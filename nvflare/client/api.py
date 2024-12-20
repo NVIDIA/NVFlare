@@ -14,7 +14,11 @@
 
 import logging
 import os
+import signal
+import threading
+import time
 from enum import Enum
+from threading import Thread
 from typing import Any, Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
@@ -24,6 +28,7 @@ from nvflare.fuel.data_event.data_bus import DataBus
 from .api_spec import CLIENT_API_KEY, CLIENT_API_TYPE_KEY, APISpec
 from .ex_process.api import ExProcessClientAPI
 
+logger = logging.getLogger(__name__)
 
 class ClientAPIType(Enum):
     IN_PROCESS_API = "IN_PROCESS_API"
@@ -33,6 +38,21 @@ class ClientAPIType(Enum):
 client_api: Optional[APISpec] = None
 data_bus = DataBus()
 
+def death_watch():
+    """
+    Python's main thread doesn't die if there are running thread pools.
+    This function kills the process when the main thread is in the shutdown process
+    """
+    try:
+        while True:
+            if threading._SHUTTING_DOWN:
+                os.kill(os.getpid(), signal.SIGKILL)
+                # Just in case kill doesn't work
+                logger.error(f"Process {os.getpid()} is killed but still running")
+                break
+            time.sleep(1)
+    except Exception as ex:
+        logger.warning(f"Death watch failed with error: {ex}")
 
 def init(rank: Optional[str] = None):
     """Initializes NVFlare Client API environment.
@@ -44,6 +64,9 @@ def init(rank: Optional[str] = None):
     Returns:
         None
     """
+
+    Thread(target=death_watch, name="death_watch", daemon=False).start()
+
     api_type_name = os.environ.get(CLIENT_API_TYPE_KEY, ClientAPIType.IN_PROCESS_API.value)
     api_type = ClientAPIType(api_type_name)
     global client_api
@@ -54,7 +77,7 @@ def init(rank: Optional[str] = None):
             client_api = ExProcessClientAPI()
         client_api.init(rank=rank)
     else:
-        logging.warning("Warning: called init() more than once. The subsequence calls are ignored")
+        logger.warning("Warning: called init() more than once. The subsequence calls are ignored")
 
 
 def receive(timeout: Optional[float] = None) -> Optional[FLModel]:
