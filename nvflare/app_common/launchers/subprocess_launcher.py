@@ -82,7 +82,7 @@ class SubprocessLauncher(Launcher):
             self._process = subprocess.Popen(
                 command_seq, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=self._app_dir, env=env
             )
-            self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger))
+            self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger), daemon=True)
             self._log_thread.start()
 
     def _stop_external_process(self):
