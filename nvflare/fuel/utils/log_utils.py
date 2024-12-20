@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import inspect
+import json
 import logging
 import logging.config
 import os
+import re
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 
 
@@ -43,14 +46,15 @@ class BaseFormatter(logging.Formatter):
     def __init__(self, fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt=None, style="%"):
         """BaseFormatter is the default formatter for log records.
 
-        Shortens logger %(name)s to the suffix, full name can be accessed with %(fullName)s
+        Shortens logger %(name)s to the suffix. Full name can be accessed with %(fullName)s
 
         Args:
-            fmt: format string which uses LogRecord attributes.
-            datefmt: date/time format string. Defaults to '%Y-%m-%d %H:%M:%S'.
-            style: style character '%' '{' or '$' for format string.
+            fmt (str): format string which uses LogRecord attributes.
+            datefmt (str): date/time format string. Defaults to '%Y-%m-%d %H:%M:%S'.
+            style (str): style character '%' '{' or '$' for format string.
 
         """
+        self.fmt = fmt
         super().__init__(fmt=fmt, datefmt=datefmt, style=style)
 
     def format(self, record):
@@ -61,8 +65,134 @@ class BaseFormatter(logging.Formatter):
         return super().format(record)
 
 
-def ansi_sgr(code):
-    # ANSI Select Graphics Rendition
+class ColorFormatter(BaseFormatter):
+    def __init__(
+        self,
+        fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt=None,
+        style="%",
+        level_colors=DEFAULT_LEVEL_COLORS,
+        logger_colors={},
+    ):
+        """ColorFormatter to format colors based on log levels. Optionally can color logger_names.
+
+        Args:
+            fmt (str): format string which uses LogRecord attributes.
+            datefmt (str): date/time format string. Defaults to '%Y-%m-%d %H:%M:%S'.
+            style (str): style character '%' '{' or '$' for format string.
+            level_colors (Dict[str, str]): dict of levelname: ANSI color. Defaults to
+                {
+                    "DEBUG": ANSIColor.GREY,
+                    "INFO": ANSIColor.GREY,
+                    "WARNING": ANSIColor.YELLOW,
+                    "ERROR": ANSIColor.RED,
+                    "CRITICAL": ANSIColor.BOLD_RED,
+                }
+            logger_colors (Dict[str, str]): dict of logger_name: ANSI colors. Defaults to {}.
+
+        """
+        super().__init__(fmt=fmt, datefmt=datefmt, style=style)
+        self.level_colors = level_colors
+        self.logger_colors = logger_colors
+
+    def format(self, record):
+        super().format(record)
+
+        # Apply level_colors based on record levelname
+        log_color = ansi_sgr(self.level_colors.get(record.levelname, ANSIColor.GREY))
+    
+        # Apply logger_color to logger_names if INFO or below
+        if record.levelno <= logging.INFO:
+            log_color = ansi_sgr(self.logger_colors.get(record.name), log_color)
+
+        log_fmt = log_color + self.fmt + ansi_sgr(ANSIColor.RESET)
+
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
+
+
+class JsonFormatter(BaseFormatter):
+    def __init__(
+        self, fmt="%(asctime)s - %(name)s - %(fullName)s - %(levelname)s - %(message)s", datefmt=None, style="%"
+    ):
+        """Format log records into JSON.
+
+        Args:
+            fmt (str): format string which uses LogRecord attributes. Attributes are used for JSON keys.
+            datefmt (str): date/time format string. Defaults to '%Y-%m-%d %H:%M:%S'.
+            style (str): style character '%' '{' or '$' for format string.
+
+        """
+        super().__init__(fmt=fmt, datefmt=datefmt, style=style)
+        self.fmt_dict = self.generate_fmt_dict(self.fmt)
+
+    def generate_fmt_dict(self, fmt: str) -> dict:
+        # Parse the `fmt` string and create a mapping of keys to LogRecord attributes
+        matches = re.findall(r"%\((.*?)\)([sd])", fmt)
+
+        fmt_dict = {}
+        for key, _ in matches:
+            if key == "shortname":
+                fmt_dict["name"] = "shortname"
+            else:
+                fmt_dict[key] = key
+
+        return fmt_dict
+
+    def extract_bracket_fields(self, message: str) -> dict:
+        # Extract bracketed fl_ctx_fields eg. [k1=v1, k2=v2...] into sub dict
+        bracket_fields = {}
+        match = re.search(r"\[(.*?)\]:", message)
+        if match:
+            pairs = match.group(1).split(", ")
+            for pair in pairs:
+                if "=" in pair:
+                    key, value = pair.split("=", 1)
+                    bracket_fields[key] = value
+        return bracket_fields
+
+    def formatMessage(self, record) -> dict:
+        return {fmt_key: record.__dict__.get(fmt_val, "") for fmt_key, fmt_val in self.fmt_dict.items()}
+
+    def format(self, record) -> str:
+        super().format(record)
+
+        record.message = record.getMessage()
+        bracket_fields = self.extract_bracket_fields(record.message)
+        record.asctime = self.formatTime(record)
+
+        formatted_message_dict = self.formatMessage(record)
+        message_dict = {k: v for k, v in formatted_message_dict.items() if k != "message"}
+
+        if bracket_fields:
+            message_dict["fl_ctx_fields"] = bracket_fields
+            record.message = re.sub(r"\[.*?\]:", "", record.message).strip()
+
+        message_dict[self.fmt_dict.get("message", "message")] = record.message
+
+        return json.dumps(message_dict, default=str)
+
+
+class FLFilter(logging.Filter):
+    def __init__(self, logger_names=["nvflare.app_common", "nvflare.app_opt"]):
+        """Filter log records based on logger names.
+
+        Args:
+            logger_names (List[str]): list of logger names to allow through filter (inclusive)
+
+        """
+        super().__init__()
+        self.logger_names = logger_names
+
+    def filter(self, record):
+        # Filter log records based on the logger name
+        fullName = record.fullName if hasattr(record, "fullName") else record.name
+        if any(fullName.startswith(name) for name in self.logger_names):
+            return record.levelno >= logging.INFO
+
+
+def ansi_sgr(code: str):
+    """ANSI Select Graphics Rendition."""
     return "\x1b[" + code + "m"
 
 
@@ -88,10 +218,66 @@ def get_script_logger():
     )
 
 
-def configure_logging(workspace: Workspace):
+def configure_logging(workspace: Workspace, dir_path: str = "", file_prefix: str = ""):
     log_config_file_path = workspace.get_log_config_file_path()
     assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+
+    with open(log_config_file_path, "r") as f:
+        dict_config = json.load(f)
+
+    apply_log_config(dict_config, dir_path, file_prefix)
+
+
+def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
+    stack = [dict_config]
+    while stack:
+        current_dict = stack.pop()
+        for key, value in current_dict.items():
+            if isinstance(value, dict):
+                stack.append(value)
+            elif key == "filename":
+                if file_prefix:
+                    value = os.path.join(os.path.dirname(value), file_prefix + "_" + os.path.basename(value))
+                current_dict[key] = os.path.join(dir_path, value)
+
+    logging.config.dictConfig(dict_config)
+
+
+def handle_log_config_command(config: str, workspace: Workspace, job_id: str = None):
+    if config is None:
+        config = workspace.get_log_config_file_path()
+
+    if not isinstance(config, str):
+        raise ValueError(
+            f"Unsupported config type. Expect config to be filepath or string level but got {type(config)}"
+        )
+
+    if os.path.isfile(config):
+
+        with open(config, "r") as f:
+            dict_config = json.load(f)
+
+        if job_id:
+            dir_path = workspace.get_run_dir(job_id)
+        else:
+            dir_path = workspace.get_root_dir()
+
+            with open(os.path.join(workspace.get_site_config_dir(), WorkspaceConstants.LOGGING_CONFIG), "w") as f:
+                f.write(json.dumps(dict_config))     
+
+        apply_log_config(dict_config, dir_path)
+
+    else:
+        if config.isdigit():
+            level = int(config)
+            if not (0 <= level <= 50):
+                raise ValueError(f"Invalid logging level: {level}")
+        else:
+            level = getattr(logging, config.upper(), None)
+            if level is None:
+                raise ValueError(f"Invalid logging level: {config}")
+
+        logging.getLogger().setLevel(level)
 
 
 def add_log_file_handler(log_file_name):

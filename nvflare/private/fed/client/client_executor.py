@@ -277,6 +277,29 @@ class JobExecutor(ClientExecutor):
             secure_log_traceback()
             return None
 
+    def configure_job_log(self, job_id, config):
+        """Get the error information.
+
+        Args:
+            job_id: the job_id
+
+        Returns:
+            A dict of error information.
+        """
+        try:
+            request = new_cell_message({}, config)
+            self.client.cell.fire_and_forget(
+                targets=self._job_fqcn(job_id),
+                channel=CellChannel.CLIENT_COMMAND,
+                topic=AdminCommandNames.CONFIGURE_JOB_LOG,
+                message=request,
+                optional=True,
+            )
+        except Exception as e:
+            self.logger.error(f"configure_job_log execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
+            return None
+
     def reset_errors(self, job_id):
         """Resets the error information.
 
