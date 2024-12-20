@@ -26,7 +26,6 @@ from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.client.flare_agent import FlareAgentException
 from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.pipe.pipe import Pipe
@@ -90,7 +89,7 @@ class ExProcessClientAPI(APISpec):
                     # import here, and register later when needed
                     _, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
                     if not ok:
-                        raise RuntimeError(f"Can't import TensorDecomposer")
+                        raise RuntimeError("Can't import TensorDecomposer")
 
                 pipe, task_channel_name = None, ""
                 if ConfigKey.TASK_EXCHANGE in client_config.config:
