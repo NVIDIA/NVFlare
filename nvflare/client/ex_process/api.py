@@ -52,14 +52,6 @@ def _create_pipe_using_config(client_config: ClientConfig, section: str) -> Tupl
     return pipe, pipe_channel_name
 
 
-def _register_tensor_decomposer():
-    tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
-    if ok:
-        fobs.register(tensor_decomposer)
-    else:
-        raise RuntimeError(f"Can't import TensorDecomposer for format: {ExchangeFormat.PYTORCH}")
-
-
 class ExProcessClientAPI(APISpec):
     def __init__(self):
         self.process_model_registry = None
@@ -95,7 +87,10 @@ class ExProcessClientAPI(APISpec):
             if rank == "0":
                 if client_config.get_exchange_format() in [ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY]:
                     # both numpy and pytorch exchange format can need tensor decomposer
-                    _register_tensor_decomposer()
+                    # import here, and register later when needed
+                    _, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
+                    if not ok:
+                        raise RuntimeError(f"Can't import TensorDecomposer")
 
                 pipe, task_channel_name = None, ""
                 if ConfigKey.TASK_EXCHANGE in client_config.config:
