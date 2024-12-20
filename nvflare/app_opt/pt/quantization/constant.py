@@ -13,7 +13,10 @@
 # limitations under the License.
 
 DATA_TYPE = [
+    "FLOAT64",
     "FLOAT32",
+    "FLOAT16",
+    "BFLOAT16",
 ]
 
 QUANTIZATION_TYPE = [

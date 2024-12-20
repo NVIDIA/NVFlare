@@ -76,6 +76,15 @@ The following docker image is recommended for GPU training:
 
     nvcr.io/nvidia/pytorch:24.03-py3
 
+Building Encryption Plugins
+---------------------------
+
+The secure training requires encryption plugins, which need to be built from the source code
+for your specific environment.
+
+To build the plugins, check out the NVFlare source code from https://github.com/NVIDIA/NVFlare and following the
+instructions in :github_nvflare_link:`this document. <integration/xgboost/encryption_plugins/README.md>`
+
 .. _xgb_provisioning:
 
 NVFlare Provisioning
@@ -181,7 +190,7 @@ The plugin can be configured in the ``local/resources.json`` file on clients:
     {
         "federated_plugin": {
             "name": "nvflare",
-            "path": "/tmp/libnvflare.so"
+            "path": "/opt/libs/libnvflare.so"
         }
     }
 
@@ -193,7 +202,7 @@ The following environment variables can be used to override the values in the JS
 .. code-block:: bash
 
     export NVFLARE_XGB_PLUGIN_NAME=nvflare
-    export NVFLARE_XGB_PLUGIN_PATH=/tmp/libnvflare.so
+    export NVFLARE_XGB_PLUGIN_PATH=/opt/libs/libnvflare.so
 
 .. note::
 
@@ -221,14 +230,6 @@ For example,
     cp /tmp/poc_workspace/example_project/prod_00/site-1/startup/client_context.tenseal /tmp/simulator_workspace/startup
 
 The server_context.tenseal file is not needed.
-
-Building Encryption Plugins
-===========================
-
-The plugins need to be built from the source code for your specific environment.
-
-To build the plugins, check out the NVFlare source code from https://github.com/NVIDIA/NVFlare and following the
-instructions in :github_nvflare_link:`this document. <integration/xgboost/encryption_plugins/README.md>`
 
 Job Configuration
 =================
