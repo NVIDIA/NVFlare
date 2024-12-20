@@ -15,7 +15,7 @@
 import os
 import pprint
 
-from bionemo_constants import BioNeMoConstants, BioNeMoDataKind
+from bionemo_constants import BioNeMoConstants
 from omegaconf import OmegaConf
 
 from nvflare.apis.client import Client
@@ -29,17 +29,10 @@ from nvflare.app_common.abstract.response_processor import ResponseProcessor
 class BioNeMoInferenceProcessor(ResponseProcessor):
     def __init__(
         self,
-        base_config_path: str = "/workspace/bionemo/examples/protein/esm1nv/conf/base_config.yaml",
-        infer_config_path: str = "config/infer.yaml",
     ):
-        """Run BioNeMo model inference.
-
-        Args:
-            config_path: BioNeMo inference config file.
+        """Creates task data, runs BioNeMo model inference, and summarizes results.
         """
         super().__init__()
-        self.base_config_path = base_config_path
-        self.infer_config_path = infer_config_path
         self._inference_responses = {}
 
     def create_task_data(self, task_name: str, fl_ctx: FLContext) -> Shareable:
@@ -55,19 +48,8 @@ class BioNeMoInferenceProcessor(ResponseProcessor):
         # get app root
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
 
-        # Load model configuration to initialize training NeMo environment
-        self.base_config_path = os.path.join(app_root, self.base_config_path)
-        self.infer_config_path = os.path.join(app_root, self.infer_config_path)
-        base_config = OmegaConf.load(self.base_config_path)
-        infer_config = OmegaConf.load(self.infer_config_path)
-        config = OmegaConf.merge(base_config, infer_config)
-        self.log_info(fl_ctx, f"Load model configuration from {self.base_config_path} and {self.infer_config_path}")
-
-        # TODO send nemo checkpoint
-        configs = {BioNeMoConstants.CONFIG: OmegaConf.to_container(config)}
-
-        # convert omega conf to primitive dict
-        dxo = DXO(data=configs, data_kind=BioNeMoDataKind.CONFIG)
+        # task data is empty in this case
+        dxo = DXO(data={}, data_kind="EMPTY")
         return dxo.to_shareable()
 
     def process_client_response(self, client: Client, task_name: str, response: Shareable, fl_ctx: FLContext) -> bool:
