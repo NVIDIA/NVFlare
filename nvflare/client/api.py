@@ -30,6 +30,7 @@ from .ex_process.api import ExProcessClientAPI
 
 logger = logging.getLogger(__name__)
 
+
 class ClientAPIType(Enum):
     IN_PROCESS_API = "IN_PROCESS_API"
     EX_PROCESS_API = "EX_PROCESS_API"
@@ -37,6 +38,7 @@ class ClientAPIType(Enum):
 
 client_api: Optional[APISpec] = None
 data_bus = DataBus()
+
 
 def death_watch():
     """
@@ -53,6 +55,7 @@ def death_watch():
             time.sleep(1)
     except Exception as ex:
         logger.warning(f"Death watch failed with error: {ex}")
+
 
 def init(rank: Optional[str] = None):
     """Initializes NVFlare Client API environment.
