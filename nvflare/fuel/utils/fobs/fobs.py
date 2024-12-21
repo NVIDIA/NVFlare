@@ -66,15 +66,10 @@ def _get_type_name(cls: Type) -> str:
 
 def _load_class(type_name: str):
     try:
-        parts = type_name.split(".")
-        if len(parts) == 1:
-            parts = ["builtins", type_name]
+        module_name, class_name = type_name.rsplit('.', 1)
+        module = importlib.import_module(module_name)
 
-        mod = __import__(parts[0])
-        for comp in parts[1:]:
-            mod = getattr(mod, comp)
-
-        return mod
+        return getattr(module, class_name)
     except Exception as ex:
         raise TypeError(f"Can't load class {type_name}: {ex}")
 
@@ -243,7 +238,7 @@ def register_folder(folder: str, package: str):
                     # classes who are abstract or take extra args in __init__ can't be auto-registered
                     if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj) and len(spec.args) == 1:
                         register(cls_obj)
-            except (ModuleNotFoundError, RuntimeError) as e:
+            except (ModuleNotFoundError, RuntimeError, ValueError) as e:
                 log.debug(
                     f"Try to import module {decomposers}, but failed: {secure_format_exception(e)}. "
                     f"Can't use name in config to refer to classes in module: {decomposers}."
@@ -275,7 +270,7 @@ def register_custom_folder(folder: str):
                                 log.warning(
                                     f"Invalid Decomposer from {module}: can't have argument in Decomposer's constructor"
                                 )
-                except (ModuleNotFoundError, RuntimeError):
+                except (ModuleNotFoundError, RuntimeError, ValueError):
                     pass
 
 
