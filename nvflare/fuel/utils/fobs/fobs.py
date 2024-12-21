@@ -66,7 +66,7 @@ def _get_type_name(cls: Type) -> str:
 
 def _load_class(type_name: str):
     try:
-        module_name, class_name = type_name.rsplit('.', 1)
+        module_name, class_name = type_name.rsplit(".", 1)
         module = importlib.import_module(module_name)
 
         return getattr(module, class_name)
