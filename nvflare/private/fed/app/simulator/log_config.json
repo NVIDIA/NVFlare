@@ -17,7 +17,7 @@
     },
     "filters": {
         "FLFilter": {
-            "()": "nvflare.fuel.utils.log_utils.FLFilter",
+            "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
             "logger_names": ["nvflare.app_common", "nvflare.app_opt"]
         }
     },

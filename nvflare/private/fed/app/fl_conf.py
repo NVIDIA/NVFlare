@@ -26,7 +26,6 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
-from nvflare.private.fed.utils.fed_utils import configure_logging
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
 
@@ -62,8 +61,6 @@ class FLServerStarterConfiger(JsonConfigurator):
             self.cmd_vars = parse_vars(kv_list)
         else:
             self.cmd_vars = {}
-
-        configure_logging(workspace)
 
         config_files = workspace.get_config_files_for_startup(is_server=True, for_job=True if args.job_id else False)
 
@@ -225,8 +222,6 @@ class FLClientStarterConfiger(JsonConfigurator):
             self.cmd_vars = parse_vars(kv_list)
         else:
             self.cmd_vars = {}
-
-        configure_logging(workspace)
 
         config_files = workspace.get_config_files_for_startup(is_server=False, for_job=True if args.job_id else False)
 
