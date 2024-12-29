@@ -23,7 +23,7 @@ from nvflare.app_common.abstract.task_handler import TaskHandler
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.statistics.numeric_stats import filter_numeric_features
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
-from nvflare.app_common.statistics.statistics_config_utils import get_feature_bin_range
+from nvflare.app_common.statistics.statistics_config_utils import get_feature_bin_range, get_target_percents
 from nvflare.fuel.utils import fobs
 from nvflare.security.logging import secure_format_exception
 
@@ -96,6 +96,7 @@ class StatisticsTaskHandler(TaskHandler):
             StC.STATS_HISTOGRAM: self.get_histogram,
             StC.STATS_MAX: self.get_max_value,
             StC.STATS_MIN: self.get_min_value,
+            StC.STATS_PERCENTILE: self.get_percentiles_and_centroids,
         }
 
     def _populate_result_statistics(self, statistics_result, ds_features, tm: StatisticConfig, shareable, fl_ctx, fn):
@@ -137,48 +138,48 @@ class StatisticsTaskHandler(TaskHandler):
         return self.stats_generator.pre_run(target_statistic_keys, feature_num_of_bins, feature_bin_ranges)
 
     def get_count(
-        self,
-        dataset_name: str,
-        feature_name: str,
-        statistic_configs: StatisticConfig,
-        inputs: Shareable,
-        fl_ctx: FLContext,
+            self,
+            dataset_name: str,
+            feature_name: str,
+            statistic_configs: StatisticConfig,
+            inputs: Shareable,
+            fl_ctx: FLContext,
     ) -> int:
 
         result = self.stats_generator.count(dataset_name, feature_name)
         return result
 
     def get_failure_count(
-        self,
-        dataset_name: str,
-        feature_name: str,
-        statistic_configs: StatisticConfig,
-        inputs: Shareable,
-        fl_ctx: FLContext,
+            self,
+            dataset_name: str,
+            feature_name: str,
+            statistic_configs: StatisticConfig,
+            inputs: Shareable,
+            fl_ctx: FLContext,
     ) -> int:
 
         result = self.stats_generator.failure_count(dataset_name, feature_name)
         return result
 
     def get_sum(
-        self,
-        dataset_name: str,
-        feature_name: str,
-        statistic_configs: StatisticConfig,
-        inputs: Shareable,
-        fl_ctx: FLContext,
+            self,
+            dataset_name: str,
+            feature_name: str,
+            statistic_configs: StatisticConfig,
+            inputs: Shareable,
+            fl_ctx: FLContext,
     ) -> float:
 
         result = round(self.stats_generator.sum(dataset_name, feature_name), self.precision)
         return result
 
     def get_mean(
-        self,
-        dataset_name: str,
-        feature_name: str,
-        statistic_configs: StatisticConfig,
-        inputs: Shareable,
-        fl_ctx: FLContext,
+            self,
+            dataset_name: str,
+            feature_name: str,
+            statistic_configs: StatisticConfig,
+            inputs: Shareable,
+            fl_ctx: FLContext,
     ) -> float:
         count = self.stats_generator.count(dataset_name, feature_name)
         sum_value = self.stats_generator.sum(dataset_name, feature_name)
@@ -191,24 +192,24 @@ class StatisticsTaskHandler(TaskHandler):
             return mean
 
     def get_stddev(
-        self,
-        dataset_name: str,
-        feature_name: str,
-        statistic_configs: StatisticConfig,
-        inputs: Shareable,
-        fl_ctx: FLContext,
+            self,
+            dataset_name: str,
+            feature_name: str,
+            statistic_configs: StatisticConfig,
+            inputs: Shareable,
+            fl_ctx: FLContext,
     ) -> float:
 
         result = round(self.stats_generator.stddev(dataset_name, feature_name), self.precision)
         return result
 
     def get_variance_with_mean(
-        self,
-        dataset_name: str,
-        feature_name: str,
-        statistic_configs: StatisticConfig,
-        inputs: Shareable,
-        fl_ctx: FLContext,
+            self,
+            dataset_name: str,
+            feature_name: str,
+            statistic_configs: StatisticConfig,
+            inputs: Shareable,
+            fl_ctx: FLContext,
     ) -> float:
         result = None
         if StC.STATS_GLOBAL_MEAN in inputs and StC.STATS_GLOBAL_COUNT in inputs:
@@ -221,12 +222,12 @@ class StatisticsTaskHandler(TaskHandler):
         return result
 
     def get_histogram(
-        self,
-        dataset_name: str,
-        feature_name: str,
-        statistic_configs: StatisticConfig,
-        inputs: Shareable,
-        fl_ctx: FLContext,
+            self,
+            dataset_name: str,
+            feature_name: str,
+            statistic_configs: StatisticConfig,
+            inputs: Shareable,
+            fl_ctx: FLContext,
     ) -> Histogram:
 
         if StC.STATS_MIN in inputs and StC.STATS_MAX in inputs:
@@ -249,12 +250,12 @@ class StatisticsTaskHandler(TaskHandler):
             return Histogram(HistogramType.STANDARD, list())
 
     def get_max_value(
-        self,
-        dataset_name: str,
-        feature_name: str,
-        statistic_configs: StatisticConfig,
-        inputs: Shareable,
-        fl_ctx: FLContext,
+            self,
+            dataset_name: str,
+            feature_name: str,
+            statistic_configs: StatisticConfig,
+            inputs: Shareable,
+            fl_ctx: FLContext,
     ) -> float:
         """
         get randomized max value
@@ -268,12 +269,12 @@ class StatisticsTaskHandler(TaskHandler):
             return feature_bin_range[1]
 
     def get_min_value(
-        self,
-        dataset_name: str,
-        feature_name: str,
-        statistic_configs: StatisticConfig,
-        inputs: Shareable,
-        fl_ctx: FLContext,
+            self,
+            dataset_name: str,
+            feature_name: str,
+            statistic_configs: StatisticConfig,
+            inputs: Shareable,
+            fl_ctx: FLContext,
     ) -> float:
         """
         get randomized min value
@@ -308,7 +309,7 @@ class StatisticsTaskHandler(TaskHandler):
             raise Exception(err_msg)
 
     def get_bin_range(
-        self, feature_name: str, global_min_value: float, global_max_value: float, hist_config: dict
+            self, feature_name: str, global_min_value: float, global_max_value: float, hist_config: dict
     ) -> List[float]:
 
         global_bin_range = [global_min_value, global_max_value]
@@ -317,6 +318,18 @@ class StatisticsTaskHandler(TaskHandler):
             bin_range = global_bin_range
 
         return bin_range
+
+    def get_percentiles_and_centroids(
+            self,
+            dataset_name: str,
+            feature_name: str,
+            statistic_configs: StatisticConfig,
+            inputs: Shareable,
+            fl_ctx: FLContext) -> dict:
+        percentile_config = statistic_configs.config
+        target_percents = get_target_percents(percentile_config, feature_name)
+        result = self.stats_generator.percentiles(dataset_name, feature_name, target_percents)
+        return result
 
     def _get_global_value_from_input(self, statistic_key: str, dataset_name: str, feature_name: str, inputs):
         global_value = None

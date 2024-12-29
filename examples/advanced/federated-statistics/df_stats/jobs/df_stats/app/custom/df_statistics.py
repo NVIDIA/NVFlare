@@ -17,6 +17,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 from pandas.core.series import Series
+from tdigest import TDigest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.statistics_spec import BinRange, Feature, Histogram, HistogramType, Statistics
@@ -140,3 +141,30 @@ class DFStatistics(Statistics):
 
         df = self.data[dataset_name]
         return df[feature_name].min()
+
+    def percentiles(self, dataset_name: str, feature_name: str, percents: List) -> Dict:
+        digest = self._prepare_t_digest(dataset_name, feature_name)
+        results = {}
+        p_results = {}
+        for p in percents:
+            v = round(digest.percentile(p), 4)
+            p_results[p] = v
+        results["percentiles"] = p_results
+
+        # Extract centroids (mean, count) from the digest to used for merge for the global
+        x = digest.centroids_to_list()
+        results["centroids"] = x
+        return results
+
+    def _prepare_t_digest(self, dataset_name: str, feature_name: str) -> TDigest:
+        df = self.data[dataset_name]
+        data = df[feature_name]
+        digest = TDigest()
+        for value in data:
+            digest.update(value)
+        return digest
+
+
+
+
+
