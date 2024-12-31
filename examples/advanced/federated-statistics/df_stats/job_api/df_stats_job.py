@@ -13,7 +13,7 @@
 # limitations under the License.
 import argparse
 
-from df_stats import DFStatistics
+from df_statistics import DFStatistics
 
 from nvflare.job_config.stats_job import StatsJob
 
@@ -47,6 +47,7 @@ def main():
         "stddev": {},
         "histogram": {"*": {"bins": 20}},
         "Age": {"bins": 20, "range": [0, 10]},
+        "percentile": {"*": [25, 50, 75], "Age": [50, 95]},
     }
     # define local stats generator
     df_stats_generator = DFStatistics(data_root_dir=data_root_dir)
@@ -64,7 +65,7 @@ def main():
     if export_config:
         job.export_job(job_dir)
     else:
-        job.simulator_run(work_dir, gpu="0")
+        job.simulator_run(work_dir)
 
 
 if __name__ == "__main__":

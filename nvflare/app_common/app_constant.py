@@ -174,6 +174,9 @@ class StatisticsConstants(AppConstants):
     STATS_BIN_RANGE = "range"
     STATS_TARGET_STATISTICS = "statistics"
 
+    STATS_PERCENTILES_KEY = "percentiles"
+    STATS_CENTROIDS_KEY = "centroids"
+
     FED_STATS_PRE_RUN = "fed_stats_pre_run"
     FED_STATS_TASK = "fed_stats"
     STATISTICS_TASK_KEY = "fed_stats_task_key"
@@ -186,8 +189,15 @@ class StatisticsConstants(AppConstants):
 
     ordered_statistics = {
         # statistics can only require one/two-round of calculations
-        STATS_1st_STATISTICS: [STATS_COUNT, STATS_FAILURE_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX,
-                               STATS_PERCENTILE],
+        STATS_1st_STATISTICS: [
+            STATS_COUNT,
+            STATS_FAILURE_COUNT,
+            STATS_SUM,
+            STATS_MEAN,
+            STATS_MIN,
+            STATS_MAX,
+            STATS_PERCENTILE,
+        ],
         STATS_2nd_STATISTICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
     }
 

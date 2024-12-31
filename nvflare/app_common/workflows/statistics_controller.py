@@ -34,14 +34,14 @@ from nvflare.fuel.utils import fobs
 
 class StatisticsController(Controller):
     def __init__(
-            self,
-            statistic_configs: Dict[str, dict],
-            writer_id: str,
-            wait_time_after_min_received: int = 1,
-            result_wait_timeout: int = 10,
-            precision=4,
-            min_clients: Optional[int] = None,
-            enable_pre_run_task: bool = True,
+        self,
+        statistic_configs: Dict[str, dict],
+        writer_id: str,
+        wait_time_after_min_received: int = 1,
+        result_wait_timeout: int = 10,
+        precision=4,
+        min_clients: Optional[int] = None,
+        enable_pre_run_task: bool = True,
     ):
         """Controller for Statistics.
 
@@ -184,7 +184,7 @@ class StatisticsController(Controller):
         self.statistics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_STATISTICS)
 
         if not StatisticsController._wait_for_all_results(
-                self.logger, self.result_wait_timeout, self.min_clients, self.client_statistics, 1.0, abort_signal
+            self.logger, self.result_wait_timeout, self.min_clients, self.client_statistics, 1.0, abort_signal
         ):
             self.log_info(fl_ctx, f"task {self.task_name} timeout on wait for all results.")
             return False
@@ -198,7 +198,7 @@ class StatisticsController(Controller):
         pass
 
     def process_result_of_unknown_task(
-            self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
 
@@ -269,8 +269,9 @@ class StatisticsController(Controller):
             abort_signal=abort_signal,
         )
 
-        self.global_statistics = get_global_stats(self.global_statistics, self.client_statistics, statistic_task,
-                                                  self.statistic_configs, self.precision)
+        self.global_statistics = get_global_stats(
+            self.global_statistics, self.client_statistics, statistic_task, self.statistic_configs, self.precision
+        )
 
         self.log_info(fl_ctx, f"task {self.task_name} statistics_flow for {statistic_task} flow end.")
 
@@ -409,7 +410,9 @@ class StatisticsController(Controller):
                             buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
                             result[feature_name][statistic][client][ds] = buckets
                         elif statistic == StC.STATS_PERCENTILE:
-                            percentiles = self.client_statistics[statistic][client][ds][feature_name]["percentiles"]
+                            percentiles = self.client_statistics[statistic][client][ds][feature_name][
+                                StC.STATS_PERCENTILES_KEY
+                            ]
                             formatted_percentiles = {}
                             for p in percentiles:
                                 formatted_percentiles[p] = round(percentiles.get(p), self.precision)
@@ -510,12 +513,12 @@ class StatisticsController(Controller):
 
     @staticmethod
     def _wait_for_all_results(
-            logger,
-            result_wait_timeout: float,
-            requested_client_size: int,
-            client_statistics: dict,
-            sleep_time: float = 1,
-            abort_signal=None,
+        logger,
+        result_wait_timeout: float,
+        requested_client_size: int,
+        client_statistics: dict,
+        sleep_time: float = 1,
+        abort_signal=None,
     ) -> bool:
         """Waits for all results.
 

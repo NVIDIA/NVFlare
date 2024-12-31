@@ -15,17 +15,17 @@
 from math import sqrt
 from typing import Dict, List, TypeVar
 
-from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
-from nvflare.app_common.app_constant import StatisticsConstants as StC
 from tdigest import TDigest
 
+from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
+from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.statistics.statistics_config_utils import get_target_percents
 
 T = TypeVar("T")
 
 
 def get_global_feature_data_types(
-        client_feature_dts: Dict[str, Dict[str, List[Feature]]]
+    client_feature_dts: Dict[str, Dict[str, List[Feature]]]
 ) -> Dict[str, Dict[str, DataType]]:
     global_feature_data_types = {}
     for client_name in client_feature_dts:
@@ -40,8 +40,9 @@ def get_global_feature_data_types(
     return global_feature_data_types
 
 
-def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: str,
-                     statistic_configs: Dict[str, dict], precision:int = 4) -> dict:
+def get_global_stats(
+    global_metrics: dict, client_metrics: dict, metric_task: str, statistic_configs: Dict[str, dict], precision: int = 4
+) -> dict:
     print(f"\n\n in get_global_stats: {precision=} \n\n")
     # we need to calculate the metrics in specified order
     ordered_target_metrics = StC.ordered_statistics[metric_task]
@@ -56,15 +57,19 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
             for client_name in stats:
                 global_metrics[metric] = accumulate_metrics(stats[client_name], global_metrics[metric], precision)
         elif metric == StC.STATS_MEAN:
-            global_metrics[metric] = get_means(global_metrics[StC.STATS_SUM], global_metrics[StC.STATS_COUNT], precision)
+            global_metrics[metric] = get_means(
+                global_metrics[StC.STATS_SUM], global_metrics[StC.STATS_COUNT], precision
+            )
         elif metric == StC.STATS_MAX:
             for client_name in stats:
-                global_metrics[metric] = get_min_or_max_values(stats[client_name], global_metrics[metric], max,
-                                                               precision)
+                global_metrics[metric] = get_min_or_max_values(
+                    stats[client_name], global_metrics[metric], max, precision
+                )
         elif metric == StC.STATS_MIN:
             for client_name in stats:
-                global_metrics[metric] = get_min_or_max_values(stats[client_name], global_metrics[metric], min,
-                                                               precision)
+                global_metrics[metric] = get_min_or_max_values(
+                    stats[client_name], global_metrics[metric], min, precision
+                )
         elif metric == StC.STATS_HISTOGRAM:
             for client_name in stats:
                 global_metrics[metric] = accumulate_hists(stats[client_name], global_metrics[metric])
@@ -105,12 +110,13 @@ def accumulate_metrics(metrics: dict, global_metrics: dict, precision: int) -> d
                     global_metrics[ds_name][feature_name] = round(feature_metrics[feature_name], precision)
                 else:
                     global_metrics[ds_name][feature_name] = round(
-                        global_metrics[ds_name][feature_name] + feature_metrics[feature_name], precision)
+                        global_metrics[ds_name][feature_name] + feature_metrics[feature_name], precision
+                    )
 
     return global_metrics
 
 
-def get_min_or_max_values(metrics: dict, global_metrics: dict, fn2, precision:int = 4) -> dict:
+def get_min_or_max_values(metrics: dict, global_metrics: dict, fn2, precision: int = 4) -> dict:
     """Use 2 argument function to calculate fn2(global, client), for example, min or max.
 
     .. note::
@@ -135,9 +141,9 @@ def get_min_or_max_values(metrics: dict, global_metrics: dict, fn2, precision:in
             if feature_name not in global_metrics[ds_name]:
                 global_metrics[ds_name][feature_name] = round(feature_metrics[feature_name], precision)
             else:
-                global_metrics[ds_name][feature_name] = round(fn2(
-                    global_metrics[ds_name][feature_name], feature_metrics[feature_name]
-                ), precision)
+                global_metrics[ds_name][feature_name] = round(
+                    fn2(global_metrics[ds_name][feature_name], feature_metrics[feature_name]), precision
+                )
 
     results = {}
     for ds_name in global_metrics:
@@ -145,7 +151,9 @@ def get_min_or_max_values(metrics: dict, global_metrics: dict, fn2, precision:in
             if feature_name not in results:
                 results[feature_name] = round(global_metrics[ds_name][feature_name], precision)
             else:
-                results[feature_name] = round(fn2(results[feature_name], global_metrics[ds_name][feature_name]), precision)
+                results[feature_name] = round(
+                    fn2(results[feature_name], global_metrics[ds_name][feature_name]), precision
+                )
 
     for ds_name in global_metrics:
         for feature_name in global_metrics[ds_name]:
@@ -163,7 +171,7 @@ def bins_to_dict(bins: List[Bin]) -> Dict[BinRange, float]:
 
 
 def accumulate_hists(
-        metrics: Dict[str, Dict[str, Histogram]], global_hists: Dict[str, Dict[str, Histogram]], precision:int =4
+    metrics: Dict[str, Dict[str, Histogram]], global_hists: Dict[str, Dict[str, Histogram]], precision: int = 4
 ) -> Dict[str, Dict[str, Histogram]]:
     for ds_name in metrics:
         feature_hists = metrics[ds_name]
@@ -175,17 +183,18 @@ def accumulate_hists(
             if feature not in global_hists[ds_name]:
                 g_bins = []
                 for bucket in hist.bins:
-                    g_bins.append(Bin(round(bucket.low_value, precision),
-                                      round(bucket.high_value, precision),
-                                      bucket.sample_count))
+                    g_bins.append(
+                        Bin(
+                            round(bucket.low_value, precision), round(bucket.high_value, precision), bucket.sample_count
+                        )
+                    )
                 g_hist = Histogram(HistogramType.STANDARD, g_bins)
                 global_hists[ds_name][feature] = g_hist
             else:
                 g_hist = global_hists[ds_name][feature]
                 g_buckets = bins_to_dict(g_hist.bins)
                 for bucket in hist.bins:
-                    bin_range = BinRange(round(bucket.low_value, precision),
-                                         round(bucket.high_value, precision))
+                    bin_range = BinRange(round(bucket.low_value, precision), round(bucket.high_value, precision))
                     if bin_range in g_buckets:
                         g_buckets[bin_range] += bucket.sample_count
                     else:
@@ -196,7 +205,8 @@ def accumulate_hists(
                 for gb in g_hist.bins:
                     bin_range = BinRange(round(gb.low_value, precision), round(gb.high_value, precision))
                     updated_bins.append(
-                        Bin(round(gb.low_value, precision), round(gb.high_value, precision), g_buckets[bin_range]))
+                        Bin(round(gb.low_value, precision), round(gb.high_value, precision), g_buckets[bin_range])
+                    )
 
                 global_hists[ds_name][feature] = Histogram(g_hist.hist_type, updated_bins)
 
@@ -224,7 +234,7 @@ def filter_numeric_features(ds_features: Dict[str, List[Feature]]) -> Dict[str, 
     return numeric_ds_features
 
 
-def aggregate_centroids(metrics: Dict[str, Dict[str, List]], g_digest: dict) -> dict:
+def aggregate_centroids(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict:
     for ds_name in metrics:
         if ds_name not in g_digest:
             g_digest[ds_name] = {}
@@ -232,7 +242,7 @@ def aggregate_centroids(metrics: Dict[str, Dict[str, List]], g_digest: dict) -> 
         feature_metrics = metrics[ds_name]
         for feature_name in feature_metrics:
             if feature_metrics[feature_name] is not None:
-                centroids: List = feature_metrics[feature_name].get("centroids")
+                centroids: List = feature_metrics[feature_name].get(StC.STATS_CENTROIDS_KEY)
                 if feature_name not in g_digest[ds_name]:
                     g_digest[ds_name][feature_name] = TDigest()
 
