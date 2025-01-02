@@ -43,7 +43,6 @@ def get_global_feature_data_types(
 def get_global_stats(
     global_metrics: dict, client_metrics: dict, metric_task: str, statistic_configs: Dict[str, dict], precision: int = 4
 ) -> dict:
-    print(f"\n\n in get_global_stats: {precision=} \n\n")
     # we need to calculate the metrics in specified order
     ordered_target_metrics = StC.ordered_statistics[metric_task]
     ordered_metrics = [metric for metric in ordered_target_metrics if metric in client_metrics]
