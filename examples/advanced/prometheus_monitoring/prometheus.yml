@@ -1,0 +1,4 @@
+scrape_configs:
+  - job_name: 'statsd'
+    static_configs:
+      - targets: ['localhost:9102']  # statsd-report exporter exposes metrics on port 9102
