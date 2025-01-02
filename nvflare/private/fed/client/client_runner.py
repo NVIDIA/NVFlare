@@ -35,6 +35,7 @@ from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils.log_utils import dynamic_log_config
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from nvflare.private.fed.tbi import TBI
@@ -719,3 +720,9 @@ class ClientRunner(TBI):
         task = TaskAssignment(name=task_name, task_id=task_id, data=request)
         reply = self._process_task(task, fl_ctx)
         return reply
+
+    def configure_job_log(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        dynamic_log_config(request, self.engine.get_workspace(), self.job_id)
+        self.log_info(fl_ctx, f"configured job {self.job_id} server log")
+
+        return make_reply(ReturnCode.OK)

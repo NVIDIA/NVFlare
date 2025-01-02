@@ -136,7 +136,7 @@ class FedJobConfig:
 
         self._generate_meta(job_dir)
 
-    def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None):
+    def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
         with TemporaryDirectory() as job_root:
             self.generate_job_config(job_root)
 
@@ -157,6 +157,8 @@ class FedJobConfig:
                 if gpu:
                     gpu = self._trim_whitespace(gpu)
                     command += " -gpu " + str(gpu)
+                if log_config:
+                    command += " -l" + str(log_config)
 
                 new_env = os.environ.copy()
                 process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)

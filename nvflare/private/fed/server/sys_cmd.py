@@ -20,10 +20,13 @@ import psutil
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.fuel.utils.log_utils import dynamic_log_config
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.cmd_utils import CommandUtil
+from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.security.logging import secure_format_exception
 
 
@@ -61,6 +64,14 @@ class SystemCommandModule(CommandModule, CommandUtil):
                     visible=True,
                 ),
                 CommandSpec(
+                    name="configure_site_log",
+                    description="configure logging of a site",
+                    usage="configure_site_log server|client <client-name>... config",
+                    handler_func=self.configure_site_log,
+                    authz_func=self.authorize_configure_site_log,
+                    visible=True,
+                ),
+                CommandSpec(
                     name="report_resources",
                     description="get the resources info",
                     usage="report_resources server | client <client-name> ...",
@@ -86,6 +97,12 @@ class SystemCommandModule(CommandModule, CommandUtil):
                 ),
             ],
         )
+
+    def authorize_configure_site_log(self, conn: Connection, args: List[str]):
+        if len(args) < 3:
+            conn.append_error("syntax error: please provide target_type and config")
+            return PreAuthzReturnCode.ERROR
+        self.authorize_server_operation(conn, args[:-1])
 
     def sys_info(self, conn: Connection, args: [str]):
         if len(args) < 2:
@@ -115,6 +132,36 @@ class SystemCommandModule(CommandModule, CommandUtil):
             return
 
         conn.append_string("invalid target type {}. Usage: sys_info server|client <client-name>".format(target_type))
+
+    def configure_site_log(self, conn: Connection, args: [str]):
+        if len(args) < 3:
+            conn.append_error("syntax error: please provide target_type and config")
+            return
+
+        target_type = args[1]
+        config = args[-1]
+
+        if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
+            engine = conn.app_ctx
+            if not isinstance(engine, ServerEngine):
+                raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+
+            workspace = engine.get_workspace()
+            dynamic_log_config(config, workspace)
+            conn.append_string("successfully configured server site log")
+
+        if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
+            message = new_message(conn, topic=SysCommandTopic.CONFIGURE_SITE_LOG, body=config, require_authz=True)
+            replies = self.send_request_to_clients(conn, message)
+            self.process_replies_to_table(conn, replies)
+            conn.append_string(f"successfully configured client site logs of {conn.get_prop(self.TARGET_CLIENT_NAMES)}")
+
+        if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
+            conn.append_string(
+                "invalid target type {}. Usage: configure_site_log server|client <client-name>... config".format(
+                    target_type
+                )
+            )
 
     def _process_replies(self, conn, replies):
         if not replies:

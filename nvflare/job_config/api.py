@@ -522,7 +522,9 @@ class FedJob:
         self._set_all_apps()
         self.job.generate_job_config(job_root)
 
-    def simulator_run(self, workspace: str, n_clients: int = None, threads: int = None, gpu: str = None):
+    def simulator_run(
+        self, workspace: str, n_clients: int = None, threads: int = None, gpu: str = None, log_config: str = None
+    ):
         """Run the job with the simulator with the `workspace` using `clients` and `threads`.
         For end users.
 
@@ -531,6 +533,7 @@ class FedJob:
             n_clients: number of clients.
             threads: number of threads.
             gpu: gpu assignments for simulating clients, comma separated
+            log_config: log config json file path
 
         Returns:
 
@@ -556,6 +559,7 @@ class FedJob:
             n_clients=n_clients,
             threads=threads,
             gpu=gpu,
+            log_config=log_config,
         )
 
     def as_id(self, obj: Any) -> str:

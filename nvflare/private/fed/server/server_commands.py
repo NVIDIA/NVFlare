@@ -423,6 +423,31 @@ class ServerStateCommand(CommandProcessor):
         return "Success"
 
 
+class ConfigureJobLogCommand(CommandProcessor):
+    """To implement the configure_job_log command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: ServerCommandNames.CONFIGURE_JOB_LOG
+
+        """
+        return ServerCommandNames.CONFIGURE_JOB_LOG
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the configure_job_log command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        """
+        server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+
+        if server_runner:
+            server_runner.configure_job_log(data, fl_ctx)
+
+
 class AppCommandProcessor(CommandProcessor):
     def get_command_name(self) -> str:
         """To get the command name.
@@ -480,6 +505,7 @@ class ServerCommands(object):
         ResetErrorsCommand(),
         HeartbeatCommand(),
         ServerStateCommand(),
+        ConfigureJobLogCommand(),
         AppCommandProcessor(),
     ]
 
