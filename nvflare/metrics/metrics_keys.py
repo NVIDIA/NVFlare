@@ -13,9 +13,18 @@
 # limitations under the License.
 
 
+class MetricTypes:
+
+    COUNTER = "counter"
+    GAUGE = "gauge"
+    HISTOGRAM = "histogram"
+    SUMMARY = "summary"
+
+
 class MetricKeys:
 
     metric_name = "metric_name"
+    type = "type"
     value = "value"
-    labels = "labels"
+    tags = "tags"
     timestamp = "timestamp"

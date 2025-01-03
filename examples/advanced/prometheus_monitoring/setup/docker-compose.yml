@@ -1,0 +1,68 @@
+version: '3.7'
+
+services:
+  statsd:
+    image: statsd/statsd
+    container_name: statsd
+    networks:
+      - monitoring
+    ports:
+      - "8125:8125/udp"
+    environment:
+      - STATSD_LISTENING_INTERFACE=0.0.0.0
+      - STATSD_PORT=8125
+      - STATSD_BACKEND=none
+
+  statsd-exporter:
+    image: prom/statsd-exporter
+    container_name: statsd-exporter
+    networks:
+      - monitoring
+    ports:
+      - "9102:9102"
+    environment:
+      - STATS_D_HOST=statsd
+      - STATS_D_PORT=8125  # Explicitly set the StatsD port her
+
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    networks:
+      - monitoring
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - monitoring
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: always
+    depends_on:
+      - prometheus
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor
+    container_name: cadvisor
+    networks:
+      - monitoring
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - "8080:8080"
+
+networks:
+  monitoring:
+    driver: bridge
