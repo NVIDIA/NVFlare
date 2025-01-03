@@ -13,7 +13,6 @@
 # limitations under the License.
 import copy
 import json
-import logging.config
 import os
 import shlex
 import shutil
@@ -53,6 +52,7 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
+from nvflare.fuel.utils.log_utils import apply_log_config
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.private.defs import AppFolderConstants
@@ -64,7 +64,6 @@ from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAp
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import (
-    add_logfile_handler,
     custom_fobs_initialize,
     get_simulator_app_root,
     nvflare_fobs_initialize,
@@ -156,7 +155,9 @@ class SimulatorRunner(FLComponent):
         log_config_file_path = os.path.join(self.args.workspace, "local", WorkspaceConstants.LOGGING_CONFIG)
         if not os.path.isfile(log_config_file_path):
             log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
-        logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+
+        with open(log_config_file_path, "r") as f:
+            dict_config = json.load(f)
 
         self.args.log_config = None
         self.args.config_folder = "config"
@@ -179,8 +180,8 @@ class SimulatorRunner(FLComponent):
         init_security_content_service(self.args.workspace)
 
         os.makedirs(os.path.join(self.simulator_root, SiteType.SERVER))
-        log_file = os.path.join(self.simulator_root, SiteType.SERVER, WorkspaceConstants.LOG_FILE_NAME)
-        add_logfile_handler(log_file)
+
+        apply_log_config(dict_config, os.path.join(self.simulator_root, SiteType.SERVER))
 
         try:
             data_bytes, job_name, meta = self.validate_job_data()
