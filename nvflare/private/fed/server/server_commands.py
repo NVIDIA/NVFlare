@@ -429,10 +429,10 @@ class ConfigureJobLogCommand(CommandProcessor):
     def get_command_name(self) -> str:
         """To get the command name.
 
-        Returns: ServerCommandNames.CONFIGURE_JOB_LOG
+        Returns: AdminCommandNames.CONFIGURE_JOB_LOG
 
         """
-        return ServerCommandNames.CONFIGURE_JOB_LOG
+        return AdminCommandNames.CONFIGURE_JOB_LOG
 
     def process(self, data: Shareable, fl_ctx: FLContext):
         """Called to process the configure_job_log command.

@@ -916,7 +916,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         try:
             self.send_command_to_child_runner_process(
                 job_id=job_id,
-                command_name=ServerCommandNames.CONFIGURE_JOB_LOG,
+                command_name=AdminCommandNames.CONFIGURE_JOB_LOG,
                 command_data=data,
             )
         except Exception as ex:
