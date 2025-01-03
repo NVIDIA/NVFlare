@@ -55,7 +55,14 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.aux_runner import AuxMsgTarget
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
+from nvflare.private.defs import (
+    CellChannel,
+    CellMessageHeaderKeys,
+    InternalFLContextKey,
+    RequestHeader,
+    TrainingTopic,
+    new_cell_message,
+)
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.utils.fed_utils import (
     get_job_launcher,
@@ -222,6 +229,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         else:
             restore_snapshot = False
         fl_ctx.set_prop(FLContextKey.SNAPSHOT, restore_snapshot, private=True, sticky=False)
+        fl_ctx.set_prop(InternalFLContextKey.SERVER_ENGINE, self, private=True, sticky=False)
         job_handle = job_launcher.launch_job(job.meta, fl_ctx)
         self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")
 

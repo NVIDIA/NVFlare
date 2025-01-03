@@ -20,21 +20,22 @@ from typing import List, Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.filter import Filter
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
 from nvflare.apis.fl_constant import ReturnCode as ShareableRC
 from nvflare.apis.fl_constant import SecureTrainConst, ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
+from nvflare.fuel.data_event.utils import get_scope_property, set_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import format_size
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.utils.fed_utils import get_scope_prop
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, load_crt_bytes
 from nvflare.security.logging import secure_format_exception
 
@@ -94,7 +95,42 @@ class Communicator:
         self.timeout = timeout
         self.maint_msg_timeout = maint_msg_timeout
 
+        # token and token_signature are issued by the Server after the client is authenticated
+        # they are added to every message going to the server as proof of authentication
+        self.token = None
+        self.token_signature = None
+        self.ssid = None
+        self.client_name = None
+
         self.logger = get_obj_logger(self)
+
+    def set_auth(self, client_name, token, token_signature, ssid):
+        self.ssid = ssid
+        self.token_signature = token_signature
+        self.token = token
+        self.client_name = client_name
+
+        # put auth properties in databus so that they can be used elsewhere
+        set_scope_property(scope_name=client_name, key=FLMetaKey.AUTH_TOKEN, value=token)
+        set_scope_property(scope_name=client_name, key=FLMetaKey.AUTH_TOKEN_SIGNATURE, value=token_signature)
+
+    def set_cell(self, cell):
+        self.cell = cell
+
+        # set filter to add additional auth headers
+        cell.core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._add_auth_headers)
+        cell.core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._add_auth_headers)
+
+    def _add_auth_headers(self, message: CellMessage):
+        if self.ssid:
+            message.set_header(CellMessageHeaderKeys.SSID, self.ssid)
+
+        if self.client_name:
+            message.set_header(CellMessageHeaderKeys.CLIENT_NAME, self.client_name)
+
+        if self.token:
+            message.set_header(CellMessageHeaderKeys.TOKEN, self.token)
+            message.set_header(CellMessageHeaderKeys.TOKEN_SIGNATURE, self.token_signature)
 
     def _challenge_server(self, client_name, expected_host, root_cert_file):
         # ask server for its info and make sure that it matches expected host
@@ -207,7 +243,7 @@ class Communicator:
                 # the provision was done with an old version
                 # to be backward compatible, we expect the host to be the server host we connected to
                 # we get the host name from DataBus!
-                expected_host = get_scope_prop(scope_name=client_name, key=FLContextKey.SERVER_HOST_NAME)
+                expected_host = get_scope_property(scope_name=client_name, key=FLContextKey.SERVER_HOST_NAME)
 
             if not expected_host:
                 raise RuntimeError("cannot determine expected_host")
@@ -260,17 +296,19 @@ class Communicator:
                     raise FLCommunicationError("error:client_registration " + reason)
 
                 token = result.get_header(CellMessageHeaderKeys.TOKEN)
+                token_signature = result.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE, "NA")
                 ssid = result.get_header(CellMessageHeaderKeys.SSID)
                 if not token and not self.should_stop:
                     time.sleep(self.client_register_interval)
                 else:
+                    self.set_auth(client_name, token, token_signature, ssid)
                     break
 
             except Exception as ex:
                 traceback.print_exc()
                 raise FLCommunicationError("error:client_registration", ex)
 
-        return token, ssid
+        return token, token_signature, ssid
 
     def pull_task(self, project_name, token, ssid, fl_ctx: FLContext, timeout=None):
         """Get a task from server.
@@ -293,9 +331,6 @@ class Communicator:
         client_name = fl_ctx.get_identity_name()
         task_message = new_cell_message(
             {
-                CellMessageHeaderKeys.TOKEN: token,
-                CellMessageHeaderKeys.CLIENT_NAME: client_name,
-                CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
             shareable,
@@ -370,9 +405,6 @@ class Communicator:
 
         task_message = new_cell_message(
             {
-                CellMessageHeaderKeys.TOKEN: token,
-                CellMessageHeaderKeys.CLIENT_NAME: client_name,
-                CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
             shareable,
@@ -420,9 +452,6 @@ class Communicator:
         client_name = fl_ctx.get_identity_name()
         quit_message = new_cell_message(
             {
-                CellMessageHeaderKeys.TOKEN: token,
-                CellMessageHeaderKeys.CLIENT_NAME: client_name,
-                CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: task_name,
             },
             shareable,
@@ -462,9 +491,6 @@ class Communicator:
                 job_ids = engine.get_all_job_ids()
                 heartbeat_message = new_cell_message(
                     {
-                        CellMessageHeaderKeys.TOKEN: token,
-                        CellMessageHeaderKeys.SSID: ssid,
-                        CellMessageHeaderKeys.CLIENT_NAME: client_name,
                         CellMessageHeaderKeys.PROJECT_NAME: task_name,
                         CellMessageHeaderKeys.JOB_IDS: job_ids,
                     },

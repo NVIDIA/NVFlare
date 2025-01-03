@@ -23,11 +23,12 @@ import threading
 from nvflare.apis.fl_constant import ConfigVarName, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import configure_logging, get_script_logger
-from nvflare.private.defs import AppFolderConstants
+from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ, AppFolderConstants, CellMessageHeaderKeys
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
@@ -108,6 +109,11 @@ def main(args):
             server.cell = server.create_job_cell(
                 args.job_id, args.root_url, args.parent_url, secure_train, server_config
             )
+
+            # set filter to add additional auth headers
+            server.cell.core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=_add_auth_headers, config=args)
+            server.cell.core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=_add_auth_headers, config=args)
+
             server.server_state = HotState(host=args.host, port=args.port, ssid=args.ssid)
 
             snapshot = None
@@ -136,6 +142,13 @@ def main(args):
         logger.exception(f"ConfigError: {secure_format_exception(e)}")
         secure_log_traceback(logger)
         raise e
+
+
+def _add_auth_headers(message: CellMessage, config):
+    message.set_header(CellMessageHeaderKeys.SSID, config.ssid)
+    message.set_header(CellMessageHeaderKeys.CLIENT_NAME, AUTH_CLIENT_NAME_FOR_SJ)
+    message.set_header(CellMessageHeaderKeys.TOKEN, config.job_id)
+    message.set_header(CellMessageHeaderKeys.TOKEN_SIGNATURE, config.token_signature)
 
 
 def parse_arguments():

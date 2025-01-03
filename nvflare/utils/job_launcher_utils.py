@@ -18,6 +18,7 @@ import sys
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, SystemVarName
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
+from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ, InternalFLContextKey
 
 
 def generate_client_command(job_meta, fl_ctx):
@@ -41,6 +42,8 @@ def generate_client_command(job_meta, fl_ctx):
         + (workspace_obj.get_startup_kit_dir())
         + " -t "
         + client.token
+        + " -ts "
+        + client.token_signature
         + " -d "
         + client.ssid
         + " -n "
@@ -71,6 +74,15 @@ def generate_server_command(job_meta, fl_ctx):
     command_options = ""
     for t in args.set:
         command_options += " " + t
+
+    # create token and signature for SJ
+    token = job_id  # use the run_number as the auth token
+    client_name = AUTH_CLIENT_NAME_FOR_SJ
+    server_engine = fl_ctx.get_prop(InternalFLContextKey.SERVER_ENGINE)
+    if not server_engine:
+        raise RuntimeError(f"missing {InternalFLContextKey.SERVER_ENGINE} in FLContext!")
+    signature = server_engine.sign_auth_token(client_name, token)
+
     command = (
         sys.executable
         + " -m nvflare.private.fed.app.server.runner_process -m "
@@ -79,6 +91,8 @@ def generate_server_command(job_meta, fl_ctx):
         + app_root
         + " -n "
         + str(job_id)
+        + " -ts "
+        + signature
         + " -p "
         + str(cell.get_internal_listener_url())
         + " -u "

@@ -45,7 +45,6 @@ JOB_RETURN_CODE_MAPPING = {
 
 
 class DockerJobHandle(JobHandleSpec):
-
     def __init__(self, container, timeout=None):
         super().__init__()
 
