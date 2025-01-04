@@ -164,50 +164,55 @@ class ObjectRetriever(FLComponent, ABC):
         self.tx_table[tx_id] = waiter
         self.log_debug(fl_ctx, f"set waiter for Rtr {tx_id}")
 
-        request = Shareable({RETRIEVER_TX_ID: tx_id})
-        if obj_attrs:
-            request.update(obj_attrs)
+        try:
+            request = Shareable({RETRIEVER_TX_ID: tx_id})
+            if obj_attrs:
+                request.update(obj_attrs)
 
-        # ask the site to start streaming
-        reply = engine.send_aux_request(
-            targets=[from_site], request=request, topic=self.topic, fl_ctx=fl_ctx, timeout=timeout
-        )
-        # the reply is a dict keyed with site names!
-        reply = reply.get(from_site)
+            # ask the site to start streaming
+            replies = engine.send_aux_request(
+                targets=[from_site], request=request, topic=self.topic, fl_ctx=fl_ctx, timeout=timeout
+            )
+            # the 'replies' is a dict keyed with site names!
+            reply = replies.get(from_site)
 
-        # now the reply is a Shareable object
-        if not isinstance(reply, Shareable):
-            self.log_error(fl_ctx, f"bad reply from site {from_site}: expect Shareable but got {type(reply)}")
-            return ReturnCode.EXECUTION_EXCEPTION, None
+            # now the reply is a Shareable object
+            if not isinstance(reply, Shareable):
+                self.log_error(fl_ctx, f"bad reply from site {from_site}: expect Shareable but got {type(reply)}")
+                return ReturnCode.EXECUTION_EXCEPTION, None
 
-        rc = reply.get_return_code()
-        if rc != ReturnCode.OK:
-            self.log_error(fl_ctx, f"retrieval request rejected by site {from_site}: {rc}")
-            return rc, None
+            rc = reply.get_return_code()
+            if rc != ReturnCode.OK:
+                self.log_error(fl_ctx, f"retrieval request rejected by site {from_site}: {rc}")
+                return rc, None
 
-        # wait for result until either the result is received or progress timed out
-        rc = ReturnCode.OK
-        abort_signal = fl_ctx.get_run_abort_signal()
-        start_time = time.time()
-        while True:
-            # wait a short time so that we can check other conditions
-            if not waiter.wait(_SHORT_WAIT):
-                # see whether we have any progress
-                if time.time() - start_time > timeout:
-                    # no progress for too long
-                    self.log_error(fl_ctx, f"streamn data not completed in {timeout} seconds")
-                    rc = ReturnCode.TIMEOUT
+            # wait for result until either the result is received or progress timed out
+            rc = ReturnCode.OK
+            abort_signal = fl_ctx.get_run_abort_signal()
+            start_time = time.time()
+            while True:
+                # wait a short time so that we can check other conditions
+                if not waiter.wait(_SHORT_WAIT):
+                    # see whether we have any progress
+                    if time.time() - start_time > timeout:
+                        # no progress for too long
+                        self.log_error(fl_ctx, f"streamn data not completed in {timeout} seconds")
+                        rc = ReturnCode.TIMEOUT
+                        break
+
+                    if abort_signal and abort_signal.triggered:
+                        rc = ReturnCode.TASK_ABORTED
+                        break
+                else:
+                    # result available!
                     break
-
-                if abort_signal and abort_signal.triggered:
-                    rc = ReturnCode.TASK_ABORTED
-                    break
-            else:
-                # result available!
-                break
+        except Exception as ex:
+            self.log_error(fl_ctx, f"exception occurred during retrieval: {secure_format_exception(ex)}")
+            rc = ReturnCode.EXECUTION_EXCEPTION
 
         self.tx_table.pop(tx_id, None)
         self.log_debug(fl_ctx, f"popped waiter for RTR {tx_id}")
+
         if waiter.result:
             # If the waiter already got result, we return it.
             # Note that due to racing condition, it is possible that the waiter still got the result
@@ -225,13 +230,12 @@ class ObjectRetriever(FLComponent, ABC):
             return
 
         try:
-            rc, result = self.get_result(stream_ctx)
+            result = self.get_result(stream_ctx)
         except Exception as ex:
             self.log_error(fl_ctx, f"Exception when get_result: {secure_format_exception(ex)}")
-            rc = ReturnCode.EXECUTION_EXCEPTION
-            result = None
+            result = (ReturnCode.EXECUTION_EXCEPTION, None)
 
-        waiter.result = (rc, result)
+        waiter.result = result
         waiter.set()
         self.log_info(fl_ctx, f"got result for RTR {tx_id}: {waiter.result}")
 
