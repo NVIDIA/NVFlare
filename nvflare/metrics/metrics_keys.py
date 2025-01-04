@@ -28,3 +28,5 @@ class MetricKeys:
     value = "value"
     tags = "tags"
     timestamp = "timestamp"
+    count = "count"
+    time_taken = "time_taken"

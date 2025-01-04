@@ -54,18 +54,18 @@ class JobMetricsCollector(FLComponent):
         job_id = fl_ctx.get_job_id()
         metric_name = event
 
-        tags : dict = self.tags
+        tags: dict = self.tags
         tags["job_id"] = job_id
 
         metrics = {MetricKeys.count: 1, MetricKeys.type: MetricTypes.COUNTER}
         duration_metrics = {MetricKeys.time_taken: 0, MetricKeys.type: MetricTypes.GAUGE}
 
         if event == EventType.START_WORKFLOW:
-            publish_app_metrics(metrics, metric_name,  tags, self.data_bus)
+            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
             self.job_start_workflow = current_time
 
         elif event == EventType.END_WORKFLOW:
-            publish_app_metrics(metrics, metric_name,  tags, self.data_bus)
+            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
 
             time_taken = current_time - self.job_start_workflow
             duration_metrics[MetricKeys.time_taken] = time_taken
@@ -189,13 +189,13 @@ class JobMetricsCollector(FLComponent):
 
         elif event == EventType.SUBMIT_JOB:
             publish_app_metrics(metrics, metric_name, tags, self.data_bus)
-  
+
         elif event == EventType.DEPLOY_JOB_TO_SERVER:
             publish_app_metrics(metrics, metric_name, tags, self.data_bus)
- 
+
         elif event == EventType.DEPLOY_JOB_TO_CLIENT:
             publish_app_metrics(metrics, metric_name, tags, self.data_bus)
- 
+
         elif event == EventType.BEFORE_CHECK_RESOURCE_MANAGER:
             publish_app_metrics(metrics, metric_name, tags, self.data_bus)
 
@@ -204,5 +204,3 @@ class JobMetricsCollector(FLComponent):
 
         else:
             pass
-    
- 

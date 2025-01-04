@@ -17,9 +17,7 @@ from datadog import initialize, statsd
 
 from nvflare.apis.fl_constant import ReservedTopic
 from nvflare.fuel.data_event.data_bus import DataBus
-from nvflare.metrics.metrics_keys import MetricTypes
-from nvflare.metrics.metrics_keys import MetricKeys
-
+from nvflare.metrics.metrics_keys import MetricKeys, MetricTypes
 
 # require datalog statsd dependency
 
@@ -38,7 +36,7 @@ class StatsDReporter:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def process_metrics(self, topic, metrics, data_bus):
-        
+
         if topic == ReservedTopic.APP_METRICS:
             try:
                 for metric in metrics:
@@ -47,7 +45,7 @@ class StatsDReporter:
 
                     print("metric_value=", metric_value)
                     print("metric_name=", metric_name)
-                    
+
                     tags = metric.get(MetricKeys.tags, {})
                     metric_tags = []
                     for k, v in tags.items():
@@ -58,7 +56,7 @@ class StatsDReporter:
 
                     if metric_type == MetricTypes.COUNTER:
                         statsd.increment(metric_name, metric_value, tags=metric_tags)
-                        
+
                     elif metric_type == MetricTypes.GAUGE:
                         statsd.gauge(metric_name, metric_value, tags=metric_tags)
                     elif metric_type == MetricTypes.HISTOGRAM:

@@ -18,7 +18,7 @@ from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.metrics.metrics_keys import MetricKeys
 
 
-def publish_app_metrics(metrics: dict, metric_name: str, tags: dict,  data_bus: DataBus) -> None:
+def publish_app_metrics(metrics: dict, metric_name: str, tags: dict, data_bus: DataBus) -> None:
     metrics_data = []
     filtered = [key for key in metrics if key != MetricKeys.type]
 
