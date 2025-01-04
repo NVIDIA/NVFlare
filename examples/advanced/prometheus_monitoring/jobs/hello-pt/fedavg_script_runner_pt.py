@@ -27,7 +27,7 @@ if __name__ == "__main__":
     job = FedAvgJob(
         name="hello-pt_cifar10_fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork()
     )
-    metrics_reporter = StatsDReporter(host="localhost", port=8125)
+    metrics_reporter = StatsDReporter(host="localhost", port=9125)
     job_metrics_collector = JobMetricsCollector(tags={"site": "server", "env": "dev"})
     job.to_server(job_metrics_collector, id="server_job_metrics_collector")
     job.to_server(metrics_reporter, id="server_statsd_reporter")
@@ -43,4 +43,4 @@ if __name__ == "__main__":
         job.to(metrics_reporter, target=f"site-{i+1}", id=f"cleint_{i+1}_statsd_reporter")
 
     job.export_job("/tmp/nvflare/jobs/job_config")
-    # job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
