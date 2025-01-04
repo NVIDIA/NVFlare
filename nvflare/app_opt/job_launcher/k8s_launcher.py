@@ -24,8 +24,7 @@ from kubernetes.client.rest import ApiException
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
-from nvflare.apis.workspace import Workspace
+from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
 from nvflare.utils.job_launcher_utils import extract_job_image
 
 
@@ -223,11 +222,16 @@ class K8sJobLauncher(JobLauncherSpec):
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
         self.logger.info(f"launch job use image: {job_image}")
+
+        job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+        if not job_args:
+            raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
+
         job_config = {
             "name": job_id,
             "image": job_image,
             "container_name": f"container-{job_id}",
-            "command": self.get_command(),
+            "command": job_args[JobProcessArgs.EXE_MODULE],
             "volume_mount_list": [{"name": self.workspace, "mountPath": self.mount_path}],
             "volume_list": [{"name": self.workspace, "hostPath": {"path": self.root_hostpath, "type": "Directory"}}],
             "module_args": self.get_module_args(job_id, fl_ctx),
@@ -256,15 +260,6 @@ class K8sJobLauncher(JobLauncherSpec):
                 add_launcher(self, fl_ctx)
 
     @abstractmethod
-    def get_command(self):
-        """To get the run command of the launcher
-
-        Returns: the command for the launcher process
-
-        """
-        pass
-
-    @abstractmethod
     def get_module_args(self, job_id, fl_ctx: FLContext):
         """To get the args to run the launcher
 
@@ -291,34 +286,36 @@ class K8sJobLauncher(JobLauncherSpec):
         pass
 
 
+def _job_args_dict(job_args: dict, arg_names: list) -> dict:
+    result = {}
+    for name in arg_names:
+        n, v = job_args[name]
+        result[n] = v
+    return result
+
+
 class ClientK8sJobLauncher(K8sJobLauncher):
-    def get_command(self):
-        return "nvflare.private.fed.app.client.worker_process"
-
     def get_module_args(self, job_id, fl_ctx: FLContext):
-        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        args = fl_ctx.get_prop(FLContextKey.ARGS)
-        client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-        server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
-        if not server_config:
-            raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
-        service = server_config[0].get("service", {})
-        if not isinstance(service, dict):
-            raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
-        self.logger.info(f"K8sJobLauncher start to launch job: {job_id} for client: {client.client_name}")
+        job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+        if not job_args:
+            raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
 
-        return {
-            "-m": args.workspace,
-            "-w": (workspace_obj.get_startup_kit_dir()),
-            "-t": client.token,
-            "-d": client.ssid,
-            "-n": job_id,
-            "-c": client.client_name,
-            "-p": str(client.cell.get_internal_listener_url()),
-            "-g": service.get("target"),
-            "-scheme": service.get("scheme", "grpc"),
-            "-s": "fed_client.json",
-        }
+        return _job_args_dict(
+            job_args,
+            [
+                JobProcessArgs.WORKSPACE,
+                JobProcessArgs.STARTUP_DIR,
+                JobProcessArgs.AUTH_TOKEN,
+                JobProcessArgs.TOKEN_SIGNATURE,
+                JobProcessArgs.SSID,
+                JobProcessArgs.JOB_ID,
+                JobProcessArgs.CLIENT_NAME,
+                JobProcessArgs.PARENT_URL,
+                JobProcessArgs.TARGET,
+                JobProcessArgs.SCHEME,
+                JobProcessArgs.STARTUP_CONFIG_FILE,
+            ],
+        )
 
     def get_set_list(self, args, fl_ctx: FLContext):
         args.set.append("print_conf=True")
@@ -326,29 +323,32 @@ class ClientK8sJobLauncher(K8sJobLauncher):
 
 
 class ServerK8sJobLauncher(K8sJobLauncher):
-    def get_command(self):
-        return "nvflare.private.fed.app.server.runner_process"
-
     def get_module_args(self, job_id, fl_ctx: FLContext):
-        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        args = fl_ctx.get_prop(FLContextKey.ARGS)
-        server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
+        job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+        if not job_args:
+            raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
 
-        return {
-            "-m": args.workspace,
-            "-s": "fed_server.json",
-            "-r": workspace_obj.get_app_dir(),
-            "-n": str(job_id),
-            "-p": str(server.cell.get_internal_listener_url()),
-            "-u": str(server.cell.get_root_url_for_child()),
-            "--host": str(server.server_state.host),
-            "--port": str(server.server_state.service_port),
-            "--ssid": str(server.server_state.ssid),
-            "--ha_mode": str(server.ha_mode),
-        }
+        return _job_args_dict(
+            job_args,
+            [
+                JobProcessArgs.WORKSPACE,
+                JobProcessArgs.STARTUP_CONFIG_FILE,
+                JobProcessArgs.APP_ROOT,
+                JobProcessArgs.JOB_ID,
+                JobProcessArgs.PARENT_URL,
+                JobProcessArgs.ROOT_URL,
+                JobProcessArgs.SERVICE_HOST,
+                JobProcessArgs.SERVICE_PORT,
+                JobProcessArgs.SSID,
+                JobProcessArgs.TOKEN_SIGNATURE,
+                JobProcessArgs.HA_MODE,
+            ],
+        )
 
     def get_set_list(self, args, fl_ctx: FLContext):
-        restore_snapshot = fl_ctx.get_prop(FLContextKey.SNAPSHOT, False)
+        job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+        if not job_args:
+            raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
         args.set.append("print_conf=True")
-        args.set.append("restore_snapshot=" + str(restore_snapshot))
+        args.set.append("restore_snapshot=" + str(job_args[JobProcessArgs.RESTORE_SNAPSHOT]))
         return args.set

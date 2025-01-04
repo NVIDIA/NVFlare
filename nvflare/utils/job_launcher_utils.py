@@ -17,100 +17,70 @@ import sys
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, SystemVarName
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.workspace import Workspace
-from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ, InternalFLContextKey
+from nvflare.apis.job_launcher_spec import JobProcessArgs
+
+
+def _job_args_str(job_args, arg_names) -> str:
+    result = ""
+    sep = ""
+    for name in arg_names:
+        n, v = job_args[name]
+        result += f"{sep}{n} {v}"
+        sep = " "
+    return result
 
 
 def generate_client_command(job_meta, fl_ctx):
-    workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-    args = fl_ctx.get_prop(FLContextKey.ARGS)
-    client = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-    job_id = job_meta.get(JobConstants.JOB_ID)
-    server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
-    if not server_config:
-        raise RuntimeError(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
-    service = server_config[0].get("service", {})
-    if not isinstance(service, dict):
-        raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
-    command_options = ""
-    for t in args.set:
-        command_options += " " + t
-    command = (
-        f"{sys.executable} -m nvflare.private.fed.app.client.worker_process -m "
-        + args.workspace
-        + " -w "
-        + (workspace_obj.get_startup_kit_dir())
-        + " -t "
-        + client.token
-        + " -ts "
-        + client.token_signature
-        + " -d "
-        + client.ssid
-        + " -n "
-        + job_id
-        + " -c "
-        + client.client_name
-        + " -p "
-        + str(client.cell.get_internal_listener_url())
-        + " -g "
-        + service.get("target")
-        + " -scheme "
-        + service.get("scheme", "grpc")
-        + " -s fed_client.json "
-        " --set" + command_options + " print_conf=True"
+    job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+    if not job_args:
+        raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
+
+    args_str = _job_args_str(
+        job_args,
+        [
+            JobProcessArgs.EXE_MODULE,
+            JobProcessArgs.WORKSPACE,
+            JobProcessArgs.STARTUP_DIR,
+            JobProcessArgs.AUTH_TOKEN,
+            JobProcessArgs.TOKEN_SIGNATURE,
+            JobProcessArgs.SSID,
+            JobProcessArgs.JOB_ID,
+            JobProcessArgs.CLIENT_NAME,
+            JobProcessArgs.PARENT_URL,
+            JobProcessArgs.TARGET,
+            JobProcessArgs.SCHEME,
+            JobProcessArgs.STARTUP_CONFIG_FILE,
+            JobProcessArgs.OPTIONS,
+        ],
     )
-    return command
+    return sys.executable + args_str + " print_conf=True"
 
 
 def generate_server_command(job_meta, fl_ctx):
-    workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-    args = fl_ctx.get_prop(FLContextKey.ARGS)
-    server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
-    job_id = job_meta.get(JobConstants.JOB_ID)
-    restore_snapshot = fl_ctx.get_prop(FLContextKey.SNAPSHOT, False)
-    app_root = workspace_obj.get_app_dir(job_id)
-    cell = server.cell
-    server_state = server.server_state
-    command_options = ""
-    for t in args.set:
-        command_options += " " + t
+    job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+    if not job_args:
+        raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext!")
 
-    # create token and signature for SJ
-    token = job_id  # use the run_number as the auth token
-    client_name = AUTH_CLIENT_NAME_FOR_SJ
-    server_engine = fl_ctx.get_prop(InternalFLContextKey.SERVER_ENGINE)
-    if not server_engine:
-        raise RuntimeError(f"missing {InternalFLContextKey.SERVER_ENGINE} in FLContext!")
-    signature = server_engine.sign_auth_token(client_name, token)
-
-    command = (
-        sys.executable
-        + " -m nvflare.private.fed.app.server.runner_process -m "
-        + args.workspace
-        + " -s fed_server.json -r "
-        + app_root
-        + " -n "
-        + str(job_id)
-        + " -ts "
-        + signature
-        + " -p "
-        + str(cell.get_internal_listener_url())
-        + " -u "
-        + str(cell.get_root_url_for_child())
-        + " --host "
-        + str(server_state.host)
-        + " --port "
-        + str(server_state.service_port)
-        + " --ssid "
-        + str(server_state.ssid)
-        + " --ha_mode "
-        + str(server.ha_mode)
-        + " --set"
-        + command_options
-        + " print_conf=True restore_snapshot="
-        + str(restore_snapshot)
+    args_str = _job_args_str(
+        job_args,
+        [
+            JobProcessArgs.EXE_MODULE,
+            JobProcessArgs.WORKSPACE,
+            JobProcessArgs.STARTUP_CONFIG_FILE,
+            JobProcessArgs.APP_ROOT,
+            JobProcessArgs.JOB_ID,
+            JobProcessArgs.TOKEN_SIGNATURE,
+            JobProcessArgs.PARENT_URL,
+            JobProcessArgs.ROOT_URL,
+            JobProcessArgs.SERVICE_HOST,
+            JobProcessArgs.SERVICE_PORT,
+            JobProcessArgs.SSID,
+            JobProcessArgs.HA_MODE,
+            JobProcessArgs.OPTIONS,
+        ],
     )
-    return command
+
+    return sys.executable + args_str + f" restore_snapshot={job_args[JobProcessArgs.RESTORE_SNAPSHOT]} print_conf=True"
 
 
 def extract_job_image(job_meta, site_name):

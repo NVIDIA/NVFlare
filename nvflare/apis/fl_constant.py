@@ -106,6 +106,7 @@ class ReservedKey(object):
     CUSTOM_PROPS = "__custom_props__"
     EXCEPTIONS = "__exceptions__"
     PROCESS_TYPE = "__process_type__"  # type of the current process (SP, CP, SJ, CJ)
+    JOB_PROCESS_ARGS = "__job_process_args__"
 
 
 class FLContextKey(object):
@@ -187,6 +188,7 @@ class FLContextKey(object):
     SERVER_CONFIG = "__server_config__"
     SERVER_HOST_NAME = "__server_host_name__"
     PROCESS_TYPE = ReservedKey.PROCESS_TYPE
+    JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
 
 
 class ProcessType:

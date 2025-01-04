@@ -166,7 +166,6 @@ class JobFailureMsgKey:
 class InternalFLContextKey:
 
     CLIENT_REG_SESSION = "client_reg_session"
-    SERVER_ENGINE = "__server_engine__"
 
 
 class ClientRegSession:

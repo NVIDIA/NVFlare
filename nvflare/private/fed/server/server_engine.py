@@ -40,7 +40,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
-from nvflare.apis.job_launcher_spec import JobLauncherSpec
+from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx, get_serializable_data
@@ -56,9 +56,9 @@ from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import (
+    AUTH_CLIENT_NAME_FOR_SJ,
     CellChannel,
     CellMessageHeaderKeys,
-    InternalFLContextKey,
     RequestHeader,
     TrainingTopic,
     new_cell_message,
@@ -228,12 +228,45 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             restore_snapshot = True
         else:
             restore_snapshot = False
-        fl_ctx.set_prop(FLContextKey.SNAPSHOT, restore_snapshot, private=True, sticky=False)
-        fl_ctx.set_prop(InternalFLContextKey.SERVER_ENGINE, self, private=True, sticky=False)
+
+        # prepare job process args
+        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        args = fl_ctx.get_prop(FLContextKey.ARGS)
+        server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
+        job_id = job.job_id
+        app_root = workspace_obj.get_app_dir(job_id)
+        cell = server.cell
+        server_state = server.server_state
+        command_options = ""
+        for t in args.set:
+            command_options += " " + t
+
+        # create token and signature for SJ
+        token = job_id  # use the run_number as the auth token
+        client_name = AUTH_CLIENT_NAME_FOR_SJ
+        signature = self.server.sign_auth_token(client_name, token)
+
+        job_args = {
+            JobProcessArgs.JOB_ID: ("-n", job_id),
+            JobProcessArgs.EXE_MODULE: ("-m", "nvflare.private.fed.app.server.runner_process"),
+            JobProcessArgs.WORKSPACE: ("-m", args.workspace),
+            JobProcessArgs.STARTUP_CONFIG_FILE: ("-s", "fed_server.json"),
+            JobProcessArgs.APP_ROOT: ("-r", app_root),
+            JobProcessArgs.HA_MODE: ("--ha_mode", server.ha_mode),
+            JobProcessArgs.AUTH_TOKEN: ("-t", token),
+            JobProcessArgs.TOKEN_SIGNATURE: ("-ts", signature),
+            JobProcessArgs.CLIENT_NAME: client_name,
+            JobProcessArgs.PARENT_URL: ("-p", str(cell.get_internal_listener_url())),
+            JobProcessArgs.ROOT_URL: ("-u", str(cell.get_root_url_for_child())),
+            JobProcessArgs.SERVICE_HOST: ("--host", str(server_state.host)),
+            JobProcessArgs.SERVICE_PORT: ("--port", str(server_state.service_port)),
+            JobProcessArgs.SSID: ("--ssid", str(server_state.ssid)),
+            JobProcessArgs.OPTIONS: ("--set", command_options),
+            JobProcessArgs.RESTORE_SNAPSHOT: restore_snapshot,
+        }
+        fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
         job_handle = job_launcher.launch_job(job.meta, fl_ctx)
         self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")
-
-        args = fl_ctx.get_prop(FLContextKey.ARGS)
 
         if not job_clients:
             job_clients = self.client_manager.clients
