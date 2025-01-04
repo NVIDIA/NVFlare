@@ -6,19 +6,19 @@ and [PyTorch](https://pytorch.org/) as the deep learning training framework.
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the client train code.
 
-You can follow the [Getting Started with NVFlare (PyTorch) notebook](../../getting_started/pt/nvflare_pt_getting_started.ipynb)
+You can follow the [Getting Started with NVFlare (PyTorch) notebook](../../../../getting_started/pt/nvflare_pt_getting_started.ipynb)
 for a detailed walkthrough of the basic concepts.
 
 See the [Hello PyTorch](https://nvflare.readthedocs.io/en/main/examples/hello_pt_job_api.html#hello-pt-job-api) example documentation page for details on this
 example.
 
-To run this example with the FLARE API, you can follow the [hello_world notebook](../hello_world.ipynb), or you can quickly get
+To run this example with the FLARE API, you can follow the [hello_world notebook](../../../../hello-world/hello_world.ipynb), or you can quickly get
 started with the following:
 
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](../../getting_started/README.md) instructions to install NVFlare.
+Follow the [Installation](../../../../getting_started/README.md) instructions to install NVFlare.
 
 Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 
