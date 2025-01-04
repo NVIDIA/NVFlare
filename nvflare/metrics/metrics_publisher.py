@@ -12,27 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
-from typing import Optional
 
 from nvflare.apis.fl_constant import ReservedTopic
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.metrics.metrics_keys import MetricKeys
 
 
-def publish_app_metrics(
-    metrics: dict, metric_name: str, labels: dict, data_bus: DataBus, timestamp: Optional[int] = None
-) -> None:
+def publish_app_metrics(metrics: dict, metric_name: str, tags: dict,  data_bus: DataBus) -> None:
     metrics_data = []
+    filtered = [key for key in metrics if key != MetricKeys.type]
 
-    for key in metrics:
+    for key in filtered:
         metrics_value = metrics.get(key)
+        metrics_type = metrics.get(MetricKeys.type)
         metrics_data.append(
             {
                 MetricKeys.metric_name: f"{metric_name}_{key}" if metric_name else key,
                 MetricKeys.value: metrics_value,
-                MetricKeys.labels: {} if labels is None else labels,
-                MetricKeys.timestamp: int(time.time() if timestamp is None else timestamp),
+                MetricKeys.type: metrics_type,
+                MetricKeys.tags: tags,
             }
         )
     data_bus.publish([ReservedTopic.APP_METRICS], metrics_data)

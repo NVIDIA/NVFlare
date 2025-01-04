@@ -1,33 +1,23 @@
 version: '3.7'
 
 services:
-  statsd:
-    image: statsd/statsd
-    container_name: statsd
-    networks:
-      - monitoring
-    ports:
-      - "8125:8125/udp"
-    environment:
-      - STATSD_LISTENING_INTERFACE=0.0.0.0
-      - STATSD_PORT=8125
-      - STATSD_BACKEND=none
 
   statsd-exporter:
-    image: prom/statsd-exporter
+    image: prom/statsd-exporter:latest
     container_name: statsd-exporter
+    ports:
+      - "9102:9102" # Prometheus metrics endpoint
+      - "9125:9125"
+      - "9125:9125/udp"
     networks:
       - monitoring
-    ports:
-      - "9102:9102"
-    environment:
-      - STATS_D_HOST=statsd
-      - STATS_D_PORT=8125  # Explicitly set the StatsD port her
 
 
   prometheus:
     image: prom/prometheus
     container_name: prometheus
+    depends_on:
+      - statsd-exporter
     networks:
       - monitoring
     ports:

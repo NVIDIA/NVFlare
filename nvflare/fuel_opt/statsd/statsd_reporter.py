@@ -12,20 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-import traceback
 
 from datadog import initialize, statsd
 
 from nvflare.apis.fl_constant import ReservedTopic
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.metrics.metrics_keys import MetricTypes
+from nvflare.metrics.metrics_keys import MetricKeys
+
 
 # require datalog statsd dependency
 
 
 class StatsDReporter:
+    # Enable debug logging
+    logging.basicConfig(level=logging.DEBUG)
 
-    def __init__(self, host="localhost", port=8125):
+    def __init__(self, host="localhost", port=9125):
 
         # Initialize the DataDog StatsD client
         initialize(statsd_host=host, statsd_port=port)
@@ -35,15 +38,27 @@ class StatsDReporter:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def process_metrics(self, topic, metrics, data_bus):
+        
         if topic == ReservedTopic.APP_METRICS:
             try:
                 for metric in metrics:
-                    metric_name = metric.get("metric_name")
-                    metric_value = metric.get("value")
-                    metric_tags = metric.get("tags")
-                    metric_type = metric.get("type")
+                    metric_name = metric.get(MetricKeys.metric_name)
+                    metric_value = metric.get(MetricKeys.value)
+
+                    print("metric_value=", metric_value)
+                    print("metric_name=", metric_name)
+                    
+                    tags = metric.get(MetricKeys.tags, {})
+                    metric_tags = []
+                    for k, v in tags.items():
+                        metric_tags.append(f"{k}:{v}")
+
+                    metric_type = metric.get(MetricKeys.type)
+                    metric_timestamp = metric.get(MetricKeys.timestamp)
+
                     if metric_type == MetricTypes.COUNTER:
                         statsd.increment(metric_name, metric_value, tags=metric_tags)
+                        
                     elif metric_type == MetricTypes.GAUGE:
                         statsd.gauge(metric_name, metric_value, tags=metric_tags)
                     elif metric_type == MetricTypes.HISTOGRAM:
@@ -51,6 +66,7 @@ class StatsDReporter:
                     elif metric_type == MetricTypes.SUMMARY:
                         pass
                     else:
-                        self.logger.warning(f"Unknown metric type: {metric_type}")
+                        self.logger.warning(f"Unknown metric type: {metric_type} for metric: {metric_name}")
+
             except Exception as e:
                 self.logger.warning(f"Failed to process_metrics metrics: {traceback.format_exc()}")

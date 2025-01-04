@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from model.simple_network import SimpleNetwork
+from nvflare.fuel_opt.prometheus.statsd_reporter import StatsDReporter
+from nvflare.metrics.job_metrics_collector import JobMetricsCollector
+from src.simple_network import SimpleNetwork
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
-from nvflare.fuel_opt.prometheus.statsd_reporter import StatsDReporter
 from nvflare.job_config.script_runner import ScriptRunner
-from nvflare.metrics.system_metrics_collector import SysMetricsCollector
-from nvflare.metrics.job_metrics_collector import JobMetricsCollector
 
 if __name__ == "__main__":
     n_clients = 2
@@ -28,11 +27,11 @@ if __name__ == "__main__":
     job = FedAvgJob(
         name="hello-pt_cifar10_fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork()
     )
-    
-    metric_reporter = StatsDReporter("localhost", 8125)
-    server_job_metrics_collector = JobMetricsCollector(tags=["server"]) 
-    job.to_server(metric_reporter)
-    job.to_server(server_job_metrics_collector)
+    metrics_reporter = StatsDReporter(host="localhost", port=8125)
+    job_metrics_collector = JobMetricsCollector( tags={"site":"server",
+                                                        "env":"dev"})
+    job.to_server(job_metrics_collector, id="server_job_metrics_collector")
+    job.to_server(metrics_reporter, id = "server_statsd_reporter") 
 
 
     # Add clients
@@ -40,11 +39,11 @@ if __name__ == "__main__":
         executor = ScriptRunner(
             script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        client_job_metrics_collector = JobMetricsCollector(tags=[f"site-{i + 1}"]) 
-        job.to_client(executor, f"site-{i + 1}")
-        job.to_client(metric_reporter)
+        job.to(executor, f"site-{i + 1}")
+        job_metrics_collector = JobMetricsCollector( tags={"site":f"site_{i+1}",
+                                                            "env":"dev"})
+        job.to(job_metrics_collector, target=f"site-{i+1}", id=f"client_{i+1}_job_metrics_collector" )
+        job.to(metrics_reporter, target=f"site-{i+1}", id = f"cleint_{i+1}_statsd_reporter")
         
-    
     job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
-    
+    # job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
