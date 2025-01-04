@@ -196,7 +196,7 @@ class ObjectRetriever(FLComponent, ABC):
                     # see whether we have any progress
                     if time.time() - start_time > timeout:
                         # no progress for too long
-                        self.log_error(fl_ctx, f"streamn data not completed in {timeout} seconds")
+                        self.log_error(fl_ctx, f"stream data not completed in {timeout} seconds")
                         rc = ReturnCode.TIMEOUT
                         break
 
