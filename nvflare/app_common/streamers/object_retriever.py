@@ -261,10 +261,14 @@ class ObjectRetriever(FLComponent, ABC):
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         # validate the request before starting stream
-        rc, validated_data = self.validate_request(request, fl_ctx)
-        if rc and rc != ReturnCode.OK:
-            self.log_error(fl_ctx, f"bad request '{topic}': failed validation ({rc})")
-            return make_reply(rc)
+        try:
+            rc, validated_data = self.validate_request(request, fl_ctx)
+            if rc and rc != ReturnCode.OK:
+                self.log_error(fl_ctx, f"bad request '{topic}': failed validation ({rc})")
+                return make_reply(rc)
+        except Exception as ex:
+            self.log_error(fl_ctx, f"exception validating request: {secure_format_exception(ex)}")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         # start the streaming in a separate thread so that we can respond to the requestor.
         self.log_debug(fl_ctx, "About to start streaming ...")
