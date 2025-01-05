@@ -20,12 +20,12 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.metrics.metrics_keys import MetricKeys, MetricTypes
-from nvflare.metrics.metrics_publisher import publish_app_metrics
+from nvflare.metrics.metrics_publisher import collect_metrics
 
 
 class SysMetricsCollector(FLComponent):
 
-    def __init__(self, tags: dict):
+    def __init__(self, tags: dict, streaming_to_server: bool = False):
         """
         Args:
             tags: comma separated static tags. used to specify server, client, production, test etc.
@@ -34,6 +34,7 @@ class SysMetricsCollector(FLComponent):
 
         self.tags = tags
         self.data_bus = DataBus()
+        self.streaming_to_server = streaming_to_server        
 
         # system events
         self.system_start = 0
@@ -48,6 +49,8 @@ class SysMetricsCollector(FLComponent):
         self.client_reconnected = 0
         self.before_check_client_resources = 0
         self.after_check_client_resources = 0
+        self.start = True
+
 
     def handle_event(self, event: str, fl_ctx: FLContext):
 
@@ -58,74 +61,79 @@ class SysMetricsCollector(FLComponent):
         duration_metrics = {MetricKeys.time_taken: 0, MetricKeys.type: MetricTypes.GAUGE}
 
         if event == EventType.SYSTEM_START:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
             self.system_start = current_time
 
         elif event == EventType.SYSTEM_END:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
 
             time_taken = current_time - self.system_start
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_system_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, self.tags, fl_ctx)
 
         elif event == EventType.START_RUN:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
             self.start_run = current_time
 
         elif event == EventType.END_RUN:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
 
             time_taken = current_time - self.start_run
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_run_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, self.tags, fl_ctx)
 
         elif event == EventType.BEFORE_CHECK_CLIENT_RESOURCES:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
             self.before_check_client_resources = current_time
 
         elif event == EventType.AFTER_CHECK_CLIENT_RESOURCES:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
 
             time_taken = current_time - self.before_check_client_resources
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_check_client_resources_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.CLIENT_DISCONNECTED:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.CLIENT_RECONNECTED:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.BEFORE_CHECK_RESOURCE_MANAGER:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.BEFORE_SEND_ADMIN_COMMAND:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.BEFORE_CLIENT_REGISTER:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
             self.before_client_register = current_time
         elif event == EventType.AFTER_CLIENT_REGISTER:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.CLIENT_REGISTER_RECEIVED:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.CLIENT_QUIT:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.SYSTEM_BOOTSTRAP:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.BEFORE_CLIENT_HEARTBEAT:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
             self.before_client_heartbeat = current_time
         elif event == EventType.AFTER_CLIENT_HEARTBEAT:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
 
             time_taken = current_time - self.before_client_heartbeat
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_client_heart_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.CLIENT_HEARTBEAT_RECEIVED:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.CLIENT_HEARTBEAT_PROCESSED:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.BEFORE_JOB_LAUNCH:
-            publish_app_metrics(metrics, metric_name, self.tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         else:
             pass
+
+    def publish_metrics(self, metrics: dict, metric_name: str, tags: dict, fl_ctx: FLContext):
+
+        collect_metrics(self, self.streaming_to_server, metrics, metric_name, tags, self.data_bus, fl_ctx)
+ 

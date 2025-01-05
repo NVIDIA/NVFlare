@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import traceback
 
 from datadog import initialize, statsd
 
@@ -23,28 +24,25 @@ from nvflare.metrics.metrics_keys import MetricKeys, MetricTypes
 
 
 class StatsDReporter:
-    # Enable debug logging
-    logging.basicConfig(level=logging.DEBUG)
 
-    def __init__(self, host="localhost", port=9125):
+    def __init__(self,site: str="", host="localhost", port=9125):
 
         # Initialize the DataDog StatsD client
         initialize(statsd_host=host, statsd_port=port)
         self.metrics = {}
         self.data_bus = DataBus()
+ 
         self.data_bus.subscribe([ReservedTopic.APP_METRICS], self.process_metrics)
         self.logger = logging.getLogger(self.__class__.__name__)
-
+        self.site = site
+ 
     def process_metrics(self, topic, metrics, data_bus):
-
+        
         if topic == ReservedTopic.APP_METRICS:
             try:
                 for metric in metrics:
                     metric_name = metric.get(MetricKeys.metric_name)
                     metric_value = metric.get(MetricKeys.value)
-
-                    print("metric_value=", metric_value)
-                    print("metric_name=", metric_name)
 
                     tags = metric.get(MetricKeys.tags, {})
                     metric_tags = []
@@ -53,6 +51,8 @@ class StatsDReporter:
 
                     metric_type = metric.get(MetricKeys.type)
                     metric_timestamp = metric.get(MetricKeys.timestamp)
+
+                    print("push metrics to statsd: ", metric_name, metric_value, metric_type, metric_tags)
 
                     if metric_type == MetricTypes.COUNTER:
                         statsd.increment(metric_name, metric_value, tags=metric_tags)

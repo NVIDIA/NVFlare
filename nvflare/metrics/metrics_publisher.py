@@ -13,9 +13,12 @@
 # limitations under the License.
 
 
-from nvflare.apis.fl_constant import ReservedTopic
+from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.fuel.data_event.data_bus import DataBus
-from nvflare.metrics.metrics_keys import MetricKeys
+from nvflare.metrics.metrics_keys import METRICS_EVENT_TYPE, MetricKeys
 
 
 def publish_app_metrics(metrics: dict, metric_name: str, tags: dict, data_bus: DataBus) -> None:
@@ -34,3 +37,32 @@ def publish_app_metrics(metrics: dict, metric_name: str, tags: dict, data_bus: D
             }
         )
     data_bus.publish([ReservedTopic.APP_METRICS], metrics_data)
+
+
+def convert_metrics_to_event(
+        comp: FLComponent,
+        metrics: dict,
+        metric_name: str,
+        tags: dict,
+        fl_ctx: FLContext,
+    ) -> None:
+        metrics_data = {MetricKeys.metric_name: metric_name, MetricKeys.value: metrics, MetricKeys.tags: tags}
+        shareable = Shareable(data={"METRICS": metrics_data})
+
+        print("\nfire local event ==> ", METRICS_EVENT_TYPE)
+        with fl_ctx.get_engine().new_context() as fl_ctx2:
+            fl_ctx2.set_prop(key=FLContextKey.EVENT_DATA, value=shareable, private=True, sticky=False)
+            comp.fire_event(event_type=METRICS_EVENT_TYPE, fl_ctx=fl_ctx2)
+            
+
+
+
+def collect_metrics(comp: FLComponent, streaming_to_server: bool, metrics: dict, metric_name: str, tags: dict, data_bus: DataBus, fl_ctx: FLContext):
+    
+    if not streaming_to_server:
+        publish_app_metrics(metrics, metric_name, tags, data_bus)
+    else:
+        print("converting metrics to event", metrics, metric_name, tags)
+        convert_metrics_to_event(comp, metrics, metric_name, tags, fl_ctx)
+
+

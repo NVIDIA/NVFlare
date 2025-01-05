@@ -20,19 +20,21 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.metrics.metrics_keys import MetricKeys, MetricTypes
-from nvflare.metrics.metrics_publisher import publish_app_metrics
+from nvflare.metrics.metrics_publisher import collect_metrics
 
 
 class JobMetricsCollector(FLComponent):
 
-    def __init__(self, tags: dict):
+    def __init__(self, tags: dict, streaming_to_server: bool = False):
         """
         Args:
             tags: comma separated static tags. used to specify server, client, production, test etc.
+            streaming_to_server: boolean to specify if metrics should be streamed to server
         """
         super().__init__()
         self.tags: dict = tags
         self.data_bus = DataBus()
+        self.streaming_to_server = streaming_to_server
 
         # job events
         self.job_start_workflow = 0
@@ -61,91 +63,91 @@ class JobMetricsCollector(FLComponent):
         duration_metrics = {MetricKeys.time_taken: 0, MetricKeys.type: MetricTypes.GAUGE}
 
         if event == EventType.START_WORKFLOW:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             self.job_start_workflow = current_time
 
         elif event == EventType.END_WORKFLOW:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
             time_taken = current_time - self.job_start_workflow
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_workflow_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.JOB_STARTED:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             self.job_started = current_time
 
         elif event == EventType.JOB_COMPLETED or event == EventType.JOB_ABORTED or event == EventType.JOB_CANCELLED:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
             time_taken = current_time - self.job_started
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_job_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_PULL_TASK:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             self.before_pull_task = current_time
 
         elif event == EventType.AFTER_PULL_TASK:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
             time_taken = current_time - self.before_pull_task
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_pull_task_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_PROCESS_TASK_REQUEST:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             self.before_process_task_request = current_time
 
         elif event == EventType.AFTER_PROCESS_TASK_REQUEST:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
             time_taken = current_time - self.before_process_task_request
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_process_task_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_PROCESS_SUBMISSION:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             self.before_process_submission = current_time
 
         elif event == EventType.AFTER_PROCESS_SUBMISSION:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
             time_taken = current_time - self.before_process_submission
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_process_submission_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_TASK_DATA_FILTER:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             self.before_task_data_filter = current_time
 
         elif event == EventType.AFTER_TASK_DATA_FILTER:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
             time_taken = current_time - self.before_task_data_filter
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_data_filter_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_TASK_RESULT_FILTER:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             self.before_task_result_filter = current_time
 
         elif event == EventType.AFTER_TASK_RESULT_FILTER:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
             time_taken = current_time - self.before_task_result_filter
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_result_filter_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_TASK_EXECUTION:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             self.before_task_execution = current_time
 
         elif event == EventType.AFTER_TASK_EXECUTION:
@@ -153,54 +155,59 @@ class JobMetricsCollector(FLComponent):
             time_taken = current_time - self.before_task_execution
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_task_execution_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.ABORT_TASK:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
             time_taken = current_time - self.before_task_execution
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_before_abort_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_SEND_TASK_RESULT:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             self.before_send_task_result = current_time
 
         elif event == EventType.AFTER_SEND_TASK_RESULT:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
             time_taken = current_time - self.before_send_task_result
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_send_task_result_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             self.before_process_result_of_unknown_task = current_time
 
         elif event == EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
             time_taken = current_time - self.before_process_result_of_unknown_task
             duration_metrics[MetricKeys.time_taken] = time_taken
             metric_name = "_process_result_of_unknown_task_time_taken"
-            publish_app_metrics(duration_metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.SUBMIT_JOB:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.DEPLOY_JOB_TO_SERVER:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.DEPLOY_JOB_TO_CLIENT:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_CHECK_RESOURCE_MANAGER:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_SEND_ADMIN_COMMAND:
-            publish_app_metrics(metrics, metric_name, tags, self.data_bus)
+            self.publish_metrics(metrics, metric_name, tags, fl_ctx)
 
         else:
             pass
+
+    def publish_metrics(self, metrics: dict, metric_name: str, tags: dict, fl_ctx: FLContext):
+        collect_metrics(self, self.streaming_to_server, metrics, metric_name, tags, self.data_bus, fl_ctx)
+ 
+
