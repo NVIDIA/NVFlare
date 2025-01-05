@@ -80,7 +80,7 @@ Add the following configuration to your NVFLARE system configuration file:
         "port": <statsd_exporter_port>
     }
 }
-
+```
 
 Replace `<statsd_exporter_host>` and `<statsd_exporter_port>` with the appropriate values for your setup.
 
