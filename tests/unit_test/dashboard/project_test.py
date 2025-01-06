@@ -13,19 +13,20 @@
 # limitations under the License.
 
 
+URL_ROOT = "/nvflare-dashboard"
 class TestProject:
     def test_login(self, access_token):
         # login is already tested if access_token is not empty
         assert access_token
 
     def test_get_project(self, client, auth_header):
-        response = client.get("/api/v1/project", headers=auth_header)
+        response = client.get(URL_ROOT+"/api/v1/project", headers=auth_header)
 
         assert response.status_code == 200
         assert response.json["project"]
 
     def test_get_orgs(self, client, auth_header):
-        response = client.get("/api/v1/organizations", headers=auth_header)
+        response = client.get(URL_ROOT+"/api/v1/organizations", headers=auth_header)
 
         assert response.status_code == 200
         assert response.json["client_list"]

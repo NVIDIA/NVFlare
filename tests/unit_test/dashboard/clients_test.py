@@ -19,14 +19,15 @@ CLIENT2 = {"name": "site-2", "organization": "example.com", "capacity": {"num_gp
 
 NEW_ORG = "company.com"
 
+URL_ROOT = "/nvflare-dashboard"
 
 class TestClients:
     @pytest.fixture(scope="session")
     def client_ids(self, auth_header, client):
 
-        response1 = client.post("/api/v1/clients", json=CLIENT1, headers=auth_header)
+        response1 = client.post(URL_ROOT+"/api/v1/clients", json=CLIENT1, headers=auth_header)
         assert response1.status_code == 201
-        response2 = client.post("/api/v1/clients", json=CLIENT2, headers=auth_header)
+        response2 = client.post(URL_ROOT+"/api/v1/clients", json=CLIENT2, headers=auth_header)
         assert response2.status_code == 201
 
         return [response1.json["client"]["id"], response2.json["client"]["id"]]
@@ -37,7 +38,7 @@ class TestClients:
 
     def test_get_all_clients(self, client, client_ids, auth_header):
 
-        response = client.get("/api/v1/clients", headers=auth_header)
+        response = client.get(URL_ROOT+"/api/v1/clients", headers=auth_header)
 
         assert response.status_code == 200
         assert len(response.json["client_list"]) == len(client_ids)
@@ -45,7 +46,7 @@ class TestClients:
     def test_get_one_client(self, client, client_ids, auth_header):
 
         client_id = client_ids[0]
-        response = client.get("/api/v1/clients/" + str(client_id), headers=auth_header)
+        response = client.get(URL_ROOT+"/api/v1/clients/" + str(client_id), headers=auth_header)
 
         assert response.status_code == 200
         assert response.json["client"]["id"] == client_id
@@ -61,7 +62,7 @@ class TestClients:
         assert response.status_code == 200
 
         # Retrieve through API again
-        response = client.get("/api/v1/clients/" + str(client_id), headers=auth_header)
+        response = client.get(URL_ROOT+"/api/v1/clients/" + str(client_id), headers=auth_header)
 
         assert response.status_code == 200
         assert response.json["client"]["organization"] == NEW_ORG
