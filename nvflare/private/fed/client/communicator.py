@@ -33,6 +33,7 @@ from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey,
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import format_size
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.sec.authn import add_authentication_headers
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
@@ -125,12 +126,9 @@ class Communicator:
         if self.ssid:
             message.set_header(CellMessageHeaderKeys.SSID, self.ssid)
 
-        if self.client_name:
-            message.set_header(CellMessageHeaderKeys.CLIENT_NAME, self.client_name)
-
-        if self.token:
-            message.set_header(CellMessageHeaderKeys.TOKEN, self.token)
-            message.set_header(CellMessageHeaderKeys.TOKEN_SIGNATURE, self.token_signature)
+        # Note that auth info (client_name, token and signature) is not available until the client is fully
+        # authenticated.
+        add_authentication_headers(message, self.client_name, self.token, self.token_signature)
 
     def _challenge_server(self, client_name, expected_host, root_cert_file):
         # ask server for its info and make sure that it matches expected host

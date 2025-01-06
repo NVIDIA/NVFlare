@@ -25,7 +25,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
-from nvflare.utils.job_launcher_utils import extract_job_image
+from nvflare.utils.job_launcher_utils import extract_job_image, get_client_job_args, get_server_job_args
 
 
 class JobState(Enum):
@@ -227,15 +227,16 @@ class K8sJobLauncher(JobLauncherSpec):
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
 
+        _, job_cmd = job_args[JobProcessArgs.EXE_MODULE]
         job_config = {
             "name": job_id,
             "image": job_image,
             "container_name": f"container-{job_id}",
-            "command": job_args[JobProcessArgs.EXE_MODULE],
+            "command": job_cmd,
             "volume_mount_list": [{"name": self.workspace, "mountPath": self.mount_path}],
             "volume_list": [{"name": self.workspace, "hostPath": {"path": self.root_hostpath, "type": "Directory"}}],
             "module_args": self.get_module_args(job_id, fl_ctx),
-            "set_list": self.get_set_list(args, fl_ctx),
+            "set_list": args.set,
         }
 
         self.logger.info(f"launch job with k8s_launcher. Job_id:{job_id}")
@@ -272,19 +273,6 @@ class K8sJobLauncher(JobLauncherSpec):
         """
         pass
 
-    @abstractmethod
-    def get_set_list(self, args, fl_ctx: FLContext):
-        """To get the command set_list
-
-        Args:
-            args: command args
-            fl_ctx: FLContext
-
-        Returns: set_list command options
-
-        """
-        pass
-
 
 def _job_args_dict(job_args: dict, arg_names: list) -> dict:
     result = {}
@@ -300,26 +288,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
 
-        return _job_args_dict(
-            job_args,
-            [
-                JobProcessArgs.WORKSPACE,
-                JobProcessArgs.STARTUP_DIR,
-                JobProcessArgs.AUTH_TOKEN,
-                JobProcessArgs.TOKEN_SIGNATURE,
-                JobProcessArgs.SSID,
-                JobProcessArgs.JOB_ID,
-                JobProcessArgs.CLIENT_NAME,
-                JobProcessArgs.PARENT_URL,
-                JobProcessArgs.TARGET,
-                JobProcessArgs.SCHEME,
-                JobProcessArgs.STARTUP_CONFIG_FILE,
-            ],
-        )
-
-    def get_set_list(self, args, fl_ctx: FLContext):
-        args.set.append("print_conf=True")
-        return args.set
+        return _job_args_dict(job_args, get_client_job_args(False, False))
 
 
 class ServerK8sJobLauncher(K8sJobLauncher):
@@ -328,27 +297,4 @@ class ServerK8sJobLauncher(K8sJobLauncher):
         if not job_args:
             raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
 
-        return _job_args_dict(
-            job_args,
-            [
-                JobProcessArgs.WORKSPACE,
-                JobProcessArgs.STARTUP_CONFIG_FILE,
-                JobProcessArgs.APP_ROOT,
-                JobProcessArgs.JOB_ID,
-                JobProcessArgs.PARENT_URL,
-                JobProcessArgs.ROOT_URL,
-                JobProcessArgs.SERVICE_HOST,
-                JobProcessArgs.SERVICE_PORT,
-                JobProcessArgs.SSID,
-                JobProcessArgs.TOKEN_SIGNATURE,
-                JobProcessArgs.HA_MODE,
-            ],
-        )
-
-    def get_set_list(self, args, fl_ctx: FLContext):
-        job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
-        if not job_args:
-            raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
-        args.set.append("print_conf=True")
-        args.set.append("restore_snapshot=" + str(job_args[JobProcessArgs.RESTORE_SNAPSHOT]))
-        return args.set
+        return _job_args_dict(job_args, get_server_job_args(False, False))

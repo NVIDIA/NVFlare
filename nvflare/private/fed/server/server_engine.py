@@ -229,7 +229,16 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         else:
             restore_snapshot = False
 
-        # prepare job process args
+        # Job process args are the same for all job launchers! Letting each job launcher compute the job
+        # args would be error-prone and would require access to internal server components (
+        # e.g. cell, server_state, self.server, etc.), which violates component layering.
+        #
+        # We prepare job process args here and save the prepared result in the fl_ctx.
+        # This way, the job launcher won't need to compute these args again.
+        # The job launcher will only need to use the args properly to launch the job process!
+        #
+        # Each arg is a tuple of (arg_option, arg_value).
+        # Note that the arg_option is fixed for each arg, and is not launcher specific!
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         args = fl_ctx.get_prop(FLContextKey.ARGS)
         server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
@@ -240,6 +249,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         command_options = ""
         for t in args.set:
             command_options += " " + t
+        command_options += f" restore_snapshot={restore_snapshot} print_conf=True"
+        args.set.append("print_conf=True")
+        args.set.append(f"restore_snapshot={restore_snapshot}")
 
         # create token and signature for SJ
         token = job_id  # use the run_number as the auth token
@@ -255,14 +267,12 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             JobProcessArgs.HA_MODE: ("--ha_mode", server.ha_mode),
             JobProcessArgs.AUTH_TOKEN: ("-t", token),
             JobProcessArgs.TOKEN_SIGNATURE: ("-ts", signature),
-            JobProcessArgs.CLIENT_NAME: client_name,
             JobProcessArgs.PARENT_URL: ("-p", str(cell.get_internal_listener_url())),
             JobProcessArgs.ROOT_URL: ("-u", str(cell.get_root_url_for_child())),
             JobProcessArgs.SERVICE_HOST: ("--host", str(server_state.host)),
             JobProcessArgs.SERVICE_PORT: ("--port", str(server_state.service_port)),
             JobProcessArgs.SSID: ("--ssid", str(server_state.ssid)),
             JobProcessArgs.OPTIONS: ("--set", command_options),
-            JobProcessArgs.RESTORE_SNAPSHOT: restore_snapshot,
         }
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
         job_handle = job_launcher.launch_job(job.meta, fl_ctx)
@@ -447,7 +457,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         Returns:
 
         """
-        self.logger.info("initialize_comm called!")
+        self.logger.debug("initialize_comm called!")
         self.cell = cell
         if self.run_manager:
             # Note that the aux_runner is created with the self.run_manager as the "engine".

@@ -115,8 +115,15 @@ class StaticFileBuilder(Builder):
 
     @staticmethod
     def _build_conn_properties(site: Participant, ctx: ProvisionContext, site_config: dict):
+        valid_values = [ConnSecurity.CLEAR, ConnSecurity.INSECURE, ConnSecurity.TLS, ConnSecurity.MTLS]
         conn_security = site.get_prop_fb(PropKey.CONN_SECURITY)
         if conn_security:
+            assert isinstance(conn_security, str)
+            conn_security = conn_security.lower()
+
+            if conn_security not in valid_values:
+                raise ValueError(f"invalid connection_security '{conn_security}': must be in {valid_values}")
+
             if conn_security in [ConnSecurity.CLEAR, ConnSecurity.INSECURE]:
                 conn_security = ConnSecurity.INSECURE
             site_config["connection_security"] = conn_security

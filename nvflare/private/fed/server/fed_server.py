@@ -52,6 +52,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
+from nvflare.fuel.sec.authn import add_authentication_headers
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -401,12 +402,11 @@ class FederatedServer(BaseServer):
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         dest = message.get_header(MessageHeaderKey.DESTINATION)
         if origin == FQCN.ROOT_SERVER and dest == origin:
-            message.set_header(CellMessageHeaderKeys.CLIENT_NAME, self.my_own_auth_client_name)
-            message.set_header(CellMessageHeaderKeys.TOKEN, self.my_own_token)
-
             if not self.my_own_token_signature:
                 self.my_own_token_signature = self.sign_auth_token(self.my_own_auth_client_name, self.my_own_token)
-            message.set_header(CellMessageHeaderKeys.TOKEN_SIGNATURE, self.my_own_token_signature)
+            add_authentication_headers(
+                message, self.my_own_auth_client_name, self.my_own_token, self.my_own_token_signature
+            )
 
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
@@ -427,27 +427,28 @@ class FederatedServer(BaseServer):
             return None
 
         client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        err_text = f"unauthenticated msg ({channel=} {topic=}) received from {origin}"
         if not client_name:
             err = "missing client name"
-            self.logger.error(f"unauthenticated msg received from {origin}: {err}")
-            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED)
+            self.logger.error(f"{err_text}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
 
         token = message.get_header(CellMessageHeaderKeys.TOKEN)
         if not token:
             err = "missing auth token"
-            self.logger.error(f"unauthenticated msg received from {origin}: {err}")
-            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED)
+            self.logger.error(f"{err_text}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
 
         signature = message.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE)
         if not signature:
             err = "missing auth token signature"
-            self.logger.error(f"unauthenticated msg received from {origin}: {err}")
-            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED)
+            self.logger.error(f"{err_text}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
 
         if not self.verify_auth_token(client_name, token, signature):
             err = "invalid auth token signature"
-            self.logger.error(f"unauthenticated msg received from {origin}: {err}")
-            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED)
+            self.logger.error(f"{err_text}: {err}")
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
 
         # all good
         self.logger.debug(f"auth valid from {origin}: {topic=} {channel=}")

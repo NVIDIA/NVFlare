@@ -175,7 +175,17 @@ class JobExecutor(ClientExecutor):
         command_options = ""
         for t in args.set:
             command_options += " " + t
+        command_options += " print_conf=True"
+        args.set.append("print_conf=True")
 
+        # Job process args are the same for all job launchers! Letting each job launcher compute the job
+        # args would be error-prone and would require access to internal server components (e.g. cell).
+        # We prepare job process args here and save the prepared result in the fl_ctx.
+        # This way, the job launcher won't need to compute these args again.
+        # The job launcher will only need to use the args properly to launch the job process!
+        #
+        # Each arg is a tuple of (arg_option, arg_value).
+        # Note that the arg_option is fixed for each arg, and is not launcher specific!
         job_args = {
             JobProcessArgs.EXE_MODULE: ("-m", "nvflare.private.fed.app.client.worker_process"),
             JobProcessArgs.JOB_ID: ("-n", job_id),

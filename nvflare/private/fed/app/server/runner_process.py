@@ -25,6 +25,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
+from nvflare.fuel.sec.authn import add_authentication_headers
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import configure_logging, get_script_logger
@@ -146,20 +147,22 @@ def main(args):
 
 def _add_auth_headers(message: CellMessage, config):
     message.set_header(CellMessageHeaderKeys.SSID, config.ssid)
-    message.set_header(CellMessageHeaderKeys.CLIENT_NAME, AUTH_CLIENT_NAME_FOR_SJ)
-    message.set_header(CellMessageHeaderKeys.TOKEN, config.job_id)
-    message.set_header(CellMessageHeaderKeys.TOKEN_SIGNATURE, config.token_signature)
+    add_authentication_headers(
+        message,
+        client_name=AUTH_CLIENT_NAME_FOR_SJ,
+        auth_token=config.job_id,
+        token_signature=config.token_signature,
+    )
 
 
 def parse_arguments():
     """FL Server program starting point."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument(
-        "--fed_server", "-s", type=str, help="an aggregation server specification json file", required=True
-    )
+    parser.add_argument("--fed_server", "-s", type=str, help="server config json file", required=True)
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
+    parser.add_argument("--token_signature", "-ts", type=str, help="auth token signature", required=True)
     parser.add_argument("--root_url", "-u", type=str, help="root_url", required=True)
     parser.add_argument("--host", "-host", type=str, help="server host", required=True)
     parser.add_argument("--port", "-port", type=str, help="service port", required=True)

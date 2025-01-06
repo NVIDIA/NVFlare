@@ -90,7 +90,7 @@ class JobLauncherSpec(FLComponent):
         """To launch a job run.
 
         Args:
-            job_meta: job meta data
+            job_meta: job metadata
             fl_ctx: FLContext
 
         Returns: boolean to indicates the job launch success or fail.

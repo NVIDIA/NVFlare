@@ -30,15 +30,13 @@ def _job_args_str(job_args, arg_names) -> str:
     return result
 
 
-def generate_client_command(job_meta, fl_ctx):
-    job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
-    if not job_args:
-        raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
+def get_client_job_args(include_exe_module=True, include_set_options=True):
+    result = []
+    if include_exe_module:
+        result.append(JobProcessArgs.EXE_MODULE)
 
-    args_str = _job_args_str(
-        job_args,
+    result.extend(
         [
-            JobProcessArgs.EXE_MODULE,
             JobProcessArgs.WORKSPACE,
             JobProcessArgs.STARTUP_DIR,
             JobProcessArgs.AUTH_TOKEN,
@@ -50,21 +48,31 @@ def generate_client_command(job_meta, fl_ctx):
             JobProcessArgs.TARGET,
             JobProcessArgs.SCHEME,
             JobProcessArgs.STARTUP_CONFIG_FILE,
-            JobProcessArgs.OPTIONS,
-        ],
+        ]
     )
-    return sys.executable + args_str + " print_conf=True"
+
+    if include_set_options:
+        result.append(JobProcessArgs.OPTIONS)
+
+    return result
 
 
-def generate_server_command(job_meta, fl_ctx):
+def generate_client_command(fl_ctx) -> str:
     job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
     if not job_args:
-        raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext!")
+        raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
 
-    args_str = _job_args_str(
-        job_args,
+    args_str = _job_args_str(job_args, get_client_job_args())
+    return f"{sys.executable} {args_str}"
+
+
+def get_server_job_args(include_exe_module=True, include_set_options=True):
+    result = []
+    if include_exe_module:
+        result.append(JobProcessArgs.EXE_MODULE)
+
+    result.extend(
         [
-            JobProcessArgs.EXE_MODULE,
             JobProcessArgs.WORKSPACE,
             JobProcessArgs.STARTUP_CONFIG_FILE,
             JobProcessArgs.APP_ROOT,
@@ -76,11 +84,22 @@ def generate_server_command(job_meta, fl_ctx):
             JobProcessArgs.SERVICE_PORT,
             JobProcessArgs.SSID,
             JobProcessArgs.HA_MODE,
-            JobProcessArgs.OPTIONS,
-        ],
+        ]
     )
 
-    return sys.executable + args_str + f" restore_snapshot={job_args[JobProcessArgs.RESTORE_SNAPSHOT]} print_conf=True"
+    if include_set_options:
+        result.append(JobProcessArgs.OPTIONS)
+
+    return result
+
+
+def generate_server_command(fl_ctx) -> str:
+    job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+    if not job_args:
+        raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext!")
+
+    args_str = _job_args_str(job_args, get_server_job_args())
+    return f"{sys.executable} {args_str}"
 
 
 def extract_job_image(job_meta, site_name):
