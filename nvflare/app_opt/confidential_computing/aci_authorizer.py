@@ -25,6 +25,10 @@ maa_endpoint = "sharedeus2.eus2.attest.azure.net"
 
 
 class ACIAuthorizer(CCAuthorizer):
+    def __init__(self, retry_count=5, retry_sleep=2):
+        self.retry_count = retry_count
+        self.retry_sleep = retry_sleep
+
     def generate(self):
         count = 0
         token = ""
@@ -40,9 +44,9 @@ class ACIAuthorizer(CCAuthorizer):
                     token = r.json().get("token")
                 break
             except:
-                if count > 5:
+                if count > self.retry_count:
                     break
-                time.sleep(2)
+                time.sleep(self.retry_sleep)
         return token
 
     def verify(self, token):
