@@ -107,9 +107,20 @@ class SysMetricsCollector(FLComponent):
             self.before_client_register = current_time
         elif event == EventType.AFTER_CLIENT_REGISTER:
             self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
+
+            time_taken = current_time - self.before_client_register
+            duration_metrics[MetricKeys.time_taken] = time_taken
+            metric_name = "_client_register_time_taken"
+            self.publish_metrics(duration_metrics, metric_name, self.tags, fl_ctx)
+
         elif event == EventType.CLIENT_REGISTER_RECEIVED:
             self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
+
+        elif event == EventType.CLIENT_REGISTER_PROCESSED:
+            self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
+
         elif event == EventType.CLIENT_QUIT:
+
             self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.SYSTEM_BOOTSTRAP:
             self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
