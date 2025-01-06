@@ -20,7 +20,6 @@ import re
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 
-from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 
 
@@ -282,10 +281,6 @@ def dynamic_log_config(config: str, workspace: Workspace, job_id: str = None):
             dir_path = workspace.get_run_dir(job_id)
         else:
             dir_path = workspace.get_root_dir()
-
-            # overwrite log_config.json of site
-            with open(os.path.join(workspace.get_site_config_dir(), WorkspaceConstants.LOGGING_CONFIG), "w") as f:
-                f.write(json.dumps(dict_config))
 
         apply_log_config(dict_config, dir_path)
 
