@@ -57,7 +57,7 @@ class TestClients:
 
         client_id = client_ids[0]
         response = client.patch(
-            "/api/v1/clients/" + str(client_id), json={"organization": NEW_ORG}, headers=auth_header
+            URL_ROOT + "/api/v1/clients/" + str(client_id), json={"organization": NEW_ORG}, headers=auth_header
         )
 
         assert response.status_code == 200
