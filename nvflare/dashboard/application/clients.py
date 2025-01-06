@@ -19,7 +19,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 from .store import Store, check_role
 
 
-@app.route("/api/v1/clients", methods=["POST"])
+@app.route("/nvflare-dashboard/api/v1/clients", methods=["POST"])
 @jwt_required()
 def create_one_client():
     creator = get_jwt_identity()
@@ -31,21 +31,21 @@ def create_one_client():
         return jsonify({"status": "conflicting"}), 409
 
 
-@app.route("/api/v1/clients", methods=["GET"])
+@app.route("/nvflare-dashboard/api/v1/clients", methods=["GET"])
 @jwt_required()
 def get_all_clients():
     result = Store.get_clients()
     return jsonify(result)
 
 
-@app.route("/api/v1/clients/<id>", methods=["GET"])
+@app.route("/nvflare-dashboard/api/v1/clients/<id>", methods=["GET"])
 @jwt_required()
 def get_one_client(id):
     result = Store.get_client(id)
     return jsonify(result)
 
 
-@app.route("/api/v1/clients/<id>", methods=["PATCH", "DELETE"])
+@app.route("/nvflare-dashboard/api/v1/clients/<id>", methods=["PATCH", "DELETE"])
 @jwt_required()
 def update_client(id):
     creator_id = Store.get_creator_id_by_client_id(id)
@@ -71,7 +71,7 @@ def update_client(id):
         return jsonify({"status": "conflicting"}), 409
 
 
-@app.route("/api/v1/clients/<int:id>/blob", methods=["POST"])
+@app.route("/nvflare-dashboard/api/v1/clients/<int:id>/blob", methods=["POST"])
 @jwt_required()
 def client_blob(id):
     if not Store._is_approved_by_client_id(id):
