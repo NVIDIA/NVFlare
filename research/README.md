@@ -1,70 +1,20 @@
-# Research Directory
-This research directory is the place to host various research work from the community on Federated learning
-leveraging NVIDIA FLARE. **The code will not be maintained by NVIDIA FLARE team**, but will require Pull Request
-approval process. 
+# Research with NVIDIA FLARE
 
-## License
-By providing the code in NVFLARE repository, you will grant the research project in NVIDIA repo to be released under Apache v2 License or equivalent open source license.
+<img src="../docs/resources/researcher.svg" alt="Researcher Icon" width="100">
 
-## Requirements
-Each research project should create a subdirectory with the following requirements.
+NVIDIA FLARE has been used in several research studies. In this directory, you can find their reference implementations.
 
-* Subdirectory name must be in ASCII string, all in lower, kebab-case, and no longer than 35 characters long
-* Each project should include
-  * README.md -- document must include
-    * Objective 
-    * Background
-    * Description
-    * Setup
-    * Steps to run the code 
-    * Data download and preparation (if applicable)
-    * Expected results
-  * Jobs-folder including configurations and optional custom code
-  * All code should be in runnable condition, i.e., no broken code
-  * License file
-  * Requirements file listing all dependencies, including the NVFLARE version used
+## Research Implementations
 
-## Example
-```
-sample_research$ 
-.
-├── jobs
-    └── job1
-           ├── app_server
-                   ├── config
-                           └── config_fed_server.json
-                   └── custom
-                        └── sample_controller.py
-           └── app_client
-                   ├── config
-                           └── config_fed_client.json
-                   └── custom
-                        └── sample_executor.py
-           └── meta.json
-└── README.md
-└── LICENSE
-└── requirements.txt
-```
+1. [FedBPT: Efficient Federated Black-box Prompt Tuning for Large Language Models](./fed-bpt/README.md) [ICML 2024](https://arxiv.org/abs/2310.01467)
+2. [ConDistFL: Conditional Distillation for Federated Learning from Partially Annotated Data](./condist-fl/README.md) ([DeCaF 2023](https://arxiv.org/abs/2308.04070))
+3. [Fair Federated Medical Image Segmentation via Client Contribution Estimation](./fed-ce/README.md) ([CVPR 2023](https://arxiv.org/abs/2303.16520))
+4. [Communication-Efficient Vertical Federated Learning with Limited Overlapping Samples](./one-shot-vfl/README.md) [ICCV 2023](https://arxiv.org/abs/2303.16270)
+5. [Closing the Generalization Gap of Cross-silo Federated Medical Image Segmentation](./fed-sm/README.md) ([CVPR 2022](https://arxiv.org/abs/2203.10144))
+6. [Do Gradient Inversion Attacks Make Federated Learning Unsafe?](./quantifying-data-leakage/README.md) ([IEEE Transactions on Medical Imaging 2022](https://arxiv.org/abs/2202.06924))
+7. [Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation](./auto-fed-rl/README.md) ([ECCV 2022](https://arxiv.org/abs/2203.06338))
+8. [FedBN: Federated Learning on Non-IID Features via Local Batch Normalization](./fed-bn/README.md) [ICLR 2021](https://arxiv.org/abs/2102.07623)
 
-## Setup
-To run the research code, we recommend using a virtual environment.
+## Contributing
 
-### Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-initialize virtual environment.
-```
-python3 -m venv venv
-source venv/bin/activate
-```
-within each research folder, install required packages for training
-```
-pip install --upgrade pip
-pip install -r requirements.txt
-```
+To provide your own research implementations, please follow this [contribution guide](./CONTRIBUTING.md).

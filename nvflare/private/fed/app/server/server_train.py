@@ -25,11 +25,12 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.log_utils import configure_logging
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
 from nvflare.private.fed.app.utils import create_admin_server, version_check
 from nvflare.private.fed.server.server_status import ServerStatus
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
+from nvflare.private.fed.utils.fed_utils import fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
 
@@ -83,8 +84,7 @@ def main(args):
             logger.critical("loglevel critical enabled")
         conf.configure()
 
-        log_file = workspace.get_log_file_path()
-        add_logfile_handler(log_file)
+        configure_logging(workspace, workspace.get_root_dir())
 
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)
