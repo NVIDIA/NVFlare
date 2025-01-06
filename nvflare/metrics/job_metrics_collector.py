@@ -209,5 +209,3 @@ class JobMetricsCollector(FLComponent):
 
     def publish_metrics(self, metrics: dict, metric_name: str, tags: dict, fl_ctx: FLContext):
         collect_metrics(self, self.streaming_to_server, metrics, metric_name, tags, self.data_bus, fl_ctx)
- 
-

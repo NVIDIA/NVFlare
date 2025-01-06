@@ -14,6 +14,7 @@
 
 METRICS_EVENT_TYPE = "metrics_event"
 
+
 class MetricTypes:
 
     COUNTER = "counter"

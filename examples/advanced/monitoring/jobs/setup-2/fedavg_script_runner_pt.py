@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.metrics.metrics_keys import METRICS_EVENT_TYPE
-from nvflare.metrics.remote_metrics_receiver import RemoteMetricsReceiver
 from src.simple_network import SimpleNetwork
 
+from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
+from nvflare.metrics.metrics_keys import METRICS_EVENT_TYPE
+from nvflare.metrics.remote_metrics_receiver import RemoteMetricsReceiver
 
 if __name__ == "__main__":
     n_clients = 2
@@ -28,12 +28,9 @@ if __name__ == "__main__":
     train_script = "src/hello-pt_cifar10_fl.py"
 
     job = FedAvgJob(
-        name="hello-pt_cifar10_fedavg",
-        n_clients=n_clients,
-        num_rounds=num_rounds,
-        initial_model=SimpleNetwork()
+        name="hello-pt_cifar10_fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork()
     )
-    metrics_reporter = StatsDReporter(site = "server", host="localhost", port=9125)
+    metrics_reporter = StatsDReporter(site="server", host="localhost", port=9125)
     remote_metrics_collector = RemoteMetricsReceiver()
 
     server_tags = {"site": "server", "env": "dev"}

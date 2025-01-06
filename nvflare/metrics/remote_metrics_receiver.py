@@ -1,18 +1,31 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 
 from typing import List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, EventScope
+from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.metrics.metrics_keys import METRICS_EVENT_TYPE, MetricKeys
-from nvflare.apis.shareable import Shareable
 from nvflare.metrics.metrics_publisher import publish_app_metrics
 
 
 class RemoteMetricsReceiver(FLComponent):
     def __init__(self, events: Optional[List[str]] = None):
- 
         """Receives metrics data from client sites and publishes it to the local data bus.
         Args:
             events (optional, List[str]): A list of event that this receiver will handle.
@@ -47,7 +60,7 @@ class RemoteMetricsReceiver(FLComponent):
             if record_origin is None:
                 self.log_error(fl_ctx, "record_origin can't be None.", fire_event=False)
                 return
-            
+
             metrics_data = data.get("METRICS")
             if metrics_data is None:
                 self.log_error(fl_ctx, "Missing metrics data.", fire_event=False)
@@ -58,6 +71,3 @@ class RemoteMetricsReceiver(FLComponent):
             tags = metrics_data.get(MetricKeys.tags)
 
             publish_app_metrics(metrics=metrics, metric_name=metric_name, tags=tags, data_bus=self.data_bus)
-
-            
-            

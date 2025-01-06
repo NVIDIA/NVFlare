@@ -34,7 +34,7 @@ class SysMetricsCollector(FLComponent):
 
         self.tags = tags
         self.data_bus = DataBus()
-        self.streaming_to_server = streaming_to_server        
+        self.streaming_to_server = streaming_to_server
 
         # system events
         self.system_start = 0
@@ -50,7 +50,6 @@ class SysMetricsCollector(FLComponent):
         self.before_check_client_resources = 0
         self.after_check_client_resources = 0
         self.start = True
-
 
     def handle_event(self, event: str, fl_ctx: FLContext):
 
@@ -136,4 +135,3 @@ class SysMetricsCollector(FLComponent):
     def publish_metrics(self, metrics: dict, metric_name: str, tags: dict, fl_ctx: FLContext):
 
         collect_metrics(self, self.streaming_to_server, metrics, metric_name, tags, self.data_bus, fl_ctx)
- 
