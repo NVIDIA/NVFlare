@@ -14,7 +14,7 @@
 
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.metrics.metrics_keys import METRICS_EVENT_TYPE
-from nvflare.metrics.remote_metrics_collector import RemoteMetricsReceiver
+from nvflare.metrics.remote_metrics_receiver import RemoteMetricsReceiver
 from src.simple_network import SimpleNetwork
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
@@ -58,4 +58,4 @@ if __name__ == "__main__":
         # job.to(metrics_reporter, target=client_site, id=f"{client_site}_statsd_reporter")
 
     job.export_job("/tmp/nvflare/jobs/job_config")
-    # job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

@@ -23,8 +23,6 @@ class RemoteMetricsReceiver(FLComponent):
         self.events = events
         self.data_bus = DataBus()
 
-        print("initialize remote metrics collector")
-
     def handle_event(self, event_type: str, fl_ctx: FLContext):
 
         print(f"RemoteMetricsCollector: listen to event: event = {event_type} \n")

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-METRICS_EVENT_TYPE = "Metrics_Event"
+METRICS_EVENT_TYPE = "metrics_event"
 
 class MetricTypes:
 
