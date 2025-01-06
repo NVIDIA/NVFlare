@@ -25,6 +25,7 @@ from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
 from nvflare.private.fed.server.server_status import ServerStatus
+from nvflare.widgets.fed_event import ServerFedEventRunner
 
 
 class ServerDeployer:
@@ -118,6 +119,9 @@ class ServerDeployer:
         job_manager = self.components.get(SystemComponents.JOB_MANAGER)
         services.engine.set_run_manager(run_manager)
         services.engine.set_job_runner(job_runner, job_manager)
+
+        fed_event_runner = ServerFedEventRunner()
+        run_manager.add_handler(fed_event_runner)
 
         run_manager.add_handler(job_runner)
         run_manager.add_component(SystemComponents.JOB_RUNNER, job_runner)
