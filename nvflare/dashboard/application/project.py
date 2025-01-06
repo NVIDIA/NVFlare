@@ -40,9 +40,11 @@ def downloads_html():
 def index_html_dashboard():
     return app.send_static_file("nvflare-dashboard/index.html")
 
+
 @app.route("/")
 def index_html():
     return app.send_static_file("nvflare-dashboard/index.html")
+
 
 @app.route("/nvflare-dashboard/logout")
 def logout_html():
