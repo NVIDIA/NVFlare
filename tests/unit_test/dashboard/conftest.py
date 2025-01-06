@@ -22,6 +22,8 @@ from nvflare.dashboard.application import init_app
 TEST_USER = "admin@test.com"
 TEST_PW = "testing1234"
 
+URL_ROOT = "/nvflare-dashboard"
+
 
 @pytest.fixture(scope="session")
 def app():
@@ -53,7 +55,7 @@ def client(app):
 
 @pytest.fixture(scope="session")
 def access_token(client):
-    response = client.post("/api/v1/login", json={"email": TEST_USER, "password": TEST_PW})
+    response = client.post(URL_ROOT + "/api/v1/login", json={"email": TEST_USER, "password": TEST_PW})
     assert response.status_code == 200
     return response.json["access_token"]
 
