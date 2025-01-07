@@ -180,11 +180,26 @@ def sign_all(content_folder, signing_pri_key):
     return signatures
 
 
+class YamlLoader(yaml.SafeLoader):
+
+    def __init__(self, stream):
+
+        self._root = os.path.split(stream.name)[0]
+        super(YamlLoader, self).__init__(stream)
+
+    def include(self, node):
+
+        filename = os.path.join(self._root, self.construct_scalar(node))
+        with open(filename, "r") as f:
+            return yaml.load(f, YamlLoader)
+
+
 def load_yaml(file):
+    YamlLoader.add_constructor("!include", YamlLoader.include)
     if isinstance(file, str):
-        return yaml.safe_load(open(file, "r"))
+        return yaml.load(open(file, "r"), YamlLoader)
     elif isinstance(file, bytes):
-        return yaml.safe_load(file)
+        return yaml.load(file, YamlLoader)
     else:
         return None
 
