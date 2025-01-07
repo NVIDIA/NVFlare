@@ -28,6 +28,7 @@ class TestFobs:
     NUMBER = 123456
     FLOAT = 123.456
     NAME = "FOBS Test"
+    SET = {4, 5, 6}
     NOW = datetime.now()
 
     test_data = {
@@ -35,7 +36,7 @@ class TestFobs:
         "number": NUMBER,
         "float": FLOAT,
         "list": [7, 8, 9],
-        "set": {4, 5, 6},
+        "set": SET,
         "tuple": ("abc", "xyz"),
         "time": NOW,
     }
@@ -44,11 +45,7 @@ class TestFobs:
         buf = fobs.dumps(TestFobs.test_data)
         data = fobs.loads(buf)
         assert data["number"] == TestFobs.NUMBER
-
-    def test_aliases(self):
-        buf = fobs.dumps(TestFobs.test_data)
-        data = fobs.loads(buf)
-        assert data["number"] == TestFobs.NUMBER
+        assert data["set"] == TestFobs.SET
 
     def test_unsupported_classes(self):
         with pytest.raises(TypeError):

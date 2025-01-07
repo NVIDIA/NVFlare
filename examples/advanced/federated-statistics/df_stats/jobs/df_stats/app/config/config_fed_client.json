@@ -14,23 +14,7 @@
       }
     }
   ],
-  "task_result_filters": [
-    {
-      "tasks": ["fed_stats"],
-      "filters":[
-        {
-          "path": "nvflare.app_common.filters.statistics_privacy_filter.StatisticsPrivacyFilter",
-          "args": {
-            "result_cleanser_ids": [
-              "min_count_cleanser",
-              "min_max_noise_cleanser",
-              "hist_bins_cleanser"
-            ]
-          }
-        }
-      ]
-    }
-  ],
+
   "task_data_filters": [],
   "components": [
     {
