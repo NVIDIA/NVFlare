@@ -195,7 +195,8 @@ class YamlLoader(yaml.SafeLoader):
 
 
 def load_yaml(file):
-    YamlLoader.add_constructor("!include", YamlLoader.include)
+    if "!include" not in YamlLoader.yaml_constructors:
+        YamlLoader.add_constructor("!include", YamlLoader.include)
     if isinstance(file, str):
         return yaml.load(open(file, "r"), YamlLoader)
     elif isinstance(file, bytes):
