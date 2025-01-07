@@ -18,10 +18,14 @@
               "bins": 10,
               "range": [0,120]
             }
+          },
+          "percentile": {
+            "*": [25, 50, 75]
           }
         },
         "writer_id": "stats_writer",
-        "enable_pre_run_task": false
+        "enable_pre_run_task": false,
+        "precision" : 2
       }
     }
   ],
