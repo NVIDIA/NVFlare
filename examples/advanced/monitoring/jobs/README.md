@@ -1,9 +1,8 @@
-# Hello PyTorch Monitoring
-
+# FLARE Monitoring
+FLARE Monitoring provides a comprehensive solution for tracking and analyzing the performance of your federated learning jobs. This guide will walk you through the steps to set up and use the monitoring system effectively.
 Please see [hello-pytorch](../../../../hello-world/hello-pt/README.md) for details on how to run hello-pt.
 
 ## Prepare Code
-
 Create a bash script to copy the hello-world example to the current directory:
 
 ```prepare_code.sh```
@@ -12,8 +11,8 @@ Create a bash script to copy the hello-world example to the current directory:
 #!/bin/bash
 
 # Copy hello-world example to the current directory
-cp -r ../../../hello-world/hello-pt/src setup-1/.
-cp -r ../../../hello-world/hello-pt/src setup-2/.
+cp -r ../../../../hello-world/hello-pt/src setup-1/.
+cp -r ../../../../hello-world/hello-pt/src setup-2/.
 ```
 
 Run the script:
@@ -21,7 +20,6 @@ Run the script:
 ```bash
 ./prepare_code.sh
 ```
-
 ## Start up the monitoring system
 
 In this example, we simulate the real setup on the local host. To keep the example simple, we will only set up 1 and 2. You can easily follow the steps to work out step 3.
@@ -55,50 +53,51 @@ In steps 1 and 2, we only need one monitoring system. Assuming you already have 
 
 **Note:** The StatsD Exporter port is 9125 (not 8125).
 
-## Prepare Job Configuration
+
+## Prepare FLARE Metrics Monitoring Configuration
+ 
+### Prepare Configuration for Setup 1: All Sites Share the Same Monitoring System
 
 As described in the [README](../README.md), we will make different component configurations depending on the setups.
-
-### Setup 1: All Sites Share the Same Monitoring System
 
 In this setup, all sites (server and clients) will share the same monitoring system with the same host and port.
 
 #### Job Metrics Monitoring Configuration
 
-Instead of manually configuring the metrics monitoring, we can directly use the Job API. You can look at the [setup-1/fedavg_script_runner_pt.py](./setup-1/fedavg_script_runner_pt.py).
+Instead of manually configuring the metrics monitoring, we can directly use the Job API. You can refer to the [setup-1/fedavg_script_runner_pt.py](./setup-1/fedavg_script_runner_pt.py).
 
 This is done by adding additional components on top of the existing code:
 
 ```python
-job = FedAvgJob(
-    name="hello-pt_cifar10_fedavg",
-    n_clients=n_clients,
-    num_rounds=num_rounds,
-    initial_model=SimpleNetwork()
-)
-
-# Add server-side monitoring components
-server_tags = {"site": "server", "env": "dev"}
-
-metrics_reporter = StatsDReporter(site="server", host="localhost", port=9125)
-metrics_collector = JobMetricsCollector(tags=server_tags, streaming_to_server=False)
-
-job.to_server(metrics_collector, id="server_job_metrics_collector")
-job.to_server(metrics_reporter, id="statsd_reporter")
-
-# Add clients
-for i in range(n_clients):
-    executor = ScriptRunner(script=train_script, script_args="")
-    job.to(executor, client_site)
-
-    # Add client-side monitoring components
-    client_site = f"site-{i + 1}"
-    tags = {"site": client_site, "env": "dev"}
-
-    metrics_collector = JobMetricsCollector(tags=tags)
     
-    job.to(metrics_collector, target=client_site, id=f"{client_site}_job_metrics_collector")
-    job.to(metrics_reporter, target=client_site, id=f"statsd_reporter")
+    job_name = "hello-pt"
+
+    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
+
+    # add server side monitoring components
+
+    server_tags = {"site": "server", "env": "dev"}
+
+    metrics_reporter = StatsDReporter(site="server", host="localhost", port=9125)
+    metrics_collector = JobMetricsCollector(tags=server_tags, streaming_to_server=False)
+
+    job.to_server(metrics_collector, id="server_job_metrics_collector")
+    job.to_server(metrics_reporter, id="statsd_reporter")
+
+    # Add clients
+    for i in range(n_clients):
+        executor = ScriptRunner(script=train_script, script_args="")
+        client_site = f"site-{i + 1}"
+        job.to(executor, client_site)
+
+        # add client side monitoring components
+        tags = {"site": client_site, "env": "dev"}
+
+        metrics_collector = JobMetricsCollector(tags=tags)
+
+        job.to(metrics_collector, target=client_site, id=f"{client_site}_job_metrics_collector")
+        job.to(metrics_reporter, target=client_site, id="statsd_reporter")
+
 ```
 
 #### System Metrics Monitoring Configuration
@@ -111,10 +110,6 @@ The detailed configurations can be found [here](./setup-1/local_config/). We nee
 cd setup-1
 ./prepare_local_config.sh
 ```
-
-### Setup 2: Only Server Site Has the Monitoring System
-
-<TODO>
 
 ## Start up FLARE FL system with POC
 
@@ -157,3 +152,90 @@ nvflare job submit -j /tmp/nvflare/jobs/job_config/hello-pt
 ```
 
 ## Monitoring View
+
+Once you setup the system, you can view from the followingt website
+for statsd-exporter, you can look at 
+
+### Statsd-exporter metrics view
+
+[http://localhost:9102/metrics](http://localhost:9102/metrics) 
+
+for the metrics published to statsd-export, which can be scraped by prometheus.
+Here is a screen shot
+
+![screen shot](../figures/statsd_export_metrics_view.png)
+
+
+### Prometheus metrics view
+The same metrics is scraped by Prometheus can be found in this URL
+
+![http://localhost:9090/metrics](http://localhost:9090/metrics)
+
+
+### Grafana Dashboard views
+
+We can visualize them better via Grafana. Here are two metrics dashboards
+
+![Client heartbeat (before & after) time taken](../figures/grafana_plot_metrics_heatbeat_time_taken.png)
+
+![task processed accumated count](../figures/grafana_plot_metrics_view_task_count.png)
+
+
+
+## Setup 2: Client Metrics streamed to Server
+
+In this setup, only the server site is connected to the monitoring system. This allows the server to monitor metrics on all client sites.
+
+### Prepare Configuration for Setup 2: Client Metrics Streamed to Server
+
+Similar to setup 1, we need to consider both job and system level configurations
+
+
+#### Job Metrics Monitoring Configuration
+
+We will configure the job to stream client metrics to the server. You can refer to the [setup-2/fedavg_script_runner_pt.py](./setup-2/fedavg_script_runner_pt.py).
+
+Here is the configuration: TO BE COMPLETE
+
+```python
+job_name = "hello-pt"
+
+    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
+
+    # add server side monitoring components
+
+    server_tags = {"site": "server", "env": "dev"}
+
+    metrics_reporter = StatsDReporter(site="server", host="localhost", port=9125)
+    metrics_collector = JobMetricsCollector(tags=server_tags, streaming_to_server=False)
+
+    job.to_server(metrics_collector, id="server_job_metrics_collector")
+    job.to_server(metrics_reporter, id="statsd_reporter")
+
+    # Add clients
+    for i in range(n_clients):
+        executor = ScriptRunner(script=train_script, script_args="")
+        client_site = f"site-{i + 1}"
+        job.to(executor, client_site)
+
+        # add client side monitoring components
+        tags = {"site": client_site, "env": "dev"}
+
+        metrics_collector = JobMetricsCollector(tags=tags)
+
+        job.to(metrics_collector, target=client_site, id=f"{client_site}_job_metrics_collector")
+        job.to(metrics_reporter, target=client_site, id="statsd_reporter")
+
+```
+
+#### System Metrics Monitoring Configuration
+
+We need to manually edit the configuration files for System Metrics collections.
+
+The detailed configurations can be found [here](./setup-2/local_config/). We need to copy them to the proper locations, or you can manually edit these files.
+
+```bash
+cd setup-2
+./prepare_local_config.sh
+```
+ 
