@@ -1,6 +1,6 @@
-# NVFLARE Prometheus Monitoring Setup
+# NVFLARE Metrics Monitoring Setup
 
-This guide describes how to set up NVFLARE metrics publishing to StatsD Exporter, Prometheus, and Grafana.
+This guide describes how to set up NVFLARE metrics publishing to StatsD Exporter, which then can be scraped by Prometheus and visualized with Grafana.
 
 
 ## Setup Types
@@ -265,15 +265,15 @@ In ```fed_config_client.json```,
 
 ```json
 {
-    "id": "sys_metrics_collector",
-    "path": "nvflare.metrics.sys_metrics_collector.SysMetricsCollector",
+    "id": "job_metrics_collector",
+    "path": "nvflare.metrics.job_metrics_collector.JobMetricsCollector",
     "args": {
         "tags": {
             "site": "server",
             "env": "dev"
         }
     }
-}, 
+},
 {
     "id": "statsd_reporter",
     "path": "nvflare.fuel_opt.statsd.statsd_reporter.StatsDReporter",

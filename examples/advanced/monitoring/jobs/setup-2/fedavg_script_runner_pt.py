@@ -12,47 +12,76 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from src.simple_network import SimpleNetwork
+import argparse
+import os
 
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
+from nvflare.metrics.metrics_keys import METRICS_EVENT_TYPE
+from nvflare.metrics.remote_metrics_receiver import RemoteMetricsReceiver
+from src.simple_network import SimpleNetwork
+
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
-from nvflare.metrics.metrics_keys import METRICS_EVENT_TYPE
-from nvflare.metrics.remote_metrics_receiver import RemoteMetricsReceiver
 
-if __name__ == "__main__":
+
+def define_parser(parser):
+
+    parser.add_argument(
+        "-j", "--job_configs_dir", type=str, default="/tmp/nvflare/jobs/job_config/", help="job configure folder"
+    )
+    return parser
+
+
+def main(job_configs_dir):
     n_clients = 2
     num_rounds = 2
     train_script = "src/hello-pt_cifar10_fl.py"
+    job_name = "hello-pt"
 
-    job = FedAvgJob(
-        name="hello-pt_cifar10_fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork()
-    )
-    metrics_reporter = StatsDReporter(site="server", host="localhost", port=9125)
-    remote_metrics_collector = RemoteMetricsReceiver()
+    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
+
+    # add server side monitoring components
 
     server_tags = {"site": "server", "env": "dev"}
-    server_job_metrics_collector = JobMetricsCollector(tags=server_tags, streaming_to_server=False)
-    job.to_server(server_job_metrics_collector, id="server_job_metrics_collector")
-    job.to_server(remote_metrics_collector, id="server_remote_metrics_collector")
-    job.to_server(metrics_reporter, id="server_statsd_reporter")
+
+    metrics_reporter = StatsDReporter(site="server", host="localhost", port=9125)
+    metrics_collector = JobMetricsCollector(tags=server_tags, streaming_to_server=False)
+    remote_metrics_receiver = RemoteMetricsReceiver(events=[METRICS_EVENT_TYPE])
+
+    job.to_server(metrics_collector, id="server_job_metrics_collector")
+    job.to_server(metrics_reporter, id="statsd_reporter")
+    job.to_server(remote_metrics_receiver, id="remote_metrics_receiver")
+
+    fed_event_converter = ConvertToFedEvent(events_to_convert=[METRICS_EVENT_TYPE])
 
     # Add clients
-    event_convertor = ConvertToFedEvent([METRICS_EVENT_TYPE])
-
     for i in range(n_clients):
         executor = ScriptRunner(script=train_script, script_args="")
         client_site = f"site-{i + 1}"
-        tags = {"site": client_site, "env": "dev"}
-        job_metrics_collector = JobMetricsCollector(tags=tags, streaming_to_server=True)
-
         job.to(executor, client_site)
-        job.to(job_metrics_collector, target=client_site, id=f"{client_site}_job_metrics_collector")
-        job.to(event_convertor, target=client_site, id=f"{client_site}_event_convertor")
 
-        # job.to(metrics_reporter, target=client_site, id=f"{client_site}_statsd_reporter")
+        # add client side monitoring components
+        tags = {"site": client_site, "env": "dev"}
 
-    job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+        metrics_collector = JobMetricsCollector(tags=tags)
+
+        job.to(metrics_collector, target=client_site, id=f"{client_site}_job_metrics_collector")
+        job.to(fed_event_converter, target= client_site, id=f"event_converter")
+        
+
+    job_config_path = os.path.join(job_configs_dir, job_name)
+    print(f"job config folder = {job_config_path}")
+
+    job.export_job(job_configs_dir)
+    # job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="FedAvg Job Script")
+    parser = define_parser(parser)
+    args = parser.parse_args()
+
+    main(args.job_configs_dir)
