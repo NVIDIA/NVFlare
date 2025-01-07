@@ -15,15 +15,15 @@
 import argparse
 import os
 
-from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.metrics.metrics_keys import METRICS_EVENT_TYPE
-from nvflare.metrics.remote_metrics_receiver import RemoteMetricsReceiver
 from src.simple_network import SimpleNetwork
 
+from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
+from nvflare.metrics.metrics_keys import METRICS_EVENT_TYPE
+from nvflare.metrics.remote_metrics_receiver import RemoteMetricsReceiver
 
 
 def define_parser(parser):
@@ -68,8 +68,7 @@ def main(job_configs_dir):
         metrics_collector = JobMetricsCollector(tags=tags)
 
         job.to(metrics_collector, target=client_site, id=f"{client_site}_job_metrics_collector")
-        job.to(fed_event_converter, target= client_site, id=f"event_converter")
-        
+        job.to(fed_event_converter, target=client_site, id="event_converter")
 
     job_config_path = os.path.join(job_configs_dir, job_name)
     print(f"job config folder = {job_config_path}")
