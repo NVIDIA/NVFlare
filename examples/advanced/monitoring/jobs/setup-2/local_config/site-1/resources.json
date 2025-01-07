@@ -12,7 +12,8 @@
           "tags": {
               "site": "site-1",
               "env": "dev"
-          }
+          },
+          "streaming_to_server": true
       }
     },
     

@@ -51,6 +51,8 @@ class SysMetricsCollector(FLComponent):
         self.after_check_client_resources = 0
         self.start = True
 
+        print("Initialize Sys_metrics collector, tags=", tags)
+
     def handle_event(self, event: str, fl_ctx: FLContext):
 
         current_time = time.time()

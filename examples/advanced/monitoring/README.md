@@ -9,6 +9,8 @@ This guide describes how to set up NVFLARE metrics publishing to StatsD Exporter
 
 All sites will share the same monitoring system.
 
+![setup-1](figures/setup-1.png)
+
 #### Steps:
 1. **Install StatsD Exporter, Prometheus, and Grafana** on a central monitoring server.
 2. **Configure StatsD Exporter** to receive metrics from all NVFLARE sites.
@@ -18,6 +20,8 @@ All sites will share the same monitoring system.
 ### 2. Clients Forward Metrics to Server Site
 
 Clients will forward (stream) the metrics to the server site, and the server site will publish them to the monitoring system, which will have a consolidated view of all metrics.
+
+![setup-2](figures/setup-2.png)
 
 #### Steps:
 1. **Install StatsD Exporter, Prometheus, and Grafana** on the server site.
@@ -30,6 +34,8 @@ Clients will forward (stream) the metrics to the server site, and the server sit
 ### 3. Individual Monitoring Systems for Each Site
 
 Each client site and the server site will have its own monitoring system, including StatsD Exporter, Prometheus, and Grafana.
+
+![setup-3](figures/setup-3.png)
 
 #### Steps:
 1. **Install StatsD Exporter, Prometheus, and Grafana** on each site.

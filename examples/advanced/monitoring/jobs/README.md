@@ -58,6 +58,8 @@ In steps 1 and 2, we only need one monitoring system. Assuming you already have 
  
 ### Prepare Configuration for Setup 1: All Sites Share the Same Monitoring System
 
+![setup-1](../figures/setup-1.png)
+
 As described in the [README](../README.md), we will make different component configurations depending on the setups.
 
 In this setup, all sites (server and clients) will share the same monitoring system with the same host and port.
@@ -186,6 +188,8 @@ We can visualize them better via Grafana. Here are two metrics dashboards
 
 In this setup, only the server site is connected to the monitoring system. This allows the server to monitor metrics on all client sites.
 
+![setup-2](../figures/setup-2.png)
+
 ### Prepare Configuration for Setup 2: Client Metrics Streamed to Server
 
 Similar to setup 1, we need to consider both job and system level configurations
@@ -195,37 +199,40 @@ Similar to setup 1, we need to consider both job and system level configurations
 
 We will configure the job to stream client metrics to the server. You can refer to the [setup-2/fedavg_script_runner_pt.py](./setup-2/fedavg_script_runner_pt.py).
 
-Here is the configuration: TO BE COMPLETE
+Here is the configuration:
 
 ```python
-job_name = "hello-pt"
+ job_name = "hello-pt"
 
-    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
+job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
 
-    # add server side monitoring components
+# add server side monitoring components
 
-    server_tags = {"site": "server", "env": "dev"}
+server_tags = {"site": "server", "env": "dev"}
 
-    metrics_reporter = StatsDReporter(site="server", host="localhost", port=9125)
-    metrics_collector = JobMetricsCollector(tags=server_tags, streaming_to_server=False)
+metrics_reporter = StatsDReporter(site="server", host="localhost", port=9125)
+metrics_collector = JobMetricsCollector(tags=server_tags, streaming_to_server=False)
+remote_metrics_receiver = RemoteMetricsReceiver(events=[METRICS_EVENT_TYPE])
 
-    job.to_server(metrics_collector, id="server_job_metrics_collector")
-    job.to_server(metrics_reporter, id="statsd_reporter")
+job.to_server(metrics_collector, id="server_job_metrics_collector")
+job.to_server(metrics_reporter, id="statsd_reporter")
+job.to_server(remote_metrics_receiver, id="remote_metrics_receiver")
 
-    # Add clients
-    for i in range(n_clients):
-        executor = ScriptRunner(script=train_script, script_args="")
-        client_site = f"site-{i + 1}"
-        job.to(executor, client_site)
+fed_event_converter = ConvertToFedEvent(events_to_convert=[METRICS_EVENT_TYPE])
 
-        # add client side monitoring components
-        tags = {"site": client_site, "env": "dev"}
+# Add clients
+for i in range(n_clients):
+   executor = ScriptRunner(script=train_script, script_args="")
+   client_site = f"site-{i + 1}"
+   job.to(executor, client_site)
 
-        metrics_collector = JobMetricsCollector(tags=tags)
+   # add client side monitoring components
+   tags = {"site": client_site, "env": "dev"}
 
-        job.to(metrics_collector, target=client_site, id=f"{client_site}_job_metrics_collector")
-        job.to(metrics_reporter, target=client_site, id="statsd_reporter")
+   metrics_collector = JobMetricsCollector(tags=tags)
 
+   job.to(metrics_collector, target=client_site, id=f"{client_site}_job_metrics_collector")
+   job.to(fed_event_converter, target= client_site, id=f"event_converter")
 ```
 
 #### System Metrics Monitoring Configuration
@@ -239,3 +246,8 @@ cd setup-2
 ./prepare_local_config.sh
 ```
  
+### Complete with rest of the steps
+  * start the POC
+  * submit job
+  * review the metrics and visualization
+
