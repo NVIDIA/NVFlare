@@ -16,7 +16,8 @@
 import threading
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, SiteType, SystemComponents
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, SiteType, SystemComponents
+from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.fed.app.utils import component_security_check
@@ -25,6 +26,7 @@ from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_cmd_modules import ServerCommandModules
 from nvflare.private.fed.server.server_status import ServerStatus
+from nvflare.widgets.fed_event import ServerFedEventRunner
 
 
 class ServerDeployer:
@@ -119,10 +121,14 @@ class ServerDeployer:
         services.engine.set_run_manager(run_manager)
         services.engine.set_job_runner(job_runner, job_manager)
 
+        fed_event_runner = ServerFedEventRunner()
+        run_manager.add_handler(fed_event_runner)
+
         run_manager.add_handler(job_runner)
         run_manager.add_component(SystemComponents.JOB_RUNNER, job_runner)
 
         with services.engine.new_context() as fl_ctx:
+            fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, Signal(), private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.SITE_OBJ, services, private=True, sticky=True)
