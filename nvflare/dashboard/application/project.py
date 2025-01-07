@@ -17,6 +17,8 @@ from flask import current_app as app
 from flask import jsonify, make_response, request
 from flask_jwt_extended import create_access_token, get_jwt, jwt_required
 
+from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
+
 from . import jwt
 from .store import Store
 
@@ -26,17 +28,17 @@ def my_expired_token_callback(jwt_header, jwt_payload):
     return jsonify({"status": "unauthenticated"}), 401
 
 
-@app.route("/nvflare-dashboard/application-config")
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/application-config")
 def application_config_html():
     return app.send_static_file("nvflare-dashboard/application-config.html")
 
 
-@app.route("/nvflare-dashboard/downloads")
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/downloads")
 def downloads_html():
     return app.send_static_file("nvflare-dashboard/downloads.html")
 
 
-@app.route("/nvflare-dashboard", strict_slashes=False)
+@app.route(FLARE_DASHBOARD_NAMESPACE, strict_slashes=False)
 def index_html_dashboard():
     return app.send_static_file("nvflare-dashboard/index.html")
 
@@ -46,42 +48,42 @@ def index_html():
     return app.send_static_file("nvflare-dashboard/index.html")
 
 
-@app.route("/nvflare-dashboard/logout")
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/logout")
 def logout_html():
     return app.send_static_file("nvflare-dashboard/logout.html")
 
 
-@app.route("/nvflare-dashboard/project-admin-dashboard")
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/project-admin-dashboard")
 def project_admin_dashboard_html():
     return app.send_static_file("nvflare-dashboard/project-admin-dashboard.html")
 
 
-@app.route("/nvflare-dashboard/project-configuration")
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/project-configuration")
 def project_configuration_html():
     return app.send_static_file("nvflare-dashboard/project-configuration.html")
 
 
-@app.route("/nvflare-dashboard/registration-form")
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/registration-form")
 def registration_form_html():
     return app.send_static_file("nvflare-dashboard/registration-form.html")
 
 
-@app.route("/nvflare-dashboard/server-config")
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/server-config")
 def server_config_html():
     return app.send_static_file("nvflare-dashboard/server-config.html")
 
 
-@app.route("/nvflare-dashboard/site-dashboard")
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/site-dashboard")
 def site_dashboard_html():
     return app.send_static_file("nvflare-dashboard/site-dashboard.html")
 
 
-@app.route("/nvflare-dashboard/user-dashboard")
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/user-dashboard")
 def user_dashboard_html():
     return app.send_static_file("nvflare-dashboard/user-dashboard.html")
 
 
-@app.route("/nvflare-dashboard/api/v1/login", methods=["POST"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/login", methods=["POST"])
 def login():
     req = request.json
     email = req.get("email", None)
@@ -101,7 +103,7 @@ def login():
         return jsonify({"status": "unauthenticated"}), 401
 
 
-@app.route("/nvflare-dashboard/api/v1/overseer/blob", methods=["POST"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/overseer/blob", methods=["POST"])
 @jwt_required()
 def overseer_blob():
     claims = get_jwt()
@@ -116,7 +118,7 @@ def overseer_blob():
         return jsonify({"status": "unauthorized"}), 403
 
 
-@app.route("/nvflare-dashboard/api/v1/servers/<int:id>/blob", methods=["POST"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/servers/<int:id>/blob", methods=["POST"])
 @jwt_required()
 def server_blob(id):
     claims = get_jwt()
@@ -131,7 +133,7 @@ def server_blob(id):
         return jsonify({"status": "unauthorized"}), 403
 
 
-@app.route("/nvflare-dashboard/api/v1/project", methods=["PATCH"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/project", methods=["PATCH"])
 @jwt_required()
 def set_project():
     claims = get_jwt()
@@ -142,11 +144,11 @@ def set_project():
         return jsonify({"status": "unauthorized"}), 403
 
 
-@app.route("/nvflare-dashboard/api/v1/project", methods=["GET"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/project", methods=["GET"])
 def get_project():
     return jsonify(Store.get_project())
 
 
-@app.route("/nvflare-dashboard/api/v1/organizations", methods=["GET"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/organizations", methods=["GET"])
 def get_orgs():
     return jsonify(Store.get_orgs())

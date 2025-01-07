@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-URL_ROOT = "/nvflare-dashboard"
+from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 
 
 class TestProject:
@@ -22,13 +22,13 @@ class TestProject:
         assert access_token
 
     def test_get_project(self, client, auth_header):
-        response = client.get(URL_ROOT + "/api/v1/project", headers=auth_header)
+        response = client.get(FLARE_DASHBOARD_NAMESPACE + "/api/v1/project", headers=auth_header)
 
         assert response.status_code == 200
         assert response.json["project"]
 
     def test_get_orgs(self, client, auth_header):
-        response = client.get(URL_ROOT + "/api/v1/organizations", headers=auth_header)
+        response = client.get(FLARE_DASHBOARD_NAMESPACE + "/api/v1/organizations", headers=auth_header)
 
         assert response.status_code == 200
         assert response.json["client_list"]
