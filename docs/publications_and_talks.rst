@@ -9,7 +9,15 @@ including papers using NVIDIA FLARE's predecessor libraries included in the `Cla
 
 Publications: 2024
 ------------------
-* **2024-02** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://arxiv.org/abs/2402.07792>`__ (Accepted to `FL@FM-TheWebConf'24 <https://federated-learning.org/fl@fm-www-2024>`__))
+* **2024-12** `C-FedRAG: A Confidential Federated Retrieval-Augmented Generation System <https://arxiv.org/abs/2412.13163>`__ (preprint)
+* **2024-11** `Toward a tipping point in federated learning in healthcare and life sciences <https://www.sciencedirect.com/science/article/pii/S2666389924002368>`__ (`Patterns, Volume 5, Issue 11, 2024, <https://www.sciencedirect.com/journal/patterns>`__)
+* **2024-07** `FedBPT: Efficient Federated Black-box Prompt Tuning for Large Language Models <https://arxiv.org/abs/2310.01467>`__ (`ICML 2024 <https://icml.cc/virtual/2024/poster/34753>`__)
+* **2024-07** `Fair evaluation of federated learning algorithms for automated breast density classification: The results of the 2022 ACR-NCI-NVIDIA federated learning challenge <https://arxiv.org/abs/2405.14900>`__ (`Medical Image Analysis, Volume 95, July 2024 <https://www.sciencedirect.com/science/article/abs/pii/S1361841524001312>`__)
+* **2024-07** `Easy and Scalable Federated Learning in the Age of Large Language Models with NVIDIA FLARE <https://federated-learning.org/fl@fm-icme-2024/HRoth.pdf>`__ (`FL@FM-ICME'24 <https://federated-learning.org/fl@fm-icme-2024/#k3>`__)
+* **2024-05** `Federated Learning Privacy: Attacks, Defenses, Applications, and Policy Landscape - A Survey <https://arxiv.org/abs/2405.03636>`__ (preprint)
+* **2024-05** `Supercharging Federated Learning with Flower and NVIDIA FLARE <https://arxiv.org/abs/2407.00031>`__ (Presented at `FL@FM-IJCAI <https://federated-learning.org/fl@fm-ijcai-2024>`__ In preparation for Lecture Notes in AI)
+* **2024-05** `An in-depth evaluation of federated learning on biomedical natural language processing for information extraction <https://www.nature.com/articles/s41746-024-01126-4>`__ (`Nature Digital Medicine 7, 127, 2024 <https://www.nature.com/npjdigitalmed>`__)
+* **2024-02** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://arxiv.org/abs/2402.07792>`__ (Presented at `FL@FM-TheWebConf'24 <https://federated-learning.org/fl@fm-www-2024>`__, `Springer Book Chapter <https://link.springer.com/book/9783031788406#about-this-book>`__))
 
 Publications: 2023
 ------------------
@@ -21,7 +29,6 @@ Publications: 2023
 
 Publications: 2022
 ------------------
-* **2022-11** `Federated Learning with Azure Machine Learning <https://www.youtube.com/watch?v=aTj4AqbCWEA>`__ (Video)
 * **2022-10** `Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation <https://arxiv.org/abs/2203.06338>`__ (`ECCV 2022 <https://eccv2022.ecva.net/>`__)
 * **2022-10** `Joint Multi Organ and Tumor Segmentation from Partial Labels Using Federated Learning <https://link.springer.com/chapter/10.1007/978-3-031-18523-6_6>`__ (`DeCaF @ MICCAI 2022 <https://decaf-workshop.github.io/decaf-2022/>`__)
 * **2022-10** `Split-U-Net: Preventing Data Leakage in Split Learning for Collaborative Multi-modal Brain Tumor Segmentation <https://arxiv.org/abs/2208.10553>`__ (`DeCaF @ MICCAI 2022 <https://decaf-workshop.github.io/decaf-2022/>`__)
@@ -52,6 +59,8 @@ NVIDIA FLARE related blogs and other media.
 
 Blogs & Videos: 2024
 --------------------
+* **2024-04** `Differential Privacy and Federated Learning for Medical Data <https://towardsdatascience.com/differential-privacy-and-federated-learning-for-medical-data-0f2437d6ece9>`__ (Roche Technical Blog)
+* **2024-03** `Announcing NVIDIA and Flower Collaboration <https://flower.ai/blog/2024-03-15-announcing-nvidia-and-flower-collaboration/>`__ (Flower Blog)
 * **2024-03** `Turning Machine Learning to Federated Learning in Minutes with NVIDIA FLARE 2.4 <https://developer.nvidia.com/blog/turning-machine-learning-to-federated-learning-in-minutes-with-nvidia-flare-2-4/>`__ (NVIDIA Technical Blog)
 * **2024-02** `Scalable Federated Learning with NVIDIA FLARE for Enhanced LLM Performance <https://developer.nvidia.com/blog/scalable-federated-learning-with-nvidia-flare-for-enhanced-llm-performance/>`__ (NVIDIA Technical Blog)
 
@@ -66,7 +75,6 @@ Blogs & Videos: 2023
 
 Blogs & Videos: 2022
 --------------------
-
 * **2022-10** `Federated Learning from Simulation to Production with NVIDIA FLARE <https://developer.nvidia.com/blog/federated-learning-from-simulation-to-production-with-nvidia-flare/?ncid=so-nvsh-705336#cid=ix11_so-nvsh_en-us>`__ (NVIDIA Technical Blog)
 * **2022-08** `Using Federated Learning to Bridge Data Silos in Financial Services <https://developer.nvidia.com/blog/using-federated-learning-to-bridge-data-silos-in-financial-services/>`__ (NVIDIA Technical Blog)
 * **2022-06** `Experimenting with Novel Distributed Applications Using NVIDIA Flare 2.1 <https://developer.nvidia.com/blog/experimenting-with-novel-distributed-applications-using-nvidia-flare-2-1/>`__ (NVIDIA Technical Blog)
@@ -94,7 +102,9 @@ Recent talks and Webinars covering federated learning research and NVIDIA FLARE.
 
 Talks: 2024
 -----------
-* **2024-03** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://youtu.be/-P2ML9Kw0FA>`__ (`SFBigAnalytics Meetup <https://www.meetup.com/sf-big-analytics/?_cookie-check=Efm7MGh7mO4YiV8A>`__)
+* **2024-12** `Real-world Federated Learning with NVIDIA FLARE <https://ucsf.zoom.us/rec/share/ncALLA6B583mh7_Lrj4aPgA-qsonqVq5-Ufi5XZCMm6vH-uK5nVYXyVlsexE5KbC.LAYkmvF-sm-yYjTB?startTime=1733957588000>`__ [Passcode: !Ms8Tw.u8H] (`UCSF Biostatistics and Bioinformatics Seminar <https://epibiostat.ucsf.edu/events/real-world-federated-learning-nvidia-flare>`__)
+* **2024-04** `Federated Learning: Towards Real-world Studies <hhttps://youtu.be/3ELbZYwy3bI?t=2474>`__ (`SFBigAnalytics Meetup <https://www.meetup.com/sf-big-analytics/events/300302421>`__)
+* **2024-03** `Empowering Federated Learning for Massive Models with NVIDIA FLARE <https://youtu.be/-P2ML9Kw0FA>`__ (`SFBigAnalytics Meetup <https://www.meetup.com/sf-big-analytics/events/299337374>`__)
 
 Talks: 2023
 -----------
@@ -103,6 +113,7 @@ Talks: 2023
 
 Talks: 2022
 -----------
+* **2022-11** `Federated Learning with Azure Machine Learning <https://www.youtube.com/watch?v=aTj4AqbCWEA>`__ (Microsoft Developer Video)
 * **2022-10** `Modern Tools for Collaborative Medical Image Analysis <https://drive.google.com/file/d/1hmlyG7g1SU8vhQ5wdTFhkqFO9Ty8BiYG/view?usp=sharing>`__ (`Keynote - DART @ MICCAI 2022 <https://sites.google.com/view/dart2022/home?authuser=0>`__) 
 * **2022-07** `NVIDIA FLARE Tutorial for Beginners <https://www.youtube.com/watch?v=8x7oY3xAgek&t=11s&ab_channel=NVIDIADeveloper>`__ (United Imaging Meetup)
 * **2022-07** `Techniques and Tools for Collaborative Development of AI Models across Institutes <https://www.bilibili.com/video/BV1y14y147nc/?spm_id_from=333.337.search-card.all.click>`__ (`VALSE Webinar <http://valser.org/article-572-1.html>`__)
