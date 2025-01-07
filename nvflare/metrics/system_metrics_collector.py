@@ -68,7 +68,7 @@ class SysMetricsCollector(FLComponent):
 
             time_taken = current_time - self.system_start
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_system_time_taken"
+            metric_name = "_system"
             self.publish_metrics(duration_metrics, metric_name, self.tags, fl_ctx)
 
         elif event == EventType.START_RUN:
@@ -80,7 +80,7 @@ class SysMetricsCollector(FLComponent):
 
             time_taken = current_time - self.start_run
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_run_time_taken"
+            metric_name = "_run"
             self.publish_metrics(duration_metrics, metric_name, self.tags, fl_ctx)
 
         elif event == EventType.BEFORE_CHECK_CLIENT_RESOURCES:
@@ -92,7 +92,7 @@ class SysMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_check_client_resources
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_check_client_resources_time_taken"
+            metric_name = "_check_client_resources"
             self.publish_metrics(duration_metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.CLIENT_DISCONNECTED:
             self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)
@@ -110,7 +110,7 @@ class SysMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_client_register
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_client_register_time_taken"
+            metric_name = "_client_register"
             self.publish_metrics(duration_metrics, metric_name, self.tags, fl_ctx)
 
         elif event == EventType.CLIENT_REGISTER_RECEIVED:
@@ -132,7 +132,7 @@ class SysMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_client_heartbeat
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_client_heart_time_taken"
+            metric_name = "_client_heartbeat"
             self.publish_metrics(duration_metrics, metric_name, self.tags, fl_ctx)
         elif event == EventType.CLIENT_HEARTBEAT_RECEIVED:
             self.publish_metrics(metrics, metric_name, self.tags, fl_ctx)

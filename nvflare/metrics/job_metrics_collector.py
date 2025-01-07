@@ -71,7 +71,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.job_start_workflow
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_workflow_time_taken"
+            metric_name = "_workflow"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.JOB_STARTED:
@@ -83,7 +83,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.job_started
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_job_time_taken"
+            metric_name = "_job"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_PULL_TASK:
@@ -95,7 +95,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_pull_task
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_pull_task_time_taken"
+            metric_name = "_pull_task"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_PROCESS_TASK_REQUEST:
@@ -107,7 +107,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_process_task_request
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_process_task_time_taken"
+            metric_name = "_process_task"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_PROCESS_SUBMISSION:
@@ -119,7 +119,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_process_submission
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_process_submission_time_taken"
+            metric_name = "_process_submission"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_TASK_DATA_FILTER:
@@ -131,7 +131,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_task_data_filter
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_data_filter_time_taken"
+            metric_name = "_data_filter"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_TASK_RESULT_FILTER:
@@ -143,7 +143,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_task_result_filter
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_result_filter_time_taken"
+            metric_name = "_result_filter"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_TASK_EXECUTION:
@@ -154,7 +154,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_task_execution
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_task_execution_time_taken"
+            metric_name = "_task_execution"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.ABORT_TASK:
@@ -162,7 +162,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_task_execution
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_before_abort_time_taken"
+            metric_name = "_before_abort"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_SEND_TASK_RESULT:
@@ -174,7 +174,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_send_task_result
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_send_task_result_time_taken"
+            metric_name = "_send_task_result"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK:
@@ -186,7 +186,7 @@ class JobMetricsCollector(FLComponent):
 
             time_taken = current_time - self.before_process_result_of_unknown_task
             duration_metrics[MetricKeys.time_taken] = time_taken
-            metric_name = "_process_result_of_unknown_task_time_taken"
+            metric_name = "_process_result_of_unknown_task"
             self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
 
         elif event == EventType.SUBMIT_JOB:
