@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 import argparse
 
-from df_stats import DFStatistics
+from image_statistics import ImageStatistics
 
 from nvflare.job_config.stats_job import StatsJob
 
@@ -40,21 +40,14 @@ def main():
     work_dir = args.work_dir
     export_config = args.export_config
 
-    statistic_configs = {
-        "count": {},
-        "mean": {},
-        "sum": {},
-        "stddev": {},
-        "histogram": {"*": {"bins": 20}},
-        "Age": {"bins": 20, "range": [0, 10]},
-    }
+    statistic_configs = {"count": {}, "histogram": {"*": {"bins": 20, "range": [0, 256]}}}
     # define local stats generator
-    df_stats_generator = DFStatistics(data_root_dir=data_root_dir)
+    stats_generator = ImageStatistics(data_root_dir)
 
     job = StatsJob(
-        job_name="stats_df",
+        job_name="stats_image",
         statistic_configs=statistic_configs,
-        stats_generator=df_stats_generator,
+        stats_generator=stats_generator,
         output_path=output_path,
     )
 

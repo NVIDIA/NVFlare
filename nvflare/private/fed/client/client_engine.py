@@ -39,6 +39,7 @@ from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.stream_runner import ObjectStreamer
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.widgets.fed_event import ClientFedEventRunner
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import JobExecutor
@@ -98,6 +99,8 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
             raise ValueError("workers must >= 1")
         self.logger = get_obj_logger(self)
         self.fl_components = [x for x in self.client.components.values() if isinstance(x, FLComponent)]
+
+        self.fl_components.append(ClientFedEventRunner())
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         fire_event(event=event_type, handlers=self.fl_components, ctx=fl_ctx)
@@ -452,6 +455,13 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
 
     def get_all_job_ids(self):
         return self.client_executor.get_run_processes_keys()
+
+    def fire_and_forget_aux_request(
+        self, topic: str, request: Shareable, fl_ctx: FLContext, optional=False, secure=False
+    ) -> dict:
+        return self.send_aux_request(
+            topic=topic, request=request, timeout=0.0, fl_ctx=fl_ctx, optional=optional, secure=secure
+        )
 
 
 def shutdown_client(federated_client, touch_file):
