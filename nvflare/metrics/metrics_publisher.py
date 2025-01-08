@@ -49,7 +49,6 @@ def convert_metrics_to_event(
     metrics_data = {MetricKeys.metric_name: metric_name, MetricKeys.value: metrics, MetricKeys.tags: tags}
     shareable = Shareable(data={"METRICS": metrics_data})
 
-    print("\nfire local event ==> ", METRICS_EVENT_TYPE)
     with fl_ctx.get_engine().new_context() as fl_ctx2:
         fl_ctx2.set_prop(key=FLContextKey.EVENT_DATA, value=shareable, private=True, sticky=False)
         comp.fire_event(event_type=METRICS_EVENT_TYPE, fl_ctx=fl_ctx2)
@@ -68,5 +67,4 @@ def collect_metrics(
     if not streaming_to_server:
         publish_app_metrics(metrics, metric_name, tags, data_bus)
     else:
-        print("converting metrics to event", metrics, metric_name, tags)
         convert_metrics_to_event(comp, metrics, metric_name, tags, fl_ctx)

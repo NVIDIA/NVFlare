@@ -52,8 +52,6 @@ class StatsDReporter:
                     metric_type = metric.get(MetricKeys.type)
                     metric_timestamp = metric.get(MetricKeys.timestamp)
 
-                    print("push metrics to statsd: ", metric_name, metric_value, metric_type, metric_tags)
-
                     if metric_type == MetricTypes.COUNTER:
                         statsd.increment(metric_name, metric_value, tags=metric_tags)
 

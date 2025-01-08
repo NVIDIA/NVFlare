@@ -38,8 +38,6 @@ class RemoteMetricsReceiver(FLComponent):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
 
-        print(f"RemoteMetricsCollector: listen to event: event = {event_type} \n")
-
         if event_type in self.events:
             data = fl_ctx.get_prop(FLContextKey.EVENT_DATA, None)
             if data is None:
