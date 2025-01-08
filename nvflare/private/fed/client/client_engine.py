@@ -204,7 +204,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
             self.logger.info(f"got aux reply: {reply}")
             return next(iter(reply.values()))
         else:
-            self.logger.debug(f"no reply from the server aux message response.")
+            self.logger.debug("no reply from the server aux message response.")
             return Shareable()
 
     def stream_objects(
