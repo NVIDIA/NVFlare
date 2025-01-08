@@ -1,0 +1,4 @@
+api_version: 3
+name: example_project
+
+server: !include 1.yml
