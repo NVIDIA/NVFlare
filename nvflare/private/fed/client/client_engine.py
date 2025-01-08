@@ -200,11 +200,11 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
             secure=secure,
         )
 
-        self.logger.info(f"got aux reply: {reply}")
-
         if len(reply) > 0:
+            self.logger.info(f"got aux reply: {reply}")
             return next(iter(reply.values()))
         else:
+            self.logger.debug(f"no reply from the server aux message response.")
             return Shareable()
 
     def stream_objects(
