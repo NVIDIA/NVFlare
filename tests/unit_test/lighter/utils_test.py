@@ -146,5 +146,6 @@ class TestSignFolder:
         shutil.rmtree(folder)
 
     def test_load_yaml(self):
-        data = load_yaml("0.yml")
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        data = load_yaml(os.path.join(dir_path, "0.yml"))
         assert data.get("server").get("server_name") == "server"
