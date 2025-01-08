@@ -451,7 +451,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         return self.client_executor.get_errors(job_id)
 
     def configure_job_log(self, job_id, config):
-        self.client_executor.configure_job_log(job_id, config)
+        return self.client_executor.configure_job_log(job_id, config)
 
     def reset_errors(self, job_id):
         self.client_executor.reset_errors(job_id)

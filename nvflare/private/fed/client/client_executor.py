@@ -324,19 +324,29 @@ class JobExecutor(ClientExecutor):
             job_id: the job_id
             config: log config
 
+         Returns:
+            configure_job_log command message
         """
         try:
             request = new_cell_message({}, config)
-            self.client.cell.fire_and_forget(
-                targets=self._job_fqcn(job_id),
+            return_data = self.client.cell.send_request(
+                target=self._job_fqcn(job_id),
                 channel=CellChannel.CLIENT_COMMAND,
                 topic=AdminCommandNames.CONFIGURE_JOB_LOG,
-                message=request,
+                request=request,
                 optional=True,
+                timeout=self.job_query_timeout,
             )
+            return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+            if return_code == ReturnCode.OK:
+                return return_data.payload
+            else:
+                return f"failed to configure_job_log with return code: {return_code}"
         except Exception as e:
-            self.logger.error(f"configure_job_log execution exception: {secure_format_exception(e)}.")
+            err = f"configure_job_log execution exception: {secure_format_exception(e)}."
+            self.logger.error(err)
             secure_log_traceback()
+            return err
 
     def reset_errors(self, job_id):
         """Resets the error information.

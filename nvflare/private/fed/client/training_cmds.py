@@ -162,10 +162,15 @@ class ConfigureJobLogProcessor(RequestProcessor):
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
 
+        fl_ctx = engine.new_context()
+        site_name = fl_ctx.get_identity_name()
         job_id = req.get_header(RequestHeader.JOB_ID)
-        engine.configure_job_log(job_id, req.body)
 
-        return ok_reply(topic=f"reply_{req.topic}", body="")
+        err = engine.configure_job_log(job_id, req.body)
+        if err:
+            return error_reply(err)
+
+        return ok_reply(topic=f"reply_{req.topic}", body=f"successfully configured {site_name} job {job_id} log")
 
 
 class ClientStatusProcessor(RequestProcessor):

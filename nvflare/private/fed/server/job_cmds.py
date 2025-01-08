@@ -241,7 +241,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         if len(args) < 4:
             conn.append_error("syntax error: please provide job_id, target_type, and config")
             return PreAuthzReturnCode.ERROR
-        self.authorize_job(conn, args[:-1])
+        return self.authorize_job(conn, args[:-1])
 
     def _start_app_on_clients(self, conn: Connection, job_id: str) -> bool:
         engine = conn.app_ctx
@@ -347,8 +347,27 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         if not isinstance(engine, ServerEngine):
             raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
+        try:
+            with engine.new_context() as fl_ctx:
+                job_manager = engine.job_def_manager
+                job = job_manager.get_job(job_id, fl_ctx)
+                job_status = job.meta.get(JobMetaKey.STATUS)
+                if not job_status == RunStatus.RUNNING:
+                    conn.append_error(f"Job {job_id} must be running but is {job_status}")
+                    return
+        except Exception as e:
+            conn.append_error(
+                f"Exception occurred trying to check job status {job_id} for configure_job_log: {secure_format_exception(e)}",
+                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
+            )
+            return
+
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
-            engine.configure_job_log(str(job_id), config)
+            err = engine.configure_job_log(str(job_id), config)
+            if err:
+                conn.append_error(err)
+                return
+
             conn.append_string(f"successfully configured server job {job_id} log")
 
         if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
@@ -356,13 +375,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             message.set_header(RequestHeader.JOB_ID, str(job_id))
             replies = self.send_request_to_clients(conn, message)
             self.process_replies_to_table(conn, replies)
-            conn.append_string(
-                f"successfully configured client job {job_id} logs of {conn.get_prop(self.TARGET_CLIENT_NAMES)}"
-            )
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
-            conn.append_string(
-                "invalid target type {}. Usage: configure_job_log job_id server|client <client-name>... config".format(
+            conn.append_error(
+                "invalid target type {}. Usage: configure_job_log job_id server|client <client-name>...|all config".format(
                     target_type
                 )
             )

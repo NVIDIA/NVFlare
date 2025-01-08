@@ -26,7 +26,6 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
-from nvflare.fuel.utils.log_utils import dynamic_log_config
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.tbi import TBI
 from nvflare.private.privacy_manager import Scope
@@ -555,9 +554,3 @@ class ServerRunner(TBI):
     def restore(self, state_data: dict, fl_ctx: FLContext):
         self.job_id = state_data.get("job_id")
         self.current_wf_index = int(state_data.get("current_wf_index", 0))
-
-    def configure_job_log(self, data, fl_ctx: FLContext) -> Shareable:
-        dynamic_log_config(data, self.engine.get_workspace(), self.job_id)
-        self.log_info(fl_ctx, f"configured job {self.job_id} server log")
-
-        return make_reply(ReturnCode.OK)
