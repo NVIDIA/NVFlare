@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.impl.cert import serialize_cert
-from nvflare.lighter.utils import sign_folders, verify_folder_signature, load_yaml
+from nvflare.lighter.utils import load_yaml, sign_folders, verify_folder_signature
 
 folders = ["folder1", "folder2"]
 files = ["file1", "file2"]
