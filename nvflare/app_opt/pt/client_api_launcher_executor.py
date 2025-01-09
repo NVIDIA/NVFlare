@@ -16,21 +16,44 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
-from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
+from nvflare.app_opt.pt.numpy_params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
+from nvflare.app_opt.pt.tensor_params_converter import PTReceiveParamsConverter, PTSendParamsConverter
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
     def initialize(self, fl_ctx: FLContext) -> None:
         fobs.register(TensorDecomposer)
-        self._params_exchange_format = ExchangeFormat.PYTORCH
         super().initialize(fl_ctx)
+        self.logger = get_obj_logger(self)
         if self._from_nvflare_converter is None:
-            self._from_nvflare_converter = NumpyToPTParamsConverter(
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-            )
+            # if not specified, assign defaults
+            if self._params_exchange_format == ExchangeFormat.NUMPY:
+                self.logger.info("Numpy from_nvflare_converter initialized")
+                self._from_nvflare_converter = NumpyToPTParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
+                )
+            elif self._params_exchange_format == ExchangeFormat.PYTORCH:
+                self.logger.info("Pytorch from_nvflare_converter initialized")
+                self._from_nvflare_converter = PTReceiveParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
+                )
+            else:
+                self._from_nvflare_converter = None
+
         if self._to_nvflare_converter is None:
-            self._to_nvflare_converter = PTToNumpyParamsConverter(
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-            )
+            # if not specified, assign defaults
+            if self._params_exchange_format == ExchangeFormat.NUMPY:
+                self.logger.info("Numpy to_nvflare_converter initialized")
+                self._to_nvflare_converter = PTToNumpyParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
+                )
+            elif self._params_exchange_format == ExchangeFormat.PYTORCH:
+                self.logger.info("Pytorch to_nvflare_converter initialized")
+                self._to_nvflare_converter = PTSendParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
+                )
+            else:
+                self._to_nvflare_converter = None

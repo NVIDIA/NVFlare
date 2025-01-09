@@ -120,7 +120,7 @@ class ProvFileName:
     FED_CLIENT_JSON = "fed_client.json"
     STOP_FL_SH = "stop_fl.sh"
     COMM_CONFIG = "comm_config.json"
-    LOG_CONFIG_DEFAULT = "log.config.default"
+    LOG_CONFIG_DEFAULT = "log_config.json.default"
     RESOURCES_JSON_DEFAULT = "resources.json.default"
     PRIVACY_JSON_SAMPLE = "privacy.json.sample"
     AUTHORIZATION_JSON_DEFAULT = "authorization.json.default"

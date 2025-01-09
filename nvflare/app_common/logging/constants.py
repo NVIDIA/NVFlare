@@ -12,13 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-DATA_TYPE = [
-    "FLOAT32",
-]
+LOG_STREAM_EVENT_TYPE = "stream_log"
 
-QUANTIZATION_TYPE = [
-    "FLOAT16",
-    "BLOCKWISE8",
-    "FLOAT4",
-    "NORMFLOAT4",
-]
+
+class Channels(object):
+    LOG_STREAMING_CHANNEL = "log_streaming"
+    ERROR_LOG_LOG_TYPE = "ERRORLOG"
