@@ -57,7 +57,9 @@ class CyclicServerController(ServerSideController):
         )
         check_str("cyclic_order", cyclic_order)
         if cyclic_order not in [CyclicOrder.FIXED, CyclicOrder.RANDOM]:
-            raise ValueError(f"invalid rr_order {cyclic_order}: must be in {[CyclicOrder.FIXED, CyclicOrder.RANDOM]}")
+            raise ValueError(
+                f"invalid cyclic_order {cyclic_order}: must be in {[CyclicOrder.FIXED, CyclicOrder.RANDOM]}"
+            )
         self.cyclic_order = cyclic_order
 
     def prepare_config(self):

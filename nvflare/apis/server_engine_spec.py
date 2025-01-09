@@ -59,7 +59,29 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
+    def add_component(self, component_id: str, component):
+        """Add a component into the system.
+
+        Args:
+            component_id: component ID
+            component: component object
+
+        Returns:
+
+        """
+        pass
+
+    @abstractmethod
     def get_component(self, component_id: str) -> object:
+        """Retrieve the system component from the engine.
+
+        Args:
+            component_id: component ID
+
+        Returns:
+            component object
+
+        """
         pass
 
     @abstractmethod
@@ -94,16 +116,43 @@ class ServerEngineSpec(EngineSpec, ABC):
     ) -> dict:
         """Send a request to specified clients via the aux channel.
 
-        Implementation: simply calls the ServerAuxRunner's send_aux_request method.
+        Implementation: simply calls the AuxRunner's send_aux_request method.
 
         Args:
-            targets: target clients. None or empty list means all clients
-            topic: topic of the request
+            targets: target clients. None or empty list means all clients.
+            topic: topic of the request.
             request: request to be sent
             timeout: number of secs to wait for replies. 0 means fire-and-forget.
             fl_ctx: FL context
             optional: whether this message is optional
             secure: send the aux request in a secure way
+
+        Returns: a dict of replies (client name => reply Shareable)
+
+        """
+        pass
+
+    @abstractmethod
+    def multicast_aux_requests(
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
+    ) -> dict:
+        """Send requests to specified clients via the aux channel.
+
+        Implementation: simply calls the AuxRunner's multicast_aux_requests method.
+
+        Args:
+            topic: topic of the request
+            target_requests: requests of the target clients. Different target can have different request.
+            timeout: amount of time to wait for responses. 0 means fire and forget.
+            fl_ctx: FL context
+            optional: whether this request is optional
+            secure: whether to send the aux request in P2P secure
 
         Returns: a dict of replies (client name => reply Shareable)
 
@@ -154,12 +203,13 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_client_job(self, job_id, client_sites):
+    def start_client_job(self, job, client_sites, fl_ctx: FLContext):
         """To send the start client run commands to the clients
 
         Args:
             client_sites: client sites
-            job_id: job_id
+            job: job object
+            fl_ctx: FLContext
 
         Returns:
 
@@ -187,7 +237,7 @@ class ServerEngineSpec(EngineSpec, ABC):
 
     @abstractmethod
     def cancel_client_resources(
-        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
+        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ):
         """Cancels the request resources for the job.
 
@@ -195,6 +245,7 @@ class ServerEngineSpec(EngineSpec, ABC):
             resource_check_results: A dict of {client_name: client_check_result}
                 where client_check_result is a tuple of (is_resource_enough, resource reserve token if any)
             resource_reqs: A dict of {client_name: resource requirements dict}
+            fl_ctx: FLContext
         """
         pass
 
@@ -209,3 +260,33 @@ class ServerEngineSpec(EngineSpec, ABC):
             Client name
         """
         pass
+
+    def register_app_command(self, topic: str, cmd_func, *args, **kwargs):
+        """Register app command handler.
+
+        Args:
+            topic: topic of the command to be handled
+            cmd_func: the function to handle the app command
+            *args: optional args to be passed to the cmd_func
+            **kwargs: optional kwargs to be passed to the cmd_func
+
+        Returns: None
+
+        """
+        pass
+
+
+def app_command_handler(topic: str, data, fl_ctx: FLContext, *args, **kwargs):
+    """This is the signature of App Command handler
+
+    Args:
+        topic: topic of the command
+        data: command data
+        fl_ctx: the FLContext object
+        *args:
+        **kwargs:
+
+    Returns: None
+
+    """
+    pass

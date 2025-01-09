@@ -21,7 +21,6 @@ import sys
 import docker
 import nvflare
 from nvflare.apis.utils.format_check import name_check
-from nvflare.dashboard.application.blob import _write
 from nvflare.lighter import tplt_utils, utils
 
 supported_csp = ("azure", "aws")
@@ -139,20 +138,31 @@ def stop():
 def cloud(args):
     lighter_folder = os.path.dirname(utils.__file__)
     template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
+    template.update(utils.load_yaml(os.path.join(lighter_folder, "impl", "aws_template.yml")))
+    template.update(utils.load_yaml(os.path.join(lighter_folder, "impl", "azure_template.yml")))
     tplt = tplt_utils.Template(template)
     cwd = os.getcwd()
     csp = args.cloud
     dest = os.path.join(cwd, f"{csp}_start_dsb.sh")
     dsb_start = template[f"{csp}_start_dsb_sh"]
     version = nvflare.__version__
+    if "+" in version:
+        print(
+            f"Unable to launching dashboard on cloud with {version}.  Please install official NVFlare release from PyPi."
+        )
+        exit(0)
     replacement_dict = {"NVFLARE": f"nvflare=={version}", "START_OPT": f"-i {args.image}" if args.image else ""}
-    _write(
+    utils._write(
         dest,
         utils.sh_replace(tplt.get_cloud_script_header() + dsb_start, replacement_dict),
         "t",
         exe=True,
     )
-    print(f"Dashboard launch script for cloud is written at {dest}.  Now running the script.")
+    print(f"Dashboard launch script for cloud is written at {dest}.  Now running it.")
+    if args.vpc_id and args.subnet_id:
+        option = [f"--vpc-id={args.vpc_id}", f"--subnet-id={args.subnet_id}"]
+        print(f"Option of the script: {option}")
+        dest = [dest] + option
     _ = subprocess.run(dest)
     os.remove(dest)
 
@@ -191,6 +201,18 @@ def define_dashboard_parser(parser):
     parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
     parser.add_argument("-i", "--image", help="set the container image name")
     parser.add_argument("--local", action="store_true", help="start dashboard locally without docker image")
+    parser.add_argument(
+        "--vpc-id",
+        type=str,
+        default="",
+        help="VPC id for AWS EC2 instance.  Applicable to AWS only.  Ignored if subnet-id is not specified.",
+    )
+    parser.add_argument(
+        "--subnet-id",
+        type=str,
+        default="",
+        help="Subnet id for AWS EC2 instance.  Applicable to AWS only.  Ignored if vpc-id is not specified.",
+    )
 
 
 def handle_dashboard(args):

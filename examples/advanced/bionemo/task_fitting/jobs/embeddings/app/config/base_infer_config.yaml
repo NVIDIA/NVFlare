@@ -1,0 +1,84 @@
+name: ???
+desc: ???
+
+trainer:
+  precision: 16-mixed
+  devices: 1 # must be set to accommodate the total model parallel size
+  num_nodes: 1 # must be set to accommodate the total model parallel size
+  accelerator: gpu
+  logger: null
+
+exp_manager:
+  name: ${name}
+  exp_dir: ${oc.env:BIONEMO_HOME}/results/nemo_experiments/${.name}/${.wandb_logger_kwargs.name}
+  create_wandb_logger: True
+  create_tensorboard_logger: False
+  wandb_logger_kwargs:
+    project: ${name}_pretraining
+    name: ${name}_pretraining
+    group: ${name}
+    job_type: Localhost_nodes_${trainer.num_nodes}_gpus_${trainer.devices}
+    tags:
+      - ${name}
+    offline: False # set to True if there are issues uploading to WandB during training
+  resume_if_exists: True # automatically resume if checkpoint exists
+  resume_ignore_no_checkpoint: True # leave as True, will start new training if resume_if_exists is True but no checkpoint exists
+  create_checkpoint_callback: True # leave as True, use exp_manger for for checkpoints
+  checkpoint_callback_params:
+    monitor: val_loss
+    save_top_k: 10 # number of checkpoints to save
+    mode: min  # use min or max of monitored metric to select best checkpoints
+    always_save_nemo: False # saves nemo file during validation, not implemented for model parallel
+    filename: 'megatron_bert--{val_loss:.2f}-{step}-{consumed_samples}'
+    model_parallel_size: ${multiply:${model.tensor_model_parallel_size}, ${model.pipeline_model_parallel_size}}
+
+
+model:
+  downstream_task:
+    restore_from_path: ??? # path of pretrained model to be used in inference
+    outputs: [embeddings, hiddens] # Which outputs to extract per sample (a value or list). Possible values: hiddens, embeddings.
+  data:
+    num_workers: 4 # number of workers in data prefetch
+    batch_size: 128
+    # Path to data must be specified by the user.
+    dataset_path: ??? # full path to dataset (can include range or a list)
+    output_fname: "" # output file, inferred based on dataset_path if empty
+    data_fields_map: # name which data_fields should be used for sequence/id (dataset dependant)
+      sequence: "sequence"
+      id: "id"
+    data_impl: "" # csv_items_mmap, fasta_fields_mmap, or leave empty for inferring type based on file extension
+    data_impl_kwargs: # currently used only for csv_items_mmap (should be data_impl dependant)
+      csv_fields_mmap:
+        newline_int: 10 # byte-value of newline
+        header_lines: 1 # skip first N header lines
+        workers: null # number of workers when creating missing index files (null defaults to cpu_num // 2)
+        sort_dataset_paths: False # if True datasets will be sorted by name
+        data_sep: ',' # string to split text into columns
+        data_fields: # field names and corresponding columns to use for data
+          id: 0
+          sequence: 1
+      fasta_fields_mmap:
+        data_fields: # field names and corresponding columns to use for data
+          id: 0
+          sequence: 1
+target: ???  # path to model class to load
+infer_target: ??? # path to inferende class to load
+
+formatters:
+  simple:
+    format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: simple
+    stream: ext://sys.stdout
+  file:
+    class: logging.FileHandler
+    formatter: simple
+    filename: /logs/inference.log
+root:
+  level: INFO
+  # handlers: [console, file]
+  handlers: [console]
+
+disable_existing_loggers: false

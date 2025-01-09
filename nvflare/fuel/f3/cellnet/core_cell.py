@@ -49,6 +49,7 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 _CHANNEL = "cellnet.channel"
@@ -155,7 +156,7 @@ class _BulkSender:
         self.messages = []
         self.last_send_time = 0
         self.lock = threading.Lock()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def queue_message(self, channel: str, topic: str, message: Message):
         if self.secure:
@@ -242,25 +243,21 @@ class CertificateExchanger:
             return cert
 
         cert = self.exchange_certificate(target)
-        self.credential_manager.save_certificate(target, cert)
-
         return cert
 
     def exchange_certificate(self, target: str) -> bytes:
-        root = FQCN.get_root(target)
-        req = self.credential_manager.create_request(root)
-        response = self.core_cell.send_request(_SM_CHANNEL, _SM_TOPIC, root, Message(None, req))
+        req = self.credential_manager.create_request()
+        response = self.core_cell.send_request(_SM_CHANNEL, _SM_TOPIC, target, Message(None, req))
         reply = response.payload
 
         if not reply:
             error_code = response.get_header(MessageHeaderKey.RETURN_CODE)
-            raise RuntimeError(f"Cert exchanged to {root} failed: {error_code}")
+            raise RuntimeError(f"Cert exchanged to {target} failed: {error_code}")
 
-        return self.credential_manager.process_response(reply)
+        return self.credential_manager.process_response(response)
 
     def _handle_cert_request(self, request: Message):
-
-        reply = self.credential_manager.process_request(request.payload)
+        reply = self.credential_manager.process_request(request)
         return Message(None, reply)
 
 
@@ -322,7 +319,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         comm_configurator = CommConfigurator()
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = get_obj_logger(self)
         self.max_msg_size = comm_configurator.get_max_message_size()
         self.comm_configurator = comm_configurator
 
@@ -334,10 +331,13 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.secure = secure
         self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")
 
-        if not root_url:
-            raise ValueError(f"{self.my_info.fqcn}: root_url not provided")
+        if not root_url and not parent_url:
+            raise ValueError(f"{self.my_info.fqcn}: neither root_url nor parent_url is provided")
 
         if self.my_info.is_root and self.my_info.is_on_server:
+            if not root_url:
+                raise ValueError(f"{self.my_info.fqcn}: root_url is required for server-side cells but not provided")
+
             if isinstance(root_url, list):
                 for url in root_url:
                     if not _validate_url(url):
@@ -346,13 +346,16 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 if not _validate_url(root_url):
                     raise ValueError(f"{self.my_info.fqcn}: invalid Root URL '{root_url}'")
                 root_url = [root_url]
-        else:
+        elif root_url:
             if isinstance(root_url, list):
                 # multiple urls are available - randomly pick one
                 root_url = random.choice(root_url)
                 self.logger.info(f"{self.my_info.fqcn}: use Root URL {root_url}")
             if not _validate_url(root_url):
                 raise ValueError(f"{self.my_info.fqcn}: invalid Root URL '{root_url}'")
+
+        if parent_url and not _validate_url(parent_url):
+            raise ValueError(f"{self.my_info.fqcn}: invalid Parent URL '{parent_url}'")
 
         self.root_url = root_url
         self.create_internal_listener = create_internal_listener
@@ -939,11 +942,15 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         if message.payload is None:
             message.payload = bytes(0)
+        elif isinstance(message.payload, memoryview) or isinstance(message.payload, bytearray):
+            message.payload = bytes(message.payload)
+        elif not isinstance(message.payload, bytes):
+            raise RuntimeError(f"Payload type of {type(message.payload)} is not supported.")
 
         payload_len = len(message.payload)
         message.add_headers(
             {
-                MessageHeaderKey.PAYLOAD_LEN: payload_len,
+                MessageHeaderKey.CLEAR_PAYLOAD_LEN: payload_len,
                 MessageHeaderKey.ENCRYPTED: True,
             }
         )
@@ -968,7 +975,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if not origin:
             raise RuntimeError("Message origin missing")
 
-        payload_len = message.get_header(MessageHeaderKey.PAYLOAD_LEN)
+        payload_len = message.get_header(MessageHeaderKey.CLEAR_PAYLOAD_LEN)
         origin_cert = self.cert_ex.get_certificate(origin)
         message.payload = self.credential_manager.decrypt(origin_cert, message.payload)
         if len(message.payload) != payload_len:
@@ -1159,7 +1166,18 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if ep:
                 reachable_targets[t] = ep
             else:
-                self.log_error(f"cannot send to '{t}': {err}", tm.message)
+                msg = Message(headers=copy.copy(tm.message.headers), payload=tm.message.payload)
+                msg.add_headers(
+                    {
+                        MessageHeaderKey.CHANNEL: tm.channel,
+                        MessageHeaderKey.TOPIC: tm.topic,
+                        MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                        MessageHeaderKey.TO_CELL: t,
+                        MessageHeaderKey.ORIGIN: self.my_info.fqcn,
+                        MessageHeaderKey.DESTINATION: t,
+                    }
+                )
+                self.log_error(f"cannot send to '{t}': {err}", msg)
                 send_errs[t] = err
 
         for t, ep in reachable_targets.items():
@@ -1170,12 +1188,12 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 {
                     MessageHeaderKey.CHANNEL: tm.channel,
                     MessageHeaderKey.TOPIC: tm.topic,
-                    MessageHeaderKey.ORIGIN: self.my_info.fqcn,
                     MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                    MessageHeaderKey.TO_CELL: ep.name,
+                    MessageHeaderKey.ORIGIN: self.my_info.fqcn,
+                    MessageHeaderKey.DESTINATION: t,
                     MessageHeaderKey.MSG_TYPE: MessageType.REQ,
                     MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
-                    MessageHeaderKey.DESTINATION: t,
-                    MessageHeaderKey.TO_CELL: ep.name,
                 }
             )
 
@@ -1478,10 +1496,18 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             self.logger.debug(f"{self.get_fqcn()}: bulk item: {req.headers}")
             self._process_request(origin=origin, message=req)
 
-    def fire_multi_requests_and_forget(self, target_msgs: Dict[str, TargetMessage], optional=False) -> Dict[str, str]:
+    def fire_multi_requests_and_forget(
+        self, target_msgs: Dict[str, TargetMessage], optional=False, secure=False
+    ) -> Dict[str, str]:
         for _, tm in target_msgs.items():
             request = tm.message
-            request.add_headers({MessageHeaderKey.REPLY_EXPECTED: False, MessageHeaderKey.OPTIONAL: optional})
+            request.add_headers(
+                {
+                    MessageHeaderKey.REPLY_EXPECTED: False,
+                    MessageHeaderKey.OPTIONAL: optional,
+                    MessageHeaderKey.SECURE: secure,
+                }
+            )
         return self._send_target_messages(target_msgs)
 
     def send_reply(self, reply: Message, to_cell: str, for_req_ids: List[str], secure=False, optional=False) -> str:
@@ -1506,11 +1532,12 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         reply.add_headers(
             {
                 MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                MessageHeaderKey.TO_CELL: to_cell,
                 MessageHeaderKey.ORIGIN: self.my_info.fqcn,
-                MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
                 MessageHeaderKey.DESTINATION: to_cell,
                 MessageHeaderKey.REQ_ID: for_req_ids,
                 MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
+                MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
                 MessageHeaderKey.SECURE: secure,
                 MessageHeaderKey.OPTIONAL: optional,
             }
@@ -1926,9 +1953,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                     MessageHeaderKey.CHANNEL: channel,
                     MessageHeaderKey.TOPIC: topic,
                     MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                    MessageHeaderKey.TO_CELL: endpoint.name,
                     MessageHeaderKey.ORIGIN: self.my_info.fqcn,
                     MessageHeaderKey.DESTINATION: origin,
-                    MessageHeaderKey.TO_CELL: endpoint.name,
                     MessageHeaderKey.REQ_ID: req_id,
                     MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
                     MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],

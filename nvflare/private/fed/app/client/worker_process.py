@@ -15,27 +15,28 @@
 """Provides a command line interface for a federated client trainer."""
 
 import argparse
-import logging
 import os
 import sys
 import threading
 
-from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import configure_logging, get_script_logger
 from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.utils.fed_utils import (
-    add_logfile_handler,
     create_stats_pool_files_for_job,
     fobs_initialize,
+    register_ext_decomposers,
+    security_close,
+    security_init_for_job,
     set_stats_pool_config_for_job,
 )
 from nvflare.security.logging import secure_format_exception
@@ -69,13 +70,10 @@ def main(args):
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
-    fobs_initialize()
-    # Initialize audit service since the job execution will need it!
-    audit_file_name = workspace.get_audit_file_path()
-    AuditService.initialize(audit_file_name)
+    fobs_initialize(workspace=workspace, job_id=args.job_id)
 
-    # print("starting the client .....")
-    SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
+    # initialize security processing and ensure that content in the startup has not been tampered with.
+    security_init_for_job(secure_train, workspace, SiteType.CLIENT)
 
     thread = None
     stop_event = threading.Event()
@@ -94,9 +92,13 @@ def main(args):
         )
         conf.configure()
 
-        log_file = workspace.get_app_log_file_path(args.job_id)
-        add_logfile_handler(log_file)
-        logger = logging.getLogger("worker_process")
+        decomposer_module = ConfigService.get_str_var(
+            name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
+        )
+        register_ext_decomposers(decomposer_module)
+
+        configure_logging(workspace, workspace.get_run_dir(args.job_id))
+        logger = get_script_logger()
         logger.info("Worker_process started.")
 
         deployer = conf.base_deployer
@@ -132,7 +134,7 @@ def main(args):
         stop_event.set()
         if thread and thread.is_alive():
             thread.join()
-        AuditService.close()
+        security_close()
         err = create_stats_pool_files_for_job(workspace, args.job_id)
         if err:
             logger.warning(err)

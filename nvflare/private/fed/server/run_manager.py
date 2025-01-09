@@ -17,12 +17,14 @@ from typing import List, Optional, Tuple
 from nvflare.apis.client import Client
 from nvflare.apis.engine_spec import EngineSpec
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey, ProcessType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.workspace import Workspace
 from nvflare.private.aux_runner import AuxRunner
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
+from nvflare.private.stream_runner import ObjectStreamer
 
 from .client_manager import ClientManager
 from .run_info import RunInfo
@@ -56,12 +58,15 @@ class RunManager(EngineSpec):
         self.client_manager = client_manager
         self.handlers = handlers
         self.aux_runner = AuxRunner(self)
+        self.object_streamer = ObjectStreamer(self.aux_runner)
         self.add_handler(self.aux_runner)
+        self.add_handler(self.object_streamer)
 
         if job_id:
             job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
+            job_ctx_props.update({FLContextKey.PROCESS_TYPE: ProcessType.SERVER_JOB})
         else:
-            job_ctx_props = {}
+            job_ctx_props = {FLContextKey.PROCESS_TYPE: ProcessType.SERVER_PARENT}
 
         self.fl_ctx_mgr = FLContextManager(
             engine=engine, identity_name=server_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props

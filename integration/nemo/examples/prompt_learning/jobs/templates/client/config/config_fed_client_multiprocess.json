@@ -14,7 +14,7 @@
       ],
       "executor": {
         "id": "Executor",
-        "name": "PTMultiProcessExecutor",
+        "path": "nvflare.app_opt.pt.multi_process_executor.PTMultiProcessExecutor",
         "args": {
           "executor_id": "learner_executor",
           "num_of_processes": "{devices}",

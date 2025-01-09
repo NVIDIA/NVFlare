@@ -11,13 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
 import os
 
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
-from nvflare.private.defs import EngineConstant
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_module_logger
+from nvflare.private.admin_defs import Message
+from nvflare.private.defs import CellChannel, EngineConstant, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
@@ -31,7 +34,7 @@ from nvflare.private.privacy_manager import PrivacyService
 
 class ClientAppRunner(Runner):
 
-    logger = logging.getLogger("ClientAppRunner")
+    logger = get_module_logger(__module__, __qualname__)
 
     def __init__(self, time_out=60.0) -> None:
         super().__init__()
@@ -53,8 +56,16 @@ class ClientAppRunner(Runner):
         self.sync_up_parents_process(federated_client)
 
         federated_client.start_overseer_agent()
+        notify_timeout = ConfigService.get_float_var(
+            name="notify_timeout", conf=SystemConfigs.APPLICATION_CONF, default=5.0
+        )
+        self.notify_job_status(federated_client, args.job_id, ClientStatus.STARTED, timeout=notify_timeout)
         federated_client.status = ClientStatus.STARTED
+
         self.client_runner.run(app_root, args)
+
+        self.notify_job_status(federated_client, args.job_id, ClientStatus.STOPPED, timeout=notify_timeout)
+        federated_client.status = ClientStatus.STOPPED
         federated_client.stop_cell()
 
     @staticmethod
@@ -76,7 +87,11 @@ class ClientAppRunner(Runner):
         client_config_file_name = os.path.join(app_root, args.client_config)
         args.set.append(f"secure_train={secure_train}")
         conf = ClientJsonConfigurator(
-            config_file_name=client_config_file_name, app_root=app_root, args=args, kv_list=args.set
+            workspace_obj=workspace,
+            config_file_name=client_config_file_name,
+            app_root=app_root,
+            args=args,
+            kv_list=args.set,
         )
         if event_handlers:
             conf.set_component_build_authorizer(authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers)
@@ -96,6 +111,7 @@ class ClientAppRunner(Runner):
 
         run_manager = self.create_run_manager(args, conf, federated_client, workspace)
         federated_client.run_manager = run_manager
+        federated_client.runner_config = runner_config
         federated_client.handlers = conf.runner_config.handlers
         with run_manager.new_context() as fl_ctx:
             self._set_fl_context(fl_ctx, app_root, args, workspace, secure_train)
@@ -126,6 +142,22 @@ class ClientAppRunner(Runner):
         run_manager = federated_client.run_manager
         with run_manager.new_context() as fl_ctx:
             run_manager.get_all_clients_from_server(fl_ctx)
+
+    def notify_job_status(self, federated_client, job_id, status, timeout=5.0):
+        message = Message(topic=TrainingTopic.NOTIFY_JOB_STATUS, body="")
+        message.set_header(RequestHeader.JOB_ID, str(job_id))
+        message.set_header(RequestHeader.JOB_STATUS, status)
+
+        my_fqcn = federated_client.cell.core_cell.get_fqcn()
+        cp_fqcn = FQCN.get_parent(my_fqcn)
+
+        federated_client.cell.send_request(
+            target=cp_fqcn,
+            channel=CellChannel.CLIENT_MAIN,
+            topic=message.topic,
+            request=new_cell_message({}, message),
+            timeout=timeout,
+        )
 
     def close(self):
         if self.command_agent:

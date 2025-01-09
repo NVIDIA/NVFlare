@@ -1,10 +1,6 @@
 {
   "format_version": 2,
-
-  "server": {
-    "heart_beat_timeout": 600,
-    "task_request_interval": 0.05
-  },
+  "num_rounds": 101,
 
   "task_data_filters": [],
   "task_result_filters": [],
@@ -31,10 +27,10 @@
   "workflows": [
     {
       "id": "scatter_and_gather",
-      "name": "ScatterAndGather",
+      "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
       "args": {
         "min_clients": 5,
-        "num_rounds": 101,
+        "num_rounds": "{num_rounds}",
         "start_round": 0,
         "wait_time_after_min_received": 0,
         "aggregator_id": "aggregator",

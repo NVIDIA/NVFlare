@@ -27,6 +27,8 @@ class TestFobs:
 
     NUMBER = 123456
     FLOAT = 123.456
+    NAME = "FOBS Test"
+    SET = {4, 5, 6}
     NOW = datetime.now()
 
     test_data = {
@@ -34,7 +36,7 @@ class TestFobs:
         "number": NUMBER,
         "float": FLOAT,
         "list": [7, 8, 9],
-        "set": {4, 5, 6},
+        "set": SET,
         "tuple": ("abc", "xyz"),
         "time": NOW,
     }
@@ -43,17 +45,17 @@ class TestFobs:
         buf = fobs.dumps(TestFobs.test_data)
         data = fobs.loads(buf)
         assert data["number"] == TestFobs.NUMBER
-
-    def test_aliases(self):
-        buf = fobs.dumps(TestFobs.test_data)
-        data = fobs.loads(buf)
-        assert data["number"] == TestFobs.NUMBER
+        assert data["set"] == TestFobs.SET
 
     def test_unsupported_classes(self):
         with pytest.raises(TypeError):
-            # Queue is just a random built-in class not supported by FOBS
+            # Queue contains collections.deque, which has no __dict__, can't be handled as Data Class
             unsupported_class = queue.Queue()
-            fobs.dumps(unsupported_class)
+            try:
+                fobs.dumps(unsupported_class)
+            except Exception as ex:
+                print(ex)
+                raise ex
 
     def test_decomposers(self):
         test_class = ExampleClass(TestFobs.NUMBER)
@@ -61,6 +63,23 @@ class TestFobs:
         buf = fobs.dumps(test_class)
         new_class = fobs.loads(buf)
         assert new_class.number == TestFobs.NUMBER
+
+    def test_no_registration(self):
+        test_class = ExampleClass(TestFobs.NUMBER)
+        fobs.register(ExampleClassDecomposer)
+        buf = fobs.dumps(test_class)
+        # Clear registration before deserializing
+        fobs.reset()
+        new_class = fobs.loads(buf)
+        assert new_class.number == TestFobs.NUMBER
+
+    def test_auto_registration(self):
+        fobs.reset()
+        test_class = ExampleDataClass(TestFobs.NAME)
+        # No decomposer is registered for ExampleDataClass
+        buf = fobs.dumps(test_class)
+        new_class = fobs.loads(buf)
+        assert new_class.name == TestFobs.NAME
 
     def test_buffer_list(self):
         buf = fobs.dumps(TestFobs.test_data, buffer_list=True)
@@ -71,6 +90,11 @@ class TestFobs:
 class ExampleClass:
     def __init__(self, number):
         self.number = number
+
+
+class ExampleDataClass:
+    def __init__(self, name):
+        self.name = name
 
 
 class ExampleClassDecomposer(Decomposer):

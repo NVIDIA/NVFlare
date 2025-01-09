@@ -1,0 +1,181 @@
+name: esm1nv
+do_training: True # set to false if data preprocessing steps must be completed
+do_testing: False # set to true to run evaluation on test data after training, requires test_dataset section
+restore_from_path: null # used when starting from a .nemo file
+
+trainer:
+  devices: 1 # number of GPUs or CPUs
+  num_nodes: 1 
+  accelerator: gpu #gpu or cpu
+  precision: 16-mixed #16 or 32
+  logger: False # logger is provided by NeMo exp_manager
+  enable_checkpointing: False # checkpointing is done by NeMo exp_manager
+  max_epochs: null # # use max_steps instead with NeMo Megatron model
+  max_steps: 1000000 # consumed_samples = global_step * micro_batch_size * data_parallel_size * accumulate_grad_batches
+  log_every_n_steps: 1  # number of iterations between logging
+  val_check_interval: 1500
+  limit_val_batches: 50 # number of batches in validation step, use fraction for fraction of data, 0 to disable
+  limit_test_batches: 500 # number of batches in test step, use fraction for fraction of data, 0 to disable
+  accumulate_grad_batches: 1
+  gradient_clip_val: 1.0
+  benchmark: False
+  
+exp_manager:
+  name: ${name}
+  exp_dir: ${.name}/${.wandb_logger_kwargs.name}
+  explicit_log_dir: ${.exp_dir}
+  create_wandb_logger: False
+  create_tensorboard_logger: True
+  wandb_logger_kwargs:
+    project: ${name}_pretraining
+    name: ${name}_pretraining
+    group: ${name}
+    job_type: Localhost_nodes_${trainer.num_nodes}_gpus_${trainer.devices}
+    notes: "date: ${now:%y%m%d-%H%M%S}"
+    tags:
+      - ${name}
+    offline: False # set to True if there are issues uploading to WandB during training
+  resume_if_exists: True # automatically resume if checkpoint exists
+  resume_ignore_no_checkpoint: True # leave as True, will start new training if resume_if_exists is True but no checkpoint exists
+  create_checkpoint_callback: False  # Setting this to False so to avoid overwriting the model sent and received to the server
+  checkpoint_callback_params:
+    monitor: val_TARGET_accuracy
+    save_top_k: 1 # number of checkpoints to save
+    mode: max  # use min or max of monitored metric to select best checkpoints
+    always_save_nemo: False # saves nemo file during validation, not implemented for model parallel
+    filename: 'esm1nv--{val_TARGET_accuracy:.4f}-{step}-{consumed_samples}'
+    model_parallel_size: ${multiply:${model.tensor_model_parallel_size}, ${model.pipeline_model_parallel_size}}
+
+
+model:
+  # model parallelism 
+  micro_batch_size: 8 # NOTE: adjust to occupy ~ 90% of GPU memory
+  tensor_model_parallel_size: 1  # model parallelism
+  pipeline_model_parallel_size: 1
+
+  # model architecture
+  seq_length: 512 # FIXME: remove me (replaced by encoder_seq_length)
+  max_position_embeddings: ${.seq_length}
+  encoder_seq_length: ${.seq_length}
+  num_layers: 6
+  hidden_size: 768
+  ffn_hidden_size: 3072 # Transformer FFN hidden size. Usually 4 * hidden_size.
+  num_attention_heads: 12
+  init_method_std: 0.02 # Standard deviation of the zero mean normal distribution used for weight initialization.')
+  hidden_dropout: 0.1 # 0.1 # Dropout probability for hidden state transformer.
+  kv_channels: null # Projection weights dimension in multi-head attention. Set to hidden_size // num_attention_heads if null
+  apply_query_key_layer_scaling: True # scale Q * K^T by 1 / layer-number.
+  layernorm_epsilon: 1e-5
+  make_vocab_size_divisible_by: 128 # Pad the vocab size to be divisible by this value for computation efficiency.
+  pre_process: True # add embedding
+  post_process: True # add pooler
+  bert_binary_head: False # BERT binary head
+  resume_from_checkpoint: null # manually set the checkpoint file to load from
+  masked_softmax_fusion: True # Use a kernel that fuses the attention softmax with it's mask.
+
+  tokenizer:
+    library: 'megatron'
+    type: 'BertWordPieceLowerCase'
+    model: null
+    vocab_file: null
+    merge_file: null 
+
+  # precision
+  native_amp_init_scale: 4294967296 # 2 ** 32
+  native_amp_growth_interval: 1000
+  fp32_residual_connection: False # Move residual connections to fp32
+  fp16_lm_cross_entropy: False # Move the cross entropy unreduced loss calculation for lm head to fp16
+
+
+  # miscellaneous
+  seed: 4
+  use_cpu_initialization: False # Init weights on the CPU (slow for large model)
+  onnx_safe: False # Use work-arounds for known problems with Torch ONNX exporter.
+
+  # not implemented in NeMo yet
+  activations_checkpoint_method: null # 'uniform', 'block'
+  activations_checkpoint_num_layers: 1 
+
+  data:
+    ngc_registry_target: uniref50_2022_05
+    ngc_registry_version: v23.06
+    data_prefix: "" # must be null or ""
+    num_workers: 2
+    dataloader_type: single # cyclic
+    reset_position_ids: False # Reset position ids after end-of-document token
+    reset_attention_mask: False # Reset attention mask after end-of-document token
+    eod_mask_loss: False # Mask loss for the end of document tokens
+    masked_lm_prob: 0.15 # Probability of replacing a token with mask.
+    short_seq_prob: 0.1 # Probability of producing a short sequence.
+    skip_lines: 0
+    drop_last: False
+    pin_memory: False
+    index_mapping_dir: null # path to store cached indexing files (if empty, will be stored in the same directory as dataset_path)
+    data_impl: "csv_mmap"
+    # Supported kwargs (with default values): 
+    #     text_mmap (newline_int=10, header_lines=0, workers=None, sort_dataset_paths=True)
+    #     csv_mmap (newline_int=10, header_lines=0,workers=None, sort_dataset_paths=True, data_col=1, data_sep=",")
+    data_impl_kwargs:
+      csv_mmap:
+        header_lines: 1
+        newline_int: 10 # byte-value of newline
+        workers: ${model.data.num_workers} # number of workers when creating missing index files (null defaults to cpu_num // 2)
+        sort_dataset_paths: True # if True datasets will be sorted by name
+        data_sep: ',' # string to split text into columns
+        # column number of csv to take values from
+        data_col: 3
+    use_upsampling: True # if the data should be upsampled to max number of steps in the training
+    seed: ${model.seed} # Random seed
+    max_seq_length: ${model.seq_length} # Maximum input sequence length. Longer sequences are truncated
+    dynamic_padding: False # If True, each batch is padded to the maximum sequence length within that batch.
+              #    Set it to False when model.pipeline_model_parallel_size > 1, as pipeline parallelism requires fixed-length padding.
+
+  optim:
+    name: fused_adam # fused optimizers used by Megatron model
+    lr: 2e-4
+    weight_decay: 0.01 
+    betas: 
+    - 0.9
+    - 0.98
+    sched:
+      name: CosineAnnealing
+      warmup_steps: 500 # use to set warmup_steps explicitly or leave as null to calculate 
+      constant_steps: 50000
+      min_lr: 2e-5
+
+  dwnstr_task_validation:
+    enabled: False
+    dataset:
+      class: bionemo.model.core.dwnstr_task_callbacks.PerTokenPredictionCallback
+      task_type: token-level-classification
+      infer_target: bionemo.model.protein.esm1nv.infer.ESM1nvInference
+      max_seq_length: ${model.seq_length}
+      emb_batch_size: 128
+      batch_size: 128
+      num_epochs: 10
+      shuffle: True
+      num_workers: 2
+      task_name: secondary_structure
+      dataset_path: /data/FLIP/${model.dwnstr_task_validation.dataset.task_name}
+      dataset:
+        train: x000
+        test: x000
+      sequence_column: "sequence" # name of column with protein sequence in csv file
+      target_column: [ "3state", "resolved" ] # names of label columns in csv file
+      target_sizes: [ 3, 2 ] # number of classes in each label
+      mask_column: [ "resolved", null ] # names of mask columns in csv file, masks must be 0 or 1
+      random_seed: ${model.seed}
+      optim:
+        name: adam
+        lr: 0.0001
+        betas:
+          - 0.9
+          - 0.999
+        eps: 1e-8
+        weight_decay: 0.01
+        sched:
+          name: WarmupAnnealing
+          min_lr: 0.00001
+          last_epoch: -1
+          warmup_ratio: 0.01
+          max_steps: 1000

@@ -2,7 +2,7 @@
 
 ## sag_pt_mlflow
     name = "sag_pt_mlflow"
-    description = "Scatter and Gather Workflow using pytorch with MLflow tracking" 
+    description = "FedAvg Scatter and Gather Workflow using pytorch with MLflow tracking, and sub-process Client API" 
     class_name  =  "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"

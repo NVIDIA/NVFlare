@@ -14,7 +14,7 @@ python train.py
 
 ```
 
-## convert the example to FL
+## Convert the example to FL
 
 Now, in ```fl``` directory, we have converted this example to FL code using the FLARE Client Lightning API.
 
@@ -23,16 +23,15 @@ to run this code, we also need to specify the workflow and other configurations 
 to do this, we will leverage the FLARE's job CLI.
 
 
-## Create job definition for Scatter and Gather (SAG) Workflow
+## Create job folder:
 
-### Create job folder:
 assuming the current directory is
 
 ```
 examples/hello-world/step-by-step/cifar10/sag_pt
 ```
 
-we can first create a job folder
+we can create a job folder
 
 ```bash
 nvflare job create -j /tmp/nvflare/cifar10_sag -w sag_pt -s fl/train.py 

@@ -30,7 +30,7 @@ This can be achieved by setting the `warm_start` flag of SGDClassifier to
 `True` in order to allow repeated fitting of the classifiers to the local data.
 
 ## Data preparation 
-The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs).
+The examples illustrate a binary classification task based on [HIGGS dataset](https://mlphysics.ics.uci.edu/data/higgs/).
 This dataset contains 11 million instances, each with 28 attributes. Download the dataset from the HIGGS link above, containing a single `.csv` file.
 By default, we assume the dataset is downloaded, uncompressed, and stored 
 in `DATASET_ROOT/HIGGS.csv`.
@@ -101,7 +101,7 @@ Below is a sample config for site-1, saved to `./jobs/sklearn_linear_5_uniform/a
 ```
 
 ## Run experiment with FL simulator
-[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
+[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
 We can run the FL simulator with five clients under the uniform data split with
 ```commandline
 bash run_experiment_simulator.sh

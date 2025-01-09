@@ -16,7 +16,7 @@ import os
 import threading
 import time
 
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 
@@ -31,7 +31,7 @@ class AioContext:
         self.name = name
         self.loop = None
         self.ready = threading.Event()
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.logger.debug(f"{os.getpid()}: ******** Created AioContext {name}")
 
     def get_event_loop(self):

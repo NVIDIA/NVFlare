@@ -1,0 +1,58 @@
+---
+import ClickTracker from './clickTracker.astro';
+
+const learnMore = [
+  {
+    title: "What is Federated Learning?",
+    description:
+      "Federated Learning is a distributed learning paradigm where training occurs across multiple clients, each with their own local datasets. This enables the creation of common robust models without sharing sensitive local data, helping solve issues of data privacy and security.",
+    link: "https://blogs.nvidia.com/blog/what-is-federated-learning/",
+  },
+  {
+    title: "Blogs & Articles",
+    description:
+      "NVIDIA Federated Learning Technical Blogs covering various applications and topics. ",
+    link: "https://developer.nvidia.com/blog/tag/federated-learning",
+  },
+  {
+    title: "Publications & Talks",
+    description:
+      "List of NVIDIA FLARE related papers and publications along with videos from blogs and talks.",
+    link: "https://nvflare.readthedocs.io/en/main/publications_and_talks.html",
+  },
+];
+---
+
+<ClickTracker div_id="learn_more_div" eventLabel="Learn More"/>
+<div id="learn_more_div" class="bg-white py-24 sm:py-24">
+  <div class="mx-auto max-w-7xl px-6 lg:px-8">
+    <div class="mx-auto lg:mx-0 text-center">
+      <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight text-gray-900">
+        Learn More
+      </h2>
+    </div>
+
+    <div
+      class="mx-auto mt-10 grid max-w-2xl grid-cols-1 gap-x-8 gap-y-16 border-t border-slate-400 pt-10 pb-10 sm:pb-10 sm:mt-16 sm:pt-16 lg:mx-0 lg:max-w-none lg:grid-cols-3">
+      {
+        learnMore.map((item) => (
+          <article class="flex max-w-xl flex-col items-start justify-between border-l border-slate-400 pl-6">
+            <h3 class="mt-3 text-lg font-semibold leading-6 text-gray-900 group-hover:text-gray-600">
+              {item.title}
+            </h3>
+            <p class="mt-5 line-clamp-3 text-sm leading-6 text-gray-600">
+              {item.description}
+            </p>
+            <p class="mt-6">
+              <a
+                href={item.link}
+                class="text-sm font-semibold leading-6 text-green-600">
+                Read more <span aria-hidden="true">→</span>
+              </a>
+            </p>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</div>

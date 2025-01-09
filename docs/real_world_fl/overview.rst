@@ -68,7 +68,7 @@ For advanced users, you can customize your provision with additional behavior th
     - **Zip**: To create password protected zip archives for the startup kits, see :ref:`distribution_builder`
     - **Docker-compose**: Provision to launch NVIDIA FLARE system via docker containers. You can customize the provisioning process and ask the provisioner to generate a docker-compose file. This can be found in :ref:`docker_compose`.
     - **Docker**: Provision to launch NVIDIA FLARE system via docker containers. If you just want to use docker files, see :ref:`containerized_deployment`.
-    - **Helm**: To change the provisioning tool to generate an NVIDIA FLARE Helm chart for Kubernetes deployment, see :ref:` helm_chart`.
+    - **Helm**: To change the provisioning tool to generate an NVIDIA FLARE Helm chart for Kubernetes deployment, see :ref:`helm_chart`.
     - **CUSTOM**: you can build custom builders specific to your needs like in :ref:`distribution_builder`.
 
 Package distribution
@@ -158,6 +158,12 @@ cloud deployment such as deployment of the FL Server at Azure and FL Clients in 
 See how to deploy to Azure and AWS clouds can be found in :ref:`cloud_deployment`.
 
 Deploy to Google Cloud will be made available in a future release.
+
+Kubernetes Deployment
+=====================
+As mentioned above, you can run NVIDIA FLARE in the public cloud.  If you prefer to deploy NVIDIA FLARE in Amazon Elastic Kubernetes Service (EKS),
+you can find the deployment guide in :ref:`eks_deployment`.
+
 
 Starting Federated Learning Servers
 =============================================

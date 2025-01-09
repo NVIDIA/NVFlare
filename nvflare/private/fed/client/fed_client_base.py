@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import threading
 import time
 from typing import List, Optional
@@ -31,7 +30,9 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import EngineConstant
+from nvflare.private.fed.utils.fed_utils import set_scope_prop
 from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
@@ -72,7 +73,7 @@ class FederatedClientBase:
             compression: communication compression algorithm
             cell: CellNet communicator
         """
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
         self.client_name = client_name
         self.token = None
@@ -82,7 +83,7 @@ class FederatedClientBase:
         self.cell = cell
         self.net_agent = None
         self.args = args
-        self.engine_create_timeout = client_args.get("engine_create_timeout", 15.0)
+        self.engine_create_timeout = client_args.get("engine_create_timeout", 30.0)
         self.cell_check_frequency = client_args.get("cell_check_frequency", 0.005)
 
         self.communicator = Communicator(
@@ -93,7 +94,7 @@ class FederatedClientBase:
             cell=cell,
             client_register_interval=client_args.get("client_register_interval", 2.0),
             timeout=client_args.get("communication_timeout", 30.0),
-            maint_msg_timeout=client_args.get("maint_msg_timeout", 5.0),
+            maint_msg_timeout=client_args.get("maint_msg_timeout", 30.0),
         )
 
         self.secure_train = secure_train
@@ -151,6 +152,10 @@ class FederatedClientBase:
             server = self.servers[project_name].get("target")
             location = sp.name + ":" + sp.fl_port
             if server != location:
+                # The SP name is the server host name that we will connect to.
+                # Save this name for this client so that it can be checked by others
+                set_scope_prop(scope_name=self.client_name, value=sp.name, key=FLContextKey.SERVER_HOST_NAME)
+
                 self.servers[project_name]["target"] = location
                 self.sp_established = True
 
@@ -169,14 +174,44 @@ class FederatedClientBase:
                 thread.start()
 
     def _create_cell(self, location, scheme):
+        """Create my cell.
+
+        Args:
+            location: the location of the Server
+            scheme: communication protocol (grpc, http, tcp, etc).
+
+        Returns: None
+
+        Note that the client can be connected to the server either directly or via bridge nodes.
+        The client's FQCN is different, depending on how the connection is made.
+
+        """
+        # Determine the CP's fqcn
+        root_url = scheme + "://" + location
+
+        # bridge_fqcn and bridge_url are set in the client's local/resources.json.
+        # If they are set, then connect via the specified bridge; if not, try to connect the Server directly
+        bridge_fqcn = self.client_args.get("bridge_fqcn")
+        bridge_url = self.client_args.get("bridge_url")
+        if bridge_fqcn:
+            cp_fqcn = FQCN.join([bridge_fqcn, self.client_name])
+            root_url = None  # do not connect to server if bridge is used
+        else:
+            cp_fqcn = self.client_name
+
         if self.args.job_id:
-            fqcn = FQCN.join([self.client_name, self.args.job_id])
+            # I am CJ
+            me = "CJ"
+            my_fqcn = FQCN.join([cp_fqcn, self.args.job_id])
             parent_url = self.args.parent_url
             create_internal_listener = False
         else:
-            fqcn = self.client_name
-            parent_url = None
+            # I am CP
+            me = "CP"
+            my_fqcn = cp_fqcn
+            parent_url = bridge_url
             create_internal_listener = True
+
         if self.secure_train:
             root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
             ssl_cert = self.client_args[SecureTrainConst.SSL_CERT]
@@ -189,9 +224,11 @@ class FederatedClientBase:
             }
         else:
             credentials = {}
+
+        self.logger.info(f"{me=}: {my_fqcn=} {root_url=} {parent_url=}")
         self.cell = Cell(
-            fqcn=fqcn,
-            root_url=scheme + "://" + location,
+            fqcn=my_fqcn,
+            root_url=root_url,
             secure=self.secure_train,
             credentials=credentials,
             create_internal_listener=create_internal_listener,
@@ -210,14 +247,14 @@ class FederatedClientBase:
                 if time.time() - start > self.engine_create_timeout:
                     raise RuntimeError(f"Failed get client_runner after {self.engine_create_timeout} seconds")
                 time.sleep(self.cell_check_frequency)
-            self.logger.info(f"Got client_runner after {time.time()-start} seconds")
+            self.logger.info(f"Got client_runner after {time.time() - start} seconds")
             self.client_runner.engine.cell = self.cell
         else:
             start = time.time()
             self.logger.info("Wait for engine to be created.")
             while not self.engine:
                 if time.time() - start > self.engine_create_timeout:
-                    raise RuntimeError(f"Failed to get engine after {time.time()-start} seconds")
+                    raise RuntimeError(f"Failed to get engine after {time.time() - start} seconds")
                 time.sleep(self.cell_check_frequency)
             self.logger.info(f"Got engine after {time.time() - start} seconds")
             self.engine.cell = self.cell
@@ -355,7 +392,7 @@ class FederatedClientBase:
         return self.push_execute_result(self._get_project_name(), shareable, fl_ctx, timeout)
 
     def register(self, fl_ctx: FLContext):
-        """Push the local model to multiple servers."""
+        """Register the client with the server."""
         return self.client_register(self._get_project_name(), fl_ctx)
 
     def set_primary_sp(self, sp):

@@ -14,11 +14,7 @@
 
 """Decomposers for types from app_common and Machine Learning libraries."""
 import os
-from abc import ABC
-from io import BytesIO
 from typing import Any
-
-import numpy as np
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.learnable import Learnable
@@ -26,7 +22,7 @@ from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
-from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer, Externalizer, Internalizer
+from nvflare.fuel.utils.fobs.decomposer import DictDecomposer, Externalizer, Internalizer
 
 
 class FLModelDecomposer(fobs.Decomposer):
@@ -40,6 +36,7 @@ class FLModelDecomposer(fobs.Decomposer):
             externalizer.externalize(b.params),
             externalizer.externalize(b.optimizer_params),
             externalizer.externalize(b.metrics),
+            b.start_round,
             b.current_round,
             b.total_rounds,
             externalizer.externalize(b.meta),
@@ -47,61 +44,18 @@ class FLModelDecomposer(fobs.Decomposer):
 
     def recompose(self, data: tuple, manager: DatumManager = None) -> FLModel:
         assert isinstance(data, tuple)
-        pt, params, opt_params, metrics, cr, tr, meta = data
+        pt, params, opt_params, metrics, sr, cr, tr, meta = data
         internalizer = Internalizer(manager)
         return FLModel(
             params_type=pt,
             params=internalizer.internalize(params),
             optimizer_params=internalizer.internalize(opt_params),
             metrics=internalizer.internalize(metrics),
+            start_round=sr,
             current_round=cr,
             total_rounds=tr,
             meta=internalizer.internalize(meta),
         )
-
-
-class NumpyScalarDecomposer(fobs.Decomposer, ABC):
-    """Decomposer base class for all numpy types with item method."""
-
-    def decompose(self, target: Any, manager: DatumManager = None) -> Any:
-        return target.item()
-
-    def recompose(self, data: Any, manager: DatumManager = None) -> np.ndarray:
-        return self.supported_type()(data)
-
-
-class Float64ScalarDecomposer(NumpyScalarDecomposer):
-    def supported_type(self):
-        return np.float64
-
-
-class Float32ScalarDecomposer(NumpyScalarDecomposer):
-    def supported_type(self):
-        return np.float32
-
-
-class Int64ScalarDecomposer(NumpyScalarDecomposer):
-    def supported_type(self):
-        return np.int64
-
-
-class Int32ScalarDecomposer(NumpyScalarDecomposer):
-    def supported_type(self):
-        return np.int32
-
-
-class NumpyArrayDecomposer(Decomposer):
-    def supported_type(self):
-        return np.ndarray
-
-    def decompose(self, target: np.ndarray, manager: DatumManager = None) -> Any:
-        stream = BytesIO()
-        np.save(stream, target, allow_pickle=False)
-        return stream.getvalue()
-
-    def recompose(self, data: Any, manager: DatumManager = None) -> np.ndarray:
-        stream = BytesIO(data)
-        return np.load(stream, allow_pickle=False)
 
 
 def register():

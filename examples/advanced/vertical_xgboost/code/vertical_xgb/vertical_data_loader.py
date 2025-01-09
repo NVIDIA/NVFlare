@@ -62,9 +62,9 @@ class VerticalDataLoader(XGBDataLoader):
         self.label_owner = label_owner
         self.train_proportion = train_proportion
 
-    def load_data(self, client_id: str):
-        client_data_split_path = self.data_split_path.replace("site-x", client_id)
-        client_psi_path = self.psi_path.replace("site-x", client_id)
+    def load_data(self):
+        client_data_split_path = self.data_split_path.replace("site-x", self.client_id)
+        client_psi_path = self.psi_path.replace("site-x", self.client_id)
 
         data_split_dir = os.path.dirname(client_data_split_path)
         train_path = os.path.join(data_split_dir, "train.csv")
@@ -78,13 +78,13 @@ class VerticalDataLoader(XGBDataLoader):
             train_df.to_csv(path_or_buf=train_path, header=False, index=False)
             valid_df.to_csv(path_or_buf=valid_path, header=False, index=False)
 
-        if client_id == self.label_owner:
+        if self.client_id == self.label_owner:
             label = "&label_column=0"
         else:
             label = ""
 
         # for Vertical XGBoost, read from csv with label_column and set data_split_mode to 1 for column mode
-        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=1)
-        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=1)
+        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=self.data_split_mode)
+        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=self.data_split_mode)
 
         return dtrain, dvalid

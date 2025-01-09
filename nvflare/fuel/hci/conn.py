@@ -16,8 +16,7 @@ from typing import List
 
 from nvflare.fuel.common.ctx import BaseContext
 
-from .chunk import MAX_CHUNK_SIZE, Receiver
-from .proto import Buffer, validate_proto
+from .proto import ALL_END, LINE_END, MAX_BLOCK_SIZE, Buffer, validate_proto
 from .table import Table
 
 # ASCII Message Format:
@@ -25,34 +24,13 @@ from .table import Table
 # Only ASCII chars can be used in message;
 # A message consists of multiple lines, each ended with the LINE_END char;
 # The message is ended with the ALL_END char.
-
-LINE_END = "\x03"  # Indicates the end of the line (end of text)
-ALL_END = "\x04"  # Marks the end of a complete transmission (End of Transmission)
-
-
-MAX_MSG_SIZE = 1024
-
-
-def receive_til_end(sock, end=ALL_END):
-    total_data = []
-
-    while True:
-        data = str(sock.recv(1024), "utf-8")
-        if end in data:
-            total_data.append(data[: data.find(end)])
-            break
-
-        total_data.append(data)
-
-    result = "".join(total_data)
-    return result.replace(LINE_END, "")
-
-
 # Returns:
 # seg1 - the text before the end
 # seg2 - the text after the end
 # if end is not found, seg2 is None
 # if end is found, seg2 is a string
+
+
 def _split_data(data: str):
     # first determine whether the data contains ALL_END
     # anything after ALL_END is dropped
@@ -73,22 +51,16 @@ def _process_one_line(line: str, process_json_func):
     process_json_func(json_data)
 
 
-def receive_bytes_and_process(sock, receive_bytes_func):
-    receiver = Receiver(receive_data_func=receive_bytes_func)
-    while True:
-        data = sock.recv(MAX_CHUNK_SIZE)
-        if not data:
-            return False
-        done = receiver.receive(data)
-        if done:
-            return True
+def receive_bytes_and_process(sock, receiver):
+    receiver.receive(sock)
+    return True
 
 
 def receive_and_process(sock, process_json_func):
     """Receives and sends lines to process with process_json_func."""
     leftover = ""
     while True:
-        data = str(sock.recv(MAX_MSG_SIZE), "utf-8")
+        data = str(sock.recv(MAX_BLOCK_SIZE), "utf-8")
         if len(data) <= 0:
             return False
 
@@ -128,6 +100,9 @@ class Connection(BaseContext):
         self.args = None
         self.buffer = Buffer()
         self.binary_mode = False
+        self.bytes_sender = None
+        self.content_type = None
+        self.extra = None
 
     def _send_line(self, line: str, all_end=False):
         """If not ``self.ended``, send line with sock."""
@@ -206,6 +181,13 @@ class Connection(BaseContext):
         self._send_line(line, all_end=False)
 
     def close(self):
+        if self.bytes_sender:
+            # This is for Client side
+            meta = self.buffer.encode()
+            self.bytes_sender.send(self.sock, meta)
+            return
+
         if not self.binary_mode:
+            # Note: binary_mode is used on Server side
             self.flush()
             self._send_line("", all_end=True)

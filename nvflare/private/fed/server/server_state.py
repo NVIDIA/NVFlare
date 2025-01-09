@@ -14,11 +14,11 @@
 
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.overseer_spec import SP
+from nvflare.fuel.utils.log_utils import get_module_logger
 
 ACTION = "_action"
 MESSAGE = "_message"
@@ -40,7 +40,7 @@ class ServerState(ABC):
     ABORT_CURRENT_RUN = {ACTION: ABORT_RUN, MESSAGE: "Abort current run"}
     IN_SERVICE = {ACTION: SERVICE, MESSAGE: "Server in service"}
 
-    logger = logging.getLogger("ServerState")
+    logger = get_module_logger(__module__, __qualname__)
 
     def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
         self.host = host
@@ -90,6 +90,13 @@ class ColdState(ServerState):
         return ServerState.NOT_IN_SERVICE
 
     def handle_sd_callback(self, sp: SP, fl_ctx: FLContext) -> ServerState:
+        if sp:
+            self.logger.info(
+                f"handle_sd_callback Got SP: {sp.name=} {sp.fl_port=} {sp.primary=} {self.host=} {self.service_port=}"
+            )
+        else:
+            self.logger.info("handle_sd_callback no SP!")
+
         if sp and sp.primary is True:
             if sp.name == self.host and sp.fl_port == self.service_port:
                 self.primary = True

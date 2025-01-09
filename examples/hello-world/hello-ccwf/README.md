@@ -5,14 +5,14 @@ by logic from clients. This example shows the components used in a job for a cli
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+Follow the [Installation](../../getting_started/README.md) instructions.
 
 ### 2. Run the experiment
 
-Use nvflare simulator to run the hello-examples:
+Run the script using the job API to create the job and run it with the simulator:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-ccwf/jobs/numpy-swcse
+python3 swarm_script_runner_np.py
 ```
 
 ### 3. Access the logs and results

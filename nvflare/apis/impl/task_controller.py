@@ -51,6 +51,9 @@ class TaskController(FLComponent, ControllerSpec):
         if not self.task_result_filters:
             self.task_result_filters = {}
 
+    def control_flow(self, fl_ctx: FLContext):
+        pass
+
     def stop_controller(self, fl_ctx: FLContext):
         pass
 

@@ -26,6 +26,7 @@
       "id": "pt_learner",
       "path": "pt.learner_with_tb.PTLearner",
       "args": {
+        "data_path": "/tmp/nvflare/tensorboard-streaming",
         "lr": 0.01,
         "epochs": 5,
         "analytic_sender_id": "log_writer"
@@ -38,7 +39,7 @@
     },
     {
       "id": "event_to_fed",
-      "name": "ConvertToFedEvent",
+      "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
       "args": {"events_to_convert": ["analytix_log_stats"], "fed_event_prefix": "fed."}
     }
   ]

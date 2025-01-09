@@ -23,6 +23,7 @@ class ReturnCode(object):
     BAD_REQUEST_DATA = "BAD_REQUEST_DATA"
     BAD_TASK_DATA = "BAD_TASK_DATA"
     COMMUNICATION_ERROR = "COMMUNICATION_ERROR"
+    TIMEOUT = "TIMEOUT"
     ERROR = "ERROR"
     EXECUTION_EXCEPTION = "EXECUTION_EXCEPTION"
     EXECUTION_RESULT_ERROR = "EXECUTION_RESULT_ERROR"
@@ -39,6 +40,7 @@ class ReturnCode(object):
     VALIDATE_TYPE_UNKNOWN = "VALIDATE_TYPE_UNKNOWN"
     EMPTY_RESULT = "EMPTY_RESULT"
     UNSAFE_JOB = "UNSAFE_JOB"
+    EARLY_TERMINATION = "EARLY_TERMINATION"
     SERVER_NOT_READY = "SERVER_NOT_READY"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
@@ -103,6 +105,7 @@ class ReservedKey(object):
     JOB_IS_UNSAFE = "__job_is_unsafe__"
     CUSTOM_PROPS = "__custom_props__"
     EXCEPTIONS = "__exceptions__"
+    PROCESS_TYPE = "__process_type__"  # type of the current process (SP, CP, SJ, CJ)
 
 
 class FLContextKey(object):
@@ -150,12 +153,18 @@ class FLContextKey(object):
     COMMUNICATION_ERROR = "Flare_communication_error__"
     UNAUTHENTICATED = "Flare_unauthenticated__"
     CLIENT_RESOURCE_SPECS = "__client_resource_specs"
+    RESOURCE_CHECK_RESULT = "__resource_check_result"
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
     CLIENT_TOKEN = "__client_token"
     AUTHORIZATION_RESULT = "_authorization_result"
     AUTHORIZATION_REASON = "_authorization_reason"
+    DISCONNECTED_CLIENT_NAME = "_disconnected_client_name"
+    RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
+    SITE_OBJ = "_site_obj_"
+    JOB_LAUNCHER = "_job_launcher"
+    SNAPSHOT = "job_snapshot"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
     SECURITY_ITEMS = "_security_items"
@@ -174,6 +183,17 @@ class FLContextKey(object):
     FILTER_DIRECTION = "__filter_dir__"
     ROOT_URL = "__root_url__"  # the URL for accessing the FL Server
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
+    CLIENT_CONFIG = "__client_config__"
+    SERVER_CONFIG = "__server_config__"
+    SERVER_HOST_NAME = "__server_host_name__"
+    PROCESS_TYPE = ReservedKey.PROCESS_TYPE
+
+
+class ProcessType:
+    SERVER_PARENT = "SP"
+    SERVER_JOB = "SJ"
+    CLIENT_PARENT = "CP"
+    CLIENT_JOB = "CJ"
 
 
 class ReservedTopic(object):
@@ -185,6 +205,7 @@ class ReservedTopic(object):
     SYNC_RUNNER = "__sync_runner__"
     JOB_HEART_BEAT = "__job_heartbeat__"
     TASK_CHECK = "__task_check__"
+    APP_METRICS = "__app_metrics__"
 
 
 class AdminCommandNames(object):
@@ -224,6 +245,7 @@ class AdminCommandNames(object):
     SHELL_HEAD = "head"
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
+    APP_COMMAND = "app_command"
 
 
 class ServerCommandNames(object):
@@ -241,6 +263,7 @@ class ServerCommandNames(object):
     UPDATE_RUN_STATUS = "update_run_status"
     HANDLE_DEAD_JOB = "handle_dead_job"
     SERVER_STATE = "server_state"
+    APP_COMMAND = "app_command"
 
 
 class ServerCommandKey(object):
@@ -259,6 +282,7 @@ class ServerCommandKey(object):
     CLIENTS = "clients"
     COLLECTOR = "collector"
     TURN_TO_COLD = "__turn_to_cold__"
+    REASON = "reason"
 
 
 class FedEventHeader(object):
@@ -314,7 +338,7 @@ class SnapshotKey(object):
 class RunProcessKey(object):
     LISTEN_PORT = "_listen_port"
     CONNECTION = "_conn"
-    CHILD_PROCESS = "_child_process"
+    JOB_HANDLE = "_job_launcher"
     STATUS = "_status"
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"
@@ -346,6 +370,10 @@ class JobConstants:
     CLIENT_JOB_CONFIG = "config_fed_client.json"
     META_FILE = "meta.json"
     META = "meta"
+    SITES = "sites"
+    JOB_IMAGE = "image"
+    JOB_ID = "job_id"
+    JOB_LAUNCHER = "job_launcher"
 
 
 class WorkspaceConstants:
@@ -355,10 +383,11 @@ class WorkspaceConstants:
     SITE_FOLDER_NAME = "local"
     CUSTOM_FOLDER_NAME = "custom"
 
-    LOGGING_CONFIG = "log.config"
+    LOGGING_CONFIG = "log_config.json"
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
     AUDIT_LOG = "audit.log"
     LOG_FILE_NAME = "log.txt"
+    ERROR_LOG_FILE_NAME = "error_log.txt"
     STATS_POOL_SUMMARY_FILE_NAME = "stats_pool_summary.json"
     STATS_POOL_RECORDS_FILE_NAME = "stats_pool_records.csv"
 
@@ -387,6 +416,10 @@ class WorkspaceConstants:
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
+    RESOURCE_FILE_NAME_PATTERN = "*__resources.json"  # for both parent and job processes
+    JOB_RESOURCE_FILE_NAME_PATTERN = "*__j_resources.json"  # for job process only
+    PARENT_RESOURCE_FILE_NAME_PATTERN = "*__p_resources.json"  # for parent process only
+
 
 class SiteType:
     SERVER = "server"
@@ -414,12 +447,19 @@ class FLMetaKey:
     FILTER_HISTORY = "filter_history"
     CONFIGS = "configs"
     VALIDATE_TYPE = "validate_type"
+    START_ROUND = "start_round"
     CURRENT_ROUND = "current_round"
     TOTAL_ROUNDS = "total_rounds"
     JOB_ID = "job_id"
     SITE_NAME = "site_name"
     PROCESS_RC_FILE = "_process_rc.txt"
     SUBMIT_MODEL_NAME = "submit_model_name"
+
+
+class StreamCtxKey:
+    JOB_ID = "job_id"
+    CLIENT_NAME = "client_name"
+    LOG_TYPE = "log_type"
 
 
 class FilterKey:
@@ -432,7 +472,7 @@ class FilterKey:
 class ConfigVarName:
     # These variables can be set in job config files (config_fed_server or config_fed_client)
     RUNNER_SYNC_TIMEOUT = "runner_sync_timeout"  # client: runner sync message timeout
-    MAX_RUNNER_SYNC_TRIES = "max_runner_sync_tries"  # client: max number of runner sync attempts
+    MAX_RUNNER_SYNC_TIMEOUT = "max_runner_sync_timeout"  # client: max timeout of runner sync attempts
     TASK_CHECK_TIMEOUT = "task_check_timeout"  # client: timeout for task_check message (before submitting task)
 
     # client: how long to wait before sending task_check again (if previous task_check fails)
@@ -453,6 +493,27 @@ class ConfigVarName:
     # client: timeout for submitTaskResult requests
     SUBMIT_TASK_RESULT_TIMEOUT = "submit_task_result_timeout"
 
+    # client and server: max number of request workers for reliable message
+    RM_MAX_REQUEST_WORKERS = "rm_max_request_workers"
+
+    # client and server: query interval for reliable message
+    RM_QUERY_INTERVAL = "rm_query_interval"
+
+    # server: wait this long since client death report before treating the client as dead/disconnected
+    DEAD_CLIENT_GRACE_PERIOD = "dead_client_grace_period"
+
+    # server: wait this long since job schedule time before starting to check dead/disconnected clients
+    DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
+
+    # customized nvflare decomposers module name
+    DECOMPOSER_MODULE = "nvflare_decomposers"
+
+    # client and server: max amount of time to wait for communication cell to be created
+    CELL_WAIT_TIMEOUT = "cell_wait_timeout"
+
+    # these vars are set in Server's startup config (fed_server.json)
+    MAX_REG_DURATION = "max_reg_duration"
+
 
 class SystemVarName:
     """
@@ -467,6 +528,8 @@ class SystemVarName:
     JOB_ID = "JOB_ID"  # Job ID
     ROOT_URL = "ROOT_URL"  # the URL of the Service Provider (server)
     SECURE_MODE = "SECURE_MODE"  # whether the system is running in secure mode
+    JOB_CUSTOM_DIR = "JOB_CUSTOM_DIR"  # custom dir of the job
+    PYTHONPATH = "PYTHONPATH"
 
 
 class RunnerTask:

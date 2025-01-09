@@ -17,7 +17,7 @@ from typing import Optional
 
 
 class Example:
-    """This class represents a standardized example structure in NVFlare."""
+    """This class represents a standardized example folder structure in NVFlare."""
 
     def __init__(
         self,
@@ -27,9 +27,37 @@ class Example:
         additional_python_path: Optional[str] = None,
         prepare_data_script: Optional[str] = None,
     ):
+        """Constructor of Example.
+
+        A standardized example folder looks like the following:
+
+            .. code-block
+
+                ./[example_root]
+                    ./[jobs_folder_in_example]
+                        ./job_name1
+                        ./job_name2
+                        ./job_name3
+                    ./[requirements]
+                    ./[prepare_data_script]
+
+        For example:
+
+            .. code-block
+
+                ./cifar10-sim
+                    ./jobs
+                        ./cifar10_central
+                        ./cifar10_fedavg
+                        ./cifar10_fedopt
+                        ...
+                    ./requirements.txt
+                    ./prepare_data.sh
+
+        """
         self.root = os.path.abspath(root)
         if not os.path.exists(self.root):
-            raise FileNotFoundError("Example root directory does not exist.")
+            raise FileNotFoundError("Example's root directory does not exist.")
 
         self.name = os.path.basename(self.root)
 

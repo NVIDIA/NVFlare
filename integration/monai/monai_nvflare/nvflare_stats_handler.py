@@ -171,7 +171,6 @@ class NVFlareStatsHandler(LogWriter):
         current_epoch = self.global_epoch_transform(engine.state.epoch)
         summary_dict = engine.state.metrics
         for name, value in summary_dict.items():
-            print(f"\n\t{name}", type(value), value)
             self._send_stats(engine, name, value, AnalyticsDataType.SCALAR, current_epoch)
 
         if self.state_attributes is not None:

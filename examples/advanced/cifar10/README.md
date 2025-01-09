@@ -6,7 +6,7 @@ Please make sure you set up virtual environment and follows [example root readme
 This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629), 
 [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), 
 and [SCAFFOLD](https://arxiv.org/abs/1910.06378) algorithms using NVFlare's 
-[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html).
+[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html).
 
 ### [Real-world Federated Learning with CIFAR-10](./cifar10-real-world/README.md)
 Real-world FL deployment requires secure provisioning and the admin API to submit jobs. 

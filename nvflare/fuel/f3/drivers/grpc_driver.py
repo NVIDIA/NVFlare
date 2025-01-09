@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import threading
 from concurrent import futures
 from typing import Any, Dict, List, Union
@@ -27,7 +28,7 @@ from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
     StreamerStub,
     add_StreamerServicer_to_server,
 )
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 from .base_driver import BaseDriver
@@ -56,7 +57,7 @@ class StreamConnection(Connection):
         self.context = context  # for server side
         self.channel = channel  # for client side
         self.lock = threading.Lock()
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def get_conn_properties(self) -> dict:
         return self.conn_props
@@ -123,7 +124,7 @@ class StreamConnection(Connection):
 class Servicer(StreamerServicer):
     def __init__(self, server):
         self.server = server
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def Stream(self, request_iterator, context):
         connection = None
@@ -168,7 +169,7 @@ class Server:
         options,
     ):
         self.driver = driver
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.connector = connector
         self.grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers), options=options)
         servicer = Servicer(self)
@@ -202,11 +203,13 @@ class Server:
 class GrpcDriver(BaseDriver):
     def __init__(self):
         BaseDriver.__init__(self)
+        # GRPC with fork issue: https://github.com/grpc/grpc/issues/28557
+        os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "False"
         self.server = None
         self.closing = False
         self.max_workers = 100
         self.options = GRPC_DEFAULT_OPTIONS
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         configurator = CommConfigurator()
         config = configurator.get_config()
         if config:

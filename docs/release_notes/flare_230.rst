@@ -41,7 +41,7 @@ Prior to FLARE 2.3.0, model initialization was performed on the server-side.
 The model was either initialized from a model file or custom model initiation code. Pre-defining a model file required extra steps of pre-generating
 and saving the model file and then sending it over to the server. Running custom model initialization code on server could be a security risk.
 
-FLARE 2.3.0 introuduces another way to initialize the model on the client side. The FL Server can select
+FLARE 2.3.0 introduces another way to initialize the model on the client side. The FL Server can select
 the initial model based on a user-chosen strategy. Here is an example using client-side model initialization: https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-pt.
 You can read more about this feature in :ref:`initialize_global_weights_workflow`.
 
@@ -67,7 +67,7 @@ Federated Private Set Intersection (PSI)
 In order to support vertical learning use cases such as secure user-id matching and feature
 over-lapping discovery, we have developed a multi-party private set intersection (PSI) operator
 that allows for the secure discovery of data intersections. Our approach leverages OpenMined's two-party
-`Private Set Intersection Cardinality protocol <https://github.com/OpenMined/PSI>`_, which is basedon ECDH and Bloom Filters, and we have
+`Private Set Intersection Cardinality protocol <https://github.com/OpenMined/PSI>`_, which is based on ECDH and Bloom Filters, and we have
 made this protocol available for multi-party use. More information on our approach and how to use the
 PSI operator can be found in the :github_nvflare_link:`PSI Example <examples/advanced/psi/README.md>`.
 

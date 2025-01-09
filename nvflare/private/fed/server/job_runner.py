@@ -22,7 +22,7 @@ from typing import Dict, List, Tuple
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemComponents
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SiteType, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
@@ -35,7 +35,7 @@ from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
-from nvflare.private.fed.utils.fed_utils import set_message_security_data
+from nvflare.private.fed.utils.fed_utils import extract_participants, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
 
@@ -49,7 +49,8 @@ def _send_to_clients(admin_server, client_sites: List[str], engine, message, tim
 
     if timeout is None:
         timeout = admin_server.timeout
-    replies = admin_server.send_requests(requests, timeout_secs=timeout, optional=optional)
+    with admin_server.sai.new_context() as fl_ctx:
+        replies = admin_server.send_requests(requests, fl_ctx, timeout_secs=timeout, optional=optional)
     return replies
 
 
@@ -120,7 +121,7 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         run_number = job.job_id
         fl_ctx.set_prop(FLContextKey.JOB_RUN_NUMBER, run_number)
-        workspace = Workspace(root_dir=self.workspace_root, site_name="server")
+        workspace = Workspace(root_dir=self.workspace_root, site_name=SiteType.SERVER)
 
         client_deploy_requests = {}
         client_token_to_name = {}
@@ -130,14 +131,15 @@ class JobRunner(FLComponent):
 
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
+            participants = extract_participants(participants)
 
             if len(participants) == 1 and participants[0].upper() == ALL_SITES:
-                participants = ["server"]
+                participants = [SiteType.SERVER]
                 participants.extend([client.name for client in engine.get_clients()])
 
             client_sites = []
             for p in participants:
-                if p == "server":
+                if p == SiteType.SERVER:
                     self.fire_event(EventType.DEPLOY_JOB_TO_SERVER, fl_ctx)
                     app_deployer = AppDeployer()
                     err = app_deployer.deploy(
@@ -244,11 +246,11 @@ class JobRunner(FLComponent):
         """
         engine = fl_ctx.get_engine()
         job_clients = engine.get_job_clients(client_sites)
-        err = engine.start_app_on_server(job_id, job=job, job_clients=job_clients)
+        err = engine.start_app_on_server(fl_ctx, job=job, job_clients=job_clients)
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
-        replies = engine.start_client_job(job_id, client_sites)
+        replies = engine.start_client_job(job, client_sites, fl_ctx)
         client_sites_names = list(client_sites.keys())
         check_client_replies(replies=replies, client_sites=client_sites_names, command=f"start job ({job_id})")
         display_sites = ",".join(client_sites_names)
@@ -417,7 +419,7 @@ class JobRunner(FLComponent):
                         if self._check_job_status(job_manager, ready_job.job_id, RunStatus.SUBMITTED, fl_ctx):
                             self.log_info(fl_ctx, f"Job: {ready_job.job_id} is not in SUBMITTED. It won't be deployed.")
                             continue
-                        client_sites = {k: v for k, v in sites.items() if k != "server"}
+                        client_sites = {k: v for k, v in sites.items() if k != SiteType.SERVER}
                         job_id = None
                         try:
                             self.log_info(fl_ctx, f"Got the job: {ready_job.job_id} from the scheduler to run")
@@ -443,6 +445,7 @@ class JobRunner(FLComponent):
                                     },
                                     fl_ctx,
                                 )
+                                self.log_info(fl_ctx, f"Updated the schedule history of Job: {job_id}")
 
                             if failed_clients:
                                 deployable_clients = {k: v for k, v in client_sites.items() if k not in failed_clients}
@@ -464,6 +467,7 @@ class JobRunner(FLComponent):
                             with self.lock:
                                 self.running_jobs[job_id] = ready_job
                             job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
+                            self.log_info(fl_ctx, f"Job: {job_id} started to run, status changed to RUNNING.")
                         except Exception as e:
                             if job_id:
                                 if job_id in self.running_jobs:
@@ -494,13 +498,13 @@ class JobRunner(FLComponent):
     def stop(self):
         self.ask_to_stop = True
 
-    def restore_running_job(self, run_number: str, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
+    def restore_running_job(self, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
 
         try:
             job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
             job = job_manager.get_job(jid=job_id, fl_ctx=fl_ctx)
-            err = engine.start_app_on_server(run_number, job=job, job_clients=job_clients, snapshot=snapshot)
+            err = engine.start_app_on_server(fl_ctx, job=job, job_clients=job_clients, snapshot=snapshot)
             if err:
                 raise RuntimeError(f"Could not restore the server App for job: {job_id}.")
             with self.lock:

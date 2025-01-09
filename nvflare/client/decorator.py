@@ -16,8 +16,9 @@ import functools
 from inspect import signature
 
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.fuel.utils.deprecated import deprecated
 
-from .api import get_model_registry, is_train
+from .api import is_train, receive, send
 
 
 def _replace_func_args(func, kwargs, model: FLModel):
@@ -26,16 +27,40 @@ def _replace_func_args(func, kwargs, model: FLModel):
     kwargs[first_params.name] = model
 
 
+class ObjectHolder:
+    def __init__(self):
+        self.metrics = None
+
+
+object_holder = ObjectHolder()
+
+
+@deprecated("@flare.train is deprecated and will be removed in a future version." "Use flare send/receive instead.")
 def train(
     _func=None,
     **root_kwargs,
 ):
+    """A decorator to wraps the training logic.
+
+    Note:
+        FLARE will pass the model received from the server side to the first argument of the decorated method.
+        The return value of the decorated training method needs to be an FLModel object.
+
+    Usage:
+
+        .. code-block:: python
+
+            @nvflare.client.train
+            def my_train(input_model=None, device="cuda:0"):
+               ...
+               return new_model
+
+    """
+
     def decorator(train_fn):
         @functools.wraps(train_fn)
         def wrapper(*args, **kwargs):
-            model_registry = get_model_registry()
-            input_model = model_registry.get_model()
-
+            input_model = receive()
             # Replace func arguments
             _replace_func_args(train_fn, kwargs, input_model)
             return_value = train_fn(**kwargs)
@@ -45,11 +70,13 @@ def train(
             elif not isinstance(return_value, FLModel):
                 raise RuntimeError("return value needs to be an FLModel.")
 
-            if model_registry.metrics is not None:
-                return_value.metrics = model_registry.metrics
+            global object_holder
 
-            model_registry.submit_model(model=return_value)
-            model_registry.clear()
+            if object_holder.metrics is not None:
+                return_value.metrics = object_holder.metrics
+                object_holder = ObjectHolder()
+
+            send(model=return_value)
 
             return return_value
 
@@ -61,27 +88,46 @@ def train(
         return decorator(_func)
 
 
+@deprecated("@flare.evaluate is deprecated and will be removed in a future version." "Use flare send/receive instead.")
 def evaluate(
     _func=None,
     **root_kwargs,
 ):
+    """A decorator to wraps the evaluate logic.
+
+    Note:
+        FLARE will pass the model received from the server side to the first argument of the decorated method.
+        The return value of the decorated method needs to be a float number metric.
+        The decorated method needs to be run BEFORE the training method,
+        so the metrics will be sent along with the trained output model.
+
+    Usage:
+
+        .. code-block:: python
+
+            @nvflare.client.evaluate
+            def my_eval(input_model, device="cuda:0"):
+               ...
+               return metrics
+
+    """
+
     def decorator(eval_fn):
         @functools.wraps(eval_fn)
         def wrapper(*args, **kwargs):
-            model_registry = get_model_registry()
-            input_model = model_registry.get_model()
+            input_model = receive()
 
             _replace_func_args(eval_fn, kwargs, input_model)
             return_value = eval_fn(**kwargs)
 
             if return_value is None:
                 raise RuntimeError("return value is None!")
+            global object_holder
 
             if is_train():
-                model_registry.metrics = return_value
+                object_holder.metrics = return_value
             else:
-                model_registry.submit_model(model=FLModel(metrics=return_value))
-                model_registry.clear()
+                send(model=FLModel(metrics=return_value))
 
             return return_value
 

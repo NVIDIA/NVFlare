@@ -13,7 +13,6 @@
 # limitations under the License.
 import json
 import os
-import pathlib
 import random
 import shutil
 import socket
@@ -31,12 +30,18 @@ from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
+from nvflare.lighter.constants import ProvisionMode
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
-from nvflare.lighter.spec import Provisioner
-from nvflare.lighter.utils import load_yaml, update_project_server_name_config, update_storage_locations
+from nvflare.lighter.provisioner import Provisioner
+from nvflare.lighter.utils import (
+    load_yaml,
+    update_project_server_name_config,
+    update_server_default_host,
+    update_storage_locations,
+)
 from nvflare.tool.api_utils import shutdown_system
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
-from nvflare.utils.cli_utils import hocon_to_string
+from nvflare.utils.cli_utils import get_hidden_nvflare_config_path, get_or_create_hidden_nvflare_dir, hocon_to_string
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 DEFAULT_PROJECT_NAME = "example_project"
@@ -164,19 +169,19 @@ def _prepare_jobs_dir(jobs_dir: str, workspace: str, config_packages: Optional[T
     dst = os.path.join(console_dir, transfer)
     if not is_dir_empty(dst):
         print(" ")
-        answer = input(f"Examples at {dst} is already exists, replace with new one ? (y/N) ")
+        answer = input(f"job directory at {dst} is already exists, replace with new one ? (y/N) ")
         if answer.strip().upper() == "Y":
             if os.path.islink(dst):
                 os.unlink(dst)
             if os.path.isdir(dst):
                 shutil.rmtree(dst, ignore_errors=True)
 
-            print(f"link examples from {src} to {dst}")
+            print(f"link job directory from {src} to {dst}")
             os.symlink(src, dst)
     else:
         if os.path.isdir(dst):
             shutil.rmtree(dst, ignore_errors=True)
-        print(f"link examples from {src} to {dst}")
+        print(f"link job directory from {src} to {dst}")
         os.symlink(src, dst)
 
 
@@ -256,12 +261,14 @@ def prepare_builders(project_dict: OrderedDict) -> List:
         path = b.get("path")
         args = b.get("args")
 
-        if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
-            path = "nvflare.lighter.impl.local_static_file.LocalStaticFileBuilder"
-            args["overseer_agent"]["args"]["sp_end_point"] = "localhost:8002:8003"
-
-        elif b.get("path") == "nvflare.lighter.impl.cert.CertBuilder":
-            path = "nvflare.lighter.impl.local_cert.LocalCertBuilder"
+        # No longer need the following since we can simply set the default_host to localhost!
+        # if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
+        #     path = "nvflare.lighter.impl.local_static_file.LocalStaticFileBuilder"
+        #     sp_end_point = args["overseer_agent"]["args"]["sp_end_point"]
+        #     args["overseer_agent"]["args"]["sp_end_point"] = replace_server_with_localhost(sp_end_point)
+        #
+        # elif b.get("path") == "nvflare.lighter.impl.cert.CertBuilder":
+        #     path = "nvflare.lighter.impl.local_cert.LocalCertBuilder"
 
         builders.append(instantiate_class(path, args))
     return builders
@@ -295,12 +302,14 @@ def local_provision(
         project_config = add_he_builder(use_he, project_config)
         if docker_image:
             project_config = update_static_file_builder(docker_image, project_config)
+    project_config = update_server_default_host(project_config, "localhost")
     save_project_config(project_config, dst_project_file)
     service_config = get_service_config(project_config)
     project = prepare_project(project_config)
     builders = prepare_builders(project_config)
+
     provisioner = Provisioner(workspace, builders)
-    provisioner.provision(project)
+    provisioner.provision(project, mode=ProvisionMode.POC)
 
     return project_config, service_config
 
@@ -366,7 +375,7 @@ def add_he_builder(use_he: bool, project_config: OrderedDict):
             "path": "nvflare.lighter.impl.he.HEBuilder",
             "args": {},
         }
-        project_config["builders"].append(he_builder)
+        project_config["builders"].insert(-1, he_builder)
 
     return project_config
 
@@ -396,7 +405,7 @@ def prepare_clients(clients, number_of_clients):
 
 
 def save_startup_kit_dir_config(workspace, project_name):
-    dst = get_hidden_nvflare_config_path()
+    dst = get_or_create_hidden_nvflare_config_path()
     config = None
     if os.path.isfile(dst):
         try:
@@ -485,27 +494,17 @@ def _prepare_poc(
     return True
 
 
-def get_home_dir():
-    return Path.home()
-
-
-def get_hidden_nvflare_config_path() -> str:
+def get_or_create_hidden_nvflare_config_path() -> str:
     """
     Get the path for the hidden nvflare configuration file.
 
     Returns:
         str: The path to the hidden nvflare configuration file.
     """
-    home_dir = get_home_dir()
-    hidden_nvflare_dir = pathlib.Path(home_dir) / ".nvflare"
+    hidden_nvflare_dir = get_or_create_hidden_nvflare_dir()
 
-    try:
-        hidden_nvflare_dir.mkdir(exist_ok=True)
-    except OSError as e:
-        raise RuntimeError(f"Error creating the hidden nvflare directory: {e}")
-
-    hidden_nvflare_config_file = hidden_nvflare_dir / "config.conf"
-    return str(hidden_nvflare_config_file)
+    hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_nvflare_dir))
+    return hidden_nvflare_config_file
 
 
 def prepare_poc_provision(
@@ -1077,7 +1076,7 @@ def get_poc_workspace():
     poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
 
     if not poc_workspace:
-        src_path = get_hidden_nvflare_config_path()
+        src_path = get_or_create_hidden_nvflare_config_path()
         if os.path.isfile(src_path):
             from pyhocon import ConfigFactory as CF
 

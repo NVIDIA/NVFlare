@@ -5,7 +5,7 @@ NVIDIA FLARE Overview
 #####################
 
 **NVIDIA FLARE** (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source,
-extensible SDK that allows researchers, data scientists and data engineers to adapt existing ML/DL and compute workflows to a federated paradigm.
+extensible Python SDK that allows researchers, data scientists and data engineers to adapt existing ML/DL and compute workflows to a federated paradigm.
 With the FLARE platform, developers can create a secure and privacy-preserving solution for decentralized data computing, facilitating distributed multi-party collaboration.
 
 Key Features
@@ -26,7 +26,7 @@ Built for productivity
 FLARE is designed for maximum productivity, providing a range of tools to enhance user experience and research efficiency at different stages of the development process:
 
 - **FLARE Client API:** Enables users to transition seamlessly from ML/DL to FL with just a few lines of code changes.
-- **Simulator CLI:** Allows users to simulate federated learning or computing jobs in multi-thread settings within a single computer, offering quick response and debugging. The same job can be deployed directly to production.
+- **Simulator CLI:** Allows users to simulate federated learning or computing jobs in multi-process settings within a single computer, offering quick response and debugging. The same job can be deployed directly to production.
 - **POC CLI:** Facilitates the simulation of federated learning or computing jobs in multi-process settings within one computer. Different processes represent server, clients, and an admin console, providing users with a realistic sense of the federated network. It also allows users to simulate project deployment on a single host.
 - **Job CLI:** Permits users to create and submit jobs directly in POC or production environments.
 - **FLARE API:** Enables users to run jobs directly from Python code or notebooks.

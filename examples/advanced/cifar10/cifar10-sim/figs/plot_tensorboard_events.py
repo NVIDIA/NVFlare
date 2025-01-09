@@ -30,7 +30,7 @@ client_results_root = "/tmp/nvflare/sim_cifar10"
 
 # 4.1 Central vs. FedAvg
 experiments = {
-    "cifar10_central": {"tag": "val_acc_local_model"},
+    "cifar10_central": {"tag": "val_acc_local_model", "alpha": 0.0},
     "cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 1.0},
 }
 
@@ -93,8 +93,10 @@ def main():
     for config, exp in experiments.items():
         config_name = config.split(" ")[0]
         alpha = exp.get("alpha", None)
-        if alpha:
+        if alpha is not None:
             config_name = config_name + f"*alpha{alpha}"
+        else:
+            raise ValueError(f"Expected an alpha value to be provided but got alpha={alpha}")
         eventfile = glob.glob(
             os.path.join(client_results_root, config_name, "**", "app_site-1", "events.*"), recursive=True
         )
@@ -116,7 +118,8 @@ def main():
                 try:
                     xsite_data[k].append(xsite_results["site-1"][k]["val_accuracy"])
                 except Exception as e:
-                    raise ValueError(f"No val_accuracy for {k} in {xsite_file}!")
+                    xsite_data[k].append(None)
+                    print(f"Warning: No val_accuracy for {k} in {xsite_file}!")
 
     print("Training TB data:")
     print(pd.DataFrame(data))

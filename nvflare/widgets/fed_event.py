@@ -52,7 +52,7 @@ class FedEventRunner(Widget):
         self.poster = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
+        if event_type == EventType.START_RUN or event_type == EventType.SYSTEM_BOOTSTRAP:
             self.engine = fl_ctx.get_engine()
             self.engine.register_aux_message_handler(topic=self.topic, message_handle_func=self._receive)
             self.abort_signal = fl_ctx.get_run_abort_signal()
@@ -208,7 +208,7 @@ class ClientFedEventRunner(FedEventRunner):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         super().handle_event(event_type, fl_ctx)
 
-        if event_type == EventType.START_RUN:
+        if event_type == EventType.START_RUN or event_type == EventType.SYSTEM_BOOTSTRAP:
             self.ready = True
 
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None, secure=False):

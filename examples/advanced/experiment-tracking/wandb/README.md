@@ -10,7 +10,7 @@ This example also highlights the Weights and Biases streaming capability from th
 
 ### 1. Install requirements and configure PYTHONPATH
 
-Install additional requirements:
+Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 
 ```
 python -m pip install -r requirements.txt
@@ -26,7 +26,9 @@ export PYTHONPATH=${PWD}/..
 Import the W&B Python SDK and log in:
 
 ```
-wandb.login()
+python3
+>>> import wandb
+>>> wandb.login()
 ```
 
 Provide your API key when prompted.

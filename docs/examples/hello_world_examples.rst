@@ -5,11 +5,11 @@ Hello World examples can be run from the :github_nvflare_link:`hello_world noteb
 
 .. toctree::
 
-   Deep Learning to Federated Learning (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/ml-to-fl>
-   Step-by-Step Examples (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/step-by-step>
-   hello_scatter_and_gather
+   :github_nvflare_link:`Deep Learning to Federated Learning (GitHub) <examples/hello-world/ml-to-fl>`
+   :github_nvflare_link:`Step-by-Step Examples (GitHub) <examples/hello-world/step-by-step>`
+   hello_fedavg_numpy
    hello_cross_val
-   Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/hello-cyclic>
-   hello_pt
-   hello_tf2
-   Hello Client Controlled Workflow (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/hello-ccwf>
+   :github_nvflare_link:`Hello Cyclic Weight Transfer (GitHub) <examples/hello-world/hello-cyclic>`
+   hello_pt_job_api
+   hello_tf_job_api
+   :github_nvflare_link:`Hello Client Controlled Workflow (GitHub) <examples/hello-world/hello-ccwf>`

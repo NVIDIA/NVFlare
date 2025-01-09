@@ -32,15 +32,15 @@ class State:
 
 
 class TestStreamCell:
-    @pytest.fixture(scope="module")
+    @pytest.fixture(scope="session")
     def port(self):
         return get_open_ports(1)[0]
 
-    @pytest.fixture(scope="module")
+    @pytest.fixture(scope="session")
     def state(self):
         return State()
 
-    @pytest.fixture(scope="module")
+    @pytest.fixture(scope="session")
     def server_cell(self, port, state):
         listening_url = f"tcp://localhost:{port}"
         cell = CoreCell(RX_CELL, listening_url, secure=False, credentials={})
@@ -48,16 +48,18 @@ class TestStreamCell:
         stream_cell.register_blob_cb(TEST_CHANNEL, TEST_TOPIC, self.blob_cb, state=state)
         cell.start()
 
-        return stream_cell
+        yield stream_cell
+        cell.stop()
 
-    @pytest.fixture(scope="module")
+    @pytest.fixture(scope="session")
     def client_cell(self, port, state):
         connect_url = f"tcp://localhost:{port}"
         cell = CoreCell(TX_CELL, connect_url, secure=False, credentials={})
         stream_cell = StreamCell(cell)
         cell.start()
 
-        return stream_cell
+        yield stream_cell
+        cell.stop()
 
     def test_streaming_blob(self, server_cell, client_cell, state):
 

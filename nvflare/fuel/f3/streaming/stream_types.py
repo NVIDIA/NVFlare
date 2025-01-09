@@ -60,15 +60,15 @@ class Stream(ABC):
         return self.headers
 
     @abstractmethod
-    def read(self, chunk_size: int) -> BytesAlike:
-        """Read and return up to chunk_size bytes. It can return less but not more than the chunk_size.
+    def read(self, size: int) -> BytesAlike:
+        """Read and return up to size bytes. It can return less but not more than the size.
         An empty bytes object is returned if the stream reaches the end.
 
         Args:
-            chunk_size: Up to (but maybe less) this many bytes will be returned
+            size: Up to (but maybe less) this many bytes will be returned
 
         Returns:
-            Binary data. If empty, it means the stream is depleted (EOF)
+            Binary data. If empty, it means the stream is depleted (EOS)
         """
         pass
 
@@ -110,13 +110,23 @@ class ObjectIterator(Iterator, ABC):
         self.index = index
 
 
+class StreamTaskSpec(ABC):
+    def cancel(self):
+        """Cancel the task
+
+        Returns:
+
+        """
+        pass
+
+
 class StreamFuture:
     """Future class for all stream calls.
 
     Fashioned after concurrent.futures.Future
     """
 
-    def __init__(self, stream_id: int, headers: Optional[dict] = None):
+    def __init__(self, stream_id: int, headers: Optional[dict] = None, task_handle: StreamTaskSpec = None):
         self.stream_id = stream_id
         self.headers = headers
         self.waiter = threading.Event()
@@ -126,6 +136,7 @@ class StreamFuture:
         self.size = 0
         self.progress = 0
         self.done_callbacks = []
+        self.task_handle = task_handle
 
     def get_stream_id(self) -> int:
         return self.stream_id
@@ -157,7 +168,8 @@ class StreamFuture:
                 return False
 
             self.error = StreamCancelled(f"Stream {self.stream_id} is cancelled")
-
+            if self.task_handle:
+                self.task_handle.cancel()
             return True
 
     def cancelled(self):

@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 from copy import deepcopy
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import Callback
+
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class RestoreState(Callback):
@@ -24,7 +25,7 @@ class RestoreState(Callback):
 
     def __init__(self):
         super().__init__()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
         self.optimizer_states = []
         self.scaler_states = []

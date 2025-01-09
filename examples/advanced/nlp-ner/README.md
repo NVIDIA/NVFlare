@@ -52,7 +52,7 @@ Let's take a closer look at the word-label correspondence:
 As shown above, the task is to capture the keywords related to medical findings.
 
 ## Run automated experiments
-We use the NVFlare [simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) to run the FL training.
+We use the NVFlare [simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) to run the FL training.
 Set `PYTHONPATH` to include custom files of this example:
 ```
 export PYTHONPATH=${PWD}

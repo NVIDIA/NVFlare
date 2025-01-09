@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import threading
 from typing import Callable, Optional
 
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
-from nvflare.fuel.f3.streaming.byte_streamer import STREAM_TYPE_BLOB, ByteStreamer
+from nvflare.fuel.f3.streaming.byte_streamer import STREAM_CHUNK_SIZE, STREAM_TYPE_BLOB, ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import EOS
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
 from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, stream_thread_pool, wrap_view
@@ -77,10 +79,14 @@ class BlobTask:
         else:
             self.buffer = FastBuffer()
 
+    def __str__(self):
+        return f"Blob[SID:{self.future.get_stream_id()} Size：{self.size}]"
+
 
 class BlobHandler:
     def __init__(self, blob_cb: Callable):
         self.blob_cb = blob_cb
+        self.chunk_size = CommConfigurator().get_streaming_chunk_size(STREAM_CHUNK_SIZE)
 
     def handle_blob_cb(self, future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int:
 
@@ -95,31 +101,43 @@ class BlobHandler:
 
         return 0
 
-    @staticmethod
-    def _read_stream(blob_task: BlobTask):
+    def _read_stream(self, blob_task: BlobTask):
 
         try:
-            # It's most efficient to use the same chunk size as the stream
-            chunk_size = ByteStreamer.get_chunk_size()
-
+            # It's most efficient to read the whole chunk
+            size = self.chunk_size
+            thread_id = threading.get_native_id()
             buf_size = 0
             while True:
-                buf = blob_task.stream.read(chunk_size)
+                buf = blob_task.stream.read(size)
                 if not buf:
                     break
 
                 length = len(buf)
-                if blob_task.pre_allocated:
-                    blob_task.buffer[buf_size : buf_size + length] = buf
-                else:
-                    blob_task.buffer.append(buf)
+                try:
+                    if blob_task.pre_allocated:
+                        remaining = len(blob_task.buffer) - buf_size
+                        if length > remaining:
+                            log.error(f"{blob_task} Buffer overrun: {thread_id=} {remaining=} {length=} {buf_size=}")
+                            if remaining > 0:
+                                blob_task.buffer[buf_size : buf_size + remaining] = buf[0:remaining]
+                                buf_size += remaining
+                            break
+                        else:
+                            blob_task.buffer[buf_size : buf_size + length] = buf
+                    else:
+                        blob_task.buffer.append(buf)
+                except Exception as ex:
+                    log.error(
+                        f"{blob_task} memoryview error: {ex} Debug info: "
+                        f"{thread_id=} {length=} {buf_size=} {type(buf)=}"
+                    )
+                    raise ex
 
                 buf_size += length
 
             if blob_task.size and blob_task.size != buf_size:
-                log.warning(
-                    f"Stream {blob_task.future.get_stream_id()} size doesn't match: " f"{blob_task.size} <> {buf_size}"
-                )
+                log.warning(f"Stream {blob_task} Size doesn't match: {blob_task.size} <> {buf_size} {thread_id=}")
 
             if blob_task.pre_allocated:
                 result = blob_task.buffer
@@ -128,8 +146,8 @@ class BlobHandler:
 
             blob_task.future.set_result(result)
         except Exception as ex:
-            log.error(f"Stream {blob_task.future.get_stream_id()} read error: {ex}")
-            log.debug(secure_format_traceback())
+            log.error(f"Stream {blob_task} Read error: {ex}")
+            log.error(secure_format_traceback())
             blob_task.future.set_exception(ex)
 
 

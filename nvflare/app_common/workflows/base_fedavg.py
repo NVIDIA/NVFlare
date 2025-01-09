@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import random
 from typing import List
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -27,44 +27,44 @@ from .model_controller import ModelController
 
 
 class BaseFedAvg(ModelController):
-    """The base controller for FedAvg Workflow. *Note*: This class is based on the experimental `ModelController`.
+    def __init__(
+        self,
+        *args,
+        num_clients: int = 3,
+        num_rounds: int = 5,
+        start_round: int = 0,
+        **kwargs,
+    ):
+        """The base controller for FedAvg Workflow. *Note*: This class is based on the `ModelController`.
 
-    Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
-    The model persistor (persistor_id) is used to load the initial global model which is sent to a list of clients.
-    Each client sends it's updated weights after local training which is aggregated.
-    Next, the global model is updated.
-    The model_persistor also saves the model after training.
+        Implements [FederatedAveraging](https://arxiv.org/abs/1602.05629).
 
-    Provides the default implementations for the follow routines:
-        - def sample_clients(self, min_clients)
-        - def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel
-        - def update_model(self, aggr_result)
+        A model persistor can be configured via the `persistor_id` argument of the `ModelController`.
+        The model persistor is used to load the initial global model which is sent to a list of clients.
+        Each client sends it's updated weights after local training which is aggregated.
+        Next, the global model is updated.
+        The model_persistor will also save the model after training.
 
-    The `run` routine needs to be implemented by the derived class:
+        Provides the default implementations for the follow routines:
+            - def aggregate(self, results: List[FLModel], aggregate_fn=None) -> FLModel
+            - def update_model(self, aggr_result)
 
-        - def run(self)
-    """
+        The `run` routine needs to be implemented by the derived class:
 
-    def sample_clients(self, min_clients):
-        """Called by the `run` routine to get a list of available clients.
+            - def run(self)
 
         Args:
-            min_clients: number of clients to return.
-
-        Returns: list of clients.
-
+            num_clients (int, optional): The number of clients. Defaults to 3.
+            num_rounds (int, optional): The total number of training rounds. Defaults to 5.
+            start_round (int, optional): The starting round number.
         """
-        self._min_clients = min_clients
+        super().__init__(*args, **kwargs)
 
-        clients = self.engine.get_clients()
-        if len(clients) < self._min_clients:
-            self._min_clients = len(clients)
+        self.num_clients = num_clients
+        self.num_rounds = num_rounds
+        self.start_round = start_round
 
-        if self._min_clients < len(clients):
-            random.shuffle(clients)
-            clients = clients[0 : self._min_clients]
-
-        return clients
+        self.current_round = None
 
     @staticmethod
     def _check_results(results: List[FLModel]):
@@ -77,22 +77,38 @@ class BaseFedAvg(ModelController):
             raise ValueError(f"Result from client(s) {empty_clients} is empty!")
 
     @staticmethod
-    def _aggregate_fn(results: List[FLModel]) -> FLModel:
-        aggregation_helper = WeightedAggregationHelper()
+    def aggregate_fn(results: List[FLModel]) -> FLModel:
+        if not results:
+            raise ValueError("received empty results for aggregation.")
+
+        aggr_helper = WeightedAggregationHelper()
+        aggr_metrics_helper = WeightedAggregationHelper()
+        all_metrics = True
         for _result in results:
-            aggregation_helper.add(
+            aggr_helper.add(
                 data=_result.params,
                 weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
                 contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
-                contribution_round=_result.meta.get("current_round", None),
+                contribution_round=_result.current_round,
             )
+            if not _result.metrics:
+                all_metrics = False
+            if all_metrics:
+                aggr_metrics_helper.add(
+                    data=_result.metrics,
+                    weight=_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
+                    contributor_name=_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
+                    contribution_round=_result.current_round,
+                )
 
-        aggregated_dict = aggregation_helper.get_result()
+        aggr_params = aggr_helper.get_result()
+        aggr_metrics = aggr_metrics_helper.get_result() if all_metrics else None
 
         aggr_result = FLModel(
-            params=aggregated_dict,
+            params=aggr_params,
             params_type=results[0].params_type,
-            meta={"nr_aggregated": len(results), "current_round": results[0].meta["current_round"]},
+            metrics=aggr_metrics,
+            meta={"nr_aggregated": len(results), "current_round": results[0].current_round},
         )
         return aggr_result
 
@@ -111,9 +127,9 @@ class BaseFedAvg(ModelController):
         self._check_results(results)
 
         if not aggregate_fn:
-            aggregate_fn = self._aggregate_fn
+            aggregate_fn = self.aggregate_fn
 
-        self.info(f"aggregating {len(results)} update(s) at round {self._current_round}")
+        self.info(f"aggregating {len(results)} update(s) at round {self.current_round}")
         try:
             aggr_result = aggregate_fn(results)
         except Exception as e:
@@ -129,10 +145,11 @@ class BaseFedAvg(ModelController):
 
         return aggr_result
 
-    def update_model(self, aggr_result):
+    def update_model(self, model, aggr_result):
         """Called by the `run` routine to update the current global model (self.model) given the aggregated result.
 
         Args:
+            model: FLModel to be updated.
             aggr_result: aggregated FLModel.
 
         Returns: None.
@@ -140,7 +157,12 @@ class BaseFedAvg(ModelController):
         """
         self.event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE)
 
-        self.model = FLModelUtils.update_model(self.model, aggr_result)
+        model = FLModelUtils.update_model(model, aggr_result)
 
-        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.model, private=True, sticky=True)
+        # persistor uses Learnable format to save model
+        ml = make_model_learnable(weights=model.params, meta_props=model.meta)
+        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, ml, private=True, sticky=True)
+
         self.event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE)
+
+        return model

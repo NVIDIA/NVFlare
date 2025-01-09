@@ -43,7 +43,7 @@ class TestJobManager(unittest.TestCase):
             mock_store.return_value = FilesystemStorage()
 
             data, meta = self._create_job()
-            content = self.job_manager.get_content(meta.get(JobMetaKey.JOB_ID), self.fl_ctx)
+            content = self.job_manager.get_content(meta, self.fl_ctx)
             assert content == data
 
     def _create_job(self):

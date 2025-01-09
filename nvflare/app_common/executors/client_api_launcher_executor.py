@@ -15,7 +15,9 @@
 import os
 from typing import Optional
 
+from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG
@@ -30,47 +32,49 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         launch_timeout: Optional[float] = None,
         task_wait_timeout: Optional[float] = None,
         last_result_transfer_timeout: float = 300.0,
-        peer_read_timeout: Optional[float] = None,
+        external_pre_init_timeout: float = 60.0,
+        peer_read_timeout: Optional[float] = 60.0,
         monitor_interval: float = 0.01,
-        read_interval: float = 0.001,
+        read_interval: float = 0.5,
         heartbeat_interval: float = 5.0,
-        heartbeat_timeout: float = 30.0,
+        heartbeat_timeout: float = 60.0,
         workers: int = 4,
         train_with_evaluation: bool = True,
-        train_task_name: str = "train",
-        evaluate_task_name: str = "evaluate",
-        submit_model_task_name: str = "submit_model",
+        train_task_name: str = AppConstants.TASK_TRAIN,
+        evaluate_task_name: str = AppConstants.TASK_VALIDATION,
+        submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
-        params_exchange_format: ExchangeFormat = ExchangeFormat.NUMPY,
-        params_transfer_type: TransferType = TransferType.FULL,
+        params_exchange_format: str = ExchangeFormat.NUMPY,
+        params_transfer_type: str = TransferType.FULL,
         config_file_name: str = CLIENT_API_CONFIG,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
 
         Args:
-            pipe_id (Optional[str]): Identifier for obtaining the Pipe from NVFlare components.
+            pipe_id (str): Identifier for obtaining the Pipe from NVFlare components.
             launcher_id (Optional[str]): Identifier for obtaining the Launcher from NVFlare components.
             launch_timeout (Optional[float]): Timeout for the Launcher's "launch_task" method to complete (None for no timeout).
             task_wait_timeout (Optional[float]): Timeout for retrieving the task result (None for no timeout).
-            last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process (default: 5.0).
+            last_result_transfer_timeout (float): Timeout for transmitting the last result from an external process.
                 This value should be greater than the time needed for sending the whole result.
-            peer_read_timeout (Optional[float]): Timeout for waiting the task to be read by the peer from the pipe (None for no timeout).
-            monitor_interval (float): Interval for monitoring the launcher (default: 0.01).
-            read_interval (float): Interval for reading from the pipe (default: 0.5).
-            heartbeat_interval (float): Interval for sending heartbeat to the peer (default: 5.0).
-            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer (default: 30.0).
-            workers (int): Number of worker threads needed (default: 4).
-            train_with_evaluation (bool): Whether to run training with global model evaluation (default: True).
-            train_task_name (str): Task name of train mode (default: train).
-            evaluate_task_name (str): Task name of evaluate mode (default: evaluate).
-            submit_model_task_name (str): Task name of submit_model mode (default: submit_model).
+            external_pre_init_timeout (float): Time to wait for external process before it calls flare.init().
+            peer_read_timeout (float, optional): time to wait for peer to accept sent message.
+            monitor_interval (float): Interval for monitoring the launcher.
+            read_interval (float): Interval for reading from the pipe.
+            heartbeat_interval (float): Interval for sending heartbeat to the peer.
+            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer.
+            workers (int): Number of worker threads needed.
+            train_with_evaluation (bool): Whether to run training with global model evaluation.
+            train_task_name (str): Task name of train mode.
+            evaluate_task_name (str): Task name of evaluate mode.
+            submit_model_task_name (str): Task name of submit_model mode.
             from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
             to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This ParamsConverter will be called when model is sent from nvflare executor side to controller side.
-            params_exchange_format (ExchangeFormat): What format to exchange the parameters.
-            params_transfer_type (TransferType): How to transfer the parameters. FULL means the whole model parameters are sent.
+            params_exchange_format (str): What format to exchange the parameters.
+            params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent.
             config_file_name (str): The config file name to write attributes into, the client api will read in this file.
         """
@@ -81,6 +85,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             launch_timeout=launch_timeout,
             task_wait_timeout=task_wait_timeout,
             last_result_transfer_timeout=last_result_transfer_timeout,
+            external_pre_init_timeout=external_pre_init_timeout,
             peer_read_timeout=peer_read_timeout,
             monitor_interval=monitor_interval,
             read_interval=read_interval,
@@ -117,12 +122,13 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 ConfigKey.CLASS_NAME: pipe_export_class,
                 ConfigKey.ARG: pipe_export_args,
             },
+            ConfigKey.HEARTBEAT_TIMEOUT: self.heartbeat_timeout,
         }
 
         config_data = {
             ConfigKey.TASK_EXCHANGE: task_exchange_attributes,
-            ConfigKey.SITE_NAME: fl_ctx.get_identity_name(),
-            ConfigKey.JOB_ID: fl_ctx.get_job_id(),
+            FLMetaKey.SITE_NAME: fl_ctx.get_identity_name(),
+            FLMetaKey.JOB_ID: fl_ctx.get_job_id(),
         }
 
         config_file_path = self._get_external_config_file_path(fl_ctx)

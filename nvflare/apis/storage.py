@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import List, Tuple
 
 DATA = "data"
@@ -21,7 +21,21 @@ META = "meta"
 META_JSON = "meta.json"
 WORKSPACE = "workspace"
 WORKSPACE_ZIP = "workspace.zip"
-MANIFEST = "manifest.json"
+
+
+class DataTypes(Enum):
+    """Valid data types for storage components.
+
+    In addition to data, meta, and workspace, this enum defines the valid components by
+    allowing for components with a name of an items in this enum and then an underscore
+    (for example ERRORLOG_site-1).
+
+    """
+
+    ERRORLOG = "ERRORLOG"
+
+
+VALID_COMPONENT_PREFIXES = [prefix.value for prefix in DataTypes]
 
 
 class StorageException(Exception):
@@ -53,7 +67,7 @@ class StorageSpec(ABC):
 
         Args:
             uri: URI of the object
-            data: content of the object
+            data: content of the object. bytes or file name.
             meta: meta info of the object
             overwrite_existing: whether to overwrite the object if already exists
 
@@ -61,6 +75,21 @@ class StorageSpec(ABC):
             - invalid args
             - object already exists and overwrite_existing is False
             - error creating the object
+
+        """
+        pass
+
+    @abstractmethod
+    def clone_object(self, from_uri: str, to_uri: str, meta: dict, overwrite_existing: bool = False):
+        """Create a new object by cloning an existing one
+
+        Args:
+            from_uri: the existing object's uri
+            to_uri: the uri for the new object
+            meta: meta info for the new object
+            overwrite_existing: whether to overwrite the new uri if already exists
+
+        Returns:
 
         """
         pass
@@ -203,4 +232,17 @@ class StorageSpec(ABC):
 
     @staticmethod
     def is_valid_component(component_name):
-        return component_name in [DATA, META, WORKSPACE, MANIFEST]
+        """Check if the component name is valid.
+
+        The valid components are: data, meta, workspace, and anything starting with a valid
+        ComponentPrefixes and then an underscore (for example ERRORLOG_site-1).
+
+        Args:
+            component_name: component name
+        """
+        valid_components = {DATA, META, WORKSPACE, *VALID_COMPONENT_PREFIXES}
+        if component_name in valid_components:
+            return True
+        if any(component_name.startswith(prefix + "_") for prefix in VALID_COMPONENT_PREFIXES):
+            return True
+        return False

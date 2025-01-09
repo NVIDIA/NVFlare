@@ -62,7 +62,10 @@ class CustomSecurityHandler(FLComponent):
         if command in ["check_resources", "submit_job"]:
             security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS)
             job_meta = security_items.get(FLContextKey.JOB_META)
-            auth_tokens = job_meta.get(JobMetaKey.CUSTOM_PROPS).get("auth_tokens")
+            auth_tokens = job_meta.get(JobMetaKey.CUSTOM_PROPS, {}).get("auth_tokens")
+            if not auth_tokens:
+                return False, f"Not authorized to execute command: {command}"
+
             site_name = fl_ctx.get_identity_name()
             site_auth_token = auth_tokens.get(site_name).split(":")[1]
 

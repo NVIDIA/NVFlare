@@ -85,7 +85,8 @@ class WsConnection(Connection):
             # This is to yield control. See bug: https://github.com/aaugustin/websockets/issues/865
             await asyncio.sleep(0)
         except Exception as ex:
-            log.error(f"Error sending frame for connection {self}: {secure_format_exception(ex)}")
+            log.error(f"Error sending frame for connection {self}, closing: {secure_format_exception(ex)}")
+            self.close()
 
 
 class AioHttpDriver(BaseDriver):
@@ -184,5 +185,11 @@ class AioHttpDriver(BaseDriver):
     async def _read_loop(conn: WsConnection):
         while not conn.closing:
             # Reading from websocket and call receiver CB
-            frame = await conn.websocket.recv()
-            conn.process_frame(frame)
+            try:
+                frame = await conn.websocket.recv()
+                conn.process_frame(frame)
+            except ConnectionClosedOK as ex:
+                raise ex
+            except Exception as ex:
+                log.error(f"Exception {type(ex)} on connection {conn}: {ex}")
+                raise ex

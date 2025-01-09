@@ -73,7 +73,9 @@ The Controller's Task Manager manages the task's lifecycle:
 
 .. note::
 
-    In NVIDIA FLARE 2.0, the underlying communication is by gRPC: the client always initiates communication by sending
-    a request to the server and a receiving response. When we say "server sends task to the client", it is only
-    conceptual. With gRPC, the client sends the "ask for next task" request to the server, and the server responds with
-    the task data.
+    In NVIDIA FLARE, the underlying communication is facilitated through gRPC:
+    the client always initiates communication by sending a request to the server and receiving a response.
+    When referring to the scenario where the "server sends a task to the client,"
+    it is important to note that this is a conceptual representation.
+    In reality, with gRPC, the client initiates the interaction by sending a "request for the next task" to the server,
+    and the server responds by providing the task data.

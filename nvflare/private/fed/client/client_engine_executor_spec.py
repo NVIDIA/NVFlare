@@ -14,7 +14,7 @@
 
 import time
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import Dict, List, Union
 
 from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.engine_spec import EngineSpec
@@ -116,16 +116,44 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
         pass
 
     @abstractmethod
+    def multicast_aux_requests(
+        self,
+        topic: str,
+        target_requests: Dict[str, Shareable],
+        timeout: float,
+        fl_ctx: FLContext,
+        optional: bool = False,
+        secure: bool = False,
+    ) -> dict:
+        """Send requests to specified targets (server or other clients) via the aux channel.
+
+        Implementation: simply calls the AuxRunner's multicast_aux_requests method.
+
+        Args:
+            topic: topic of the request
+            target_requests: requests of the targets. Different target can have different request.
+            timeout: amount of time to wait for responses. 0 means fire and forget.
+            fl_ctx: FL context
+            optional: whether this request is optional
+            secure: whether to send the aux request in P2P secure
+
+        Returns: a dict of replies (client name => reply Shareable)
+
+        """
+        pass
+
+    @abstractmethod
     def fire_and_forget_aux_request(
         self, topic: str, request: Shareable, fl_ctx: FLContext, optional=False, secure=False
     ) -> Shareable:
         """Send an async request to Server via the aux channel.
 
         Args:
-            topic: topic of the request
+            topic: topic of the request.
             request: request to be sent
             fl_ctx: FL context
             optional: whether the request is optional
+            secure: whether to send the message in P2P secure mode
 
         Returns:
 

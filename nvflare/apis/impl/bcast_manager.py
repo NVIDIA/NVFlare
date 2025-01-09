@@ -66,7 +66,7 @@ class BcastTaskManager(TaskManager):
             return True, TaskCompletionStatus.OK
 
         # if min_responses is 0, need to have all client tasks responded
-        if task.props[_KEY_MIN_RESPS] == 0 and clients_not_responded > 0:
+        if task.props[_KEY_MIN_RESPS] == 0 and clients_responded < len(task.targets):
             return False, TaskCompletionStatus.IGNORED
 
         # check if minimum responses are received

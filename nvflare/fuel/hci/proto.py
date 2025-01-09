@@ -19,6 +19,11 @@ from typing import List
 
 from .table import Table
 
+LINE_END = "\x03"  # Indicates the end of the line (end of text)
+ALL_END = "\x04"  # Marks the end of a complete transmission (End of Transmission)
+
+MAX_BLOCK_SIZE = 1024
+
 
 class ProtoKey(object):
 
@@ -56,12 +61,14 @@ class MetaKey(object):
     CLIENT_LAST_CONNECT_TIME = "client_last_conn_time"
     CLIENTS = "clients"
     CLIENT_STATUS = "client_status"
+    FQCN = "fqcn"
     JOBS = "jobs"
     JOB_NAME = "job_name"
     SUBMIT_TIME = "submit_time"
     DURATION = "duration"
     CMD_TIMEOUT = "cmd_timeout"
     CUSTOM_PROPS = "custom_props"
+    CMD_PROPS = "cmd_props"
     FILES = "files"
     CMD_NAME = "cmd_name"
     TX_ID = "tx_id"

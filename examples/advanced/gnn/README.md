@@ -24,14 +24,14 @@ Since the inductive learning mode is being used, the locally learnt model (a rep
 
 ###  Experiments
 ####  Install NVIDIA FLARE
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
-Install additional requirements:
+Follow the [Installation](../../getting_started/README.md) instructions.
+Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 ```
 python3 -m pip install -r requirements.txt
 ```
 To support functions of PyTorch Geometric necessary for this example, we need extra dependencies. Please refer to [installation guide](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) and install accordingly:
 ```
-pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
+python3 -m pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0+cpu.html
 ```
 
 #### Job Template
@@ -46,8 +46,8 @@ nvflare job list_templates
 We can see the "sag_gnn" template is available
 
 #### Protein Classification
-The PPI dataset is directly available via torch_geometric library, we randomly split the dataset to 2 subsets, one for each client.
-First, we run the local training on each client, as well as the whole dataset.
+The PPI dataset is directly available via torch_geometric library, we randomly split the dataset to 2 subsets, one for each client (`--client_id 1` and `--client_id 2`).
+First, we run the local training on each client, as well as the whole dataset with `--client_id 0`.
 ```
 python3 code/graphsage_protein_local.py --client_id 0
 python3 code/graphsage_protein_local.py --client_id 1
@@ -55,7 +55,7 @@ python3 code/graphsage_protein_local.py --client_id 2
 ```
 Then, we create NVFlare job based on GNN template.
 ```
-nvflare job create -force -j "./jobs/gnn_protein" -w "sag_gnn" -sd "code" \
+nvflare job create -force -j "/tmp/nvflare/jobs/gnn_protein" -w "sag_gnn" -sd "code" \
   -f app_1/config_fed_client.conf app_script="graphsage_protein_fl.py" app_config="--client_id 1 --epochs 10" \
   -f app_2/config_fed_client.conf app_script="graphsage_protein_fl.py" app_config="--client_id 2 --epochs 10" \
   -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_f1" model_class_path="torch_geometric.nn.GraphSAGE" components[0].args.model.args.in_channels=50  components[0].args.model.args.hidden_channels=64 components[0].args.model.args.num_layers=2 components[0].args.model.args.out_channels=64  
@@ -64,17 +64,17 @@ For client configs, we set client_ids for each client, and the number of local e
 
 For server configs, we set the number of rounds for federated training, the key metric for model selection, and the model class path with model hyperparameters.
 
-With the produced job, we run the federated training on both clients via FedAvg using NVFlare Simulator.
+With the produced job, we run the federated training on both clients via FedAvg using the NVFlare Simulator.
 ```
-nvflare simulator -w /tmp/nvflare/gnn/protein_fl_workspace -n 2 -t 2 ./jobs/gnn_protein
+nvflare simulator -w /tmp/nvflare/gnn/protein_fl_workspace -n 2 -t 2 /tmp/nvflare/jobs/gnn_protein
 ```
 
 #### Financial Transaction Classification
-We first download the Elliptic++ dataset to `data` folder. In this example, we will use the following three files:
+We first download the Elliptic++ dataset to `/tmp/nvflare/datasets/elliptic_pp` folder. In this example, we will use the following three files:
 - `txs_classes.csv`: transaction id and its class (licit or illicit)
 - `txs_edgelist.csv`: connections for transaction ids 
 - `txs_features.csv`: transaction id and its features
-Then, we run the local training on each client, as well as the whole dataset.
+Then, we run the local training on each client, as well as the whole dataset. Again, `--client_id 0` uses all data.
 ```
 python3 code/graphsage_finance_local.py --client_id 0
 python3 code/graphsage_finance_local.py --client_id 1
@@ -82,14 +82,14 @@ python3 code/graphsage_finance_local.py --client_id 2
 ```
 Similarly, we create NVFlare job based on GNN template.
 ```
-nvflare job create -force -j "./jobs/gnn_finance" -w "sag_gnn" -sd "code" \
+nvflare job create -force -j "/tmp/nvflare/jobs/gnn_finance" -w "sag_gnn" -sd "code" \
   -f app_1/config_fed_client.conf app_script="graphsage_finance_fl.py" app_config="--client_id 1 --epochs 10" \
   -f app_2/config_fed_client.conf app_script="graphsage_finance_fl.py" app_config="--client_id 2 --epochs 10" \
   -f app_server/config_fed_server.conf num_rounds=7 key_metric="validation_auc" model_class_path="pyg_sage.SAGE" components[0].args.model.args.in_channels=165  components[0].args.model.args.hidden_channels=256 components[0].args.model.args.num_layers=3 components[0].args.model.args.num_classes=2  
 ```
-And with the produced job, we run the federated training on both clients via FedAvg using NVFlare Simulator.
+And with the produced job, we run the federated training on both clients via FedAvg using the NVFlare Simulator.
 ```
-nvflare simulator -w /tmp/nvflare/gnn/finance_fl_workspace -n 2 -t 2 ./jobs/gnn_finance
+nvflare simulator -w /tmp/nvflare/gnn/finance_fl_workspace -n 2 -t 2 /tmp/nvflare/jobs/gnn_finance
 ```
 
 ###  Results

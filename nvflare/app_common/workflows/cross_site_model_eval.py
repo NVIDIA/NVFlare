@@ -49,7 +49,9 @@ class CrossSiteModelEval(Controller):
         participating_clients=None,
         wait_for_clients_timeout=300,
     ):
-        """Cross Site Model Validation workflow.
+        """Cross Site Model Evaluation workflow.
+
+        # TODO: change validation to evaluation to reflect the real meaning
 
         Args:
             task_check_period (float, optional): How often to check for new tasks or tasks being finished.
@@ -58,8 +60,8 @@ class CrossSiteModelEval(Controller):
                 Defaults to "cross_site_val".
             submit_model_timeout (int, optional): Timeout of submit_model_task. Defaults to 600 secs.
             validation_timeout (int, optional): Timeout for validate_model task. Defaults to 6000 secs.
-            model_locator_id (str, optional): ID for model_locator component. Defaults to "".
-            formatter_id (str, optional): ID for formatter component. Defaults to "".
+            model_locator_id (str, optional): ID for `ModelLocator` component. Defaults to "".
+            formatter_id (str, optional): ID for `Formatter` component. Defaults to "".
             submit_model_task_name (str, optional): Name of submit_model task. Defaults to "".
             validation_task_name (str, optional): Name of validate_model task. Defaults to "validate".
             cleanup_models (bool, optional): Whether or not models should be deleted after run. Defaults to False.

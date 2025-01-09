@@ -26,7 +26,6 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
-from nvflare.private.fed.utils.fed_utils import configure_logging
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
 
@@ -35,7 +34,7 @@ from .deployer.server_deployer import ServerDeployer
 from .fl_app_validator import FLAppValidator
 
 FL_PACKAGES = ["nvflare"]
-FL_MODULES = ["server", "client", "app_common", "private", "app_opt"]
+FL_MODULES = ["server", "client", "app_common", "private"]
 
 
 class FLServerStarterConfiger(JsonConfigurator):
@@ -49,7 +48,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             kv_list: key value pair list
         """
         site_custom_folder = workspace.get_site_custom_dir()
-        if os.path.isdir(site_custom_folder):
+        if os.path.isdir(site_custom_folder) and site_custom_folder not in sys.path:
             sys.path.append(site_custom_folder)
 
         self.args = args
@@ -63,16 +62,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         else:
             self.cmd_vars = {}
 
-        configure_logging(workspace)
-
-        server_startup_file_path = workspace.get_server_startup_file_path()
-        resource_config_path = workspace.get_resources_file_path()
-        config_files = [server_startup_file_path, resource_config_path]
-        if args.job_id:
-            # this is for job process
-            job_resources_file_path = workspace.get_job_resources_file_path()
-            if os.path.exists(job_resources_file_path):
-                config_files.append(job_resources_file_path)
+        config_files = workspace.get_config_files_for_startup(is_server=True, for_job=True if args.job_id else False)
 
         JsonConfigurator.__init__(
             self,
@@ -219,7 +209,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             kv_list: key value pair list
         """
         site_custom_folder = workspace.get_site_custom_dir()
-        if os.path.isdir(site_custom_folder):
+        if os.path.isdir(site_custom_folder) and site_custom_folder not in sys.path:
             sys.path.append(site_custom_folder)
 
         self.args = args
@@ -233,17 +223,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         else:
             self.cmd_vars = {}
 
-        configure_logging(workspace)
-
-        client_startup_file_path = workspace.get_client_startup_file_path()
-        resources_file_path = workspace.get_resources_file_path()
-        config_files = [client_startup_file_path, resources_file_path]
-
-        if args.job_id:
-            # this is for job process
-            job_resources_file_path = workspace.get_job_resources_file_path()
-            if os.path.exists(job_resources_file_path):
-                config_files.append(job_resources_file_path)
+        config_files = workspace.get_config_files_for_startup(is_server=False, for_job=True if args.job_id else False)
 
         JsonConfigurator.__init__(
             self,

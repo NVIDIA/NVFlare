@@ -51,12 +51,10 @@ with the appropriate path to the directory containing the "pt" directory with cu
 Adding MLflow Logging to Configurations
 ------------------------------------------------
 
-Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
+Inside the config folder there are two files, ``config_fed_client.conf`` and ``config_fed_server.conf``.
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/mlflow/jobs/hello-pt-mlflow/app/config/config_fed_client.json
-   :language: json
-   :linenos:
-   :caption: config_fed_client.json
+.. literalinclude:: ../../examples/advanced/experiment-tracking/mlflow/jobs/hello-pt-mlflow/app/config/config_fed_client.conf
+   :caption: config_fed_client.conf
 
 Take a look at the components section of the client config at line 24.
 The first component is the ``pt_learner`` which contains the initialization, training, and validation logic.
@@ -69,10 +67,8 @@ within NVFlare with the information to track.
 Finally, :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` converts local events to federated events.
 This changes the event ``analytix_log_stats`` into a fed event ``fed.analytix_log_stats``, which will then be streamed from the clients to the server.
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/mlflow/jobs/hello-pt-mlflow/app/config/config_fed_server.json
-   :language: json
-   :linenos:
-   :caption: config_fed_server.json
+.. literalinclude:: ../../examples/advanced/experiment-tracking/mlflow/jobs/hello-pt-mlflow/app/config/config_fed_server.conf
+   :caption: config_fed_server.conf
 
 Under the component section in the server config, we have the
 :class:`MLflowReceiver<nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver>`. This component receives

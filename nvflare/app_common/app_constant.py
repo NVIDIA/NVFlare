@@ -109,6 +109,7 @@ class AppConstants(object):
     TASK_END_RUN = "_end_run_"
     TASK_TRAIN = "train"
     TASK_GET_WEIGHTS = "get_weights"
+    TASK_PROP_CALLBACK = "_task_callback_"
 
     DEFAULT_AGGREGATOR_ID = "aggregator"
     DEFAULT_PERSISTOR_ID = "persistor"
@@ -162,6 +163,7 @@ class StatisticsConstants(AppConstants):
     STATS_VAR = "var"
     STATS_STDDEV = "stddev"
     STATS_HISTOGRAM = "histogram"
+    STATS_PERCENTILE = "percentile"
     STATS_MAX = "max"
     STATS_MIN = "min"
     STATS_FEATURES = "stats_features"
@@ -172,6 +174,9 @@ class StatisticsConstants(AppConstants):
     STATS_BIN_RANGE = "range"
     STATS_TARGET_STATISTICS = "statistics"
 
+    STATS_PERCENTILES_KEY = "percentiles"
+    STATS_CENTROIDS_KEY = "centroids"
+
     FED_STATS_PRE_RUN = "fed_stats_pre_run"
     FED_STATS_TASK = "fed_stats"
     STATISTICS_TASK_KEY = "fed_stats_task_key"
@@ -179,9 +184,20 @@ class StatisticsConstants(AppConstants):
     STATS_2nd_STATISTICS = "fed_stats_2nd_statistics"
 
     GLOBAL = "Global"
+    LOCAL = "Local"
+    NAME = "Name"
 
     ordered_statistics = {
-        STATS_1st_STATISTICS: [STATS_COUNT, STATS_FAILURE_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],
+        # statistics can only require one/two-round of calculations
+        STATS_1st_STATISTICS: [
+            STATS_COUNT,
+            STATS_FAILURE_COUNT,
+            STATS_SUM,
+            STATS_MEAN,
+            STATS_MIN,
+            STATS_MAX,
+            STATS_PERCENTILE,
+        ],
         STATS_2nd_STATISTICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
     }
 

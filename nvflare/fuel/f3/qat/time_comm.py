@@ -69,7 +69,7 @@ def _compute_time(file_name: str, pool_name: str, out_file):
         if min_time > rec.value:
             min_time = rec.value
 
-    _print(f"    Max={max_time};  Min={min_time};  Avg={result/count}; Count={count}; Total={result}", out_file)
+    _print(f"    Max={max_time};  Min={min_time};  Avg={result / count}; Count={count}; Total={result}", out_file)
     return result
 
 

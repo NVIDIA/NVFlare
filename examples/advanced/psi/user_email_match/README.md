@@ -13,42 +13,36 @@ These items could be user_ids or feature names depending on your use case.
 
 ```
 {
-  "format_version": 2,
-  "executors": [
+  format_version = 2
+  executors = [
     {
-      "tasks": [
-        "PSI"
-      ],
-      "executor": {
-        "id": "Executor",
-        "name": "PSIExecutor",
-        "args": {
-          "psi_algo_id": "dh_psi"
-        }
+      tasks = ["PSI"]
+      executor {
+        id = "Executor"
+        path = "nvflare.app_common.psi.psi_executor.PSIExecutor"
+        args.psi_algo_id = "dh_psi"
       }
     }
-  ],
-  "components": [
+  ]
+
+  components = [
     {
-      "id": "dh_psi",
-      "name": "DhPSITaskHandler",
-      "args": {
-        "local_psi_id": "local_psi"
+      id = "dh_psi"
+      path = "nvflare.app_opt.psi.dh_psi.dh_psi_task_handler.DhPSITaskHandler"
+      args.local_psi_id = "local_psi"
+    },
+    {
+      id = "local_psi"
+      path = "local_psi.LocalPSI"
+      args {
+        psi_writer_id = "psi_writer"
+        data_root_dir = "/tmp/nvflare/psi/data"
       }
     },
     {
-      "id": "local_psi",
-      "path": "local_psi.LocalPSI",
-      "args": {
-        "psi_writer_id": "psi_writer"
-      }
-    },
-    {
-      "id": "psi_writer",
-      "name": "FilePSIWriter",
-      "args": {
-        "output_path": "psi/intersection.txt"
-      }
+      id = "psi_writer",
+      path = "nvflare.app_common.psi.file_psi_writer.FilePSIWriter"
+      args.output_path = "psi/intersection.txt"
     }
   ]
 }
@@ -67,17 +61,16 @@ a file writer
 Just specify the built-in PSI controller. 
 ```
 {
-  "format_version": 2,
-  "workflows": [
+  format_version = 2,
+  workflows = [
     {
-      "id": "controller",
-      "name": "DhPSIController",
-      "args": {
+      id = "DhPSIController"
+      path = "nvflare.app_common.psi.dh_psi.dh_psi_controller.DhPSIController"
+      args{
       }
     }
   ]
 }
-
 ```
 **Code**
  the code is really trivial just needs to implement one method in PSI interface
@@ -120,18 +113,22 @@ copy NVFlare/examples/advanced/psi/user_email_match/data to /tmp/nvflare/psi dir
 
 **run job** 
 ```
-nvflare simulator -w /tmp/nvflare/psi -n 3 -t 3 user_email_match/jobs/user_email_match
+nvflare simulator -w /tmp/nvflare/psi/job -n 3 -t 3 user_email_match/jobs/user_email_match
 ```
 Once job completed and succeed, you should be able to find the intersection for different sites at
 
 ```
-/tmp/nvflare/psi/simulate_job/site-1/psi/intersection.txt 
-/tmp/nvflare/psi/simulate_job/site-2/psi/intersection.txt 
-/tmp/nvflare/psi/simulate_job/site-3/psi/intersection.txt  
+/tmp/nvflare/psi/job/simulate_job/site-1/psi/intersection.txt 
+/tmp/nvflare/psi/job/simulate_job/site-2/psi/intersection.txt 
+/tmp/nvflare/psi/job/simulate_job/site-3/psi/intersection.txt  
 ```
 to compare these intersections, you can check with the followings:
 
 ```bash
-diff <(sort /tmp/nvflare/psi/simulate_job/site-1/psi/intersection.txt) <(sort /tmp/nvflare/psi/simulate_job/site-2/psi/intersection.txt)
-diff <(sort /tmp/nvflare/psi/simulate_job/site-2/psi/intersection.txt) <(sort /tmp/nvflare/psi/simulate_job/site-3/psi/intersection.txt)
+diff <(sort /tmp/nvflare/psi/job/simulate_job/site-1/psi/intersection.txt) <(sort /tmp/nvflare/psi/job/simulate_job/site-2/psi/intersection.txt)
+diff <(sort /tmp/nvflare/psi/job/simulate_job/site-2/psi/intersection.txt) <(sort /tmp/nvflare/psi/job/simulate_job/site-3/psi/intersection.txt)
 ```
+
+**NOTE**
+>>The PSI operator depends on openmind-psi. It now supports up-to-python 3.11
+python 3.12 is still working in progress

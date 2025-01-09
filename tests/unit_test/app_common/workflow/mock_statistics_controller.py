@@ -15,8 +15,8 @@
 from typing import Dict
 
 from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import ClientTask
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.workflows.statistics_controller import StatisticsController

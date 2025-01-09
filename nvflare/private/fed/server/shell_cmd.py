@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import re
 import subprocess
 from typing import List
 
-from nvflare.fuel.hci.cmd_arg_utils import join_args
+from nvflare.apis.fl_constant import SiteType
+from nvflare.fuel.hci.cmd_arg_utils import join_args, validate_text_file_name
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -70,7 +70,7 @@ class _CommandExecutor(object):
         conn.set_prop("shell_cmd", shell_cmd)
         conn.set_prop("target_site", site_name)
 
-        if site_name == "server":
+        if site_name == SiteType.SERVER:
             return PreAuthzReturnCode.REQUIRE_AUTHZ
         else:
             # client site authorization will be done by the client itself
@@ -82,7 +82,7 @@ class _CommandExecutor(object):
     def execute_command(self, conn: Connection, args: List[str]):
         target = conn.get_prop("target_site")
         shell_cmd = conn.get_prop("shell_cmd")
-        if target == "server":
+        if target == SiteType.SERVER:
             # run the shell command on server
             output = subprocess.getoutput(shell_cmd)
             conn.append_string(output)
@@ -186,12 +186,9 @@ class _FileCmdExecutor(_CommandExecutor):
                         return ".. in path name is not allowed"
 
                 if self.text_file_only:
-                    basename, file_extension = os.path.splitext(f)
-                    if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
-                        return (
-                            "this command cannot be applied to file {}. Only files with the following extensions "
-                            "are permitted: .txt, .log, .json, .csv, .sh, .config, .py".format(f)
-                        )
+                    err = validate_text_file_name(f)
+                    if err:
+                        return err
 
         return ""
 

@@ -32,6 +32,10 @@ from nvflare.app_common.abstract.model import make_model_learnable, model_learna
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
 
+# (optional) We change to use GPU to speed things up.
+# if you want to use CPU, change DEVICE="cpu"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
 
 class CIFAR10Executor(Executor):
     def __init__(
@@ -43,7 +47,7 @@ class CIFAR10Executor(Executor):
         num_workers: int = 1,
         dataset_path: str = "/tmp/nvflare/data/cifar10",
         model_path: str = "/tmp/nvflare/data/cifar10/cifar_net.pth",
-        device="cuda:0",
+        device=DEVICE,
         pre_train_task_name=AppConstants.TASK_GET_WEIGHTS,
         train_task_name=AppConstants.TASK_TRAIN,
         submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL,

@@ -125,39 +125,40 @@ class FedAdminAgent(object):
                 try:
                     reply = None
 
-                    # see whether pre-authorization is needed
-                    authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
-                    require_authz = authz_flag == "true"
-                    if require_authz:
-                        # authorize this command!
-                        cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
-                        if cmd:
-                            user = Person(
-                                name=req.get_header(RequestHeader.USER_NAME, ""),
-                                org=req.get_header(RequestHeader.USER_ORG, ""),
-                                role=req.get_header(RequestHeader.USER_ROLE, ""),
-                            )
-                            submitter = Person(
-                                name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
-                                org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
-                                role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
-                            )
+                    cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
+                    if cmd:
+                        site_security = SiteSecurity()
+                        self._set_security_data(req, fl_ctx)
+                        authorized, messages = site_security.authorization_check(self.app_ctx, cmd, fl_ctx)
+                        if not authorized:
+                            reply = error_reply(messages)
 
-                            authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
-                            authorized, err = AuthorizationService.authorize(authz_ctx)
-                            if err:
-                                reply = error_reply(err)
-                            elif not authorized:
-                                reply = error_reply("not authorized")
+                    if not reply:
+                        # see whether pre-authorization is needed
+                        authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
+                        require_authz = authz_flag == "true"
+                        if require_authz:
+                            # authorize this command!
+                            if cmd:
+                                user = Person(
+                                    name=req.get_header(RequestHeader.USER_NAME, ""),
+                                    org=req.get_header(RequestHeader.USER_ORG, ""),
+                                    role=req.get_header(RequestHeader.USER_ROLE, ""),
+                                )
+                                submitter = Person(
+                                    name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
+                                    org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
+                                    role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
+                                )
 
-                            site_security = SiteSecurity()
-                            self._set_security_data(req, fl_ctx)
-                            authorized, messages = site_security.authorization_check(self.app_ctx, cmd, fl_ctx)
-                            if not authorized:
-                                reply = error_reply(messages)
-
-                        else:
-                            reply = error_reply("requires authz but missing admin command")
+                                authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
+                                authorized, err = AuthorizationService.authorize(authz_ctx)
+                                if err:
+                                    reply = error_reply(err)
+                                elif not authorized:
+                                    reply = error_reply("not authorized")
+                            else:
+                                reply = error_reply("requires authz but missing admin command")
 
                     if not reply:
                         reply = processor.process(req, self.app_ctx)

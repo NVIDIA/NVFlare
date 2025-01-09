@@ -3,7 +3,9 @@ name: example_project
 description: NVIDIA FLARE sample project yaml file
 
 participants:
-  # change example.com to the FQDN of the server
+  # Change the name of the server (server1) to the Fully Qualified Domain Name
+  # (FQDN) of the server, for example: server1.example.com.
+  # Ensure that the FQDN is correctly mapped in the /etc/hosts file.
   - name: server1
     type: server
     org: nvidia
@@ -12,9 +14,10 @@ participants:
   - name: site-1
     type: client
     org: nvidia
-    # listening_host will enable creating one pair of cert/private key for this client
-    # so it can behave like a server for client api.  The value must be a hostname that
-    # client api can reach via network.
+    # Specifying listening_host will enable the creation of one pair of
+    # certificate/private key for this client, allowing the client to function
+    # as a server for 3rd-party integration.
+    # The value must be a hostname that the external trainer can reach via the network.
     # listening_host: site-1-lh
   - name: site-2
     type: client
@@ -28,8 +31,10 @@ participants:
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
     args:
-      template_file: master_template.yml
-  - path: nvflare.lighter.impl.template.TemplateBuilder
+      template_file:
+        - master_template.yml
+        - aws_template.yml
+        - azure_template.yml
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
     args:
       # config_folder can be set to inform NVIDIA FLARE where to get configuration

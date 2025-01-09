@@ -31,6 +31,7 @@ class ReservedHeaderKey(object):
     AUDIT_EVENT_ID = ReservedKey.AUDIT_EVENT_ID
     CONTENT_TYPE = "__content_type__"
     TASK_OPERATOR = "__task_operator__"
+    ERROR = "__error__"
 
 
 class Shareable(dict):
@@ -40,9 +41,11 @@ class Shareable(dict):
     It is recommended that keys are strings. Values must be serializable.
     """
 
-    def __init__(self):
+    def __init__(self, data: dict = None):
         """Init the Shareable."""
         super().__init__()
+        if data:
+            self.update(data)
         self[ReservedHeaderKey.HEADERS] = {}
 
     def set_header(self, key: str, value):

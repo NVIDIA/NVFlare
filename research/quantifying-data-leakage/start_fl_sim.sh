@@ -44,6 +44,6 @@ echo "==========================================================================
 
 # Show cross-site validation results
 echo "Cross-site validation results:"
-cat "${workspace}/simulate_job/cross_site_val/cross_val_results.json"
+cat "${workspace}/server/simulate_job/cross_site_val/cross_val_results.json"
 echo
 echo "================================================================================================================="

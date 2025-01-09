@@ -22,7 +22,7 @@ from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_accessor import FileAccessor
 from nvflare.fuel.utils.pipe.file_name_utils import file_name_to_message, message_to_file_name
 from nvflare.fuel.utils.pipe.fobs_file_accessor import FobsFileAccessor
-from nvflare.fuel.utils.pipe.pipe import Message, Pipe
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
 
 
@@ -39,6 +39,16 @@ class FilePipe(Pipe):
         """
         super().__init__(mode=mode)
         check_positive_number("file_check_interval", file_check_interval)
+        check_str("root_path", root_path)
+
+        self._remove_root = False
+        if not os.path.exists(root_path):
+            try:
+                # create the root path
+                os.makedirs(root_path)
+                self._remove_root = True
+            except Exception:
+                pass
 
         self.root_path = root_path
         self.file_check_interval = file_check_interval
@@ -77,12 +87,6 @@ class FilePipe(Pipe):
     def open(self, name: str):
         if not self.accessor:
             raise RuntimeError("File accessor is not set. Make sure to set a FileAccessor before opening the pipe")
-
-        check_str("root_path", self.root_path)
-
-        if not os.path.exists(self.root_path):
-            # create the root path
-            os.makedirs(self.root_path)
 
         pipe_path = os.path.join(self.root_path, name)
 
@@ -135,10 +139,8 @@ class FilePipe(Pipe):
         self._clear_dir(self.y_path)
         self._clear_dir(self.t_path)
 
-    def _monitor_file(self, file_path: str, timeout) -> bool:
+    def _monitor_file(self, file_path: str, timeout=None) -> bool:
         """Monitors the file until it's read-and-removed by peer, or timed out.
-
-        If timeout, remove the file.
 
         Args:
             file_path: the path to be monitored
@@ -147,8 +149,6 @@ class FilePipe(Pipe):
         Returns:
             whether the file has been read and removed
         """
-        if not timeout:
-            return False
         start = time.time()
         while True:
             if not self.pipe_path:
@@ -156,7 +156,7 @@ class FilePipe(Pipe):
 
             if not os.path.exists(file_path):
                 return True
-            if time.time() - start > timeout:
+            if timeout and time.time() - start > timeout:
                 # timed out - try to delete the file
                 try:
                     os.remove(file_path)
@@ -247,17 +247,23 @@ class FilePipe(Pipe):
         return self._get_from_dir(self.y_path, timeout)
 
     def send(self, msg: Message, timeout=None) -> bool:
-        """
+        """Sends the specified message to the peer.
 
         Args:
-            msg:
-            timeout:
+            msg: the message to be sent
+            timeout: if specified, number of secs to wait for the peer to read the message.
+                If not specified, wait indefinitely.
 
-        Returns: whether the message is read by peer (if timeout is specified)
+        Returns:
+            Whether the message is read by the peer.
 
         """
         if not self.pipe_path:
             raise BrokenPipeError("pipe is not open")
+
+        if not timeout and msg.topic in [Topic.END, Topic.ABORT, Topic.HEARTBEAT]:
+            timeout = 5.0
+
         return self.put_f(msg, timeout)
 
     def receive(self, timeout=None):
@@ -270,10 +276,9 @@ class FilePipe(Pipe):
         self.pipe_path = None
         if self.mode == Mode.PASSIVE:
             if pipe_path and os.path.exists(pipe_path):
-                try:
-                    shutil.rmtree(pipe_path)
-                except Exception:
-                    pass
+                shutil.rmtree(pipe_path, ignore_errors=True)
+        if self._remove_root and os.path.exists(self.root_path):
+            shutil.rmtree(self.root_path, ignore_errors=True)
 
     def can_resend(self) -> bool:
         return False

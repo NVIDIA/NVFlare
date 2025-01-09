@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import shlex
 import subprocess
@@ -23,7 +22,7 @@ from abc import abstractmethod
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReturnCode, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -40,6 +39,8 @@ from nvflare.fuel.f3.cellnet.core_cell import make_reply as F3make_reply
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
 from nvflare.security.logging import secure_format_exception
 
@@ -84,7 +85,7 @@ class MultiProcessExecutor(Executor):
         self.execute_complete = None
         self.engine = None
 
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
         self.conn_clients = []
         self.exe_process = None
 
@@ -163,6 +164,10 @@ class MultiProcessExecutor(Executor):
             client_name = fl_ctx.get_identity_name()
             job_id = fl_ctx.get_job_id()
 
+            decomposer_module = ConfigService.get_str_var(
+                name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
+            )
+
             self.engine = fl_ctx.get_engine()
             simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
             cell = self.engine.client.cell
@@ -187,6 +192,8 @@ class MultiProcessExecutor(Executor):
                 + str(cell.get_root_url_for_child())
                 + " --parent_url "
                 + str(cell.get_internal_listener_url())
+                + " --decomposer_module "
+                + str(decomposer_module)
             )
             self.logger.info(f"multi_process_executor command: {command}")
             # use os.setsid to create new process group ID

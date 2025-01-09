@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
+import uuid
+
+# this import is to let existing scripts import from nvflare.private.defs
+from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, SSLConstants  # noqa: F401
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.hci.server.constants import ConnProps
 
@@ -62,11 +67,13 @@ class TrainingTopic(object):
     CANCEL_RESOURCE = "scheduler.cancel_resource"
     START_JOB = "train.start_job"
     GET_SCOPES = "train.get_scopes"
+    NOTIFY_JOB_STATUS = "train.notify_job_status"
 
 
 class RequestHeader(object):
 
     JOB_ID = "job_id"
+    JOB_STATUS = "job_status"
     TOPIC = "topic"
     JOB_META = "job_meta"
     APP_NAME = "app_name"
@@ -126,42 +133,6 @@ class AppFolderConstants:
     CONFIG_ENV = "environment.json"
 
 
-class SSLConstants:
-    """hard coded names related to SSL."""
-
-    CERT = "ssl_cert"
-    PRIVATE_KEY = "ssl_private_key"
-    ROOT_CERT = "ssl_root_cert"
-
-
-class CellChannel:
-
-    CLIENT_MAIN = "admin"
-    AUX_COMMUNICATION = "aux_communication"
-    SERVER_MAIN = "task"
-    SERVER_COMMAND = "server_command"
-    SERVER_PARENT_LISTENER = "server_parent_listener"
-    CLIENT_COMMAND = "client_command"
-    CLIENT_SUB_WORKER_COMMAND = "client_sub_worker_command"
-    MULTI_PROCESS_EXECUTOR = "multi_process_executor"
-    SIMULATOR_RUNNER = "simulator_runner"
-    RETURN_ONLY = "return_only"
-
-
-class CellChannelTopic:
-
-    Register = "register"
-    Quit = "quit"
-    GET_TASK = "get_task"
-    SUBMIT_RESULT = "submit_result"
-    HEART_BEAT = "heart_beat"
-    EXECUTE_RESULT = "execute_result"
-    FIRE_EVENT = "fire_event"
-    REPORT_JOB_FAILURE = "report_job_failure"
-
-    SIMULATOR_WORKER_INIT = "simulator_worker_init"
-
-
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"
 
 
@@ -184,6 +155,18 @@ class JobFailureMsgKey:
     JOB_ID = "job_id"
     CODE = "code"
     REASON = "reason"
+
+
+class InternalFLContextKey:
+
+    CLIENT_REG_SESSION = "client_reg_session"
+
+
+class ClientRegSession:
+    def __init__(self, client_name: str):
+        self.client_name = client_name
+        self.nonce = str(uuid.uuid4())
+        self.reg_start_time = time.time()
 
 
 def new_cell_message(headers: dict, payload=None):

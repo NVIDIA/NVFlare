@@ -46,7 +46,7 @@ _CMD_TYPE_CLIENT = 1
 _CMD_TYPE_SERVER = 2
 
 MAX_AUTO_LOGIN_TRIES = 300
-AUTO_LOGIN_INTERVAL = 1.0
+AUTO_LOGIN_INTERVAL = 1.5
 
 
 class ResultKey(object):
@@ -249,11 +249,12 @@ class _TryLogin(State):
 
 
 class _Operate(State):
-    def __init__(self, api, sess_check_interval):
+    def __init__(self, api, sess_check_interval, auto_login_delay):
         State.__init__(self, _STATE_NAME_OPERATE)
         self.api = api
         self.last_sess_check_time = None
         self.sess_check_interval = sess_check_interval
+        self.auto_login_delay = auto_login_delay
 
     def enter(self):
         self.api.server_sess_active = True
@@ -273,6 +274,7 @@ class _Operate(State):
 
         if new_host != cur_host or new_port != cur_port or cur_ssid != new_ssid:
             # need to re-login
+            time.sleep(self.auto_login_delay)
             api.fire_session_event(EventType.SP_ADDR_CHANGED, f"Server address changed to {new_host}:{new_port}")
             return _STATE_NAME_LOGIN
 
@@ -310,7 +312,8 @@ class AdminAPI(AdminAPISpec):
         debug: bool = False,
         session_timeout_interval=None,
         session_status_check_interval=None,
-        auto_login_max_tries: int = 5,
+        auto_login_delay: int = 5,
+        auto_login_max_tries: int = 15,
         event_handlers=None,
     ):
         """API to keep certs, keys and connection information and to execute admin commands through do_command.
@@ -418,11 +421,13 @@ class AdminAPI(AdminAPISpec):
         # create the FSM for session monitoring
         if auto_login_max_tries < 0 or auto_login_max_tries > MAX_AUTO_LOGIN_TRIES:
             raise ValueError(f"auto_login_max_tries is out of range: [0, {MAX_AUTO_LOGIN_TRIES}]")
+        if auto_login_delay < 5.0:
+            raise ValueError(f"auto_login_delay must be more than 5.0. Got value: {auto_login_delay}]")
         self.auto_login_max_tries = auto_login_max_tries
         fsm = FSM("session monitor")
         fsm.add_state(_WaitForServerAddress(self))
         fsm.add_state(_TryLogin(self))
-        fsm.add_state(_Operate(self, session_status_check_interval))
+        fsm.add_state(_Operate(self, session_status_check_interval, auto_login_delay))
         self.fsm = fsm
 
         self.session_timeout_interval = session_timeout_interval
@@ -696,6 +701,7 @@ class AdminAPI(AdminAPISpec):
         process_json_func = json_processor.process_server_reply
 
         conn = Connection(sock, self)
+        conn.bytes_sender = ctx.get_bytes_sender()
         conn.append_command(command)
         if self.token:
             conn.append_token(self.token)
@@ -707,11 +713,16 @@ class AdminAPI(AdminAPISpec):
         if custom_props:
             conn.update_meta({MetaKey.CUSTOM_PROPS: custom_props})
 
+        cmd_props = ctx.get_command_props()
+        if cmd_props:
+            conn.update_meta({MetaKey.CMD_PROPS: cmd_props})
+
         conn.close()
-        receive_bytes_func = ctx.get_bytes_receiver()
-        if receive_bytes_func is not None:
+
+        receiver = ctx.get_bytes_receiver()
+        if receiver is not None:
             self.debug("receive_bytes_and_process ...")
-            ok = receive_bytes_and_process(sock, receive_bytes_func)
+            ok = receive_bytes_and_process(sock, receiver)
             if ok:
                 ctx.set_command_result({"status": APIStatus.SUCCESS, "details": "OK"})
             else:
@@ -828,7 +839,7 @@ class AdminAPI(AdminAPISpec):
         Returns: command processing info
 
         """
-        cmd_type, cmd_name, args, entries = self._get_command_detail(command)
+        cmd_type, cmd_name, _, entries = self._get_command_detail(command)
 
         if cmd_type == _CMD_TYPE_UNKNOWN:
             return CommandInfo.UNKNOWN
@@ -867,11 +878,12 @@ class AdminAPI(AdminAPISpec):
             return {ResultKey.STATUS: APIStatus.ERROR_RUNTIME, ResultKey.DETAILS: "Client did not respond"}
         return result
 
-    def do_command(self, command):
+    def do_command(self, command: str, props=None):
         """A convenient method to call commands using string.
 
         Args:
           command (str): command
+          props: additional props
 
         Returns:
             Object containing status and details (or direct response from server, which originally was just time and data)
@@ -902,9 +914,9 @@ class AdminAPI(AdminAPISpec):
                 ResultKey.DETAILS: "Session is inactive, please try later",
             }
 
-        return self.server_execute(command, cmd_entry=ent)
+        return self.server_execute(command, cmd_entry=ent, props=props)
 
-    def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None):
+    def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None, props=None):
         if self.in_logout:
             return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "session is logging out"}
 
@@ -914,6 +926,11 @@ class AdminAPI(AdminAPISpec):
         else:
             ctx = self._new_command_context(command, args, cmd_entry)
         ctx.set_command(command)
+
+        if props:
+            self.debug(f"server_execute: set cmd props to ctx {props}")
+            ctx.set_command_props(props)
+
         start = time.time()
         ctx.set_reply_processor(reply_processor)
         self._try_command(ctx)

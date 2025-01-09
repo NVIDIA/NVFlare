@@ -23,6 +23,7 @@ from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
 from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
+from nvflare.private.fed.app.utils import version_check
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
 from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
@@ -31,6 +32,7 @@ from nvflare.utils.cli_utils import (
     create_poc_workspace_config,
     create_startup_kit_config,
     get_hidden_config,
+    print_hidden_config,
     save_config,
 )
 
@@ -42,13 +44,6 @@ CMD_DASHBOARD = "dashboard"
 CMD_AUTHZ_PREVIEW = "authz_preview"
 CMD_JOB = "job"
 CMD_CONFIG = "config"
-
-
-def check_python_version():
-    if sys.version_info >= (3, 11):
-        raise RuntimeError("Python versions 3.11 and above are not yet supported. Please use Python 3.8, 3.9 or 3.10.")
-    if sys.version_info < (3, 8):
-        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8, 3.9 or 3.10")
 
 
 def def_provision_parser(sub_cmd):
@@ -116,11 +111,18 @@ def def_config_parser(sub_cmd):
 def handle_config_cmd(args):
     config_file_path, nvflare_config = get_hidden_config()
 
+    if args.startup_kit_dir is None and args.poc_workspace_dir is None and args.job_templates_dir is None:
+        print(f"not specifying any directory. print existing config at {config_file_path}")
+        print_hidden_config(config_file_path, nvflare_config)
+        return
+
     nvflare_config = create_startup_kit_config(nvflare_config, args.startup_kit_dir)
     nvflare_config = create_poc_workspace_config(nvflare_config, args.poc_workspace_dir)
     nvflare_config = create_job_template_config(nvflare_config, args.job_templates_dir)
 
     save_config(nvflare_config, config_file_path)
+    print(f"new config at {config_file_path}")
+    print_hidden_config(config_file_path, nvflare_config)
 
 
 def parse_args(prog_name: str):
@@ -141,9 +143,10 @@ def parse_args(prog_name: str):
     cmd = args.__dict__.get("sub_command")
     sub_cmd_parser = sub_cmd_parsers.get(cmd)
     if argv:
-        msg = f"{prog_name} {cmd}: unrecognized arguments: {''.join(argv)}\n"
+        msg = f"{prog_name} {cmd}: unrecognized arguments: {' '.join(argv)}\n"
         print(f"\nerror: {msg}")
-        sub_cmd_parser.print_help()
+        if sub_cmd_parser:
+            sub_cmd_parser.print_help()
         _parser.exit(2, "\n")
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
@@ -209,7 +212,7 @@ def print_nvflare_version():
 
 
 def main():
-    check_python_version()
+    version_check()
     run("nvflare")
 
 

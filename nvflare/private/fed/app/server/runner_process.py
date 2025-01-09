@@ -20,22 +20,24 @@ import os
 import sys
 import threading
 
-from nvflare.apis.fl_constant import JobConstants
+from nvflare.apis.fl_constant import ConfigVarName, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import configure_logging, get_script_logger
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.fed_utils import (
-    add_logfile_handler,
     create_stats_pool_files_for_job,
     fobs_initialize,
+    register_ext_decomposers,
+    security_close,
+    security_init_for_job,
     set_stats_pool_config_for_job,
 )
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -59,27 +61,24 @@ def main(args):
     # get parent process id
     parent_pid = os.getppid()
     stop_event = threading.Event()
-    workspace = Workspace(root_dir=args.workspace, site_name="server")
+    workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
     set_stats_pool_config_for_job(workspace, args.job_id)
+    secure_train = kv_list.get("secure_train", False)
 
     try:
         os.chdir(args.workspace)
-        fobs_initialize()
+        fobs_initialize(workspace=workspace, job_id=args.job_id)
 
-        SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
-
-        # Initialize audit service since the job execution will need it!
-        audit_file_name = workspace.get_audit_file_path()
-        AuditService.initialize(audit_file_name)
+        # initialize security processing and ensure that content in the startup has not been tampered with.
+        security_init_for_job(secure_train, workspace, SiteType.SERVER)
 
         conf = FLServerStarterConfiger(
             workspace=workspace,
             args=args,
             kv_list=args.set,
         )
-        log_file = workspace.get_app_log_file_path(args.job_id)
-        add_logfile_handler(log_file)
-        logger = logging.getLogger("runner_process")
+        configure_logging(workspace, workspace.get_run_dir(args.job_id))
+        logger = get_script_logger()
         logger.info("Runner_process started.")
 
         log_level = os.environ.get("FL_LOG_LEVEL", "")
@@ -95,7 +94,11 @@ def main(args):
         conf.configure()
         event_handlers = conf.handlers
         deployer = conf.deployer
-        secure_train = conf.cmd_vars.get("secure_train", False)
+
+        decomposer_module = ConfigService.get_str_var(
+            name=ConfigVarName.DECOMPOSER_MODULE, conf=SystemConfigs.RESOURCES_CONF
+        )
+        register_ext_decomposers(decomposer_module)
 
         try:
             # create the FL server
@@ -123,13 +126,13 @@ def main(args):
             if deployer:
                 deployer.close()
             stop_event.set()
-            AuditService.close()
+            security_close()
             err = create_stats_pool_files_for_job(workspace, args.job_id)
             if err:
                 logger.warning(err)
 
     except ConfigError as e:
-        logger = logging.getLogger("runner_process")
+        logger = get_script_logger()
         logger.exception(f"ConfigError: {secure_format_exception(e)}")
         secure_log_traceback(logger)
         raise e

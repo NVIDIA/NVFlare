@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nvflare.apis.shareable import Shareable
 from nvflare.private.defs import CellMessageHeaderKeys, new_cell_message
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_state import ColdState, HotState
@@ -46,7 +47,8 @@ class TestFederatedServer:
                     CellMessageHeaderKeys.CLIENT_NAME: "client_name",
                     CellMessageHeaderKeys.PROJECT_NAME: "task_name",
                     CellMessageHeaderKeys.JOB_IDS: ["extra_job"],
-                }
+                },
+                Shareable(),
             )
 
             result = server.client_heartbeat(request)

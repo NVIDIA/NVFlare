@@ -50,7 +50,7 @@ if __name__ == "__main__":
     print("Creating buffer ...")
     start = time.time()
     buffer = make_buffer(BUF_SIZE)
-    print(f"Buffer done, took {time.time()-start} seconds")
+    print(f"Buffer done, took {time.time() - start} seconds")
 
     start = time.time()
     fut = sender.send(buffer)
@@ -62,6 +62,6 @@ if __name__ == "__main__":
         time.sleep(1)
 
     n = fut.result()
-    print(f"Time to send {time.time()-start} seconds")
+    print(f"Time to send {time.time() - start} seconds")
 
     print(f"Bytes sent: {n}")

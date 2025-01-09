@@ -19,11 +19,32 @@ import shutil
 from base64 import b64decode, b64encode
 
 import yaml
+from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-from nvflare.lighter.impl.cert import load_crt
+from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
+
+
+def serialize_pri_key(pri_key):
+    return pri_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+
+
+def serialize_cert(cert):
+    return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def load_crt(path):
+    return load_crt_bytes(open(path, "rb").read())
+
+
+def load_crt_bytes(data: bytes):
+    return x509.load_pem_x509_certificate(data, default_backend())
 
 
 def generate_password(passlen=16):
@@ -32,22 +53,59 @@ def generate_password(passlen=16):
     return p
 
 
-def sign_one(content, signing_pri_key):
+def sign_content(content, signing_pri_key, return_str=True):
+    if isinstance(content, str):
+        content = content.encode("utf-8")  # to bytes
     signature = signing_pri_key.sign(
         data=content,
-        padding=padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()),
-            salt_length=padding.PSS.MAX_LENGTH,
-        ),
-        algorithm=hashes.SHA256(),
+        padding=_content_padding(),
+        algorithm=_content_hash_algo(),
     )
-    return b64encode(signature).decode("utf-8")
+
+    # signature is bytes
+    if return_str:
+        return b64encode(signature).decode("utf-8")
+    else:
+        return signature
+
+
+def _content_padding():
+    return padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH)
+
+
+def _content_hash_algo():
+    return hashes.SHA256()
+
+
+def verify_content(content, signature, public_key):
+    if isinstance(content, str):
+        content = content.encode("utf-8")  # to bytes
+    if isinstance(signature, str):
+        signature = b64decode(signature.encode("utf-8"))  # decode to bytes
+    public_key.verify(
+        signature=signature,
+        data=content,
+        padding=_content_padding(),
+        algorithm=_content_hash_algo(),
+    )
+
+
+def verify_cert(cert_to_be_verified, root_ca_public_key):
+    root_ca_public_key.verify(
+        cert_to_be_verified.signature,
+        cert_to_be_verified.tbs_certificate_bytes,
+        padding.PKCS1v15(),
+        cert_to_be_verified.signature_hash_algorithm,
+    )
+
+
+def load_private_key(data: str):
+    return serialization.load_pem_private_key(data.encode("ascii"), password=None, backend=default_backend())
 
 
 def load_private_key_file(file_path):
     with open(file_path, "rt") as f:
-        pri_key = serialization.load_pem_private_key(f.read().encode("ascii"), password=None, backend=default_backend())
-    return pri_key
+        return load_private_key(f.read())
 
 
 def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
@@ -56,30 +114,20 @@ def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
         depth = depth + 1
         signatures = dict()
         for file in files:
-            if file == ".__nvfl_sig.json" or file == ".__nvfl_submitter.crt":
+            if file == NVFLARE_SIG_FILE or file == NVFLARE_SUBMITTER_CRT_FILE:
                 continue
-            signature = signing_pri_key.sign(
-                data=open(os.path.join(root, file), "rb").read(),
-                padding=padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                algorithm=hashes.SHA256(),
+            signatures[file] = sign_content(
+                content=open(os.path.join(root, file), "rb").read(),
+                signing_pri_key=signing_pri_key,
             )
-            signatures[file] = b64encode(signature).decode("utf-8")
         for folder in folders:
-            signature = signing_pri_key.sign(
-                data=folder.encode("utf-8"),
-                padding=padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                algorithm=hashes.SHA256(),
+            signatures[folder] = sign_content(
+                content=folder,
+                signing_pri_key=signing_pri_key,
             )
-            signatures[folder] = b64encode(signature).decode("utf-8")
 
-        json.dump(signatures, open(os.path.join(root, ".__nvfl_sig.json"), "wt"))
-        shutil.copyfile(crt_path, os.path.join(root, ".__nvfl_submitter.crt"))
+        json.dump(signatures, open(os.path.join(root, NVFLARE_SIG_FILE), "wt"))
+        shutil.copyfile(crt_path, os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
         if depth >= max_depth:
             break
 
@@ -90,35 +138,30 @@ def verify_folder_signature(src_folder, root_ca_path):
         root_ca_public_key = root_ca_cert.public_key()
         for root, folders, files in os.walk(src_folder):
             try:
-                signatures = json.load(open(os.path.join(root, ".__nvfl_sig.json"), "rt"))
-                cert = load_crt(os.path.join(root, ".__nvfl_submitter.crt"))
+                signatures = json.load(open(os.path.join(root, NVFLARE_SIG_FILE), "rt"))
+                cert = load_crt(os.path.join(root, NVFLARE_SUBMITTER_CRT_FILE))
                 public_key = cert.public_key()
             except:
                 continue  # TODO: shall return False
-            root_ca_public_key.verify(
-                cert.signature, cert.tbs_certificate_bytes, padding.PKCS1v15(), cert.signature_hash_algorithm
-            )
-            for k in signatures:
-                signatures[k] = b64decode(signatures[k].encode("utf-8"))
+
+            verify_cert(cert_to_be_verified=cert, root_ca_public_key=root_ca_public_key)
             for file in files:
-                if file == ".__nvfl_sig.json" or file == ".__nvfl_submitter.crt":
+                if file == NVFLARE_SIG_FILE or file == NVFLARE_SUBMITTER_CRT_FILE:
                     continue
                 signature = signatures.get(file)
                 if signature:
-                    public_key.verify(
+                    verify_content(
+                        content=open(os.path.join(root, file), "rb").read(),
                         signature=signature,
-                        data=open(os.path.join(root, file), "rb").read(),
-                        padding=padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                        algorithm=hashes.SHA256(),
+                        public_key=public_key,
                     )
             for folder in folders:
                 signature = signatures.get(folder)
                 if signature:
-                    public_key.verify(
+                    verify_content(
+                        content=folder,
                         signature=signature,
-                        data=folder.encode("utf-8"),
-                        padding=padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-                        algorithm=hashes.SHA256(),
+                        public_key=public_key,
                     )
         return True
     except Exception as e:
@@ -130,15 +173,10 @@ def sign_all(content_folder, signing_pri_key):
     for f in os.listdir(content_folder):
         path = os.path.join(content_folder, f)
         if os.path.isfile(path):
-            signature = signing_pri_key.sign(
-                data=open(path, "rb").read(),
-                padding=padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH,
-                ),
-                algorithm=hashes.SHA256(),
+            signatures[f] = sign_content(
+                content=open(path, "rb").read(),
+                signing_pri_key=signing_pri_key,
             )
-            signatures[f] = b64encode(signature).decode("utf-8")
     return signatures
 
 
@@ -160,19 +198,7 @@ def sh_replace(src, mapping_dict):
 
 def update_project_server_name_config(project_config: dict, old_server_name, server_name) -> dict:
     update_participant_server_name(project_config, old_server_name, server_name)
-    update_overseer_server_name(project_config, old_server_name, server_name)
     return project_config
-
-
-def update_overseer_server_name(project_config, old_server_name, server_name):
-    # update overseer_agent builder
-    builders = project_config.get("builders", [])
-    for b in builders:
-        if "args" in b:
-            if "overseer_agent" in b["args"]:
-                end_point = b["args"]["overseer_agent"]["args"]["sp_end_point"]
-                new_end_point = end_point.replace(old_server_name, server_name)
-                b["args"]["overseer_agent"]["args"]["sp_end_point"] = new_end_point
 
 
 def update_participant_server_name(project_config, old_server_name, new_server_name):
@@ -180,7 +206,28 @@ def update_participant_server_name(project_config, old_server_name, new_server_n
     for p in participants:
         if p["type"] == "server" and p["name"] == old_server_name:
             p["name"] = new_server_name
-            return
+            break
+    return project_config
+
+
+def update_server_default_host(project_config, default_host):
+    """Update the default_host property of the Server in the project config.
+    If a client does not explicitly specify "connect_to", it will use the default_host to connect to server.
+    This is mainly used for POC, where the default_host is set to localhost.
+
+    Args:
+        project_config: the project config dict
+        default_host: value of the default host
+
+    Returns: the updated project_config
+
+    """
+    participants = project_config["participants"]
+    for p in participants:
+        if p["type"] == "server":
+            p["default_host"] = default_host
+            break
+    return project_config
 
 
 def update_project_server_name(project_file: str, old_server_name, server_name):
@@ -224,3 +271,87 @@ def update_storage_locations(
     json_object = json.dumps(resources, indent=4)
     with open(target_resource, "w") as outfile:
         outfile.write(json_object)
+
+
+def make_dirs(dirs):
+    for d in dirs:
+        if not os.path.exists(d):
+            os.makedirs(d)
+
+
+def _write(file_full_path, content, mode, exe=False):
+    mode = mode + "w"
+    with open(file_full_path, mode) as f:
+        f.write(content)
+    if exe:
+        os.chmod(file_full_path, 0o755)
+
+
+def write(file_full_path, content, mode, exe=False):
+    _write(file_full_path, content, mode, exe)
+
+
+def _write_common(type, dest_dir, template, tplt, replacement_dict, config):
+    mapping = {"server": "svr", "client": "cln"}
+    write(os.path.join(dest_dir, f"fed_{type}.json"), json.dumps(config, indent=2), "t")
+    write(
+        os.path.join(dest_dir, "docker.sh"),
+        sh_replace(template[f"docker_{mapping[type]}_sh"], replacement_dict),
+        "t",
+        exe=True,
+    )
+    write(
+        os.path.join(dest_dir, "start.sh"),
+        sh_replace(template[f"start_{mapping[type]}_sh"], replacement_dict),
+        "t",
+        exe=True,
+    )
+    write(
+        os.path.join(dest_dir, "sub_start.sh"),
+        sh_replace(tplt.get_sub_start_sh(), replacement_dict),
+        "t",
+        exe=True,
+    )
+    write(
+        os.path.join(dest_dir, "stop_fl.sh"),
+        template["stop_fl_sh"],
+        "t",
+        exe=True,
+    )
+
+
+def _write_local(type, dest_dir, template, capacity=""):
+    write(
+        os.path.join(dest_dir, "log_config.json.default"),
+        template["log_config"],
+        "t",
+    )
+    write(
+        os.path.join(dest_dir, "privacy.json.sample"),
+        template["sample_privacy"],
+        "t",
+    )
+    write(
+        os.path.join(dest_dir, "authorization.json.default"),
+        template["default_authz"],
+        "t",
+    )
+    if type == "server":
+        resources = json.loads(template["local_server_resources"])
+    elif type == "client":
+        resources = json.loads(template["local_client_resources"])
+        for component in resources["components"]:
+            if "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager" == component["path"]:
+                component["args"] = json.loads(capacity)
+                break
+    write(
+        os.path.join(dest_dir, "resources.json.default"),
+        json.dumps(resources, indent=2),
+        "t",
+    )
+
+
+def _write_pki(type, dest_dir, cert_pair, root_cert):
+    write(os.path.join(dest_dir, f"{type}.crt"), cert_pair.ser_cert, "b", exe=False)
+    write(os.path.join(dest_dir, f"{type}.key"), cert_pair.ser_pri_key, "b", exe=False)
+    write(os.path.join(dest_dir, "rootCA.pem"), root_cert, "b", exe=False)

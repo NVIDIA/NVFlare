@@ -15,7 +15,6 @@
 import os
 import shutil
 import traceback
-from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
 from typing import List, Optional, Tuple
 
@@ -41,13 +40,13 @@ from nvflare.tool.job.job_client_const import (
     JOB_CONFIG_FILE_NAME,
     JOB_CONFIG_VAR_NAME,
     JOB_CONFIG_VAR_VALUE,
-    JOB_INFO_CLIENT_TYPE,
-    JOB_INFO_CLIENT_TYPE_KEY,
     JOB_INFO_CONF,
     JOB_INFO_CONTROLLER_TYPE,
     JOB_INFO_CONTROLLER_TYPE_KEY,
     JOB_INFO_DESC,
     JOB_INFO_DESC_KEY,
+    JOB_INFO_EXECUTION_API_TYPE,
+    JOB_INFO_EXECUTION_API_TYPE_KEY,
     JOB_INFO_KEYS,
     JOB_INFO_MD,
     JOB_META_BASE_NAME,
@@ -105,7 +104,7 @@ def get_template_info_config(template_dir):
 
 def get_app_dirs_from_template(template_dir):
     app_dirs = []
-    for root, dirs, files in os.walk(template_dir):
+    for root, _dirs, files in os.walk(template_dir):
         if root != template_dir and (CONFIG_FED_SERVER_CONF in files or CONFIG_FED_CLIENT_CONF in files):
             app_dirs.append(root)
 
@@ -114,7 +113,7 @@ def get_app_dirs_from_template(template_dir):
 
 def get_app_dirs_from_job_folder(job_folder):
     app_dirs = []
-    for root, dirs, files in os.walk(job_folder):
+    for root, _dirs, _files in os.walk(job_folder):
         if root != job_folder and (root.endswith("config") or root.endswith("custom")):
             dir_name = os.path.dirname(os.path.relpath(root, job_folder))
             if dir_name:
@@ -134,7 +133,7 @@ def create_job(cmd_args):
         job_folder = cmd_args.job_folder
         prepare_job_folder(cmd_args)
         app_custom_dirs = prepare_app_dirs(job_folder, app_names)
-        prepare_app_scripts(app_custom_dirs, cmd_args)
+        prepare_app_scripts(job_folder, app_custom_dirs, cmd_args)
         config_dirs = get_config_dirs(job_folder, app_names)
 
         fmt, real_config_path = ConfigFactory.search_config_format(CONFIG_FED_CLIENT_CONF, config_dirs)
@@ -157,7 +156,7 @@ def create_job(cmd_args):
         for app_name in template_srcs:
             src = template_srcs[app_name]
             app_config_dir = get_config_dir(job_folder, app_name)
-            copy_tree(src=src, dst=app_config_dir)
+            shutil.copytree(src=src, dst=app_config_dir, dirs_exist_ok=True)
             remove_extra_files(app_config_dir)
         prepare_meta_config(cmd_args, template_src, app_names)
         app_variable_values = prepare_job_config(cmd_args, app_names)
@@ -192,7 +191,7 @@ def get_src_template(cmd_args) -> Optional[str]:
 
 
 def remove_pycache_files(custom_dir):
-    for root, dirs, files in os.walk(custom_dir):
+    for root, dirs, _files in os.walk(custom_dir):
         # remove pycache and pyc files
         for d in dirs:
             if d == "__pycache__" or d.endswith(".pyc"):
@@ -318,13 +317,13 @@ def display_available_templates(template_index_conf):
     print("-" * total_length)
     name_fix_length = 20
     description_fix_length = 60
-    controller_type_fix_length = 20
-    client_category_fix_length = 20
+    controller_type_fix_length = 17
+    execution_api_type_fix_length = 23
     name = fix_length_format("name", name_fix_length)
     description = fix_length_format(JOB_INFO_DESC, description_fix_length)
-    client_category = fix_length_format(JOB_INFO_CLIENT_TYPE, client_category_fix_length)
+    execution_api_type = fix_length_format(JOB_INFO_EXECUTION_API_TYPE, execution_api_type_fix_length)
     controller_type = fix_length_format(JOB_INFO_CONTROLLER_TYPE, controller_type_fix_length)
-    print(" " * left_margin, name, description, controller_type, client_category)
+    print(" " * left_margin, name, description, controller_type, execution_api_type)
     print("-" * total_length)
     for file_path in sorted(template_registry.keys()):
         name = os.path.basename(file_path)
@@ -333,9 +332,11 @@ def display_available_templates(template_index_conf):
             template_info = template_registry.get(name)
         name = fix_length_format(name, name_fix_length)
         description = fix_length_format(template_info.get(JOB_INFO_DESC_KEY), description_fix_length)
-        client_category = fix_length_format(template_info.get(JOB_INFO_CLIENT_TYPE_KEY), client_category_fix_length)
+        execution_api_type = fix_length_format(
+            template_info.get(JOB_INFO_EXECUTION_API_TYPE_KEY), execution_api_type_fix_length
+        )
         controller_type = fix_length_format(template_info.get(JOB_INFO_CONTROLLER_TYPE_KEY), controller_type_fix_length)
-        print(" " * left_margin, name, description, controller_type, client_category)
+        print(" " * left_margin, name, description, controller_type, execution_api_type)
     print("-" * total_length)
 
 
@@ -350,7 +351,7 @@ def submit_job(cmd_args):
             raise ValueError(f"invalid job folder: {cmd_args.job_folder}")
 
         temp_job_dir = mkdtemp()
-        copy_tree(cmd_args.job_folder, temp_job_dir)
+        shutil.copytree(cmd_args.job_folder, temp_job_dir, dirs_exist_ok=True)
 
         app_dirs = get_app_dirs_from_job_folder(cmd_args.job_folder)
         app_names = [os.path.basename(f) for f in app_dirs]
@@ -686,11 +687,23 @@ def prepare_job_folder(cmd_args):
             )
 
 
-def prepare_app_scripts(app_custom_dirs, cmd_args):
+def is_subdir(path, directory):
+    # Normalize the paths to avoid issues with different OS formats
+    path = os.path.realpath(path)
+    directory = os.path.realpath(directory)
+    # Check if the directory is a prefix of the path
+    return os.path.commonpath([path, directory]) == directory
+
+
+def prepare_app_scripts(job_folder, app_custom_dirs, cmd_args):
+    script_dir = cmd_args.script_dir
+
     for app_custom_dir in app_custom_dirs:
-        if cmd_args.script_dir and len(cmd_args.script_dir.strip()) > 0:
-            if os.path.exists(cmd_args.script_dir):
-                copy_tree(cmd_args.script_dir, app_custom_dir)
+        if script_dir and len(script_dir.strip()) > 0:
+            if os.path.exists(script_dir):
+                if script_dir == job_folder or is_subdir(job_folder, script_dir):
+                    raise ValueError("job_folder must not be the same or sub directory of script_dir")
+                shutil.copytree(cmd_args.script_dir, app_custom_dir, dirs_exist_ok=True)
                 remove_pycache_files(app_custom_dir)
             else:
                 raise ValueError(f"{cmd_args.script_dir} doesn't exists")

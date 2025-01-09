@@ -1,13 +1,13 @@
 .. _poc_command:
 
 *****************************************
-Command for Proof Of Concept (POC) Mode
+Proof Of Concept (POC) Command
 *****************************************
 
-Introduction to the POC Command
-===============================
 
 The POC command allows users to try out the features of NVFlare in a proof of concept deployment on a single machine.
+
+Different processes represent the server, clients, and the admin console, making it a useful tool in preparation for a distributed deployment.
 
 Syntax and Usage
 =================
@@ -294,7 +294,7 @@ will start ALL clients (site-1, site-2) and server as well as FLARE Console (aka
 
 .. note::
 
-    If you prefer to have the FLARE Console on a different terminal, you can start everything else with: ``nvflare poc start -ex admin``.
+    If you prefer to have the FLARE Console on a different terminal, you can start everything else with: ``nvflare poc start -ex admin@nvidia.com``.
 
 Start the server only
 ----------------------
@@ -358,6 +358,59 @@ If there is no GPU, then there will be no assignments. If there are GPUs, they w
 
            nvidia-smi --list-gpus
 
+Operating the System and Submitting a Job
+==========================================
+After preparing the poc workspace and starting the server, clients, and console (optional), we have several options to operate the whole system.
+
+First, link the desired job directory to the admin's transfer directory:
+
+.. code-block:: none
+
+    nvflare poc prepare-jobs-dir -j NVFlare/examples
+
+FLARE Console
+--------------
+After starting the FLARE console with:
+
+.. code-block:: none
+
+    nvflare poc start -p admin@nvidia.com
+
+Login and submit the job:
+
+.. code-block:: none
+
+    submit_job hello-world/hello-numpy-sag/jobs/hello-numpy-sag
+
+Refer to :ref:`operating_nvflare` for more details.
+
+FLARE API
+---------
+To programmatically operate the system and submit a job, use the :ref:`flare_api`:
+
+.. code-block:: python
+
+    import os
+    from nvflare.fuel.flare_api.flare_api import new_secure_session
+
+    poc_workspace = "/tmp/nvflare/poc"
+    poc_prepared = os.path.join(poc_workspace, "example_project/prod_00")
+    admin_dir = os.path.join(poc_prepared, "admin@nvidia.com")
+    sess = new_secure_session("admin@nvidia.com", startup_kit_location=admin_dir)
+    job_id = sess.submit_job("hello-world/hello-numpy-sag/jobs/hello-numpy-sag")
+
+    print(f"Job is running with ID {job_id}")
+
+
+Job CLI
+-------
+The :ref:`job_cli` also provides a convenient command to submit a job:
+
+.. code-block:: none
+
+    nvflare job submit -j NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag
+
+
 Stop Package(s)
 ===============
 
@@ -383,3 +436,9 @@ There is a command to clean up the POC workspace added in version 2.2 that will 
 .. code-block::
 
     nvflare poc clean
+
+Learn More
+===========
+
+To learn more about the different options of the POC command in more detail, see the 
+:github_nvflare_link:`Setup NVFLARE in POC Mode Tutorial <examples/tutorials/setup_poc.ipynb>`.

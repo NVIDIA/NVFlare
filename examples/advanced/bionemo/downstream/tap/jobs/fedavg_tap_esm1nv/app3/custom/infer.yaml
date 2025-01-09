@@ -1,0 +1,25 @@
+defaults:
+  - base_infer_config
+  # allow this config to override defaults
+  - _self_
+
+hydra:
+  searchpath:
+     - /workspace/bionemo/examples/conf/
+
+name: ESM1nv_Inference
+desc: Minimum configuration for initializing a ESM1nv model for inference.
+
+model:
+  post_process: False
+  tokenizer:
+    vocab_path: /tokenizers/protein/esm1nv/vocab/protein_sequence_sentencepiece.vocab
+    model_path: /tokenizers/protein/esm1nv/vocab/protein_sequence_sentencepiece.model
+  downstream_task:
+    restore_from_path: "/model/protein/esm1nv/esm1nv.nemo"
+    outputs: [embeddings, hiddens] # Which outputs to extract per sample (a value or list). Possible values: hiddens, embeddings.
+  data:
+    dataset_path: /data/FLIP/secondary_structure/test/x000 # full path to dataset (can include range or a list)
+
+target: bionemo.model.protein.esm1nv.esm1nv_model.ESM1nvModel  # path to model class to load
+infer_target: bionemo.model.protein.esm1nv.infer.ESM1nvInference # path to inferende class to load

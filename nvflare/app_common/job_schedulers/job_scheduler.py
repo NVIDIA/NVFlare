@@ -25,6 +25,7 @@ from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, Job, JobMetaKey, R
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
+from nvflare.private.fed.utils.fed_utils import extract_participants
 
 SCHEDULE_RESULT_OK = 0  # the job is scheduled
 SCHEDULE_RESULT_NO_RESOURCE = 1  # job is not scheduled due to lack of resources
@@ -93,7 +94,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if not isinstance(engine, ServerEngineSpec):
             raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
 
-        engine.cancel_client_resources(resource_check_results, resource_reqs)
+        engine.cancel_client_resources(resource_check_results, resource_reqs, fl_ctx)
         self.log_debug(fl_ctx, f"cancel client resources using check results: {resource_check_results}")
         return False, None
 
@@ -109,7 +110,9 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         applicable_sites = []
         sites_to_app = {}
         for app_name in job.deploy_map:
-            for site_name in job.deploy_map[app_name]:
+            deployments = job.deploy_map[app_name]
+            deployments = extract_participants(deployments)
+            for site_name in deployments:
                 if site_name.upper() == ALL_SITES:
                     # deploy_map: {"app_name": ["ALL_SITES"]} will be treated as deploying to all online clients
                     applicable_sites = online_site_names
@@ -165,6 +168,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             return SCHEDULE_RESULT_NO_RESOURCE, None, block_reason
 
         resource_check_results = self._check_client_resources(job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx)
+        fl_ctx.set_prop(FLContextKey.RESOURCE_CHECK_RESULT, resource_check_results, private=True, sticky=False)
         self.fire_event(EventType.AFTER_CHECK_CLIENT_RESOURCES, fl_ctx)
 
         if not resource_check_results:

@@ -92,5 +92,9 @@ class SwarmServerController(ServerSideController):
             if c not in self.train_clients and c not in self.aggr_clients:
                 raise RuntimeError(f"Config Error:  client {c} is neither train client nor aggr client")
 
+        # set train_clients as a sticky prop in fl_ctx
+        # in case CSE (cross site eval) workflow follows, it will know that only training clients have local models
+        fl_ctx.set_prop(key=Constant.PROP_KEY_TRAIN_CLIENTS, value=self.train_clients, private=True, sticky=True)
+
     def prepare_config(self):
         return {Constant.AGGR_CLIENTS: self.aggr_clients, Constant.TRAIN_CLIENTS: self.train_clients}

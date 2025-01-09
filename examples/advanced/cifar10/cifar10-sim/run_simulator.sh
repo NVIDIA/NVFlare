@@ -8,12 +8,7 @@ n_clients=$4
 
 # specify output workdir
 RESULT_ROOT=/tmp/nvflare/sim_cifar10
-if [ 1 -eq "$(echo "${alpha} > 0" | bc)" ]
-then
-  out_workspace=${RESULT_ROOT}/${job}_alpha${alpha}
-else
-  out_workspace=${RESULT_ROOT}/${job}
-fi
+out_workspace=${RESULT_ROOT}/${job}_alpha${alpha}
 
 # run FL simulator
 ./set_alpha.sh "${job}" "${alpha}"

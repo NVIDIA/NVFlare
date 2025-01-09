@@ -1,4 +1,3 @@
-nvflare
 torch
 torch_geometric
 tensorboard

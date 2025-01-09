@@ -2,7 +2,7 @@
 
 ## sag_cse_pt
     name = "sag_cse_pt"
-    description = "scatter & gather workflow and cross-site evaluation with PyTorch"
+    description = "FedAvg with scatter & gather workflow and cross-site evaluation with PyTorch"
     class_name  =  "CrossSiteModelEval"
     controller_type = "server"
     executor_type = "launcher_executor"

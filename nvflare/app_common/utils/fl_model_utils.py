@@ -19,6 +19,7 @@ from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, MetaKey, ParamsType
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.validation_utils import check_object_type
 
@@ -55,8 +56,9 @@ class FLModelUtils:
             raise ValueError("FLModel without params and metrics is NOT supported.")
         elif fl_model.params is not None:
             if fl_model.params_type is None:
-                raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
-            data_kind = params_type_to_data_kind.get(fl_model.params_type)
+                fl_model.params_type = ParamsType.FULL
+
+            data_kind = params_type_to_data_kind.get(fl_model.params_type.value)
             if data_kind is None:
                 raise ValueError(f"Invalid ParamsType: ({fl_model.params_type}).")
 
@@ -72,6 +74,8 @@ class FLModelUtils:
         dxo.meta.update(meta)
 
         shareable = dxo.to_shareable()
+        if fl_model.start_round is not None:
+            shareable.set_header(AppConstants.START_ROUND, fl_model.start_round)
         if fl_model.current_round is not None:
             shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.current_round)
         if fl_model.total_rounds is not None:
@@ -96,25 +100,30 @@ class FLModelUtils:
         params = None
         meta = {}
 
-        try:
+        submit_model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
+        if submit_model_name:
+            # this only happens in cross-site eval right now
+            meta[MetaKey.SUBMIT_MODEL_NAME] = submit_model_name
+        else:
             dxo = from_shareable(shareable)
             meta = dict(dxo.meta)
             if dxo.data_kind == DataKind.METRICS:
                 metrics = dxo.data
             else:
                 params_type = data_kind_to_params_type.get(dxo.data_kind)
+                params = dxo.data
                 if params_type is None:
-                    raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
+                    if params is None:
+                        raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
+                    else:
+                        params_type = ParamsType.FULL
+
                 params_type = ParamsType(params_type)
 
-                params = dxo.data
                 if MetaKey.INITIAL_METRICS in meta:
                     metrics = meta[MetaKey.INITIAL_METRICS]
-        except:
-            # this only happens in cross-site eval right now
-            submit_model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
-            meta[MetaKey.SUBMIT_MODEL_NAME] = submit_model_name
 
+        start_round = shareable.get_header(AppConstants.START_ROUND, None)
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE, None)
@@ -133,6 +142,7 @@ class FLModelUtils:
             params_type=params_type,
             params=params,
             metrics=metrics,
+            start_round=start_round,
             current_round=current_round,
             total_rounds=total_rounds,
             meta=meta,
@@ -163,6 +173,7 @@ class FLModelUtils:
         params_type = dxo.data.get(FLModelConst.PARAMS_TYPE, None)
         metrics = dxo.data.get(FLModelConst.METRICS, None)
         optimizer_params = dxo.data.get(FLModelConst.OPTIMIZER_PARAMS, None)
+        start_round = dxo.data.get(FLModelConst.START_ROUND, None)
         current_round = dxo.data.get(FLModelConst.CURRENT_ROUND, None)
         total_rounds = dxo.data.get(FLModelConst.TOTAL_ROUNDS, None)
         meta = dxo.data.get(FLModelConst.META, None)
@@ -172,9 +183,22 @@ class FLModelUtils:
             params_type=params_type,
             metrics=metrics,
             optimizer_params=optimizer_params,
+            start_round=start_round,
             current_round=current_round,
             total_rounds=total_rounds,
             meta=meta,
+        )
+
+    @staticmethod
+    def to_model_learnable(fl_model: FLModel) -> ModelLearnable:
+        return make_model_learnable(weights=fl_model.params, meta_props=fl_model.meta)
+
+    @staticmethod
+    def from_model_learnable(model_learnable: ModelLearnable) -> FLModel:
+        return FLModel(
+            params_type=ParamsType.FULL,
+            params=model_learnable[ModelLearnableKey.WEIGHTS],
+            meta=model_learnable[ModelLearnableKey.META],
         )
 
     @staticmethod
@@ -197,14 +221,15 @@ class FLModelUtils:
     @staticmethod
     def update_model(model: FLModel, model_update: FLModel, replace_meta: bool = True) -> FLModel:
         if model.params_type != ParamsType.FULL:
-            raise RuntimeError(
-                f"params_type {model_update.params_type} of `model` not supported! Expected `ParamsType.FULL`."
-            )
+            raise RuntimeError(f"params_type {model.params_type} of `model` not supported! Expected `ParamsType.FULL`.")
 
         if replace_meta:
             model.meta = model_update.meta
         else:
             model.meta.update(model_update.meta)
+
+        model.metrics = model_update.metrics
+
         if model_update.params_type == ParamsType.FULL:
             model.params = model_update.params
         elif model_update.params_type == ParamsType.DIFF:

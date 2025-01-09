@@ -1,0 +1,10 @@
+{
+  "name": "xgboost_histogram_based_v2",
+  "resource_spec": {},
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  },
+  "min_clients": 2
+}

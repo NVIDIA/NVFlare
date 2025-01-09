@@ -25,14 +25,15 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.log_utils import configure_logging
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
-from nvflare.private.fed.app.utils import version_check
+from nvflare.private.fed.app.utils import component_security_check, version_check
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.fed_client import FederatedClient
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
+from nvflare.private.fed.utils.fed_utils import fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
 
@@ -66,7 +67,7 @@ def main(args):
 
     try:
         os.chdir(args.workspace)
-        fobs_initialize()
+        fobs_initialize(workspace)
 
         conf = FLClientStarterConfiger(
             workspace=workspace,
@@ -75,8 +76,7 @@ def main(args):
         )
         conf.configure()
 
-        log_file = workspace.get_log_file_path()
-        add_logfile_handler(log_file)
+        configure_logging(workspace, workspace.get_root_dir())
 
         deployer = conf.base_deployer
         security_init(
@@ -100,6 +100,7 @@ def main(args):
 
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
+        workspace = Workspace(args.workspace, federated_client.client_name, config_folder)
 
         client_engine = ClientEngine(federated_client, args, rank)
 
@@ -107,8 +108,35 @@ def main(args):
             print("Waiting client cell to be created ....")
             time.sleep(1.0)
 
+        client_engine.initialize_comm(federated_client.cell)
+
         with client_engine.new_context() as fl_ctx:
             client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
+
+            fl_ctx.set_prop(
+                key=FLContextKey.CLIENT_CONFIG,
+                value=deployer.client_config,
+                private=True,
+                sticky=True,
+            )
+            fl_ctx.set_prop(
+                key=FLContextKey.SERVER_CONFIG,
+                value=deployer.server_config,
+                private=True,
+                sticky=True,
+            )
+            fl_ctx.set_prop(
+                key=FLContextKey.SECURE_MODE,
+                value=deployer.secure_train,
+                private=True,
+                sticky=True,
+            )
+
+            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
+            fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.SITE_OBJ, federated_client, private=True, sticky=True)
+
+            component_security_check(fl_ctx)
 
             client_engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
             federated_client.register(fl_ctx)
@@ -121,7 +149,7 @@ def main(args):
 
         federated_client.start_heartbeat(interval=kv_list.get("heart_beat_interval", 10.0))
 
-        admin_agent = create_admin_agent(deployer.req_processors, federated_client, client_engine)
+        create_admin_agent(deployer.req_processors, federated_client, client_engine)
 
         while federated_client.status != ClientStatus.STOPPED:
             time.sleep(1.0)

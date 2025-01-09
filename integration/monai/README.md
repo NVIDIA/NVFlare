@@ -9,10 +9,6 @@ Add `ClientAlgoExecutor` class to allow using MONAI's `ClientAlgo` class in fede
 
 Allow the use of bundles from the MONAI [model zoo](https://github.com/Project-MONAI/model-zoo) or custom configurations with NVFlare.
 
-### Non-goals:
-
-n/a
-
 ## Background
 MONAI allows the definition of AI models using the "[bundle](https://docs.monai.io/en/latest/bundle.html)" concept. 
 It allows for easy experimentation and sharing of models that have been developed using MONAI.

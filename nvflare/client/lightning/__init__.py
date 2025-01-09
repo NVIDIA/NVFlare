@@ -12,6 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""PyTorch Lightning API integration module for simplified imports.
+
+Usage:
+    from nvflare.client.lightning import patch
+
+For detailed information on usage and the API, refer to:
+    :mod:`nvflare.app_opt.lightning.api`
+
+"""
+
 from nvflare.fuel.utils.import_utils import optional_import
 
 pytorch_lightning, ok = optional_import(module="pytorch_lightning")
@@ -25,6 +35,7 @@ if ok:
     from nvflare.client import get_config as get_config
     from nvflare.client import get_job_id as get_job_id
     from nvflare.client import get_site_name as get_site_name
+    from nvflare.client import init as init
     from nvflare.client import is_running as is_running
     from nvflare.client import log as log
     from nvflare.client import receive as receive

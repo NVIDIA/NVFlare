@@ -169,6 +169,7 @@ class CrossSiteEvalClientController(ClientSideController):
 
         model_to_validate = reply
         model_to_validate.set_header(AppConstants.VALIDATE_TYPE, ValidateType.MODEL_VALIDATE)
+        model_to_validate.set_header(FLContextKey.TASK_NAME, self.validation_task_name)
         if model_type == ModelType.LOCAL:
             model_to_validate.set_header(AppConstants.MODEL_OWNER, model_owner)
 
@@ -218,6 +219,7 @@ class CrossSiteEvalClientController(ClientSideController):
         if not self.local_model:
             task_data = Shareable()
             task_data.set_header(AppConstants.SUBMIT_MODEL_NAME, model_name)
+            task_data.set_header(FLContextKey.TASK_NAME, self.submit_model_task_name)
 
             abort_signal = Signal()
             try:

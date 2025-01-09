@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import pathlib
 from typing import List, Optional, Tuple
@@ -20,10 +19,12 @@ from typing import List, Optional, Tuple
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
+from nvflare.fuel.utils.log_utils import get_module_logger
 
 
 class ConfigFactory:
-    logger = logging.getLogger(__qualname__)
+    logger = get_module_logger(__module__, __qualname__)
+
     OmegaConfLoader, omega_import_ok = optional_import(
         module="nvflare.fuel_opt.utils.omegaconf_loader", name="OmegaConfLoader"
     )
@@ -45,12 +46,12 @@ class ConfigFactory:
     def search_config_format(
         init_file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
     ) -> Tuple[Optional[ConfigFormat], Optional[str]]:
+        """Finds the configuration format and the location (file_path) for given initial init_file_path and search directories.
 
-        """find the configuration format and the location (file_path) for given initial init_file_path and search directories.
-            for example, the initial config file path given is config_client.json
-            the search function will ignore the .json extension and search "config_client.xxx" in the given directory in
-            specified extension search order. The first found file_path will be used as configuration.
-            the ".xxx" is one of the extensions defined in the configuration format.
+        For example, the initial config file path given is `config_client.json`
+        the search function will ignore the .json extension and search "config_client.xxx" in the given directory in
+        specified extension search order. The first found file_path will be used as configuration.
+        the ".xxx" is one of the extensions defined in the configuration format.
 
         Args:
             init_file_path: initial file_path for the configuration
@@ -97,12 +98,13 @@ class ConfigFactory:
     def load_config(
         file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
     ) -> Optional[Config]:
+        """Finds the configuration for given initial init_file_path and search directories.
 
-        """Find the configuration for given initial init_file_path and search directories.
-            for example, the initial config file path given is config_client.json
-            the search function will ignore the .json extension and search "config_client.xxx" in the given directory in
-            specified extension search order. The first found file_path will be used as configuration.
-            the ".xxx" is one of the extensions defined in the configuration format.
+        For example, the initial config file path given is `config_client.json`
+        the search function will ignore the .json extension and search "config_client.xxx" in the given directory in
+        specified extension search order. The first found file_path will be used as configuration.
+        the ".xxx" is one of the extensions defined in the configuration format.
+
         Args:
             file_path: initial file path
             search_dirs: search directory. If none, the parent directory of init_file_path will be used as search dir
@@ -124,8 +126,7 @@ class ConfigFactory:
 
     @staticmethod
     def get_config_loader(config_format: ConfigFormat) -> Optional[ConfigLoader]:
-
-        """return ConfigLoader for given config_format
+        """Returns ConfigLoader for given config_format
 
         Args:
             config_format: ConfigFormat

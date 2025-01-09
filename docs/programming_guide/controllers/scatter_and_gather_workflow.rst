@@ -7,7 +7,7 @@ of NVIDIA FLARE with a Server aggregating results from Clients that have produce
 
 At the core, the control_flow of :class:`nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather` is a for loop:
 
-.. image:: ../resources/fed_sag_round.png
+.. image:: ../../resources/fed_sag_round.png
     :height: 400px
 
 Trainer

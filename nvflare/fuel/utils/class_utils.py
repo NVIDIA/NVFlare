@@ -14,10 +14,13 @@
 
 import importlib
 import inspect
-import logging
 import pkgutil
 from typing import Dict, List, Optional
 
+from nvflare.apis.fl_component import FLComponent
+from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.utils.components_utils import create_classes_table_static
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 DEPRECATED_PACKAGES = ["nvflare.app_common.pt", "nvflare.app_common.homomorphic_encryption"]
@@ -60,17 +63,6 @@ def instantiate_class(class_path, init_params):
     return instance
 
 
-class _ModuleScanResult:
-    """Data class for ModuleScanner."""
-
-    def __init__(self, class_name: str, module_name: str):
-        self.class_name = class_name
-        self.module_name = module_name
-
-    def __str__(self):
-        return f"{self.class_name}:{self.module_name}"
-
-
 class ModuleScanner:
     def __init__(self, base_pkgs: List[str], module_names: List[str], exclude_libs=True):
         """Loads specified modules from base packages and then constructs a class to module name mapping.
@@ -84,12 +76,11 @@ class ModuleScanner:
         self.module_names = module_names
         self.exclude_libs = exclude_libs
 
-        self._logger = logging.getLogger(self.__class__.__name__)
-        self._class_table: Dict[str, str] = {}
-        self._create_classes_table()
+        self._logger = get_obj_logger(self)
+        self._class_table = create_classes_table_static()
 
-    def _create_classes_table(self):
-        scan_result_table = {}
+    def create_classes_table(self):
+        class_table: Dict[str, str] = {}
         for base in self.base_pkgs:
             package = importlib.import_module(base)
 
@@ -107,24 +98,19 @@ class ModuleScanner:
                                         not name.startswith("_")
                                         and inspect.isclass(obj)
                                         and obj.__module__ == module_name
+                                        and issubclass(obj, FLComponent)
                                     ):
-                                        # same class name exists in multiple modules
-                                        if name in scan_result_table:
-                                            scan_result = scan_result_table[name]
-                                            if name in self._class_table:
-                                                self._class_table.pop(name)
-                                                self._class_table[f"{scan_result.module_name}.{name}"] = module_name
-                                            self._class_table[f"{module_name}.{name}"] = module_name
+                                        if name in class_table:
+                                            class_table[name].append(module_name)
                                         else:
-                                            scan_result = _ModuleScanResult(class_name=name, module_name=module_name)
-                                            scan_result_table[name] = scan_result
-                                            self._class_table[name] = module_name
-                            except (ModuleNotFoundError, RuntimeError) as e:
-                                self._logger.debug(
+                                            class_table[name] = [module_name]
+                            except (ModuleNotFoundError, RuntimeError, AttributeError) as e:
+                                self._logger.error(
                                     f"Try to import module {module_name}, but failed: {secure_format_exception(e)}. "
                                     f"Can't use name in config to refer to classes in module: {module_name}."
                                 )
                                 pass
+        return class_table
 
     def get_module_name(self, class_name) -> Optional[str]:
         """Gets the name of the module that contains this class.
@@ -135,4 +121,41 @@ class ModuleScanner:
         Returns:
             The module name if found.
         """
-        return self._class_table.get(class_name, None)
+        if class_name not in self._class_table:
+            raise ConfigError(
+                f"Cannot find class '{class_name}'. Please check its spelling. If the spelling is correct, specify the class using its full path."
+            )
+
+        modules = self._class_table.get(class_name, None)
+        if modules and len(modules) > 1:
+            raise ConfigError(
+                f"Multiple modules have the class '{class_name}': {modules}. "
+                f"Please specify the class using its full path."
+            )
+        else:
+            return modules[0]
+
+
+def _retrieve_parameters(class__, parameters):
+    constructor = class__.__init__
+    constructor__parameters = inspect.signature(constructor).parameters
+    parameters.update(constructor__parameters)
+    if "args" in constructor__parameters.keys() and "kwargs" in constructor__parameters.keys():
+        for item in class__.__bases__:
+            parameters.update(_retrieve_parameters(item, parameters))
+    return parameters
+
+
+def get_component_init_parameters(component):
+    """To retrieve the initialize parameters of an object from the class constructor.
+
+    Args:
+        component: a class instance
+
+    Returns:
+
+    """
+    class__ = component.__class__
+    parameters = {}
+    _retrieve_parameters(class__, parameters)
+    return parameters
