@@ -1,0 +1,9 @@
+global:
+  scrape_interval:     5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'statsd'
+    static_configs:
+      - targets: ['statsd-exporter:9102']  # Use the container name for statsd-exporter
+ 
