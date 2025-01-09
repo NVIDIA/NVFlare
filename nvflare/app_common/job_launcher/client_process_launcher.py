@@ -18,4 +18,4 @@ from nvflare.utils.job_launcher_utils import generate_client_command
 
 class ClientProcessJobLauncher(ProcessJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> str:
-        return generate_client_command(job_meta, fl_ctx)
+        return generate_client_command(fl_ctx)

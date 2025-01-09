@@ -19,6 +19,29 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 
 
+class JobProcessArgs:
+
+    EXE_MODULE = "exe_module"
+    WORKSPACE = "workspace"
+    STARTUP_DIR = "startup_dir"
+    APP_ROOT = "app_root"
+    AUTH_TOKEN = "auth_token"
+    TOKEN_SIGNATURE = "auth_signature"
+    SSID = "ssid"
+    JOB_ID = "job_id"
+    CLIENT_NAME = "client_name"
+    ROOT_URL = "root_url"
+    PARENT_URL = "parent_url"
+    SERVICE_HOST = "service_host"
+    SERVICE_PORT = "service_port"
+    HA_MODE = "ha_mode"
+    TARGET = "target"
+    SCHEME = "scheme"
+    STARTUP_CONFIG_FILE = "startup_config_file"
+    RESTORE_SNAPSHOT = "restore_snapshot"
+    OPTIONS = "options"
+
+
 class JobReturnCode(ProcessExitCode):
     SUCCESS = 0
     EXECUTION_ERROR = 1
@@ -67,7 +90,7 @@ class JobLauncherSpec(FLComponent):
         """To launch a job run.
 
         Args:
-            job_meta: job meta data
+            job_meta: job metadata
             fl_ctx: FLContext
 
         Returns: boolean to indicates the job launch success or fail.

@@ -15,11 +15,20 @@
 import copy
 import json
 import os
+import shutil
 
 import yaml
 
 from nvflare.lighter import utils
-from nvflare.lighter.constants import CtxKey, OverseerRole, PropKey, ProvFileName, ProvisionMode, TemplateSectionKey
+from nvflare.lighter.constants import (
+    ConnSecurity,
+    CtxKey,
+    OverseerRole,
+    PropKey,
+    ProvFileName,
+    ProvisionMode,
+    TemplateSectionKey,
+)
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
@@ -104,6 +113,25 @@ class StaticFileBuilder(Builder):
         else:
             ctx[PropKey.OVERSEER_END_POINT] = f"{protocol}://{overseer.name}{api_root}"
 
+    @staticmethod
+    def _build_conn_properties(site: Participant, ctx: ProvisionContext, site_config: dict):
+        valid_values = [ConnSecurity.CLEAR, ConnSecurity.INSECURE, ConnSecurity.TLS, ConnSecurity.MTLS]
+        conn_security = site.get_prop_fb(PropKey.CONN_SECURITY)
+        if conn_security:
+            assert isinstance(conn_security, str)
+            conn_security = conn_security.lower()
+
+            if conn_security not in valid_values:
+                raise ValueError(f"invalid connection_security '{conn_security}': must be in {valid_values}")
+
+            if conn_security in [ConnSecurity.CLEAR, ConnSecurity.INSECURE]:
+                conn_security = ConnSecurity.INSECURE
+            site_config["connection_security"] = conn_security
+
+        custom_ca_cert = site.get_prop_fb(PropKey.CUSTOM_CA_CERT)
+        if custom_ca_cert:
+            shutil.copyfile(custom_ca_cert, os.path.join(ctx.get_kit_dir(site), ProvFileName.CUSTOM_CA_CERT_FILE_NAME))
+
     def _build_server(self, server: Participant, ctx: ProvisionContext):
         project = ctx.get_project()
         config = ctx.json_load_template_section(TemplateSectionKey.FED_SERVER)
@@ -118,6 +146,10 @@ class StaticFileBuilder(Builder):
         server_0["admin_port"] = admin_port
 
         self._prepare_overseer_agent(server, config, OverseerRole.SERVER, ctx)
+
+        # set up connection props
+        self._build_conn_properties(server, ctx, server_0)
+
         utils.write(os.path.join(dest_dir, ProvFileName.FED_SERVER_JSON), json.dumps(config, indent=2), "t")
 
         replacement_dict = {
@@ -192,6 +224,10 @@ class StaticFileBuilder(Builder):
         }
 
         self._prepare_overseer_agent(client, config, OverseerRole.CLIENT, ctx)
+
+        # set connection properties
+        client_conf = config["client"]
+        self._build_conn_properties(client, ctx, client_conf)
 
         utils.write(os.path.join(dest_dir, ProvFileName.FED_CLIENT_JSON), json.dumps(config, indent=2), "t")
 

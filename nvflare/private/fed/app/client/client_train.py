@@ -111,8 +111,6 @@ def main(args):
         client_engine.initialize_comm(federated_client.cell)
 
         with client_engine.new_context() as fl_ctx:
-            client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
-
             fl_ctx.set_prop(
                 key=FLContextKey.CLIENT_CONFIG,
                 value=deployer.client_config,
@@ -135,6 +133,8 @@ def main(args):
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.SITE_OBJ, federated_client, private=True, sticky=True)
+
+            client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
             component_security_check(fl_ctx)
 

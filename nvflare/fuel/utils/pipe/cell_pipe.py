@@ -17,13 +17,15 @@ import threading
 import time
 from typing import Tuple, Union
 
-from nvflare.apis.fl_constant import SystemVarName
+from nvflare.apis.fl_constant import FLMetaKey, SecureTrainConst, SystemVarName
+from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.sec.authn import add_authentication_headers
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.config_service import search_file
 from nvflare.fuel.utils.constants import Mode
@@ -112,6 +114,9 @@ class CellPipe(Pipe):
 
     _lock = threading.Lock()
     _cells_info = {}  # (root_url, site_name, token) => _CellInfo
+    _auth_token = None
+    _token_signature = None
+    _site_name = None
 
     @classmethod
     def _build_cell(cls, mode, root_url, site_name, token, secure_mode, workspace_dir):
@@ -131,6 +136,7 @@ class CellPipe(Pipe):
 
         """
         with cls._lock:
+            cls._site_name = site_name
             cell_key = f"{root_url}.{site_name}.{token}"
             ci = cls._cells_info.get(cell_key)
             if not ci:
@@ -144,6 +150,10 @@ class CellPipe(Pipe):
                         DriverParams.CA_CERT.value: root_cert_path,
                     }
 
+                    conn_sec = get_scope_property(site_name, SecureTrainConst.CONNECTION_SECURITY)
+                    if conn_sec:
+                        credentials[DriverParams.CONNECTION_SECURITY.value] = conn_sec
+
                 cell = Cell(
                     fqcn=_cell_fqcn(mode, site_name, token),
                     root_url=root_url,
@@ -151,10 +161,23 @@ class CellPipe(Pipe):
                     credentials=credentials,
                     create_internal_listener=False,
                 )
+
+                # set filter to add additional auth headers
+                cell.core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=cls._add_auth_headers)
+                cell.core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=cls._add_auth_headers)
+
                 net_agent = NetAgent(cell)
                 ci = _CellInfo(cell, net_agent)
                 cls._cells_info[cell_key] = ci
             return ci
+
+    @classmethod
+    def _add_auth_headers(cls, message: CellMessage):
+        if not cls._auth_token:
+            cls._auth_token = get_scope_property(scope_name=cls._site_name, key=FLMetaKey.AUTH_TOKEN, default="NA")
+            cls._token_signature = get_scope_property(cls._site_name, FLMetaKey.AUTH_TOKEN_SIGNATURE, default="NA")
+
+        add_authentication_headers(message, cls._site_name, cls._auth_token, cls._token_signature)
 
     def __init__(
         self,

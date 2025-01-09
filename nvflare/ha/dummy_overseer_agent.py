@@ -26,7 +26,7 @@ from nvflare.apis.overseer_spec import SP, OverseerAgent
 class DummyOverseerAgent(OverseerAgent):
     SSID = "ebc6125d-0a56-4688-9b08-355fe9e4d61a"
 
-    def __init__(self, sp_end_point, heartbeat_interval=5):
+    def __init__(self, sp_end_point, heartbeat_interval=0.5):
         super().__init__()
         self._base_init(sp_end_point)
 
