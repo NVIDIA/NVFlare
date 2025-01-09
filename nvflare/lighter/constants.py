@@ -43,7 +43,7 @@ class PropKey:
     OVERSEER_END_POINT = "overseer_end_point"
     ADMIN_PORT = "admin_port"
     FED_LEARN_PORT = "fed_learn_port"
-    COMMUNICATION_PORT = "communication_port"
+    DOCKER_COMM_PORT = "docker_comm_port"
 
 
 class CtxKey(WorkDir, PropKey):

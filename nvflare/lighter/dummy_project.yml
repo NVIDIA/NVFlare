@@ -11,7 +11,7 @@ participants:
     org: nvidia
     fed_learn_port: 8002
     admin_port: 8003
-    communication_port: 8005
+    docker_comm_port: 8005
   - name: site-1
     type: client
     org: nvidia
@@ -20,7 +20,7 @@ participants:
     # as a server for 3rd-party integration.
     # The value must be a hostname that the external trainer can reach via the network.
     # listening_host: site-1-lh
-    communication_port: 8006
+    docker_comm_port: 8006
   - name: site-2
     type: client
     org: nvidia

@@ -76,7 +76,7 @@ class DockerBuilder(Builder):
             )
         utils.write(os.path.join(dest_dir, ProvFileName.RESOURCES_JSON_DEFAULT), json.dumps(resources, indent=4), "t")
 
-        communication_port = ctx.get(CtxKey.COMMUNICATION_PORT)
+        communication_port = server.get_prop(CtxKey.DOCKER_COMM_PORT)
         if communication_port:
             replacement_dict = {"comm_host_name": "server-parent", "communication_port": communication_port}
             ctx.build_from_template(
@@ -114,7 +114,7 @@ class DockerBuilder(Builder):
             )
         utils.write(os.path.join(dest_dir, ProvFileName.RESOURCES_JSON_DEFAULT), json.dumps(resources, indent=4), "t")
 
-        communication_port = client.get_prop(PropKey.COMMUNICATION_PORT)
+        communication_port = client.get_prop(PropKey.DOCKER_COMM_PORT)
         if communication_port:
             replacement_dict = {"comm_host_name": client.name + "-parent", "communication_port": communication_port}
             ctx.build_from_template(
