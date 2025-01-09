@@ -162,6 +162,8 @@ Once you setup the system, you can view from the followingt website
 for statsd-exporter, you can look at 
 
 ### Statsd-exporter metrics view
+
+<!-- markdown-link-check-disable -->
 metrics page: "http://localhost:9102/metrics" 
 
 for the metrics published to statsd-export, which can be scraped by prometheus.
@@ -173,6 +175,7 @@ Here is a screen shot
 ### Prometheus metrics view
 The same metrics is scraped by Prometheus can be found in this URL
 
+<!-- markdown-link-check-disable -->
 metrics page: "http://localhost:9090/metrics"
 
 
@@ -180,7 +183,8 @@ metrics page: "http://localhost:9090/metrics"
 
 We can visualize them better via Grafana. 
 
-Visualization: "http://localhost:3000"
+<!-- markdown-link-check-disable -->
+Visualization: http://localhost:3000
 
 Here are two metrics dashboards examples
 
