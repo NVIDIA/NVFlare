@@ -153,6 +153,20 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def list_client_data(self, jid: str, fl_ctx: FLContext):
+        """Get list of all the client data for the specified job.
+
+        Args:
+            jid (str): Job ID
+            fl_ctx (FLContext): FLContext information
+
+        Returns:
+            data content
+
+        """
+        pass
+
+    @abstractmethod
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         """Set status of an existing Job.
 
