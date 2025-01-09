@@ -99,7 +99,17 @@ Each client site and the server site will have its own monitoring system, includ
 | CLIENT_REGISTER_PROCESSED | _client_register_processed_count | |
 | CLIENT_QUIT | _client_quit_count | |
 | SYSTEM_BOOTSTRAP | _system_bootstrap_count | |
-
+| BEFORE_AGGREGATION | _before_aggregation_count | |
+| END_AGGREGATION | _end_aggregation_count | _aggregation_time_taken|
+| RECEIVE_BEST_MODEL | _receive_best_model_count | |
+| BEFORE_TRAIN | _before_train_count | |
+| AFTER_TRAIN | _after_train_count |_train_time_taken |
+| TRAIN_DONE | _train_done_count | |
+| TRAINING_STARTED | _training_count | |
+| TRAINING_FINISHED | _training_count | _training_time_taken|
+| ROUND_STARTED | _round_started_count | |
+| ROUND_DONE | _round_done_count |  _round_time_taken |
+           
 
 These metrics can be separated into Job Metrics and System Metrics. System Metrics are associated with the Client and Server parent processes, while Job Metrics are associated with each job.
 

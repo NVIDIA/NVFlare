@@ -13,7 +13,6 @@
 # limitations under the License.
 
 
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.metrics.metrics_collector import MetricsCollector
@@ -26,48 +25,38 @@ class SysMetricsCollector(MetricsCollector):
         Args:
             tags: comma separated static tags. used to specify server, client, production, test etc.
         """
-        super().__init__(tags=tags, streaming_to_server= streaming_to_server)
-        
+        super().__init__(tags=tags, streaming_to_server=streaming_to_server)
 
         self.pair_events = {
             EventType.SYSTEM_START: "_system",
             EventType.SYSTEM_END: "_system",
-            
-            EventType.START_RUN: "_run",
-            EventType.END_RUN: "_run",
-            
             EventType.BEFORE_CHECK_CLIENT_RESOURCES: "_check_client_resources",
             EventType.AFTER_CHECK_CLIENT_RESOURCES: "_check_client_resources",
-            
             EventType.BEFORE_CLIENT_REGISTER: "_client_register",
             EventType.AFTER_CLIENT_REGISTER: "_client_register",
-
             EventType.BEFORE_CLIENT_HEARTBEAT: "_client_heartbeat",
             EventType.AFTER_CLIENT_HEARTBEAT: "_client_heartbeat",
         }
 
-   
         self.single_events = [
-                EventType.CLIENT_DISCONNECTED,
-                EventType.CLIENT_RECONNECTED,
-                EventType.BEFORE_CHECK_RESOURCE_MANAGER, 
-                EventType.BEFORE_SEND_ADMIN_COMMAND,
-                EventType.CLIENT_REGISTER_RECEIVED, 
-                EventType.CLIENT_REGISTER_PROCESSED,
-                EventType.CLIENT_QUIT, 
-                EventType.SYSTEM_BOOTSTRAP,
-                EventType.CLIENT_HEARTBEAT_RECEIVED,
-                EventType.CLIENT_HEARTBEAT_PROCESSED,
-                EventType.BEFORE_JOB_LAUNCH
+            EventType.CLIENT_DISCONNECTED,
+            EventType.CLIENT_RECONNECTED,
+            EventType.BEFORE_CHECK_RESOURCE_MANAGER,
+            EventType.BEFORE_SEND_ADMIN_COMMAND,
+            EventType.CLIENT_REGISTER_RECEIVED,
+            EventType.CLIENT_REGISTER_PROCESSED,
+            EventType.CLIENT_QUIT,
+            EventType.SYSTEM_BOOTSTRAP,
+            EventType.CLIENT_HEARTBEAT_RECEIVED,
+            EventType.CLIENT_HEARTBEAT_PROCESSED,
+            EventType.BEFORE_JOB_LAUNCH,
         ]
- 
+
     def handle_event(self, event: str, fl_ctx: FLContext):
         super().collect_event_metrics(event=event, tags=self.tags, fl_ctx=fl_ctx)
-
 
     def get_single_events(self):
         return self.single_events
 
     def get_pair_events(self):
         return self.pair_events
- 

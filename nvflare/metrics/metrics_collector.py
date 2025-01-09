@@ -13,8 +13,8 @@
 # limitations under the License.
 
 
-from abc import ABC, abstractmethod
 import time
+from abc import ABC, abstractmethod
 from typing import Dict, List
 
 from nvflare.apis.fl_component import FLComponent
@@ -36,19 +36,17 @@ class MetricsCollector(FLComponent, ABC):
         self.tags = tags
         self.data_bus = DataBus()
         self.streaming_to_server = streaming_to_server
- 
+
         self.event_start_time = {}
 
+    @abstractmethod
+    def get_single_events() -> List[str]:
+        pass
 
     @abstractmethod
-    def get_single_events()-> List[str]:
+    def get_pair_events() -> Dict:
         pass
- 
-    @abstractmethod
-    def get_pair_events()-> Dict:
-        pass
-        
-  
+
     def collect_event_metrics(self, event: str, tags, fl_ctx: FLContext):
 
         current_time = time.time()
@@ -59,7 +57,7 @@ class MetricsCollector(FLComponent, ABC):
 
         if event in self.get_single_events():
             self.publish_metrics(metrics, metric_name, tags, fl_ctx)
-        elif event in self.get_pair_events():
+        elif event in self.get_pair_events().keys():
             self.publish_metrics(metrics, metric_name, tags, fl_ctx)
             key = self.pair_events.get(event)
             if not self.event_start_time.get(key):
@@ -73,8 +71,7 @@ class MetricsCollector(FLComponent, ABC):
                 duration_metrics[MetricKeys.time_taken] = time_taken
                 metric_name = key
                 self.publish_metrics(duration_metrics, metric_name, tags, fl_ctx)
-                
- 
+
     def publish_metrics(self, metrics: dict, metric_name: str, tags: dict, fl_ctx: FLContext):
 
         collect_metrics(self, self.streaming_to_server, metrics, metric_name, tags, self.data_bus, fl_ctx)
