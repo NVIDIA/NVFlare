@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.impl.cert import serialize_cert
-from nvflare.lighter.utils import sign_folders, verify_folder_signature
+from nvflare.lighter.utils import load_yaml, sign_folders, verify_folder_signature
 
 folders = ["folder1", "folder2"]
 files = ["file1", "file2"]
@@ -144,3 +144,8 @@ class TestSignFolder:
         os.unlink("client.crt")
         os.unlink("root.crt")
         shutil.rmtree(folder)
+
+    def test_load_yaml(self):
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        data = load_yaml(os.path.join(dir_path, "0.yml"))
+        assert data.get("server").get("server_name") == "server"
