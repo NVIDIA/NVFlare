@@ -205,6 +205,7 @@ class ReservedTopic(object):
     SYNC_RUNNER = "__sync_runner__"
     JOB_HEART_BEAT = "__job_heartbeat__"
     TASK_CHECK = "__task_check__"
+    APP_METRICS = "__app_metrics__"
 
 
 class AdminCommandNames(object):

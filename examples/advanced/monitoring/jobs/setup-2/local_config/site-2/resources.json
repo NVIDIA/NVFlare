@@ -1,0 +1,47 @@
+{
+  "format_version": 2,
+  "client": {
+    "retry_timeout": 30,
+    "compression": "Gzip"
+  },
+  "components": [
+    {
+      "id": "sys_metrics_collector",
+      "path": "nvflare.metrics.system_metrics_collector.SysMetricsCollector",
+      "args": {
+          "tags": {
+              "site": "site-2",
+              "env": "dev"
+          },
+        "streaming_to_server": true
+      }
+    },
+    {
+      "id": "event_to_fed",
+      "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+      "args": {
+          "events_to_convert": [
+              "metrics_event"
+          ]
+       }
+    },
+    {
+      "id": "resource_manager",
+      "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
+      "args": {
+        "num_of_gpus": 0,
+        "mem_per_gpu_in_GiB": 0
+      }
+    },
+    {
+      "id": "resource_consumer",
+      "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
+      "args": {}
+    },
+    {
+      "id": "process_launcher",
+      "path": "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
+      "args": {}
+    }
+  ]
+}
