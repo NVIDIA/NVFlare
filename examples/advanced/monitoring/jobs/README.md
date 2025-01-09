@@ -3,7 +3,7 @@ FLARE Monitoring provides a initial solution for tracking system metrics of your
 Different from Machine learning experiment tracking, where it focused on the training metrics, the monitoring here focused on the FL system: i.e. job and system lifecycle metrics. 
 
 This guide will walk you through the steps to set up and use the monitoring system effectively.
-Please see [hello-pytorch](../../../../hello-world/hello-pt/README.md) for details on how to run hello-pt.
+Please see [hello-pytorch](../../../hello-world/hello-pt/README.md) for details on how to run hello-pt.
 
 ## Prepare Code
 Create a bash script to copy the hello-world example to the current directory:
@@ -162,8 +162,7 @@ Once you setup the system, you can view from the followingt website
 for statsd-exporter, you can look at 
 
 ### Statsd-exporter metrics view
-
-[http://localhost:9102/metrics](http://localhost:9102/metrics) 
+metrics page: "http://localhost:9102/metrics" 
 
 for the metrics published to statsd-export, which can be scraped by prometheus.
 Here is a screen shot
@@ -174,12 +173,16 @@ Here is a screen shot
 ### Prometheus metrics view
 The same metrics is scraped by Prometheus can be found in this URL
 
-![http://localhost:9090/metrics](http://localhost:9090/metrics)
+metrics page: "http://localhost:9090/metrics"
 
 
 ### Grafana Dashboard views
 
-We can visualize them better via Grafana. Here are two metrics dashboards
+We can visualize them better via Grafana. 
+
+Visualization: "http://localhost:3000"
+
+Here are two metrics dashboards examples
 
 ![Client heartbeat (before & after) time taken](../figures/grafana_plot_metrics_heatbeat_time_taken.png)
 
