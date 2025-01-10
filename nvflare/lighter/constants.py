@@ -43,6 +43,7 @@ class PropKey:
     OVERSEER_END_POINT = "overseer_end_point"
     ADMIN_PORT = "admin_port"
     FED_LEARN_PORT = "fed_learn_port"
+    ALLOW_ERROR_SENDING = "allow_error_sending"
 
 
 class CtxKey(WorkDir, PropKey):
