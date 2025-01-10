@@ -3,7 +3,7 @@
 set -e
 
 PYTHONPATH="${PWD}/../.."
-backends=(numpy tensorflow pytorch overseer ha auth preflight cifar auto stats xgboost client_api client_api_qa model_controller_api)
+backends=(numpy tensorflow pytorch overseer auth preflight cifar auto stats xgboost client_api client_api_qa model_controller_api)
 
 usage()
 {
