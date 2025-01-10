@@ -13,13 +13,15 @@
 # limitations under the License.
 import pytest
 
+from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
+
 USER_NAME = "Test User"
 
 
 class TestUsers:
     @pytest.fixture(scope="session")
     def first_user_id(self, auth_header, client):
-        response = client.get("/api/v1/users", headers=auth_header)
+        response = client.get(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users", headers=auth_header)
 
         assert response.status_code == 200
         user_list = response.json["user_list"]
@@ -38,7 +40,9 @@ class TestUsers:
 
     def test_update_user(self, auth_header, client, first_user_id):
         user = {"name": USER_NAME}
-        response = client.patch("/api/v1/users/" + str(first_user_id), json=user, headers=auth_header)
+        response = client.patch(
+            FLARE_DASHBOARD_NAMESPACE + "/api/v1/users/" + str(first_user_id), json=user, headers=auth_header
+        )
         assert response.status_code == 200
 
         new_user = self._get_one_user(auth_header, client, first_user_id)
@@ -54,21 +58,21 @@ class TestUsers:
             "approval_state": 200,
         }
 
-        response = client.post("/api/v1/users", json=test_user, headers=auth_header)
+        response = client.post(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users", json=test_user, headers=auth_header)
         assert response.status_code == 201
         new_id = response.json["user"]["id"]
 
-        response = client.delete("/api/v1/users/" + str(new_id), headers=auth_header)
+        response = client.delete(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users/" + str(new_id), headers=auth_header)
         assert response.status_code == 200
 
         # Make sure user is deleted
-        response = client.get("/api/v1/users/" + str(new_id), headers=auth_header)
+        response = client.get(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users/" + str(new_id), headers=auth_header)
         assert response.status_code == 200
         # The API returns empty dict for non-existent user
         assert len(response.json["user"]) == 0
 
     def _get_one_user(self, auth_header, client, user_id):
-        response = client.get("/api/v1/users/" + str(user_id), headers=auth_header)
+        response = client.get(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users/" + str(user_id), headers=auth_header)
 
         assert response.status_code == 200
         return response.json["user"]
