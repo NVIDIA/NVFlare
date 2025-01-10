@@ -13,6 +13,8 @@
 # limitations under the License.
 import pytest
 
+from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
+
 CLIENT1 = {"name": "site-1", "organization": "test.com", "capacity": {"num_gpus": 16, "mem_per_gpu_in_GiB": 64}}
 
 CLIENT2 = {"name": "site-2", "organization": "example.com", "capacity": {"num_gpus": 4, "mem_per_gpu_in_GiB": 32}}
@@ -24,9 +26,9 @@ class TestClients:
     @pytest.fixture(scope="session")
     def client_ids(self, auth_header, client):
 
-        response1 = client.post("/api/v1/clients", json=CLIENT1, headers=auth_header)
+        response1 = client.post(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients", json=CLIENT1, headers=auth_header)
         assert response1.status_code == 201
-        response2 = client.post("/api/v1/clients", json=CLIENT2, headers=auth_header)
+        response2 = client.post(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients", json=CLIENT2, headers=auth_header)
         assert response2.status_code == 201
 
         return [response1.json["client"]["id"], response2.json["client"]["id"]]
@@ -37,7 +39,7 @@ class TestClients:
 
     def test_get_all_clients(self, client, client_ids, auth_header):
 
-        response = client.get("/api/v1/clients", headers=auth_header)
+        response = client.get(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients", headers=auth_header)
 
         assert response.status_code == 200
         assert len(response.json["client_list"]) == len(client_ids)
@@ -45,7 +47,7 @@ class TestClients:
     def test_get_one_client(self, client, client_ids, auth_header):
 
         client_id = client_ids[0]
-        response = client.get("/api/v1/clients/" + str(client_id), headers=auth_header)
+        response = client.get(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/" + str(client_id), headers=auth_header)
 
         assert response.status_code == 200
         assert response.json["client"]["id"] == client_id
@@ -55,13 +57,15 @@ class TestClients:
 
         client_id = client_ids[0]
         response = client.patch(
-            "/api/v1/clients/" + str(client_id), json={"organization": NEW_ORG}, headers=auth_header
+            FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/" + str(client_id),
+            json={"organization": NEW_ORG},
+            headers=auth_header,
         )
 
         assert response.status_code == 200
 
         # Retrieve through API again
-        response = client.get("/api/v1/clients/" + str(client_id), headers=auth_header)
+        response = client.get(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/" + str(client_id), headers=auth_header)
 
         assert response.status_code == 200
         assert response.json["client"]["organization"] == NEW_ORG
