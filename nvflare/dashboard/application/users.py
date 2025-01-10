@@ -16,10 +16,12 @@ from flask import current_app as app
 from flask import jsonify, make_response, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
+from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
+
 from .store import Store, check_role
 
 
-@app.route("/api/v1/users", methods=["POST"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users", methods=["POST"])
 def create_one_user():
     req = request.json
     result = Store.create_user(req)
@@ -29,7 +31,7 @@ def create_one_user():
         return jsonify({"status": "conflicting"}), 409
 
 
-@app.route("/api/v1/users", methods=["GET"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users", methods=["GET"])
 @jwt_required()
 def get_all_users():
     claims = get_jwt()
@@ -41,7 +43,7 @@ def get_all_users():
     return jsonify(result)
 
 
-@app.route("/api/v1/users/<id>", methods=["GET"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users/<id>", methods=["GET"])
 @jwt_required()
 def get_one_user(id):
     c, p = check_role(id, get_jwt(), get_jwt_identity())
@@ -51,7 +53,7 @@ def get_one_user(id):
     return jsonify(Store.get_user(id))
 
 
-@app.route("/api/v1/users/<id>", methods=["PATCH", "DELETE"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users/<id>", methods=["PATCH", "DELETE"])
 @jwt_required()
 def update_user(id):
     c, p = check_role(id, get_jwt(), get_jwt_identity())
@@ -72,7 +74,7 @@ def update_user(id):
     return jsonify(result)
 
 
-@app.route("/api/v1/users/<int:id>/blob", methods=["POST"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/users/<int:id>/blob", methods=["POST"])
 @jwt_required()
 def user_blob(id):
     if not Store._is_approved_by_user_id(id):
