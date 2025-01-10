@@ -14,24 +14,23 @@
 
 from typing import List, Optional
 
-from torch import nn as nn
+import tensorflow as tf
 
-from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.job_config.api import FedJob, validate_object_for_job
+from nvflare.job_config.api import validate_object_for_job
+from nvflare.job_config.common_job import CommonJob
 
 
-class BaseFedJob(FedJob):
+class TFJob(CommonJob):
     def __init__(
         self,
-        initial_model: nn.Module = None,
+        initial_model: tf.keras.Model = None,
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
@@ -41,16 +40,15 @@ class BaseFedJob(FedJob):
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
         model_persistor: Optional[ModelPersistor] = None,
-        model_locator: Optional[ModelLocator] = None,
     ):
-        """PyTorch BaseFedJob.
+        """TensorFlow CommonJob.
 
-        Configures ValidationJsonGenerator, IntimeModelSelector, AnalyticsReceiver, ConvertToFedEvent.
+        Configures ValidationJsonGenerator, IntimeModelSelector, TBAnalyticsReceiver, ConvertToFedEvent.
 
         User must add controllers and executors.
 
         Args:
-            initial_model (nn.Module): initial PyTorch Model. Defaults to None.
+            initial_model (tf.keras.Model): initial TensorFlow Model. Defaults to None.
             name (name, optional): name of the job. Defaults to "fed_job".
             min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
             mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
@@ -66,34 +64,19 @@ class BaseFedJob(FedJob):
             analytics_receiver (AnlyticsReceiver, optional): Receive analytics.
                 If not provided, a TBAnalyticsReceiver will be configured.
             model_persistor (optional, ModelPersistor): how to persistor the model.
-            model_locator (optional, ModelLocator): how to locate the model.
         """
         super().__init__(
             name=name,
             min_clients=min_clients,
             mandatory_clients=mandatory_clients,
+            key_metric=key_metric,
+            validation_json_generator=validation_json_generator,
+            intime_model_selector=intime_model_selector,
+            convert_to_fed_event=convert_to_fed_event,
         )
 
         self.initial_model = initial_model
         self.comp_ids = {}
-
-        if validation_json_generator:
-            validate_object_for_job("validation_json_generator", validation_json_generator, ValidationJsonGenerator)
-        else:
-            validation_json_generator = ValidationJsonGenerator()
-        self.to_server(id="json_generator", obj=validation_json_generator)
-
-        if intime_model_selector:
-            validate_object_for_job("intime_model_selector", intime_model_selector, IntimeModelSelector)
-            self.to_server(id="model_selector", obj=intime_model_selector)
-        elif key_metric:
-            self.to_server(id="model_selector", obj=IntimeModelSelector(key_metric=key_metric))
-
-        if convert_to_fed_event:
-            validate_object_for_job("convert_to_fed_event", convert_to_fed_event, ConvertToFedEvent)
-        else:
-            convert_to_fed_event = ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE])
-        self.convert_to_fed_event = convert_to_fed_event
 
         if analytics_receiver:
             validate_object_for_job("analytics_receiver", analytics_receiver, AnalyticsReceiver)
@@ -106,9 +89,4 @@ class BaseFedJob(FedJob):
         )
 
         if initial_model:
-            self.comp_ids.update(
-                self.to_server(PTModel(model=initial_model, persistor=model_persistor, locator=model_locator))
-            )
-
-    def set_up_client(self, target: str):
-        self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target)
+            self.comp_ids["persistor_id"] = self.to_server(TFModel(model=initial_model, persistor=model_persistor))
