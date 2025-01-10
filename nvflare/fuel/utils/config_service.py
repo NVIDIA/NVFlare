@@ -13,12 +13,12 @@
 # limitations under the License.
 import argparse
 import json
-import logging
 import os
 from typing import Dict, List, Optional, Union
 
 from nvflare.fuel.utils.config import Config, ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.log_utils import get_module_logger
 
 ENV_VAR_PREFIX = "NVFLARE_"
 
@@ -69,7 +69,7 @@ class ConfigService:
     Only JSON file loading is supported.
     """
 
-    logger = logging.getLogger(__name__)
+    logger = get_module_logger(__module__, __qualname__)
     _sections = {}
     _config_path = []
     _cmd_args = None

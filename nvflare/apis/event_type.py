@@ -89,4 +89,4 @@ class EventType(object):
 
     AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
     BEFORE_BUILD_COMPONENT = "_before_build_component"
-    GET_JOB_LAUNCHER = "_get_job_launcher"
+    BEFORE_JOB_LAUNCH = "_before_job_launch"

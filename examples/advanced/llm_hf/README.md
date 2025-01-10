@@ -99,7 +99,7 @@ Similar patterns can be observed from the PEFT curves, purple for centralized re
 ![peft](./figs/fl_peft.png)
 
 ## Model Quantization for Communication
-In the above example, we used float32 for communication. To reduce the message size, we can use model precision conversion and quantization 
+In the above example, we used numpy in float32 for communication. To reduce the message size, we can use model precision conversion and quantization 
 from float32 to 16-bit, 8-bit, and 4-bit for communication. Quantization is enabled by NVFlare's [filter mechanism](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html). We can use the following command to run the federated training with model quantization.
 16-bit is a direct precision conversion, while 8-bit, 4-bit quantization is performed by [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/main).
 Note that 4-bit quantizations (`fp4` or `nf4`) need device support.
@@ -124,6 +124,21 @@ For message reduce, from float32 to 16-/8-/4-bit, the message size (in MB) of Ll
 | normalized float4 | 5716.26        | 714.53               | 89.33                  |
 
 Note that quantization will generate additional meta data, which can be significant for 4-bit cases.
+
+## Model Communication with Tensor
+In addition, since the model is trained with bf16, instead of first converting to numpy in float32, we can directly communicate with tensor in bf16 to avoid the message size inflation due to the conversion. 
+We can use the following command to run the federated training with direct tensor communication.
+```
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor --job_dir ${PWD}/workspace/jobs/hf_sft_tensor --train_mode SFT --message_mode tensor
+```
+Similarly, quantization can be applied to tensor communication as well.
+```
+python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
+```
+In this case, since the tensor is in bf16, and the quantization reduces it to float4, the message size change is thus:
+```
+Before quantization: 2858.13 MB. After quantization: 714.53 MB with meta: 89.33 MB.
+```
 
 ## Federated Training with Multiple Clients
 With the above example, we can easily extend the federated training to multiple clients. We can use the following command to run the federated training with multiple clients:

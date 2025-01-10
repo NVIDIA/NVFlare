@@ -1,3 +1,9 @@
+<img src="docs/resources/nvidia_eye.wwPt122j.png" alt="NVIDIA Logo" width="200">
+
+# NVIDIA FLARE
+
+[Website](https://nvidia.github.io/NVFlare) | [Paper](https://arxiv.org/abs/2210.13291) | [Blogs](https://developer.nvidia.com/blog/tag/federated-learning) | [Talks & Papers](https://nvflare.readthedocs.io/en/main/publications_and_talks.html) | [Research](./research/README.md) | [Documentation](https://nvflare.readthedocs.io/en/main)
+
 [![Blossom-CI](https://github.com/NVIDIA/nvflare/workflows/Blossom-CI/badge.svg?branch=main)](https://github.com/NVIDIA/nvflare/actions)
 [![documentation](https://readthedocs.org/projects/nvflare/badge/?version=main)](https://nvflare.readthedocs.io/en/main/?badge=main)
 [![license](https://img.shields.io/badge/License-Apache%202.0-brightgreen.svg)](./LICENSE)
@@ -5,10 +11,8 @@
 [![pyversion](https://img.shields.io/pypi/pyversions/nvflare.svg)](https://badge.fury.io/py/nvflare)
 [![downloads](https://static.pepy.tech/badge/nvflare)](https://pepy.tech/project/nvflare)
 
-# NVIDIA FLARE
-
 [NVIDIA FLARE](https://nvidia.github.io/NVFlare/) (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment)
-is a domain-agnostic, open-source, extensible SDK that allows researchers and data scientists to adapt existing ML/DL workflows to a federated paradigm.
+is a domain-agnostic, open-source, extensible Python SDK that allows researchers and data scientists to adapt existing ML/DL workflows to a federated paradigm.
 It enables platform developers to build a secure, privacy-preserving offering for a distributed multi-party collaboration.
 
 ## Features
@@ -41,10 +45,12 @@ $ python3 -m pip install nvflare
 ```
 ## Getting Started
 
-You can quickly get started using the [FL simulator](https://nvflare.readthedocs.io/en/main/getting_started.html#the-fl-simulator).
-A detailed [getting started](https://nvflare.readthedocs.io/en/main/getting_started.html) guide is available in the [documentation](https://nvflare.readthedocs.io/en/main/index.html).
- 
-Examples and notebook tutorials are located at [NVFlare/examples](./examples).
+### To get started, take a look at the instructions and code examples on our [**website**](https://nvidia.github.io/NVFlare/).
+
+* For more details, see our getting started [tutorials](./examples/getting_started/README.md).
+* For more advanced examples and [step-by-step](./examples/hello-world/step-by-step/README.md) walk-troughs, see our [examples](examples).
+* There are also detailed instructions on how to convert your standalone/centralized training code to [federated learning code](./examples/hello-world/ml-to-fl/README.md).
+* If you'd like to write your own NVIDIA FLARE components, a detailed programming guide can be found [here](https://nvflare.readthedocs.io/en/main/programming_guide.html).
 
 ## Community
 

@@ -30,8 +30,9 @@ from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
+from nvflare.lighter.constants import ProvisionMode
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
-from nvflare.lighter.spec import Provisioner
+from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import (
     load_yaml,
     update_project_server_name_config,
@@ -306,8 +307,9 @@ def local_provision(
     service_config = get_service_config(project_config)
     project = prepare_project(project_config)
     builders = prepare_builders(project_config)
+
     provisioner = Provisioner(workspace, builders)
-    provisioner.provision(project)
+    provisioner.provision(project, mode=ProvisionMode.POC)
 
     return project_config, service_config
 

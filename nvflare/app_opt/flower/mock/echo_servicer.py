@@ -15,12 +15,12 @@
 import flwr.proto.grpcadapter_pb2 as pb2
 from flwr.proto.grpcadapter_pb2_grpc import GrpcAdapterServicer
 
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class EchoServicer(GrpcAdapterServicer):
     def __init__(self, num_rounds):
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.num_rounds = num_rounds
         self.server = None
         self.stopped = False

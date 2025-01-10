@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import concurrent.futures
-import logging
 import threading
 import time
 import uuid
@@ -23,6 +22,7 @@ from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, mak
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import generate_log_message
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_module_logger
 from nvflare.fuel.utils.validation_utils import check_positive_number
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
@@ -236,7 +236,7 @@ class ReliableMessage:
     _reply_receivers = {}  # tx id => receiver
     _tx_lock = threading.Lock()
     _shutdown_asked = False
-    _logger = logging.getLogger("ReliableMessage")
+    _logger = get_module_logger(__module__, __qualname__)
 
     @classmethod
     def register_request_handler(cls, topic: str, handler_f, fl_ctx: FLContext):

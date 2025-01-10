@@ -16,22 +16,30 @@ import os
 
 import yaml
 
-from nvflare.lighter.spec import Builder
+from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.entity import Participant
+from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class HelmChartBuilder(Builder):
     def __init__(self, docker_image):
         """Build Helm Chart."""
         self.docker_image = docker_image
+        self.helm_chart_directory = None
+        self.service_overseer = None
+        self.service_server = None
+        self.deployment_server = None
+        self.deployment_overseer = None
+        self.helm_chart_templates_directory = None
 
-    def initialize(self, ctx):
-        self.helm_chart_directory = os.path.join(self.get_wip_dir(ctx), "nvflare_hc")
+    def initialize(self, project: Project, ctx: ProvisionContext):
+        self.helm_chart_directory = os.path.join(ctx.get_wip_dir(), ProvFileName.HELM_CHART_DIR)
         os.mkdir(self.helm_chart_directory)
 
-    def _build_overseer(self, overseer, ctx):
-        protocol = overseer.props.get("protocol", "http")
+    def _build_overseer(self, overseer: Participant):
+        protocol = overseer.get_prop(PropKey.PROTOCOL, "http")
         default_port = "443" if protocol == "https" else "80"
-        port = overseer.props.get("port", default_port)
+        port = overseer.get_prop(PropKey.PORT, default_port)
         self.deployment_overseer["spec"]["template"]["spec"]["volumes"][0]["hostPath"][
             "path"
         ] = "{{ .Values.workspace }}"
@@ -40,18 +48,17 @@ class HelmChartBuilder(Builder):
         self.deployment_overseer["spec"]["template"]["spec"]["containers"][0]["command"][
             0
         ] = f"/workspace/{overseer.name}/startup/start.sh"
-        with open(os.path.join(self.helm_chart_templates_directory, "deployment_overseer.yaml"), "wt") as f:
+        with open(os.path.join(self.helm_chart_templates_directory, ProvFileName.DEPLOYMENT_OVERSEER_YAML), "wt") as f:
             yaml.dump(self.deployment_overseer, f)
 
         self.service_overseer["spec"]["ports"][0]["port"] = port
         self.service_overseer["spec"]["ports"][0]["targetPort"] = port
-        with open(os.path.join(self.helm_chart_templates_directory, "service_overseer.yaml"), "wt") as f:
+        with open(os.path.join(self.helm_chart_templates_directory, ProvFileName.SERVICE_OVERSEER_YAML), "wt") as f:
             yaml.dump(self.service_overseer, f)
 
-    def _build_server(self, server, ctx):
-        fed_learn_port = server.props.get("fed_learn_port", 30002)
-        admin_port = server.props.get("admin_port", 30003)
-        idx = ctx["index"]
+    def _build_server(self, server: Participant, ctx: ProvisionContext, idx: int):
+        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT, 30002)
+        admin_port = ctx.get(CtxKey.ADMIN_PORT, 30003)
 
         self.deployment_server["metadata"]["name"] = f"{server.name}"
         self.deployment_server["metadata"]["labels"]["system"] = f"{server.name}"
@@ -91,25 +98,26 @@ class HelmChartBuilder(Builder):
         with open(os.path.join(self.helm_chart_templates_directory, f"service_server{idx}.yaml"), "wt") as f:
             yaml.dump(self.service_server, f)
 
-    def build(self, project, ctx):
-        self.template = ctx.get("template")
-        with open(os.path.join(self.helm_chart_directory, "Chart.yaml"), "wt") as f:
-            yaml.dump(yaml.safe_load(self.template.get("helm_chart_chart")), f)
+    def build(self, project: Project, ctx: ProvisionContext):
+        with open(os.path.join(self.helm_chart_directory, ProvFileName.CHART_YAML), "wt") as f:
+            yaml.dump(ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_CHART), f)
 
-        with open(os.path.join(self.helm_chart_directory, "values.yaml"), "wt") as f:
-            yaml.dump(yaml.safe_load(self.template.get("helm_chart_values")), f)
+        with open(os.path.join(self.helm_chart_directory, ProvFileName.VALUES_YAML), "wt") as f:
+            yaml.dump(ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_VALUES), f)
 
-        self.service_overseer = yaml.safe_load(self.template.get("helm_chart_service_overseer"))
-        self.service_server = yaml.safe_load(self.template.get("helm_chart_service_server"))
+        self.service_overseer = ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_SERVICE_OVERSEER)
+        self.service_server = ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_SERVICE_SERVER)
 
-        self.deployment_overseer = yaml.safe_load(self.template.get("helm_chart_deployment_overseer"))
-        self.deployment_server = yaml.safe_load(self.template.get("helm_chart_deployment_server"))
-
-        self.helm_chart_templates_directory = os.path.join(self.helm_chart_directory, "templates")
+        self.deployment_overseer = ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_DEPLOYMENT_OVERSEER)
+        self.deployment_server = ctx.yaml_load_template_section(TemplateSectionKey.HELM_CHART_DEPLOYMENT_SERVER)
+        self.helm_chart_templates_directory = os.path.join(
+            self.helm_chart_directory, ProvFileName.HELM_CHART_TEMPLATES_DIR
+        )
         os.mkdir(self.helm_chart_templates_directory)
-        overseer = project.get_participants_by_type("overseer")
-        self._build_overseer(overseer, ctx)
-        servers = project.get_participants_by_type("server", first_only=False)
-        for index, server in enumerate(servers):
-            ctx["index"] = index
-            self._build_server(server, ctx)
+        overseer = project.get_overseer()
+        if overseer:
+            self._build_overseer(overseer)
+
+        server = project.get_server()
+        if server:
+            self._build_server(server, ctx, 0)

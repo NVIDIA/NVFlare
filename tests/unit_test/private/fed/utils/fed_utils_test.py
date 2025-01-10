@@ -18,7 +18,8 @@ from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.fobs import register_custom_folder
-from nvflare.private.fed.utils.fed_utils import extract_job_image, extract_participants
+from nvflare.private.fed.utils.fed_utils import extract_participants
+from nvflare.utils.job_launcher_utils import extract_job_image
 
 
 class ExampleTestClass:

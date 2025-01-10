@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import shlex
 import subprocess
@@ -41,6 +40,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
 from nvflare.security.logging import secure_format_exception
 
@@ -85,7 +85,7 @@ class MultiProcessExecutor(Executor):
         self.execute_complete = None
         self.engine = None
 
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
         self.conn_clients = []
         self.exe_process = None
 

@@ -16,7 +16,7 @@ from flwr.proto.grpcadapter_pb2_grpc import GrpcAdapterStub
 
 from nvflare.app_opt.flower.defs import GRPC_DEFAULT_OPTIONS
 from nvflare.fuel.utils.grpc_utils import create_channel
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .utils import reply_should_exit
 
@@ -39,7 +39,7 @@ class GrpcClient:
         self.server_addr = server_addr
         self.grpc_options = grpc_options
         self.started = False
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def start(self, ready_timeout=10):
         """Start the gRPC client and wait for the server to be ready.

@@ -21,7 +21,7 @@ from nvflare.app_opt.xgboost.histogram_based_v2.proto.federated_pb2_grpc import 
     FederatedServicer,
     add_FederatedServicer_to_server,
 )
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int
 from nvflare.security.logging import secure_format_exception
 
@@ -46,7 +46,7 @@ class GrpcServer:
         check_positive_int("max_workers", max_workers)
         self.grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers), options=grpc_options)
         add_FederatedServicer_to_server(servicer, self.grpc_server)
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
         try:
             # TBD: will be enhanced to support secure port

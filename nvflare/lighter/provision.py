@@ -22,7 +22,9 @@ import sys
 from typing import Optional
 
 from nvflare.fuel.utils.class_utils import instantiate_class
-from nvflare.lighter.spec import Participant, Project, Provisioner
+from nvflare.lighter.constants import ParticipantType, PropKey
+from nvflare.lighter.provisioner import Provisioner
+from nvflare.lighter.spec import Project
 from nvflare.lighter.utils import load_yaml
 
 adding_client_error_msg = """
@@ -128,33 +130,54 @@ def prepare_builders(project_dict):
     return builders
 
 
+def _must_get(participant_def: dict, key: str):
+    v = participant_def.get(key)
+    if not v:
+        raise ValueError(f"missing property '{key}' from participant definition")
+    return v
+
+
 def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
-    api_version = project_dict.get("api_version")
+    api_version = project_dict.get(PropKey.API_VERSION)
     if api_version not in [3]:
         raise ValueError(f"API version expected 3 but found {api_version}")
-    project_name = project_dict.get("name")
-    project_description = project_dict.get("description", "")
-    participants = list()
-    for p in project_dict.get("participants"):
-        participants.append(Participant(**p))
+    project_name = project_dict.get(PropKey.NAME)
+    if len(project_name) > 63:
+        print(f"Project name {project_name} is longer than 63.  Will truncate it to {project_name[:63]}.")
+        project_name = project_name[:63]
+        project_dict[PropKey.NAME] = project_name
+    project_description = project_dict.get(PropKey.DESCRIPTION, "")
+    project = Project(name=project_name, description=project_description, props=project_dict)
+    participant_defs = project_dict.get("participants")
+
     if add_user_file_path:
-        add_extra_users(add_user_file_path, participants)
+        add_extra_users(add_user_file_path, participant_defs)
+
     if add_client_file_path:
-        add_extra_clients(add_client_file_path, participants)
-    project = Project(name=project_name, description=project_description, participants=participants)
-    n_servers = len(project.get_participants_by_type("server", first_only=False))
-    if n_servers > 2:
-        raise ValueError(
-            f"Configuration error: Expect 2 or 1 server to be provisioned. project contains {n_servers} servers."
-        )
+        add_extra_clients(add_client_file_path, participant_defs)
+
+    for p in participant_defs:
+        participant_type = _must_get(p, "type")
+        name = _must_get(p, "name")
+        org = _must_get(p, "org")
+        if participant_type == ParticipantType.SERVER:
+            project.set_server(name, org, props=p)
+        elif participant_type == ParticipantType.CLIENT:
+            project.add_client(name, org, p)
+        elif participant_type == ParticipantType.ADMIN:
+            project.add_admin(name, org, p)
+        elif participant_type == ParticipantType.OVERSEER:
+            project.set_overseer(name, org, p)
+        else:
+            raise ValueError(f"invalid participant_type '{participant_type}'")
     return project
 
 
-def add_extra_clients(add_client_file_path, participants):
+def add_extra_clients(add_client_file_path, participant_defs):
     try:
         extra = load_yaml(add_client_file_path)
         extra.update({"type": "client"})
-        participants.append(Participant(**extra))
+        participant_defs.append(extra)
     except Exception as e:
         print("** Error during adding client **")
         print("The yaml file format is")
@@ -162,11 +185,11 @@ def add_extra_clients(add_client_file_path, participants):
         exit(0)
 
 
-def add_extra_users(add_user_file_path, participants):
+def add_extra_users(add_user_file_path, participant_defs):
     try:
         extra = load_yaml(add_user_file_path)
         extra.update({"type": "admin"})
-        participants.append(Participant(**extra))
+        participant_defs.append(extra)
     except Exception:
         print("** Error during adding user **")
         print("The yaml file format is")

@@ -69,6 +69,10 @@ class StatisticsController(Controller):
                 "histogram": {
                     "*": {"bins": 20},
                     "Age": {"bins": 10, "range": [0, 120]}
+                },
+                percentile: {
+                    "*": [25, 50, 75, 90],
+                    "Age": [50, 75, 95]
                 }
             },
 
@@ -207,6 +211,7 @@ class StatisticsController(Controller):
             StC.STATS_MEAN: StatisticConfig(StC.STATS_MEAN, {}),
             StC.STATS_VAR: StatisticConfig(StC.STATS_VAR, {}),
             StC.STATS_STDDEV: StatisticConfig(StC.STATS_STDDEV, {}),
+            StC.STATS_PERCENTILE: StatisticConfig(StC.STATS_PERCENTILE, {}),
         }
 
         if StC.STATS_HISTOGRAM in self.statistic_configs:
@@ -264,7 +269,9 @@ class StatisticsController(Controller):
             abort_signal=abort_signal,
         )
 
-        self.global_statistics = get_global_stats(self.global_statistics, self.client_statistics, statistic_task)
+        self.global_statistics = get_global_stats(
+            self.global_statistics, self.client_statistics, statistic_task, self.statistic_configs, self.precision
+        )
 
         self.log_info(fl_ctx, f"task {self.task_name} statistics_flow for {statistic_task} flow end.")
 
@@ -402,12 +409,19 @@ class StatisticsController(Controller):
                             hist: Histogram = self.client_statistics[statistic][client][ds][feature_name]
                             buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
                             result[feature_name][statistic][client][ds] = buckets
+                        elif statistic == StC.STATS_PERCENTILE:
+                            percentiles = self.client_statistics[statistic][client][ds][feature_name][
+                                StC.STATS_PERCENTILES_KEY
+                            ]
+                            formatted_percentiles = {}
+                            for p in percentiles:
+                                formatted_percentiles[p] = round(percentiles.get(p), self.precision)
+                            result[feature_name][statistic][client][ds] = formatted_percentiles
                         else:
                             result[feature_name][statistic][client][ds] = round(
                                 self.client_statistics[statistic][client][ds][feature_name], self.precision
                             )
 
-        precision = self.precision
         for statistic in filtered_global_statistics:
             for ds in self.global_statistics[statistic]:
                 for feature_name in self.global_statistics[statistic][ds]:
@@ -419,11 +433,13 @@ class StatisticsController(Controller):
 
                     if statistic == StC.STATS_HISTOGRAM:
                         hist: Histogram = self.global_statistics[statistic][ds][feature_name]
-                        buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
-                        result[feature_name][statistic][StC.GLOBAL][ds] = buckets
+                        result[feature_name][statistic][StC.GLOBAL][ds] = hist.bins
+                    elif statistic == StC.STATS_PERCENTILE:
+                        percentiles = self.global_statistics[statistic][ds][feature_name]
+                        result[feature_name][statistic][StC.GLOBAL][ds] = percentiles
                     else:
                         result[feature_name][statistic][StC.GLOBAL].update(
-                            {ds: round(self.global_statistics[statistic][ds][feature_name], precision)}
+                            {ds: self.global_statistics[statistic][ds][feature_name]}
                         )
 
         return result
@@ -444,9 +460,10 @@ class StatisticsController(Controller):
     @staticmethod
     def _get_target_statistics(statistic_configs: dict, ordered_statistics: list) -> List[StatisticConfig]:
         # make sure the execution order of the statistics calculation
+
         targets = []
         if statistic_configs:
-            for statistic in statistic_configs:
+            for metric in statistic_configs:
                 # if target statistic has histogram, we are not in 2nd statistic task
                 # we only need to estimate the global min/max if we have histogram statistic,
                 # If the user provided the global min/max for a specified feature, then we do nothing
@@ -457,16 +474,16 @@ class StatisticsController(Controller):
                 # in all cases, we will still send the STATS_MIN/MAX tasks, but client executor may or may not
                 # delegate to stats generator to calculate the local min/max depends on if the global bin ranges
                 # are specified. to do this, we send over the histogram configuration when calculate the local min/max
-                if statistic == StC.STATS_HISTOGRAM and statistic not in ordered_statistics:
+                if metric == StC.STATS_HISTOGRAM and metric not in ordered_statistics:
                     targets.append(StatisticConfig(StC.STATS_MIN, statistic_configs[StC.STATS_HISTOGRAM]))
                     targets.append(StatisticConfig(StC.STATS_MAX, statistic_configs[StC.STATS_HISTOGRAM]))
 
-                if statistic == StC.STATS_STDDEV and statistic in ordered_statistics:
+                if metric == StC.STATS_STDDEV and metric in ordered_statistics:
                     targets.append(StatisticConfig(StC.STATS_VAR, {}))
 
                 for rm in ordered_statistics:
-                    if rm == statistic:
-                        targets.append(StatisticConfig(statistic, statistic_configs[statistic]))
+                    if rm == metric:
+                        targets.append(StatisticConfig(metric, statistic_configs[metric]))
         return targets
 
     def _prepare_inputs(self, statistic_task: str) -> Shareable:

@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import List, Tuple
 
 DATA = "data"
@@ -21,6 +21,21 @@ META = "meta"
 META_JSON = "meta.json"
 WORKSPACE = "workspace"
 WORKSPACE_ZIP = "workspace.zip"
+
+
+class DataTypes(Enum):
+    """Valid data types for storage components.
+
+    In addition to data, meta, and workspace, this enum defines the valid components by
+    allowing for components with a name of an items in this enum and then an underscore
+    (for example ERRORLOG_site-1).
+
+    """
+
+    ERRORLOG = "ERRORLOG"
+
+
+VALID_COMPONENT_PREFIXES = [prefix.value for prefix in DataTypes]
 
 
 class StorageException(Exception):
@@ -217,4 +232,17 @@ class StorageSpec(ABC):
 
     @staticmethod
     def is_valid_component(component_name):
-        return component_name in [DATA, META, WORKSPACE]
+        """Check if the component name is valid.
+
+        The valid components are: data, meta, workspace, and anything starting with a valid
+        ComponentPrefixes and then an underscore (for example ERRORLOG_site-1).
+
+        Args:
+            component_name: component name
+        """
+        valid_components = {DATA, META, WORKSPACE, *VALID_COMPONENT_PREFIXES}
+        if component_name in valid_components:
+            return True
+        if any(component_name.startswith(prefix + "_") for prefix in VALID_COMPONENT_PREFIXES):
+            return True
+        return False

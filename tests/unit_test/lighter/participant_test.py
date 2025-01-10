@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.lighter.spec import Participant
+from nvflare.lighter.entity import Participant
 
 
 class TestParticipant:

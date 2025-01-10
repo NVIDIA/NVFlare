@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import builtins
 import importlib
 import inspect
 import logging
@@ -66,15 +67,12 @@ def _get_type_name(cls: Type) -> str:
 
 def _load_class(type_name: str):
     try:
-        parts = type_name.split(".")
-        if len(parts) == 1:
-            parts = ["builtins", type_name]
-
-        mod = __import__(parts[0])
-        for comp in parts[1:]:
-            mod = getattr(mod, comp)
-
-        return mod
+        if "." in type_name:
+            module_name, class_name = type_name.rsplit(".", 1)
+            module = importlib.import_module(module_name)
+            return getattr(module, class_name)
+        else:
+            return getattr(builtins, type_name)
     except Exception as ex:
         raise TypeError(f"Can't load class {type_name}: {ex}")
 

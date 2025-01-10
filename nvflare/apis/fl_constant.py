@@ -205,6 +205,7 @@ class ReservedTopic(object):
     SYNC_RUNNER = "__sync_runner__"
     JOB_HEART_BEAT = "__job_heartbeat__"
     TASK_CHECK = "__task_check__"
+    APP_METRICS = "__app_metrics__"
 
 
 class AdminCommandNames(object):
@@ -382,7 +383,7 @@ class WorkspaceConstants:
     SITE_FOLDER_NAME = "local"
     CUSTOM_FOLDER_NAME = "custom"
 
-    LOGGING_CONFIG = "log.config"
+    LOGGING_CONFIG = "log_config.json"
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
     AUDIT_LOG = "audit.log"
     LOG_FILE_NAME = "log.txt"
@@ -453,6 +454,12 @@ class FLMetaKey:
     SITE_NAME = "site_name"
     PROCESS_RC_FILE = "_process_rc.txt"
     SUBMIT_MODEL_NAME = "submit_model_name"
+
+
+class StreamCtxKey:
+    JOB_ID = "job_id"
+    CLIENT_NAME = "client_name"
+    LOG_TYPE = "log_type"
 
 
 class FilterKey:

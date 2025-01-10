@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import time
 from typing import Dict, List, Optional, Union
 
@@ -25,6 +24,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
@@ -116,7 +116,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         for _, widget in self.widgets.items():
             self.handlers.append(widget)
 
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def get_task_assignment(self, fl_ctx: FLContext, timeout=None) -> TaskAssignment:
         pull_success, task_name, return_shareable = self.client.fetch_task(fl_ctx, timeout)
@@ -230,7 +230,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             return {}
 
     def _get_aux_msg_target(self, name: str):
-        if name.lower() == "server":
+        if name.lower() == SiteType.SERVER:
             return AuxMsgTarget.server_target()
 
         c = self.get_client_from_name(name)

@@ -19,7 +19,7 @@ BUF_SIZE = 64 * 1024 * 1024 + 1
 TEST_CHANNEL = "stream"
 TEST_TOPIC = "test"
 TX_CELL = "sender"
-RX_CELL = "server"
+RX_CELL = "receiver"
 
 
 def make_buffer(size: int) -> bytearray:

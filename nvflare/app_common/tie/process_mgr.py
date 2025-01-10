@@ -20,7 +20,7 @@ import threading
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
 
@@ -87,7 +87,7 @@ class ProcessManager:
         self.log_file = None
         self.msg_prefix = None
         self.file_lock = threading.Lock()
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def start(
         self,

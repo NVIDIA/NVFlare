@@ -14,31 +14,74 @@
 
 import pytest
 
-from nvflare.lighter.spec import Participant, Project
+from nvflare.lighter.entity import Participant, Project
 
 
-def create_participants(type, number, org, name):
+def create_participants(type, number, org, name, props=None):
     p_list = list()
     for i in range(number):
         name = f"{name[:2]}{i}{name[2:]}"
-        p_list.append(Participant(name=name, org=org, type=type))
+        p_list.append(Participant(name=name, org=org, type=type, props=props))
     return p_list
 
 
 class TestProject:
-    def test_invalid_project(self):
-        p1 = create_participants("server", 3, "org", "server")
-        p2 = create_participants("server", 3, "org", "server")
-        p = p1 + p2
-        with pytest.raises(ValueError, match=r".* se0rver .*"):
+    def test_single_server(self):
+        p1 = Participant(name="server1", org="org", type="server")
+        p2 = Participant(name="server2", org="org", type="server")
+        with pytest.raises(ValueError, match=r".* already has a server defined"):
+            _ = Project("name", "description", [p1, p2])
+
+    def test_single_overseer(self):
+        p1 = Participant(name="name1", org="org", type="overseer")
+        p2 = Participant(name="name2", org="org", type="overseer")
+        with pytest.raises(ValueError, match=r".* already has an overseer defined"):
+            _ = Project("name", "description", [p1, p2])
+
+    def test_get_clients(self):
+        p = create_participants(type="client", number=3, org="org", name="name")
+        prj = Project("name", "description", p)
+        c = prj.get_clients()
+        assert len(c) == len(p)
+        assert all(c[i].name == p[i].name and c[i].org == p[i].org for i in range(len(p)))
+
+    def test_get_admins(self):
+        p = create_participants(
+            type="admin", number=3, org="org", name="admin@nvidia.com", props={"role": "project_admin"}
+        )
+        prj = Project("name", "description", p)
+        c = prj.get_admins()
+        assert len(c) == len(p)
+        assert all(c[i].name == p[i].name and c[i].org == p[i].org for i in range(len(p)))
+
+    def test_admin_role_required(self):
+        p = create_participants(type="admin", number=3, org="org", name="admin@nvidia.com")
+        with pytest.raises(ValueError, match=r"missing role *."):
             _ = Project("name", "description", p)
 
+    def test_bad_admin_role(self):
+        with pytest.raises(ValueError, match=r"bad value for role *."):
+            _ = create_participants(
+                type="admin", number=3, org="org", name="admin@nvidia.com", props={"role": "invalid"}
+            )
+
     @pytest.mark.parametrize(
-        "p_type,name",
-        [("server", "server"), ("client", "client"), ("admin", "admin@abc.com"), ("overseer", "overseer")],
+        "type1,type2",
+        [
+            ("client", "client"),
+            ("server", "client"),
+            ("admin", "admin"),
+        ],
     )
-    def test_get_participants_by_type(self, p_type, name):
-        p = create_participants(type=p_type, number=3, org="org", name=name)
-        prj = Project("name", "description", p)
-        assert prj.get_participants_by_type(p_type) == p[0]
-        assert prj.get_participants_by_type(p_type, first_only=False) == p
+    def test_dup_names(self, type1, type2):
+        if type1 == "admin":
+            name = "name@xyz.com"
+            props = {"role": "project_admin"}
+        else:
+            name = "name"
+            props = None
+
+        p1 = Participant(name=name, org="org", type=type1, props=props)
+        p2 = Participant(name=name, org="org", type=type2, props=props)
+        with pytest.raises(ValueError, match=r".* already has a participant with the name *."):
+            _ = Project("name", "description", [p1, p2])

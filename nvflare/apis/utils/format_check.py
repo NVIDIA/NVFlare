@@ -35,7 +35,9 @@ def name_check(name: str, entity_type: str):
     if re.match(regex_pattern, name):
         return False, "name={} passed on regex_pattern={} check".format(name, regex_pattern)
     else:
-        return True, "name={} is ill-formatted based on regex_pattern={}".format(name, regex_pattern)
+        return True, "name={} is ill-formatted for entity_type={} based on regex_pattern={}".format(
+            name, entity_type, regex_pattern
+        )
 
 
 def validate_class_methods_args(cls):

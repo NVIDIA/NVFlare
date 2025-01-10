@@ -1,4 +1,3 @@
-nvflare~=2.5.0rc
 numpy
 monai[itk]
 pandas

@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -21,6 +19,7 @@ from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .cell_runner import CellRunner, NetConfig
 
@@ -28,7 +27,7 @@ from .cell_runner import CellRunner, NetConfig
 class Server(CellRunner):
     def __init__(self, config_path: str, config_file: str, log_level: str):
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = get_obj_logger(self)
 
         net_config = NetConfig(config_file)
         admin_host, admin_port = net_config.get_admin()

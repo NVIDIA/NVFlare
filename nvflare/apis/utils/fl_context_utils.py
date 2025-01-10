@@ -13,16 +13,16 @@
 # limitations under the License.
 
 import copy
-import logging
 
 from nvflare.apis.fl_constant import FLContextKey, NonSerializableKeys
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.log_utils import get_module_logger
 from nvflare.security.logging import secure_format_exception
 
-logger = logging.getLogger("fl_context_utils")
+logger = get_module_logger()
 
 
 def get_serializable_data(fl_ctx: FLContext):

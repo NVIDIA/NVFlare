@@ -52,7 +52,7 @@ def main():
     )
 
     sites = [f"site-{i + 1}" for i in range(n_clients)]
-    job.setup_client(sites)
+    job.setup_clients(sites)
 
     if export_config:
         job.export_job(job_dir)

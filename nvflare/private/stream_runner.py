@@ -24,7 +24,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamContext, StreamContextKey
 from nvflare.fuel.f3.cellnet.registry import Registry
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_callable, check_object_type, check_str
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.security.logging import secure_format_exception
@@ -75,6 +75,14 @@ class _ConsumerInfo:
 
     def stream_done(self, rc: str, fl_ctx: FLContext):
         self.stream_ctx[StreamContextKey.RC] = rc
+        try:
+            self.consumer.finalize(self.stream_ctx, fl_ctx)
+        except Exception as ex:
+            self.logger.error(
+                f"exception finalizing processor {self.consumer.__class__.__name__}: {secure_format_exception(ex)}"
+            )
+            self.stream_ctx[StreamContextKey.RC] = ReturnCode.EXECUTION_EXCEPTION
+
         if self.stream_done_cb:
             try:
                 self.stream_done_cb(self.stream_ctx, fl_ctx, **self.stream_done_cb_kwargs)
@@ -82,12 +90,6 @@ class _ConsumerInfo:
                 self.logger.error(
                     f"exception from stream_done_cb {self.stream_done_cb.__name__}: {secure_format_exception(ex)}"
                 )
-        try:
-            self.consumer.finalize(self.stream_ctx, fl_ctx)
-        except Exception as ex:
-            self.logger.error(
-                f"exception finalizing processor {self.consumer.__class__.__name__}: {secure_format_exception(ex)}"
-            )
 
         try:
             self.factory.return_consumer(
@@ -109,7 +111,7 @@ class ObjectStreamer(FLComponent):
         self.registry = Registry()
         self.tx_lock = Lock()
         self.tx_table = {}  # tx_id => _ProcessorInfo
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
         # Note: the ConfigService has been initialized
         max_concurrent_streaming_sessions = ConfigService.get_int_var("max_concurrent_streaming_sessions", default=20)

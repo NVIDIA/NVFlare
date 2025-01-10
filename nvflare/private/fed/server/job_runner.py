@@ -22,7 +22,7 @@ from typing import Dict, List, Tuple
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemComponents
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SiteType, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
@@ -121,7 +121,7 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         run_number = job.job_id
         fl_ctx.set_prop(FLContextKey.JOB_RUN_NUMBER, run_number)
-        workspace = Workspace(root_dir=self.workspace_root, site_name="server")
+        workspace = Workspace(root_dir=self.workspace_root, site_name=SiteType.SERVER)
 
         client_deploy_requests = {}
         client_token_to_name = {}
@@ -134,12 +134,12 @@ class JobRunner(FLComponent):
             participants = extract_participants(participants)
 
             if len(participants) == 1 and participants[0].upper() == ALL_SITES:
-                participants = ["server"]
+                participants = [SiteType.SERVER]
                 participants.extend([client.name for client in engine.get_clients()])
 
             client_sites = []
             for p in participants:
-                if p == "server":
+                if p == SiteType.SERVER:
                     self.fire_event(EventType.DEPLOY_JOB_TO_SERVER, fl_ctx)
                     app_deployer = AppDeployer()
                     err = app_deployer.deploy(
@@ -419,7 +419,7 @@ class JobRunner(FLComponent):
                         if self._check_job_status(job_manager, ready_job.job_id, RunStatus.SUBMITTED, fl_ctx):
                             self.log_info(fl_ctx, f"Job: {ready_job.job_id} is not in SUBMITTED. It won't be deployed.")
                             continue
-                        client_sites = {k: v for k, v in sites.items() if k != "server"}
+                        client_sites = {k: v for k, v in sites.items() if k != SiteType.SERVER}
                         job_id = None
                         try:
                             self.log_info(fl_ctx, f"Got the job: {ready_job.job_id} from the scheduler to run")
