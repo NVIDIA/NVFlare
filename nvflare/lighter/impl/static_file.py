@@ -17,8 +17,6 @@ import json
 import os
 
 import yaml
-from sphinx import ret
-from sympy import comp, content
 
 from nvflare.lighter import utils
 from nvflare.lighter.constants import CtxKey, OverseerRole, PropKey, ProvFileName, ProvisionMode, TemplateSectionKey

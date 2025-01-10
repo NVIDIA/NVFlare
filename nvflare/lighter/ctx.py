@@ -13,7 +13,6 @@
 # limitations under the License.
 import json
 import os
-from calendar import c
 
 import yaml
 
