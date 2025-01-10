@@ -303,34 +303,83 @@ fl_admin_sh: |
   python3 -m nvflare.fuel.hci.tools.admin -m $DIR/.. -s fed_admin.json
 
 log_config: |
-  [loggers]
-  keys=root
-
-  [handlers]
-  keys=consoleHandler,errorFileHandler
-
-  [formatters]
-  keys=baseFormatter
-
-  [logger_root]
-  level=INFO
-  handlers=consoleHandler,errorFileHandler
-
-  [handler_consoleHandler]
-  class=StreamHandler
-  level=DEBUG
-  formatter=baseFormatter
-  args=(sys.stdout,)
-
-  [handler_errorFileHandler]
-  class=FileHandler
-  level=ERROR
-  formatter=baseFormatter
-  args=('error_log.txt', 'a')
-
-  [formatter_baseFormatter]
-  class=nvflare.fuel.utils.log_utils.BaseFormatter
-  format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+  {
+      "version": 1,
+      "disable_existing_loggers": false,
+      "formatters": {
+          "baseFormatter": {
+              "()": "nvflare.fuel.utils.log_utils.BaseFormatter",
+              "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+          },
+          "colorFormatter": {
+              "()": "nvflare.fuel.utils.log_utils.ColorFormatter",
+              "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+          },
+          "jsonFormatter": {
+              "()": "nvflare.fuel.utils.log_utils.JsonFormatter",
+              "fmt": "%(asctime)s - %(name)s - %(fullName)s - %(levelname)s - %(message)s"
+          }
+      },
+      "filters": {
+          "FLFilter": {
+              "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
+              "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+          }
+      },
+      "handlers": {
+          "consoleHandler": {
+              "class": "logging.StreamHandler",
+              "level": "DEBUG",
+              "formatter": "colorFormatter",
+              "filters": [],
+              "stream": "ext://sys.stdout"
+          },
+          "logFileHandler": {
+              "class": "logging.handlers.RotatingFileHandler",
+              "level": "DEBUG",
+              "formatter": "baseFormatter",
+              "filename": "log.txt",
+              "mode": "a",
+              "maxBytes": 20971520,
+              "backupCount": 10
+          },
+          "errorFileHandler": {
+              "class": "logging.handlers.RotatingFileHandler",
+              "level": "ERROR",
+              "formatter": "baseFormatter",
+              "filename": "log_error.txt",
+              "mode": "a",
+              "maxBytes": 20971520,
+              "backupCount": 10
+          },
+          "jsonFileHandler": {
+              "class": "logging.handlers.RotatingFileHandler",
+              "level": "DEBUG",
+              "formatter": "jsonFormatter",
+              "filename": "log.json",
+              "mode": "a",
+              "maxBytes": 20971520,
+              "backupCount": 10
+          },
+          "FLFileHandler": {
+              "class": "logging.handlers.RotatingFileHandler",
+              "level": "DEBUG",
+              "formatter": "baseFormatter",
+              "filters": ["FLFilter"],
+              "filename": "log_fl.txt",
+              "mode": "a",
+              "maxBytes": 20971520,
+              "backupCount": 10,
+              "delay": true
+          }
+      },
+      "loggers": {
+          "root": {
+              "level": "INFO",
+              "handlers": ["consoleHandler", "logFileHandler", "errorFileHandler", "jsonFileHandler", "FLFileHandler"]
+          }
+      }
+  }
 
 start_ovsr_sh: |
   #!/usr/bin/env bash
