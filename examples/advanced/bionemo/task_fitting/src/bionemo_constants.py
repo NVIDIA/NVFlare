@@ -17,8 +17,4 @@ class BioNeMoConstants(object):
     TASK_INFERENCE = "bionemo_inference"
     NUMBER_SEQUENCES = "bionemo_number_sequences"
     DATA_INFO = "bionemo_data_info"
-    CONFIG = "bionemo_config"
-
-
-class BioNeMoDataKind(object):
-    CONFIG = "bionemo_config"
+    RESULT_SHAPES = "bionemo_result_shapes"

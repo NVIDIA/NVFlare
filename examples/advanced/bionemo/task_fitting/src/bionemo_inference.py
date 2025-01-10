@@ -23,18 +23,15 @@ from nvflare.app_common.workflows.broadcast_and_process import BroadcastAndProce
 class BioNeMoInference(BroadcastAndProcess):
     def __init__(
         self,
-        base_config_path: str = "/workspace/bionemo/examples/protein/esm1nv/conf/base_config.yaml",
-        infer_config_path: str = "config/infer.yaml",
         task_name: str = BioNeMoConstants.TASK_INFERENCE,
         min_responses_required: int = 0,
         wait_time_after_min_received: int = 0,
         task_timeout: int = 0,
         clients: Union[List[str], None] = None,
     ):
-        """A controller for running federated BiNeMo model inference on the clients.
+        """A controller for running federated BioNeMo model inference on the clients.
 
         Args:
-            config_path: BioNeMo inference config file.
             task_name: name of the task to be sent to clients to share configs and model weight.
             min_responses_required: min number of responses required. 0 means all clients.
             wait_time_after_min_received: how long (secs) to wait after min responses are received
@@ -50,7 +47,7 @@ class BioNeMoInference(BroadcastAndProcess):
 
         BroadcastAndProcess.__init__(
             self,
-            processor=BioNeMoInferenceProcessor(base_config_path=base_config_path, infer_config_path=infer_config_path),
+            processor=BioNeMoInferenceProcessor(),
             task_name=task_name,
             min_responses_required=min_responses_required,
             wait_time_after_min_received=wait_time_after_min_received,

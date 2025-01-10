@@ -18,6 +18,8 @@ import os
 import pickle
 from distutils.util import strtobool
 from typing import Union
+import torch
+
 
 import numpy as np
 import pandas as pd
@@ -36,7 +38,8 @@ from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 class BioNeMoMLPLearner(ModelLearner):  # does not support CIFAR10ScaffoldLearner
     def __init__(
         self,
-        data_root: str = "/tmp/data/mixed_soft",
+        data_path: str,
+        inference_result: str,
         aggregation_epochs: int = 1,
         lr: float = 1e-3,
         central: bool = False,
@@ -48,7 +51,8 @@ class BioNeMoMLPLearner(ModelLearner):  # does not support CIFAR10ScaffoldLearne
         """Simple CIFAR-10 Trainer.
 
         Args:
-            data_root: data file root.
+            data_path: data file with labels in csv format.
+            inference_result: inference results in torch format.
             aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             lr: local learning rate. Float number. Defaults to 1e-2.
             central: Bool. Whether to simulate central training. Default False.
@@ -65,7 +69,8 @@ class BioNeMoMLPLearner(ModelLearner):  # does not support CIFAR10ScaffoldLearne
         super().__init__()
         # trainer init happens at the very beginning, only the basic info regarding the trainer is set here
         # the actual run has not started at this point
-        self.data_root = data_root
+        self.data_path = data_path
+        self.inference_result = inference_result
         self.aggregation_epochs = aggregation_epochs
         self.lr = lr
         self.best_acc = 0.0
@@ -115,24 +120,23 @@ class BioNeMoMLPLearner(ModelLearner):  # does not support CIFAR10ScaffoldLearne
             self.writer = SummaryWriter(self.app_root)
 
         # Read embeddings
-        data_filename = os.path.join(self.data_root, f"data_{self.site_name}.pkl")
-        protein_embeddings = pickle.load(open(data_filename, "rb"))
+        results = torch.load(self.inference_result)
+        protein_embeddings = results['embeddings']
         self.info(f"Loaded {len(protein_embeddings)} embeddings")
 
         # Read labels
-        labels_filename = os.path.join(self.data_root, f"data_{self.site_name}.csv")
-        labels = pd.read_csv(labels_filename).astype(str)
+        labels = pd.read_csv(self.data_path).astype(str)
 
         # Prepare the data for training
-        for embedding in protein_embeddings:
+        for index, label in labels.iterrows():
+            embedding = protein_embeddings[index].numpy()
             # get label entry from pandas dataframe
-            label = labels.loc[labels["id"] == str(embedding["id"])]
-            if label["SET"].item() == "train":
-                self.X_train.append(embedding["embeddings"])
-                self.y_train.append(label["TARGET"].item())
-            elif label["SET"].item() == "test":
-                self.X_test.append(embedding["embeddings"])
-                self.y_test.append(label["TARGET"].item())
+            if label["SET"] == "train":
+                self.X_train.append(embedding)
+                self.y_train.append(label["labels"])
+            elif label["SET"] == "test":
+                self.X_test.append(embedding)
+                self.y_test.append(label["labels"])
 
         assert len(self.X_train) > 0
         assert len(self.X_test) > 0
@@ -163,7 +167,7 @@ class BioNeMoMLPLearner(ModelLearner):  # does not support CIFAR10ScaffoldLearne
         ]
         _X, _y = [], []
         for label in class_labels:
-            _X.append(np.random.rand(768))
+            _X.append(np.random.rand(1280))  # embedding dimensions of ESM2-650m
             _y.append(label)
         self.model.partial_fit(_X, _y, classes=class_labels)
 

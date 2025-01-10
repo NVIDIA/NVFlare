@@ -87,7 +87,7 @@ class BioNeMoMLPModelPersistor(PTFileModelPersistor):
         ]
         _X, _y = [], []
         for label in class_labels:
-            _X.append(np.random.rand(768))
+            _X.append(np.random.rand(1280))  # embedding dimensions of ESM2-650m
             _y.append(label)
         self.model.fit(_X, _y)
         self.log_info(
