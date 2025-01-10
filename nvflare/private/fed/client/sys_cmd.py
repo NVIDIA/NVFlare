@@ -24,9 +24,11 @@ except ImportError:
 
 from nvflare.apis.fl_constant import FLContextKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
-from nvflare.private.admin_defs import Message
+from nvflare.fuel.utils.log_utils import dynamic_log_config
+from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.client.admin import RequestProcessor
+from nvflare.security.logging import secure_format_exception
 
 
 class SysInfoProcessor(RequestProcessor):
@@ -80,3 +82,21 @@ class ReportEnvProcessor(RequestProcessor):
         }
         message = Message(topic="reply_" + req.topic, body=json.dumps(env))
         return message
+
+
+class ConfigureSiteLogProcessor(RequestProcessor):
+    def get_topics(self) -> List[str]:
+        return [SysCommandTopic.CONFIGURE_SITE_LOG]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        engine = app_ctx
+        fl_ctx = engine.new_context()
+        site_name = fl_ctx.get_identity_name()
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+
+        try:
+            dynamic_log_config(req.body, workspace)
+        except Exception as e:
+            return error_reply(secure_format_exception(e))
+
+        return ok_reply(topic=f"reply_{req.topic}", body=f"successfully configured {site_name} log")
