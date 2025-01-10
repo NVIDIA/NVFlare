@@ -29,11 +29,11 @@ Here is the complete workspace structure, with the addition of the "local" folde
             resources.json.default
             authorization.json.default
             privacy.json.sample
-            log.config.default
+            log_config.json.default
             resources.json
             authorization.json
             privacy.json
-            log.config
+            log_config.json
             custom/
                 local_code.xyz
         audit.txt

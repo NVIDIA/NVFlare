@@ -1,34 +1,191 @@
 .. _logging_configuration:
 
-##################################
-NVIDIA FLARE Logging Configuration
-##################################
+#####################
+Logging Configuration
+#####################
 
-NVFLARE uses python logging, specifically fileConfig( configure https://docs.python.org/3/library/logging.config.html) 
+FLARE uses python logging with the dictConfig API (https://docs.python.org/3/library/logging.config.html#logging.config.dictConfig).
+FLARE Loggers are designed to follow the package level hierarchy using dot separated logger names in order to faciliate granular control at different levels.
 
-We provide default logging configuration files for NVFLARE sub-systems. You can overwrite these logging configurations by modifying the configuration files. 
+We provide a :ref:`Default Logging Configuration` file **log_config.json.default** for all NVFLARE sub-systems with pre-configured handlers for console colors, logs, error logs, structured json logs, and fl training logs.
+You can overwrite the default configuration by :ref:`Modifying Logging Configurations` files.
+Users can also change the logging configuration during runtime by using the :ref:`Dynamic Logging Configuration Commands` **configure_site_log** and **configure_job_log**.
 
-************************************
-Logging configuration files location
-************************************
+**********************************
+Logging Configuration and Features
+**********************************
+
+Default Logging Configuration
+=============================
+
+The default logging configuration json file (**log_config.json.default**):
+
+.. code-block:: json
+
+    {
+        "version": 1,
+        "disable_existing_loggers": false,
+        "formatters": {
+            "baseFormatter": {
+                "()": "nvflare.fuel.utils.log_utils.BaseFormatter",
+                "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            },
+            "colorFormatter": {
+                "()": "nvflare.fuel.utils.log_utils.ColorFormatter",
+                "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            },
+            "jsonFormatter": {
+                "()": "nvflare.fuel.utils.log_utils.JsonFormatter",
+                "fmt": "%(asctime)s - %(name)s - %(fullName)s - %(levelname)s - %(message)s"
+            }
+        },
+        "filters": {
+            "FLFilter": {
+                "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
+                "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+            }
+        },
+        "handlers": {
+            "consoleHandler": {
+                "class": "logging.StreamHandler",
+                "level": "DEBUG",
+                "formatter": "colorFormatter",
+                "filters": [],
+                "stream": "ext://sys.stdout"
+            },
+            "logFileHandler": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "level": "DEBUG",
+                "formatter": "baseFormatter",
+                "filename": "log.txt",
+                "mode": "a",
+                "maxBytes": 20971520,
+                "backupCount": 10
+            },
+            "errorFileHandler": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "level": "ERROR",
+                "formatter": "baseFormatter",
+                "filename": "log_error.txt",
+                "mode": "a",
+                "maxBytes": 20971520,
+                "backupCount": 10
+            },
+            "jsonFileHandler": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "level": "DEBUG",
+                "formatter": "jsonFormatter",
+                "filename": "log.json",
+                "mode": "a",
+                "maxBytes": 20971520,
+                "backupCount": 10
+            },
+            "FLFileHandler": {
+                "class": "logging.handlers.RotatingFileHandler",
+                "level": "DEBUG",
+                "formatter": "baseFormatter",
+                "filters": ["FLFilter"],
+                "filename": "log_fl.txt",
+                "mode": "a",
+                "maxBytes": 20971520,
+                "backupCount": 10,
+                "delay": true
+            }
+        },
+        "loggers": {
+            "root": {
+                "level": "INFO",
+                "handlers": ["consoleHandler", "logFileHandler", "errorFileHandler", "jsonFileHandler", "FLFileHandler"]
+            }
+        }
+    }
+
+
+We use multiple handlers to output log records to the console and various log files.
+
+- consoleHandler with colorFormatter for level/logname based log coloring to the stdout console
+- logFileHandler with baseFormatter to write all logs to log.txt
+- errorFileHandler  with baseFormatter to write error level logs to log_error.txt
+- jsonFileHandler with jsonFormatter to write json formatted logs to log.json
+- FLFileHandler with FLFilter to write fl training and custom logs to log_fl.txt
+- root logger set to INFO with the above handlers
+
+For more details see the sections below.
+
+
+Formatters
+==========
+
+`Formatters <https://docs.python.org/3/library/logging.html#logging.Formatter>`_ are used to specify the format of log records.
+We provide several useful formatters by default:
+
+BaseFormatter
+-------------
+The :class:`BaseFormatter<nvflare.fuel.utils.log_utils.base_fed_job.BaseFormatter>` is the default formatter serving as the base class for other FLARE formatters.
+
+- All the default formatter arguments such as **fmt** and **datefmt** can be specified.
+- Shortens the **record.name** to the base names, and adds a **record.fullName** property.
+
+
+ColorFormatter
+--------------
+The :class:`ColorFormatter<nvflare.fuel.utils.log_utils.base_fed_job.ColorFormatter>` uses ANSI color codes to format log records based on log level and/or logger names.
+
+- **level_colors**: dict of levelname: ANSI color. Defaults to ANSIColor.DEFAULT_LEVEL_COLORS.
+- **logger_colors**: dict of loggername: ANSI color. Defaults to {}.
+
+We provide an :class:`ANSIColor<nvflare.fuel.utils.log_utils.base_fed_job.ANSIColor>` class with commonly used colors and default mappings for log levels.
+To customize the colors, use either string of a color name specifed in ANSIColor.COLORS, or an ANSI color code (semicolons can be used for additional ANSI arguments).
+
+
+JsonFormatter
+-------------
+The :class:`JsonFormatter<nvflare.fuel.utils.log_utils.base_fed_job.JsonFormatter>` converts the log records into a json string.
+
+The `extract_brackets` argument also parses the message and adds a nested **fl_ctx_fields** object with the fl context keys and values.
+
+
+Filters
+=======
+
+`Filters <https://docs.python.org/3/library/logging.html#logging.Filter>`_ are used to allow certain log records to pass through based on a a specified criteria. 
+
+LoggerNameFilter
+----------------
+:class:`LoggerNameFilter<nvflare.fuel.utils.log_utils.base_fed_job.LoggerNameFilter>` enables a list of logger_names to be filtered.
+Filters utilize the logger hierarchy, so any descendants of the specified names will also be allowed.
+
+This is used in our FLFilter, which filters loggers related to fl training or custom code.
+
+.. code-block::
+
+    "FLFilter": {
+        "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
+        "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+    }
+
+
+********************************
+Modifying Logging Configurations
+********************************
 
 Startup kits log configurations
 ===============================
 
 The log configuration files are located in the startup kits under the local directory.
 
-If you search for the ``log.config.*`` files in the startup kits workspace, you will find the following files:
+If you search for the ``log_config.json.*`` files in the startup kits workspace, you will find the following files:
 
 .. code-block:: shell
 
-    find . -name "log.config.*"
+    find . -name "log_config.json.*"
 
-    ./site-1/local/log.config.default
-    ./site-2/local/log.config.default
-    ./server1/local/log.config.default
+    ./site-1/local/log_config.json.default
+    ./site-2/local/log_config.json.default
+    ./server1/local/log_config.json.default
 
-The server ``log.config.default`` is the default logging configuration used by the FL Server and clients. To overwrite the default,
-you can change ``log.config.default`` to ``log.config`` and modify the configuration.
+The server ``log_config.json.default`` is the default logging configuration used by the FL Server and clients. To overwrite the default,
+you can change ``log_config.json.default`` to ``log_config.json`` and modify the configuration.
 
 POC log configurations
 ======================
@@ -36,19 +193,19 @@ Similarly, if you search the POC workspace, you will find the following:
 
 .. code-block:: shell
 
-    find /tmp/nvflare/poc  -name "log.config*"
+    find /tmp/nvflare/poc  -name "log_config.json*"
 
-    /tmp/nvflare/poc/server/local/log.config
-    /tmp/nvflare/poc/site-1/local/log.config
-    /tmp/nvflare/poc/site-2/local/log.config
+    /tmp/nvflare/poc/server/local/log_config.json
+    /tmp/nvflare/poc/site-1/local/log_config.json
+    /tmp/nvflare/poc/site-2/local/log_config.json
 
-You can directly modify ``log.config`` to make changes.
+You can directly modify ``log_config.json`` to make changes.
 
 Simulator log configuration
 ===========================
 
-Simulator logging configuration uses the default log configuration. If you want to overwrite the default configuration, you can add ``log.config`` to
-``<simulator_workspace>/startup/log.config``.
+Simulator logging configuration uses the default log configuration. If you want to overwrite the default configuration, you can add ``log_config.json`` to
+``<simulator_workspace>/startup/log_config.json``.
 
 For example, for hello-numpy-sag examples, the CLI command is:
 
@@ -56,66 +213,33 @@ For example, for hello-numpy-sag examples, the CLI command is:
 
     nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 hello-world/hello-numpy-sag/jobs/hello-numpy-sag
 
-If the workspace is ``/tmp/nvflare/hello-numpy-sag/``, then you can add log.config in ``/tmp/nvflare/hello-numpy-sag/startup/log.config`` to overwrite the default one. 
+If the workspace is ``/tmp/nvflare/hello-numpy-sag/``, then you can add log_config.json in ``/tmp/nvflare/hello-numpy-sag/startup/log_config.json`` to overwrite the default one.
 
-Configuration logging
-=====================
-
-The default logging file-config based logging configuration is the following:
+Users can also specify a log configuration file in the command with the ``-l`` simulator argument:
 
 .. code-block:: shell
 
-    [loggers]
-    keys=root
+    nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 hello-world/hello-numpy-sag/jobs/hello-numpy-sag -l log_config.json
 
-    [handlers]
-    keys=consoleHandler
 
-    [formatters]
-    keys=fullFormatter
+**************************************
+Dynamic Logging Configuration Commands
+**************************************
 
-    [logger_root]
-    level=INFO
-    handlers=consoleHandler
+See :ref:`operating_nvflare` for details on the commands and :ref:`command_categories` for the default authorization policy.
 
-    [handler_consoleHandler]
-    class=StreamHandler
-    level=DEBUG
-    formatter=fullFormatter
-    args=(sys.stdout,)
-
-    [formatter_fullFormatter]
-    format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
-
-Suppose we would like to change the logging for :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>` from to INFO to ERROR,
-we can do the following:
+- **target** can be one of server, client <clients>..., or all
+- **config** can be a path to a log configuration file, a log level name/number, or "reload" to read the current log config
 
 .. code-block:: shell
 
-    [loggers]
-    keys=root, ScatterAndGather
+    configure_site_log target config
 
-    [handlers]
-    keys=consoleHandler
+Configures the target site logging (does not affect jobs).
 
-    [formatters]
-    keys=fullFormatter
 
-    [logger_root]
-    level=INFO
-    handlers=consoleHandler
+.. code-block:: shell
 
-    [logger_ScatterAndGather]
-    level=ERROR
-    handlers=consoleHandler
-    qualname=ScatterAndGather
-    propagate=0
+    configure_job_log job_id target config
 
-    [handler_consoleHandler]
-    class=StreamHandler
-    level=DEBUG
-    formatter=fullFormatter
-    args=(sys.stdout,)
-
-    [formatter_fullFormatter]
-    format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+Configures the target job logging.
