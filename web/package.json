@@ -17,7 +17,7 @@
     "@fontsource-variable/inter": "^5.0.15",
     "@glidejs/glide": "^3.6.1",
     "@tailwindcss/typography": "^0.5.10",
-    "astro": "^4.16.6",
+    "astro": "^4.16.18",
     "astro-icon": "^0.8.1",
     "astro-navbar": "^2.3.0",
     "astro-seo": "^0.8.0",

@@ -318,6 +318,19 @@ class Statistics(InitFinalComponent, ABC):
         """
         return 0
 
+    def percentiles(self, dataset_name: str, feature_name: str, percentiles: List) -> Dict:
+        """Return failed count for given dataset and feature.
+
+        To perform data privacy min_count check, failure_count is always required.
+
+        Args:
+            dataset_name:
+            feature_name:
+            percentiles: List[Int] ex [25,50, 75] corresponding to p25, p50, p75
+        Returns: dict
+        """
+        raise NotImplementedError
+
     def finalize(self, fl_ctx: FLContext):
         """Called to finalize the Statistic calculator (close/release resources gracefully).
 

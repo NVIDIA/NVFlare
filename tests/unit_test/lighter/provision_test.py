@@ -34,7 +34,5 @@ class TestProvision:
             ],
         }
 
-        with pytest.raises(
-            ValueError, match="Configuration error: Expect 2 or 1 server to be provisioned. project contains 3 servers."
-        ):
+        with pytest.raises(ValueError, match=".* already has a server defined"):
             prepare_project(project_dict=project_config)

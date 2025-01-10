@@ -26,7 +26,7 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobReturnCode, add_launcher
 from nvflare.apis.workspace import Workspace
-from nvflare.private.fed.utils.fed_utils import extract_job_image
+from nvflare.utils.job_launcher_utils import extract_job_image
 
 
 class JobState(Enum):
@@ -249,7 +249,7 @@ class K8sJobLauncher(JobLauncherSpec):
             return None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.GET_JOB_LAUNCHER:
+        if event_type == EventType.BEFORE_JOB_LAUNCH:
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
             job_image = extract_job_image(job_meta, fl_ctx.get_identity_name())
             if job_image:

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import shutil
 import threading
@@ -32,6 +31,7 @@ from nvflare.apis.fl_constant import (
     SecureTrainConst,
     ServerCommandKey,
     ServerCommandNames,
+    SiteType,
     SnapshotKey,
     SystemComponents,
     SystemConfigs,
@@ -54,6 +54,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.ha.overseer_agent import HttpOverseerAgent
 from nvflare.private.defs import (
@@ -124,7 +125,7 @@ class BaseServer(ABC):
         self.abort_signal = None
         self.executor = None
 
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def get_all_clients(self) -> Dict[str, Client]:
         """Get the list of registered clients.
@@ -387,7 +388,7 @@ class FederatedServer(BaseServer):
                 expired_regs = []
                 now = time.time()
                 for client_name, reg in self.name_to_reg.items():
-                    if now - reg.start_time > self.max_reg_duration:
+                    if now - reg.reg_start_time > self.max_reg_duration:
                         self.logger.warning(f"dropped expired reg session: not done in {self.max_reg_duration} secs")
                         expired_regs.append(client_name)
                 for c in expired_regs:
@@ -774,7 +775,7 @@ class FederatedServer(BaseServer):
 
     def start_run(self, job_id, run_root, conf, args, snapshot):
         # Create the FL Engine
-        workspace = Workspace(args.workspace, "server", args.config_folder)
+        workspace = Workspace(args.workspace, SiteType.SERVER, args.config_folder)
         self.run_manager = self.create_run_manager(workspace, job_id)
         self.engine.set_run_manager(self.run_manager)
         self.engine.set_configurator(conf)
@@ -893,7 +894,7 @@ class FederatedServer(BaseServer):
                     prv_key_path=grpc_args["ssl_private_key"],
                 )
 
-        self.engine.cell = self.cell
+        self.engine.initialize_comm(self.cell)
         self._register_cellnet_cbs()
 
         self.overseer_agent.start(self.overseer_callback)

@@ -53,7 +53,9 @@ class TestNumericStats:
 
         global_stats = {}
         for client_name in client_stats:
-            global_stats = accumulate_metrics(metrics=client_stats[client_name], global_metrics=global_stats)
+            global_stats = accumulate_metrics(
+                metrics=client_stats[client_name], global_metrics=global_stats, precision=4
+            )
 
         assert global_stats.keys() == expected_global_stats.keys()
         assert global_stats == expected_global_stats

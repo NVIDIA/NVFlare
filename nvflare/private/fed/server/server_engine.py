@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-import logging
 import os
 import re
 import shutil
@@ -30,25 +29,29 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
-    ReturnCode,
     RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
+    SiteType,
     SnapshotKey,
     WorkspaceConstants,
 )
-from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
 from nvflare.apis.job_launcher_spec import JobLauncherSpec
-from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx, get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.cellnet.core_cell import FQCN
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.aux_runner import AuxMsgTarget
@@ -75,7 +78,7 @@ from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
 
 
-class ServerEngine(ServerEngineInternalSpec):
+class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def __init__(self, server, args, client_manager: ClientManager, snapshot_persistor, workers=3):
         """Server engine.
 
@@ -92,7 +95,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.exception_run_processes = {}
         self.run_manager = None
         self.conf = None
-        # TODO:: does this class need client manager?
+        self.cell = None
         self.client_manager = client_manager
 
         self.widgets = {
@@ -107,7 +110,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.lock = Lock()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
@@ -117,7 +120,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.kv_list = parse_vars(args.set)
 
     def _get_server_app_folder(self):
-        return WorkspaceConstants.APP_PREFIX + "server"
+        return WorkspaceConstants.APP_PREFIX + SiteType.SERVER
 
     def _get_client_app_folder(self, client_name):
         return WorkspaceConstants.APP_PREFIX + client_name
@@ -169,7 +172,7 @@ class ServerEngine(ServerEngineInternalSpec):
         if job.job_id in self.run_processes.keys():
             return f"Server run: {job.job_id} already started."
         else:
-            workspace = Workspace(root_dir=self.args.workspace, site_name="server")
+            workspace = Workspace(root_dir=self.args.workspace, site_name=SiteType.SERVER)
             app_root = workspace.get_app_dir(job.job_id)
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
@@ -380,9 +383,60 @@ class ServerEngine(ServerEngineInternalSpec):
         return result
 
     def set_run_manager(self, run_manager: RunManager):
+        self.logger.debug("set_run_manager is called")
         self.run_manager = run_manager
+
+        # we set the run_manager's cell if we have the cell.
+        if self.cell:
+            self.run_manager.cell = self.cell
+
         for _, widget in self.widgets.items():
             self.run_manager.add_handler(widget)
+
+    def get_cell(self):
+        return self.cell
+
+    def initialize_comm(self, cell: Cell):
+        """This is called when the communication cell has been created.
+        We will set up aux message handler here.
+
+        Args:
+            cell:
+
+        Returns:
+
+        """
+        self.logger.info("initialize_comm called!")
+        self.cell = cell
+        if self.run_manager:
+            # Note that the aux_runner is created with the self.run_manager as the "engine".
+            # We must set the cell in it; otherwise it won't be able to send messages.
+            # The timing of the creation of the run_manager and the cell is not deterministic, we set the cell here
+            # only if the run_manager has been created.
+            self.run_manager.cell = cell
+
+        cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self._handle_aux_message,
+        )
+
+    def _handle_aux_message(self, request: CellMessage) -> CellMessage:
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        data = request.payload
+
+        topic = request.get_header(MessageHeaderKey.TOPIC)
+        with self.new_context() as fl_ctx:
+            reply = self.run_manager.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
+            shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+
+            if reply is not None:
+                return_message = new_cell_message({}, reply)
+                return_message.set_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
+            else:
+                return_message = new_cell_message({}, None)
+            return return_message
 
     def set_job_runner(self, job_runner: JobRunner, job_manager: JobDefManagerSpec):
         self.job_runner = job_runner
@@ -400,10 +454,8 @@ class ServerEngine(ServerEngineInternalSpec):
         if self.run_manager:
             return self.run_manager.new_context()
         else:
-            # return FLContext()
-            return FLContextManager(
-                engine=self, identity_name=self.server.project_name, job_id="", public_stickers={}, private_stickers={}
-            ).new_context()
+            # this call should never be made before the run_manager is created!
+            raise RuntimeError("no run_manager in Server Engine.")
 
     def add_component(self, component_id: str, component):
         self.server.runner_config.add_component(component_id, component)
@@ -418,7 +470,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return os.path.join(self.server.admin_server.file_upload_dir, app_name)
 
     def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
-        return self.deploy_app(run_destination, app_name, WorkspaceConstants.APP_PREFIX + "server")
+        return self.deploy_app(run_destination, app_name, WorkspaceConstants.APP_PREFIX + SiteType.SERVER)
 
     def get_workspace(self) -> Workspace:
         return self.run_manager.get_workspace()
@@ -505,7 +557,7 @@ class ServerEngine(ServerEngineInternalSpec):
         )
 
     def _get_aux_msg_target(self, name: str):
-        if name.lower() == "server":
+        if name.lower() == SiteType.SERVER:
             return AuxMsgTarget.server_target()
 
         c = self.get_client_from_name(name)
@@ -514,17 +566,17 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return None
 
-    def send_aux_to_targets(self, targets, topic, request, timeout, fl_ctx, optional, secure):
+    def _to_aux_msg_targets(self, target_names: List[str]):
         msg_targets = []
-        if not targets:
+        if not target_names:
             # all clients
             for c in self.get_clients():
                 msg_targets.append(AuxMsgTarget.client_target(c))
-        elif not isinstance(targets, list):
-            raise TypeError(f"invalid targets type {type(targets)}")
+        elif not isinstance(target_names, list):
+            raise TypeError(f"invalid target_names {type(target_names)}")
         else:
             # this is a list of targets: check targets
-            for t in targets:
+            for t in target_names:
                 if not isinstance(t, str):
                     raise TypeError(f"target name must be str but got {type(t)}")
 
@@ -534,7 +586,10 @@ class ServerEngine(ServerEngineInternalSpec):
                     return {}
                 else:
                     msg_targets.append(amt)
+        return msg_targets
 
+    def send_aux_to_targets(self, targets, topic, request, timeout, fl_ctx, optional, secure):
+        msg_targets = self._to_aux_msg_targets(targets)
         if msg_targets:
             return self.run_manager.aux_runner.send_aux_request(
                 targets=msg_targets,
@@ -547,6 +602,56 @@ class ServerEngine(ServerEngineInternalSpec):
             )
         else:
             return {}
+
+    def stream_objects(
+        self,
+        channel: str,
+        topic: str,
+        stream_ctx: StreamContext,
+        targets: List[str],
+        producer: ObjectProducer,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ):
+        if not self.run_manager:
+            raise RuntimeError("run_manager has not been created")
+
+        if not self.run_manager.object_streamer:
+            raise RuntimeError("object_streamer has not been created")
+
+        return self.run_manager.object_streamer.stream(
+            channel=channel,
+            topic=topic,
+            stream_ctx=stream_ctx,
+            targets=self._to_aux_msg_targets(targets),
+            producer=producer,
+            fl_ctx=fl_ctx,
+            secure=secure,
+            optional=optional,
+        )
+
+    def register_stream_processing(
+        self,
+        channel: str,
+        topic: str,
+        factory: ConsumerFactory,
+        stream_done_cb=None,
+        **cb_kwargs,
+    ):
+        if not self.run_manager:
+            raise RuntimeError("run_manager has not been created")
+
+        if not self.run_manager.object_streamer:
+            raise RuntimeError("object_streamer has not been created")
+
+        self.run_manager.object_streamer.register_stream_processing(
+            channel=channel, topic=topic, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
+        )
+
+    def shutdown_streamer(self):
+        if self.run_manager and self.run_manager.object_streamer:
+            self.run_manager.object_streamer.shutdown()
 
     def sync_clients_from_main_process(self):
         # repeatedly ask the parent process to get participating clients until we receive the result
@@ -763,7 +868,7 @@ class ServerEngine(ServerEngineInternalSpec):
         requests = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
-            if site_name == "server":
+            if site_name == SiteType.SERVER:
                 continue
             request = self._make_message_for_check_resource(job, resource_requirements, fl_ctx)
 
@@ -850,6 +955,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def close(self):
         self.executor.shutdown()
+        self.shutdown_streamer()
 
 
 def server_shutdown(server, touch_file):

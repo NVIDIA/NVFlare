@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -26,6 +25,7 @@ from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import get_job_launcher, get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -41,7 +41,6 @@ class ClientExecutor(ABC):
         job_id,
         job_meta,
         args,
-        app_custom_folder,
         allocated_resource,
         token,
         resource_manager,
@@ -53,7 +52,6 @@ class ClientExecutor(ABC):
             client: the FL client object
             job_id: the job_id
             args: admin command arguments for starting the FL client training
-            app_custom_folder: FL application custom folder
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
@@ -130,7 +128,7 @@ class JobExecutor(ClientExecutor):
             startup: startup folder
         """
         self.client = client
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
         self.startup = startup
         self.run_processes = {}
         self.lock = threading.Lock()
@@ -145,7 +143,6 @@ class JobExecutor(ClientExecutor):
         job_id,
         job_meta,
         args,
-        app_custom_folder,
         allocated_resource,
         token,
         resource_manager: ResourceManagerSpec,
@@ -158,7 +155,6 @@ class JobExecutor(ClientExecutor):
             job_id: the job_id
             job_meta: job meta data
             args: admin command arguments for starting the worker process
-            app_custom_folder: FL application custom folder
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
@@ -179,14 +175,14 @@ class JobExecutor(ClientExecutor):
 
         thread = threading.Thread(
             target=self._wait_child_process_finish,
-            args=(client, job_id, allocated_resource, token, resource_manager, args.workspace),
+            args=(client, job_id, allocated_resource, token, resource_manager, args.workspace, fl_ctx),
         )
         thread.start()
 
     def _get_job_launcher(self, job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
         engine = fl_ctx.get_engine()
         fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
-        engine.fire_event(EventType.GET_JOB_LAUNCHER, fl_ctx)
+        engine.fire_event(EventType.BEFORE_JOB_LAUNCH, fl_ctx)
 
         job_launcher = fl_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
         if not (job_launcher and isinstance(job_launcher, list)):
@@ -384,7 +380,9 @@ class JobExecutor(ClientExecutor):
             )
             self.logger.debug("abort_task sent")
 
-    def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager, workspace):
+    def _wait_child_process_finish(
+        self, client, job_id, allocated_resource, token, resource_manager, workspace, fl_ctx
+    ):
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         job_handle = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE)
         if job_handle:
@@ -393,6 +391,7 @@ class JobExecutor(ClientExecutor):
             return_code = get_return_code(job_handle, job_id, workspace, self.logger)
 
             self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
+
             if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
                 request = new_cell_message(
                     headers={},
@@ -418,6 +417,11 @@ class JobExecutor(ClientExecutor):
         with self.lock:
             self.run_processes.pop(job_id, None)
         self.logger.debug(f"run ({job_id}): child worker resources freed.")
+
+        engine = fl_ctx.get_engine()
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client.client_name, private=True, sticky=False)
+        engine.fire_event(EventType.JOB_COMPLETED, fl_ctx)
 
     def get_status(self, job_id):
         process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)

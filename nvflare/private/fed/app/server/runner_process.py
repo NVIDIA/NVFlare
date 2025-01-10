@@ -26,13 +26,13 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import configure_logging, get_script_logger
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.fed_utils import (
-    add_logfile_handler,
     create_stats_pool_files_for_job,
     fobs_initialize,
     register_ext_decomposers,
@@ -61,7 +61,7 @@ def main(args):
     # get parent process id
     parent_pid = os.getppid()
     stop_event = threading.Event()
-    workspace = Workspace(root_dir=args.workspace, site_name="server")
+    workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
     set_stats_pool_config_for_job(workspace, args.job_id)
     secure_train = kv_list.get("secure_train", False)
 
@@ -77,9 +77,8 @@ def main(args):
             args=args,
             kv_list=args.set,
         )
-        log_file = workspace.get_app_log_file_path(args.job_id)
-        add_logfile_handler(log_file)
-        logger = logging.getLogger("runner_process")
+        configure_logging(workspace, workspace.get_run_dir(args.job_id))
+        logger = get_script_logger()
         logger.info("Runner_process started.")
 
         log_level = os.environ.get("FL_LOG_LEVEL", "")
@@ -133,7 +132,7 @@ def main(args):
                 logger.warning(err)
 
     except ConfigError as e:
-        logger = logging.getLogger("runner_process")
+        logger = get_script_logger()
         logger.exception(f"ConfigError: {secure_format_exception(e)}")
         secure_log_traceback(logger)
         raise e

@@ -15,7 +15,7 @@
 import re
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
+from nvflare.apis.fl_constant import SiteType, SystemConfigs, SystemVarName
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.impl.wf_comm_server import WFCommServer
 from nvflare.apis.workspace import Workspace
@@ -70,7 +70,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
 
         sys_vars = {
             SystemVarName.JOB_ID: args.job_id,
-            SystemVarName.SITE_NAME: "server",
+            SystemVarName.SITE_NAME: SiteType.SERVER,
             SystemVarName.WORKSPACE: args.workspace,
             SystemVarName.SECURE_MODE: self.cmd_vars.get("secure_train", True),
             SystemVarName.JOB_CUSTOM_DIR: workspace_obj.get_app_custom_dir(args.job_id),

@@ -13,30 +13,20 @@
 # limitations under the License.
 import importlib
 import json
-import logging
-import logging.config
 import os
 import pkgutil
 import sys
 import warnings
-from logging.handlers import RotatingFileHandler
 from typing import Any, List, Union
 
 from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLContext
-from nvflare.apis.fl_constant import (
-    ConfigVarName,
-    FLContextKey,
-    FLMetaKey,
-    JobConstants,
-    SiteType,
-    SystemVarName,
-    WorkspaceConstants,
-)
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
@@ -57,46 +47,6 @@ from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
-
-
-def add_logfile_handler(log_file: str):
-    """Adds a log file handler to the root logger.
-
-    The purpose for this is to handle dynamic log file locations.
-
-    If a handler named errorFileHandler is found, it will be used as a template to
-    create a new handler for writing to the error.log file at the same directory as log_file.
-    The original errorFileHandler will be removed and replaced by the new handler.
-
-    Each log file will be rotated when it reaches 20MB.
-
-    Args:
-        log_file (str): log file path
-    """
-    root_logger = logging.getLogger()
-    configured_handlers = root_logger.handlers
-    main_handler = root_logger.handlers[0]
-    file_handler = RotatingFileHandler(log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
-    file_handler.setLevel(main_handler.level)
-    file_handler.setFormatter(main_handler.formatter)
-    root_logger.addHandler(file_handler)
-
-    configured_error_handler = None
-    for handler in configured_handlers:
-        if handler.get_name() == "errorFileHandler":
-            configured_error_handler = handler
-            break
-
-    if not configured_error_handler:
-        return
-
-    error_log_file = os.path.join(os.path.dirname(log_file), "error.log")
-    error_file_handler = RotatingFileHandler(error_log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
-    error_file_handler.setLevel(configured_error_handler.level)
-    error_file_handler.setFormatter(configured_error_handler.formatter)
-
-    root_logger.addHandler(error_file_handler)
-    root_logger.removeHandler(configured_error_handler)
 
 
 def _check_secure_content(site_type: str) -> List[str]:
@@ -258,12 +208,6 @@ def create_job_processing_context_properties(workspace: Workspace, job_id: str) 
 
 def find_char_positions(s, ch):
     return [i for i, c in enumerate(s) if c == ch]
-
-
-def configure_logging(workspace: Workspace):
-    log_config_file_path = workspace.get_log_config_file_path()
-    assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
 
 def get_scope_info():
@@ -473,14 +417,6 @@ def get_simulator_app_root(simulator_root, site_name):
     return os.path.join(simulator_root, site_name, SimulatorConstants.JOB_NAME, "app_" + site_name)
 
 
-def add_custom_dir_to_path(app_custom_folder, new_env):
-    path = new_env.get(SystemVarName.PYTHONPATH, "")
-    if path:
-        new_env[SystemVarName.PYTHONPATH] = path + os.pathsep + app_custom_folder
-    else:
-        new_env[SystemVarName.PYTHONPATH] = app_custom_folder
-
-
 def extract_participants(participants_list):
     participants = []
     for item in participants_list:
@@ -492,17 +428,6 @@ def extract_participants(participants_list):
         else:
             raise ValueError(f"Must be tye of str or dict, but got {type(item)}")
     return participants
-
-
-def extract_job_image(job_meta, site_name):
-    deploy_map = job_meta.get(JobMetaKey.DEPLOY_MAP, {})
-    for _, participants in deploy_map.items():
-        for item in participants:
-            if isinstance(item, dict):
-                sites = item.get(JobConstants.SITES)
-                if site_name in sites:
-                    return item.get(JobConstants.JOB_IMAGE)
-    return None
 
 
 def _scope_prop_key(scope_name: str, key: str):
@@ -542,17 +467,21 @@ def get_scope_prop(scope_name: str, key: str) -> Any:
     return data_bus.get_data(_scope_prop_key(scope_name, key))
 
 
-def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> dict:
+def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
     engine = fl_ctx.get_engine()
 
     with engine.new_context() as job_launcher_ctx:
         # Remove the potential not cleaned up JOB_LAUNCHER
         job_launcher_ctx.remove_prop(FLContextKey.JOB_LAUNCHER)
         job_launcher_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
-        engine.fire_event(EventType.GET_JOB_LAUNCHER, job_launcher_ctx)
+        engine.fire_event(EventType.BEFORE_JOB_LAUNCH, job_launcher_ctx)
 
         job_launcher = job_launcher_ctx.get_prop(FLContextKey.JOB_LAUNCHER)
         if not (job_launcher and isinstance(job_launcher, list)):
             raise RuntimeError(f"There's no job launcher can handle this job: {job_meta}.")
+
+    launcher = job_launcher[0]
+    if not isinstance(launcher, JobLauncherSpec):
+        raise RuntimeError(f"The job launcher must be JobLauncherSpec but got {type(launcher)}")
 
     return job_launcher[0]

@@ -161,7 +161,7 @@ class TestSimulatorRunner:
     def test_get_new_sys_path_with_empty(self):
         args = Namespace(workspace="/tmp")
         args.set = []
-        runner = SimulatorClientRunner(args, [], None, None, None)
+        runner = SimulatorClientRunner(None, args, [], None, None, None)
         old_sys_path = copy.deepcopy(sys.path)
         sys.path.insert(0, "")
         sys.path.append("/temp/test")
@@ -172,7 +172,7 @@ class TestSimulatorRunner:
     def test_get_new_sys_path_with_multiple_empty(self):
         args = Namespace(workspace="/tmp")
         args.set = []
-        runner = SimulatorClientRunner(args, [], None, None, None)
+        runner = SimulatorClientRunner(None, args, [], None, None, None)
         old_sys_path = copy.deepcopy(sys.path)
         sys.path.insert(0, "")
         if len(sys.path) > 2:
@@ -185,7 +185,7 @@ class TestSimulatorRunner:
     def test_get_new_sys_path(self):
         args = Namespace(workspace="/tmp")
         args.set = []
-        runner = SimulatorClientRunner(args, [], None, None, None)
+        runner = SimulatorClientRunner(None, args, [], None, None, None)
         old_sys_path = copy.deepcopy(sys.path)
         sys.path.append("/temp/test")
         new_sys_path = runner._get_new_sys_path()
