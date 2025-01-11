@@ -31,15 +31,15 @@ See the `configuration dictionary schema <(https://docs.python.org/3/library/log
         "formatters": {
             "baseFormatter": {
                 "()": "nvflare.fuel.utils.log_utils.BaseFormatter",
-                "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+                "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s"
             },
             "colorFormatter": {
                 "()": "nvflare.fuel.utils.log_utils.ColorFormatter",
-                "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+                "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s"
             },
             "jsonFormatter": {
                 "()": "nvflare.fuel.utils.log_utils.JsonFormatter",
-                "fmt": "%(asctime)s - %(name)s - %(fullName)s - %(levelname)s - %(message)s"
+                "fmt": "%(asctime)s - %(name)s - %(fullName)s - %(levelname)s - %(fl_ctx)s - %(message)s"
             }
         },
         "filters": {
@@ -117,19 +117,20 @@ The :class:`BaseFormatter<nvflare.fuel.utils.log_utils.BaseFormatter>` is the de
 
 - All the default `Formatter <https://docs.python.org/3/library/logging.html#logging.Formatter>`_ arguments such as **fmt** with `log record attributes <https://docs.python.org/3/library/logging.html#logrecord-attributes>`_ and the **datefmt** `date format string <https://docs.python.org/3/library/logging.html#logging.Formatter.formatTime>`_ can be specified.
 - The **record.name** is shortened to the logger base name, and **record.fullName** is set to the logger full name.
+
 Example configuration and output:
 
 .. code-block:: json
 
     "baseFormatter": {
         "()": "nvflare.fuel.utils.log_utils.BaseFormatter",
-        "fmt": "%(asctime)s - %(name)s - %(fullName)s - %(levelname)s - %(message)s",
+        "fmt": "%(asctime)s - %(name)s - %(fullName)s - %(levelname)s - %(fl_ctx)s - %(message)s",
         "datefmt": "%m-%d-%Y- %H:%M:%S"
     }
 
 .. code-block:: shell
 
-    01-14-2025 14:44:46 - PTInProcessClientAPIExecutor - nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor - INFO - [identity=site-1, run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, peer=example_project, peer_run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, task_name=train, task_id=a16b7a02-b2ea-4eb5-895a-b40d507b2c5c]: execute for task (train)
+    01-14-2025 14:44:46 - PTInProcessClientAPIExecutor - nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor - INFO - [identity=site-1, run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, peer=example_project, peer_run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, task_name=train, task_id=a16b7a02-b2ea-4eb5-895a-b40d507b2c5c] - execute for task (train)
 
 
 ColorFormatter
@@ -148,7 +149,7 @@ Example configuration:
 
     "colorFormatter": {
         "()": "nvflare.fuel.utils.log_utils.ColorFormatter",
-        "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s",
         "level_colors": {
             "NOTSET": "grey",
             "DEBUG": "grey",
@@ -168,20 +169,18 @@ JsonFormatter
 -------------
 The :class:`JsonFormatter<nvflare.fuel.utils.log_utils.JsonFormatter>` converts the log records into a json string.
 
-The **extract_brackets** argument can be used to parse the message and add a nested **fl_ctx_fields** object with the fl context keys and values.
-
 Example configuration and output:
 
 .. code-block:: json
 
     "jsonFormatter": {
         "()": "nvflare.fuel.utils.log_utils.JsonFormatter",
-        "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s"
     }
 
 .. code-block:: json
 
-    {"asctime": "2025-01-14 14:44:46,559", "name": "PTInProcessClientAPIExecutor", "levelname": "INFO", "fl_ctx_fields": {"identity": "site-1", "run": "fc711945-a7cf-4834-9fc4-aa9cb60e327b", "peer": "example_project", "peer_run": "fc711945-a7cf-4834-9fc4-aa9cb60e327b", "task_name": "train", "task_id": "a16b7a02-b2ea-4eb5-895a-b40d507b2c5c"}, "message": "execute for task (train)"}
+    {"asctime": "2025-01-14 14:44:46,559", "name": "PTInProcessClientAPIExecutor", "fullName": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor", "levelname": "INFO", "fl_ctx": "[identity=site-1, run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, peer=example_project, peer_run=fc711945-a7cf-4834-9fc4-aa9cb60e327b, task_name=train, task_id=a16b7a02-b2ea-4eb5-895a-b40d507b2c5c]", "message": "execute for task (train)"}
 
 
 Filters
@@ -193,6 +192,9 @@ LoggerNameFilter
 ----------------
 :class:`LoggerNameFilter<nvflare.fuel.utils.log_utils.LoggerNameFilter>` filters loggers based on a list of logger_names.
 Filters utilize the logger hierarchy, so any descendants of the specified names will also be allowed through the filter.
+
+- **logger_names**: list of logger names to allow through filter
+- **exclude_logger_names**: list of logger names to disallow through filter (takes precedence over allowing from logger_names)
 
 We leverage this in our FLFilter, which filters loggers related to fl training or custom code.
 
@@ -286,24 +288,22 @@ Modifying Logging Configurations
 Simulator log configuration
 ===========================
 
-Simulator logging configuration uses the default log configuration. If you want to overwrite the default configuration, you can add ``log_config.json`` to
-``<simulator_workspace>/startup/log_config.json``.
-
-For example, for hello-numpy-sag examples, if the workspace is ``/tmp/nvflare/hello-numpy-sag/``, then you can add log_config.json in ``/tmp/nvflare/hello-numpy-sag/startup/log_config.json`` to overwrite the default one, then run the CLI command:
-
-.. code-block:: shell
-
-    nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 hello-world/hello-numpy-sag/jobs/hello-numpy-sag
-
-Users can also instead specify a log configuration file in the command with the ``-l`` simulator argument:
+Users can specify a log configuration file in the simulator command with the ``-l`` simulator argument:
 
 .. code-block:: shell
 
     nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 hello-world/hello-numpy-sag/jobs/hello-numpy-sag -l log_config.json
 
+Or using the ``log_config`` argument of the Job API simulator run:
+
+.. code-block:: python
+
+    job.simulator_run("/tmp/nvflare/hello-numpy-sag", log_config="log_config.json")
+
+
 POC log configurations
 ======================
-Similarly, if you search the POC workspace, you will find the following:
+If you search the POC workspace, you will find the following:
 
 .. code-block:: shell
 
@@ -314,6 +314,8 @@ Similarly, if you search the POC workspace, you will find the following:
     /tmp/nvflare/poc/site-2/local/log_config.json.default
 
 You can add a ``log_config.json`` to make changes.
+
+We also recommend using the :ref:`Dynamic Logging Configuration Commands <dynamic_logging_configuration_commands>`.
 
 Startup kits log configurations
 ===============================
@@ -332,6 +334,8 @@ If you search for the ``log_config.json.*`` files in the startup kits workspace,
 
 The server ``log_config.json.default`` is the default logging configuration used by the FL Server and clients. To overwrite the default,
 you can change ``log_config.json.default`` to ``log_config.json`` and modify the configuration.
+
+We also recommend using the :ref:`Dynamic Logging Configuration Commands <dynamic_logging_configuration_commands>`.
 
 .. _dynamic_logging_configuration_commands:
 **************************************

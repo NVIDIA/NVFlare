@@ -70,7 +70,11 @@ class BaseFormatter(logging.Formatter):
     def __init__(self, fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt=None, style="%"):
         """Default formatter for log records.
 
-        Shortens logger %(name)s to the basenames. Full name can be accessed with %(fullName)s
+        The following attributes are added to the record and can be configured in `fmt` with '%(<attribute>)s'
+            - record.name: base name
+            - record.fullName: full name
+            - record.fl_ctx: bracked fl ctx key value pairs if exists in the message
+            - record.identity: identity from fl_ctx if fl_ctx exists
 
         Args:
             fmt (str): format string which uses LogRecord attributes.
@@ -86,6 +90,26 @@ class BaseFormatter(logging.Formatter):
             record.fullName = record.name
             record.name = record.name.split(".")[-1]
 
+        if not hasattr(record, "fl_ctx"):
+            record.fl_ctx = ""
+            record.identity = ""
+            message = record.getMessage()
+            fl_ctx_match = re.search(r"\[(.*?)\]: ", message)
+            if fl_ctx_match:
+                fl_ctx_pairs = {
+                    pair.split("=", 1)[0]: pair.split("=", 1)[1] for pair in fl_ctx_match.group(1).split(", ")
+                }
+                record.fl_ctx = fl_ctx_match[0][:-2]
+                record.identity = fl_ctx_pairs["identity"]  # TODO add more values as attributes?
+                record.msg = message.replace(fl_ctx_match[0], "")
+                self._style._fmt = self.fmt
+            else:
+                for placeholder in [
+                    " %(fl_ctx)s -",
+                    " %(identity)s -",
+                ]:  # TODO generalize this or add default values?
+                    self._style._fmt = self._style._fmt.replace(placeholder, "")
+
         return super().format(record)
 
 
@@ -98,7 +122,7 @@ class ColorFormatter(BaseFormatter):
         level_colors=ANSIColor.DEFAULT_LEVEL_COLORS,
         logger_colors={},
     ):
-        """Format colors based on log levels. Optionally can provide mapping based on logger namess.
+        """Format colors based on log levels. Optionally can provide mapping based on logger names.
 
         Args:
             fmt (str): format string which uses LogRecord attributes.
@@ -113,28 +137,30 @@ class ColorFormatter(BaseFormatter):
         self.logger_colors = logger_colors
 
     def format(self, record):
-        super().format(record)
+        record_s = super().format(record)
 
         # Apply level_colors based on record levelname
         log_color = self.level_colors.get(record.levelname, "reset")
 
-        # Apply logger_color to logger_names if INFO or below
+        # Apply logger_colors to logger names if INFO or below.
+        logger_specificity = 0
         if record.levelno <= logging.INFO:
-            log_color = self.logger_colors.get(record.name, log_color)
+            for name, color in self.logger_colors.items():
+                if (name.count(".") >= logger_specificity or record.name == name) and (
+                    record.fullName.startswith(name) or record.name == name
+                ):
+                    log_color = color
+                    logger_specificity = name.count(".")
 
-        log_fmt = ANSIColor.colorize(self.fmt, log_color)
-
-        formatter = logging.Formatter(log_fmt)
-        return formatter.format(record)
+        return ANSIColor.colorize(record_s, log_color)
 
 
 class JsonFormatter(BaseFormatter):
     def __init__(
         self,
-        fmt="%(asctime)s - %(name)s - %(fullName)s - %(levelname)s - %(message)s",
+        fmt="%(asctime)s - %(identity)s - %(name)s - %(fullName)s - %(levelname)s - %(fl_ctx)s - %(message)s",
         datefmt=None,
         style="%",
-        extract_brackets=True,
     ):
         """Format log records into JSON.
 
@@ -142,12 +168,10 @@ class JsonFormatter(BaseFormatter):
             fmt (str): format string which uses LogRecord attributes. Attributes are used for JSON keys.
             datefmt (str): date/time format string. Defaults to '%Y-%m-%d %H:%M:%S'.
             style (str): style character '%' '{' or '$' for format string.
-            extract_bracket_fields (bool): whether to extract bracket fields of message into sub-dictionary. Defaults to True.
 
         """
         super().__init__(fmt=fmt, datefmt=datefmt, style=style)
         self.fmt_dict = self.generate_fmt_dict(self.fmt)
-        self.extract_brackets = extract_brackets
 
     def generate_fmt_dict(self, fmt: str) -> dict:
         # Parse the `fmt` string and create a mapping of keys to LogRecord attributes
@@ -155,61 +179,45 @@ class JsonFormatter(BaseFormatter):
 
         fmt_dict = {}
         for key, _ in matches:
-            if key == "shortname":
-                fmt_dict["name"] = "shortname"
-            else:
-                fmt_dict[key] = key
+            fmt_dict[key] = key
 
         return fmt_dict
 
-    def extract_bracket_fields(self, message: str) -> dict:
-        # Extract bracketed fl_ctx_fields eg. [k1=v1, k2=v2...] into sub-dictionary
-        bracket_fields = {}
-        match = re.search(r"\[(.*?)\]:", message)
-        if match:
-            pairs = match.group(1).split(", ")
-            for pair in pairs:
-                if "=" in pair:
-                    key, value = pair.split("=", 1)
-                    bracket_fields[key] = value
-        return bracket_fields
-
     def formatMessage(self, record) -> dict:
-        return {fmt_key: record.__dict__.get(fmt_val, "") for fmt_key, fmt_val in self.fmt_dict.items()}
+        message_dict = {}
+        for fmt_key, fmt_val in self.fmt_dict.items():
+            message_dict[fmt_key] = record.__dict__.get(fmt_val, "")
+        return message_dict
 
     def format(self, record) -> str:
         super().format(record)
 
-        record.message = record.getMessage()
-        bracket_fields = self.extract_bracket_fields(record.message) if self.extract_brackets else None
-        record.asctime = self.formatTime(record)
-
+        record.asctime = self.formatTime(record, self.datefmt)
         formatted_message_dict = self.formatMessage(record)
-        message_dict = {k: v for k, v in formatted_message_dict.items() if k != "message"}
-
-        if bracket_fields:
-            message_dict["fl_ctx_fields"] = bracket_fields
-            record.message = re.sub(r"\[.*?\]:", "", record.message).strip()
-
-        message_dict[self.fmt_dict.get("message", "message")] = record.message
+        message_dict = {k: v for k, v in formatted_message_dict.items()}
 
         return json.dumps(message_dict, default=str)
 
 
 class LoggerNameFilter(logging.Filter):
-    def __init__(self, logger_names=["nvflare"]):
+    def __init__(self, logger_names=["nvflare"], exclude_logger_names=[]):
         """Filter log records based on logger names.
 
         Args:
-            logger_names (List[str]): list of logger names to allow through filter (inclusive)
+            logger_names (List[str]): list of logger names to allow through filter
+            exclude_logger_names (List[str]): list of logger names to disallow through filter (takes precedence over allowing from logger_names)
 
         """
         super().__init__()
         self.logger_names = logger_names
+        self.exclude_logger_names = exclude_logger_names
 
     def filter(self, record):
         name = record.fullName if hasattr(record, "fullName") else record.name
-        return any(name.startswith(logger_name) for logger_name in self.logger_names)
+        return not self.matches_name(name, self.exclude_logger_names) and self.matches_name(name, self.logger_names)
+
+    def matches_name(self, name, logger_names) -> bool:
+        return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
 
 
 def get_module_logger(module=None, name=None):

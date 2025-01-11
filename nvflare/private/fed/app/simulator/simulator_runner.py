@@ -126,6 +126,8 @@ class SimulatorRunner(FLComponent):
                 f" {os.path.join(running_dir, self.workspace)}"
             )
         self.workspace = os.path.join(running_dir, self.workspace)
+        if self.log_config:
+            self.log_config = os.path.join(running_dir, self.log_config)
 
     def _generate_args(
         self,
