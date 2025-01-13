@@ -114,6 +114,19 @@ class ProvisionContext(dict):
         content_modify_cb=None,
         **cb_kwargs,
     ):
+        """Build a file from a template section and writes it to the specified location.
+
+        Args:
+            dest_dir: destination directory
+            temp_section: template section key
+            file_name: file name
+            replacement: replacement dict
+            mode: file mode
+            exe: executable
+            content_modify_cb: content modification callback, can be included to take the section content as the first argument and return the modified content
+            cb_kwargs: additional keyword arguments for the callback
+
+        """
         section = self.get_template_section(temp_section)
         if replacement:
             section = utils.sh_replace(section, replacement)
