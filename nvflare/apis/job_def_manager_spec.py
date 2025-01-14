@@ -153,15 +153,15 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def list_client_data(self, jid: str, fl_ctx: FLContext):
-        """Get list of all the client data for the specified job.
+    def list_components(self, jid: str, fl_ctx: FLContext):
+        """Get list of all the components for the specified job.
 
         Args:
             jid (str): Job ID
             fl_ctx (FLContext): FLContext information
 
         Returns:
-            data content
+            list of components
 
         """
         pass

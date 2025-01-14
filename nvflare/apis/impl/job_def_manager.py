@@ -250,10 +250,10 @@ class SimpleJobDefManager(JobDefManagerSpec):
         except StorageException:
             return None
 
-    def list_client_data(self, jid: str, fl_ctx: FLContext):
+    def list_components(self, jid: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         self.log_debug(
-            fl_ctx, f"list_client_data called for {jid}: {store.list_components_of_object(self.job_uri(jid))}"
+            fl_ctx, f"list_components called for {jid}: {store.list_components_of_object(self.job_uri(jid))}"
         )
         return store.list_components_of_object(self.job_uri(jid))
 

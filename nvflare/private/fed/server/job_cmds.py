@@ -114,9 +114,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     authz_func=self.authorize_job,
                 ),
                 CommandSpec(
-                    name=AdminCommandNames.LIST_JOB_COMPONENTS,
-                    description="get additional components of specified job",
-                    usage=f"{AdminCommandNames.LIST_JOB_COMPONENTS} job_id",
+                    name=AdminCommandNames.LIST_JOB,
+                    description="list additional components of specified job",
+                    usage=f"{AdminCommandNames.LIST_JOB} job_id",
                     handler_func=self.list_job_components,
                     authz_func=self.authorize_job,
                 ),
@@ -448,16 +448,15 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
             )
         with engine.new_context() as fl_ctx:
-            list_of_data = job_def_manager.list_client_data(jid=job_id, fl_ctx=fl_ctx)
+            list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
             if list_of_data:
-                filtered_data = [
-                    item for item in list_of_data if item not in {"workspace", "meta", "scheduled", "data"}
-                ]
+                system_components = {"workspace", "meta", "scheduled", "data"}
+                filtered_data = [item for item in list_of_data if item not in system_components]
                 if filtered_data:
                     data_str = ", ".join(filtered_data)
                     conn.append_string(data_str)
                 else:
-                    conn.append_string("No client error logs found.")
+                    conn.append_string("No additional job components found.")
             else:
                 conn.append_error(
                     f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
@@ -721,7 +720,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_download_dir = self.tx_path(conn, tx_id)  # absolute path of the job download dir.
         with engine.new_context() as fl_ctx:
             try:
-                list_of_data = job_def_manager.list_client_data(jid=job_id, fl_ctx=fl_ctx)
+                list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
                 if list_of_data:
                     job_components = [
                         item for item in list_of_data if item not in {"workspace", "meta", "scheduled", "data"}
