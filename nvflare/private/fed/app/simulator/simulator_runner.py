@@ -172,6 +172,9 @@ class SimulatorRunner(FLComponent):
 
         if self.args.log_config:
             log_config_file_path = self.args.log_config
+            if not os.path.isfile(log_config_file_path):
+                self.logger.error(f"log_config: {log_config_file_path} is not a valid file path")
+                return False
         else:
             log_config_file_path = os.path.join(self.args.workspace, "local", WorkspaceConstants.LOGGING_CONFIG)
             if not os.path.isfile(log_config_file_path):
@@ -691,6 +694,8 @@ class SimulatorClientRunner(FLComponent):
         client_workspace = os.path.join(self.args.workspace, client.client_name)
         if self.args.log_config:
             logging_config = self.args.log_config
+            if not os.path.isfile(logging_config):
+                raise ValueError(f"log_config: {logging_config} is not a valid file path")
         else:
             logging_config = os.path.join(
                 self.args.workspace, client.client_name, "local", WorkspaceConstants.LOGGING_CONFIG

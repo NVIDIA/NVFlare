@@ -94,7 +94,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 ),
                 CommandSpec(
                     name=AdminCommandNames.CONFIGURE_JOB_LOG,
-                    description="configure logging of a job",
+                    description="configure logging of a running job",
                     usage=f"{AdminCommandNames.CONFIGURE_JOB_LOG} job_id server|client <client-name>... config",
                     handler_func=self.configure_job_log,
                     authz_func=self.authorize_configure_job_log,
