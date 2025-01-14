@@ -100,7 +100,7 @@ class SimulatorDeployer(ServerDeployer):
         )
         cell.start()
         federated_client.cell = cell
-        federated_client.communicator.cell = cell
+        federated_client.communicator.set_cell(cell)
         # if self.engine:
         #     self.engine.admin_agent.register_cell_cb()
 
