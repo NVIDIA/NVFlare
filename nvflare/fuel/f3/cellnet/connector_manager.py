@@ -39,10 +39,11 @@ class _Defaults:
 
 
 class ConnectorData:
-    def __init__(self, handle, connect_url: str, active: bool):
+    def __init__(self, handle, connect_url: str, active: bool, params: dict):
         self.handle = handle
         self.connect_url = connect_url
         self.active = active
+        self.params = params
 
     def get_connection_url(self):
         return self.connect_url
@@ -192,19 +193,19 @@ class ConnectorManager:
 
         try:
             if active:
-                handle = self.communicator.add_connector(url, Mode.ACTIVE, ssl_required)
+                handle, conn_params = self.communicator.add_connector(url, Mode.ACTIVE, ssl_required)
                 connect_url = url
             elif url:
-                handle = self.communicator.add_connector(url, Mode.PASSIVE, ssl_required)
+                handle, conn_params = self.communicator.add_connector(url, Mode.PASSIVE, ssl_required)
                 connect_url = url
             else:
                 self.logger.info(f"{os.getpid()}: Try start_listener Listener resources: {reqs}")
-                handle, connect_url = self.communicator.start_listener(scheme, reqs)
+                handle, connect_url, conn_params = self.communicator.start_listener(scheme, reqs)
                 self.logger.debug(f"{os.getpid()}: ############ dynamic listener at {connect_url}")
                 # Kludge: to wait for listener ready and avoid race
                 time.sleep(0.5)
 
-            return ConnectorData(handle, connect_url, active)
+            return ConnectorData(handle, connect_url, active, conn_params)
         except CommError as ex:
             self.logger.error(f"Failed to get connector: {secure_format_exception(ex)}")
             return None

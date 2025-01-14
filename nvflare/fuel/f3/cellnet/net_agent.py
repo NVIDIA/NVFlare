@@ -406,7 +406,12 @@ class NetAgent:
 
     @staticmethod
     def _connector_info(info: ConnectorData) -> dict:
-        return {"url": info.connect_url, "handle": info.handle, "type": "connector" if info.active else "listener"}
+        return {
+            "url": info.connect_url,
+            "handle": info.handle,
+            "type": "connector" if info.active else "listener",
+            "params": info.params,
+        }
 
     def _get_connectors(self) -> dict:
         cell = self.cell
@@ -548,9 +553,6 @@ class NetAgent:
         self.close()
 
     def stop_cell(self, target: str) -> str:
-        # if self.cell.get_fqcn() == target:
-        #     self.stop()
-        #     return ReturnCode.OK
         reply = self.cell.send_request(
             channel=_CHANNEL, topic=_TOPIC_STOP_CELL, request=Message(), target=target, timeout=1.0
         )
