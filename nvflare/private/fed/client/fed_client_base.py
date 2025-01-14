@@ -24,6 +24,7 @@ from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
@@ -31,8 +32,6 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import EngineConstant
-from nvflare.private.fed.utils.fed_utils import set_scope_prop
 from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
@@ -77,6 +76,7 @@ class FederatedClientBase:
 
         self.client_name = client_name
         self.token = None
+        self.token_signature = None
         self.ssid = None
         self.client_args = client_args
         self.servers = server_args
@@ -154,7 +154,7 @@ class FederatedClientBase:
             if server != location:
                 # The SP name is the server host name that we will connect to.
                 # Save this name for this client so that it can be checked by others
-                set_scope_prop(scope_name=self.client_name, value=sp.name, key=FLContextKey.SERVER_HOST_NAME)
+                set_scope_property(scope_name=self.client_name, value=sp.name, key=FLContextKey.SERVER_HOST_NAME)
 
                 self.servers[project_name]["target"] = location
                 self.sp_established = True
@@ -222,6 +222,10 @@ class FederatedClientBase:
                 DriverParams.CLIENT_CERT.value: ssl_cert,
                 DriverParams.CLIENT_KEY.value: private_key,
             }
+            conn_security = self.client_args.get(SecureTrainConst.CONNECTION_SECURITY)
+            if conn_security:
+                credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
+                set_scope_property(self.client_name, SecureTrainConst.CONNECTION_SECURITY, conn_security)
         else:
             credentials = {}
 
@@ -235,7 +239,7 @@ class FederatedClientBase:
             parent_url=parent_url,
         )
         self.cell.start()
-        self.communicator.cell = self.cell
+        self.communicator.set_cell(self.cell)
         self.net_agent = NetAgent(self.cell)
         mpm.add_cleanup_cb(self.net_agent.close)
         mpm.add_cleanup_cb(self.cell.stop)
@@ -272,16 +276,17 @@ class FederatedClientBase:
 
         Args:
             project_name: FL study project name.
-            register_data: customer defined client register data (in a dict)
             fl_ctx: FLContext
 
         """
         if not self.token:
             try:
-                self.token, self.ssid = self.communicator.client_registration(self.client_name, project_name, fl_ctx)
+                self.token, self.token_signature, self.ssid = self.communicator.client_registration(
+                    self.client_name, project_name, fl_ctx
+                )
+
                 if self.token is not None:
                     self.fl_ctx.set_prop(FLContextKey.CLIENT_NAME, self.client_name, private=False)
-                    self.fl_ctx.set_prop(EngineConstant.FL_TOKEN, self.token, private=False)
                     self.logger.info(
                         "Successfully registered client:{} for project {}. Token:{} SSID:{}".format(
                             self.client_name, project_name, self.token, self.ssid
