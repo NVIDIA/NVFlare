@@ -153,7 +153,7 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def list_components(self, jid: str, fl_ctx: FLContext):
+    def list_components(self, jid: str, fl_ctx: FLContext) -> List[str]:
         """Get list of all the components for the specified job.
 
         Args:
