@@ -45,7 +45,6 @@ JOB_RETURN_CODE_MAPPING = {
 
 
 class DockerJobHandle(JobHandleSpec):
-
     def __init__(self, container, timeout=None):
         super().__init__()
 
@@ -183,7 +182,7 @@ class ClientDockerJobLauncher(DockerJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> (str, str):
         job_id = job_meta.get(JobConstants.JOB_ID)
         client_name = fl_ctx.get_identity_name()
-        command = generate_client_command(job_meta, fl_ctx)
+        command = generate_client_command(fl_ctx)
 
         return f"{client_name}-{job_id}", command
 
@@ -191,6 +190,6 @@ class ClientDockerJobLauncher(DockerJobLauncher):
 class ServerDockerJobLauncher(DockerJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> (str, str):
         job_id = job_meta.get(JobConstants.JOB_ID)
-        command = generate_server_command(job_meta, fl_ctx)
+        command = generate_server_command(fl_ctx)
 
         return f"server-{job_id}", command

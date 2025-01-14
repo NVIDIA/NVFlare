@@ -106,6 +106,7 @@ class ReservedKey(object):
     CUSTOM_PROPS = "__custom_props__"
     EXCEPTIONS = "__exceptions__"
     PROCESS_TYPE = "__process_type__"  # type of the current process (SP, CP, SJ, CJ)
+    JOB_PROCESS_ARGS = "__job_process_args__"
 
 
 class FLContextKey(object):
@@ -187,6 +188,7 @@ class FLContextKey(object):
     SERVER_CONFIG = "__server_config__"
     SERVER_HOST_NAME = "__server_host_name__"
     PROCESS_TYPE = ReservedKey.PROCESS_TYPE
+    JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
 
 
 class ProcessType:
@@ -205,6 +207,7 @@ class ReservedTopic(object):
     SYNC_RUNNER = "__sync_runner__"
     JOB_HEART_BEAT = "__job_heartbeat__"
     TASK_CHECK = "__task_check__"
+    APP_METRICS = "__app_metrics__"
 
 
 class AdminCommandNames(object):
@@ -436,6 +439,7 @@ class SecureTrainConst:
     SSL_ROOT_CERT = "ssl_root_cert"
     SSL_CERT = "ssl_cert"
     PRIVATE_KEY = "ssl_private_key"
+    CONNECTION_SECURITY = "connection_security"
 
 
 class FLMetaKey:
@@ -453,6 +457,14 @@ class FLMetaKey:
     SITE_NAME = "site_name"
     PROCESS_RC_FILE = "_process_rc.txt"
     SUBMIT_MODEL_NAME = "submit_model_name"
+    AUTH_TOKEN = "auth_token"
+    AUTH_TOKEN_SIGNATURE = "auth_token_signature"
+
+
+class CellMessageAuthHeaderKey:
+    CLIENT_NAME = "client_name"
+    TOKEN = "__token__"
+    TOKEN_SIGNATURE = "__token_signature__"
 
 
 class StreamCtxKey:
