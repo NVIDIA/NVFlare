@@ -99,7 +99,7 @@ class TestCommunicator:
         comm_a = get_comm_a(comm_state)
         comm_b = get_comm_b(comm_state)
 
-        _, url = comm_a.start_listener(scheme, {"ports": port_range})
+        _, url, _ = comm_a.start_listener(scheme, {"ports": port_range})
         comm_a.start()
 
         # Check port is in the range
