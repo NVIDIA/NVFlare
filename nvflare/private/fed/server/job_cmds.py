@@ -18,8 +18,6 @@ import shutil
 import uuid
 from typing import Dict, List
 
-from flask.cli import F
-
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
