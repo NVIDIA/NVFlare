@@ -17,7 +17,7 @@ import os
 import pkgutil
 import sys
 import warnings
-from typing import Any, List, Union
+from typing import List, Union
 
 from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
@@ -30,14 +30,12 @@ from nvflare.apis.job_launcher_spec import JobLauncherSpec
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
-from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.fobs import register_custom_folder
-from nvflare.fuel.utils.validation_utils import check_str
 from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
@@ -428,43 +426,6 @@ def extract_participants(participants_list):
         else:
             raise ValueError(f"Must be tye of str or dict, but got {type(item)}")
     return participants
-
-
-def _scope_prop_key(scope_name: str, key: str):
-    return f"{scope_name}::{key}"
-
-
-def set_scope_prop(scope_name: str, key: str, value: Any):
-    """Save the specified property of the specified scope (globally).
-
-    Args:
-        scope_name: name of the scope
-        key: key of the property to be saved
-        value: value of property
-
-    Returns: None
-
-    """
-    check_str("scope_name", scope_name)
-    check_str("key", key)
-    data_bus = DataBus()
-    data_bus.put_data(_scope_prop_key(scope_name, key), value)
-
-
-def get_scope_prop(scope_name: str, key: str) -> Any:
-    """Get the value of a specified property from the specified scope.
-
-    Args:
-        scope_name: name of the scope
-        key: key of the scope
-
-    Returns:
-
-    """
-    check_str("scope_name", scope_name)
-    check_str("key", key)
-    data_bus = DataBus()
-    return data_bus.get_data(_scope_prop_key(scope_name, key))
 
 
 def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:

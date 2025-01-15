@@ -44,6 +44,8 @@ class PropKey:
     ADMIN_PORT = "admin_port"
     FED_LEARN_PORT = "fed_learn_port"
     ALLOW_ERROR_SENDING = "allow_error_sending"
+    CONN_SECURITY = "connection_security"
+    CUSTOM_CA_CERT = "custom_ca_cert"
 
 
 class CtxKey(WorkDir, PropKey):
@@ -60,6 +62,13 @@ class CtxKey(WorkDir, PropKey):
 class ProvisionMode:
     POC = "poc"
     NORMAL = "normal"
+
+
+class ConnSecurity:
+    CLEAR = "clear"
+    INSECURE = "insecure"
+    TLS = "tls"
+    MTLS = "mtls"
 
 
 class AdminRole:
@@ -137,6 +146,7 @@ class ProvFileName:
     CHART_YAML = "Chart.yaml"
     VALUES_YAML = "values.yaml"
     HELM_CHART_TEMPLATES_DIR = "templates"
+    CUSTOM_CA_CERT_FILE_NAME = "customRootCA.pem"
 
 
 class CertFileBasename:
