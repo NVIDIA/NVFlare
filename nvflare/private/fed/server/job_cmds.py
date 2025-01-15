@@ -456,7 +456,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     data_str = ", ".join(filtered_data)
                     conn.append_string(data_str)
                     conn.append_success(
-                        "", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: data_str})
+                        "", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: filtered_data})
                     )
                 else:
                     conn.append_error(
