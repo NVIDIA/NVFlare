@@ -792,6 +792,21 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return f"reset the server error stats for job: {job_id}"
 
+    def configure_job_log(self, job_id, data) -> str:
+        error = None
+        try:
+            error = self.send_command_to_child_runner_process(
+                job_id=job_id,
+                command_name=AdminCommandNames.CONFIGURE_JOB_LOG,
+                command_data=data,
+            )
+        except Exception as ex:
+            err = f"Failed to configure_job_log for JOB: {job_id}: {secure_format_exception(ex)}"
+            self.logger.error(err)
+            return err
+
+        return error
+
     def _send_admin_requests(self, requests, fl_ctx: FLContext, timeout_secs=10) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, fl_ctx, timeout_secs=timeout_secs)
 

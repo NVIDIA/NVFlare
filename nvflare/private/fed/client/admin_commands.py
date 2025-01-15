@@ -17,7 +17,9 @@
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.utils.log_utils import dynamic_log_config
 from nvflare.private.fed.client.client_status import get_status_message
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import WidgetID
 
@@ -246,6 +248,34 @@ class ByeCommand(CommandProcessor):
         return None
 
 
+class ConfigureJobLogCommand(CommandProcessor):
+    """To implement the configure_job_log command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.CONFIGURE_JOB_LOG
+
+        """
+        return AdminCommandNames.CONFIGURE_JOB_LOG
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the configure_job_log command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: configure_job_log command message
+
+        """
+        engine = fl_ctx.get_engine()
+        try:
+            dynamic_log_config(data, engine.get_workspace(), fl_ctx.get_job_id())
+        except Exception as e:
+            return secure_format_exception(e)
+
+
 class AdminCommands(object):
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
@@ -257,6 +287,7 @@ class AdminCommands(object):
         ShowStatsCommand(),
         ShowErrorsCommand(),
         ResetErrorsCommand(),
+        ConfigureJobLogCommand(),
     ]
 
     @staticmethod
