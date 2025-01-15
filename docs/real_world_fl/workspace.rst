@@ -21,7 +21,7 @@ Server
         startup/
             authorization.json
             fed_server.json
-            log.config
+            log_config.json
             readme.txt
             rootCA.pem
             server_context.tenseal
@@ -89,7 +89,7 @@ Client
             client.crt
             client.key
             fed_client.json
-            log.config
+            log_config.json
             readme.txt
             rootCA.pem
             signature.pkl

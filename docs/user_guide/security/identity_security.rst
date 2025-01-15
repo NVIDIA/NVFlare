@@ -200,6 +200,7 @@ Command Categories
         AC.START_APP: CommandCategory.MANAGE_JOB,
         AC.DELETE_JOB: CommandCategory.MANAGE_JOB,
         AC.DELETE_WORKSPACE: CommandCategory.MANAGE_JOB,
+        AC.CONFIGURE_JOB_LOG: CommandCategory.MANAGE_JOB,
     
         AC.CHECK_STATUS: CommandCategory.VIEW,
         AC.SHOW_STATS: CommandCategory.VIEW,
@@ -213,6 +214,7 @@ Command Categories
         AC.REMOVE_CLIENT: CommandCategory.OPERATE,
         AC.SET_TIMEOUT: CommandCategory.OPERATE,
         AC.CALL: CommandCategory.OPERATE,
+        AC.CONFIGURE_SITE_LOG: CommandCategory.OPERATE,
     
         AC.SHELL_CAT: CommandCategory.SHELL_COMMANDS,
         AC.SHELL_GREP: CommandCategory.SHELL_COMMANDS,

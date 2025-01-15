@@ -40,7 +40,7 @@ Custom FL applications can contain the folders:
 
  #. **custom**: contains any custom components (custom Python code)
  #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
- #. **resources**: contains the logger config (``log.config``)
+ #. **resources**: contains the logger config (``log_config.json``)
 
 Let's get started. First clone the repo, if you haven't already:
 
