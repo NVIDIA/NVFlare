@@ -20,28 +20,30 @@ and jobs that can then be directly used in a real production deployment.
 Command Usage
 ***********************
 
-.. code-block::
+.. code-block:: shell
 
-    usage: nvflare simulator [-h] -w WORKSPACE [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] job_folder
+    $ nvflare simulator -h
+    usage: nvflare simulator [-h] [-w WORKSPACE] [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] [-m MAX_CLIENTS] [--end_run_for_all] job_folder
 
     positional arguments:
-    job_folder
+        job_folder
 
-    optional arguments:
-    -h, --help             show this help message and exit
-    -w WORKSPACE, --workspace WORKSPACE
-                           WORKSPACE folder
-    -n N_CLIENTS, --n_clients N_CLIENTS
-                           number of clients
-    -c CLIENTS, --clients CLIENTS
-                           client names list
-    -t THREADS, --threads THREADS
-                           number of parallel running clients
-    -gpu GPU, --gpu GPU
-                           list of GPU Device Ids, comma separated
-    -m MAX_CLIENTS, --max_clients MAX_CLIENTS
-                           maximum number of clients
+    options:
+        -h, --help            show this help message and exit
+        -w WORKSPACE, --workspace WORKSPACE
+                            WORKSPACE folder
+        -n N_CLIENTS, --n_clients N_CLIENTS
+                            number of clients
+        -c CLIENTS, --clients CLIENTS
+                            client names list
+        -t THREADS, --threads THREADS
+                            number of parallel running clients
+        -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
+        -m MAX_CLIENTS, --max_clients MAX_CLIENTS
+                            max number of clients
+        --end_run_for_all     flag to indicate if running END_RUN event for all clients
 
+    
 *****************
 Command examples
 *****************
