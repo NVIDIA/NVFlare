@@ -18,6 +18,8 @@ import shutil
 import uuid
 from typing import Dict, List
 
+from flask.cli import F
+
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -169,6 +171,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     handler_func=self.pull_file,
                     authz_func=self.authorize_job_file,
                     client_cmd=ftd.PULL_BINARY_FQN,
+                    visible=False,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB_COMPONENTS,
