@@ -274,6 +274,8 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
 
     def _modify_error_sender(self, section: dict, client: Participant):
+        if not isinstance(section, dict):
+            return section
         allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, False)
         if not allow:
             components = section.get("components")
