@@ -102,7 +102,7 @@ local_client_resources: |
           "id": "error_log_sender",
           "path": "nvflare.app_common.logging.log_sender.ErrorLogSender",
           "args": {}
-      },
+      }
     ]
   }
 
@@ -236,7 +236,7 @@ local_server_resources: |
               "id": "log_receiver",
               "path": "nvflare.app_common.logging.log_receiver.LogReceiver",
               "args": {}
-          },
+          }
       ]
   }
 
