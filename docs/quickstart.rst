@@ -247,12 +247,12 @@ Basic usage for the :ref:`FL Simulator <fl_simulator>` is available with ``nvfla
 .. code-block:: shell
 
   $ nvflare simulator -h
-  usage: nvflare simulator [-h] [-w WORKSPACE] [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] [-m MAX_CLIENTS] job_folder
-  
+  usage: nvflare simulator [-h] [-w WORKSPACE] [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] [-m MAX_CLIENTS] [--end_run_for_all] job_folder
+
   positional arguments:
     job_folder
-  
-  optional arguments:
+
+  options:
     -h, --help            show this help message and exit
     -w WORKSPACE, --workspace WORKSPACE
                           WORKSPACE folder
@@ -265,6 +265,7 @@ Basic usage for the :ref:`FL Simulator <fl_simulator>` is available with ``nvfla
     -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
     -m MAX_CLIENTS, --max_clients MAX_CLIENTS
                           max number of clients
+    --end_run_for_all     flag to indicate if running END_RUN event for all clients
 
 
 Before we get into the Simulator, we'll walk through a few additional setup steps in the next section required
@@ -328,7 +329,7 @@ and codes, logs of the output, site and global models, cross-site validation res
   /tmp/nvflare/jobs/workdir
   ├── server
   │   ├── local
-  │   │   └── log.config
+  │   │   └── log_config.json
   │   ├── log.txt
   │   ├── pool_stats
   │   │   └── simulator_cell_stats.json
@@ -347,7 +348,7 @@ and codes, logs of the output, site and global models, cross-site validation res
   ├── site-1
   │   ├── cifar_net.pth
   │   ├── local
-  │   │   └── log.config
+  │   │   └── log_config.json
   │   ├── log.txt
   │   ├── simulate_job
   │   │   ├── app_site-1
@@ -358,7 +359,7 @@ and codes, logs of the output, site and global models, cross-site validation res
   ├── site-2
   │   ├── cifar_net.pth
   │   ├── local
-  │   │   └── log.config
+  │   │   └── log_config.json
   │   ├── log.txt
   │   ├── simulate_job
   │   │   ├── app_site-2

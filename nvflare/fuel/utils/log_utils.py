@@ -262,6 +262,42 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
     logging.config.dictConfig(dict_config)
 
 
+def dynamic_log_config(config: str, workspace: Workspace, job_id: str = None):
+    # Dynamically configure log given a config (filepath, levelname, levelnumber, 'reload'), apply the config to the proper locations.
+    if not isinstance(config, str):
+        raise ValueError(
+            f"Unsupported config type. Expect config to be string filepath, levelname, levelnumber, or 'reload' but got {type(config)}"
+        )
+
+    if config == "reload":
+        config = workspace.get_log_config_file_path()
+
+    if os.path.isfile(config):
+        # Read confg file
+        with open(config, "r") as f:
+            dict_config = json.load(f)
+
+        if job_id:
+            dir_path = workspace.get_run_dir(job_id)
+        else:
+            dir_path = workspace.get_root_dir()
+
+        apply_log_config(dict_config, dir_path)
+
+    else:
+        # Set level of root logger based on levelname or levelnumber
+        if config.isdigit():
+            level = int(config)
+            if not (0 <= level <= 50):
+                raise ValueError(f"Invalid logging level: {level}")
+        else:
+            level = getattr(logging, config.upper(), None)
+            if level is None:
+                raise ValueError(f"Invalid logging level: {config}")
+
+        logging.getLogger().setLevel(level)
+
+
 def add_log_file_handler(log_file_name):
     root_logger = logging.getLogger()
     main_handler = root_logger.handlers[0]
