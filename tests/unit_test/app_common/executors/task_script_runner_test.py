@@ -32,7 +32,7 @@ class TestTaskScriptRunner(unittest.TestCase):
         # to ensure test correctness
         build_dir = os.path.join(self.nvflare_root, "build")
         if os.path.exists(build_dir):
-            shutil.rmtree(build_dir)
+            shutil.rmtree(build_dir, ignore_errors=True)
 
     def test_app_scripts_and_args(self):
         script_path = "nvflare/cli.py"
