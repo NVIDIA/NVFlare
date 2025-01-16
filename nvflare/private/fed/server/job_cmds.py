@@ -121,6 +121,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     authz_func=self.authorize_job,
                 ),
                 CommandSpec(
+                    name=AdminCommandNames.LIST_JOB,
+                    description="list additional components of specified job",
+                    usage=f"{AdminCommandNames.LIST_JOB} job_id",
+                    handler_func=self.list_job_components,
+                    authz_func=self.authorize_job,
+                ),
+                CommandSpec(
                     name=AdminCommandNames.DELETE_JOB,
                     description="delete a job and persisted workspace",
                     usage=f"{AdminCommandNames.DELETE_JOB} job_id",
@@ -170,6 +177,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     authz_func=self.authorize_job_file,
                     client_cmd=ftd.PULL_BINARY_FQN,
                     visible=False,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.DOWNLOAD_JOB_COMPONENTS,
+                    description="download additional components for a specified job",
+                    usage=f"{AdminCommandNames.DOWNLOAD_JOB_COMPONENTS} job_id",
+                    handler_func=self.download_job_components,
+                    client_cmd=ftd.PULL_FOLDER_FQN,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.APP_COMMAND,
@@ -484,6 +498,39 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
                 )
 
+    def list_job_components(self, conn: Connection, args: List[str]):
+        if len(args) < 2:
+            conn.append_error("Usage: list_job_components job_id", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
+            return
+
+        job_id = conn.get_prop(self.JOB_ID)
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            raise TypeError(
+                f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+            )
+        with engine.new_context() as fl_ctx:
+            list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
+            if list_of_data:
+                system_components = {"workspace", "meta", "scheduled", "data"}
+                filtered_data = [item for item in list_of_data if item not in system_components]
+                if filtered_data:
+                    data_str = ", ".join(filtered_data)
+                    conn.append_string(data_str)
+                    conn.append_success(
+                        "", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: filtered_data})
+                    )
+                else:
+                    conn.append_error(
+                        "No additional job components found.",
+                        meta=make_meta(MetaStatusValue.NO_JOB_COMPONENTS, "No additional job components found."),
+                    )
+            else:
+                conn.append_error(
+                    f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
+                )
+
     def abort_job(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
         job_runner = engine.job_runner
@@ -710,6 +757,51 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     conn,
                     tx_id=tx_id,
                     folder_name=job_id,
+                    download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE,
+                )
+            except Exception as e:
+                secure_log_traceback()
+                self.logger.error(f"exception downloading job {job_id}: {secure_format_exception(e)}")
+                self._clean_up_download(conn, tx_id)
+                conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+
+    def download_job_components(self, conn: Connection, args: List[str]):
+        """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
+
+        Based on job download but downloads the additional components for a job that job download does
+        not download.
+        """
+        job_id = args[1]
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            self.logger.error(
+                f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+            )
+            conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+            return
+
+        # It is possible that the same job is downloaded in multiple sessions at the same time.
+        # To allow this, we use a separate sub-folder in the download_dir for each download.
+        # This sub-folder is named with a transaction ID (tx_id), which is a UUID.
+        # The folder path for download the job is: <download_dir>/<tx_id>/<job_id>.
+        tx_id = str(uuid.uuid4())  # generate a new tx_id
+        job_download_dir = self.tx_path(conn, tx_id)  # absolute path of the job download dir.
+        with engine.new_context() as fl_ctx:
+            try:
+                list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
+                if list_of_data:
+                    job_components = [
+                        item for item in list_of_data if item not in {"workspace", "meta", "scheduled", "data"}
+                    ]
+                for job_component in job_components:
+                    job_def_manager.get_storage_for_download(
+                        job_id + "_components", job_download_dir, job_component, job_component, fl_ctx
+                    )
+                self.download_folder(
+                    conn,
+                    tx_id=tx_id,
+                    folder_name=job_id + "_components",
                     download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE,
                 )
             except Exception as e:

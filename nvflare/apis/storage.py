@@ -157,6 +157,22 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
+    def list_components_of_object(self, uri: str) -> List[str]:
+        """Gets all components of the specified object.
+
+        Args:
+            uri: URI of the object
+
+        Returns:
+            list of component names
+
+        Raises StorageException when:
+            - invalid args
+
+        """
+        pass
+
+    @abstractmethod
     def get_data(self, uri: str, component_name: str = DATA) -> bytes:
         """Gets data of the specified object.
 
