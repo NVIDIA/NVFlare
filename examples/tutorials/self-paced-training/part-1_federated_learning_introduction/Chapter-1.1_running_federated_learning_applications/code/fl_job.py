@@ -18,28 +18,23 @@ from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
-    n_clients = 2
+    n_clients = 5
     num_rounds = 2
 
     import os, sys
     
+    train_script = "src/client.py"
 
-    try: 
-        train_script = "src/client.py"
+    job = FedAvgJob(
+        name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork()
+    )
 
-        job = FedAvgJob(
-            name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork()
+    # Add clients
+    for i in range(n_clients):
+        executor = ScriptRunner(
+            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
+        job.to(executor, f"site-{i + 1}")
 
-        # Add clients
-        for i in range(n_clients):
-            executor = ScriptRunner(
-                script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-            )
-            job.to(executor, f"site-{i + 1}")
-
-        # job.export_job("/tmp/nvflare/jobs/job_config")
-        job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
-    except:
-        print(os.path.abspath(os.path.curdir))
-
+    # job.export_job("/tmp/nvflare/jobs/job_config")
+    job.simulator_run("/tmp/nvflare/jobs/workdir")

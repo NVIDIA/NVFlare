@@ -23,7 +23,6 @@ from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 import nvflare.client as flare
-from nvflare.client.tracking import SummaryWriter
 
 DATASET_PATH = "/tmp/nvflare/data"
 
@@ -55,10 +54,14 @@ def main():
     
     print("number of loaders = ", n_loaders)
 
-    summary_writer = SummaryWriter()
+    round = 0
+    last_loss = 0
     while flare.is_running():
         input_model = flare.receive()
-        print(f"current_round={input_model.current_round}")
+        round=input_model.current_round
+        site_name = input_model.meta["site_name"]
+
+        print(f"\n\nsite_name={site_name}, current_round={round + 1}\n ")
 
         model.load_state_dict(input_model.params)
         model.to(device)
@@ -66,8 +69,10 @@ def main():
         steps = epochs * n_loaders
         for epoch in range(epochs):
             running_loss = 0.0
+
             for i, batch in enumerate(train_loader):
                 images, labels = batch[0].to(device), batch[1].to(device)
+      
                 optimizer.zero_grad()
 
                 predictions = model(images)
@@ -75,12 +80,14 @@ def main():
                 cost.backward()
                 optimizer.step()
 
-                running_loss += cost.cpu().detach().numpy() / images.size()[0]
+                running_loss += cost.cpu().detach().numpy() / batch_size
+                
                 if i % 3000 == 0:
-                    print(f"Epoch: {epoch}/{epochs}, Iteration: {i}, Loss: {running_loss / 3000}")
-                    global_step = input_model.current_round * steps + epoch * n_loaders + i
-                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
+                    print(f"Round: {round + 1}, Epoch: {epoch}/{epochs}, batch: {i+1}, Loss: {running_loss / 3000}")
                     running_loss = 0.0
+
+            last_loss = {running_loss / (i+1)}
+            print(f"site: {site_name}, round: {round + 1}, Epoch: {epoch}/{epochs}, batch: {i+1}, Loss: {last_loss}")
 
         print("Finished Training")
 
@@ -93,6 +100,23 @@ def main():
         )
 
         flare.send(output_model)
+
+    print(f"\n"
+          f"Result Summary\n"
+           "    Training parameters:\n" 
+           "       number of clients = 5\n" 
+          f"       round = {round + 1},\n"
+          f"       batch_size = {batch_size},\n"
+          f"       epochs = {epochs},\n"
+          f"       lr = {lr},\n"
+          f"       total data batches = {n_loaders},\n"
+          f"    Metrics: last_loss = {last_loss}\n")
+
+
+
+        
+
+        
 
 
 if __name__ == "__main__":
