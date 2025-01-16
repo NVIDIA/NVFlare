@@ -97,6 +97,11 @@ local_client_resources: |
         "id": "process_launcher",
         "path": "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
         "args": {}
+      },
+      {
+          "id": "error_log_sender",
+          "path": "nvflare.app_common.logging.log_sender.ErrorLogSender",
+          "args": {}
       }
     ]
   }
@@ -225,6 +230,11 @@ local_server_resources: |
           {
               "id": "process_launcher",
               "path": "nvflare.app_common.job_launcher.server_process_launcher.ServerProcessJobLauncher",
+              "args": {}
+          },
+          {
+              "id": "log_receiver",
+              "path": "nvflare.app_common.logging.log_receiver.LogReceiver",
               "args": {}
           }
       ]

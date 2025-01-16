@@ -254,7 +254,11 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
 
         ctx.build_from_template(
-            dest_dir, TemplateSectionKey.LOCAL_CLIENT_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT
+            dest_dir,
+            TemplateSectionKey.LOCAL_CLIENT_RESOURCES,
+            ProvFileName.RESOURCES_JSON_DEFAULT,
+            content_modify_cb=self._modify_error_sender,
+            client=client,
         )
 
         ctx.build_from_template(
@@ -268,6 +272,20 @@ class StaticFileBuilder(Builder):
         # workspace folder file
         dest_dir = ctx.get_ws_dir(client)
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
+
+    def _modify_error_sender(self, section: dict, client: Participant):
+        if not isinstance(section, dict):
+            return section
+        allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, False)
+        if not allow:
+            components = section.get("components")
+            assert isinstance(components, list)
+            for c in components:
+                if c["id"] == "error_log_sender":
+                    components.remove(c)
+                    break
+
+        return section
 
     @staticmethod
     def _check_host_name(host_name: str, server: Participant) -> str:
