@@ -52,6 +52,7 @@ class MetaKey(object):
     DATA_TYPE = "data_type"
     JOB_META = "job_meta"
     JOB_DATA = "job_data"
+    JOB_COMPONENTS = "job_components"
     WORKSPACE = "workspace"
     JOB_DOWNLOAD_URL = "job_download_url"
     APP_NAME = "app_name"
@@ -91,6 +92,7 @@ class MetaStatusValue(object):
     JOB_NOT_RUNNING = "job_not_running"
     CLIENTS_RUNNING = "clients_running"
     NO_JOBS = "no_jobs"
+    NO_JOB_COMPONENTS = "no_job_compoents"
     NO_REPLY = "no_reply"
     NO_CLIENTS = "no_clients"
 
