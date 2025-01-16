@@ -44,6 +44,7 @@ class PropKey:
     ADMIN_PORT = "admin_port"
     FED_LEARN_PORT = "fed_learn_port"
     DOCKER_COMM_PORT = "docker_comm_port"
+    ALLOW_ERROR_SENDING = "allow_error_sending"
     CONN_SECURITY = "connection_security"
     CUSTOM_CA_CERT = "custom_ca_cert"
 
