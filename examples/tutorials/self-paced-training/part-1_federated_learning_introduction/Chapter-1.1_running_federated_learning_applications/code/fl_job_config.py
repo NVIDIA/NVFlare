@@ -34,4 +34,10 @@ if __name__ == "__main__":
         )
         job.to(executor, f"site-{i + 1}")
 
-    job.simulator_run("/tmp/nvflare/jobs/workdir")
+    
+    job_config_dir =  "/tmp/nvflare/jobs/job_config"
+    
+    print(f"create job config at {job_config_dir}/fedavg")
+
+    job.export_job(job_config_dir)
+    
