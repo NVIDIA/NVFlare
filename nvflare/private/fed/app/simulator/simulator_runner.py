@@ -99,7 +99,7 @@ class SimulatorRunner(FLComponent):
         self.n_clients = n_clients
         self.threads = threads
         self.gpu = gpu
-        self.log_config = log_config
+        self.log_config = None
         self.max_clients = max_clients
         self.end_run_for_all = end_run_for_all
 
@@ -125,6 +125,8 @@ class SimulatorRunner(FLComponent):
                 f" {os.path.join(running_dir, self.workspace)}"
             )
         self.workspace = os.path.join(running_dir, self.workspace)
+        if log_config:
+            self.log_config = os.path.join(running_dir, log_config)
 
     def _generate_args(
         self,
