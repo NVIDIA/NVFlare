@@ -103,8 +103,33 @@ class ProvisionContext(dict):
     def json_load_template_section(self, section_key: str):
         return json.loads(self.get_template_section(section_key))
 
-    def build_from_template(self, dest_dir: str, temp_section: str, file_name, replacement=None, mode="t", exe=False):
+    def build_from_template(
+        self,
+        dest_dir: str,
+        temp_section: str,
+        file_name,
+        replacement=None,
+        mode="t",
+        exe=False,
+        content_modify_cb=None,
+        **cb_kwargs,
+    ):
+        """Build a file from a template section and writes it to the specified location.
+
+        Args:
+            dest_dir: destination directory
+            temp_section: template section key
+            file_name: file name
+            replacement: replacement dict
+            mode: file mode
+            exe: executable
+            content_modify_cb: content modification callback, can be included to take the section content as the first argument and return the modified content
+            cb_kwargs: additional keyword arguments for the callback
+
+        """
         section = self.get_template_section(temp_section)
         if replacement:
             section = utils.sh_replace(section, replacement)
+        if content_modify_cb:
+            section = content_modify_cb(section, **cb_kwargs)
         utils.write(os.path.join(dest_dir, file_name), section, mode, exe=exe)

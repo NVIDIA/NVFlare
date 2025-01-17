@@ -140,6 +140,7 @@ class StaticFileBuilder(Builder):
         server_0["name"] = project.name
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        communication_port = server.get_prop(CtxKey.DOCKER_COMM_PORT)
         server_0["service"]["target"] = f"{server.name}:{fed_learn_port}"
         server_0["service"]["scheme"] = self.scheme
         server_0["admin_host"] = server.name
@@ -155,6 +156,7 @@ class StaticFileBuilder(Builder):
         replacement_dict = {
             "admin_port": admin_port,
             "fed_learn_port": fed_learn_port,
+            "communication_port": communication_port,
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
             "org_name": server.org,
@@ -214,7 +216,14 @@ class StaticFileBuilder(Builder):
         config["servers"][0]["service"]["scheme"] = self.scheme
         config["servers"][0]["name"] = project.name
         config["servers"][0]["identity"] = server.name  # the official identity of the server
+        admin_port = ctx.get(CtxKey.ADMIN_PORT)
+        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        communication_port = client.get_prop(PropKey.DOCKER_COMM_PORT)
         replacement_dict = {
+            "admin_port": admin_port,
+            "fed_learn_port": fed_learn_port,
+            "communication_port": communication_port,
+            "comm_host_name": client.name + "-parent",
             "client_name": f"{client.subject}",
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
@@ -254,7 +263,11 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
 
         ctx.build_from_template(
-            dest_dir, TemplateSectionKey.LOCAL_CLIENT_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT
+            dest_dir,
+            TemplateSectionKey.LOCAL_CLIENT_RESOURCES,
+            ProvFileName.RESOURCES_JSON_DEFAULT,
+            content_modify_cb=self._modify_error_sender,
+            client=client,
         )
 
         ctx.build_from_template(
@@ -268,6 +281,20 @@ class StaticFileBuilder(Builder):
         # workspace folder file
         dest_dir = ctx.get_ws_dir(client)
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
+
+    def _modify_error_sender(self, section: dict, client: Participant):
+        if not isinstance(section, dict):
+            return section
+        allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, False)
+        if not allow:
+            components = section.get("components")
+            assert isinstance(components, list)
+            for c in components:
+                if c["id"] == "error_log_sender":
+                    components.remove(c)
+                    break
+
+        return section
 
     @staticmethod
     def _check_host_name(host_name: str, server: Participant) -> str:

@@ -181,9 +181,10 @@ class DockerJobLauncher(JobLauncherSpec):
 class ClientDockerJobLauncher(DockerJobLauncher):
     def get_command(self, job_meta, fl_ctx) -> (str, str):
         job_id = job_meta.get(JobConstants.JOB_ID)
+        client_name = fl_ctx.get_identity_name()
         command = generate_client_command(fl_ctx)
 
-        return f"client-{job_id}", command
+        return f"{client_name}-{job_id}", command
 
 
 class ServerDockerJobLauncher(DockerJobLauncher):

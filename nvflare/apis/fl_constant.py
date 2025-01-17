@@ -215,7 +215,9 @@ class AdminCommandNames(object):
     SUBMIT_JOB = "submit_job"
     LIST_JOBS = "list_jobs"
     GET_JOB_META = "get_job_meta"
+    LIST_JOB = "list_job"
     DOWNLOAD_JOB = "download_job"
+    DOWNLOAD_JOB_COMPONENTS = "download_job_components"
     DOWNLOAD_JOB_FILE = "download_job_file"
     ABORT_JOB = "abort_job"
     DELETE_JOB = "delete_job"
@@ -248,6 +250,8 @@ class AdminCommandNames(object):
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
     APP_COMMAND = "app_command"
+    CONFIGURE_JOB_LOG = "configure_job_log"
+    CONFIGURE_SITE_LOG = "configure_site_log"
 
 
 class ServerCommandNames(object):
