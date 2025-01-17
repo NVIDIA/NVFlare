@@ -14,6 +14,9 @@
 
 import json
 import os.path
+from functools import singledispatch
+
+import numpy as np
 
 from nvflare.apis.dxo import DataKind, from_shareable, get_leaf_dxos
 from nvflare.apis.event_type import EventType
@@ -21,6 +24,17 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.widget import Widget
+
+
+@singledispatch
+def to_serializable(val):
+    """Default json serializable method."""
+    return str(val)
+
+
+@to_serializable.register(np.float32)
+def ts_float32(val):
+    return np.float64(val)
 
 
 class ValidationJsonGenerator(Widget):
@@ -58,7 +72,6 @@ class ValidationJsonGenerator(Widget):
             if val_results:
                 try:
                     dxo = from_shareable(val_results)
-                    dxo.validate()
 
                     if dxo.data_kind == DataKind.METRICS:
                         if data_client not in self._val_results:
@@ -71,7 +84,6 @@ class ValidationJsonGenerator(Widget):
                             for err in errors:
                                 self.log_error(fl_ctx, f"Bad result from {data_client}: {err}")
                         for _sub_data_client, _dxo in leaf_dxos.items():
-                            _dxo.validate()
                             if _sub_data_client not in self._val_results:
                                 self._val_results[_sub_data_client] = {}
                             self._val_results[_sub_data_client][model_owner] = _dxo.data
@@ -93,4 +105,4 @@ class ValidationJsonGenerator(Widget):
 
             res_file_path = os.path.join(cross_val_res_dir, self._json_file_name)
             with open(res_file_path, "w") as f:
-                json.dump(self._val_results, f)
+                json.dump(self._val_results, f, default=to_serializable)
