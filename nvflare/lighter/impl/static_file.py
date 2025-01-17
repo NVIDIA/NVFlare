@@ -15,11 +15,20 @@
 import copy
 import json
 import os
+import shutil
 
 import yaml
 
 from nvflare.lighter import utils
-from nvflare.lighter.constants import CtxKey, OverseerRole, PropKey, ProvFileName, ProvisionMode, TemplateSectionKey
+from nvflare.lighter.constants import (
+    ConnSecurity,
+    CtxKey,
+    OverseerRole,
+    PropKey,
+    ProvFileName,
+    ProvisionMode,
+    TemplateSectionKey,
+)
 from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
@@ -104,6 +113,25 @@ class StaticFileBuilder(Builder):
         else:
             ctx[PropKey.OVERSEER_END_POINT] = f"{protocol}://{overseer.name}{api_root}"
 
+    @staticmethod
+    def _build_conn_properties(site: Participant, ctx: ProvisionContext, site_config: dict):
+        valid_values = [ConnSecurity.CLEAR, ConnSecurity.INSECURE, ConnSecurity.TLS, ConnSecurity.MTLS]
+        conn_security = site.get_prop_fb(PropKey.CONN_SECURITY)
+        if conn_security:
+            assert isinstance(conn_security, str)
+            conn_security = conn_security.lower()
+
+            if conn_security not in valid_values:
+                raise ValueError(f"invalid connection_security '{conn_security}': must be in {valid_values}")
+
+            if conn_security in [ConnSecurity.CLEAR, ConnSecurity.INSECURE]:
+                conn_security = ConnSecurity.INSECURE
+            site_config["connection_security"] = conn_security
+
+        custom_ca_cert = site.get_prop_fb(PropKey.CUSTOM_CA_CERT)
+        if custom_ca_cert:
+            shutil.copyfile(custom_ca_cert, os.path.join(ctx.get_kit_dir(site), ProvFileName.CUSTOM_CA_CERT_FILE_NAME))
+
     def _build_server(self, server: Participant, ctx: ProvisionContext):
         project = ctx.get_project()
         config = ctx.json_load_template_section(TemplateSectionKey.FED_SERVER)
@@ -112,17 +140,23 @@ class StaticFileBuilder(Builder):
         server_0["name"] = project.name
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        communication_port = server.get_prop(CtxKey.DOCKER_COMM_PORT)
         server_0["service"]["target"] = f"{server.name}:{fed_learn_port}"
         server_0["service"]["scheme"] = self.scheme
         server_0["admin_host"] = server.name
         server_0["admin_port"] = admin_port
 
         self._prepare_overseer_agent(server, config, OverseerRole.SERVER, ctx)
+
+        # set up connection props
+        self._build_conn_properties(server, ctx, server_0)
+
         utils.write(os.path.join(dest_dir, ProvFileName.FED_SERVER_JSON), json.dumps(config, indent=2), "t")
 
         replacement_dict = {
             "admin_port": admin_port,
             "fed_learn_port": fed_learn_port,
+            "communication_port": communication_port,
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
             "org_name": server.org,
@@ -182,7 +216,14 @@ class StaticFileBuilder(Builder):
         config["servers"][0]["service"]["scheme"] = self.scheme
         config["servers"][0]["name"] = project.name
         config["servers"][0]["identity"] = server.name  # the official identity of the server
+        admin_port = ctx.get(CtxKey.ADMIN_PORT)
+        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        communication_port = client.get_prop(PropKey.DOCKER_COMM_PORT)
         replacement_dict = {
+            "admin_port": admin_port,
+            "fed_learn_port": fed_learn_port,
+            "communication_port": communication_port,
+            "comm_host_name": client.name + "-parent",
             "client_name": f"{client.subject}",
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
@@ -192,6 +233,10 @@ class StaticFileBuilder(Builder):
         }
 
         self._prepare_overseer_agent(client, config, OverseerRole.CLIENT, ctx)
+
+        # set connection properties
+        client_conf = config["client"]
+        self._build_conn_properties(client, ctx, client_conf)
 
         utils.write(os.path.join(dest_dir, ProvFileName.FED_CLIENT_JSON), json.dumps(config, indent=2), "t")
 
@@ -218,7 +263,11 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
 
         ctx.build_from_template(
-            dest_dir, TemplateSectionKey.LOCAL_CLIENT_RESOURCES, ProvFileName.RESOURCES_JSON_DEFAULT
+            dest_dir,
+            TemplateSectionKey.LOCAL_CLIENT_RESOURCES,
+            ProvFileName.RESOURCES_JSON_DEFAULT,
+            content_modify_cb=self._modify_error_sender,
+            client=client,
         )
 
         ctx.build_from_template(
@@ -232,6 +281,20 @@ class StaticFileBuilder(Builder):
         # workspace folder file
         dest_dir = ctx.get_ws_dir(client)
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
+
+    def _modify_error_sender(self, section: dict, client: Participant):
+        if not isinstance(section, dict):
+            return section
+        allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, False)
+        if not allow:
+            components = section.get("components")
+            assert isinstance(components, list)
+            for c in components:
+                if c["id"] == "error_log_sender":
+                    components.remove(c)
+                    break
+
+        return section
 
     @staticmethod
     def _check_host_name(host_name: str, server: Participant) -> str:

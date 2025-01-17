@@ -154,7 +154,7 @@ class Communicator:
 
         self.conn_manager.register_message_receiver(app_id, receiver)
 
-    def add_connector(self, url: str, mode: Mode, secure: bool = False) -> str:
+    def add_connector(self, url: str, mode: Mode, secure: bool = False) -> (str, dict):
         """Load a connector. The driver is selected based on the URL
 
         Args:
@@ -163,7 +163,7 @@ class Communicator:
             secure: True if SSL is required.
 
         Returns:
-            A handle that can be used to delete connector
+            A tuple of (A handle that can be used to delete connector, connector params)
 
         Raises:
             CommError: If any errors
@@ -177,9 +177,9 @@ class Communicator:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
 
         params = parse_url(url)
-        return self.add_connector_advanced(driver_class(), mode, params, secure, False)
+        return self.add_connector_advanced(driver_class(), mode, params, secure, False), params
 
-    def start_listener(self, scheme: str, resources: dict) -> (str, str):
+    def start_listener(self, scheme: str, resources: dict) -> (str, str, dict):
         """Add and start a connector in passive mode on an address selected by the driver.
 
         Args:
@@ -187,7 +187,7 @@ class Communicator:
             resources: User specified resources like host and port ranges
 
         Returns:
-            A tuple with connector handle and connect url
+            A tuple with connector handle and connect url, and connection params
 
         Raises:
             CommError: If any errors like invalid host or port not available
@@ -205,7 +205,7 @@ class Communicator:
 
         handle = self.add_connector_advanced(driver_class(), Mode.PASSIVE, params, False, True)
 
-        return handle, connect_url
+        return handle, connect_url, params
 
     def add_connector_advanced(
         self, driver: Driver, mode: Mode, params: dict, secure: bool, start: bool = False
@@ -229,9 +229,7 @@ class Communicator:
         if self.local_endpoint.conn_props:
             params.update(self.local_endpoint.conn_props)
 
-        if secure:
-            params[DriverParams.SECURE] = secure
-
+        params[DriverParams.SECURE] = secure
         handle = self.conn_manager.add_connector(driver, params, mode)
 
         if not start:

@@ -32,7 +32,7 @@ from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCo
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
-from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant, new_cell_message
+from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.utils.app_deployer import AppDeployer
@@ -200,11 +200,11 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
             secure=secure,
         )
 
-        self.logger.info(f"got aux reply: {reply}")
-
         if len(reply) > 0:
+            self.logger.info(f"got aux reply: {reply}")
             return next(iter(reply.values()))
         else:
+            self.logger.debug("no reply from the server aux message response.")
             return Shareable()
 
     def stream_objects(
@@ -371,23 +371,6 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
     def get_client_name(self):
         return self.client.client_name
 
-    def _write_token_file(self, job_id, open_port):
-        token_file = os.path.join(self.args.workspace, EngineConstant.CLIENT_TOKEN_FILE)
-        if os.path.exists(token_file):
-            os.remove(token_file)
-        with open(token_file, "wt") as f:
-            f.write(
-                "%s\n%s\n%s\n%s\n%s\n%s\n"
-                % (
-                    self.client.token,
-                    self.client.ssid,
-                    job_id,
-                    self.client.client_name,
-                    open_port,
-                    list(self.client.servers.values())[0]["target"],
-                )
-            )
-
     def abort_app(self, job_id: str) -> str:
         status = self.client_executor.get_status(job_id)
         if status == ClientStatus.STOPPED:
@@ -466,6 +449,9 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
 
     def get_errors(self, job_id):
         return self.client_executor.get_errors(job_id)
+
+    def configure_job_log(self, job_id, config):
+        return self.client_executor.configure_job_log(job_id, config)
 
     def reset_errors(self, job_id):
         self.client_executor.reset_errors(job_id)
