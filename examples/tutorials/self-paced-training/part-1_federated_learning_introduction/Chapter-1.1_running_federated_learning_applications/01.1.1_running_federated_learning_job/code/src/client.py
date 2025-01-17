@@ -45,21 +45,21 @@ def main():
     flare.init()
     sys_info = flare.system_info()
     site_name = sys_info["site_name"]
-    
+
     data_path = os.path.join(DATASET_PATH, site_name)
 
-    train_dataset = CIFAR10( root=data_path, transform=transforms, download=True, train=True)
+    train_dataset = CIFAR10(root=data_path, transform=transforms, download=True, train=True)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     n_loaders = len(train_loader)
-    
+
     print("number of loaders = ", n_loaders)
 
     round = 0
     last_loss = 0
     while flare.is_running():
         input_model = flare.receive()
-        round=input_model.current_round
-  
+        round = input_model.current_round
+
         print(f"\n\nsite_name={site_name}, current_round={round + 1}\n ")
 
         model.load_state_dict(input_model.params)
@@ -71,7 +71,7 @@ def main():
 
             for i, batch in enumerate(train_loader):
                 images, labels = batch[0].to(device), batch[1].to(device)
-      
+
                 optimizer.zero_grad()
 
                 predictions = model(images)
@@ -80,12 +80,12 @@ def main():
                 optimizer.step()
 
                 running_loss += cost.cpu().detach().numpy() / batch_size
-                
+
                 if i % 3000 == 0:
                     print(f"Round: {round + 1}, Epoch: {epoch+1}/{epochs}, batch: {i+1}, Loss: {running_loss / 3000}")
                     running_loss = 0.0
 
-            last_loss = {running_loss / (i+1)}
+            last_loss = {running_loss / (i + 1)}
             print(f"site: {site_name}, round: {round + 1}, Epoch: {epoch+1}/{epochs}, batch: {i+1}, Loss: {last_loss}")
 
         print("Finished Training")
@@ -100,16 +100,18 @@ def main():
 
         flare.send(output_model)
 
-    print(f"\n"
-          f"Result Summary\n"
-           "    Training parameters:\n" 
-           "       number of clients = 5\n" 
-          f"       round = {round + 1},\n"
-          f"       batch_size = {batch_size},\n"
-          f"       epochs = {epochs},\n"
-          f"       lr = {lr},\n"
-          f"       total data batches = {n_loaders},\n"
-          f"    Metrics: last_loss = {last_loss}\n")
+    print(
+        f"\n"
+        f"Result Summary\n"
+        "    Training parameters:\n"
+        "       number of clients = 5\n"
+        f"       round = {round + 1},\n"
+        f"       batch_size = {batch_size},\n"
+        f"       epochs = {epochs},\n"
+        f"       lr = {lr},\n"
+        f"       total data batches = {n_loaders},\n"
+        f"    Metrics: last_loss = {last_loss}\n"
+    )
 
 
 if __name__ == "__main__":

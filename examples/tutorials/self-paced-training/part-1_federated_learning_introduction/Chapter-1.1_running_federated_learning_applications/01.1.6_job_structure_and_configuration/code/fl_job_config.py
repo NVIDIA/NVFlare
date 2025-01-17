@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,9 +23,7 @@ if __name__ == "__main__":
 
     train_script = "src/client.py"
 
-    job = FedAvgJob(
-        name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork()
-    )
+    job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
 
     # Add clients
     for i in range(n_clients):
@@ -34,10 +32,8 @@ if __name__ == "__main__":
         )
         job.to(executor, f"site-{i + 1}")
 
-    
-    job_config_dir =  "/tmp/nvflare/jobs/job_config"
-    
+    job_config_dir = "/tmp/nvflare/jobs/job_config"
+
     print(f"create job config at {job_config_dir}/fedavg")
 
     job.export_job(job_config_dir)
-    
