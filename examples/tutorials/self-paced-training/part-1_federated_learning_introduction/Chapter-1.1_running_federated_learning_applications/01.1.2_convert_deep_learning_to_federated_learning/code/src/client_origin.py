@@ -69,11 +69,11 @@ def main():
             running_loss += cost.cpu().detach().numpy() / batch_size
 
             if i % 3000 == 0:
-                print(f"Epoch: {epoch+1}/{epochs}, batch: {i+1}, Loss: {running_loss / 3000}")
+                print(f"Epoch: {epoch + 1}/{epochs}, batch: {i + 1}, Loss: {running_loss / 3000}")
                 running_loss = 0.0
 
         last_loss = {running_loss / (i + 1)}
-        print(f"Epoch: {epoch}/{epochs}, batch: {i+1}, Loss: {last_loss}")
+        print(f"Epoch: {epoch}/{epochs}, batch: {i + 1}, Loss: {last_loss}")
 
     print("Finished Training")
 
