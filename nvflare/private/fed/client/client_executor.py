@@ -319,9 +319,10 @@ class ProcessExecutor(ClientExecutor):
             configure_job_log command message
         """
         try:
+            fqcn = FQCN.join([self.client.client_name, job_id])
             request = new_cell_message({}, config)
             return_data = self.client.cell.send_request(
-                target=self._job_fqcn(job_id),
+                target=fqcn,
                 channel=CellChannel.CLIENT_COMMAND,
                 topic=AdminCommandNames.CONFIGURE_JOB_LOG,
                 request=request,

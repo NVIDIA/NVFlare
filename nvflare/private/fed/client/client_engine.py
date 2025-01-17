@@ -23,8 +23,8 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey
 from nvflare.private.event import fire_event
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
