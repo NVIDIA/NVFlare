@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.data_event.data_bus import DataBus
 
 from .api_spec import CLIENT_API_KEY, CLIENT_API_TYPE_KEY, APISpec
@@ -30,8 +31,43 @@ class ClientAPIType(Enum):
     EX_PROCESS_API = "EX_PROCESS_API"
 
 
+DEFAULT_CONFIG = f"config/{CLIENT_API_CONFIG}"
+
 client_api: Optional[APISpec] = None
 data_bus = DataBus()
+
+
+class FlareClientContext:
+    def __init__(self, rank: Optional[str] = None, config_file: str = None):
+        self.rank = rank
+        self.config_file = config_file if config_file else DEFAULT_CONFIG
+        self._client_api = None
+
+    def __enter__(self):
+        """Initialize the client API in the context."""
+        api_type_name = os.environ.get(CLIENT_API_TYPE_KEY, ClientAPIType.IN_PROCESS_API.value)
+        api_type = ClientAPIType(api_type_name)
+
+        if not self._client_api:
+            global client_api
+            client_api = self._create_client_api(api_type)
+            client_api.init(rank=self.rank)
+            self._client_api = client_api
+
+        return self._client_api
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Cleanup the client API when the context ends."""
+        if self._client_api:
+            self._client_api.clear()
+            self._client_api = None
+
+    def _create_client_api(self, api_type: ClientAPIType) -> APISpec:
+        """Creates a new client_api based on the provided API type."""
+        if api_type == ClientAPIType.IN_PROCESS_API:
+            return data_bus.get_data(CLIENT_API_KEY)
+        else:
+            return ExProcessClientAPI(config_file=self.config_file)
 
 
 def init(rank: Optional[str] = None):
@@ -51,7 +87,7 @@ def init(rank: Optional[str] = None):
         if api_type == ClientAPIType.IN_PROCESS_API:
             client_api = data_bus.get_data(CLIENT_API_KEY)
         else:
-            client_api = ExProcessClientAPI()
+            client_api = ExProcessClientAPI(config_file=DEFAULT_CONFIG)
         client_api.init(rank=rank)
     else:
         logging.warning("Warning: called init() more than once. The subsequence calls are ignored")

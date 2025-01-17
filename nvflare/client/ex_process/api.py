@@ -22,7 +22,6 @@ from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, from_file
-from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.client.flare_agent import FlareAgentException
 from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry
@@ -74,16 +73,17 @@ def _create_pipe_using_config(client_config: ClientConfig, section: str) -> Tupl
 
 
 class ExProcessClientAPI(APISpec):
-    def __init__(self):
-        self.process_model_registry = None
+    def __init__(self, config_file: str):
+        self.model_registry = None
         self.logger = get_obj_logger(self)
         self.receive_called = False
+        self.config_file = config_file
 
     def get_model_registry(self) -> ModelRegistry:
         """Gets the ModelRegistry."""
-        if self.process_model_registry is None:
+        if self.model_registry is None:
             raise RuntimeError("needs to call init method first")
-        return self.process_model_registry
+        return self.model_registry
 
     def init(self, rank: Optional[str] = None):
         """Initializes NVFlare Client API environment.
@@ -96,12 +96,11 @@ class ExProcessClientAPI(APISpec):
         if rank is None:
             rank = os.environ.get("RANK", "0")
 
-        if self.process_model_registry:
+        if self.model_registry:
             self.logger.warning("Warning: called init() more than once. The subsequence calls are ignored")
             return
 
-        config_file = f"config/{CLIENT_API_CONFIG}"
-        client_config = _create_client_config(config=config_file)
+        client_config = _create_client_config(config=self.config_file)
 
         flare_agent = None
         try:
@@ -133,7 +132,7 @@ class ExProcessClientAPI(APISpec):
                 )
                 flare_agent.start()
 
-            self.process_model_registry = ModelRegistry(client_config, rank, flare_agent)
+            self.model_registry = ModelRegistry(client_config, rank, flare_agent)
         except Exception as e:
             self.logger.error(f"flare.init failed: {e}")
             raise e
