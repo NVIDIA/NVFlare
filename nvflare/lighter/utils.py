@@ -180,29 +180,41 @@ def sign_all(content_folder, signing_pri_key):
     return signatures
 
 
-class YamlLoader(yaml.SafeLoader):
-
-    def __init__(self, stream):
-
-        self._root = os.path.split(stream.name)[0]
-        super(YamlLoader, self).__init__(stream)
-
-    def include(self, node):
-
-        filename = os.path.join(self._root, self.construct_scalar(node))
-        with open(filename, "r") as f:
-            return yaml.load(f, YamlLoader)
-
-
 def load_yaml(file):
-    if "!include" not in YamlLoader.yaml_constructors:
-        YamlLoader.add_constructor("!include", YamlLoader.include)
+
+    root = os.path.split(file)[0]
+    yaml_data = None
     if isinstance(file, str):
-        return yaml.load(open(file, "r"), YamlLoader)
+        yaml_data = yaml.safe_load(open(file, "r"))
     elif isinstance(file, bytes):
-        return yaml.load(file, YamlLoader)
-    else:
-        return None
+        yaml_data = yaml.safe_load(file)
+
+    yaml_data = load_yaml_include(root, yaml_data)
+
+    return yaml_data
+
+
+def load_yaml_include(root, yaml_data):
+    new_data = {}
+    for k, v in yaml_data.items():
+        if k == "include":
+            if isinstance(v, str):
+                includes = [v]
+            elif isinstance(v, list):
+                includes = v
+            for item in includes:
+                new_data.update(load_yaml(os.path.join(root, item)))
+        elif isinstance(v, list):
+            new_list = []
+            for item in v:
+                if isinstance(item, dict):
+                    item = load_yaml_include(root, item)
+                new_list.append(item)
+            new_data[k] = new_list
+        else:
+            new_data[k] = v
+
+    return new_data
 
 
 def sh_replace(src, mapping_dict):

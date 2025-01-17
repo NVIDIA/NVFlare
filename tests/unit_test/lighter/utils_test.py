@@ -145,7 +145,19 @@ class TestSignFolder:
         os.unlink("root.crt")
         shutil.rmtree(folder)
 
+    def _get_participant(self, name, participants):
+        for p in participants:
+            if p.get("name") == name:
+                return p
+
     def test_load_yaml(self):
         dir_path = os.path.dirname(os.path.realpath(__file__))
         data = load_yaml(os.path.join(dir_path, "0.yml"))
-        assert data.get("server").get("server_name") == "server"
+
+        assert data.get("server_name") == "server"
+
+        participant = self._get_participant("server", data.get("participants"))
+        assert participant.get("server_name") == "server"
+
+        participant = self._get_participant("client", data.get("participants"))
+        assert participant.get("client_name") == "client-1"
