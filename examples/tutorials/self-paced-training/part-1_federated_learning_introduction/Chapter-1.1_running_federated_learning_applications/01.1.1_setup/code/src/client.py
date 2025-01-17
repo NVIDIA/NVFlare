@@ -44,11 +44,11 @@ def main():
 
     flare.init()
     sys_info = flare.system_info()
-    client_name = sys_info["site_name"]
+    site_name = sys_info["site_name"]
+    
+    data_path = os.path.join(DATASET_PATH, site_name)
 
-    train_dataset = CIFAR10(
-        root=os.path.join(DATASET_PATH, client_name), transform=transforms, download=True, train=True
-    )
+    train_dataset = CIFAR10( root=data_path, transform=transforms, download=True, train=True)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     n_loaders = len(train_loader)
     
@@ -59,8 +59,7 @@ def main():
     while flare.is_running():
         input_model = flare.receive()
         round=input_model.current_round
-        site_name = input_model.meta["site_name"]
-
+  
         print(f"\n\nsite_name={site_name}, current_round={round + 1}\n ")
 
         model.load_state_dict(input_model.params)
@@ -111,12 +110,6 @@ def main():
           f"       lr = {lr},\n"
           f"       total data batches = {n_loaders},\n"
           f"    Metrics: last_loss = {last_loss}\n")
-
-
-
-        
-
-        
 
 
 if __name__ == "__main__":
