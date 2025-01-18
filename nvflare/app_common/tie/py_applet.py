@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import multiprocessing
-import os
 import sys
 import threading
 import time
 from abc import ABC, abstractmethod
 
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.utils.log_utils import add_log_file_handler, configure_logging
+from nvflare.fuel.utils.log_utils import configure_logging
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .applet import Applet
@@ -94,9 +93,7 @@ class _PyStarter:
             if not self.in_process:
                 # enable logging
                 run_dir = self.workspace.get_run_dir(self.job_id)
-                log_file_name = os.path.join(run_dir, "applet_log.txt")
-                configure_logging(self.workspace)
-                add_log_file_handler(log_file_name)
+                configure_logging(self.workspace, dir_path=run_dir, file_prefix="applet")
             self.runner.start(app_ctx)
 
             # Note: run_func does not return until it runs to completion!

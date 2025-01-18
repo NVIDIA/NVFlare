@@ -232,6 +232,8 @@ class AdminCommandNames(object):
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
     APP_COMMAND = "app_command"
+    CONFIGURE_JOB_LOG = "configure_job_log"
+    CONFIGURE_SITE_LOG = "configure_site_log"
 
 
 class ServerCommandNames(object):
@@ -365,7 +367,7 @@ class WorkspaceConstants:
     SITE_FOLDER_NAME = "local"
     CUSTOM_FOLDER_NAME = "custom"
 
-    LOGGING_CONFIG = "log.config"
+    LOGGING_CONFIG = "log_config.json"
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
     AUDIT_LOG = "audit.log"
     LOG_FILE_NAME = "log.txt"

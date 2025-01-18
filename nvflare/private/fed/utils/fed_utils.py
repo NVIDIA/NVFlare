@@ -14,13 +14,10 @@
 import copy
 import importlib
 import json
-import logging
-import logging.config
 import os
 import pkgutil
 import sys
 import warnings
-from logging.handlers import RotatingFileHandler
 from typing import Any, List, Union
 
 from nvflare.apis.app_validation import AppValidator
@@ -49,15 +46,6 @@ from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
-
-
-def add_logfile_handler(log_file):
-    root_logger = logging.getLogger()
-    main_handler = root_logger.handlers[0]
-    file_handler = RotatingFileHandler(log_file, maxBytes=20 * 1024 * 1024, backupCount=10)
-    file_handler.setLevel(main_handler.level)
-    file_handler.setFormatter(main_handler.formatter)
-    root_logger.addHandler(file_handler)
 
 
 def _check_secure_content(site_type: str) -> List[str]:
@@ -180,12 +168,6 @@ def create_job_processing_context_properties(workspace: Workspace, job_id: str) 
 
 def find_char_positions(s, ch):
     return [i for i, c in enumerate(s) if c == ch]
-
-
-def configure_logging(workspace: Workspace):
-    log_config_file_path = workspace.get_log_config_file_path()
-    assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
 
 
 def get_scope_info():

@@ -14,7 +14,6 @@
 
 """FL Admin commands."""
 
-import logging
 import time
 from abc import ABC, abstractmethod
 from typing import List
@@ -30,6 +29,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
+from nvflare.fuel.utils.log_utils import dynamic_log_config, get_obj_logger
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 from nvflare.widgets.widget import WidgetID
@@ -41,7 +41,7 @@ class CommandProcessor(ABC):
     """The CommandProcessor is responsible for processing a command from parent process."""
 
     def __init__(self) -> None:
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     @abstractmethod
     def get_command_name(self) -> str:
@@ -423,6 +423,32 @@ class ServerStateCommand(CommandProcessor):
         return "Success"
 
 
+class ConfigureJobLogCommand(CommandProcessor):
+    """To implement the configure_job_log command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.CONFIGURE_JOB_LOG
+
+        """
+        return AdminCommandNames.CONFIGURE_JOB_LOG
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the configure_job_log command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        """
+        engine = fl_ctx.get_engine()
+        try:
+            dynamic_log_config(data, engine.get_workspace(), fl_ctx.get_job_id())
+        except Exception as e:
+            return secure_format_exception(e)
+
+
 class AppCommandProcessor(CommandProcessor):
     def get_command_name(self) -> str:
         """To get the command name.
@@ -480,6 +506,7 @@ class ServerCommands(object):
         ResetErrorsCommand(),
         HeartbeatCommand(),
         ServerStateCommand(),
+        ConfigureJobLogCommand(),
         AppCommandProcessor(),
     ]
 
