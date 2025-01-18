@@ -36,16 +36,11 @@ class FedAvgV2(BaseFedAvg):
         initial_model (nn.Module, optional): initial PyTorch model
     """
 
-    def __init__(
-        self,
-        *args,
-        stop_cond: str = None,
-        save_filename: str = "FL_global_model.pt",
-        initial_model=None,
-        **kwargs):
+    def __init__(self, *args, stop_cond: str, save_filename: str = "FL_global_model.pt", initial_model=None, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.stop_cond = stop_cond
+
         if stop_cond:
             self.stop_condition = parse_compare_criteria(stop_cond)
         else:
@@ -76,10 +71,7 @@ class FedAvgV2(BaseFedAvg):
 
             clients = self.sample_clients(self.num_clients)
 
-            results : List[FLModel] = self.send_model_and_wait(targets=clients, data=model)
-            for r in results:
-                print(f"metrics = ", r.metrics)
-
+            results: List[FLModel] = self.send_model_and_wait(targets=clients, data=model)
             aggregate_results = self.aggregate(
                 results, aggregate_fn=self.aggregate_fn
             )  # using default aggregate_fn with `WeightedAggregationHelper`. Can overwrite self.aggregate_fn with signature Callable[List[FLModel], FLModel]
