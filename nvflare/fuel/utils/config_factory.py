@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import pathlib
 from typing import List, Optional, Tuple
@@ -20,10 +19,12 @@ from typing import List, Optional, Tuple
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
+from nvflare.fuel.utils.log_utils import get_module_logger
 
 
 class ConfigFactory:
-    logger = logging.getLogger(__qualname__)
+    logger = get_module_logger(__module__, __qualname__)
+
     OmegaConfLoader, omega_import_ok = optional_import(
         module="nvflare.fuel_opt.utils.omegaconf_loader", name="OmegaConfLoader"
     )

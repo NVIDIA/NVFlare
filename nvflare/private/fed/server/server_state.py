@@ -14,11 +14,11 @@
 
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.overseer_spec import SP
+from nvflare.fuel.utils.log_utils import get_module_logger
 
 ACTION = "_action"
 MESSAGE = "_message"
@@ -40,7 +40,7 @@ class ServerState(ABC):
     ABORT_CURRENT_RUN = {ACTION: ABORT_RUN, MESSAGE: "Abort current run"}
     IN_SERVICE = {ACTION: SERVICE, MESSAGE: "Server in service"}
 
-    logger = logging.getLogger("ServerState")
+    logger = get_module_logger(__module__, __qualname__)
 
     def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
         self.host = host
