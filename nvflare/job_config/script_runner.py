@@ -207,7 +207,6 @@ class BaseScriptRunner:
                     params_transfer_type=self._params_transfer_type,
                     from_nvflare_converter_id=self._from_nvflare_converter_id,
                     to_nvflare_converter_id=self._to_nvflare_converter_id,
-                    heartbeat_timeout=0,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
