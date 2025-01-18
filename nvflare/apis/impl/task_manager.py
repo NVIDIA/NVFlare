@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 from enum import Enum
 from typing import Tuple
 
 from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class TaskCheckStatus(Enum):
@@ -39,7 +39,7 @@ class TaskManager(object):
         app-defined props.
         """
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = get_obj_logger(self)
 
     def check_task_send(self, client_task: ClientTask, fl_ctx: FLContext) -> TaskCheckStatus:
         """Determine whether the task should be sent to the client.

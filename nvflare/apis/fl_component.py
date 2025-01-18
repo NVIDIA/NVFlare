@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-
 from nvflare.apis.utils.fl_context_utils import generate_log_message
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_traceback
 
 from .analytix import AnalyticsData, AnalyticsDataType
@@ -35,7 +34,7 @@ class FLComponent(StatePersistable):
         FLComponents have the capability to handle and fire events and contain various methods for logging.
         """
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = get_obj_logger(self)
 
     @property
     def name(self):

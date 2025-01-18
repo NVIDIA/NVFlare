@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import json
-import logging
 from typing import Dict, Optional
 
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 
@@ -37,7 +37,7 @@ class JsonConfig(Config):
 class JsonConfigLoader(ConfigLoader):
     def __init__(self):
         super(JsonConfigLoader, self).__init__(fmt=ConfigFormat.JSON)
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def load_config(self, file_path: str) -> Config:
         conf_dict = self._from_file(file_path)

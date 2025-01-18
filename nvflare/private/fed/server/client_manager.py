@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import threading
 import time
 import uuid
@@ -24,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessagePropKey
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, InternalFLContextKey
 from nvflare.private.fed.utils.identity_utils import IdentityVerifier, load_crt_bytes
 from nvflare.security.logging import secure_format_exception
@@ -46,7 +46,7 @@ class ClientManager:
         self.id_verifier = None
         self.lock = threading.Lock()
 
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def authenticate(self, request, context: FLContext) -> Optional[Client]:
         client = self.login_client(request, context)
