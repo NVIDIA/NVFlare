@@ -153,6 +153,20 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def list_components(self, jid: str, fl_ctx: FLContext) -> List[str]:
+        """Get list of all the components for the specified job.
+
+        Args:
+            jid (str): Job ID
+            fl_ctx (FLContext): FLContext information
+
+        Returns:
+            list of components
+
+        """
+        pass
+
+    @abstractmethod
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         """Set status of an existing Job.
 
