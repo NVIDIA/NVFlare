@@ -124,7 +124,7 @@ class ProvFileName:
     SUB_START_SH = "sub_start.sh"
     PRIVILEGE_YML = "privilege.yml"
     DOCKER_BUILD_SH = "docker_build.sh"
-    DOCKER_SH = "start_docker.sh"
+    DOCKER_SH = "docker.sh"
     GUNICORN_CONF_PY = "gunicorn.conf.py"
     FED_SERVER_JSON = "fed_server.json"
     FED_CLIENT_JSON = "fed_client.json"
