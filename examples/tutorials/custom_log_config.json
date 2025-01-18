@@ -6,7 +6,7 @@
             "()": "nvflare.fuel.utils.log_utils.BaseFormatter",
             "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s"
         },
-        "colorFormatter": {
+        "consoleFormatter": {
             "()": "nvflare.fuel.utils.log_utils.ColorFormatter",
             "fmt": "%(asctime)s - %(identity)s - %(name)s - %(levelname)s - %(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
@@ -29,7 +29,7 @@
         "consoleHandler": {
             "class": "logging.StreamHandler",
             "level": "DEBUG",
-            "formatter": "colorFormatter",
+            "formatter": "consoleFormatter",
             "filters": ["FLFilter"],
             "stream": "ext://sys.stdout"
         },
@@ -76,6 +76,9 @@
         "root": {
             "level": "INFO",
             "handlers": ["consoleHandler", "logFileHandler", "errorFileHandler", "jsonFileHandler", "FLFileHandler"]
+        },
+        "nvflare.app_common.aggregators": {
+            "level": "DEBUG"
         }
     }
 }
