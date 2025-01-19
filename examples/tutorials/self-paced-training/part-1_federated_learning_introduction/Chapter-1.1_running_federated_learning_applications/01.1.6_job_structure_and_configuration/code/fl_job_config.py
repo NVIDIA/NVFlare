@@ -12,28 +12,52 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+import os
+
+from src.fedavg import FedAvg
 from src.network import SimpleNetwork
 
-from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
-    n_clients = 5
-    num_rounds = 2
-
+    num_clients = 5
+    num_rounds = 5
+    job_name = "fedavg"
     train_script = "src/client.py"
 
-    job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
+    job = FedJob(name=job_name, min_clients=num_clients)
+
+    controller = FedAvg(
+        stop_cond="accuracy > 25",
+        save_filename="global_model.pt",
+        initial_model=SimpleNetwork(),
+        num_clients=num_clients,
+        num_rounds=num_rounds,
+    )
+
+    job.to_server(controller)
 
     # Add clients
-    for i in range(n_clients):
-        executor = ScriptRunner(
-            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-        )
-        job.to(executor, f"site-{i + 1}")
 
-    job_config_dir = "/tmp/nvflare/jobs/job_config"
+    executor_1 = ScriptRunner(script=train_script, script_args="--learning_rate 0.01 --batch_size 12")
+    job.to(executor_1, "site-1")
 
-    print(f"create job config at {job_config_dir}/fedavg")
+    executor_2 = ScriptRunner(script=train_script, script_args="--learning_rate 0.01 --batch_size 10")
+    job.to(executor_2, "site-2")
+
+    executor_3 = ScriptRunner(script=train_script, script_args="--learning_rate 0.001 --batch_size 8")
+    job.to(executor_3, "site-3")
+
+    executor_4 = ScriptRunner(script=train_script, script_args="--learning_rate 0.001 --batch_size 6")
+    job.to(executor_3, "site-4")
+
+    executor_5 = ScriptRunner(script=train_script, script_args="--learning_rate 0.0001 --batch_size 4")
+    job.to(executor_3, "site-5")
+
+    job_config_dir = "/tmp/nvflare/jobs/workdir"
+
+    print("job-config is at ", os.path.join(job_config_dir, job_name))
 
     job.export_job(job_config_dir)

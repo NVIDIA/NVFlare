@@ -19,7 +19,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from net import Net
+from network import SimpleNetwork
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -37,6 +37,7 @@ def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_path", type=str, default=CIFAR10_ROOT, nargs="?")
     parser.add_argument("--batch_size", type=int, default=4, nargs="?")
+    parser.add_argument("--learning_rate", type=float, default=0.001, nargs="?")
     parser.add_argument("--num_workers", type=int, default=1, nargs="?")
     parser.add_argument("--local_epochs", type=int, default=2, nargs="?")
     parser.add_argument("--model_path", type=str, default=f"{CIFAR10_ROOT}/cifar_net.pth", nargs="?")
@@ -52,6 +53,7 @@ def main():
     num_workers = args.num_workers
     local_epochs = args.local_epochs
     model_path = args.model_path
+    lr = args.learning_rate
 
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     trainset = torchvision.datasets.CIFAR10(root=dataset_path, train=True, download=True, transform=transform)
@@ -59,13 +61,13 @@ def main():
     testset = torchvision.datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-    net = Net()
+    net = SimpleNetwork()
     best_accuracy = 0.0
 
     # wraps evaluation logic into a method to re-use for
     #       evaluation on both trained and received model
     def evaluate(input_weights):
-        net = Net()
+        net = SimpleNetwork()
         net.load_state_dict(input_weights)
         # (optional) use GPU to speed things up
         net.to(DEVICE)
@@ -111,7 +113,7 @@ def main():
             net.load_state_dict(input_model.params)
 
             criterion = nn.CrossEntropyLoss()
-            optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+            optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.9)
 
             # (optional) use GPU to speed things up
             net.to(DEVICE)
@@ -178,7 +180,7 @@ def main():
             if model_name == ModelName.BEST_MODEL:
                 try:
                     weights = torch.load(model_path)
-                    net = Net()
+                    net = SimpleNetwork()
                     net.load_state_dict(weights)
                     flare.send(flare.FLModel(params=net.cpu().state_dict()))
                 except Exception as e:
