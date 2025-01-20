@@ -32,7 +32,4 @@ if __name__ == "__main__":
         )
         job.to(executor, f"site-{i + 1}")
 
-    
-    job.simulator_run(workspace = "/tmp/nvflare/jobs/workdir", log_config= "./log_config.json")
-
-
+    job.simulator_run(workspace="/tmp/nvflare/jobs/workdir", log_config="./log_config.json")
