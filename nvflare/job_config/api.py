@@ -180,9 +180,13 @@ class FedJob:
         self.job: FedJobConfig = FedJobConfig(
             job_name=self.name, min_clients=min_clients, mandatory_clients=mandatory_clients
         )
+
+        self.log_config_file_path: str = None
+
         self._deploy_map = {}
         self._deployed = False
         self._components = {}
+        
 
     def set_up_client(self, target: str):
         """Setup routine called by FedJob when first sending object to a client target.
@@ -553,13 +557,14 @@ class FedJob:
         if threads is None:
             threads = n_clients
 
+        actual_log_config = log_config if log_config else self.log_config_file_path
         self.job.simulator_run(
             workspace,
             clients=",".join(self.clients),
             n_clients=n_clients,
             threads=threads,
             gpu=gpu,
-            log_config=log_config,
+            log_config=actual_log_config,
         )
 
     def as_id(self, obj: Any) -> str:
@@ -569,6 +574,10 @@ class FedJob:
         cid = str(uuid.uuid4())
         self._components[cid] = obj
         return cid
+
+    def set_log_config(self, log_config_file_path: str):
+        self.log_config_file_path = log_config_file_path
+    
 
     @staticmethod
     def check_kwargs(args_to_check: dict, args_expected: dict):
@@ -622,3 +631,4 @@ def validate_object_for_job(name, obj, obj_type):
         return
 
     check_object_type(name, obj, obj_type)
+
