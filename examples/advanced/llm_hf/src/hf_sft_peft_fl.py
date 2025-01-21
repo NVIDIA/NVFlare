@@ -126,11 +126,6 @@ def main():
         model = get_peft_model(model, peft_config)
     model.config.pretraining_tp = 1
 
-    # Set tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
-
     # Training arguments
     train_args = SFTConfig(
         output_dir=args.output_path,
