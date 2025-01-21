@@ -16,4 +16,4 @@ Specifically, we suggest against the use of port 443, the typical port number fo
 not exactly implement HTTPS to the letter, and the firewall of some sites may decide to block it.
 
 The IT infrastructure of FL Client sites must allow the FL application to connect to the address (domain and port)
-opened by the FL server.
+opened by the FL Server.

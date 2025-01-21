@@ -47,7 +47,7 @@ nvflare job create -j /tmp/nvflare/cifar10_sag -w sag_pt -s fl/train.py
 
 * Run in POC mode or Production
 
-Before you can the POC or production mode, you must make sure the server or clients are already started.
+Before you can use POC or production mode, you must ensure that the server or clients are already started.
 You can refer the POC setup tutorial to see how to setup the POC, and documentation to refer to the
 production setup.
 

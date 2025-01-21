@@ -9,8 +9,7 @@ Follow the [Installation](../../getting_started/README.md) instructions.
 
 # Run training and cross site validation right after training
 
-This example uses a Numpy-based trainer to simulate the training
-steps.
+This example uses a NumPy-based trainer to simulate the training steps.
 
 We first perform FedAvg training and then conduct cross-site validation.
 
@@ -33,7 +32,7 @@ $ ls /tmp/nvflare/jobs/workdir/
 server/  site-1/  site-2/  startup/
 ```
 
-The cross site validation results:
+The cross-site validation results:
 
 ```bash
 $ cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
@@ -57,7 +56,7 @@ python3 generate_pretrain_models.py
 
 ## 2. Prepare the job and run the experiment using simulator
 
-Note that our pretrained models is generated under:
+Note that our pre-trained models are generated under:
 
 ```python
 SERVER_MODEL_DIR = "/tmp/nvflare/server_pretrain_models"
@@ -81,7 +80,7 @@ $ ls /tmp/nvflare/jobs/workdir/
 server/  site-1/  site-2/  startup/
 ```
 
-The cross site validation results:
+The cross-site validation results:
 
 ```bash
 $ cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json

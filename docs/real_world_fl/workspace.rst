@@ -49,9 +49,9 @@ Server
 In each ``job_id`` folder, there is the ``app_server`` folder that contains the :ref:`application` that is running
 on the server for this ``job_id``.
 
-The ``log.txt`` inside each ``job_id`` folder are the loggings of this job.
+The ``log.txt`` file inside each ``job_id`` folder contains the log entries for that job.
 
-While the ``log.txt`` under server folder is the log for the server control process.
+In contrast, the ``log.txt`` file under the server folder logs the server control process.
 
 The ``startup`` folder contains the config and the scripts to start the FL server program.
 
@@ -70,8 +70,8 @@ You can issue the ``download_job [JOB_ID]`` in the admin client to download the 
 The downloaded workspace will be in ``[DOWNLOAD_DIR]/[JOB_ID]/workspace/``.
 
 .. note::
-
-    If you issue ``download_job`` before the job is finished, the workspace folder will be empty.
+    
+    Issuing ``download_job`` before the job finishes will result in an empty workspace folder.
 
 
 .. _client_workspace:
@@ -114,7 +114,7 @@ Client
 In each ``job_id`` folder, there is the ``app_clientname`` folder that contains the :ref:`application` that is running
 on the client for this ``job_id``.
 
-The ``log.txt`` inside each ``job_id`` folder are the loggings of this job.
+The ``log.txt`` file inside each ``job_id`` folder contains the log entries for that job.
 
 While the ``log.txt`` under client folder is the log for the client control process.
 

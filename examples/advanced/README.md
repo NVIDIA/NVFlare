@@ -18,7 +18,7 @@ Please also install "./requirements.txt" in each example folder.
   and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/).
 * [Federated XGBoost](./xgboost/README.md)
   * Includes examples of [histogram-based](./xgboost/histogram-based/README.md) algorithm, [tree-based](./xgboost/tree-based/README.md).
-    Tree-based algorithms also includes [bagging](./xgboost/tree-based/jobs/bagging_base) and [cyclic](./xgboost/tree-based/jobs/cyclic_base) approaches.
+    Tree-based algorithms also include [bagging](./xgboost/tree-based/jobs/bagging_base) and [cyclic](./xgboost/tree-based/jobs/cyclic_base) approaches.
 
 ## Traditional ML examples
 * [Federated Linear Model with Scikit-learn](./sklearn-linear/README.md)

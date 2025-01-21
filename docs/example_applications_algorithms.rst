@@ -8,7 +8,7 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
 
 1. Hello World Examples
 =======================
-Can be run from the :github_nvflare_link:`hello_world notebook <examples/hello-world/hello_world.ipynb>`.
+Can be run from :github_nvflare_link:`hello_world notebook <examples/hello-world/hello_world.ipynb>`.
 
 .. toctree::
   :maxdepth: 1

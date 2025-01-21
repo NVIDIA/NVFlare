@@ -138,7 +138,7 @@ The problems that may be reported:
 
     Check overseer running,	Can't connect to overseer,"1) Please check if overseer is up or certificates are correct
     2) Please check if overseer hostname in project.yml is available
-    3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts."
+    3) if running on a local machine, check if the overseer defined in project.yml is defined in /etc/hosts."
     Check primary service provider available,Can't get primary service provider ({psp}) from overseer,Please check if server is up.
     Check SP's socket server available,Can't connect to primary service provider's ({sp_end_point}) socketserver,Please check if server is up.
     Check SP's GRPC server available,Can't connect to primary service provider's ({sp_end_point}) grpc server,Please check if server is up.

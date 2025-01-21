@@ -59,10 +59,9 @@ Additional examples can be found at the :ref:`Examples Applications <example_app
 FLARE for Users
 ===============
 If you want to learn how to interact with the FLARE system, please refer to the :ref:`User Guide <user_guide>`.
-When you are ready to for a secure, distributed deployment, the :ref:`Real World Federated Learning <real_world_fl>` section covers the tools and process
-required to deploy and operate a secure, real-world FLARE project.
+When you are ready for a secure, distributed deployment, the :ref:`Real World Federated Learning <real_world_fl>` section covers the tools and processes required to deploy and operate a secure, real-world FLARE project.
 
 FLARE for Developers
 ====================
-When you're ready to build your own application, the :ref:`Programming Guide <programming_guide>`, :ref:`Programming Best Practices <best_practices>`, :ref:`FAQ<faq>`, and :ref:`API Reference <apidocs/modules>`
-give an in depth look at the FLARE platform and APIs.
+When you're ready to build your own application, the :ref:`Programming Guide <programming_guide>`, :ref:`Programming Best Practices <best_practices>`, :ref:`FAQ <faq>`, and :ref:`API Reference <apidocs/modules>`
+provide an in-depth look at the FLARE platform and APIs.

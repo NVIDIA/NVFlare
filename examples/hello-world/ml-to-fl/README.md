@@ -46,4 +46,4 @@ These implementations can be easily configured using the JobAPI's ScriptRunner.
 By default, the ```InProcessClientAPIExecutor``` is used, however setting `launch_external_process=True` uses the ```ClientAPILauncherExecutor```
 with pre-configured CellPipes for communication and metrics streaming.
 
-Note: Avoid install TensorFlow and PyTorch on the same virtual environment due to library conflicts.
+Note: Avoid installing TensorFlow and PyTorch in the same virtual environment due to library conflicts.
