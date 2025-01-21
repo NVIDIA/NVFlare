@@ -211,6 +211,8 @@ def load_yaml_include(root, yaml_data):
                     item = load_yaml_include(root, item)
                 new_list.append(item)
             new_data[k] = new_list
+        elif isinstance(v, dict):
+            new_data[k] = load_yaml_include(root, v)
         else:
             new_data[k] = v
 

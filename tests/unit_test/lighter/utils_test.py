@@ -158,6 +158,7 @@ class TestSignFolder:
 
         participant = self._get_participant("server", data.get("participants"))
         assert participant.get("server_name") == "server"
+        assert participant.get("extra").get("gpus") == "large"
 
         participant = self._get_participant("client", data.get("participants"))
         assert participant.get("client_name") == "client-1"
