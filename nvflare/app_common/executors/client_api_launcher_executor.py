@@ -40,7 +40,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 60.0,
         workers: int = 4,
-        train_with_evaluation: bool = True,
+        train_with_evaluation: bool = False,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
