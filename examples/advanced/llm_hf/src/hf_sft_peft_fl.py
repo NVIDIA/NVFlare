@@ -23,7 +23,7 @@ import datasets
 import numpy as np
 import torch
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
-from transformers import AutoModelForCausalLM, AutoTokenizer, trainer_utils
+from transformers import AutoModelForCausalLM, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
 import nvflare.client as flare

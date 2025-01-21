@@ -21,7 +21,7 @@ import datasets
 import numpy as np
 import torch
 from peft import LoraConfig, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM
 from trl import SFTConfig, SFTTrainer
 
 torch.manual_seed(0)
