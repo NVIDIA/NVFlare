@@ -311,7 +311,7 @@ def _write_common(type, dest_dir, template, tplt, replacement_dict, config):
 
 def _write_local(type, dest_dir, template, capacity=""):
     _write(
-        os.path.join(dest_dir, "log.config.default"),
+        os.path.join(dest_dir, "log_config.json.default"),
         template["log_config"],
         "t",
     )

@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
 import multiprocessing
 import os
 import sys
@@ -28,7 +27,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
-from nvflare.fuel.utils.log_utils import add_log_file_handler, configure_logging
+from nvflare.fuel.utils.log_utils import configure_logging, get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -49,7 +48,7 @@ class _RunnerStarter:
         self.started = True
         self.stopped = False
         self.exit_code = 0
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def start(self, ctx: dict):
         """Start the runner and wait for it to finish.
@@ -66,8 +65,7 @@ class _RunnerStarter:
                 run_dir = self.workspace.get_run_dir(self.job_id)
                 log_file_name = os.path.join(run_dir, f"{self.app_name}_log.txt")
                 print(f"XGB Log: {log_file_name}")
-                configure_logging(self.workspace)
-                add_log_file_handler(log_file_name)
+                configure_logging(self.workspace, dir_path=run_dir, file_prefix=self.app_name)
             self.runner.run(ctx)
             self.stopped = True
         except Exception as e:

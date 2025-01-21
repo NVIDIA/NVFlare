@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
 import os
 import signal
 import threading
@@ -21,6 +20,7 @@ from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.drivers.aio_context import AioContext
+from nvflare.fuel.utils.log_utils import get_module_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 
@@ -54,7 +54,7 @@ class MainProcessMonitor:
     @classmethod
     def logger(cls):
         if not cls._logger:
-            cls._logger = logging.getLogger(cls.name)
+            cls._logger = get_module_logger(cls.__module__, cls.name)
         return cls._logger
 
     @classmethod

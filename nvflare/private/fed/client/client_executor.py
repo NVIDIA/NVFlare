@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import shlex
 import subprocess
@@ -27,6 +26,7 @@ from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.private.fed.utils.fed_utils import add_custom_dir_to_path, get_return_code
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -134,7 +134,7 @@ class ProcessExecutor(ClientExecutor):
             startup: startup folder
         """
         self.client = client
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
         self.startup = startup
         self.run_processes = {}
         self.lock = threading.Lock()
@@ -307,6 +307,38 @@ class ProcessExecutor(ClientExecutor):
             self.logger.error(f"get_errors execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()
             return None
+
+    def configure_job_log(self, job_id, config):
+        """Configure the job log.
+
+        Args:
+            job_id: the job_id
+            config: log config
+
+         Returns:
+            configure_job_log command message
+        """
+        try:
+            fqcn = FQCN.join([self.client.client_name, job_id])
+            request = new_cell_message({}, config)
+            return_data = self.client.cell.send_request(
+                target=fqcn,
+                channel=CellChannel.CLIENT_COMMAND,
+                topic=AdminCommandNames.CONFIGURE_JOB_LOG,
+                request=request,
+                optional=True,
+                timeout=self.job_query_timeout,
+            )
+            return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+            if return_code == ReturnCode.OK:
+                return return_data.payload
+            else:
+                return f"failed to configure_job_log with return code: {return_code}"
+        except Exception as e:
+            err = f"configure_job_log execution exception: {secure_format_exception(e)}."
+            self.logger.error(err)
+            secure_log_traceback()
+            return err
 
     def reset_errors(self, job_id):
         """Resets the error information.

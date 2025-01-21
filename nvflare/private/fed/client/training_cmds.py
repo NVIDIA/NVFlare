@@ -153,6 +153,26 @@ class DeleteRunNumberProcessor(RequestProcessor):
         return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
+class ConfigureJobLogProcessor(RequestProcessor):
+    def get_topics(self) -> List[str]:
+        return [TrainingTopic.CONFIGURE_JOB_LOG]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        engine = app_ctx
+        if not isinstance(engine, ClientEngineInternalSpec):
+            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
+
+        fl_ctx = engine.new_context()
+        site_name = fl_ctx.get_identity_name()
+        job_id = req.get_header(RequestHeader.JOB_ID)
+
+        err = engine.configure_job_log(job_id, req.body)
+        if err:
+            return error_reply(err)
+
+        return ok_reply(topic=f"reply_{req.topic}", body=f"successfully configured {site_name} job {job_id} log")
+
+
 class ClientStatusProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.CHECK_STATUS]
