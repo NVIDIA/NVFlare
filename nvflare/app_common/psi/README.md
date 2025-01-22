@@ -7,7 +7,7 @@ for two-party.
 We took the two-party direct communication PSI protocol and extended to Federated Computing setting where all exchanges are 
 funneled via a central FL server. We supported multi-party PSI via pair-wise approach.  
  
-Here is the detailed Sequence diagrams for DH PSI.
+Here is the detailed sequence diagram for DH PSI.
 
 ```mermaid
  
@@ -71,7 +71,7 @@ sequenceDiagram
 
 * Note each site/client is both a PSI Client and PSI Server. 
 * Initially, the items() is the original data items
-* Once the client has get the intersection from the previous Clients' intersect operation, the items will be
+* Once the client has gotten the intersection from the previous clients' intersect operation, the items will be
 * the intersection instead of original items.
 
 ```mermaid

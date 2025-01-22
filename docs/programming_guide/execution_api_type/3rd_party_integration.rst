@@ -31,7 +31,7 @@ Requirements
   Depending on where the trainer is running, the connection may or may not need to be in secure mode (TLS).
 - We will need to modify the "project.yml" for NVFlare provision system
   and generate new package folders for each participating sites
-- The trainer must be a Python program that can integrate with the NVFLARE library.
+- The trainer must be a Python program that can integrate with the NVFlare library.
 - The trainer must be able to connect to the server, as well as the address that
   is dynamically opened by the FL client.
 

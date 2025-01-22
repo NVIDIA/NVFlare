@@ -5,7 +5,7 @@ Unsafe Component Detection
 **************************
 NVFLARE is based on a componentized architecture in that FL jobs are performed by components that are configured in configuration
 files. These components are created at the beginning of job execution. To address the issue of components potentially being unsafe
-and leaking sensitive information, NVFLARE uses an event based solutionm.
+and leaking sensitive information, NVFLARE uses an event based solution.
 
 NVFLARE has a very powerful and flexible event mechanism that allows custom code to be plugged into defined moments of system
 workflow (e.g. start/end of the job, before/after a task is executed, etc.). At such moments, NVFLARE fires events and invokes
@@ -42,8 +42,8 @@ The important points are:
 
     - The class must extend FLComponent
     - It defines the handle_event method, following the exact signature
-    - It checks the event_type to be ``EventType.BEFORE_BUILD_COMPONENT``. 
-    - It checks the component being built based on the information provided in the fl_ctx. There are many properties in fl_ctx. The most important ones are the ``COMPONENT_CONFIG`` that is a dict of the component's configuration data. The fl_ctx also has ``WORKSPACE_OBJECT`` that allows you to access any file in the job's workspace.
+    - It checks if the event_type is ``EventType.BEFORE_BUILD_COMPONENT``. 
+    - It checks the component being built based on the information provided in the fl_ctx. There are many properties in fl_ctx. The most important ones are the ``COMPONENT_CONFIG`` that is a dict of the component's configuration data. The fl_ctx also has ``WORKSPACE_OBJECT`` which allows access to any file in the job's workspace.
     - If any issue is detected with the component to be built, you raise the ``UnsafeComponentError`` exception with a meaningful text.
 
 The following properties in the fl_ctx could be helpful too:
