@@ -73,6 +73,12 @@
         "root": {
             "level": "INFO",
             "handlers": ["consoleHandler", "logFileHandler", "errorFileHandler", "jsonFileHandler", "FLFileHandler"]
+        }, 
+        "nvflare.app_opt.pt.client_api_launcher_executor.PTClientAPILauncherExecutor": {
+            "level": "ERROR"
+        },
+        "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor": {
+            "level": "ERROR"
         }
     }
 }
