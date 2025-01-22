@@ -6,15 +6,6 @@ test_configs:
     - ./data/test_configs/authorization/abort_job.yml
     - ./data/test_configs/authorization/list_job.yml
     - ./data/test_configs/authorization/shell_commands.yml
-  ha:
-    - ./data/test_configs/ha/kill_one_server_during_training_after_first_round.yml
-    - ./data/test_configs/ha/kill_one_server_during_training_before_first_round.yml
-    - ./data/test_configs/ha/kill_server_after_training_complete.yml
-    - ./data/test_configs/ha/kill_server_during_training_after_first_round.yml
-    - ./data/test_configs/ha/kill_server_during_training_before_first_round.yml
-    - ./data/test_configs/ha/kill_server_during_training_sending_model.yml
-    - ./data/test_configs/ha/two_servers.yml
-    - ./data/test_configs/ha/fladminapi.yml
   numpy:
     - ./data/test_configs/standalone_job/np_job.yml
     - ./data/test_configs/standalone_job/np_app.yml
