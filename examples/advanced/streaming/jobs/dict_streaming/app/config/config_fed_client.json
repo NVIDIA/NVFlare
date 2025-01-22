@@ -1,0 +1,24 @@
+{
+  "format_version": 2,
+  "cell_wait_timeout": 5.0,
+  "executors": [
+    {
+      "tasks": ["*"],
+      "executor": {
+        "path": "app_cmd_executor.AppCmdExecutor",
+        "args": {
+          "file_retriever_id": "file_retriever"
+        }
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "file_retriever",
+      "path": "nvflare.app_common.streamers.file_retriever.FileRetriever",
+      "args": {
+        "source_dir": "/tmp"
+      }
+    }
+  ]
+}

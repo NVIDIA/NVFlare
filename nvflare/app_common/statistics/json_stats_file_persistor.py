@@ -19,7 +19,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import StorageException
 from nvflare.app_common.abstract.statistics_writer import StatisticsWriter
 from nvflare.app_common.utils.json_utils import ObjectEncoder
-from nvflare.fuel.utils.class_utils import get_class
+from nvflare.fuel.utils.fobs import load_class
 
 
 class JsonStatsFileWriter(StatisticsWriter):
@@ -34,7 +34,7 @@ class JsonStatsFileWriter(StatisticsWriter):
             self.json_encoder_class = ObjectEncoder
         else:
             self.json_encoder_path = json_encoder_path
-            self.json_encoder_class = get_class(json_encoder_path)
+            self.json_encoder_class = load_class(json_encoder_path)
 
     def save(
         self,

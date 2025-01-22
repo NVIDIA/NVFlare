@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import importlib
 import inspect
 import pkgutil
@@ -20,26 +19,11 @@ from typing import Dict, List, Optional
 from nvflare.apis.fl_component import FLComponent
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.components_utils import create_classes_table_static
+from nvflare.fuel.utils.fobs import load_class
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 DEPRECATED_PACKAGES = ["nvflare.app_common.pt", "nvflare.app_common.homomorphic_encryption"]
-
-
-def get_class(class_path):
-    module_name, class_name = class_path.rsplit(".", 1)
-
-    try:
-        module_ = importlib.import_module(module_name)
-
-        try:
-            class_ = getattr(module_, class_name)
-        except AttributeError:
-            raise ValueError("Class {} does not exist".format(class_path))
-    except AttributeError:
-        raise ValueError("Module {} does not exist".format(class_path))
-
-    return class_
 
 
 def instantiate_class(class_path, init_params):
@@ -51,7 +35,7 @@ def instantiate_class(class_path, init_params):
         arguments. The transform name will be appended to `medical.common.transforms` to make a
         full name of the transform to be built.
     """
-    c = get_class(class_path)
+    c = load_class(class_path)
     try:
         if init_params:
             instance = c(**init_params)
@@ -80,7 +64,7 @@ class ModuleScanner:
         self._class_table = create_classes_table_static()
 
     def create_classes_table(self):
-        class_table: Dict[str, str] = {}
+        class_table: Dict[str, list[str]] = {}
         for base in self.base_pkgs:
             package = importlib.import_module(base)
 
@@ -123,7 +107,8 @@ class ModuleScanner:
         """
         if class_name not in self._class_table:
             raise ConfigError(
-                f"Cannot find class '{class_name}'. Please check its spelling. If the spelling is correct, specify the class using its full path."
+                f"Cannot find class '{class_name}'. Please check its spelling. If the spelling is correct, "
+                "specify the class using its full path."
             )
 
         modules = self._class_table.get(class_name, None)

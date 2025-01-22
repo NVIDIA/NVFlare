@@ -1,0 +1,20 @@
+{
+  "format_version": 2,
+  "components": [
+    {
+      "id": "file_retriever",
+      "path": "nvflare.app_common.streamers.file_retriever.FileRetriever",
+      "args": {
+        "source_dir": "/tmp"
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "controller",
+      "path": "app_cmd_controller.AppCommandController",
+      "args": {
+      }
+    }
+  ]
+}

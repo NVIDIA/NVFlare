@@ -22,7 +22,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.security.logging import secure_format_exception
 
 from .argument_utils import parse_vars
-from .class_utils import ModuleScanner, get_class, instantiate_class
+from .class_utils import ModuleScanner, load_class, instantiate_class
 from .dict_utils import extract_first_level_primitive, merge_dict
 from .json_scanner import JsonObjectProcessor, JsonScanner, Node
 
@@ -362,7 +362,7 @@ class Configurator(JsonObjectProcessor):
         return class_path
 
     def is_configured_subclass(self, config_dict, base_class):
-        return issubclass(get_class(self.get_class_path(config_dict)), base_class)
+        return issubclass(load_class(self.get_class_path(config_dict)), base_class)
 
     def start_config(self, config_ctx: ConfigContext):
         pass
