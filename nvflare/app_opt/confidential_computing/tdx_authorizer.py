@@ -17,7 +17,7 @@ import subprocess
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
-TDX_NAMESPACE = "tdx_"
+TDX_NAMESPACE = "x-tdx"
 TDX_CLI_CONFIG = "config.json"
 TOKEN_FILE = "token.txt"
 VERIFY_FILE = "verify.txt"
