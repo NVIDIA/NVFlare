@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
+import shutil
 import sys
 import unittest
 
@@ -26,6 +28,11 @@ class TestTaskScriptRunner(unittest.TestCase):
         file_dir = os.path.dirname(os.path.realpath(__file__))
         splits = file_dir.split(os.sep)
         self.nvflare_root = os.sep.join(splits[0:-4])
+        # sometimes a build dir is generated, we need to remove
+        # to ensure test correctness
+        build_dir = os.path.join(self.nvflare_root, "build")
+        if os.path.exists(build_dir):
+            shutil.rmtree(build_dir, ignore_errors=True)
 
     def test_app_scripts_and_args(self):
         script_path = "nvflare/cli.py"
