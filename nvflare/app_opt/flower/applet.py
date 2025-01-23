@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import time
 
 from nvflare.apis.fl_context import FLContext
@@ -57,6 +58,8 @@ class FlowerClientApplet(CLIApplet):
         job_id = fl_ctx.get_job_id()
         custom_dir = ws.get_app_custom_dir(job_id)
         app_dir = ws.get_app_dir(job_id)
+        if not os.path.isabs(custom_dir):
+            custom_dir = os.path.relpath(custom_dir, app_dir)
         cmd = f"flower-supernode --insecure --grpc-adapter --superlink {addr} {custom_dir}"
 
         # use app_dir as the cwd for flower's client app.
