@@ -54,6 +54,8 @@ class _EntryConsumer(ObjectConsumer):
             if isinstance(self.container, dict):
                 key, value = entry
                 self.container[key] = value
+            elif isinstance(self.container, set):
+                self.container.add(entry)
             else:
                 self.container.append(entry)
         except Exception as ex:

@@ -37,7 +37,7 @@ Currently, following implementations are available,
 To use ContainerRetriever, the container must be given a name and added on the sending site,
 
 ```
-ContainerRetriever.add("model", model_dict)
+ContainerRetriever.add_container("model", model_dict)
 ```
 
 ## Example Jobs
