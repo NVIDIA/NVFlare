@@ -25,6 +25,7 @@ from nvflare.private.fed.server.server_state import HotState
 
 from ..server.fed_server import FederatedServer
 from ..server.server_engine import ServerEngine
+from ..utils.identity_utils import IdentityAsserter
 
 
 class SimulatorServerEngine(ServerEngine):
@@ -75,6 +76,22 @@ class SimulatorServerEngine(ServerEngine):
 class SimulatorRunManager(RunManager):
     def create_job_processing_context_properties(self, workspace, job_id):
         return {}
+
+
+class SimulatorIdentityAsserter(IdentityAsserter):
+
+    def __init__(self, private_key_file: str, cert_file: str):
+        self.private_key_file = private_key_file
+        self.cert_file = cert_file
+
+    def sign_common_name(self, nonce: str) -> str:
+        return nonce
+
+    def sign(self, content, return_str: bool) -> str:
+        return "signature"
+
+    def verify_signature(self, content, signature) -> bool:
+        return True
 
 
 class SimulatorServer(FederatedServer):
@@ -142,6 +159,9 @@ class SimulatorServer(FederatedServer):
         return SimulatorServerEngine(
             server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
         )
+
+    def _get_id_asserter(self):
+        return SimulatorIdentityAsserter("private_key_file", "cert_file")
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super(FederatedServer, self).deploy(args, grpc_args, secure_train)

@@ -56,7 +56,7 @@ class InProcessClientAPIExecutor(Executor):
         params_transfer_type: TransferType = TransferType.FULL,
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
-        train_with_evaluation: bool = True,
+        train_with_evaluation: bool = False,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,

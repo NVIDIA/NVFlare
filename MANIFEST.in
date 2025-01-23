@@ -2,3 +2,4 @@ include versioneer.py
 include nvflare/_version.py
 include nvflare/libs/*.so
 include nvflare/fuel/utils/*.json
+include nvflare/private/fed/app/simulator/log_config.json

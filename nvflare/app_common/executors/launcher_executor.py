@@ -49,7 +49,7 @@ class LauncherExecutor(TaskExchanger):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 60.0,
         workers: int = 4,
-        train_with_evaluation: bool = True,
+        train_with_evaluation: bool = False,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
@@ -227,6 +227,7 @@ class LauncherExecutor(TaskExchanger):
     def _initialize_external_execution(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
     ) -> bool:
+        self.reset_peer_is_up_or_dead()
         with self._lock:
             self._abort_signal = abort_signal
             self._current_task = task_name
@@ -242,13 +243,15 @@ class LauncherExecutor(TaskExchanger):
             abort_signal.trigger("launch task failed")
             return False
 
-        self.log_info(fl_ctx, f"External execution for task ({task_name}) is launched.")
+        self.log_info(fl_ctx, f"Launcher successfully launched task ({task_name}).")
         # wait for external execution to set up their pipe_handler
         setup_success = self._wait_external_setup(task_name, fl_ctx, abort_signal)
         if not setup_success:
-            self.log_error(fl_ctx, "External execution set up failed.")
-            abort_signal.trigger("External execution set up failed.")
+            error = f"Failed external setup for task ({task_name})."
+            self.log_error(fl_ctx, error)
+            abort_signal.trigger(error)
             return False
+        self.log_info(fl_ctx, f"External setup for task ({task_name}) succeeded.")
         return True
 
     def _execute_launcher_method_in_thread_executor(self, method_name: str, **kwargs) -> Any:

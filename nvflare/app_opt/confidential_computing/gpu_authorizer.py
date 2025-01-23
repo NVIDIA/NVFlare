@@ -13,81 +13,85 @@
 # limitations under the License.
 
 
+import json
+import logging
+import uuid
+
+import jwt
+from nv_attestation_sdk import attestation
+
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
-GPU_NAMESPACE = "x-nv-gpu-"
+GPU_NAMESPACE = "x-nv-gpu"
+default_policy = """{
+  "version":"1.0",
+  "authorization-rules":{
+    "sub":"NVIDIA-GPU-ATTESTATION",
+    "secboot":true,
+    "x-nvidia-gpu-manufacturer":"NVIDIA Corporation",
+    "x-nvidia-attestation-type":"GPU",
+    "x-nvidia-attestation-detailed-result":{
+      "x-nvidia-gpu-driver-rim-schema-validated":true,
+      "x-nvidia-gpu-vbios-rim-cert-validated":true,
+      "x-nvidia-gpu-attestation-report-cert-chain-validated":true,
+      "x-nvidia-gpu-driver-rim-schema-fetched":true,
+      "x-nvidia-gpu-attestation-report-parsed":true,
+      "x-nvidia-gpu-nonce-match":true,
+      "x-nvidia-gpu-vbios-rim-signature-verified":true,
+      "x-nvidia-gpu-driver-rim-signature-verified":true,
+      "x-nvidia-gpu-arch-check":true,
+      "x-nvidia-gpu-measurements-match":true,
+      "x-nvidia-gpu-attestation-report-signature-verified":true,
+      "x-nvidia-gpu-vbios-rim-schema-validated":true,
+      "x-nvidia-gpu-driver-rim-cert-validated":true,
+      "x-nvidia-gpu-vbios-rim-schema-fetched":true,
+      "x-nvidia-gpu-vbios-rim-measurements-available":true
+    },
+    "x-nvidia-gpu-driver-version":"535.104.05",
+    "hwmodel":"GH100 A01 GSP BROM",
+    "measres":"comparison-successful",
+    "x-nvidia-gpu-vbios-version":"96.00.5E.00.02"
+  }
+}
+"""
 
 
 class GPUAuthorizer(CCAuthorizer):
-    """Note: This is just a fake implementation for GPU authorizer. It will be replaced later
-    with the real implementation.
+    def __init__(self, verifier_url="https://nras.attestation.nvidia.com/v1/attest/gpu", policy_file=None):
+        self._can_generate = True
+        self.client = attestation.Attestation()
+        self.client.set_name("nvflare_node")
+        nonce = uuid.uuid4().hex + uuid.uuid1().hex
+        self.client.set_nonce(nonce)
+        if policy_file is None:
+            self.remote_att_result_policy = default_policy
+        else:
+            self.remote_att_result_policy = open(policy_file).read()
+        self.client.add_verifier(attestation.Devices.GPU, attestation.Environment.REMOTE, verifier_url, "")
+        self.logger = logging.getLogger(self.__class__.__name__)
 
-    """
+    def generate(self):
+        try:
+            self.client.attest()
+            token = self.client.get_token()
+        except BaseException:
+            self.can_generate = False
+            token = "[[],{}]"
+        return token
 
-    def __init__(self, verifiers: list) -> None:
-        """
-
-        Args:
-            verifiers (list):
-                each element in this list is a dictionary and the keys of dictionary are
-                "devices", "env", "url", "appraisal_policy_file" and "result_policy_file."
-
-                the values of devices are "gpu" and "cpu"
-                the values of env are "local" and "test"
-                currently, valid combination is gpu + local
-
-                url must be an empty string
-                appraisal_policy_file must point to an existing file
-                currently supports an empty file only
-
-                result_policy_file must point to an existing file
-                currently supports the following content only
-
-                .. code-block:: json
-
-                    {
-                        "version":"1.0",
-                        "authorization-rules":{
-                            "x-nv-gpu-available":true,
-                            "x-nv-gpu-attestation-report-available":true,
-                            "x-nv-gpu-info-fetched":true,
-                            "x-nv-gpu-arch-check":true,
-                            "x-nv-gpu-root-cert-available":true,
-                            "x-nv-gpu-cert-chain-verified":true,
-                            "x-nv-gpu-ocsp-cert-chain-verified":true,
-                            "x-nv-gpu-ocsp-signature-verified":true,
-                            "x-nv-gpu-cert-ocsp-nonce-match":true,
-                            "x-nv-gpu-cert-check-complete":true,
-                            "x-nv-gpu-measurement-available":true,
-                            "x-nv-gpu-attestation-report-parsed":true,
-                            "x-nv-gpu-nonce-match":true,
-                            "x-nv-gpu-attestation-report-driver-version-match":true,
-                            "x-nv-gpu-attestation-report-vbios-version-match":true,
-                            "x-nv-gpu-attestation-report-verified":true,
-                            "x-nv-gpu-driver-rim-schema-fetched":true,
-                            "x-nv-gpu-driver-rim-schema-validated":true,
-                            "x-nv-gpu-driver-rim-cert-extracted":true,
-                            "x-nv-gpu-driver-rim-signature-verified":true,
-                            "x-nv-gpu-driver-rim-driver-measurements-available":true,
-                            "x-nv-gpu-driver-vbios-rim-fetched":true,
-                            "x-nv-gpu-vbios-rim-schema-validated":true,
-                            "x-nv-gpu-vbios-rim-cert-extracted":true,
-                            "x-nv-gpu-vbios-rim-signature-verified":true,
-                            "x-nv-gpu-vbios-rim-driver-measurements-available":true,
-                            "x-nv-gpu-vbios-index-conflict":true,
-                            "x-nv-gpu-measurements-match":true
-                        }
-                    }
-
-        """
-        super().__init__()
-        self.verifiers = verifiers
+    def verify(self, eat_token):
+        try:
+            jwt_token = json.loads(eat_token)[1]
+            claims = jwt.decode(jwt_token.get("REMOTE_GPU_CLAIMS"), options={"verify_signature": False})
+            # With claims, we will retrieve the nonce
+            nonce = claims.get("eat_nonce")
+            self.client.set_nonce(nonce)
+            self.client.set_token(name="nvflare_node", eat_token=eat_token)
+            result = self.client.validate_token(self.remote_att_result_policy)
+        except BaseException as e:
+            self.logger.info(f"Token verification failed {e=}")
+            result = False
+        return result
 
     def get_namespace(self) -> str:
         return GPU_NAMESPACE
-
-    def generate(self) -> str:
-        raise NotImplementedError
-
-    def verify(self, token: str) -> bool:
-        raise NotImplementedError

@@ -33,7 +33,7 @@ See the `configuration dictionary schema <(https://docs.python.org/3/library/log
                 "()": "nvflare.fuel.utils.log_utils.BaseFormatter",
                 "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s"
             },
-            "colorFormatter": {
+            "consoleFormatter": {
                 "()": "nvflare.fuel.utils.log_utils.ColorFormatter",
                 "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s"
             },
@@ -52,7 +52,7 @@ See the `configuration dictionary schema <(https://docs.python.org/3/library/log
             "consoleHandler": {
                 "class": "logging.StreamHandler",
                 "level": "DEBUG",
-                "formatter": "colorFormatter",
+                "formatter": "consoleFormatter",
                 "filters": [],
                 "stream": "ext://sys.stdout"
             },
@@ -147,7 +147,7 @@ Example configuration:
 
 .. code-block:: json
 
-    "colorFormatter": {
+    "consoleFormatter": {
         "()": "nvflare.fuel.utils.log_utils.ColorFormatter",
         "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s",
         "level_colors": {
@@ -221,7 +221,7 @@ Example configuration:
     "consoleHandler": {
         "class": "logging.StreamHandler",
         "level": "DEBUG",
-        "formatter": "colorFormatter",
+        "formatter": "consoleFormatter",
         "filters": ["FLFilter"],
         "stream": "ext://sys.stdout"
     }

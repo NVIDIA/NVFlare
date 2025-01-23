@@ -30,8 +30,8 @@ First, we add the image and datalist directory roots to `config_train.json` file
 ```
 for alg in brats_central brats_fedavg brats_fedavg_dp
 do
-  sed -i "s|DATASET_ROOT|${PWD}/dataset_brats18/dataset|g" configs/${alg}/config/config_train.json
-  sed -i "s|DATALIST_ROOT|${PWD}/dataset_brats18/datalist|g" configs/${alg}/config/config_train.json
+  sed -i "s|DATASET_ROOT|${PWD}/dataset_brats18/dataset|g" configs/${alg}/app/config/config_train.json
+  sed -i "s|DATALIST_ROOT|${PWD}/dataset_brats18/datalist|g" configs/${alg}/app/config/config_train.json
 done
 ```
 
