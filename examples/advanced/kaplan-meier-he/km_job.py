@@ -57,18 +57,16 @@ def main():
         controller = KM_HE(min_clients=num_clients, he_context_path=he_context_path)
     else:
         controller = KM(min_clients=num_clients)
-    job.to(controller, "server")
+    job.to_server(controller)
 
     # Define the ScriptRunner and send to all clients
-    for i in range(num_clients):
-        site_name = f"site-{i + 1}"
-        runner = ScriptRunner(
-            script=train_script,
-            script_args=script_args,
-            params_exchange_format="raw",
-            launch_external_process=False,
-        )
-        job.to(runner, site_name, tasks=["train"])
+    runner = ScriptRunner(
+        script=train_script,
+        script_args=script_args,
+        params_exchange_format="raw",
+        launch_external_process=False,
+    )
+    job.to_clients(runner, tasks=["train"])
 
     # Export the job
     print("job_dir=", job_dir)
@@ -77,7 +75,7 @@ def main():
     # Run the job
     print("workspace_dir=", workspace_dir)
     print("num_threads=", num_threads)
-    job.simulator_run(workspace_dir, threads=num_threads)
+    job.simulator_run(workspace_dir, n_clients=num_clients, threads=num_threads)
 
 
 def define_parser():
