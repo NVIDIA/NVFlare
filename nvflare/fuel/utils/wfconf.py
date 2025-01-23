@@ -22,7 +22,8 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.security.logging import secure_format_exception
 
 from .argument_utils import parse_vars
-from .class_utils import ModuleScanner, instantiate_class, load_class
+from .class_loader import load_class
+from .class_utils import ModuleScanner, instantiate_class
 from .dict_utils import extract_first_level_primitive, merge_dict
 from .json_scanner import JsonObjectProcessor, JsonScanner, Node
 

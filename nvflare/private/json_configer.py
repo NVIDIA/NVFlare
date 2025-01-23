@@ -15,7 +15,8 @@ import copy
 from typing import List, Union
 
 from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
-from nvflare.fuel.utils.class_utils import ModuleScanner, load_class
+from nvflare.fuel.utils.class_loader import load_class
+from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.config_service import ConfigService
