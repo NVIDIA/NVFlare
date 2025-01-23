@@ -19,13 +19,14 @@ import re
 import sys
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FilterKey, SiteType, SystemConfigs
+from nvflare.apis.fl_constant import FilterKey, SecureTrainConst, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
+from nvflare.private.fed.utils.fed_utils import set_scope_prop
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
 
@@ -316,6 +317,14 @@ class FLClientStarterConfiger(JsonConfigurator):
                 client[SSLConstants.CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.CERT])
             if client.get(SSLConstants.ROOT_CERT):
                 client[SSLConstants.ROOT_CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.ROOT_CERT])
+
+            conn_sec = client.get(SecureTrainConst.CONNECTION_SECURITY)
+            if conn_sec:
+                client_name = self.cmd_vars.get("uid", None)
+                if not client_name:
+                    raise ConfigError("missing 'uid' from command args")
+                set_scope_prop(client_name, SecureTrainConst.CONNECTION_SECURITY, conn_sec)
+
         except Exception:
             raise ValueError(f"Client config error: '{self.client_config_file_names}'")
 
