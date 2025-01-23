@@ -23,12 +23,11 @@ from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
 
 import msgpack
 
+from nvflare.fuel.utils.class_loader import get_class_name, load_class
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposer import DataClassDecomposer, Decomposer, EnumTypeDecomposer
 
 __all__ = [
-    "get_class_name",
-    "load_class",
     "register",
     "register_data_classes",
     "register_enum_types",
@@ -60,41 +59,6 @@ _enum_auto_registration = True
 _data_auto_registration = True
 
 
-def get_class_name(cls: Type) -> str:
-    """Get canonical class path or fully qualified name. The builtins module is removed
-    so common builtin class can be referenced with its normal name
-
-        Args:
-            cls: The class type
-        Returns:
-            The canonical name
-    """
-    module = cls.__module__
-    if module == "builtins":
-        return cls.__qualname__
-    return module + "." + cls.__qualname__
-
-
-def load_class(class_path):
-    """Load class from fully qualified class name
-
-    Args:
-        class_path: fully qualified class name
-    Returns:
-        The class type
-    """
-
-    try:
-        if "." in class_path:
-            module_name, class_name = class_path.rsplit(".", 1)
-            module = importlib.import_module(module_name)
-            return getattr(module, class_name)
-        else:
-            return getattr(builtins, class_path)
-    except Exception as ex:
-        raise TypeError(f"Can't load class {class_path}: {ex}")
-    
-    
 def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
     """Register a decomposer. It does nothing if decomposer is already registered for the type
 

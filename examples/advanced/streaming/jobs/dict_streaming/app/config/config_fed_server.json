@@ -2,19 +2,19 @@
   "format_version": 2,
   "components": [
     {
-      "id": "file_retriever",
-      "path": "nvflare.app_common.streamers.file_retriever.FileRetriever",
+      "id": "dict_retriever",
+      "path": "nvflare.app_common.streamers.container_retriever.ContainerRetriever",
       "args": {
-        "source_dir": "/tmp"
       }
     }
   ],
   "workflows": [
     {
       "id": "controller",
-      "path": "app_cmd_controller.AppCommandController",
+      "path": "streaming_controller.StreamingController",
       "args": {
-      }
+          "dict_retriever_id": "dict_retriever"
+        }
     }
   ]
 }

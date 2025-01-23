@@ -18,8 +18,8 @@ from typing import Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.utils.class_loader import load_class
 from nvflare.fuel.utils.components_utils import create_classes_table_static
-from nvflare.fuel.utils.fobs import load_class
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 

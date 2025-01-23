@@ -19,7 +19,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import StorageException
 from nvflare.app_common.abstract.statistics_writer import StatisticsWriter
 from nvflare.app_common.utils.json_utils import ObjectEncoder
-from nvflare.fuel.utils.fobs import load_class
+from nvflare.fuel.utils.class_loader import load_class
 
 
 class JsonStatsFileWriter(StatisticsWriter):

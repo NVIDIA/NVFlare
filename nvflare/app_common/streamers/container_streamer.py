@@ -17,11 +17,11 @@ from typing import Any, Dict, List, Tuple
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamableEngine, StreamContext
+from nvflare.fuel.utils.class_loader import load_class, get_class_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_positive_number
 
 from nvflare.app_common.streamers.streamer_base import StreamerBase
-from nvflare.fuel.utils.fobs import get_class_name, load_class
 
 _PREFIX = "ContainerStreamer."
 
@@ -89,10 +89,11 @@ class _EntryConsumerFactory(ConsumerFactory):
 class _EntryProducer(ObjectProducer):
     def __init__(self, container, entry_timeout):
         self.logger = get_obj_logger(self)
-        if not self.container:
+        if not container:
             error = "Can't stream empty container"
             self.logger.error(error)
             raise ValueError(error)
+
         self.container = container
         if isinstance(container, dict):
             self.iterator = iter(container.items())
@@ -141,7 +142,7 @@ class _EntryProducer(ObjectProducer):
         if has_error:
             # done - failed
             return False
-        elif self.eof:
+        elif self.last:
             # done - succeeded
             return True
         else:
@@ -216,7 +217,7 @@ class ContainerStreamer(StreamerBase):
         """
         if not entry_timeout:
             entry_timeout = 60.0
-        check_positive_number("chunk_timeout", entry_timeout)
+        check_positive_number("entry_timeout", entry_timeout)
 
         producer = _EntryProducer(container, entry_timeout)
         engine = fl_ctx.get_engine()
@@ -227,7 +228,7 @@ class ContainerStreamer(StreamerBase):
         if not stream_ctx:
             stream_ctx = {}
 
-        stream_ctx[_CTX_TYPE] = get_class_name(container)
+        stream_ctx[_CTX_TYPE] = get_class_name(type(container))
         stream_ctx[_CTX_SIZE] = len(container)
 
         return engine.stream_objects(
@@ -242,7 +243,7 @@ class ContainerStreamer(StreamerBase):
         )
 
     @staticmethod
-    def get_container(stream_ctx: StreamContext) -> Any:
+    def get_result(stream_ctx: StreamContext) -> Any:
         """Get the received container
         This method is intended to be used by the stream_done_cb() function of the receiving side.
 

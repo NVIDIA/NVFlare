@@ -5,19 +5,18 @@
     {
       "tasks": ["*"],
       "executor": {
-        "path": "app_cmd_executor.AppCmdExecutor",
+        "path": "streaming_executor.StreamingExecutor",
         "args": {
-          "file_retriever_id": "file_retriever"
+          "dict_retriever_id": "dict_retriever"
         }
       }
     }
   ],
   "components": [
     {
-      "id": "file_retriever",
-      "path": "nvflare.app_common.streamers.file_retriever.FileRetriever",
+      "id": "dict_retriever",
+      "path": "nvflare.app_common.streamers.container_retriever.ContainerRetriever",
       "args": {
-        "source_dir": "/tmp"
       }
     }
   ]
