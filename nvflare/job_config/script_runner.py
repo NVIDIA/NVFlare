@@ -186,7 +186,6 @@ class BaseScriptRunner:
                     launcher_id=launcher_id,
                     params_exchange_format=self._params_exchange_format,
                     params_transfer_type=self._params_transfer_type,
-                    heartbeat_timeout=0,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
