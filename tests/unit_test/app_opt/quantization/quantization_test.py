@@ -28,9 +28,9 @@ TEST_CASES = [
         {"a": np.array([1.0, 2.0, 3.0, 65504.0], dtype="float32")},
     ),
     # (
-    #    {"a": np.array([1.0, 2.0, 3.0, 4.0], dtype="float32")},
-    #    "blockwise8",
-    #    {"a": np.array([0.99062496, 2.003125, 3.015625, 4.0], dtype="float32")},
+    #     {"a": np.array([1.0, 2.0, 3.0, 4.0], dtype="float32")},
+    #     "blockwise8",
+    #     {"a": np.array([0.99062496, 2.003125, 3.015625, 4.0], dtype="float32")},
     # ),
     (
         {"a": torch.tensor([1.0, 2.0, 3.0, 4000.0], dtype=torch.bfloat16)},
@@ -38,9 +38,9 @@ TEST_CASES = [
         {"a": torch.tensor([1.0, 2.0, 3.0, 4000.0], dtype=torch.bfloat16)},
     ),
     # (
-    #    {"a": torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32)},
-    #    "blockwise8",
-    #    {"a": torch.tensor([0.99062496, 2.003125, 3.015625, 4.0], dtype=torch.float32)},
+    #     {"a": torch.tensor([1.0, 2.0, 3.0, 4.0], dtype=torch.float32)},
+    #     "blockwise8",
+    #     {"a": torch.tensor([0.99062496, 2.003125, 3.015625, 4.0], dtype=torch.float32)},
     # ),
 ]
 
