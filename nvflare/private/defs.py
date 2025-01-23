@@ -15,6 +15,8 @@
 import time
 import uuid
 
+from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
+
 # this import is to let existing scripts import from nvflare.private.defs
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, SSLConstants  # noqa: F401
 from nvflare.fuel.f3.message import Message
@@ -34,8 +36,8 @@ class TaskConstant(object):
 class EngineConstant(object):
 
     FEDERATE_CLIENT = "federate_client"
-    FL_TOKEN = "fl_token"
-    CLIENT_TOKEN_FILE = "client_token.txt"
+    AUTH_TOKEN = "auth_token"
+    AUTH_TOKEN_SIGNATURE = "auth_token_signature"
     ENGINE_TASK_NAME = "engine_task_name"
 
 
@@ -68,6 +70,7 @@ class TrainingTopic(object):
     START_JOB = "train.start_job"
     GET_SCOPES = "train.get_scopes"
     NOTIFY_JOB_STATUS = "train.notify_job_status"
+    CONFIGURE_JOB_LOG = "train.configure_job_log"
 
 
 class RequestHeader(object):
@@ -96,6 +99,7 @@ class SysCommandTopic(object):
     SHELL = "sys.shell"
     REPORT_RESOURCES = "resource_manager.report_resources"
     REPORT_ENV = "sys.report_env"
+    CONFIGURE_SITE_LOG = "sys.configure_site_log"
 
 
 class ControlCommandTopic(object):
@@ -138,16 +142,20 @@ ERROR_MSG_PREFIX = "NVFLARE_ERROR"
 
 class CellMessageHeaderKeys:
 
-    CLIENT_NAME = "client_name"
+    CLIENT_NAME = CellMessageAuthHeaderKey.CLIENT_NAME
+    TOKEN = CellMessageAuthHeaderKey.TOKEN
+    TOKEN_SIGNATURE = CellMessageAuthHeaderKey.TOKEN_SIGNATURE
     CLIENT_IP = "client_ip"
     PROJECT_NAME = "project_name"
-    TOKEN = "token"
     SSID = "ssid"
     UNAUTHENTICATED = "unauthenticated"
     JOB_ID = "job_id"
     JOB_IDS = "job_ids"
     MESSAGE = "message"
     ABORT_JOBS = "abort_jobs"
+
+
+AUTH_CLIENT_NAME_FOR_SJ = "server_job"
 
 
 class JobFailureMsgKey:

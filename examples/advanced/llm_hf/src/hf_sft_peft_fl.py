@@ -23,7 +23,7 @@ import datasets
 import numpy as np
 import torch
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
-from transformers import AutoModelForCausalLM, AutoTokenizer, trainer_utils
+from transformers import AutoModelForCausalLM, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
 import nvflare.client as flare
@@ -126,11 +126,6 @@ def main():
         model = get_peft_model(model, peft_config)
     model.config.pretraining_tp = 1
 
-    # Set tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
-
     # Training arguments
     train_args = SFTConfig(
         output_dir=args.output_path,
@@ -159,8 +154,6 @@ def main():
         train_dataset=dataset_train,
         eval_dataset=dataset_valid,
         peft_config=peft_config,
-        tokenizer=tokenizer,
-        packing=False,
         formatting_func=format_instruction,
         args=train_args,
     )
