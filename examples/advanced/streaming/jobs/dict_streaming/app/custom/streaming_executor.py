@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import random
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -20,7 +19,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.streamers.container_retriever import ContainerRetriever
-from nvflare.app_common.streamers.file_retriever import FileRetriever
 
 
 class StreamingExecutor(Executor):

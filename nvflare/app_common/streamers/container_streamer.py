@@ -98,9 +98,10 @@ class _EntryProducer(ObjectProducer):
             self.iterator = iter(container.items())
         else:
             self.iterator = iter(container)
-        self.entry_timeout = entry_timeout
+        self.size = len(container)
+        self.count = 0
         self.last = False
-        self.next = None
+        self.entry_timeout = entry_timeout
 
     def produce(
         self,
@@ -108,16 +109,13 @@ class _EntryProducer(ObjectProducer):
         fl_ctx: FLContext,
     ) -> Tuple[Shareable, float]:
 
-        # To check if this is the last entry, need to get one entry ahead
-        if self.next:
-            entry = self.next
-        else:
-            entry = next(self.iterator)
-
         try:
-            self.next = next(self.iterator)
-            self.last = False
+            entry = next(self.iterator)
+            self.count += 1
+            self.last = self.count >= self.size
         except StopIteration:
+            self.logger.error(f"Producer called too many times {self.count}/{self.size}")
+            entry = None
             self.last = True
 
         result = Shareable()

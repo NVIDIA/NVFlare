@@ -13,7 +13,6 @@
 # limitations under the License.
 import os
 import tempfile
-import time
 from threading import Thread
 
 from nvflare.apis.event_type import EventType
@@ -59,7 +58,7 @@ class FileSender(FLComponent):
 
         rc, result = FileStreamer.stream_file(
             targets=["server"],
-            stream_ctx=None,
+            stream_ctx={},
             channel=CHANNEL,
             topic=TOPIC,
             file_name=self.file_name,

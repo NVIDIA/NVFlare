@@ -29,6 +29,8 @@ class SimpleController(Controller):
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         logger.info(f"Entering control loop of {self.__class__.__name__}")
         engine = fl_ctx.get_engine()
+
+        # Wait till receiver is done. Otherwise, the job ends.
         receiver = engine.get_component("receiver")
         while not receiver.is_done():
             time.sleep(0.2)
