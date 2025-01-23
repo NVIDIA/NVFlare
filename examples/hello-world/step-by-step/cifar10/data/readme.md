@@ -1,10 +1,10 @@
 # Problem and Data
 
-For this tutorial, we will use the CIFAR10 dataset. 
+For this tutorial, we will use the CIFAR-10 dataset. 
 It has the classes: ‘airplane’, ‘automobile’, ‘bird’, ‘cat’, ‘deer’, ‘dog’, ‘frog’, ‘horse’, ‘ship’, ‘truck’. 
-The images in CIFAR-10 are of size 3x32x32, i.e. 3-channel color images of 32x32 pixels in size.
+The images in CIFAR-10 are of size 3x32x32, i.e., 3-channel color images with a resolution of 32x32 pixels.
 
-The pytorch tutorial will training an image classifier. The examples shows the following steps in order:
+The PyTorch tutorial will train an image classifier. The example shows the following steps in order:
 
 * Load and normalize the CIFAR10 training and test datasets using torchvision
 * Define a Convolutional Neural Network
@@ -24,7 +24,7 @@ we usually need two steps to prepare data.
 
 To avoid each job having to download and split the data, we add a step to prepare the data for all the cifar10 jobs. 
 
-The CIFAR10 data will be downloaded to the common location, so rest of the job won't download it.
+The CIFAR-10 data will be downloaded to a common location, so it will not need to be repeatedly downloaded.
 
 to download data
 ```

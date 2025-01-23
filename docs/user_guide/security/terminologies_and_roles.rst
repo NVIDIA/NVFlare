@@ -33,7 +33,7 @@ on its local data.
 Overseer
 ----------
 An application responsible for overseeing overall system health and enabling seamless failover of FL servers. This
-component is only needed for High Available.
+component is only needed for high availability.
 
 User
 -----

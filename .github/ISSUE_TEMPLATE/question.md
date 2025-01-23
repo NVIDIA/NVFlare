@@ -1,7 +1,7 @@
 ---
-name: Question (please use the Discussion tab)
+name: Question (please use the Discussions tab)
 about: https://github.com/NVIDIA/NVFlare/discussions
-title: 'Please use NVFlare Discussion tab for questions'
+title: 'Please use NVFlare's Discussions tab for questions'
 labels: ''
 assignees: ''
 ---
