@@ -17,11 +17,10 @@ from typing import Any, Dict, List, Tuple
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamableEngine, StreamContext
-from nvflare.fuel.utils.class_loader import load_class, get_class_name
+from nvflare.app_common.streamers.streamer_base import StreamerBase
+from nvflare.fuel.utils.class_loader import get_class_name, load_class
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_positive_number
-
-from nvflare.app_common.streamers.streamer_base import StreamerBase
 
 _PREFIX = "ContainerStreamer."
 
@@ -117,13 +116,13 @@ class _EntryProducer(ObjectProducer):
 
         try:
             self.next = next(self.iterator)
-            last = False
+            self.last = False
         except StopIteration:
-            last = True
+            self.last = True
 
         result = Shareable()
         result[_KEY_ENTRY] = entry
-        result[_KEY_LAST] = last
+        result[_KEY_LAST] = self.last
         return result, self.entry_timeout
 
     def process_replies(

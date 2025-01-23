@@ -18,8 +18,8 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.streaming import StreamContext
-from .container_streamer import ContainerStreamer
 
+from .container_streamer import ContainerStreamer
 from .file_streamer import FileStreamer
 from .object_retriever import ObjectRetriever
 
