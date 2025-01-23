@@ -23,7 +23,7 @@ from nvflare.app_common.streamers.file_streamer import FileStreamer
 
 CHANNEL = "_test_channel"
 TOPIC = "_test_topic"
-SIZE = 100*1024*1024  # 100 MB
+SIZE = 100 * 1024 * 1024  # 100 MB
 
 
 class FileSender(FLComponent):

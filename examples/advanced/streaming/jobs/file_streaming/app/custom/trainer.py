@@ -31,7 +31,7 @@ class TestTrainer(Executor):
         if event_type == EventType.ABORT_TASK:
             self.log_info(fl_ctx, "Trainer is aborted")
             self.aborted = True
-            
+
     def execute(
         self,
         task_name: str,
