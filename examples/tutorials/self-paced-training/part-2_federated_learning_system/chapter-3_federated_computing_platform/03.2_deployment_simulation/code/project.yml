@@ -1,0 +1,70 @@
+api_version: 3
+builders:
+- args:
+    template_file: master_template.yml
+  path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+- path: nvflare.lighter.impl.template.TemplateBuilder
+- args:
+    config_folder: config
+    overseer_agent:
+      args:
+        sp_end_point: server:8002:8003
+      overseer_exists: false
+      path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
+  path: nvflare.lighter.impl.static_file.StaticFileBuilder
+- path: nvflare.lighter.impl.cert.CertBuilder
+- path: nvflare.lighter.impl.signature.SignatureBuilder
+description: health_project project yaml file
+name: health_project
+participants:
+
+- admin_port: 8003
+  fed_learn_port: 8002
+  name: general-hospital-server
+  org: nonprofit_health
+  type: server
+
+- name: us_hospital
+  org: us_hospital
+  type: client
+
+- name: europe-hospital
+  org: eu_hospital
+  type: client
+
+
+- name: admin@nonprofit.org
+  org: nonprofit_health
+  role: project_admin
+  type: admin
+
+
+- name: admin@hospital.org.us
+  type: admin
+  org:  us_hospital
+  role: org_admin
+
+- name: lead@hospital.org.us
+  type: admin
+  org: us_hospital
+  role: lead
+
+- name: member@hospital.org.us
+  type: admin
+  org: us_hospital
+  role: member
+
+- name: admin@hospital.org.eu
+  type: admin
+  org:  eu_hospital
+  role: org_admin
+
+- name: lead@hospital.org.eu
+  type: admin
+  org: eu_hospital
+  role: lead
+
+- name: member@hospital.org.eu
+  type: admin
+  org: eu_hospital
+  role: member
