@@ -13,7 +13,7 @@ When a job is deployed, dedicated job-specific processes are created throughout 
 Specifically, a dedicated server process is created to perform server-side logic; and dedicated client processes (one process for each site) are created to perform client-side logic.
 This design allows multiple jobs to be running in their isolated space at the same time. The success or failure of a job won't interfere with the execution of other jobs.
 
-The task-based interactions between a FL client and the FL server is done with the ClientRunner on the client side and the ServerRunner on the server side.
+The task-based interactions between an FL client and the FL server are done with the ClientRunner on the client side and the ServerRunner on the server side.
 When the job is deployed, the order of the job process creation is not guaranteed - the server-side job process may be started before or after any client-side job process.
 
 To ensure that the ClientRunner does not start to fetch tasks from the ServerRunner, the two runners need to be synchronized first.
@@ -27,7 +27,7 @@ runner_sync_timeout
 This variable is for the client-side configuration (config_fed_client.json).
 
 This runner_sync_timeout specifies the timeout value for the "runner sync" request.
-If a response is not received from the Server within this specified value, then another "runner sync" request will be sent.
+If a response is not received from the server within this specified value, then another "runner sync" request will be sent.
 
 The default value is 2.0 seconds.
 
@@ -41,7 +41,7 @@ If a response is still not received after this many tries, the client's job proc
 
 The default value is 30.
 
-The default settings of these two variables mean that if the ClientRunner and the ServerRunner are not synched within one minute, the client will terminate.
+The default settings of these two variables mean that if the ClientRunner and the ServerRunner are not synchronized within one minute, the client will terminate.
 If one minute is not enough, you can extend these two variables to meet your requirement.
 
 Task Check

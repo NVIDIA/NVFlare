@@ -21,14 +21,14 @@ You can also choose to run just one set of tests using "-m" option.
 **NOTE**
 
 There are 7 options: numpy, tensorflow, pytorch, ha, auth, overseer, preflight.
-The overseer and preflight tests have their own entry file.
+The overseer and preflight tests have their own entry files.
 All other options share the same test entry file `tests/integration_test/system_test.py`
 
 ---
 
 ## Test structure
 
-The integration tests has 3 entry files:
+The integration tests have 3 entry files:
   - The integration tests entry file is `tests/integration_test/system_test.py`.
     It will read all test configurations from `./test_configs.yml`.
     
@@ -39,7 +39,7 @@ The integration tests has 3 entry files:
 
 ### Test configuration
 
-Each test configuration yaml define a whole FL system.
+Each test configuration YAML defines a whole FL system.
 The `system_test.py` will read and parse the config to determine which `SiteLauncher` to use
 to set up the whole system.
 
@@ -85,7 +85,7 @@ Each test case has the following attributes:
 | teardown (optional)   | What shell command to run after this test case.                                            |
 
 
-The most important part is "event_sequence", it will be trigger one by one.
+The most important part is the "event_sequence", which is triggered one by one.
 
 After all events in event_sequence is triggered, then this test case is done.
 

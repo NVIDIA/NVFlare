@@ -55,16 +55,15 @@ script.
 > [!WARNING]
 > If you are using GPU, make sure to set the following
 > environment variables before running a training job, to prevent
-> `Tensoflow` from allocating full GPU memory all at once:
+> `TensorFlow` from allocating full GPU memory all at once:
 > `export TF_FORCE_GPU_ALLOW_GROWTH=true && export
 > TF_GPU_ALLOCATOR=cuda_malloc_asyncp`
 
-We use Dirichelet sampling (implementation from FedMA (https://github.com/IBM/FedMA)) on
-CIFAR10 data labels to simulate data heterogeneity among data splits for different client
-sites, controlled by an alpha value, ranging from 0 (not including 0)
-to 1. A high alpha value indicates less data heterogeneity, i.e., an
-alpha value equal to 1.0 would result in homogeneous data distribution
-among different splits.
+We apply Dirichlet sampling (as implemented in FedMA: https://github.com/IBM/FedMA) to
+CIFAR10 data labels to simulate data heterogeneity among client sites, controlled by an
+alpha value between 0 (exclusive) and 1. A high alpha value indicates less data
+heterogeneity, i.e., an alpha value equal to 1.0 would result in homogeneous data 
+distribution among different splits.
 
 ### 2.1 Centralized training
 

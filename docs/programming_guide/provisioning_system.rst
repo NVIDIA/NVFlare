@@ -105,7 +105,7 @@ the Project instance:
 Participant
 -----------
 Each participant is one entity that communicates with other participants inside the NVIDIA FLARE system during runtime.
-Each participant has the following attributes: type, name, org and props.  The attribute ``props`` is a dictionary and
+Each participant has the following attributes: type, name, org, and props.  The attribute ``props`` is a dictionary and
 stores additional information:
 
 .. code-block:: python

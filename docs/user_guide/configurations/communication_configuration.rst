@@ -10,7 +10,7 @@ All cells form a communication network called CellNet and each cell has a unique
 Any cell can communicate with any other cells via their FQCNs, regardless how the messages are routed. 
 
 FLARE is a multi-job system in that multiple jobs can be executed at the same time.
-When a FLARE system is started, the CellNet only comprises of the server and one client cell for each site.
+When a FLARE system is started, the CellNet consists of the server and one client cell for each site.
 All client cells are connected to the server cell. This topology is the backbone of the communication system and cells are called Parent Cells.
 
 When a job is deployed, the job is done by new cells dedicated to the execution of the job, one cell at each site (server and clients).
@@ -19,7 +19,7 @@ These cells are called Job Cells which are started when the job is deployed, and
 This communication system provides many powerful features (multiple choices of communication drivers, large message streaming, ad-hoc direct connections, etc.).
 However, for these features to work well, they need to be configured properly.
 
-This document describes all aspects that can be configured and how to do configure them properly.
+This document describes all aspects that can be configured and how to configure them properly.
 
 The following aspects of the communication system can be configured:
 

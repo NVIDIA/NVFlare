@@ -49,7 +49,7 @@ For more in-depth information on the Client API, refer to the :ref:`client_api` 
 
 The 3rd-Party Integration Pattern
 ---------------------------------
-In certain scenarios, users face challenges when attempting to moving the training logic to the FLARE client side due to pre-existing ML/DL training system infrastructure.
+In certain scenarios, users face challenges when attempting to move the training logic to the FLARE client side due to pre-existing ML/DL training system infrastructure.
 In the 2.4.0 release, we introduce the Third-Party Integration Pattern, which allows the FLARE system and a third-party external training system to seamlessly exchange model parameters without requiring a tightly integrated system.
 
 See the :ref:`3rd_party_integration` documentation for more details.

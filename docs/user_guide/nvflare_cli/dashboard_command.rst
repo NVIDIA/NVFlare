@@ -76,7 +76,7 @@ from scratch and you can provide a project admin email address and get a new pas
 The Dashboard will also check the cert folder inside current the working directory (or directory specified by the --folder option) to load web.crt and web.key.
 If those files exist, Dashboard will load them and run as an HTTPS server.  If Dashboard does not find both of them, it runs as HTTP server.  In both cases, the service
 listens to port 443, unless the ``--port`` option is used to specify a different port. Dashboard will run on ``0.0.0.0``, so by default it should be accessible on the same machine from
-``localhost:443``. To make it available to users outside the network, port forwarding and other configurations may be needed to securely direct traffic to the maching running Dashboard.
+``localhost:443``. To make it available to users outside the network, port forwarding and other configurations may be needed to securely direct traffic to the machine running Dashboard.
 
 .. note::
 

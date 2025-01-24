@@ -48,7 +48,7 @@ the session in a finally clause:
 
     try:
         print(sess.get_system_info())
-        job_id = sess.submit_job("/workspace/locataion_of_jobs/job1")
+        job_id = sess.submit_job("/workspace/location_of_jobs/job1")
         print(job_id + " was submitted")
         # monitor_job() waits until the job is done, see the section about it below for details
         sess.monitor_job(job_id)

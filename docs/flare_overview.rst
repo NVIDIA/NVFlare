@@ -16,8 +16,8 @@ Federated Computing
 
 At its core, FLARE serves as a federated computing framework, with applications such as Federated Learning and Federated Analytics built upon this foundation.
 Notably, it is agnostic to datasets, workloads, and domains. In contrast to centralized data lake solutions that necessitate copying data to a central location, FLARE brings computing capabilities directly to distributed datasets.
-This approach ensures that data remains within the compute node, with only pre-approved, selected results shared among collaborators.
-Moreover, FLARE is system agnostic, offering easy integration with various data processing frameworks through the implementation of the FLARE client.
+This approach ensures that data remains within the compute node, with only pre-approved, selected results being shared among collaborators.
+Moreover, FLARE is system-agnostic, offering easy integration with various data processing frameworks through the implementation of the FLARE client.
 This client facilitates deployment in sub-processes, Docker containers, Kubernetes pods, HPC, or specialized systems.
 
 Built for productivity
@@ -106,7 +106,7 @@ High-level System Architecture
 
 As detailed above, FLARE incorporates components that empower researchers and developers to construct and deploy end-to-end federated learning applications.
 The high-level architecture, depicted in the diagram below, encompasses the foundational layer of the FLARE communication, messaging streaming layers, and tools dedicated to privacy preservation and secure platform management. 
-Atop this foundation lie the building blocks for federated learning applications, featuring a suite of federation workflows and learning algorithms. 
+Atop this foundation are the building blocks for federated learning applications, featuring a suite of federation workflows and learning algorithms. 
 Adjacent to this central stack are tools facilitating experimentation and simulation with the FL Simulator and POC CLI, complemented by a set of tools designed for the deployment and management of production workflows.
 
 .. image:: resources/flare_overview.png
@@ -123,7 +123,7 @@ Design Principles
 
 **Less is more**
 We strive to solve unique challenges by doing less while enabling others to do more. 
-We can't solve whole worlds' problems, but by building an open platform we can enable others to solve world's problems.
+We can't solve whole world's problems, but by building an open platform, we can enable others to solve them.
 This design principle means we intentionally limit the scope of the implementation, only building the necessary components. 
 For a given implementation, we follow specifications in a way that allows others to easily customize and extend.
 

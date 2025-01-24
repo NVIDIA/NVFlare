@@ -64,12 +64,11 @@ script.
 > `export TF_FORCE_GPU_ALLOW_GROWTH=true && export
 > TF_GPU_ALLOCATOR=cuda_malloc_asyncp`
 
-We use Dirichelet sampling (implementation from FedMA (https://github.com/IBM/FedMA)) on
-CIFAR10 data labels to simulate data heterogeneity among data splits for different client
-sites, controlled by an alpha value, ranging from 0 (not including 0)
-to 1. A high alpha value indicates less data heterogeneity, i.e., an
-alpha value equal to 1.0 would result in homogeneous data distribution
-among different splits.
+We use Dirichlet sampling (implementation from FedMA (https://github.com/IBM/FedMA)) on
+CIFAR-10 data labels to simulate data heterogeneity among data splits for different client
+sites, controlled by an alpha value ranging from 0 (exclusive) to 1. A high alpha value
+indicates less data heterogeneity, i.e., analpha value equal to 1.0 would result in homogeneous
+data distribution among different splits.
 
 ### 2.1 Centralized training
 

@@ -163,7 +163,7 @@ The ``Project Admin`` is the administrator for the site and is responsible for i
 then approving the users and client sites while making edits if necessary.
 
 After deploying the FLARE Dashboard website package, the Project Admin should log in from the Home Page with the bootstrapped credentials
-provided in the deployment proecess. At this point, the Project Home Page only has a placeholder title since none of the project values have
+provided in the deployment process. At this point, the Project Home Page only has a placeholder title since none of the project values have
 been set yet.
 
 .. note::

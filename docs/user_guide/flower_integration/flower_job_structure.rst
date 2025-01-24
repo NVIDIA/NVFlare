@@ -74,7 +74,7 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
 Project Name
 ------------
 The project name should match the name of the project folder, though not a requirement. In this example, it is ``flwr_pt``. 
-Serverapp Specification
+Server App Specification
 
 This value is specified following this format:
 
@@ -92,7 +92,7 @@ where:
     app = ServerApp(server_fn=server_fn)
 
 
-Clientapp Specification
+Client App Specification
 ------------------------
 This value is specified following this format:
 

@@ -26,7 +26,7 @@ FL Terms and Definitions
 
 .. note::
 
-    Here we describe the centralized version of FL, where the FL server has the role of the aggregrator node. However in a decentralized version such as 
+    Here we describe the centralized version of FL, where the FL server has the role of the aggregator node. However in a decentralized version such as 
     swarm learning, FL clients can serve as the aggregator node instead.
 
 - Types of FL

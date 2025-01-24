@@ -18,4 +18,4 @@ Previous Releases of FLARE
    release_notes/flare_220
    release_notes/flare_210
 
-Also refer to the the NVFlare GitHub `releases <https://github.com/NVIDIA/NVFlare/releases>`_ to see minor release notes for RC versions.
+Also refer to the NVFlare GitHub `releases <https://github.com/NVIDIA/NVFlare/releases>`_ to see minor release notes for RC versions.

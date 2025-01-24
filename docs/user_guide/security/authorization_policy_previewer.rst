@@ -9,7 +9,7 @@ Since authorization policy is vital for system security, and many people can now
 to validate the policies before deploying them to production.
 
 The Authorization Policy Previewer is a tool for validating authorization policy definitions. The tool provides an interactive
-user interface and commands for the user to validate different aspects of policy definitions:
+user interface and commands for users to validate different aspects of policy definitions:
 
     - Show defined roles and rights
     - Show the content of the policy definition

@@ -1,7 +1,7 @@
 
 # Training an image classifier with CIFAR10 dataset
  
-We will use the original [Training a Classifer](https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html)
+We will use the original [Training a Classifier](https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html)
 example from pytorch as the code base.  
 
 The CIFAR10 dataset has the following classes: ‘airplane’, ‘automobile’, ‘bird’, ‘cat’, ‘deer’, ‘dog’, ‘frog’, ‘horse’, ‘ship’, ‘truck’.
@@ -16,7 +16,7 @@ In the following examples, we will show various Federated Learning workflows and
 * [sag_deploy_map](sag_deploy_map) - FedAvg with site-specific configs.
 * [sag_executor](sag_executor) - FedAvg with Executor API
 * [sag_mlflow](sag_mlflow) - FedAvg with MLflow experiment tracking logs.
-* [sag_he](sag_he) - FedAvg with homomorphic encyption using POC -he mode.
+* [sag_he](sag_he) - FedAvg with homomorphic encryption using POC -he mode.
 * [cse](cse) - Cross-site evaluation with server-side controller.
 * [cyclic](cyclic) - Cyclic Weight Transfer (cyclic) workflow with server-side controller.
 * [cyclic_ccwf](cyclic_ccwf) - Client-controlled cyclic workflow with client-side controller.
