@@ -1,0 +1,23 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "path": "trainer.TestTrainer",
+        "args": {}
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "sender",
+      "path": "file_streaming.FileSender",
+      "args": {}
+    }
+  ]
+}

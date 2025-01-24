@@ -182,6 +182,9 @@ class TxTask(StreamTaskSpec):
 
     def stop(self, error: Optional[StreamError] = None, notify=True):
 
+        if self.stopped:
+            return
+
         self.stopped = True
 
         if self.task_future:
