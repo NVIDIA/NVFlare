@@ -1,0 +1,15 @@
+api_version: 3
+name: example_project
+
+include: 1.yml
+
+participants:
+  - name: server
+    port: 123
+    include: [1.yml]
+    extra:
+      location: "east"
+      include: 3.yml
+  - name: client
+    port: 234
+    include: 2.yml
