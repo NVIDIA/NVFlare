@@ -25,7 +25,7 @@ def args_parser():
     parser.add_argument(
         "--output_curve_path",
         type=str,
-        default="/tmp/km_curve_baseline.png",
+        default="/tmp/nvflare/baseline/km_curve_baseline.png",
         help="save path for the output curve",
     )
     return parser
