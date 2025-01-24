@@ -31,12 +31,12 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
         if self._from_nvflare_converter is None:
             # if not specified, assign defaults
             if self._params_exchange_format == ExchangeFormat.NUMPY:
-                self.logger.info("Numpy from_nvflare_converter initialized")
+                self.logger.debug("Numpy from_nvflare_converter initialized")
                 self._from_nvflare_converter = NumpyToPTParamsConverter(
                     [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
                 )
             elif self._params_exchange_format == ExchangeFormat.PYTORCH:
-                self.logger.info("Pytorch from_nvflare_converter initialized")
+                self.logger.debug("Pytorch from_nvflare_converter initialized")
                 self._from_nvflare_converter = PTReceiveParamsConverter(
                     [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
                 )
@@ -46,12 +46,12 @@ class PTClientAPILauncherExecutor(ClientAPILauncherExecutor):
         if self._to_nvflare_converter is None:
             # if not specified, assign defaults
             if self._params_exchange_format == ExchangeFormat.NUMPY:
-                self.logger.info("Numpy to_nvflare_converter initialized")
+                self.logger.debug("Numpy to_nvflare_converter initialized")
                 self._to_nvflare_converter = PTToNumpyParamsConverter(
                     [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
                 )
             elif self._params_exchange_format == ExchangeFormat.PYTORCH:
-                self.logger.info("Pytorch to_nvflare_converter initialized")
+                self.logger.debug("Pytorch to_nvflare_converter initialized")
                 self._to_nvflare_converter = PTSendParamsConverter(
                     [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
                 )
