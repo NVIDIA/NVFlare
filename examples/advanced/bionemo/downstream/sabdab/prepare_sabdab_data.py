@@ -30,7 +30,7 @@ alpha = 1.0
 
 
 def clean_chains(df):
-    a = df["Antibody"]
+    a = df["sequences"]
     b = []
     for chains in a:
         # split chains
@@ -41,16 +41,16 @@ def clean_chains(df):
         assert "\\n" not in chains
         assert "'" not in chains
         b.append(chains)
-    df["Antibody"] = b
+    df["sequences"] = b
 
     return df
 
 
 def break_chains(df):
-    out_df = {"Antibody": []}
+    out_df = {"sequences": []}
     for idx, row in df.iterrows():
         # split chains
-        chains = row["Antibody"]
+        chains = row["sequences"]
         chains = chains.replace("['", "").replace("']", "").split("'\\n '")
         assert "'" not in chains
         assert "[" not in chains
@@ -59,9 +59,9 @@ def break_chains(df):
         assert "'" not in chains
 
         for chain in chains:
-            out_df["Antibody"].append(chain)
+            out_df["sequences"].append(chain)
             for k in row.keys():
-                if k == "Antibody":
+                if k == "sequences":
                     continue
                 if k not in out_df:
                     out_df[k] = [row[k]]
@@ -76,6 +76,11 @@ def main():
 
     data = Develop(name="SAbDab_Chen", path="/tmp/data")
     split = data.get_split()
+
+    # rename columns to fit BioNeMo convetion of "sequences" and "labels"
+    for s in ["train", "valid", "test"]:
+        split[s] = split[s].rename(columns={"Antibody": "sequences"})
+        split[s] = split[s].rename(columns={"Y": "labels"})
 
     train_df = pd.concat([split["train"], split["valid"]])
     test_df = split["test"]
@@ -129,8 +134,8 @@ def main():
     print(f"Saved {len(train_df)} training and {len(test_df)} testing proteins.")
 
     for _set, _df in zip(["TRAIN", "TEST"], [train_df, test_df]):
-        n_pos = np.sum(_df["Y"] == 0)
-        n_neg = np.sum(_df["Y"] == 1)
+        n_pos = np.sum(_df["labels"] == 0)
+        n_neg = np.sum(_df["labels"] == 1)
         n = len(_df)
         print(f"  {_set} Pos/Neg ratio: neg={n_neg}, pos={n_pos}: {n_pos / n_neg:0.3f}")
         print(f"  {_set} Trivial accuracy: {n_pos / n:0.3f}")
