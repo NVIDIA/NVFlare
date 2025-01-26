@@ -225,6 +225,8 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         config_files = workspace.get_config_files_for_startup(is_server=False, for_job=True if args.job_id else False)
 
+        print(f"got all config files: {config_files}")
+
         JsonConfigurator.__init__(
             self,
             config_file_name=config_files,
@@ -324,6 +326,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             "overseer_agent": self.overseer_agent,
             "client_components": self.components,
             "client_handlers": self.handlers,
+            "relay_config": self.config_data.get("relay"),
         }
 
         custom_validators = [self.app_validator] if self.app_validator else []

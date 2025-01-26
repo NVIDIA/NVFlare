@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import atexit
+import copy
 import logging
 import os
 import weakref
@@ -201,7 +202,9 @@ class Communicator:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for scheme {scheme}")
 
         connect_url, listening_url = driver_class.get_urls(scheme, resources)
-        params = parse_url(listening_url)
+        extra_params = parse_url(listening_url)
+        params = copy.copy(resources)
+        params.update(extra_params)
 
         handle = self.add_connector_advanced(driver_class(), Mode.PASSIVE, params, False, True)
 
@@ -225,11 +228,18 @@ class Communicator:
         Raises:
             CommError: If any errors
         """
-
+        original_conn_sec = params.get(DriverParams.CONNECTION_SECURITY)
         if self.local_endpoint.conn_props:
             params.update(self.local_endpoint.conn_props)
 
+        if original_conn_sec:
+            # we do not allow the connection sec to be overwritten by the endpoint's conn_props
+            params[DriverParams.CONNECTION_SECURITY] = original_conn_sec
+
         params[DriverParams.SECURE] = secure
+
+        log.info(f"$$$ add_connector_advanced: {params=} {mode=} {original_conn_sec=}")
+
         handle = self.conn_manager.add_connector(driver, params, mode)
 
         if not start:

@@ -426,6 +426,11 @@ class FederatedServer(BaseServer):
             self.logger.debug(f"skip special message {topic=} {channel=}")
             return None
 
+        if channel in ["_net_manager"]:
+            # skip internal net query messages for now to support relays
+            # TBD: need to add relay authentication
+            return None
+
         client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
         err_text = f"unauthenticated msg ({channel=} {topic=}) received from {origin}"
         if not client_name:

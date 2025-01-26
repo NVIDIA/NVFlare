@@ -20,6 +20,7 @@ from nvflare.fuel.f3.cellnet.defs import ConnectorRequirementKey
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import CommError, Communicator, Mode
+from nvflare.fuel.f3.drivers.driver_params import ConnectionSecurity, DriverParams
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
@@ -84,6 +85,11 @@ class ConnectorManager:
             if adhoc_conf:
                 self.adhoc_scheme = adhoc_conf.get(_KEY_SCHEME)
                 self.adhoc_resources = adhoc_conf.get(_KEY_RESOURCES)
+
+        # default conn sec
+        conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY)
+        if not conn_sec:
+            self.int_resources[DriverParams.CONNECTION_SECURITY] = ConnectionSecurity.INSECURE
 
         self.logger.debug(f"internal scheme={self.int_scheme}, resources={self.int_resources}")
         self.logger.debug(f"adhoc scheme={self.adhoc_scheme}, resources={self.adhoc_resources}")
