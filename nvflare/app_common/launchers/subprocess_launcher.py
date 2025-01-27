@@ -66,7 +66,7 @@ def log_subprocess_output(process, logger):
 
     buffer = bytearray()
     while True:
-        chunk = process.stdout.read()
+        chunk = process.stdout.read1(4096)
         if not chunk:
             break
         buffer = buffer + chunk
