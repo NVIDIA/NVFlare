@@ -24,10 +24,10 @@ from .cert import CertPair, Entity, deserialize_ca_key, make_cert
 from .models import Client, Project, User
 
 lighter_folder = os.path.dirname(utils.__file__)
-template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
+template = utils.load_yaml(os.path.join(lighter_folder, "templates", "master_template.yml"))
 supported_csps = ["aws", "azure"]
 for csp in supported_csps:
-    csp_template_file = os.path.join(lighter_folder, "impl", f"{csp}_template.yml")
+    csp_template_file = os.path.join(lighter_folder, "templates", f"{csp}_template.yml")
     if os.path.exists(csp_template_file):
         template.update(utils.load_yaml(csp_template_file))
 
