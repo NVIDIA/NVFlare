@@ -96,21 +96,28 @@ class BaseFormatter(logging.Formatter):
             message = record.getMessage()
             fl_ctx_match = re.search(r"\[(.*?)\]: ", message)
             if fl_ctx_match:
-                fl_ctx_pairs = {
-                    pair.split("=", 1)[0]: pair.split("=", 1)[1] for pair in fl_ctx_match.group(1).split(", ")
-                }
-                record.fl_ctx = fl_ctx_match[0][:-2]
-                record.identity = fl_ctx_pairs["identity"]  # TODO add more values as attributes?
-                record.msg = message.replace(fl_ctx_match[0], "")
-                self._style._fmt = self.fmt
+                try:
+                    fl_ctx_pairs = {
+                        pair.split("=", 1)[0]: pair.split("=", 1)[1] for pair in fl_ctx_match.group(1).split(", ")
+                    }
+                    record.fl_ctx = fl_ctx_match[0][:-2]
+                    record.identity = fl_ctx_pairs["identity"]  # TODO add more values as attributes?
+                    record.msg = message.replace(fl_ctx_match[0], "")
+                    self._style._fmt = self.fmt
+                except:
+                    # found brackets pattern, but invalid fl_ctx
+                    self.remove_empty_placeholders()
             else:
-                for placeholder in [
-                    " %(fl_ctx)s -",
-                    " %(identity)s -",
-                ]:  # TODO generalize this or add default values?
-                    self._style._fmt = self._style._fmt.replace(placeholder, "")
+                self.remove_empty_placeholders()
 
         return super().format(record)
+
+    def remove_empty_placeholders(self):
+        for placeholder in [
+            " %(fl_ctx)s -",
+            " %(identity)s -",
+        ]:  # TODO generalize this or add default values?
+            self._style._fmt = self._style._fmt.replace(placeholder, "")
 
 
 class ColorFormatter(BaseFormatter):
