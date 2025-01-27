@@ -17,7 +17,7 @@ import threading
 import time
 from typing import Tuple, Union
 
-from nvflare.apis.fl_constant import FLMetaKey, SecureTrainConst, SystemVarName
+from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey, SystemVarName
 from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
@@ -150,7 +150,7 @@ class CellPipe(Pipe):
                         DriverParams.CA_CERT.value: root_cert_path,
                     }
 
-                    conn_sec = get_scope_property(site_name, SecureTrainConst.CONNECTION_SECURITY)
+                    conn_sec = get_scope_property(site_name, ConnPropKey.CONNECTION_SECURITY)
                     if conn_sec:
                         credentials[DriverParams.CONNECTION_SECURITY.value] = conn_sec
 

@@ -16,7 +16,7 @@ import json
 import os
 from typing import Dict, Optional
 
-from nvflare.apis.fl_constant import FLMetaKey, SecureTrainConst
+from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
@@ -157,7 +157,7 @@ class ClientConfig:
         )
 
     def get_connection_security(self):
-        return self.config.get(SecureTrainConst.CONNECTION_SECURITY)
+        return self.config.get(ConnPropKey.CONNECTION_SECURITY)
 
     def get_site_name(self):
         return self.config.get(FLMetaKey.SITE_NAME)

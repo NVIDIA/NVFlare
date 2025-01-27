@@ -18,13 +18,13 @@ from typing import List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst, ServerCommandKey
+from nvflare.apis.fl_constant import ConnPropKey, FLContextKey, SecureTrainConst, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.fuel.data_event.utils import set_scope_property
+from nvflare.fuel.data_event.utils import get_scope_property, set_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
@@ -32,7 +32,6 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.url_utils import make_url
 from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
@@ -189,39 +188,16 @@ class FederatedClientBase:
         """
         # Determine the CP's fqcn
         root_url = scheme + "://" + location
-        relay_fqcn = None
-        relay_url = None
-        relay_conn_security = None
-        conn_security = self.client_args.get(SecureTrainConst.CONNECTION_SECURITY)
+        conn_security = self.client_args.get(ConnPropKey.CONNECTION_SECURITY)
 
-        # relay info is set in the client's local/resources.json.
-        # If relay is used, then connect via the specified relay; if not, try to connect the Server directly
-        self.logger.info(f"Config data: {self.client_args=}")
-        self.logger.info(f"Args: {self.args=}")
-        relay_config = self.client_args.get("relay_config")
-        self.logger.info(f"got relay config: {relay_config}")
-        if relay_config:
-            if relay_config:
-                relay_fqcn = relay_config.get("fqcn")
-                scheme = relay_config.get("scheme")
-                addr = relay_config.get("address")
-                relay_conn_security = relay_config.get(SecureTrainConst.CONNECTION_SECURITY)
-                secure = True
-                if relay_conn_security == "insecure":
-                    secure = False
-                relay_url = make_url(scheme, addr, secure)
-                self.logger.info(f"connect to server via relay: {relay_url=} {relay_fqcn=}")
-            else:
-                self.logger.info("no relay defined: connect to server directly")
-        else:
-            self.logger.info("no comm_config: connect to server directly")
+        conn_props = get_scope_property(self.client_name, ConnPropKey.CONNECTION_PROPERTIES)
+        self.logger.info(f"got connection_properties: {conn_props}")
 
+        relay_fqcn = conn_props.get(ConnPropKey.FQCN)
         if relay_fqcn:
-            cp_fqcn = FQCN.join([relay_fqcn, self.client_name])
-            root_url = None  # do not connect to server if bridge is used
-        else:
-            cp_fqcn = self.client_name
+            root_url = None  # do not connect to server if relay is used
 
+        cp_fqcn = conn_props.get(ConnPropKey.CP_FQCN)
         if self.args.job_id:
             # I am CJ
             me = "CJ"
@@ -232,8 +208,9 @@ class FederatedClientBase:
             # I am CP
             me = "CP"
             my_fqcn = cp_fqcn
-            parent_url = relay_url
+            parent_url = conn_props.get(ConnPropKey.URL)
             create_internal_listener = True
+            relay_conn_security = conn_props.get(ConnPropKey.CONNECTION_SECURITY)
             if relay_conn_security:
                 conn_security = relay_conn_security
 
@@ -252,7 +229,6 @@ class FederatedClientBase:
 
         if conn_security:
             credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
-            set_scope_property(self.client_name, SecureTrainConst.CONNECTION_SECURITY, conn_security)
 
         self.logger.info(f"{me=}: {my_fqcn=} {root_url=} {parent_url=}")
         self.cell = Cell(

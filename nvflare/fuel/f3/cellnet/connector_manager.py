@@ -15,12 +15,13 @@ import os
 import time
 from typing import Union
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.cellnet.defs import ConnectorRequirementKey
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import CommError, Communicator, Mode
-from nvflare.fuel.f3.drivers.driver_params import ConnectionSecurity, DriverParams
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 

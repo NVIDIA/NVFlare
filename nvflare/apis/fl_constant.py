@@ -443,7 +443,6 @@ class SecureTrainConst:
     SSL_ROOT_CERT = "ssl_root_cert"
     SSL_CERT = "ssl_cert"
     PRIVATE_KEY = "ssl_private_key"
-    CONNECTION_SECURITY = "connection_security"
 
 
 class FLMetaKey:
@@ -552,3 +551,23 @@ class RunnerTask:
     INIT = "init"
     TASK_EXEC = "task_exec"
     END_RUN = "end_run"
+
+
+class ConnPropKey:
+
+    IDENTITY = "identity"
+    PARENT = "parent"
+    FQCN = "fqcn"
+    URL = "url"
+    SCHEME = "scheme"
+    ADDRESS = "address"
+    CONNECTION_SECURITY = "connection_security"
+    CP_FQCN = "cp_fqcn"
+    CONNECTION_PROPERTIES = "connection_properties"
+    RELAY_CONFIG = "relay_config"
+
+
+class ConnectionSecurity:
+    INSECURE = "insecure"
+    TLS = "tls"
+    MTLS = "mtls"

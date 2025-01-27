@@ -25,6 +25,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     ConfigVarName,
+    ConnPropKey,
     FLContextKey,
     MachineStatus,
     RunProcessKey,
@@ -169,7 +170,7 @@ class BaseServer(ABC):
                 DriverParams.SERVER_KEY.value: private_key,
             }
 
-            conn_security = grpc_args.get(SecureTrainConst.CONNECTION_SECURITY)
+            conn_security = grpc_args.get(ConnPropKey.CONNECTION_SECURITY)
             if conn_security:
                 credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
         else:
@@ -431,6 +432,10 @@ class FederatedServer(BaseServer):
             # TBD: need to add relay authentication
             return None
 
+        if channel == "cellnet.channel" and topic == "bye":
+            # skip cellnet goodbye
+            return None
+
         client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
         err_text = f"unauthenticated msg ({channel=} {topic=}) received from {origin}"
         if not client_name:
@@ -546,7 +551,7 @@ class FederatedServer(BaseServer):
                 DriverParams.SERVER_KEY.value: private_key,
             }
 
-            conn_security = server_config.get(SecureTrainConst.CONNECTION_SECURITY)
+            conn_security = server_config.get(ConnPropKey.CONNECTION_SECURITY)
             if conn_security:
                 credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
         else:

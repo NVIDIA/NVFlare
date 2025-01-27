@@ -19,11 +19,14 @@ import re
 import sys
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FilterKey, SiteType, SystemConfigs
+from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, FilterKey, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.data_event.utils import set_scope_property
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
+from nvflare.fuel.utils.url_utils import make_url
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
 from nvflare.private.json_configer import JsonConfigurator
@@ -285,6 +288,48 @@ class FLClientStarterConfiger(JsonConfigurator):
                 self.handlers.append(t)
         return t
 
+    def _determine_conn_props(self, client_name, config_data: dict):
+        relay_fqcn = None
+        relay_url = None
+        relay_conn_security = None
+
+        # relay info is set in the client's relay__resources.json.
+        # If relay is used, then connect via the specified relay; if not, try to connect the Server directly
+        print(f"Config data: {config_data=}")
+        print(f"Args: {self.args=}")
+        relay_config = config_data.get(ConnPropKey.RELAY_CONFIG)
+        self.logger.info(f"got relay config: {relay_config}")
+        if relay_config:
+            if relay_config:
+                relay_fqcn = relay_config.get(ConnPropKey.FQCN)
+                scheme = relay_config.get(ConnPropKey.SCHEME)
+                addr = relay_config.get(ConnPropKey.ADDRESS)
+                relay_conn_security = relay_config.get(ConnPropKey.CONNECTION_SECURITY)
+                secure = True
+                if relay_conn_security == ConnectionSecurity.INSECURE:
+                    secure = False
+                relay_url = make_url(scheme, addr, secure)
+                print(f"connect to server via relay: {relay_url=} {relay_fqcn=}")
+            else:
+                print("no relay defined: connect to server directly")
+        else:
+            print("no relay_config: connect to server directly")
+
+        if relay_fqcn:
+            cp_fqcn = FQCN.join([relay_fqcn, client_name])
+        else:
+            cp_fqcn = client_name
+
+        result = {
+            ConnPropKey.CP_FQCN: cp_fqcn,
+        }
+
+        if relay_fqcn:
+            result[ConnPropKey.FQCN] = relay_fqcn
+            result[ConnPropKey.URL] = relay_url
+            result[ConnPropKey.CONNECTION_SECURITY] = relay_conn_security
+        return result
+
     def start_config(self, config_ctx: ConfigContext):
         """Start the config process.
 
@@ -303,6 +348,23 @@ class FLClientStarterConfiger(JsonConfigurator):
                 client[SSLConstants.CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.CERT])
             if client.get(SSLConstants.ROOT_CERT):
                 client[SSLConstants.ROOT_CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.ROOT_CERT])
+
+            client_name = self.cmd_vars.get("uid", None)
+            if not client_name:
+                raise ConfigError("missing 'uid' from command args")
+
+            relay_config = self.config_data.get(ConnPropKey.RELAY_CONFIG)
+            print(f"got relay config: {relay_config}")
+            if relay_config:
+                set_scope_property(client_name, ConnPropKey.RELAY_CONFIG, relay_config)
+
+            conn_sec = client.get(ConnPropKey.CONNECTION_SECURITY)
+            if conn_sec:
+                set_scope_property(client_name, ConnPropKey.CONNECTION_SECURITY, conn_sec)
+
+            conn_props = self._determine_conn_props(client_name, self.config_data)
+            set_scope_property(client_name, ConnPropKey.CONNECTION_PROPERTIES, conn_props)
+
         except Exception:
             raise ValueError(f"Client config error: '{self.client_config_file_names}'")
 
@@ -326,7 +388,6 @@ class FLClientStarterConfiger(JsonConfigurator):
             "overseer_agent": self.overseer_agent,
             "client_components": self.components,
             "client_handlers": self.handlers,
-            "relay_config": self.config_data.get("relay"),
         }
 
         custom_validators = [self.app_validator] if self.app_validator else []

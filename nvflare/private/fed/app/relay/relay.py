@@ -18,12 +18,12 @@ import os
 import sys
 import threading
 
-from nvflare.apis.fl_constant import SecureTrainConst, WorkspaceConstants
+from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
-from nvflare.fuel.f3.drivers.driver_params import ConnectionSecurity, DriverParams
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SSL_ROOT_CERT
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.config_service import ConfigService, search_file
@@ -58,23 +58,23 @@ def main(args):
     if not isinstance(relay_config, dict):
         raise RuntimeError(f"invalid relay config file {args.relay_config}")
 
-    my_identity = relay_config.get("identity")
+    my_identity = relay_config.get(ConnPropKey.IDENTITY)
     if not my_identity:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing identity")
 
-    parent = relay_config.get("parent")
+    parent = relay_config.get(ConnPropKey.PARENT)
     if not parent:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing parent")
 
-    parent_address = parent.get("address")
+    parent_address = parent.get(ConnPropKey.ADDRESS)
     if not parent_address:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing parent.address")
 
-    parent_scheme = parent.get("scheme")
+    parent_scheme = parent.get(ConnPropKey.SCHEME)
     if not parent_scheme:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing parent.scheme")
 
-    parent_fqcn = parent.get("fqcn")
+    parent_fqcn = parent.get(ConnPropKey.FQCN)
     if not parent_fqcn:
         raise RuntimeError(f"invalid relay config file {args.relay_config}: missing parent.fqcn")
 
@@ -95,7 +95,7 @@ def main(args):
         DriverParams.CA_CERT.value: root_cert_path,
     }
 
-    conn_security = parent.get(SecureTrainConst.CONNECTION_SECURITY)
+    conn_security = parent.get(ConnPropKey.CONNECTION_SECURITY)
     secure = True
     if conn_security:
         credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security

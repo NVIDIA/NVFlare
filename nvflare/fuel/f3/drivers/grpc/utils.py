@@ -13,8 +13,9 @@
 # limitations under the License.
 import grpc
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.comm_config import CommConfigurator
-from nvflare.fuel.f3.drivers.driver_params import ConnectionSecurity, DriverParams
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 
 def use_aio_grpc():

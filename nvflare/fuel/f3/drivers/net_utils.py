@@ -20,8 +20,9 @@ from ssl import SSLContext
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.driver_params import ConnectionSecurity, DriverParams
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.argument_utils import str2bool
 from nvflare.security.logging import secure_format_exception
 
