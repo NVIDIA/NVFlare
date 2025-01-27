@@ -41,24 +41,24 @@ def get_line(buffer: bytearray):
     size = len(buffer)
     r = buffer.find(b"\r")
     if r < 0:
-        r = size+1
+        r = size + 1
     n = buffer.find(b"\n")
     if n < 0:
-        n = size+1
+        n = size + 1
     index = min(r, n)
 
     if index >= size:
         return None, buffer
 
     # if \r and \n are adjacent, treat them as one
-    if abs(r-n) == 1:
-        index = index+1
+    if abs(r - n) == 1:
+        index = index + 1
 
     line = buffer[:index].decode().rstrip()
-    if index >= size-1:
+    if index >= size - 1:
         remaining = bytearray()
     else:
-        remaining = buffer[index+1:]
+        remaining = buffer[index + 1 :]
     return line, remaining
 
 
