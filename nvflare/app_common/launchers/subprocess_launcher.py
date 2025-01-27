@@ -70,6 +70,7 @@ def log_subprocess_output(process, logger):
         if not chunk:
             break
         buffer = buffer + chunk
+
         while True:
             line, buffer = get_line(buffer)
             if line is None:
@@ -77,6 +78,9 @@ def log_subprocess_output(process, logger):
 
             if line:
                 logger.info(line)
+
+    if buffer:
+        logger.info(buffer.decode())
 
 
 class SubprocessLauncher(Launcher):
