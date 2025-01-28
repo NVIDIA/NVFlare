@@ -55,5 +55,5 @@ launcher_dockerfile: |
 docker_build_sh: |
   #!/usr/bin/env bash
   docker image rm {~~image~~}
-  docker build -t {~~image~~} -f Dockerfile .
+  docker build -t {~~image~~} -f Dockerfile.launcher .
   docker push {~~image~~}

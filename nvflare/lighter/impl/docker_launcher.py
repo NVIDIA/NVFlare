@@ -87,7 +87,26 @@ class DockerLauncherBuilder(Builder):
                 exe=True,
             )
 
+        dest_dir = ctx.get_kit_dir(server)
+        replacement_dict = {
+            "admin_port": admin_port,
+            "fed_learn_port": fed_learn_port,
+            "comm_host_name": "server-parent",
+            "communication_port": communication_port,
+            "docker_image": self.docker_image,
+        }
+        ctx.build_from_template(
+            dest_dir,
+            TemplateSectionKey.DOCKER_LAUNCHER_SERVER_SH,
+            ProvFileName.DOCKER_LAUNCHER_SH,
+            replacement=replacement_dict,
+            exe=True,
+        )
+
     def _build_client(self, client, ctx: ProvisionContext):
+        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        admin_port = ctx.get(CtxKey.ADMIN_PORT)
+
         info_dict = copy.deepcopy(self.services["__flclient__"])
         info_dict["volumes"] = [f"./{client.name}:" + "${WORKSPACE}"]
         info_dict["build"] = "nvflare_compose"
@@ -125,6 +144,22 @@ class DockerLauncherBuilder(Builder):
                 exe=True,
             )
 
+        dest_dir = ctx.get_kit_dir(client)
+        replacement_dict = {
+            "admin_port": admin_port,
+            "fed_learn_port": fed_learn_port,
+            "comm_host_name": "server-parent",
+            "communication_port": communication_port,
+            "docker_image": self.docker_image,
+        }
+        ctx.build_from_template(
+            dest_dir,
+            TemplateSectionKey.DOCKER_LAUNCHER_CLIENT_SH,
+            ProvFileName.DOCKER_LAUNCHER_SH,
+            replacement=replacement_dict,
+            exe=True,
+        )
+
     def build(self, project: Project, ctx: ProvisionContext):
         compose = ctx.yaml_load_template_section(TemplateSectionKey.COMPOSE_YAML)
         self.services = compose.get("services")
@@ -151,10 +186,10 @@ class DockerLauncherBuilder(Builder):
             f.write("PYTHON_EXECUTABLE=/usr/local/bin/python3\n")
             f.write("IMAGE_NAME=nvflare-service\n")
         compose_build_dir = os.path.join(ctx.get_wip_dir(), ProvFileName.COMPOSE_BUILD_DIR)
-        os.mkdir(compose_build_dir)
-        with open(os.path.join(compose_build_dir, ProvFileName.DOCKERFILE), "wt") as f:
+        os.makedirs(compose_build_dir, exist_ok=True)
+        with open(os.path.join(compose_build_dir, ProvFileName.LAUNCHER_DOCKERFILE), "wt") as f:
             f.write(f"FROM {self.base_image}\n")
-            f.write(ctx.get_template_section(TemplateSectionKey.DOCKERFILE))
+            f.write(ctx.get_template_section(TemplateSectionKey.LAUNCHER_DOCKERFILE))
         replacement_dict = {"image": self.docker_image}
         ctx.build_from_template(
             compose_build_dir,
