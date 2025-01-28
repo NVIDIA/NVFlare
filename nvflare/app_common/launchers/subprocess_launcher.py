@@ -18,14 +18,13 @@ import subprocess
 from threading import Thread
 from typing import Optional
 
-from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
-
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.utils.job_launcher_utils import add_custom_dir_to_path
 
 
 def get_line(buffer: bytearray):
