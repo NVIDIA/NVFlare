@@ -39,7 +39,6 @@ class CIFAR10DataModule(LightningDataModule):
 
     def prepare_data(self):
         torchvision.datasets.CIFAR10(root=self.data_dir, train=True, download=True, transform=transform)
-        torchvision.datasets.CIFAR10(root=self.data_dir, train=False, download=True, transform=transform)
 
     def setup(self, stage: str):
         # Assign train/val datasets for use in dataloaders
@@ -49,23 +48,11 @@ class CIFAR10DataModule(LightningDataModule):
             )
             self.cifar_train, self.cifar_val = random_split(cifar_full, [0.8, 0.2])
 
-        # Assign test dataset for use in dataloader(s)
-        if stage == "test" or stage == "predict":
-            self.cifar_test = torchvision.datasets.CIFAR10(
-                root=self.data_dir, train=False, download=False, transform=transform
-            )
-
     def train_dataloader(self):
         return DataLoader(self.cifar_train, batch_size=self.batch_size)
 
     def val_dataloader(self):
         return DataLoader(self.cifar_val, batch_size=self.batch_size)
-
-    def test_dataloader(self):
-        return DataLoader(self.cifar_test, batch_size=self.batch_size)
-
-    def predict_dataloader(self):
-        return DataLoader(self.cifar_test, batch_size=self.batch_size)
 
 
 def main():
@@ -94,14 +81,6 @@ def main():
         # perform local training starting with the received global model
         print("--- train new model ---")
         trainer.fit(model, datamodule=cifar10_dm)
-
-        # test local model
-        print("--- test new model ---")
-        trainer.test(ckpt_path="best", datamodule=cifar10_dm)
-
-        # get predictions
-        print("--- prediction with new best model ---")
-        trainer.predict(ckpt_path="best", datamodule=cifar10_dm)
 
 
 if __name__ == "__main__":
