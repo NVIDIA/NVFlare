@@ -155,13 +155,14 @@ class Communicator:
 
         self.conn_manager.register_message_receiver(app_id, receiver)
 
-    def add_connector(self, url: str, mode: Mode, secure: bool = False) -> (str, dict):
+    def add_connector(self, url: str, mode: Mode, secure: bool = False, resources=None) -> (str, dict):
         """Load a connector. The driver is selected based on the URL
 
         Args:
             url: The url to listen on or connect to, like "https://0:443". Use 0 for empty host
             mode: Active for connecting, Passive for listening
             secure: True if SSL is required.
+            resources: extra resources for creating connection
 
         Returns:
             A tuple of (A handle that can be used to delete connector, connector params)
@@ -178,6 +179,8 @@ class Communicator:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
 
         params = parse_url(url)
+        if resources:
+            params.update(resources)
         return self.add_connector_advanced(driver_class(), mode, params, secure, False), params
 
     def start_listener(self, scheme: str, resources: dict) -> (str, str, dict):

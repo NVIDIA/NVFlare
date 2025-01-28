@@ -188,31 +188,40 @@ class FederatedClientBase:
         """
         # Determine the CP's fqcn
         root_url = scheme + "://" + location
-        conn_security = self.client_args.get(ConnPropKey.CONNECTION_SECURITY)
+        root_conn_security = self.client_args.get(ConnPropKey.CONNECTION_SECURITY)
 
-        conn_props = get_scope_property(self.client_name, ConnPropKey.CONNECTION_PROPERTIES)
-        self.logger.info(f"got connection_properties: {conn_props}")
+        relay_conn_props = get_scope_property(self.client_name, ConnPropKey.RELAY_CONN_PROPS, {})
+        self.logger.info(f"got {ConnPropKey.RELAY_CONN_PROPS}: {relay_conn_props}")
 
-        relay_fqcn = conn_props.get(ConnPropKey.FQCN)
+        relay_fqcn = relay_conn_props.get(ConnPropKey.FQCN)
         if relay_fqcn:
             root_url = None  # do not connect to server if relay is used
 
-        cp_fqcn = conn_props.get(ConnPropKey.CP_FQCN)
+        cp_conn_props = get_scope_property(self.client_name, ConnPropKey.CP_CONN_PROPS)
+        cp_fqcn = cp_conn_props.get(ConnPropKey.FQCN)
+        parent_resources = None
         if self.args.job_id:
             # I am CJ
             me = "CJ"
             my_fqcn = FQCN.join([cp_fqcn, self.args.job_id])
-            parent_url = self.args.parent_url
+            parent_url = cp_conn_props.get(ConnPropKey.URL)
+            parent_conn_sec = cp_conn_props.get(ConnPropKey.CONNECTION_SECURITY)
             create_internal_listener = False
+            if parent_conn_sec:
+                parent_resources = {
+                    DriverParams.CONNECTION_SECURITY.value: parent_conn_sec
+                }
         else:
             # I am CP
             me = "CP"
             my_fqcn = cp_fqcn
-            parent_url = conn_props.get(ConnPropKey.URL)
+            parent_url = relay_conn_props.get(ConnPropKey.URL)
             create_internal_listener = True
-            relay_conn_security = conn_props.get(ConnPropKey.CONNECTION_SECURITY)
+            relay_conn_security = relay_conn_props.get(ConnPropKey.CONNECTION_SECURITY)
             if relay_conn_security:
-                conn_security = relay_conn_security
+                parent_resources = {
+                    DriverParams.CONNECTION_SECURITY.value: relay_conn_security
+                }
 
         if self.secure_train:
             root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
@@ -227,8 +236,9 @@ class FederatedClientBase:
         else:
             credentials = {}
 
-        if conn_security:
-            credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
+        if root_conn_security:
+            # this is the default conn sec
+            credentials[DriverParams.CONNECTION_SECURITY.value] = root_conn_security
 
         self.logger.info(f"{me=}: {my_fqcn=} {root_url=} {parent_url=}")
         self.cell = Cell(
@@ -238,6 +248,7 @@ class FederatedClientBase:
             credentials=credentials,
             create_internal_listener=create_internal_listener,
             parent_url=parent_url,
+            parent_resources=parent_resources,
         )
         self.cell.start()
         self.communicator.set_cell(self.cell)

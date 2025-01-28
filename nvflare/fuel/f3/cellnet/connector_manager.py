@@ -50,6 +50,9 @@ class ConnectorData:
     def get_connection_url(self):
         return self.connect_url
 
+    def get_connection_params(self):
+        return self.params
+
 
 class ConnectorManager:
     """
@@ -159,7 +162,7 @@ class ConnectorManager:
         return conn_config
 
     def _get_connector(
-        self, url: str, active: bool, internal: bool, adhoc: bool, secure: bool
+        self, url: str, active: bool, internal: bool, adhoc: bool, secure: bool, conn_resources=None
     ) -> Union[None, ConnectorData]:
         if active and not url:
             raise RuntimeError("url is required by not provided for active connector!")
@@ -200,10 +203,10 @@ class ConnectorManager:
 
         try:
             if active:
-                handle, conn_params = self.communicator.add_connector(url, Mode.ACTIVE, ssl_required)
+                handle, conn_params = self.communicator.add_connector(url, Mode.ACTIVE, ssl_required, conn_resources)
                 connect_url = url
             elif url:
-                handle, conn_params = self.communicator.add_connector(url, Mode.PASSIVE, ssl_required)
+                handle, conn_params = self.communicator.add_connector(url, Mode.PASSIVE, ssl_required, conn_resources)
                 connect_url = url
             else:
                 self.logger.info(f"{os.getpid()}: Try start_listener Listener resources: {reqs}")
@@ -247,11 +250,13 @@ class ConnectorManager:
         """
         return self._get_connector(url="", active=False, internal=True, adhoc=False, secure=False)
 
-    def get_internal_connector(self, url: str) -> Union[None, ConnectorData]:
+    def get_internal_connector(self, url: str, conn_resources=None) -> Union[None, ConnectorData]:
         """
         Try to get an internal listener.
 
         Args:
             url:
         """
-        return self._get_connector(url=url, active=True, internal=True, adhoc=False, secure=False)
+        return self._get_connector(
+            url=url, active=True, internal=True, adhoc=False, secure=False, conn_resources=conn_resources
+        )

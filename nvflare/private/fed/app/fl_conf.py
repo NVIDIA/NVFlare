@@ -320,15 +320,39 @@ class FLClientStarterConfiger(JsonConfigurator):
         else:
             cp_fqcn = client_name
 
-        result = {
-            ConnPropKey.CP_FQCN: cp_fqcn,
-        }
-
         if relay_fqcn:
-            result[ConnPropKey.FQCN] = relay_fqcn
-            result[ConnPropKey.URL] = relay_url
-            result[ConnPropKey.CONNECTION_SECURITY] = relay_conn_security
-        return result
+            relay_conn_props = {
+                ConnPropKey.FQCN: relay_fqcn,
+                ConnPropKey.URL:  relay_url,
+                ConnPropKey.CONNECTION_SECURITY: relay_conn_security
+            }
+            set_scope_property(client_name, ConnPropKey.RELAY_CONN_PROPS, relay_conn_props)
+
+        client = self.config_data["client"]
+
+        if hasattr(self.args, "job_id") and self.args.job_id:
+            # this is CJ
+            sp_scheme = self.args.sp_scheme
+            sp_target = self.args.sp_target
+            root_url = f"{sp_scheme}://{sp_target}"
+            root_conn_props = {
+                ConnPropKey.FQCN: FQCN.ROOT_SERVER,
+                ConnPropKey.URL: root_url,
+                ConnPropKey.CONNECTION_SECURITY: client.get(ConnPropKey.CONNECTION_SECURITY)
+            }
+            set_scope_property(client_name, ConnPropKey.ROOT_CONN_PROPS, root_conn_props)
+
+            cp_conn_props = {
+                ConnPropKey.FQCN: cp_fqcn,
+                ConnPropKey.URL: self.args.parent_url,
+                ConnPropKey.CONNECTION_SECURITY: self.args.parent_conn_sec,
+            }
+        else:
+            # this is CP
+            cp_conn_props = {
+                ConnPropKey.FQCN: cp_fqcn,
+            }
+        set_scope_property(client_name, ConnPropKey.CP_CONN_PROPS, cp_conn_props)
 
     def start_config(self, config_ctx: ConfigContext):
         """Start the config process.
@@ -353,17 +377,11 @@ class FLClientStarterConfiger(JsonConfigurator):
             if not client_name:
                 raise ConfigError("missing 'uid' from command args")
 
-            relay_config = self.config_data.get(ConnPropKey.RELAY_CONFIG)
-            print(f"got relay config: {relay_config}")
-            if relay_config:
-                set_scope_property(client_name, ConnPropKey.RELAY_CONFIG, relay_config)
-
             conn_sec = client.get(ConnPropKey.CONNECTION_SECURITY)
             if conn_sec:
                 set_scope_property(client_name, ConnPropKey.CONNECTION_SECURITY, conn_sec)
 
-            conn_props = self._determine_conn_props(client_name, self.config_data)
-            set_scope_property(client_name, ConnPropKey.CONNECTION_PROPERTIES, conn_props)
+            self._determine_conn_props(client_name, self.config_data)
 
         except Exception:
             raise ValueError(f"Client config error: '{self.client_config_file_names}'")

@@ -282,6 +282,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         credentials: dict,
         create_internal_listener: bool = False,
         parent_url: str = None,
+        parent_resources: dict = None,
         max_timeout=3600,
         bulk_check_interval=0.5,
         bulk_process_interval=0.5,
@@ -297,6 +298,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             max_timeout: default timeout for send_and_receive
             create_internal_listener: whether to create an internal listener for child cells
             parent_url: url for connecting to parent cell
+            parent_resources: extra resources for making connection to parent
 
         FQCN is the names of all ancestor, concatenated with dots.
 
@@ -323,6 +325,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.logger = get_obj_logger(self)
         self.max_msg_size = comm_configurator.get_max_message_size()
         self.comm_configurator = comm_configurator
+
+        self.logger.info(f"XXXX {parent_resources=} {parent_url=}")
 
         err = FQCN.validate(fqcn)
         if err:
@@ -371,6 +375,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.root_url = root_url
         self.create_internal_listener = create_internal_listener
         self.parent_url = parent_url
+        self.parent_resources = parent_resources
         self.bulk_check_interval = bulk_check_interval
         self.max_bulk_size = max_bulk_size
         self.bulk_checker = None
@@ -567,7 +572,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def _set_bb_for_client_child(self, parent_url: str, create_internal_listener: bool):
         if parent_url:
-            self._create_internal_connector(parent_url)
+            self._create_internal_connector(parent_url, self.parent_resources)
 
         if create_internal_listener:
             self._create_internal_listener()
@@ -694,6 +699,11 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             return None
         return self.int_listener.get_connection_url()
 
+    def get_internal_listener_params(self) -> Union[None, dict]:
+        if not self.int_listener:
+            return None
+        return self.int_listener.get_connection_params()
+
     def _add_adhoc_connector(self, to_cell: str, url: str):
         if self.bb_ext_connector:
             # it is possible that the server root offers connect url after the bb_ext_connector is created
@@ -787,8 +797,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         else:
             raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone external connector to {self.root_url}")
 
-    def _create_internal_connector(self, url: str):
-        self.bb_int_connector = self.connector_manager.get_internal_connector(url)
+    def _create_internal_connector(self, url: str, resources=None):
+        self.bb_int_connector = self.connector_manager.get_internal_connector(url, resources)
         if self.bb_int_connector:
             self.logger.info(f"{self.my_info.fqcn}: created backbone internal connector to {url} on parent")
         else:

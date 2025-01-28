@@ -562,9 +562,11 @@ class ConnPropKey:
     SCHEME = "scheme"
     ADDRESS = "address"
     CONNECTION_SECURITY = "connection_security"
-    CP_FQCN = "cp_fqcn"
-    CONNECTION_PROPERTIES = "connection_properties"
+
     RELAY_CONFIG = "relay_config"
+    CP_CONN_PROPS = "cp_conn_props"
+    RELAY_CONN_PROPS = "relay_conn_props"
+    ROOT_CONN_PROPS = "root_conn_props"
 
 
 class ConnectionSecurity:
