@@ -71,6 +71,7 @@ builders:
 #
 #  - path: nvflare.lighter.impl.docker.DockerBuilder
 #    args:
+#      docker_image: localhost/nvflare:0.0.1
 #      base_image: python:3.10
 #      requirements_file: docker_compose_requirements.txt
   - path: nvflare.lighter.impl.cert.CertBuilder
