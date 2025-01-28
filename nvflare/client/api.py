@@ -13,97 +13,55 @@
 # limitations under the License.
 
 import logging
-import os
-from enum import Enum
 from typing import Any, Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.client.constants import CLIENT_API_CONFIG
-from nvflare.fuel.data_event.data_bus import DataBus
 
-from .api_spec import CLIENT_API_KEY, CLIENT_API_TYPE_KEY, APISpec
-from .ex_process.api import ExProcessClientAPI
+from .api_context import APIContext
 
-
-class ClientAPIType(Enum):
-    IN_PROCESS_API = "IN_PROCESS_API"
-    EX_PROCESS_API = "EX_PROCESS_API"
+context_dict = {}
+default_context = None
 
 
-DEFAULT_CONFIG = f"config/{CLIENT_API_CONFIG}"
-
-client_api: Optional[APISpec] = None
-data_bus = DataBus()
-
-
-class FlareClientContext:
-    def __init__(self, rank: Optional[str] = None, config_file: str = None):
-        self.rank = rank
-        self.config_file = config_file if config_file else DEFAULT_CONFIG
-        self._client_api = None
-
-    def __enter__(self):
-        """Initialize the client API in the context."""
-        api_type_name = os.environ.get(CLIENT_API_TYPE_KEY, ClientAPIType.IN_PROCESS_API.value)
-        api_type = ClientAPIType(api_type_name)
-
-        if not self._client_api:
-            global client_api
-            client_api = self._create_client_api(api_type)
-            client_api.init(rank=self.rank)
-            self._client_api = client_api
-
-        return self._client_api
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Cleanup the client API when the context ends."""
-        if self._client_api:
-            self._client_api.clear()
-            self._client_api = None
-
-    def _create_client_api(self, api_type: ClientAPIType) -> APISpec:
-        """Creates a new client_api based on the provided API type."""
-        if api_type == ClientAPIType.IN_PROCESS_API:
-            return data_bus.get_data(CLIENT_API_KEY)
-        else:
-            return ExProcessClientAPI(config_file=self.config_file)
-
-
-def init(rank: Optional[str] = None):
+def init(rank: Optional[str] = None, config_file: Optional[str] = None) -> APIContext:
     """Initializes NVFlare Client API environment.
 
     Args:
         rank (str): local rank of the process.
             It is only useful when the training script has multiple worker processes. (for example multi GPU)
+        config_file (str): client api configuration.
 
     Returns:
-        None
+        APIContext
     """
-    api_type_name = os.environ.get(CLIENT_API_TYPE_KEY, ClientAPIType.IN_PROCESS_API.value)
-    api_type = ClientAPIType(api_type_name)
-    global client_api
-    if client_api is None:
-        if api_type == ClientAPIType.IN_PROCESS_API:
-            client_api = data_bus.get_data(CLIENT_API_KEY)
-        else:
-            client_api = ExProcessClientAPI(config_file=DEFAULT_CONFIG)
-        client_api.init(rank=rank)
+    global context_dict
+    global default_context
+    local_ctx = context_dict.get((rank, config_file))
+
+    if local_ctx is None:
+        local_ctx = APIContext(rank=rank, config_file=config_file)
+        context_dict[(rank, config_file)] = local_ctx
+        default_context = local_ctx
     else:
-        logging.warning("Warning: called init() more than once. The subsequence calls are ignored")
+        logging.warning(
+            "Warning: called init() more than once with same parameters." "The subsequence calls are ignored"
+        )
+    return local_ctx
 
 
-def receive(timeout: Optional[float] = None) -> Optional[FLModel]:
+def receive(timeout: Optional[float] = None, ctx: Optional[APIContext] = None) -> Optional[FLModel]:
     """Receives model from NVFlare side.
 
     Returns:
         An FLModel received.
     """
-    global client_api
-    return client_api.receive(timeout)
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.receive(timeout)
 
 
-def send(model: FLModel, clear_cache: bool = True) -> None:
+def send(model: FLModel, clear_cache: bool = True, ctx: Optional[APIContext] = None) -> None:
     """Sends the model to NVFlare side.
 
     Args:
@@ -112,11 +70,12 @@ def send(model: FLModel, clear_cache: bool = True) -> None:
     """
     if not isinstance(model, FLModel):
         raise TypeError("model needs to be an instance of FLModel")
-    global client_api
-    return client_api.send(model, clear_cache)
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.send(model, clear_cache)
 
 
-def system_info() -> Dict:
+def system_info(ctx: Optional[APIContext] = None) -> Dict:
     """Gets NVFlare system information.
 
     System information will be available after a valid FLModel is received.
@@ -129,91 +88,100 @@ def system_info() -> Dict:
        A dict of system information.
 
     """
-    global client_api
-    return client_api.system_info()
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.system_info()
 
 
-def get_config() -> Dict:
+def get_config(ctx: Optional[APIContext] = None) -> Dict:
     """Gets the ClientConfig dictionary.
 
     Returns:
         A dict of the configuration used in Client API.
     """
-    global client_api
-    return client_api.get_config()
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.get_config()
 
 
-def get_job_id() -> str:
+def get_job_id(ctx: Optional[APIContext] = None) -> str:
     """Gets job id.
 
     Returns:
         The current job id.
     """
-    global client_api
-    return client_api.get_job_id()
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.get_job_id()
 
 
-def get_site_name() -> str:
+def get_site_name(ctx: Optional[APIContext] = None) -> str:
     """Gets site name.
 
     Returns:
         The site name of this client.
     """
-    global client_api
-    return client_api.get_site_name()
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.get_site_name()
 
 
-def get_task_name() -> str:
+def get_task_name(ctx: Optional[APIContext] = None) -> str:
     """Gets task name.
 
     Returns:
         The task name.
     """
-    global client_api
-    return client_api.get_task_name()
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.get_task_name()
 
 
-def is_running() -> bool:
+def is_running(ctx: Optional[APIContext] = None) -> bool:
     """Returns whether the NVFlare system is up and running.
 
     Returns:
         True, if the system is up and running. False, otherwise.
     """
-    global client_api
-    return client_api.is_running()
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.is_running()
 
 
-def is_train() -> bool:
+def is_train(ctx: Optional[APIContext] = None) -> bool:
     """Returns whether the current task is a training task.
 
     Returns:
         True, if the current task is a training task. False, otherwise.
     """
-    global client_api
-    return client_api.is_train()
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.is_train()
 
 
-def is_evaluate() -> bool:
+def is_evaluate(ctx: Optional[APIContext] = None) -> bool:
     """Returns whether the current task is an evaluate task.
 
     Returns:
         True, if the current task is an evaluate task. False, otherwise.
     """
-    global client_api
-    return client_api.is_evaluate()
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.is_evaluate()
 
 
-def is_submit_model() -> bool:
+def is_submit_model(ctx: Optional[APIContext] = None) -> bool:
     """Returns whether the current task is a submit_model task.
 
     Returns:
         True, if the current task is a submit_model. False, otherwise.
     """
-    global client_api
-    return client_api.is_submit_model()
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.is_submit_model()
 
 
-def log(key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
+def log(key: str, value: Any, data_type: AnalyticsDataType, ctx: Optional[APIContext] = None, **kwargs):
     """Logs a key value pair.
 
     We suggest users use the high-level APIs in nvflare/client/tracking.py
@@ -227,11 +195,20 @@ def log(key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
     Returns:
         whether the key value pair is logged successfully
     """
-    global client_api
-    return client_api.log(key, value, data_type, **kwargs)
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.log(key, value, data_type, **kwargs)
 
 
-def clear():
+def clear(ctx: Optional[APIContext] = None):
     """Clears the cache."""
-    global client_api
-    return client_api.clear()
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.clear()
+
+
+def shutdown(ctx: Optional[APIContext] = None):
+    """Releases all threads and resources used by the API and stops operation."""
+    global default_context
+    local_ctx = ctx if ctx else default_context
+    return local_ctx.api.shutdown()

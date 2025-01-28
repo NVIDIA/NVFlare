@@ -114,6 +114,6 @@ class TaskRegistry:
     def __str__(self):
         return f"{self.__class__.__name__}(config: {self.config.get_config()})"
 
-    def __del__(self):
+    def shutdown(self):
         if self.flare_agent:
             self.flare_agent.stop()

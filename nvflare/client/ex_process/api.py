@@ -214,3 +214,7 @@ class ExProcessClientAPI(APISpec):
         model_registry = self.get_model_registry()
         model_registry.clear()
         self.receive_called = False
+
+    def shutdown(self):
+        model_registry = self.get_model_registry()
+        model_registry.shutdown()
