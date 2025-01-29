@@ -1474,8 +1474,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         with self.bulk_msg_lock:
             if self.bulk_processor is None:
                 self.logger.debug(f"{self.my_info.fqcn}: starting bulk message processor")
-                self.bulk_processor = threading.Thread(target=self._process_bulk_messages,
-                                                       name="process_bulk_msg", daemon=True)
+                self.bulk_processor = threading.Thread(
+                    target=self._process_bulk_messages, name="process_bulk_msg", daemon=True
+                )
                 self.bulk_processor.start()
                 self.logger.debug(f"{self.my_info.fqcn}: started bulk message processor")
             self.bulk_messages.append(request)
