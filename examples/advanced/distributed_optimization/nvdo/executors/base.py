@@ -100,7 +100,7 @@ class SynchronousAlgorithmExecutor(BaseAlgorithmExecutor):
             targets=[neighbor.id for neighbor in self.neighbors],
             topic="send_value",
             request=DXO(
-                data_kind=DataKind.METRICS,
+                data_kind=DataKind.WEIGHTS,
                 data={
                     "value": self._to_message(value),
                     "iteration": iteration,

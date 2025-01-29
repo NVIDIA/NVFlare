@@ -24,7 +24,7 @@ class AlgorithmController(Controller):
             task = Task(
                 name="config",
                 data=DXO(
-                    data_kind=DataKind.METRICS,
+                    data_kind=DataKind.APP_DEFINED,
                     data={"neighbors": [n.__dict__ for n in node.neighbors]},
                 ).to_shareable(),
             )
@@ -36,7 +36,7 @@ class AlgorithmController(Controller):
             task=Task(
                 name="run_algorithm",
                 data=DXO(
-                    data_kind=DataKind.METRICS,
+                    data_kind=DataKind.APP_DEFINED,
                     data={key: value for key, value in self.config.extra.items()},
                 ).to_shareable(),
             ),
