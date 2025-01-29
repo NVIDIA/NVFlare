@@ -44,6 +44,10 @@ Please also install "./requirements.txt" in each example folder.
 * [Swarm Learning](./swarm_learning/README.md)
    * Example of swarm learning with NVIDIA FLARE using PyTorch with the CIFAR-10 dataset.
 
+## Distributed Optimization / P2P algorithms
+* [Distributed Optimization](./distributed_optimization/README.md)
+   * Example of using the low-level NVFlare APIs to implement and run P2P distributed optimization algorithms.
+
 ## Vertical Federated Learning
 * [Vertical Federated Learning](./vertical_federated_learning/README.md)
    * Example of running split learning using the CIFAR-10 dataset.
