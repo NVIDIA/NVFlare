@@ -117,8 +117,8 @@ class _EntryProducer(ObjectProducer):
             self.last = self.count >= self.size
         except StopIteration:
             self.logger.error(f"Producer called too many times {self.count}/{self.size}")
-            entry = None
             self.last = True
+            return None, 0.0
 
         result = Shareable()
         result[_KEY_ENTRY] = entry
