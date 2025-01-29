@@ -1,0 +1,53 @@
+import networkx as nx
+import numpy as np
+
+from nvdo.types import Neighbor, Node, Network
+
+from .topology import doubly_stochastic_adjacency
+
+
+def generate_random_network(
+    num_clients: int,
+    seed: int = 42,
+    connection_probability: float = 0.3,
+) -> Network:
+    """Generate a random configuration for the given number of clients.
+    The configuration includes the number of iterations, the network topology,
+    and the initial values for each node.
+
+    Args:
+        num_clients (int): The number of clients in the network.
+
+    Returns:
+        BaseConfig: The generated configuration.
+        np.ndarray: The weighted adjacency matrix of the network.
+    """
+    np.random.seed(seed=seed)
+
+    while True:
+        graph = nx.gnp_random_graph(num_clients, p=connection_probability)
+        if nx.is_connected(graph):
+            break
+    adjacency_matrix = nx.adjacency_matrix(graph) + np.eye(num_clients)
+    weighted_adjacency_matrix = doubly_stochastic_adjacency(graph)
+
+    network = []
+    for j in range(num_clients):
+        in_neighbors = np.nonzero(adjacency_matrix[:, j])[0].tolist()
+        in_weights = weighted_adjacency_matrix[:, j].tolist()
+
+        neighbors = [
+            Neighbor(id=f"site-{i + 1}", weight=in_weights[i])
+            for i in in_neighbors
+            if i != j
+        ]
+
+        network.append(Node(
+            id=f"site-{j + 1}",
+            neighbors=neighbors,
+        ))
+
+    config = Network(
+        nodes=network,
+    )
+    return config, weighted_adjacency_matrix

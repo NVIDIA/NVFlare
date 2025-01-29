@@ -1,0 +1,161 @@
+import torch
+from nvflare.apis.dxo import from_shareable
+from nvdo.utils.metrics import compute_loss_over_dataset
+import time
+
+from .base import SynchronousAlgorithmExecutor
+from abc import abstractmethod
+
+
+class GTExecutor(SynchronousAlgorithmExecutor):
+    @abstractmethod
+    def __init__(
+        self,
+        model: torch.nn.Module | None = None,
+        loss: torch.nn.modules.loss._Loss | None = None,
+        train_dataloader: torch.utils.data.DataLoader | None = None,
+        test_dataloader: torch.utils.data.DataLoader | None = None,
+        val_dataloader: torch.utils.data.DataLoader | None = None,
+    ):
+        super().__init__()
+        self.model = model
+        self.loss = loss
+        self.train_dataloader = train_dataloader
+        self.test_dataloader = test_dataloader
+        self.val_dataloader = val_dataloader
+
+        # metrics
+        self.train_loss_sequence = []
+        self.test_loss_sequence = []
+
+    def run_algorithm(self, fl_ctx, shareable, abort_signal):
+        start_time = time.time()
+        iter_dataloader = iter(self.train_dataloader)
+
+        for iteration in range(self._iterations):
+            self.log_info(fl_ctx, f"iteration: {iteration}/{self._iterations}")
+            if abort_signal.triggered:
+                break
+
+            try:
+                data, label = next(iter_dataloader)
+            except StopIteration:
+                # 3. store metrics
+                current_time = time.time() - start_time
+                self.train_loss_sequence.append(
+                    (
+                        current_time,
+                        compute_loss_over_dataset(
+                            self.model, self.loss, self.train_dataloader
+                        ),
+                    )
+                )
+                self.test_loss_sequence.append(
+                    (
+                        current_time,
+                        compute_loss_over_dataset(
+                            self.model, self.loss, self.test_dataloader
+                        ),
+                    )
+                )
+                # restart after an epoch
+                iter_dataloader = iter(self.train_dataloader)
+                data, label = next(iter_dataloader)
+
+            # run algorithm step
+            with torch.no_grad():
+                # 1. exchange trainable parameters and tracker
+                value_to_exchange = {
+                    "parameters": self.model.parameters(),
+                    "tracker": self.tracker,
+                }
+                self._exchange_values(
+                    fl_ctx, value=value_to_exchange, iteration=iteration
+                )
+
+                # 2. Update trainable parameters
+                # - a. compute consensus value
+                for idx, param in enumerate(self.model.parameters()):
+                    if param.requires_grad:
+                        param.mul_(self._weight)
+                        for neighbor in self.neighbors:
+                            param.add_(
+                                self.neighbors_values[iteration][neighbor.id][
+                                    "parameters"
+                                ][idx],
+                                alpha=neighbor.weight,
+                            )
+
+                # - b. update local parameters
+                self._update_local_state(self._stepsize)
+
+                # 3. Update tracker
+                # - a. consensus on tracker
+                for idx, tracker in enumerate(iter(self.tracker)):
+                    tracker.mul_(self._weight)
+                    for neighbor in self.neighbors:
+                        tracker.add_(
+                            self.neighbors_values[iteration][neighbor.id]["tracker"][
+                                idx
+                            ],
+                            alpha=neighbor.weight,
+                        )
+
+            # -b. compute new gradients
+            self.model.zero_grad()
+            pred = self.model(data)
+            loss = self.loss(pred, label)
+            loss.backward()
+
+            gradient = [param.grad for param in self.model.parameters()]
+
+            # - c. update tracker
+            for i in range(len(self.tracker)):
+                self.tracker[i] += gradient[i] - self.old_gradient[i]
+
+            self.old_gradient = gradient
+
+            # 4. free memory that's no longer needed
+            del self.neighbors_values[iteration]
+
+    def _update_local_state(self, stepsize):
+        for idx, param in enumerate(self.model.parameters()):
+            if param.requires_grad:
+                param.add_(self.tracker[idx], alpha=-stepsize)
+
+    def _to_message(self, x):
+        return {
+            "parameters": [param.cpu().numpy() for param in iter(x["parameters"])],
+            "tracker": [z.cpu().numpy() for z in iter(x["tracker"])],
+        }
+
+    def _from_message(self, x):
+        return {
+            "parameters": [torch.from_numpy(param) for param in x["parameters"]],
+            "tracker": [torch.from_numpy(z) for z in x["tracker"]],
+        }
+
+    def _pre_algorithm_run(self, fl_ctx, shareable, abort_signal):
+        data = from_shareable(shareable).data
+        self._iterations = data["iterations"]
+        self._stepsize = data["stepsize"]
+
+        init_train_loss = compute_loss_over_dataset(
+            self.model, self.loss, self.train_dataloader
+        )
+        init_test_loss = compute_loss_over_dataset(
+            self.model, self.loss, self.test_dataloader
+        )
+
+        self.train_loss_sequence.append((0, init_train_loss))
+        self.test_loss_sequence.append((0, init_test_loss))
+
+        # initialize tracker
+        self.old_gradient = [
+            torch.zeros_like(param) for param in self.model.parameters()
+        ]
+        self.tracker = [torch.zeros_like(param) for param in self.model.parameters()]
+
+    def _post_algorithm_run(self, *args, **kwargs):
+        torch.save(torch.tensor(self.train_loss_sequence), "train_loss_sequence.pt")
+        torch.save(torch.tensor(self.test_loss_sequence), "test_loss_sequence.pt")
