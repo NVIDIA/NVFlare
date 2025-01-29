@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import faulthandler
 import os
 import signal
 import threading
@@ -86,7 +85,7 @@ class MainProcessMonitor:
         time.sleep(shutdown_grace_time)  # let pending activities finish
 
         cleanup_waiter = threading.Event()
-        t = threading.Thread(target=cls._do_cleanup, args=(cleanup_waiter,), name="mpm")
+        t = threading.Thread(target=cls._do_cleanup, args=(cleanup_waiter,))
         t.daemon = True
         t.start()
 
@@ -176,8 +175,7 @@ class MainProcessMonitor:
         num_active_threads = 0
         for thread in threading.enumerate():
             if thread.name != "MainThread" and not thread.daemon:
-                logger.warning(f"#### {cls.name}: still running thread {thread.name} {id(thread):032X}")
-                faulthandler.dump_traceback(all_threads=True)
+                logger.warning(f"#### {cls.name}: still running thread {thread.name}")
                 num_active_threads += 1
         logger.info(f"{cls.name}: Good Bye!")
         if num_active_threads > 0:
