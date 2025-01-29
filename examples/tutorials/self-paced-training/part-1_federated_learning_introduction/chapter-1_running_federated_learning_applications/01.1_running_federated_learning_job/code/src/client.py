@@ -104,19 +104,6 @@ def main():
 
         flare.send(output_model)
 
-    print(
-        f"\n"
-        f"Result Summary\n"
-        "    Training parameters:\n"
-        "       number of clients = 5\n"
-        f"       round = {round + 1},\n"
-        f"       batch_size = {batch_size},\n"
-        f"       epochs = {epochs},\n"
-        f"       lr = {lr},\n"
-        f"       total data batches = {n_loaders},\n"
-        f"    Metrics: last_loss = {last_loss}\n"
-    )
-
 
 if __name__ == "__main__":
     main()
