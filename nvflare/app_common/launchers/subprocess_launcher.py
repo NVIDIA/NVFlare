@@ -84,12 +84,21 @@ def log_subprocess_output(process, logger):
 
 
 class SubprocessLauncher(Launcher):
-    def __init__(self, script: str, launch_once: bool = True, clean_up_script: Optional[str] = None):
+    def __init__(
+        self,
+        script: str,
+        launch_once: Optional[bool] = True,
+        clean_up_script: Optional[str] = None,
+        shutdown_timeout: Optional[float] = None,
+    ):
         """Initializes the SubprocessLauncher.
 
         Args:
             script (str): Script to be launched using subprocess.
+            launch_once (bool): Whether the external process will be launched only once at the beginning or on each task.
             clean_up_script (Optional[str]): Optional clean up script to be run after the main script execution.
+            shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
+                None means never times out.
         """
         super().__init__()
 
@@ -98,6 +107,7 @@ class SubprocessLauncher(Launcher):
         self._script = script
         self._launch_once = launch_once
         self._clean_up_script = clean_up_script
+        self._shutdown_timeout = shutdown_timeout
         self.logger = get_obj_logger(self)
 
     def initialize(self, fl_ctx: FLContext):
@@ -138,8 +148,8 @@ class SubprocessLauncher(Launcher):
 
     def _stop_external_process(self):
         if self._process:
+            self._process.wait(self._shutdown_timeout)
             self._process.terminate()
-            self._process.wait()
             self._log_thread.join()
             if self._clean_up_script:
                 command_seq = shlex.split(self._clean_up_script)
