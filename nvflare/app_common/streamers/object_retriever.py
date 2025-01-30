@@ -237,7 +237,7 @@ class ObjectRetriever(FLComponent, ABC):
 
         waiter.result = result
         waiter.set()
-        self.log_info(fl_ctx, f"got result for RTR {tx_id}: {waiter.result}")
+        self.log_info(fl_ctx, f"got result for RTR {tx_id}: {type(waiter.result)}")
 
     def _handle_request(self, topic, request: Shareable, fl_ctx: FLContext) -> Shareable:
         # On request receiving side, which is also stream sending side.
