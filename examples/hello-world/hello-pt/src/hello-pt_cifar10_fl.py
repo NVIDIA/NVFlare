@@ -30,7 +30,7 @@ DATASET_PATH = "/tmp/nvflare/data"
 
 def main():
     batch_size = 4
-    epochs = 2
+    epochs = 5
     lr = 0.01
     model = SimpleNetwork()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
