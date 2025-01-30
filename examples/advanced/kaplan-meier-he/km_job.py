@@ -63,6 +63,7 @@ def main():
     runner = ScriptRunner(
         script=train_script,
         script_args=script_args,
+        framework="raw",
         params_exchange_format="raw",
         launch_external_process=False,
     )
