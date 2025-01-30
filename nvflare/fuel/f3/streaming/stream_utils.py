@@ -38,8 +38,8 @@ class CheckedExecutor(ThreadPoolExecutor):
         self.stopped = False
 
     def shutdown(self, wait=True):
-        super().shutdown(wait)
         self.stopped = True
+        super().shutdown(wait)
 
     def submit(self, fn, *args, **kwargs):
         if self.stopped:
