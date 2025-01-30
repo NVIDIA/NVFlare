@@ -1,0 +1,19 @@
+{
+  "format_version": 2,
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "receiver",
+      "path": "file_streaming.FileReceiver",
+      "args": {}
+    }
+  ],
+  "workflows": [
+    {
+      "id": "controller",
+      "path": "controller.SimpleController",
+      "args": {}
+    }
+  ]
+}
