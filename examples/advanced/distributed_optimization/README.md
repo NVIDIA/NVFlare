@@ -3,7 +3,7 @@
 Here we show how to exploit the lower-level NVFlare APIs to implement P2P distributed optimization algorithms. We built a collection of distributed optimization algorithms built on top of NVFlare with examples. Below you can find a walkthrough of the implementation.
 
 The following algorithms are currently implemented:
-- Consensus algorithm - initially published in [DeGroot, M. H. (1974). Reaching a Consensus. Journal of the American Statistical Association, 69(345), 118–121.](https://www.jstor.org/stable/2285509)
+- Consensus algorithm - initially published in [DeGroot, M. H. (1974). Reaching a Consensus. Journal of the American Statistical Association, 69(345), 118–121.](https://doi.org/10.2307/2285509)
 - Distributed (stochastic) gradient descent [Tsitsiklis, J., Bertsekas, D., & Athans, M. (1986). Distributed asynchronous deterministic and stochastic gradient optimization algorithms. IEEE transactions on automatic control, 31(9), 803-812.](https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=1104412) and [Sundhar Ram, S., Nedić, A., & Veeravalli, V. V. (2010). Distributed stochastic subgradient projection algorithms for convex optimization. Journal of optimization theory and applications, 147, 516-545.](https://arxiv.org/pdf/0811.2595)
 - (Stochastic) gradient tracking [Pu, S., & Nedić, A. (2021). Distributed stochastic gradient tracking methods. Mathematical Programming, 187(1), 409-457.](https://arxiv.org/pdf/1805.11454)
 - GTAdam [Carnevale, G., Farina, F., Notarnicola, I., & Notarstefano, G. (2022). GTAdam: Gradient tracking with adaptive momentum for distributed online optimization. IEEE Transactions on Control of Network Systems, 10(3), 1436-1448.](https://ieeexplore.ieee.org/abstract/document/9999485)
