@@ -15,7 +15,7 @@
 import os
 import shlex
 import subprocess
-from threading import Thread
+from threading import Lock, Thread
 from typing import Optional
 
 from nvflare.apis.fl_constant import FLContextKey
@@ -108,6 +108,7 @@ class SubprocessLauncher(Launcher):
         self._launch_once = launch_once
         self._clean_up_script = clean_up_script
         self._shutdown_timeout = shutdown_timeout
+        self._lock = Lock()
         self.logger = get_obj_logger(self)
 
     def initialize(self, fl_ctx: FLContext):
@@ -129,40 +130,46 @@ class SubprocessLauncher(Launcher):
             self._stop_external_process()
 
     def _start_external_process(self, fl_ctx: FLContext):
-        if self._process is None:
-            command = self._script
-            env = os.environ.copy()
-            env["CLIENT_API_TYPE"] = "EX_PROCESS_API"
+        with self._lock:
+            if self._process is None:
+                command = self._script
+                env = os.environ.copy()
+                env["CLIENT_API_TYPE"] = "EX_PROCESS_API"
 
-            workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-            job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-            app_custom_folder = workspace.get_app_custom_dir(job_id)
-            add_custom_dir_to_path(app_custom_folder, env)
+                workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+                job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+                app_custom_folder = workspace.get_app_custom_dir(job_id)
+                add_custom_dir_to_path(app_custom_folder, env)
 
-            command_seq = shlex.split(command)
-            self._process = subprocess.Popen(
-                command_seq, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=self._app_dir, env=env
-            )
-            self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger))
-            self._log_thread.start()
+                command_seq = shlex.split(command)
+                self._process = subprocess.Popen(
+                    command_seq, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=self._app_dir, env=env
+                )
+                self._log_thread = Thread(target=log_subprocess_output, args=(self._process, self.logger))
+                self._log_thread.start()
 
     def _stop_external_process(self):
-        if self._process:
-            self._process.wait(self._shutdown_timeout)
-            self._process.terminate()
-            self._log_thread.join()
-            if self._clean_up_script:
-                command_seq = shlex.split(self._clean_up_script)
-                process = subprocess.Popen(command_seq, cwd=self._app_dir)
-                process.wait()
-            self._process = None
+        with self._lock:
+            if self._process:
+                try:
+                    self._process.wait(self._shutdown_timeout)
+                except subprocess.TimeoutExpired:
+                    pass
+                self._process.terminate()
+                self._log_thread.join()
+                if self._clean_up_script:
+                    command_seq = shlex.split(self._clean_up_script)
+                    process = subprocess.Popen(command_seq, cwd=self._app_dir)
+                    process.wait()
+                self._process = None
 
     def check_run_status(self, task_name: str, fl_ctx: FLContext) -> str:
-        if self._process is None:
-            return LauncherRunStatus.NOT_RUNNING
-        return_code = self._process.poll()
-        if return_code is None:
-            return LauncherRunStatus.RUNNING
-        if return_code == 0:
-            return LauncherRunStatus.COMPLETE_SUCCESS
-        return LauncherRunStatus.COMPLETE_FAILED
+        with self._lock:
+            if self._process is None:
+                return LauncherRunStatus.NOT_RUNNING
+            return_code = self._process.poll()
+            if return_code is None:
+                return LauncherRunStatus.RUNNING
+            if return_code == 0:
+                return LauncherRunStatus.COMPLETE_SUCCESS
+            return LauncherRunStatus.COMPLETE_FAILED
