@@ -58,7 +58,7 @@ Retriever is more convenient to use:
 ```commandline
 python simple_dict_streaming_job.py
 ```
-In this second example, the `ContainerRetriever` is sent to both server and client, and will automatically handle the streaming.
+In this second example, the `ContainerRetriever` is setup in both server and client, and will automatically handle the streaming.
 It couples closely with the workflow, and is easier to define what to send and where to retrieve.
 
 ## Full-scale Examples and Comparisons
