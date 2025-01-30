@@ -326,8 +326,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.max_msg_size = comm_configurator.get_max_message_size()
         self.comm_configurator = comm_configurator
 
-        self.logger.info(f"XXXX {parent_resources=} {parent_url=}")
-
         err = FQCN.validate(fqcn)
         if err:
             raise ValueError(f"Invalid FQCN '{fqcn}': {err}")

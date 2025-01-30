@@ -240,9 +240,6 @@ class Communicator:
             params[DriverParams.CONNECTION_SECURITY] = original_conn_sec
 
         params[DriverParams.SECURE] = secure
-
-        log.info(f"$$$ add_connector_advanced: {params=} {mode=} {original_conn_sec=}")
-
         handle = self.conn_manager.add_connector(driver, params, mode)
 
         if not start:

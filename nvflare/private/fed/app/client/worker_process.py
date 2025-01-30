@@ -155,7 +155,8 @@ def parse_arguments():
     parser.add_argument("--sp_scheme", "-scheme", type=str, help="Sp connection scheme", required=True)
     parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
     parser.add_argument(
-        "--parent_conn_sec", "-pcs",
+        "--parent_conn_sec",
+        "-pcs",
         type=str,
         help="parent conn security",
         required=False,

@@ -208,9 +208,7 @@ class FederatedClientBase:
             parent_conn_sec = cp_conn_props.get(ConnPropKey.CONNECTION_SECURITY)
             create_internal_listener = False
             if parent_conn_sec:
-                parent_resources = {
-                    DriverParams.CONNECTION_SECURITY.value: parent_conn_sec
-                }
+                parent_resources = {DriverParams.CONNECTION_SECURITY.value: parent_conn_sec}
         else:
             # I am CP
             me = "CP"
@@ -219,9 +217,7 @@ class FederatedClientBase:
             create_internal_listener = True
             relay_conn_security = relay_conn_props.get(ConnPropKey.CONNECTION_SECURITY)
             if relay_conn_security:
-                parent_resources = {
-                    DriverParams.CONNECTION_SECURITY.value: relay_conn_security
-                }
+                parent_resources = {DriverParams.CONNECTION_SECURITY.value: relay_conn_security}
 
         if self.secure_train:
             root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]

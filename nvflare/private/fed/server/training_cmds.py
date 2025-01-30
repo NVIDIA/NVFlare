@@ -18,6 +18,7 @@ from typing import List
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import AdminCommandNames, SiteType
+from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -159,6 +160,12 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             if not success:
                 conn.update_meta(make_meta(MetaStatusValue.ERROR, "failed to shut down all clients"))
                 return
+
+        if target_type in [self.TARGET_TYPE_ALL]:
+            # shutdown the cellnet
+            data_bus = DataBus()
+            data_bus.publish(["stop_cellnet"], conn)
+            # time.sleep(2.0)
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             # shut down the server

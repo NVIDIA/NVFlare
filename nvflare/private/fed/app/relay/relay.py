@@ -14,6 +14,7 @@
 
 import argparse
 import json
+import logging
 import os
 import sys
 import threading
@@ -29,6 +30,18 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.config_service import ConfigService, search_file
 from nvflare.fuel.utils.log_utils import configure_logging
 from nvflare.fuel.utils.url_utils import make_url
+
+
+class CellnetMonitor:
+    def __init__(self, stop_event: threading.Event, workspace: str):
+        self.stop_event = stop_event
+        self.workspace = workspace
+
+    def cellnet_stopped(self):
+        touch_file = os.path.join(self.workspace, WorkspaceConstants.SHUTDOWN_FILE)
+        with open(touch_file, "a"):
+            os.utime(touch_file, None)
+        self.stop_event.set()
 
 
 def parse_arguments():
@@ -80,7 +93,10 @@ def main(args):
 
     configure_logging(workspace, workspace.get_root_dir())
 
+    logger = logging.getLogger()
+
     stop_event = threading.Event()
+    monitor = CellnetMonitor(stop_event, args.workspace)
 
     ConfigService.initialize(
         section_files={},
@@ -119,12 +135,14 @@ def main(args):
         create_internal_listener=True,
         parent_url=parent_url,
     )
-    net_agent = NetAgent(cell)
+    NetAgent(cell, agent_closed_cb=monitor.cellnet_stopped)
     cell.start()
 
     # wait until stopped
-    print(f"started relay {my_identity=} {my_fqcn=}")
+    logger.info(f"Started relay {my_identity=} {my_fqcn=} {root_url=} {parent_url=} {parent_fqcn=}")
     stop_event.wait()
+    cell.stop()
+    logger.info(f"Relay stopped.")
 
 
 if __name__ == "__main__":

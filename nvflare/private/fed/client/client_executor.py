@@ -17,7 +17,7 @@ import time
 from abc import ABC, abstractmethod
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemConfigs, ConnPropKey
+from nvflare.apis.fl_constant import AdminCommandNames, ConnPropKey, FLContextKey, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
@@ -203,7 +203,6 @@ class JobExecutor(ClientExecutor):
         }
 
         params = client.cell.get_internal_listener_params()
-        self.logger.info(f"XXXX get_internal_listener_params: {params} ")
         if params:
             parent_conn_sec = params.get(ConnPropKey.CONNECTION_SECURITY)
             if parent_conn_sec:

@@ -57,7 +57,6 @@ def ssl_required(params: dict) -> bool:
 def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
     if not ssl_required(params):
         params[DriverParams.IMPLEMENTED_CONN_SEC.value] = "clear"
-        log.info("get_ssl_context: XXX clear")
         return None
 
     conn_security = params.get(DriverParams.CONNECTION_SECURITY.value, ConnectionSecurity.MTLS)
@@ -88,7 +87,6 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
                 # no custom CA cert: use provisioned CA cert
                 ca_path = params.get(DriverParams.CA_CERT.value)
                 params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client TLS: Flare CA Cert used"
-                log.info("get_ssl_context: XXX 1-way SSL")
             cert_path = None
             key_path = None
         else:
@@ -97,7 +95,6 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
             cert_path = params.get(DriverParams.CLIENT_CERT.value)
             key_path = params.get(DriverParams.CLIENT_KEY.value)
             params[DriverParams.IMPLEMENTED_CONN_SEC] = "Client mTLS: Flare credentials used"
-            log.info("get_ssl_context: XXX 2-way SSL")
 
     if not ca_path:
         scheme = params.get(DriverParams.SCHEME.value, "Unknown")

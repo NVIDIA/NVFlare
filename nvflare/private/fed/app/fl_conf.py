@@ -323,8 +323,8 @@ class FLClientStarterConfiger(JsonConfigurator):
         if relay_fqcn:
             relay_conn_props = {
                 ConnPropKey.FQCN: relay_fqcn,
-                ConnPropKey.URL:  relay_url,
-                ConnPropKey.CONNECTION_SECURITY: relay_conn_security
+                ConnPropKey.URL: relay_url,
+                ConnPropKey.CONNECTION_SECURITY: relay_conn_security,
             }
             set_scope_property(client_name, ConnPropKey.RELAY_CONN_PROPS, relay_conn_props)
 
@@ -338,7 +338,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             root_conn_props = {
                 ConnPropKey.FQCN: FQCN.ROOT_SERVER,
                 ConnPropKey.URL: root_url,
-                ConnPropKey.CONNECTION_SECURITY: client.get(ConnPropKey.CONNECTION_SECURITY)
+                ConnPropKey.CONNECTION_SECURITY: client.get(ConnPropKey.CONNECTION_SECURITY),
             }
             set_scope_property(client_name, ConnPropKey.ROOT_CONN_PROPS, root_conn_props)
 

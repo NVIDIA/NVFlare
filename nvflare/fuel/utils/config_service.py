@@ -187,9 +187,7 @@ class ConfigService:
         Returns: config data loaded, or None if the config file is not found.
 
         """
-        cls.logger.info(f"XXXX load_configuration: {file_basename=} {cls._config_path=}")
         result = ConfigFactory.load_config(file_basename, cls._config_path)
-        cls.logger.info(f"XXXX loaded: {result}")
         return result
 
     @classmethod

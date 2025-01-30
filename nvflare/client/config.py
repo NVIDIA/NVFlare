@@ -159,6 +159,15 @@ class ClientConfig:
     def get_connection_security(self):
         return self.config.get(ConnPropKey.CONNECTION_SECURITY)
 
+    def get_root_conn_props(self):
+        return self.config.get(ConnPropKey.ROOT_CONN_PROPS)
+
+    def get_cp_conn_props(self):
+        return self.config.get(ConnPropKey.CP_CONN_PROPS)
+
+    def get_relay_conn_props(self):
+        return self.config.get(ConnPropKey.RELAY_CONN_PROPS)
+
     def get_site_name(self):
         return self.config.get(FLMetaKey.SITE_NAME)
 
