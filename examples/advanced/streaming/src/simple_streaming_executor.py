@@ -21,7 +21,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.streamers.container_retriever import ContainerRetriever
 
 
-class StreamingExecutor(Executor):
+class SimpleStreamingExecutor(Executor):
     def __init__(self, dict_retriever_id=None):
         Executor.__init__(self)
         self.dict_retriever_id = dict_retriever_id
@@ -41,7 +41,7 @@ class StreamingExecutor(Executor):
                 self.dict_retriever = c
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        self.log_info(fl_ctx, f"got task {task_name}: {shareable}")
+        self.log_info(fl_ctx, f"got task {task_name}")
         if task_name == "retrieve_dict":
             name = shareable.get("name")
             if not name:
