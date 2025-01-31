@@ -21,7 +21,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG
-from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.utils.attributes_exportable import ExportMode, export_components
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.widgets.widget import Widget

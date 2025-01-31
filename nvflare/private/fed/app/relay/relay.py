@@ -142,7 +142,7 @@ def main(args):
     logger.info(f"Started relay {my_identity=} {my_fqcn=} {root_url=} {parent_url=} {parent_fqcn=}")
     stop_event.wait()
     cell.stop()
-    logger.info(f"Relay stopped.")
+    logger.info(f"Relay {my_fqcn} stopped.")
 
 
 if __name__ == "__main__":
