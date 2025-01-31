@@ -145,7 +145,7 @@ class Servicer(StreamerServicer):
             self.logger.debug(f"SERVER created connection in thread {ct.name}")
             self.server.driver.add_connection(connection)
             self.logger.debug(f"SERVER created read_loop thread in thread {ct.name}")
-            t = threading.Thread(target=connection.read_loop, args=(request_iterator,), daemon=True)
+            t = threading.Thread(target=connection.read_loop, args=(request_iterator,), name="grpc_reader", daemon=True)
             t.start()
             yield from connection.generate_output()
         except Exception as ex:
