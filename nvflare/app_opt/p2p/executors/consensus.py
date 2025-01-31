@@ -47,6 +47,7 @@ class ConsensusExecutor(SyncAlgorithmExecutor):
         super().__init__()
         if initial_value is None:
             initial_value = random.random()
+        self.initial_value = initial_value
         self.current_value = initial_value
         self.value_history = [self.current_value]
 
@@ -64,9 +65,7 @@ class ConsensusExecutor(SyncAlgorithmExecutor):
             # 2. compute new value
             current_value = self.current_value * self._weight
             for neighbor in self.neighbors:
-                current_value += (
-                    self.neighbors_values[iteration][neighbor.id] * neighbor.weight
-                )
+                current_value += self.neighbors_values[iteration][neighbor.id] * neighbor.weight
 
             # 3. store current value
             self.current_value = current_value

@@ -28,8 +28,8 @@ class DGDExecutor(SyncAlgorithmExecutor):
     at each iteration. The model parameters are updated based on the neighbors' parameters and local gradient descent steps.
     The executor also tracks and records training, validation and test losses over time.
 
-    The number of iterations and the learning rate must be provided by the controller when asing to run the algorithm. 
-    They can be set in the extra parameters of the controller's config with the "iterations" and "stepsize" keys. 
+    The number of iterations and the learning rate must be provided by the controller when assigning to run the algorithm.
+    They can be set in the extra parameters of the controller's config with the "iterations" and "stepsize" keys.
 
     Note:
         Subclasses must implement the __init__ method to initialize the model, loss function, and data loaders.
@@ -88,17 +88,13 @@ class DGDExecutor(SyncAlgorithmExecutor):
                 self.train_loss_sequence.append(
                     (
                         current_time,
-                        compute_loss_over_dataset(
-                            self.model, self.loss, self.train_dataloader
-                        ),
+                        compute_loss_over_dataset(self.model, self.loss, self.train_dataloader),
                     )
                 )
                 self.test_loss_sequence.append(
                     (
                         current_time,
-                        compute_loss_over_dataset(
-                            self.model, self.loss, self.test_dataloader
-                        ),
+                        compute_loss_over_dataset(self.model, self.loss, self.test_dataloader),
                     )
                 )
                 # restart after an epoch
@@ -108,9 +104,7 @@ class DGDExecutor(SyncAlgorithmExecutor):
             # run algorithm step
             # 1. exchange values
             with torch.no_grad():
-                self._exchange_values(
-                    fl_ctx, value=self.model.parameters(), iteration=iteration
-                )
+                self._exchange_values(fl_ctx, value=self.model.parameters(), iteration=iteration)
 
                 # compute consensus value
                 for idx, param in enumerate(self.model.parameters()):
@@ -145,12 +139,8 @@ class DGDExecutor(SyncAlgorithmExecutor):
         self._iterations = from_shareable(shareable).data["iterations"]
         self._stepsize = from_shareable(shareable).data["stepsize"]
 
-        init_train_loss = compute_loss_over_dataset(
-            self.model, self.loss, self.train_dataloader
-        )
-        init_test_loss = compute_loss_over_dataset(
-            self.model, self.loss, self.test_dataloader
-        )
+        init_train_loss = compute_loss_over_dataset(self.model, self.loss, self.train_dataloader)
+        init_test_loss = compute_loss_over_dataset(self.model, self.loss, self.test_dataloader)
 
         self.train_loss_sequence.append((0, init_train_loss))
         self.test_loss_sequence.append((0, init_test_loss))

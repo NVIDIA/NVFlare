@@ -22,11 +22,6 @@ from nvflare.app_opt.p2p.types import Config
 from nvflare.app_opt.p2p.utils.config_generator import generate_random_network
 
 
-class CustomConsensusExecutor(ConsensusExecutor):
-    def __init__(self):
-        super().__init__(initial_value=random.randint(0, 10))
-
-
 if __name__ == "__main__":
     # Create job
     job = FedJob(name="consensus")
@@ -42,7 +37,7 @@ if __name__ == "__main__":
 
     # Add clients
     for i in range(num_clients):
-        executor = CustomConsensusExecutor()
+        executor = ConsensusExecutor(random.randint(0, 10))
         job.to(executor, f"site-{i + 1}")
 
     # run
