@@ -158,7 +158,7 @@ class P2PAlgorithmController(Controller):
 
 Now, in the `control_flow` method we can send the local configurations to each client and, once they receive them, ask them to run the algorithm. We'll do so by sending `Task`s to each client. In NVFlare, a `Task` is a piece of work that is assigned by the Controller to client workers. Depending on how the task is assigned (broadcast, send, or relay), the task will be performed by one or more clients.
 
-In fact, one one hand, we'll use the `send_and_wait` method to send the `"config"` task to each client, since each client will potentially have a different config (because of different neighbors); on the other hand, to run the algorith, we'll use the `broadcast_and_wait`, which broadcasts the same `"run_algorithm"` task to all clients and waits for all clients to respond/complete the task. As you see, each task specifies a `name` - in this case, `"config"` and `"run_algorithm"` - let's remember those as they'll need to be the same in the control flow of each client.
+In fact, on one hand, we'll use the `send_and_wait` method to send the `"config"` task to each client, since each client will potentially have a different config (because of different neighbors); on the other hand, to run the algorith, we'll use the `broadcast_and_wait`, which broadcasts the same `"run_algorithm"` task to all clients and waits for all clients to respond/complete the task. As you see, each task specifies a `name` - in this case, `"config"` and `"run_algorithm"` - let's remember those as they'll need to be the same in the control flow of each client.
 
 
 ```python
