@@ -13,9 +13,7 @@
 # limitations under the License.
 import pytest
 
-from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
-from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 
 class TestCommConfigUtils:
@@ -25,64 +23,17 @@ class TestCommConfigUtils:
         [
             ({}, False),
             ({"x": 1, "y": 2}, False),
-            ({DriverParams.SECURE.value: True}, True),
-            ({DriverParams.SECURE.value: False}, False),
-            ({DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.INSECURE}, False),
-            ({DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS}, True),
-            ({DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS}, True),
-            (
-                {
-                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS,
-                },
-                True,
-            ),
-            (
-                {
-                        DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS,
-                },
-                True,
-            ),
-            (
-                {
-                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS,
-                    DriverParams.SECURE.value: False,
-                },
-                True,
-            ),
-            (
-                {
-                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS,
-                    DriverParams.SECURE.value: False,
-                },
-                True,
-            ),
-            (
-                {
-                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS,
-                    DriverParams.SECURE.value: True,
-                },
-                True,
-            ),
-            (
-                {
-                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS,
-                    DriverParams.SECURE.value: True,
-                },
-                True,
-            ),
-            (
-                {
-                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.INSECURE,
-                    DriverParams.SECURE.value: True,
-                },
-                False,
-            ),
-            (
-                {
-                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.INSECURE,
-                },
-                False,
-            ),
+            ({"secure": True}, True),
+            ({"secure": False}, False),
+            ({"connection_security": "insecure"}, False),
+            ({"connection_security": "tls"}, True),
+            ({"connection_security": "mtls"}, True),
+            ({"connection_security": "mtls", "secure": False}, True),
+            ({"connection_security": "mtls", "secure": True}, True),
+            ({"connection_security": "tls", "secure": False}, True),
+            ({"connection_security": "tls", "secure": True}, True),
+            ({"connection_security": "insecure", "secure": False}, False),
+            ({"connection_security": "insecure", "secure": True}, False),
         ],
     )
     def test_requires_secure_connection(self, resources, expected):
