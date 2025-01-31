@@ -30,6 +30,7 @@ from .api import is_train as is_train
 from .api import log as log
 from .api import receive as receive
 from .api import send as send
+from .api import shutdown as shutdown
 from .api import system_info as system_info
 from .decorator import evaluate as evaluate
 from .decorator import train as train

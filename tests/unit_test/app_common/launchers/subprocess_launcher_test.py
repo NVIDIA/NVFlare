@@ -38,7 +38,7 @@ class TestSubprocessLauncher:
     def test_stop(self):
         tempdir = tempfile.mkdtemp()
         fl_ctx = FLContext()
-        launcher = SubprocessLauncher("python -c \"for i in range(1000000): print('cool')\"")
+        launcher = SubprocessLauncher("python -c \"for i in range(1000000): print('cool')\"", shutdown_timeout=0.0)
         launcher._app_dir = tempdir
 
         signal = Signal()

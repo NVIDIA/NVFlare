@@ -39,4 +39,5 @@ if ok:
     from nvflare.client import is_running as is_running
     from nvflare.client import log as log
     from nvflare.client import receive as receive
+    from nvflare.client import shutdown as shutdown
     from nvflare.client import system_info as system_info
