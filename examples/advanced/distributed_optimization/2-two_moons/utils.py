@@ -31,7 +31,7 @@ class TwoMoonsDataset(Dataset):
 
 
 def get_dataloaders(data_seed:int):
-    X, y = make_moons(n_samples=100, noise=0.1, random_state=data_seed)
+    X, y = make_moons(n_samples=128, noise=0.1, random_state=data_seed)
 
     X_train = torch.from_numpy(X).float()
     y_train = torch.from_numpy(y).long()
@@ -45,7 +45,7 @@ def get_dataloaders(data_seed:int):
     test_dataset = TwoMoonsDataset(X_test, y_test)
 
     train_dataloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    test_dataloader = DataLoader(test_dataset, batch_size=64)
+    test_dataloader = DataLoader(test_dataset, batch_size=20)
     return train_dataloader, test_dataloader
 
 
@@ -101,3 +101,4 @@ def plot_results(job, num_clients):
 
     plt.tight_layout()
     plt.savefig(f"{job}_results.png")
+    plt.show()

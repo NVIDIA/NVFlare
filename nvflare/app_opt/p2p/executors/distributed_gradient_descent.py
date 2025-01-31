@@ -19,6 +19,7 @@ import torch
 from nvflare.apis.dxo import from_shareable
 from nvflare.app_opt.p2p.executors.sync_executor import SyncAlgorithmExecutor
 from nvflare.app_opt.p2p.utils.metrics import compute_loss_over_dataset
+from nvflare.app_opt.p2p.utils.utils import get_device
 
 
 class DGDExecutor(SyncAlgorithmExecutor):
@@ -61,8 +62,9 @@ class DGDExecutor(SyncAlgorithmExecutor):
         val_dataloader: torch.utils.data.DataLoader | None = None,
     ):
         super().__init__()
-        self.model = model
-        self.loss = loss
+        self.device = get_device()
+        self.model = model.to(self.device)
+        self.loss = loss.to(self.device)
         self.train_dataloader = train_dataloader
         self.test_dataloader = test_dataloader
         self.val_dataloader = val_dataloader
@@ -82,37 +84,54 @@ class DGDExecutor(SyncAlgorithmExecutor):
 
             try:
                 data, label = next(iter_dataloader)
+                data, label = data.to(self.device), label.to(self.device)
             except StopIteration:
                 # 3. store metrics
                 current_time = time.time() - start_time
                 self.train_loss_sequence.append(
                     (
                         current_time,
-                        compute_loss_over_dataset(self.model, self.loss, self.train_dataloader),
+                        compute_loss_over_dataset(
+                            self.model,
+                            self.loss,
+                            self.train_dataloader,
+                            device=self.device,
+                        ),
                     )
                 )
                 self.test_loss_sequence.append(
                     (
                         current_time,
-                        compute_loss_over_dataset(self.model, self.loss, self.test_dataloader),
+                        compute_loss_over_dataset(
+                            self.model,
+                            self.loss,
+                            self.test_dataloader,
+                            device=self.device,
+                        ),
                     )
                 )
                 # restart after an epoch
                 iter_dataloader = iter(self.train_dataloader)
                 data, label = next(iter_dataloader)
+                data, label = data.to(self.device), label.to(self.device)
 
             # run algorithm step
             # 1. exchange values
             with torch.no_grad():
-                self._exchange_values(fl_ctx, value=self.model.parameters(), iteration=iteration)
+                self._exchange_values(
+                    fl_ctx, value=self.model.parameters(), iteration=iteration
+                )
 
                 # compute consensus value
                 for idx, param in enumerate(self.model.parameters()):
                     if param.requires_grad:
                         param.mul_(self._weight)
                         for neighbor in self.neighbors:
+                            neighbor_param = self.neighbors_values[iteration][
+                                neighbor.id
+                            ][idx].to(self.device)
                             param.add_(
-                                self.neighbors_values[iteration][neighbor.id][idx],
+                                neighbor_param,
                                 alpha=neighbor.weight,
                             )
             # 2. update current value
@@ -139,8 +158,12 @@ class DGDExecutor(SyncAlgorithmExecutor):
         self._iterations = from_shareable(shareable).data["iterations"]
         self._stepsize = from_shareable(shareable).data["stepsize"]
 
-        init_train_loss = compute_loss_over_dataset(self.model, self.loss, self.train_dataloader)
-        init_test_loss = compute_loss_over_dataset(self.model, self.loss, self.test_dataloader)
+        init_train_loss = compute_loss_over_dataset(
+            self.model, self.loss, self.train_dataloader, device=self.device
+        )
+        init_test_loss = compute_loss_over_dataset(
+            self.model, self.loss, self.test_dataloader, device=self.device
+        )
 
         self.train_loss_sequence.append((0, init_train_loss))
         self.test_loss_sequence.append((0, init_test_loss))

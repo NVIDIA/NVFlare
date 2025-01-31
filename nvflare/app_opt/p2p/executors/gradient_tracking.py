@@ -19,6 +19,7 @@ import torch
 from nvflare.apis.dxo import from_shareable
 from nvflare.app_opt.p2p.executors.sync_executor import SyncAlgorithmExecutor
 from nvflare.app_opt.p2p.utils.metrics import compute_loss_over_dataset
+from nvflare.app_opt.p2p.utils.utils import get_device
 
 
 class GTExecutor(SyncAlgorithmExecutor):
@@ -28,8 +29,8 @@ class GTExecutor(SyncAlgorithmExecutor):
     at each iteration. The model parameters are updated based on the neighbors' parameters and local gradient descent steps.
     The executor also tracks and records training, validation and test losses over time.
 
-    The number of iterations and the learning rate must be provided by the controller when asing to run the algorithm. 
-    They can be set in the extra parameters of the controller's config with the "iterations" and "stepsize" keys. 
+    The number of iterations and the learning rate must be provided by the controller when asing to run the algorithm.
+    They can be set in the extra parameters of the controller's config with the "iterations" and "stepsize" keys.
 
     Note:
         Subclasses must implement the __init__ method to initialize the model, loss function, and data loaders.
@@ -50,6 +51,7 @@ class GTExecutor(SyncAlgorithmExecutor):
         train_loss_sequence (list[tuple]): Records of training loss over time.
         test_loss_sequence (list[tuple]): Records of testing loss over time.
     """
+
     @abstractmethod
     def __init__(
         self,
@@ -60,8 +62,9 @@ class GTExecutor(SyncAlgorithmExecutor):
         val_dataloader: torch.utils.data.DataLoader | None = None,
     ):
         super().__init__()
-        self.model = model
-        self.loss = loss
+        self.device = get_device()
+        self.model = model.to(self.device)
+        self.loss = loss.to(self.device)
         self.train_dataloader = train_dataloader
         self.test_dataloader = test_dataloader
         self.val_dataloader = val_dataloader
@@ -81,6 +84,7 @@ class GTExecutor(SyncAlgorithmExecutor):
 
             try:
                 data, label = next(iter_dataloader)
+                data, label = data.to(self.device), label.to(self.device)
             except StopIteration:
                 # 3. store metrics
                 current_time = time.time() - start_time
@@ -88,7 +92,7 @@ class GTExecutor(SyncAlgorithmExecutor):
                     (
                         current_time,
                         compute_loss_over_dataset(
-                            self.model, self.loss, self.train_dataloader
+                            self.model, self.loss, self.train_dataloader, self.device
                         ),
                     )
                 )
@@ -96,13 +100,14 @@ class GTExecutor(SyncAlgorithmExecutor):
                     (
                         current_time,
                         compute_loss_over_dataset(
-                            self.model, self.loss, self.test_dataloader
+                            self.model, self.loss, self.test_dataloader, self.device
                         ),
                     )
                 )
                 # restart after an epoch
                 iter_dataloader = iter(self.train_dataloader)
                 data, label = next(iter_dataloader)
+                data, label = data.to(self.device), label.to(self.device)
 
             # run algorithm step
             with torch.no_grad():
@@ -121,10 +126,11 @@ class GTExecutor(SyncAlgorithmExecutor):
                     if param.requires_grad:
                         param.mul_(self._weight)
                         for neighbor in self.neighbors:
+                            neighbor_param = self.neighbors_values[iteration][
+                                neighbor.id
+                            ]["parameters"][idx].to(self.device)
                             param.add_(
-                                self.neighbors_values[iteration][neighbor.id][
-                                    "parameters"
-                                ][idx],
+                                neighbor_param,
                                 alpha=neighbor.weight,
                             )
 
@@ -136,10 +142,11 @@ class GTExecutor(SyncAlgorithmExecutor):
                 for idx, tracker in enumerate(iter(self.tracker)):
                     tracker.mul_(self._weight)
                     for neighbor in self.neighbors:
+                        neighbor_tracker = self.neighbors_values[iteration][
+                            neighbor.id
+                        ]["tracker"][idx].to(self.device)
                         tracker.add_(
-                            self.neighbors_values[iteration][neighbor.id]["tracker"][
-                                idx
-                            ],
+                            neighbor_tracker,
                             alpha=neighbor.weight,
                         )
 
@@ -149,13 +156,15 @@ class GTExecutor(SyncAlgorithmExecutor):
             loss = self.loss(pred, label)
             loss.backward()
 
-            gradient = [param.grad for param in self.model.parameters()]
+            gradient = [param.grad.clone() for param in self.model.parameters()]
 
             # - c. update tracker
-            for i in range(len(self.tracker)):
-                self.tracker[i] += gradient[i] - self.old_gradient[i]
+            with torch.no_grad():
+                for i in range(len(self.tracker)):
+                    self.tracker[i].add_(gradient[i], alpha=1.0)
+                    self.tracker[i].sub_(self.old_gradient[i], alpha=1.0)
 
-            self.old_gradient = gradient
+            self.old_gradient = [g.clone() for g in gradient]
 
             # 4. free memory that's no longer needed
             del self.neighbors_values[iteration]
@@ -183,10 +192,10 @@ class GTExecutor(SyncAlgorithmExecutor):
         self._stepsize = data["stepsize"]
 
         init_train_loss = compute_loss_over_dataset(
-            self.model, self.loss, self.train_dataloader
+            self.model, self.loss, self.train_dataloader, self.device
         )
         init_test_loss = compute_loss_over_dataset(
-            self.model, self.loss, self.test_dataloader
+            self.model, self.loss, self.test_dataloader, self.device
         )
 
         self.train_loss_sequence.append((0, init_train_loss))
@@ -194,9 +203,13 @@ class GTExecutor(SyncAlgorithmExecutor):
 
         # initialize tracker
         self.old_gradient = [
-            torch.zeros_like(param) for param in self.model.parameters()
+            torch.zeros_like(param, device=self.device)
+            for param in self.model.parameters()
         ]
-        self.tracker = [torch.zeros_like(param) for param in self.model.parameters()]
+        self.tracker = [
+            torch.zeros_like(param, device=self.device)
+            for param in self.model.parameters()
+        ]
 
     def _post_algorithm_run(self, *args, **kwargs):
         torch.save(torch.tensor(self.train_loss_sequence), "train_loss_sequence.pt")

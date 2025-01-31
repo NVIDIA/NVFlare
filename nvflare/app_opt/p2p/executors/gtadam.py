@@ -54,9 +54,9 @@ class GTADAMExecutor(GTExecutor):
         self.beta1 = data["beta1"]
         self.beta2 = data["beta2"]
         self.epsilon = data["epsilon"]
-        self.G = torch.tensor(1e6)
-        self.m = [torch.zeros_like(param) for param in self.model.parameters()]
-        self.v = [torch.zeros_like(param) for param in self.model.parameters()]
+        self.G = torch.tensor(1e6, device=self.device)
+        self.m = [torch.zeros_like(param, device=self.device) for param in self.model.parameters()]
+        self.v = [torch.zeros_like(param, device=self.device) for param in self.model.parameters()]
 
     def _update_local_state(self, stepsize):
         for i in range(len(self.tracker)):
