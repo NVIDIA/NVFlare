@@ -38,7 +38,7 @@ All other security concerns must be handled by the site's IT security infrastruc
 
     - Physical security
     - Firewall policies
-    - Data management policies: storage, retention, cleaning, distributions, access, etc.
+    - Data management policies: storage, retention, cleaning, distribution, access, etc.
 
 Security Trust Boundary and Balance of Risk and Usability
 ---------------------------------------------------------

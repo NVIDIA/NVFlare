@@ -18,7 +18,7 @@ Initialization of the FLAdminAPI was cumbersome due to all the necessary argumen
 :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>` was used for initializing the FLAdminAPI
 with the username of the admin user and the path to the admin startup kit directory.
 
-Initialization the FLAdminAPI:
+Initializing the FLAdminAPI:
 
 .. code-block:: python
 
@@ -66,12 +66,12 @@ General Notes on Migrating to FLARE API
 
 Return Structure
 ^^^^^^^^^^^^^^^^
-The return structure for FLAdminAPI commands were ``FLAdminAPIResponse`` objects that contained the status, details, and raw response from the server.
+The return structure for FLAdminAPI commands was an ``FLAdminAPIResponse`` object that contained the status, details, and raw response from the server.
 This required parsing the response to get the status or other information to then use or output. The FLARE API no longer returns an object with a
 status and a dictionary of details, but the response depends on the command and is greatly simplified. See the details of what each command returns below
 or in the docstrings at: :mod:`FLARE API<nvflare.fuel.flare_api.flare_api>`.
 
-FLARE API now Raises Exceptions
+FLARE API Now Raises Exceptions
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Instead of having a status with an error that needs to be parsed in FLAdminAPI, FLARE API will now raise an exception if there is an error or
 something unexpected happens, and the handling of these exceptions will be the responsibility of the code using the FLARE API. This means that in general,

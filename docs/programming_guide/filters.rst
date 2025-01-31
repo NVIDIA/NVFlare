@@ -48,9 +48,9 @@ For an example application using SVTPrivacy, see :github_nvflare_link:`Different
 
 DXO - Data Exchange Object
 ===========================
-The message object passed between the server and clients are of Shareable class. Shareable is a general structure for all kinds of communication (task interaction, aux messages, fed events, etc.) that in addition to the message payload, also carries contextual information (such as peer FL context). NVFLARE's DXO object is a general-purpose structure that is meant to be used to carry message payload in a self-descriptive manner. As an analogy, think of Shareable as an HTTP message, whereas a DXO as a JPEG image that is carried by the HTTP message.
+The message object passed between the server and clients is of the Shareable class. Shareable is a general structure for all kinds of communication (task interaction, aux messages, fed events, etc.) that in addition to the message payload, also carries contextual information (such as peer FL context). NVFLARE's DXO object is a general-purpose structure that is meant to be used to carry message payload in a self-descriptive manner. As an analogy, think of Shareable as an HTTP message, whereas a DXO as a JPEG image that is carried by the HTTP message.
 
-An DXO object has the following properties:
+A DXO object has the following properties:
 
     - Data Kind - the kind of data the DXO object carries (e.g. WEIGHTS, WEIGHT_DIFF, COLLECTION of DXOs, etc.)
     - Meta - meta properties that describe the data (e.g. whether processed/encrypted and processing algorithm). This is a dict.

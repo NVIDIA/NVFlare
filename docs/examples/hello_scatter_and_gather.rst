@@ -27,7 +27,7 @@ Due to the simplified weights, you will be able to clearly see and understand
 the results of the FL aggregation and the model persistor process.
 
 The setup of this exercise consists of one **server** and two **clients**.
-The server side model starting with weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
+The server-side model starts with weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
 
 The following steps compose one cycle of weight updates, called a **round**:
 

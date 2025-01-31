@@ -2,13 +2,13 @@
 
 We will demonstrate how to transform an existing DL code into an FL application step-by-step:
 
-1. [How to modify an existing training script using DL2FL Client API](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api)
+1. [How to modify an existing training script using the DL2FL Client API](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api)
 
 2. [How to modify an existing multi GPU training script using DL2FL Client API](#transform-cifar10-tensorflow-multi-gpu-training-code-to-fl-with-nvflare-client-api)
 
 ## Software Requirements
 
-Please install the requirements first, it is suggested to install inside a virtual environment:
+Please install the requirements first. It is suggested to install them inside a virtual environment.
 
 ```bash
 pip install -r requirements.txt
@@ -38,12 +38,12 @@ TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
 ```
 
 If you possess more GPUs than clients, a good strategy is to run one client on each GPU.
-This can be achieved using the `-gpu` argument during simulation, e.g., `nvflare simulator -n 2 -gpu 0,1 [job]`.
+This can be achieved by using the `-gpu` argument during simulation, e.g., `nvflare simulator -n 2 -gpu 0,1 [job]`.
 
 
 ## Transform CIFAR10 TensorFlow training code to FL with NVFLARE Client API
 
-Given a TensorFlow CIFAR10 example: [./src/cifar10_tf_original.py](./src/cifar10_tf_original.py).
+Given a TensorFlow CIFAR-10 example: [./src/cifar10_tf_original.py](./src/cifar10_tf_original.py).
 
 You can run it using
 
@@ -51,7 +51,7 @@ You can run it using
 python3 ./src/cifar10_tf_original.py
 ```
 
-To transform the existing code to FL training code, we made the following changes:
+To transform the existing code into FL training code, we made the following changes:
 
 1. Import NVFlare Client API: ```import nvflare.client as flare```
 2. Initialize NVFlare Client API: ```flare.init()```

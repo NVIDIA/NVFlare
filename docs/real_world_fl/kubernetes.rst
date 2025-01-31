@@ -45,7 +45,7 @@ Provision
 With NVIDIA FLARE installed in your local machine, you can create one set of startup kits easily with ``nvflare provision``.  If there is a project.yml file
 in your current working directory, ``nvflare provision`` will create a workspace directory.  If that project.yml file does not exist, ``nvflare provision`` will
 create a sample project.yml for you.  For simplicity, we suggest you remove/rename any existing project.yml and workspace directory.  Then provision the
-set of startup kits from scratch.  When selecting the sampel project.yml during provisioning time, select non-HA one as most clusters support HA easily.
+set of startup kits from scratch.  When selecting the sample project.yml during provisioning, select a non-HA one, as most clusters support HA easily.
 
 After provisioning, you will have a workspace/example_project/prod_00 folder, which includes server, site-1, site-2 and admin@nvidia.com folders.  If you
 would like to use other names instead of ``site-1``, ``site-2``, etc, you can remove the workspace folder and modify the project.yml file.  After that,
@@ -54,8 +54,8 @@ you can run ``nvflare provision`` command to get the new set of startup kits.
 Persistent Volume
 =================
 
-EKS provides several ways to create persistent volumes.  Before you can use create the volume, 
-you will need to create one OIDC provider, add one service account and attach a pollicy to two roles, the node instance group and that service account.
+EKS provides several ways to create persistent volumes.  Before you can create the volume,
+you need to create an OIDC provider, add a service account, and attach a policy to two roles: the node instance group and the service account.
 
 .. code-block:: shell
 
@@ -128,13 +128,13 @@ can run ``kubectl apply -f volume.yaml`` to make the volume available.
                 storage: 5Gi
         storageClassName: gp2
 
-After that, your EKS persistent volme should be waiting for the first claim.
+After that, your EKS persistent volume should be waiting for the first claim.
 
 
 Start Helper Pod
 ================
 
-Now you will need to copy your startup kits to your EKS cluster.  Those startup kits will copied into the volume you just created.
+Now you will need to copy your startup kits to your EKS cluster.  Those startup kits will be copied into the volume you just created.
 In order to access the volume, we deploy a helper pod which mounts that persistent volume and use kubectl cp to copy files from your
 local machine to the cluster.
 
@@ -190,8 +190,8 @@ And the same for site-1, site-2, admin@nvidia.com.
 This will make the entire startup kits available at the nvflare-pv-claim of the cluster so that NVIDIA FLARE system
 can mount that nvflare-pv-claim and access the startup kits.
 
-After copying those folders to nvflare-pv-claim, you can shutdown the helper pod.  The nvflare-pv-claim and its contents will stay and is
-available to server/client/admin pods.
+After copying those folders to nvflare-pv-claim, you can shutdown the helper pod. The nvflare-pv-claim and its contents will remain available to 
+server, client, and admin pods.
 
 Start Server Pod
 ================

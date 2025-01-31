@@ -29,7 +29,7 @@ ReliableMessage Timeout
 
 There are two timeout values to control the behavior of ReliableMessage (RM).
 
-Per-message Timeout
+Per-Message Timeout
 -------------------
 
 Essentially RM tries to resend the message until delivered successfully.
@@ -42,8 +42,8 @@ The per-message timeout should be set to 5 seconds.
 
 .. note::
 
-    Note that the initial XGBoost message might take more than 100 seconds
-    depends on the dataset size.
+    Note that the initial XGBoost message may take more than 100 seconds,
+    depending on the dataset size.
 
 Transaction Timeout
 -------------------
@@ -93,4 +93,4 @@ client op timeout.
 
 In general, follow this rule:
 
-Per-message Timeout < Transaction Timeout < XGBoost Client Operation Timeout
+Per-Message Timeout < Transaction Timeout < XGBoost Client Operation Timeout

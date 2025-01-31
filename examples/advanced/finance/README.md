@@ -12,7 +12,7 @@ In these examples, we illustrate the use of NVFlare to carry out the following f
   - tree-based collaboration with cyclic federation
   - tree-based collaboration with bagging federation
 
-For more details, please refer to the READMEs for 
+For more details, please refer to the README files for 
 [vertical](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_xgboost/README.md), 
 [histogram-based](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/histogram-based/README.md),
 and [tree-based](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/tree-based/README.md) 
@@ -48,7 +48,7 @@ bash run_training.sh
 This will cover baseline centralized training, horizontal FL with histogram-based, tree-based cyclic, and tree-based bagging
 collaborations, as well as vertical FL.
 
-Then we test the resulting models on the test dataset with 
+Then, we test the resulting models on the test dataset using 
 ```
 bash run_testing.sh
 ``` 
