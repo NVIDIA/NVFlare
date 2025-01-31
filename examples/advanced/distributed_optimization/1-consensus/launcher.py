@@ -11,19 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import pickle
+import torch
 import random
 import matplotlib.pyplot as plt
 from nvflare.job_config.api import FedJob
 
-from nvdo.controllers import AlgorithmController
-from nvdo.executors import ConsensusExecutor
-from nvdo.types import Config
-from nvdo.utils.config_generator import generate_random_network
+from nvflare.app_opt.p2p.controllers import P2PAlgorithmController
+from nvflare.app_opt.p2p.executors import ConsensusExecutor
+from nvflare.app_opt.p2p.types import Config
+from nvflare.app_opt.p2p.utils.config_generator import generate_random_network
+
 
 class CustomConsensusExecutor(ConsensusExecutor):
     def __init__(self):
-        super().__init__(initial_value=random.randint(0,10))
+        super().__init__(initial_value=random.randint(0, 10))
 
 
 if __name__ == "__main__":
@@ -33,11 +34,10 @@ if __name__ == "__main__":
     # generate random config
     num_clients = 6
     network, _ = generate_random_network(num_clients=num_clients)
-    config = Config(network=network, extra={"iterations": 20})
-
+    config = Config(network=network, extra={"iterations": 50})
 
     # send controller to server
-    controller = AlgorithmController(config=config)
+    controller = P2PAlgorithmController(config=config)
     job.to_server(controller)
 
     # Add clients
@@ -49,10 +49,9 @@ if __name__ == "__main__":
     job.export_job("./tmp/job_configs")
     job.simulator_run("./tmp/runs/consensus")
 
-
     history = {
-        f"site-{i + 1}": pickle.load(
-            open(f"tmp/runs/consensus/site-{i + 1}/results.pkl", "rb")
+        f"site-{i + 1}": torch.load(
+            f"tmp/runs/consensus/site-{i + 1}/value_sequence.pt"
         )
         for i in range(num_clients)
     }

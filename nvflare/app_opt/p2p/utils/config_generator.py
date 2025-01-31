@@ -14,9 +14,8 @@
 import networkx as nx
 import numpy as np
 
-from nvdo.types import Neighbor, Node, Network
-
-from .topology import doubly_stochastic_adjacency
+from nvflare.app_opt.p2p.types import Neighbor, Network, Node
+from nvflare.app_opt.p2p.utils.topology import doubly_stochastic_adjacency
 
 
 def generate_random_network(

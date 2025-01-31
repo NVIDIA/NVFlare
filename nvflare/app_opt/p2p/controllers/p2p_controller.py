@@ -16,12 +16,12 @@ from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.signal import Signal
+from nvflare.app_opt.p2p.types import Config
 
-from nvdo.types import Config
 
-
-class AlgorithmController(Controller):
+class P2PAlgorithmController(Controller):
     """Controller for running a p2p algorithm on a network."""
+
     def __init__(
         self,
         config: Config,

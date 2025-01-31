@@ -1,22 +1,20 @@
 # P2P Distributed Optimization algorithms with NVFlare
 
-Here we show how to exploit the lower-level NVFlare APIs to implement P2P distributed optimization algorithms. We built a collection of distributed optimization algorithms built on top of NVFlare with examples. Below you can find a walkthrough of the implementation.
+In this example we show how to exploit the lower-level NVFlare APIs to implement and run P2P distributed optimization algorithms. The aim here is twofold: on one hand we provide a few [examples](#examples) showing how to directly use the `nvflare.app_opt.p2p` API to run distributed optimization algorithms, on the other hand we provide a [walkthrough](#implementation-walkthrough) of the actual implementation of the APIs in `nvflare.app_opt.p2p` to show how to exploit lower-level NVFlare APIs for advanced use-cases.
 
-The following algorithms are currently implemented:
+
+## Examples
+The following algorithms are currently implemented in `nvflare.app_opt.p2p`:
 - Consensus algorithm - initially published in [DeGroot, M. H. (1974). Reaching a Consensus. Journal of the American Statistical Association, 69(345), 118–121.](https://doi.org/10.2307/2285509)
 - Distributed (stochastic) gradient descent [Tsitsiklis, J., Bertsekas, D., & Athans, M. (1986). Distributed asynchronous deterministic and stochastic gradient optimization algorithms. IEEE transactions on automatic control, 31(9), 803-812.](https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=1104412) and [Sundhar Ram, S., Nedić, A., & Veeravalli, V. V. (2010). Distributed stochastic subgradient projection algorithms for convex optimization. Journal of optimization theory and applications, 147, 516-545.](https://arxiv.org/pdf/0811.2595)
 - (Stochastic) gradient tracking [Pu, S., & Nedić, A. (2021). Distributed stochastic gradient tracking methods. Mathematical Programming, 187(1), 409-457.](https://arxiv.org/pdf/1805.11454)
 - GTAdam [Carnevale, G., Farina, F., Notarnicola, I., & Notarstefano, G. (2022). GTAdam: Gradient tracking with adaptive momentum for distributed online optimization. IEEE Transactions on Control of Network Systems, 10(3), 1436-1448.](https://ieeexplore.ieee.org/abstract/document/9999485)
 
-## Installation
-We packaged the implementation of the algorithms under the `nvdo` namespace. To install it, you can use the following command:
 
-```shell
-pip install -e .
-```
-
-## Examples
-Examples for the different algorithms on different problems can be found in the `examples` folder with with instructions and results.
+In this repo we provide the following examples:
+- [1-consensus](./1-consensus/) - a simple consensus algorithm to compute the average of a set of numbers
+- [2-two_moons](./2-two_moons/) - different distributed optimization algorithms solving the two moons classification problem
+- [3-mnist](./3-mnist/) - different distributed optimization algorithms training local models to classify MNIST images in a heavily unbalanced setting
 
 
 ## Implementation walkthrough
@@ -24,7 +22,7 @@ Let's now walk through how to use NVFlare to implement custom peer-to-peer (P2P)
 Specifically, we'll delve into using some lower-level NVFlare APIs to create a controllers and executors, which serve as the backbone for orchestrating communication and computation across different nodes (clients) in a distributed setup. 
 As an example, we'll demonstrate how to implement a consensus algorithm using these components and we'll show it in action in the next notebook.
 
-As said, the final implementation is packaged under the `nvdo` namespace (see the [Installation](#installation) section above) - we'll refer to the specific files along the notebook.
+As said, the final implementation is in the `nvflare.app_opt.p2p` module - we'll refer to the specific files along the notebook.
 
 ### Introduction
 
@@ -82,7 +80,7 @@ class LocalConfig:
 
 The `extra` parameter can be used to pass additional parameters, usually specific for the various algorithms. 
 
-To actual implementation of the objects above can be found in `nvdo/types/__init__.py` (you'll see they'll have the `__dict__` and `__post_init__` methods defined facilitate serializing and deserializing them, which is needed for NVFlare).
+To actual implementation of the objects above can be found in `nvflare/app_opt/p2p/types/__init__.py` (you'll see they'll have the `__dict__` and `__post_init__` methods defined facilitate serializing and deserializing them, which is needed for NVFlare).
 
 Here's an example of a ring network with 3 clients, running an algorithm for 100 iterations:
 ```shell
@@ -115,7 +113,7 @@ Config(
 
 ### The controller
 
-In NVFlare, a `Controller` is a server-side component that manages the job execution and orchestration of tasks. Here, since we're running a P2P algorithm, we'll implement a custom controller whose main job is to load and broadcast the network configuration, and initiate/terminate the execution of a P2P algorithm. Let's call it `AlgorithmController`. As a subclass of `Controller`, it must implement 3 methods:
+In NVFlare, a `Controller` is a server-side component that manages the job execution and orchestration of tasks. Here, since we're running a P2P algorithm, we'll implement a custom controller whose main job is to load and broadcast the network configuration, and initiate/terminate the execution of a P2P algorithm. Let's call it `P2PAlgorithmController`. As a subclass of `Controller`, it must implement 3 methods:
 
 - `start_controller` which is called at the beginning of the run
 - `control_flow` defining the main control flow of the controller (in this case, broadcasting the configuration and asking clients to run the algorithm)
@@ -124,7 +122,7 @@ In NVFlare, a `Controller` is a server-side component that manages the job execu
 ```python
 from nvflare.apis.impl.controller import Controller
 
-class AlgorithmController(Controller):
+class P2PAlgorithmController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         # Broadcast configuration to clients
@@ -143,9 +141,9 @@ class AlgorithmController(Controller):
 We won't do anything fancy during the start and stop phase, so let's focus on the `control_flow` and implement the two steps. To do so, we first need to override the `__init__` method to take a `Config` object as an argument. 
 
 ```python
-from nvdo.types import Config
+from nvflare.app_opt.p2p.types import Config
 
-class AlgorithmController(Controller):
+class P2PAlgorithmController(Controller):
     def __init__(
         self,
         config: Config,
@@ -169,7 +167,7 @@ from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 
-class AlgorithmController(Controller):
+class P2PAlgorithmController(Controller):
 
     ...
 
@@ -179,7 +177,7 @@ class AlgorithmController(Controller):
             task = Task(
                 name="config",
                 data=DXO(
-                    data_kind=DataKind.METRICS,
+                    data_kind=DataKind.APP_DEFINED,
                     data={"neighbors": [n.__dict__ for n in node.neighbors]},
                 ).to_shareable(),
             )
@@ -191,7 +189,7 @@ class AlgorithmController(Controller):
             task=Task(
                 name="run_algorithm",
                 data=DXO(
-                    data_kind=DataKind.METRICS,
+                    data_kind=DataKind.APP_DEFINED,
                     data={key: value for key, value in self.config.extra.items()},
                 ).to_shareable(),
             ),
@@ -203,18 +201,18 @@ class AlgorithmController(Controller):
     ... 
 ```
 
-And that's it, our `AlgorithmController` is ready. The complete implementation of the `AlgorithmController` can be found in `nvdo/controllers/base.py`.
+And that's it, our `P2PAlgorithmController` is ready. The complete implementation of the `P2PAlgorithmController` can be found in `nvflare/app_opt/p2p/controllers/base.py`.
 
 ### The executor
 
-Now that we have our `AlgorithmController`, it's time to take care of the actual execution of the algorithm at the client level - we'll build on top of the NVFlare `Executor` to do to that.
+Now that we have our `P2PAlgorithmController`, it's time to take care of the actual execution of the algorithm at the client level - we'll build on top of the NVFlare `Executor` to do to that.
 
 In NVFlare, an `Executor` is a client-side component that handles tasks received from the controller and executes them. For our purposes we'll need our executor to be able to do a few things:
 - receive the config from the server/controller
 - communicate with its neighbors and send/receive messages to/from them
 - run the algorithm
 
-For the moment, we'll focus on synchronous algorithms only, meaning that the clients will need to run the iterations of an algorithm in a synchronous way. Let' call our executor `SynchronousAlgorithmExecutor`.
+For the moment, we'll focus on synchronous algorithms only, meaning that the clients will need to run the iterations of an algorithm in a synchronous way. Let' call our executor `SyncAlgorithmExecutor`.
 The only method that must be implemented in this case is the `execute` method, which takes the `task_name` and `shareable` sent from the controller as inputs.
 
 ```python
@@ -224,7 +222,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 
 
-class SynchronousAlgorithmExecutor(Executor):
+class SyncAlgorithmExecutor(Executor):
 
     def execute(
         self,
@@ -253,7 +251,7 @@ from nvflare.apis.dxo import from_shareable
 from nvdo.types import LocalConfig, Neighbor
 
 
-class SynchronousAlgorithmExecutor(Executor):
+class SyncAlgorithmExecutor(Executor):
     def __init__(self):
         super().__init__()
 
@@ -303,7 +301,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.signal import Signal
 
 
-class SynchronousAlgorithmExecutor(Executor):
+class SyncAlgorithmExecutor(Executor):
     def __init__(self):
         super().__init__()
         ... # other attributes
@@ -375,10 +373,10 @@ class SynchronousAlgorithmExecutor(Executor):
 That's it for the synchronous message exchange. Notice that `neighbors_values` needs to maintain a dictionary of received values per iteration. 
 This is because, different parts of a network may be at different iterations of the algorithm (plus or minus 1 at most) - this means that I could receive a message from a neighbor valid for iteration `t+1` when I'm still at iteration `t`. Since that message won't be sent again, I need to store it. To avoid the `neighbors_values` to grow indefinitely, we'll delete its content at iteration `t` after having consumed its values and moving to the next iteration in the algorithm. We'll see that in the next section.
 
-Moving forward, now that we have a way to store the config and exchange messages with the neighbors, we can move on to implementing the algorithmic part. For this base `SynchronousAlgorithmExecutor`, we'll just implement the main logic in the `execute` method, based on an abstract `run_algorithm` to be overridden by each specific algorithm.
+Moving forward, now that we have a way to store the config and exchange messages with the neighbors, we can move on to implementing the algorithmic part. For this base `SyncAlgorithmExecutor`, we'll just implement the main logic in the `execute` method, based on an abstract `run_algorithm` to be overridden by each specific algorithm.
 
 ```python
-class SynchronousAlgorithmExecutor(Executor):
+class SyncAlgorithmExecutor(Executor):
     
     ...
     
@@ -411,16 +409,16 @@ class SynchronousAlgorithmExecutor(Executor):
     ...
 ```
 
-And that's all. The full implementation is in `nvdo/executors/base.py` - note that the implementation in `nvdo` is split between a `BaseAlgorithmExecutor` and the `SynchronousAlgorithmExecutor`. It contains a few additional attributes (namely `self.id` and `self.client_name`) to identify the client, which are potentially useful in algorithms, and two additional methods `_pre_algorithm_run` and `_post_algorithm_run` to be overridden by each specific algorithm to execute some code before and after the algorithm execution, respectively.
+And that's all. The full implementation is in `nvflare/app_opt/p2p/executors/base.py` - note that the implementation in `nvflare.app_opt.p2p` is split between a `BaseP2PAlgorithmExecutor` and the `SyncAlgorithmExecutor`. It contains a few additional attributes (namely `self.id` and `self.client_name`) to identify the client, which are potentially useful in algorithms, and two additional methods `_pre_algorithm_run` and `_post_algorithm_run` to be overridden by each specific algorithm to execute some code before and after the algorithm execution, respectively.
 
 ### An example: the `ConsensusExecutor`
 
-Now that we have built all the main foundations, we can easily implement any custom P2P algorithm. For example, let's implement a slightly simplified version of the `ConsensusExecutor` that will be used in the next section and whose full implementation is in `nvdo/executors/consensus.py`.
+Now that we have built all the main foundations, we can easily implement any custom P2P algorithm. For example, let's implement a slightly simplified version of the `ConsensusExecutor` that will be used in the next section and whose full implementation is in `nvflare/app_opt/p2p/executors/consensus.py`.
 
 ```python
 import torch
 
-class ConsensusExecutor(SynchronousAlgorithmExecutor):
+class ConsensusExecutor(SyncAlgorithmExecutor):
 
     def __init__(
         self,
@@ -456,9 +454,4 @@ class ConsensusExecutor(SynchronousAlgorithmExecutor):
 
 ```
 
-It's basically just a matter of implementing the algorithm logic in the `run_algorithm` method.
-
-### Summary
-We have shown how to use NVFlare to implement custom peer-to-peer (P2P) algorithms. We have packaged the implementation in the main repository under the `nvdo` namespace.
-
-You can find usage examples in the `examples` folder, from a simple consensus algorithm, to training classifiers on the MNIST dataset.
+As you can see, it's basically just a matter of implementing the algorithm logic in the `run_algorithm` method. Feel free to explore the `nvflare.app_opt.p2p` module to see how other algorithms are implemented.

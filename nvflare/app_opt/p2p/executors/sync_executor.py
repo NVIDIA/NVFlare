@@ -12,88 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import threading
-from abc import abstractmethod
 from collections import defaultdict
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
-from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.signal import Signal
-
-from nvdo.types import LocalConfig, Neighbor
+from nvflare.app_opt.p2p.executors.base_p2p_executor import BaseP2PAlgorithmExecutor
 
 
-class BaseAlgorithmExecutor(Executor):
-    """Base class for algorithm executors."""
-    def __init__(self):
-        super().__init__()
-
-        self.id = None
-        self.client_name = None
-        self.config = None
-        self._weight = None
-
-        self.neighbors: list[Neighbor] = []
-
-    def execute(
-        self,
-        task_name: str,
-        shareable: Shareable,
-        fl_ctx: FLContext,
-        abort_signal: Signal,
-    ):
-        if task_name == "config":
-            # Load local network config
-            self.config = LocalConfig(**from_shareable(shareable).data)
-            self.neighbors = self.config.neighbors
-            self._weight = 1.0 - sum([n.weight for n in self.neighbors])
-            return make_reply(ReturnCode.OK)
-
-        elif task_name == "run_algorithm":
-            # Run the algorithm
-            self._pre_algorithm_run(fl_ctx, shareable, abort_signal)
-            self.run_algorithm(fl_ctx, shareable, abort_signal)
-            self._post_algorithm_run(fl_ctx, shareable, abort_signal)
-            return make_reply(ReturnCode.OK)
-        else:
-            self.log_warning(fl_ctx, f"Unknown task name: {task_name}")
-            return make_reply(ReturnCode.TASK_UNKNOWN)
-
-    @abstractmethod
-    def run_algorithm(
-        self, fl_ctx: FLContext, shareable: Shareable, abort_signal: Signal
-    ):
-        """Executes the algorithm"""
-        pass
-
-    def _pre_algorithm_run(
-        self, fl_ctx: FLContext, shareable: Shareable, abort_signal: Signal
-    ):
-        """Executes before algorithm run."""
-        pass
-
-    def _post_algorithm_run(
-        self, fl_ctx: FLContext, shareable: Shareable, abort_signal: Signal
-    ):
-        """Executes after algorithm run. Could be used, for example, to save results"""
-        pass
-
-    def _to_message(self, x):
-        return x
-
-    def _from_message(self, x):
-        return x
-    
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self.client_name = fl_ctx.get_identity_name()
-            self.id = int(self.client_name.split("-")[1])
-
-
-class SynchronousAlgorithmExecutor(BaseAlgorithmExecutor):
+class SyncAlgorithmExecutor(BaseP2PAlgorithmExecutor):
     """An executor to implement synchronous algorithms."""
     def __init__(self):
         super().__init__()

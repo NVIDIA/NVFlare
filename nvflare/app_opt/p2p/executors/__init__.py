@@ -11,4 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .base import AlgorithmController # noqa
+from .base_p2p_executor import BaseP2PAlgorithmExecutor # noqa
+from .sync_executor import SyncAlgorithmExecutor # noqa
+from .consensus import ConsensusExecutor # noqa
+from .distributed_gradient_descent import DGDExecutor # noqa
+from .gradient_tracking import GTExecutor # noqa
+from .gtadam import GTADAMExecutor # noqa

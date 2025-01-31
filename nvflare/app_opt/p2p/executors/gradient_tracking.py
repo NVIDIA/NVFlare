@@ -11,16 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import torch
-from nvflare.apis.dxo import from_shareable
-from nvdo.utils.metrics import compute_loss_over_dataset
 import time
-
-from .base import SynchronousAlgorithmExecutor
 from abc import abstractmethod
 
+import torch
 
-class GTExecutor(SynchronousAlgorithmExecutor):
+from nvflare.apis.dxo import from_shareable
+from nvflare.app_opt.p2p.executors.sync_executor import SyncAlgorithmExecutor
+from nvflare.app_opt.p2p.utils.metrics import compute_loss_over_dataset
+
+
+class GTExecutor(SyncAlgorithmExecutor):
     @abstractmethod
     def __init__(
         self,

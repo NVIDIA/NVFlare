@@ -11,15 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import pickle
 import random
 
+import torch
+
 from nvflare.apis.dxo import from_shareable
+from nvflare.app_opt.p2p.executors.sync_executor import SyncAlgorithmExecutor
 
-from .base import SynchronousAlgorithmExecutor
 
-
-class ConsensusExecutor(SynchronousAlgorithmExecutor):
+class ConsensusExecutor(SyncAlgorithmExecutor):
     """An executor that implements the consensus algorithm"""
 
     def __init__(
@@ -58,4 +58,4 @@ class ConsensusExecutor(SynchronousAlgorithmExecutor):
             del self.neighbors_values[iteration]
 
     def _post_algorithm_run(self, *args, **kwargs):
-        pickle.dump(self.value_history, open("results.pkl", "wb"))
+        torch.save(torch.tensor(self.value_history), "value_sequence.pt")

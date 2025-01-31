@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
-from nvflare.apis.dxo import from_shareable
 
-from .gradient_tracking import GTExecutor
+from nvflare.apis.dxo import from_shareable
+from nvflare.app_opt.p2p.executors.gradient_tracking import GTExecutor
 
 
 class GTADAMExecutor(GTExecutor):
@@ -29,14 +29,13 @@ class GTADAMExecutor(GTExecutor):
         self.m = [torch.zeros_like(param) for param in self.model.parameters()]
         self.v = [torch.zeros_like(param) for param in self.model.parameters()]
 
-
     def _update_local_state(self, stepsize):
         for i in range(len(self.tracker)):
             self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * self.tracker[i]
             self.v[i] = torch.minimum(
                 self.beta2 * self.v[i] + (1 - self.beta2) * self.tracker[i] ** 2, self.G
             )
-        
+
         with torch.no_grad():
             for idx, param in enumerate(self.model.parameters()):
                 if param.requires_grad:

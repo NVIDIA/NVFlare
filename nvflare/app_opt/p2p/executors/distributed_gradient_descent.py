@@ -11,16 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import torch
-from nvflare.apis.dxo import from_shareable
-from nvdo.utils.metrics import compute_loss_over_dataset
 import time
-
-from .base import SynchronousAlgorithmExecutor
 from abc import abstractmethod
 
+import torch
 
-class DGDExecutor(SynchronousAlgorithmExecutor):
+from nvflare.apis.dxo import from_shareable
+from nvflare.app_opt.p2p.executors.sync_executor import SyncAlgorithmExecutor
+from nvflare.app_opt.p2p.utils.metrics import compute_loss_over_dataset
+
+
+class DGDExecutor(SyncAlgorithmExecutor):
     @abstractmethod
     def __init__(
         self,
@@ -106,13 +107,11 @@ class DGDExecutor(SynchronousAlgorithmExecutor):
             del self.neighbors_values[iteration]
 
     def _to_message(self, x):
-        return [
-            param.cpu().numpy() for param in iter(x) if param.requires_grad
-        ]
+        return [param.cpu().numpy() for param in iter(x) if param.requires_grad]
 
     def _from_message(self, x):
         return [torch.from_numpy(param) for param in x]
-    
+
     def _pre_algorithm_run(self, fl_ctx, shareable, abort_signal):
         self._iterations = from_shareable(shareable).data["iterations"]
         self._stepsize = from_shareable(shareable).data["stepsize"]

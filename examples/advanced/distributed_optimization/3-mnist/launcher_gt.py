@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+from config import ITERATIONS, NUM_CLIENTS, STEPSIZE
 from utils import NeuralNetwork, get_dataloaders, plot_results
-from config import NUM_CLIENTS, ITERATIONS, STEPSIZE
+
+from nvflare.app_opt.p2p.controllers import P2PAlgorithmController
+from nvflare.app_opt.p2p.executors import GTExecutor
+from nvflare.app_opt.p2p.types import Config
+from nvflare.app_opt.p2p.utils.config_generator import generate_random_network
 from nvflare.job_config.api import FedJob
 
-from nvdo.controllers import AlgorithmController
-from nvdo.executors import DGDExecutor
-from nvdo.types import Config
-from nvdo.utils.config_generator import generate_random_network
 
-
-class CustomDGDExecutor(DGDExecutor):
-    def __init__(self, data_seed: int | None = None):
-        self._data_seed = data_seed
-        train_dataloader, test_dataloader = get_dataloaders(data_seed)
+class CustomGTExecutor(GTExecutor):
+    def __init__(self, data_chunk: int | None = None):
+        self._data_chunk = data_chunk
+        train_dataloader, test_dataloader = get_dataloaders(data_chunk)
         super().__init__(
             model=NeuralNetwork(),
             loss=torch.nn.CrossEntropyLoss(),
@@ -33,31 +33,26 @@ class CustomDGDExecutor(DGDExecutor):
             test_dataloader=test_dataloader,
         )
 
-
 if __name__ == "__main__":
     # Create job
-    job_name = "dgd"
+    job_name = "gt"
     job = FedJob(name=job_name)
 
     # generate random config
     network, _ = generate_random_network(num_clients=NUM_CLIENTS)
-    config = Config(
-        network=network,
-        extra={"iterations": ITERATIONS, "stepsize": STEPSIZE},
-    )
+    config = Config(network=network, extra={"iterations": ITERATIONS, "stepsize": STEPSIZE})
 
     # send controller to server
-    controller = AlgorithmController(config=config)
+    controller = P2PAlgorithmController(config=config)
     job.to_server(controller)
 
     # Add clients
     for i in range(NUM_CLIENTS):
-        executor = CustomDGDExecutor(data_seed=i)
+        executor = CustomGTExecutor(data_chunk=i)
         job.to(executor, f"site-{i + 1}")
 
     # run
     job.export_job("./tmp/job_configs")
     job.simulator_run(f"./tmp/runs/{job_name}")
 
-    # plot and save results
     plot_results(job_name, NUM_CLIENTS)

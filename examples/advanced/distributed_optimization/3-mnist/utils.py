@@ -102,4 +102,3 @@ def plot_results(job, num_clients):
 
     plt.tight_layout()
     plt.savefig(f"{job}_results.png")
-    # plt.show()
