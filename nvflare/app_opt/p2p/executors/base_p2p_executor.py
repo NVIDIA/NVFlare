@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.event_type import EventType
@@ -24,7 +24,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_opt.p2p.types import LocalConfig, Neighbor
 
 
-class BaseP2PAlgorithmExecutor(Executor):
+class BaseP2PAlgorithmExecutor(Executor, ABC):
     """Base class for peer-to-peer (P2P) algorithm executors.
 
     This class provides the foundational structure for executors that run P2P algorithms
