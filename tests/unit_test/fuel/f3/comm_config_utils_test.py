@@ -31,57 +31,57 @@ class TestCommConfigUtils:
             ({DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS}, True),
             ({DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS}, True),
             (
-                    {
-                        DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS
-                    },
-                    True
+                {
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS,
+                },
+                True,
             ),
             (
-                    {
-                        DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS
-                    },
-                    True
-            ),
-            (
-                    {
-                        DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS,
-                        DriverParams.SECURE.value: False,
-                    },
-                    True
-            ),
-            (
-                    {
+                {
                         DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS,
-                        DriverParams.SECURE.value: False,
-                    },
-                    True
+                },
+                True,
             ),
             (
-                    {
-                        DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS,
-                        DriverParams.SECURE.value: True,
-                    },
-                    True
+                {
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS,
+                    DriverParams.SECURE.value: False,
+                },
+                True,
             ),
             (
-                    {
-                        DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS,
-                        DriverParams.SECURE.value: True,
-                    },
-                    True
+                {
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS,
+                    DriverParams.SECURE.value: False,
+                },
+                True,
             ),
             (
-                    {
-                        DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.INSECURE,
-                        DriverParams.SECURE.value: True,
-                    },
-                    False
+                {
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.MTLS,
+                    DriverParams.SECURE.value: True,
+                },
+                True,
             ),
             (
-                    {
-                        DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.INSECURE,
-                    },
-                    False
+                {
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS,
+                    DriverParams.SECURE.value: True,
+                },
+                True,
+            ),
+            (
+                {
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.INSECURE,
+                    DriverParams.SECURE.value: True,
+                },
+                False,
+            ),
+            (
+                {
+                    DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.INSECURE,
+                },
+                False,
             ),
         ],
     )
