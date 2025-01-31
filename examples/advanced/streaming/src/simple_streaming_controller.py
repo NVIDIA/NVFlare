@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from random import randbytes
 
 from nvflare.apis.controller_spec import Client, ClientTask, Task
@@ -21,10 +22,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.streamers.container_retriever import ContainerRetriever
 
-STREAM_TOPIC = "rtr_file_stream"
 
-
-class StreamingController(Controller):
+class SimpleStreamingController(Controller):
     def __init__(self, dict_retriever_id=None, task_timeout=60, task_check_period: float = 0.5):
         Controller.__init__(self, task_check_period=task_check_period)
         self.dict_retriever_id = dict_retriever_id
@@ -37,6 +36,19 @@ class StreamingController(Controller):
 
     def stop_controller(self, fl_ctx: FLContext):
         pass
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.START_RUN:
+            engine = fl_ctx.get_engine()
+            if self.dict_retriever_id:
+                c = engine.get_component(self.dict_retriever_id)
+                if not isinstance(c, ContainerRetriever):
+                    self.system_panic(
+                        f"invalid dict_retriever {self.dict_retriever_id}, wrong type: {type(c)}",
+                        fl_ctx,
+                    )
+                    return
+                self.dict_retriever = c
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         s = Shareable()
@@ -65,19 +77,6 @@ class StreamingController(Controller):
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            engine = fl_ctx.get_engine()
-            if self.dict_retriever_id:
-                c = engine.get_component(self.dict_retriever_id)
-                if not isinstance(c, ContainerRetriever):
-                    self.system_panic(
-                        f"invalid dict_retriever {self.dict_retriever_id}, wrong type: {type(c)}",
-                        fl_ctx,
-                    )
-                    return
-                self.dict_retriever = c
 
     @staticmethod
     def _get_test_model() -> dict:
