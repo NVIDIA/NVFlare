@@ -443,7 +443,6 @@ class SecureTrainConst:
     SSL_ROOT_CERT = "ssl_root_cert"
     SSL_CERT = "ssl_cert"
     PRIVATE_KEY = "ssl_private_key"
-    CONNECTION_SECURITY = "connection_security"
 
 
 class FLMetaKey:
@@ -542,6 +541,8 @@ class SystemVarName:
     WORKSPACE = "WORKSPACE"  # directory of the workspace
     JOB_ID = "JOB_ID"  # Job ID
     ROOT_URL = "ROOT_URL"  # the URL of the Service Provider (server)
+    CP_URL = "CP_URL"  # URL to CP
+    RELAY_URL = "RELAY_URL"  # URL to relay that the CP is connected to
     SECURE_MODE = "SECURE_MODE"  # whether the system is running in secure mode
     JOB_CUSTOM_DIR = "JOB_CUSTOM_DIR"  # custom dir of the job
     PYTHONPATH = "PYTHONPATH"
@@ -552,3 +553,25 @@ class RunnerTask:
     INIT = "init"
     TASK_EXEC = "task_exec"
     END_RUN = "end_run"
+
+
+class ConnPropKey:
+
+    IDENTITY = "identity"
+    PARENT = "parent"
+    FQCN = "fqcn"
+    URL = "url"
+    SCHEME = "scheme"
+    ADDRESS = "address"
+    CONNECTION_SECURITY = "connection_security"
+
+    RELAY_CONFIG = "relay_config"
+    CP_CONN_PROPS = "cp_conn_props"
+    RELAY_CONN_PROPS = "relay_conn_props"
+    ROOT_CONN_PROPS = "root_conn_props"
+
+
+class ConnectionSecurity:
+    INSECURE = "insecure"
+    TLS = "tls"
+    MTLS = "mtls"

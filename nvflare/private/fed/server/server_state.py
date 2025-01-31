@@ -91,11 +91,11 @@ class ColdState(ServerState):
 
     def handle_sd_callback(self, sp: SP, fl_ctx: FLContext) -> ServerState:
         if sp:
-            self.logger.info(
+            self.logger.debug(
                 f"handle_sd_callback Got SP: {sp.name=} {sp.fl_port=} {sp.primary=} {self.host=} {self.service_port=}"
             )
         else:
-            self.logger.info("handle_sd_callback no SP!")
+            self.logger.debug("handle_sd_callback no SP!")
 
         if sp and sp.primary is True:
             if sp.name == self.host and sp.fl_port == self.service_port:

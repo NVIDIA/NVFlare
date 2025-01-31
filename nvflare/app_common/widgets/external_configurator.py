@@ -16,8 +16,9 @@ import os
 from typing import List
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.utils.attributes_exportable import ExportMode, export_components
@@ -47,9 +48,7 @@ class ExternalConfigurator(Widget):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.ABOUT_TO_START_RUN:
             components_data = self._export_all_components(fl_ctx)
-            components_data[FLMetaKey.SITE_NAME] = fl_ctx.get_identity_name()
-            components_data[FLMetaKey.JOB_ID] = fl_ctx.get_job_id()
-
+            update_export_props(components_data, fl_ctx)
             config_file_path = self._get_external_config_file_path(fl_ctx)
             write_config_to_file(config_data=components_data, config_file_path=config_file_path)
 
@@ -65,5 +64,11 @@ class ExternalConfigurator(Widget):
         engine = fl_ctx.get_engine()
         all_components = engine.get_all_components()
         components = {i: all_components.get(i) for i in self._component_ids}
-        reserved_keys = [FLMetaKey.SITE_NAME, FLMetaKey.JOB_ID]
+        reserved_keys = [
+            FLMetaKey.SITE_NAME,
+            FLMetaKey.JOB_ID,
+            ConnPropKey.CP_CONN_PROPS,
+            ConnPropKey.ROOT_CONN_PROPS,
+            ConnPropKey.RELAY_CONN_PROPS,
+        ]
         return export_components(components=components, reserved_keys=reserved_keys, export_mode=ExportMode.PEER)

@@ -65,8 +65,10 @@ class TestInProcessClientAPI(unittest.TestCase):
     def test_init_subscriptions(self):
         client_api = InProcessClientAPI(self.task_metadata)
         xs = list(client_api.data_bus.subscribers.keys())
-        xs.sort()
-        assert xs == [TOPIC_ABORT, TOPIC_GLOBAL_RESULT, TOPIC_STOP]
+
+        # Depending on the timing of this test, the data bus may have other subscribed topics
+        # since the data bus is a singleton!
+        assert set(xs).issuperset([TOPIC_ABORT, TOPIC_GLOBAL_RESULT, TOPIC_STOP])
 
     def local_result_callback(self, data, topic):
         pass

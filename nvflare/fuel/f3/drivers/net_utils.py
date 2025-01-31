@@ -20,8 +20,9 @@ from ssl import SSLContext
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.driver_params import ConnectionSecurity, DriverParams
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.argument_utils import str2bool
 from nvflare.security.logging import secure_format_exception
 
@@ -64,6 +65,10 @@ def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
         ca_path = params.get(DriverParams.CA_CERT.value)
         cert_path = params.get(DriverParams.SERVER_CERT.value)
         key_path = params.get(DriverParams.SERVER_KEY.value)
+
+        if not cert_path or not key_path:
+            raise RuntimeError(f"not cert or key for SSL server: {params=}")
+
         if conn_security == ConnectionSecurity.TLS:
             # do not require client auth
             ctx.verify_mode = ssl.CERT_NONE

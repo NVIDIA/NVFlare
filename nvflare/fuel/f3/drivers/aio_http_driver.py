@@ -18,6 +18,7 @@ from typing import Any, Dict, List
 import websockets
 from websockets.exceptions import ConnectionClosedOK
 
+from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection
 from nvflare.fuel.f3.drivers import net_utils
@@ -120,7 +121,7 @@ class AioHttpDriver(BaseDriver):
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
-        secure = resources.get(DriverParams.SECURE)
+        secure = requires_secure_connection(resources)
         if secure:
             scheme = "https"
 

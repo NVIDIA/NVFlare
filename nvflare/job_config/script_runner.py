@@ -14,6 +14,7 @@
 
 from typing import Optional, Type, Union
 
+from nvflare.apis.fl_constant import SystemVarName
 from nvflare.app_common.abstract.launcher import Launcher
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
@@ -22,8 +23,9 @@ from nvflare.app_common.widgets.external_configurator import ExternalConfigurato
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
+from nvflare.fuel.utils.pipe.cell_pipe import CellPipe, Mode
 from nvflare.fuel.utils.pipe.pipe import Pipe
+from nvflare.fuel.utils.validation_utils import check_str
 
 from .api import FedJob, validate_object_for_job
 
@@ -33,6 +35,19 @@ class FrameworkType:
     NUMPY = "numpy"
     PYTORCH = "pytorch"
     TENSORFLOW = "tensorflow"
+
+
+class PipeConnectType:
+    VIA_ROOT = "via_root"
+    VIA_CP = "via_cp"
+    VIA_RELAY = "via_relay"
+
+
+_PIPE_CONNECT_URL = {
+    PipeConnectType.VIA_CP: "{" + SystemVarName.CP_URL + "}",
+    PipeConnectType.VIA_RELAY: "{" + SystemVarName.RELAY_URL + "}",
+    PipeConnectType.VIA_ROOT: "{" + SystemVarName.ROOT_URL + "}",
+}
 
 
 class BaseScriptRunner:
@@ -52,6 +67,7 @@ class BaseScriptRunner:
         launcher: Optional[Launcher] = None,
         metric_relay: Optional[MetricRelay] = None,
         metric_pipe: Optional[Pipe] = None,
+        pipe_connect_type: str = None,
     ):
         """BaseScriptRunner is used with FedJob API to run or launch a script.
 
@@ -102,6 +118,12 @@ class BaseScriptRunner:
             metric_pipe (Optional[Pipe], optional):
                 An optional Pipe instance for passing metric data between components. This allows
                 for real-time metric handling during execution. Defaults to `None`.
+
+            pipe_connect_type: how pipe peers are to be connected:
+                Via Root: peers are both connected to the root of the cellnet
+                Via Relay: peers are both connected to the relay if a relay is used; otherwise via root.
+                Via CP: peers are both connected to the CP
+                If not specified, will be via CP.
         """
         self._script = script
         self._script_args = script_args
@@ -112,6 +134,7 @@ class BaseScriptRunner:
         self._params_exchange_format = params_exchange_format
         self._from_nvflare_converter_id = from_nvflare_converter_id
         self._to_nvflare_converter_id = to_nvflare_converter_id
+        self._pipe_connect_type = pipe_connect_type
 
         if self._framework == FrameworkType.PYTORCH:
             _, torch_ok = optional_import(module="torch")
@@ -151,11 +174,34 @@ class BaseScriptRunner:
         elif executor is not None:
             validate_object_for_job("executor", executor, InProcessClientAPIExecutor)
 
+        if pipe_connect_type:
+            check_str("pipe_connect_type", pipe_connect_type)
+            valid_connect_types = [PipeConnectType.VIA_CP, PipeConnectType.VIA_RELAY, PipeConnectType.VIA_RELAY]
+            if pipe_connect_type not in valid_connect_types:
+                raise ValueError(f"invalid pipe_connect_type '{pipe_connect_type}': must be {valid_connect_types}")
+
         self._metric_pipe = metric_pipe
         self._metric_relay = metric_relay
         self._task_pipe = task_pipe
         self._executor = executor
         self._launcher = launcher
+
+    def _create_cell_pipe(self):
+        ct = self._pipe_connect_type
+        if not ct:
+            ct = PipeConnectType.VIA_CP
+        conn_url = _PIPE_CONNECT_URL.get(ct)
+        if not conn_url:
+            raise RuntimeError(f"cannot determine pipe connect url for {self._pipe_connect_type}")
+
+        return CellPipe(
+            mode=Mode.PASSIVE,
+            site_name="{" + SystemVarName.SITE_NAME + "}",
+            token="{" + SystemVarName.JOB_ID + "}",
+            root_url=conn_url,
+            secure_mode="{" + SystemVarName.SECURE_MODE + "}",
+            workspace_dir="{" + SystemVarName.WORKSPACE + "}",
+        )
 
     def add_to_fed_job(self, job: FedJob, ctx, **kwargs):
         """This method is used by Job API.
@@ -172,18 +218,7 @@ class BaseScriptRunner:
         comp_ids = {}
 
         if self._launch_external_process:
-            task_pipe = (
-                self._task_pipe
-                if self._task_pipe
-                else CellPipe(
-                    mode="PASSIVE",
-                    site_name="{SITE_NAME}",
-                    token="{JOB_ID}",
-                    root_url="{ROOT_URL}",
-                    secure_mode="{SECURE_MODE}",
-                    workspace_dir="{WORKSPACE}",
-                )
-            )
+            task_pipe = self._task_pipe if self._task_pipe else self._create_cell_pipe()
             task_pipe_id = job.add_component("pipe", task_pipe, ctx)
             comp_ids["pipe_id"] = task_pipe_id
 
@@ -211,18 +246,7 @@ class BaseScriptRunner:
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
-            metric_pipe = (
-                self._metric_pipe
-                if self._metric_pipe
-                else CellPipe(
-                    mode="PASSIVE",
-                    site_name="{SITE_NAME}",
-                    token="{JOB_ID}",
-                    root_url="{ROOT_URL}",
-                    secure_mode="{SECURE_MODE}",
-                    workspace_dir="{WORKSPACE}",
-                )
-            )
+            metric_pipe = self._metric_pipe if self._metric_pipe else self._create_cell_pipe()
             metric_pipe_id = job.add_component("metrics_pipe", metric_pipe, ctx)
             comp_ids["metric_pipe_id"] = metric_pipe_id
 
@@ -295,6 +319,7 @@ class ScriptRunner(BaseScriptRunner):
         framework: FrameworkType = FrameworkType.PYTORCH,
         params_exchange_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: str = TransferType.FULL,
+        pipe_connect_type: str = PipeConnectType.VIA_CP,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
@@ -310,6 +335,7 @@ class ScriptRunner(BaseScriptRunner):
             params_exchange_format (str): The format to exchange the parameters. Defaults to ExchangeFormat.NUMPY.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            pipe_connect_type (str): how pipe peers are to be connected
         """
         super().__init__(
             script=script,
@@ -319,4 +345,5 @@ class ScriptRunner(BaseScriptRunner):
             framework=framework,
             params_exchange_format=params_exchange_format,
             params_transfer_type=params_transfer_type,
+            pipe_connect_type=pipe_connect_type,
         )

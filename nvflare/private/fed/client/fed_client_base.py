@@ -18,13 +18,13 @@ from typing import List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst, ServerCommandKey
+from nvflare.apis.fl_constant import ConnPropKey, FLContextKey, SecureTrainConst, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.fuel.data_event.utils import set_scope_property
+from nvflare.fuel.data_event.utils import get_scope_property, set_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
@@ -188,29 +188,36 @@ class FederatedClientBase:
         """
         # Determine the CP's fqcn
         root_url = scheme + "://" + location
+        root_conn_security = self.client_args.get(ConnPropKey.CONNECTION_SECURITY)
 
-        # bridge_fqcn and bridge_url are set in the client's local/resources.json.
-        # If they are set, then connect via the specified bridge; if not, try to connect the Server directly
-        bridge_fqcn = self.client_args.get("bridge_fqcn")
-        bridge_url = self.client_args.get("bridge_url")
-        if bridge_fqcn:
-            cp_fqcn = FQCN.join([bridge_fqcn, self.client_name])
-            root_url = None  # do not connect to server if bridge is used
-        else:
-            cp_fqcn = self.client_name
+        relay_conn_props = get_scope_property(self.client_name, ConnPropKey.RELAY_CONN_PROPS, {})
+        self.logger.info(f"got {ConnPropKey.RELAY_CONN_PROPS}: {relay_conn_props}")
 
+        relay_fqcn = relay_conn_props.get(ConnPropKey.FQCN)
+        if relay_fqcn:
+            root_url = None  # do not connect to server if relay is used
+
+        cp_conn_props = get_scope_property(self.client_name, ConnPropKey.CP_CONN_PROPS)
+        cp_fqcn = cp_conn_props.get(ConnPropKey.FQCN)
+        parent_resources = None
         if self.args.job_id:
             # I am CJ
             me = "CJ"
             my_fqcn = FQCN.join([cp_fqcn, self.args.job_id])
-            parent_url = self.args.parent_url
+            parent_url = cp_conn_props.get(ConnPropKey.URL)
+            parent_conn_sec = cp_conn_props.get(ConnPropKey.CONNECTION_SECURITY)
             create_internal_listener = False
+            if parent_conn_sec:
+                parent_resources = {DriverParams.CONNECTION_SECURITY.value: parent_conn_sec}
         else:
             # I am CP
             me = "CP"
             my_fqcn = cp_fqcn
-            parent_url = bridge_url
+            parent_url = relay_conn_props.get(ConnPropKey.URL)
             create_internal_listener = True
+            relay_conn_security = relay_conn_props.get(ConnPropKey.CONNECTION_SECURITY)
+            if relay_conn_security:
+                parent_resources = {DriverParams.CONNECTION_SECURITY.value: relay_conn_security}
 
         if self.secure_train:
             root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
@@ -222,12 +229,12 @@ class FederatedClientBase:
                 DriverParams.CLIENT_CERT.value: ssl_cert,
                 DriverParams.CLIENT_KEY.value: private_key,
             }
-            conn_security = self.client_args.get(SecureTrainConst.CONNECTION_SECURITY)
-            if conn_security:
-                credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
-                set_scope_property(self.client_name, SecureTrainConst.CONNECTION_SECURITY, conn_security)
         else:
             credentials = {}
+
+        if root_conn_security:
+            # this is the default conn sec
+            credentials[DriverParams.CONNECTION_SECURITY.value] = root_conn_security
 
         self.logger.info(f"{me=}: {my_fqcn=} {root_url=} {parent_url=}")
         self.cell = Cell(
@@ -237,6 +244,7 @@ class FederatedClientBase:
             credentials=credentials,
             create_internal_listener=create_internal_listener,
             parent_url=parent_url,
+            parent_resources=parent_resources,
         )
         self.cell.start()
         self.communicator.set_cell(self.cell)

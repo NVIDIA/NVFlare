@@ -277,7 +277,11 @@ class K8sJobLauncher(JobLauncherSpec):
 def _job_args_dict(job_args: dict, arg_names: list) -> dict:
     result = {}
     for name in arg_names:
-        n, v = job_args[name]
+        e = job_args.get(name)
+        if not e:
+            continue
+
+        n, v = e
         result[n] = v
     return result
 

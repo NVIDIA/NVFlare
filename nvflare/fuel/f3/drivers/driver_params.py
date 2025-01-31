@@ -44,12 +44,6 @@ class DriverParams(str, Enum):
     IMPLEMENTED_CONN_SEC = "implemented_conn_sec"
 
 
-class ConnectionSecurity:
-    INSECURE = "insecure"
-    TLS = "tls"
-    MTLS = "mtls"
-
-
 class DriverCap(str, Enum):
 
     SEND_HEARTBEAT = "send_heartbeat"
