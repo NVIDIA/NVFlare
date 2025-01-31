@@ -15,12 +15,22 @@ from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 
-def requires_secure(resources: dict):
+def requires_secure_connection(resources: dict):
+    """Determine whether secure connection is required based on information in resources.
+
+    Args:
+        resources: a dict that contains info for making connection
+
+    Returns: whether secure connection is required
+
+    """
     conn_sec = resources.get(DriverParams.CONNECTION_SECURITY)
     if conn_sec:
+        # if connection security is specified, it takes precedence over the "secure" flag
         if conn_sec == ConnectionSecurity.INSECURE:
             return False
         else:
             return True
     else:
-        return resources.get(DriverParams.SECURE)
+        # Connection security is not specified, check the "secure" flag.
+        return resources.get(DriverParams.SECURE, False)
