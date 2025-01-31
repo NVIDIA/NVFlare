@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import os
 import threading
 import time
@@ -22,10 +23,32 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor
 STREAM_THREAD_POOL_SIZE = 128
 ONE_MB = 1024 * 1024
 
-stream_thread_pool = ThreadPoolExecutor(STREAM_THREAD_POOL_SIZE, "stm")
 lock = threading.Lock()
 sid_base = int((time.time() + os.getpid()) * 1000000)  # microseconds
 stream_count = 0
+
+log = logging.getLogger(__name__)
+
+
+class CheckedExecutor(ThreadPoolExecutor):
+    """This executor ignores task after shutting down"""
+
+    def __init__(self, max_workers=None, thread_name_prefix=""):
+        super().__init__(max_workers, thread_name_prefix)
+        self.stopped = False
+
+    def shutdown(self, wait=True):
+        self.stopped = True
+        super().shutdown(wait)
+
+    def submit(self, fn, *args, **kwargs):
+        if self.stopped:
+            log.debug(f"Call {fn} is ignored after streaming shutting down")
+        else:
+            super().submit(fn, *args, **kwargs)
+
+
+stream_thread_pool = CheckedExecutor(STREAM_THREAD_POOL_SIZE, "stm")
 
 
 def wrap_view(buffer: BytesAlike) -> memoryview:

@@ -75,7 +75,7 @@ class AioStreamSession(Connection):
         if conf.get_bool_var("simulate_unstable_network", default=False):
             if context:
                 # only server side
-                self.disconn = threading.Thread(target=self._disconnect, daemon=True)
+                self.disconn = threading.Thread(target=self._disconnect, name="grpc_disc", daemon=True)
                 self.disconn.start()
 
     def _disconnect(self):
