@@ -20,7 +20,15 @@ from nvflare.app_opt.p2p.types import Config
 
 
 class P2PAlgorithmController(Controller):
-    """Controller for running a p2p algorithm on a network."""
+    """Controller for running a peer-to-peer (P2P) algorithm on a network.
+
+    This controller manages the execution of a P2P algorithm by configuring
+    each client with its neighbors and initiating the algorithm execution across
+    the network.
+
+    Args:
+        config (Config): The P2P network configuration containing node and neighbor information.
+    """
 
     def __init__(
         self,
@@ -59,7 +67,7 @@ class P2PAlgorithmController(Controller):
         )
 
     def start_controller(self, fl_ctx: FLContext):
-        self.log_info(fl_ctx, "BaseController started")
+        self.log_info(fl_ctx, "P2PAlgorithmController started")
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.log_info(fl_ctx, "BaseController stopped")
+        self.log_info(fl_ctx, "P2PAlgorithmController stopped")

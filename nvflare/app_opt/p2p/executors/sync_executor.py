@@ -23,7 +23,18 @@ from nvflare.app_opt.p2p.executors.base_p2p_executor import BaseP2PAlgorithmExec
 
 
 class SyncAlgorithmExecutor(BaseP2PAlgorithmExecutor):
-    """An executor to implement synchronous algorithms."""
+    """An executor to implement synchronous peer-to-peer (P2P) algorithms.
+
+    This executor extends the BaseP2PAlgorithmExecutor to support synchronous execution
+    of P2P algorithms. It manages the exchange of values with neighboring clients and ensures
+    synchronization at each iteration.
+
+    Attributes:
+        neighbors_values (defaultdict): A dictionary to store values received from neighbors,
+            keyed by iteration and neighbor ID.
+        sync_waiter (threading.Event): An event to synchronize the exchange of values.
+        lock (threading.Lock): A lock to manage concurrent access to shared data structures.
+    """
     def __init__(self):
         super().__init__()
 
@@ -33,6 +44,20 @@ class SyncAlgorithmExecutor(BaseP2PAlgorithmExecutor):
         self.lock = threading.Lock()
 
     def _exchange_values(self, fl_ctx: FLContext, value: any, iteration: int):
+        """Exchanges values with neighbors synchronously.
+
+        Sends the local value to all neighbors and waits for their values for the current iteration.
+        Utilizes threading events to synchronize the exchange and ensure all values are received
+        before proceeding.
+
+        Args:
+            fl_ctx (FLContext): Federated learning context.
+            value (any): The local value to send to neighbors.
+            iteration (int): The current iteration number of the algorithm.
+
+        Raises:
+            SystemExit: If the values from all neighbors are not received within the timeout.
+        """
         engine = fl_ctx.get_engine()
 
         # Clear the event before starting the exchange
@@ -63,13 +88,27 @@ class SyncAlgorithmExecutor(BaseP2PAlgorithmExecutor):
     def _handle_neighbor_value(
         self, topic: str, request: Shareable, fl_ctx: FLContext
     ) -> Shareable:
+        """Handles incoming values from neighbors.
+
+        Processes the received value from a neighbor, stores it, and signals when all neighbor
+        values for the current iteration have been received.
+
+        Args:
+            topic (str): Topic of the incoming message.
+            request (Shareable): The message containing the neighbor's value.
+            fl_ctx (FLContext): Federated learning context.
+
+        Returns:
+            Shareable: A reply message indicating successful reception.
+        """
         sender = request.get_peer_props()["__identity_name__"]
         data = from_shareable(request).data
         iteration = data["iteration"]
 
         with self.lock:
+            # Store the received value in the neighbors_values dictionary
             self.neighbors_values[iteration][sender] = self._from_message(data["value"])
-            # Check if all neighbor values have been received
+            # Check if all neighbor values have been received for the iteration
             if len(self.neighbors_values[iteration]) >= len(self.neighbors):
                 self.sync_waiter.set()  # Signal that we have all neighbor values
         return make_reply(ReturnCode.OK)
@@ -79,6 +118,7 @@ class SyncAlgorithmExecutor(BaseP2PAlgorithmExecutor):
         if event_type == EventType.START_RUN:
             engine = fl_ctx.get_engine()
 
+            # Register the message handler for receiving neighbor values
             engine.register_aux_message_handler(
                 topic="send_value", message_handle_func=self._handle_neighbor_value
             )

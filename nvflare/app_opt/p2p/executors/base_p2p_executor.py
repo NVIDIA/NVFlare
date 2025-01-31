@@ -25,7 +25,19 @@ from nvflare.app_opt.p2p.types import LocalConfig, Neighbor
 
 
 class BaseP2PAlgorithmExecutor(Executor):
-    """Base class for algorithm executors."""
+    """Base class for peer-to-peer (P2P) algorithm executors.
+
+    This class provides the foundational structure for executors that run P2P algorithms
+    in a distributed/federated setting. It handles the configuration of the local network,
+    execution flow based on tasks, and interaction with neighboring clients.
+
+    Attributes:
+        id (int): Unique identifier for the client.
+        client_name (str): Name of the client.
+        config (LocalConfig): Local configuration containing neighbor information.
+        _weight (float): Weight assigned to the client in the network topology.
+        neighbors (list[Neighbor]): List of neighboring clients.
+    """
 
     def __init__(self):
         super().__init__()
@@ -65,35 +77,81 @@ class BaseP2PAlgorithmExecutor(Executor):
     def run_algorithm(
         self, fl_ctx: FLContext, shareable: Shareable, abort_signal: Signal
     ):
-        """Executes the algorithm"""
+        """Abstract method to execute the main P2P algorithm.
+
+        Subclasses must implement this method to define the algorithm logic.
+        """
         pass
 
     def _pre_algorithm_run(
         self, fl_ctx: FLContext, shareable: Shareable, abort_signal: Signal
     ):
-        """Executes before algorithm run."""
+        """Hook method executed before running the main algorithm.
+
+        Can be overridden to perform setup tasks.
+        """
         pass
 
     def _post_algorithm_run(
         self, fl_ctx: FLContext, shareable: Shareable, abort_signal: Signal
     ):
-        """Executes after algorithm run. Could be used, for example, to save results"""
+        """Hook method executed after running the main algorithm.
+
+        Can be overridden to perform cleanup tasks or save results.
+        """
         pass
 
     @abstractmethod
-    def _exchange_values(self, fl_ctx: FLContext, value: any, iteration: int):
+    def _exchange_values(self, fl_ctx: FLContext, value: any, *args, **kwargs):
+        """Abstract method to handle value exchange with neighbors.
+
+        Subclasses must implement this method to define how values are exchanged.
+
+        Args:
+            fl_ctx (FLContext): Federated learning context.
+            value (any): The value to exchange.
+
+        """
         pass
 
     @abstractmethod
     def _handle_neighbor_value(
         self, topic: str, request: Shareable, fl_ctx: FLContext
     ) -> Shareable:
+        """Abstract method to process incoming values from neighbors.
+
+        Subclasses must implement this method to handle incoming data.
+
+        Args:
+            topic (str): Topic of the incoming message.
+            request (Shareable): The incoming data from a neighbor.
+            fl_ctx (FLContext): Federated learning context.
+
+        Returns:
+            Shareable: A response message or data to send back.
+        """
         pass
 
     def _to_message(self, x):
+        """Converts a value to a message format suitable for transmission.
+
+        Args:
+            x (any): The value to convert.
+
+        Returns:
+            any: The converted message.
+        """
         return x
 
     def _from_message(self, x):
+        """Converts a received message back to its original value format.
+
+        Args:
+            x (any): The received message.
+
+        Returns:
+            any: The original value.
+        """
         return x
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

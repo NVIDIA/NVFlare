@@ -20,7 +20,25 @@ from nvflare.app_opt.p2p.executors.sync_executor import SyncAlgorithmExecutor
 
 
 class ConsensusExecutor(SyncAlgorithmExecutor):
-    """An executor that implements the consensus algorithm"""
+    """An executor that implements a consensus algorithm in a peer-to-peer (P2P) setup.
+
+    This executor extends the SyncAlgorithmExecutor to implement a simple consensus algorithm.
+    The client starts with an initial value and iteratively exchanges values with its neighbors.
+    At each iteration, the client updates its current value based on its own value and the weighted sum
+    of its neighbors' values. The process continues for a specified number of iterations, and the history
+    of values is saved at the end of the run.
+
+    The number of iterations must be provided by the controller when asing to run the algorithm. It can
+    be set in the extra parameters of the controller's config with the "iterations" key.
+
+    Args:
+        initial_value (float, optional): The initial value for the consensus algorithm.
+            If not provided, a random value between 0 and 1 is used.
+
+    Attributes:
+        current_value (float): The current value of the client in the consensus algorithm.
+        value_history (list[float]): A list storing the history of values over iterations.
+    """
 
     def __init__(
         self,

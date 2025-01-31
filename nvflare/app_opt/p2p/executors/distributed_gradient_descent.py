@@ -22,6 +22,35 @@ from nvflare.app_opt.p2p.utils.metrics import compute_loss_over_dataset
 
 
 class DGDExecutor(SyncAlgorithmExecutor):
+    """An executor that implements Stochastic Distributed Gradient Descent (DGD) in a peer-to-peer (P2P) learning setup.
+
+    Each client maintains its own local model and synchronously exchanges model parameters with its neighbors
+    at each iteration. The model parameters are updated based on the neighbors' parameters and local gradient descent steps.
+    The executor also tracks and records training, validation and test losses over time.
+
+    The number of iterations and the learning rate must be provided by the controller when asing to run the algorithm. 
+    They can be set in the extra parameters of the controller's config with the "iterations" and "stepsize" keys. 
+
+    Note:
+        Subclasses must implement the __init__ method to initialize the model, loss function, and data loaders.
+
+    Args:
+        model (torch.nn.Module, optional): The neural network model used for training.
+        loss (torch.nn.modules.loss._Loss, optional): The loss function used for training.
+        train_dataloader (torch.utils.data.DataLoader, optional): DataLoader for the training dataset.
+        test_dataloader (torch.utils.data.DataLoader, optional): DataLoader for the testing dataset.
+        val_dataloader (torch.utils.data.DataLoader, optional): DataLoader for the validation dataset.
+
+    Attributes:
+        model (torch.nn.Module): The neural network model.
+        loss (torch.nn.modules.loss._Loss): The loss function.
+        train_dataloader (torch.utils.data.DataLoader): DataLoader for training data.
+        test_dataloader (torch.utils.data.DataLoader): DataLoader for testing data.
+        val_dataloader (torch.utils.data.DataLoader): DataLoader for validation data.
+        train_loss_sequence (list[tuple]): Records of training loss over time.
+        test_loss_sequence (list[tuple]): Records of testing loss over time.
+    """
+
     @abstractmethod
     def __init__(
         self,

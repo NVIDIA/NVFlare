@@ -16,7 +16,11 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Neighbor:
-    """Represents a neighbor in the network."""
+    """Represents a neighbor in the network.
+
+    Each neighbor is characterized by an identifier and an optional weight,
+    which can be used in algorithms that require weighted interactions between nodes.
+    """
 
     id: int | str
     weight: float | None = None
@@ -28,7 +32,12 @@ class Neighbor:
 
 @dataclass
 class Node:
-    """Represents a node in the network."""
+    """Represents a node in the network.
+
+    A node contains an identifier and a list of its neighbors.
+    During initialization, any neighbor specified as a dictionary is converted
+    into a `Neighbor` instance to ensure consistent data structures.
+    """
 
     id: int | str | None = None
     neighbors: list[Neighbor] = field(default_factory=list)
@@ -52,7 +61,11 @@ class Node:
 
 @dataclass
 class Network:
-    """Represents a network."""
+    """Represents a network consisting of multiple nodes.
+
+    The network defines the topology over which the peer-to-peer algorithm operates.
+    During initialization, any node specified as a dictionary is converted into a `Node` instance.
+    """
 
     nodes: list[Node] = field(default_factory=list)
 
@@ -72,6 +85,11 @@ class Network:
 
 @dataclass
 class Config:
+    """Represents the configuration for the peer-to-peer algorithm.
+
+    The configuration includes the network topology and any extra algorithm-specific parameters.
+    Algorithm-specific parameters in `extra` can include settings like 'stepsize', 'iterations', etc.
+    """
     network: Network
 
     extra: dict = field(default_factory=dict)
@@ -87,6 +105,11 @@ class Config:
 
 @dataclass
 class LocalConfig:
+    """Represents the local configuration for a node in the network.
+
+    The local configuration includes the node's neighbors and any extra algorithm-specific parameters.
+    Algorithm-specific parameters in `extra` can include settings like 'stepsize', 'iterations', etc.
+    """
     neighbors: list[Neighbor]
 
     extra: dict = field(default_factory=dict)
