@@ -1,0 +1,219 @@
+openapi: 3.0.0
+info:
+  title: NVFlare Edge Training API (ETA)
+  version: 0.1.0
+
+servers:
+  - url: http://flare.nvidia.com/edge/v1
+    description: Edge device training API for NVFlare
+
+paths:
+  /study:
+    post:
+      summary: Get the study
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudyRequest"
+      responses:
+        "200":
+          description: Response for study request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyResponse"
+        "403":
+          description: Authentication/permission error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /task:
+    post:
+      summary: Get a task
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskRequest"
+      responses:
+        "200":
+          description: Response for task request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskResponse"
+        "403":
+          description: Authentication/permission error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /result:
+    post:
+      summary: Report result for the task
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskResult"
+      responses:
+        "200":
+          description: Response for task result reporting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultResponse"
+        "403":
+          description: Authentication/permission error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+
+    StudyRequest:
+      description: A request to join studies
+      type: object
+      properties:
+        user_info:
+          $ref: "#/components/schemas/UserInfo"
+        device_info:
+          $ref: "#/components/schemas/DeviceInfo"
+        capabilities:
+          type: object
+        device_state:
+          type: object
+
+    StudyResponse:
+      description: Response to study request
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, retry, done]
+        session_id:
+          type: string
+        study_id:
+          type: string
+        job_id:
+          type: string
+        retry_wait:
+          type: integer
+          format: int64
+        device_state:
+          type: object
+
+    TaskRequest:
+      description: Request a task to execute
+      type: object
+      properties:
+        session_id:
+          type: string
+        study_id:
+          type: string
+        device_state:
+          type: object
+
+    TaskResponse:
+      description: Response to study request
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, retry, done]
+        session_id:
+          type: string
+        study_id:
+          type: string
+        job_id:
+          type: string
+        retry_wait:
+          type: integer
+          format: int64
+        task_name:
+          type: string
+        task_data:
+          type: object
+        device_state:
+          type: object
+
+    TaskResult:
+      description: Report result back for the task
+      type: object
+      properties:
+        session_id:
+          type: string
+        task_name:
+          type: string
+        result_type:
+          type: string
+        result_data:
+          type: object
+        device_state:
+          type: object
+
+    ResultResponse:
+      description: Response to result reporting
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, done, retry, invalid]
+        message:
+          type: string
+        session_id:
+          type: string
+        retry_wait:
+          type: integer
+          format: int64
+        task_name:
+          type: string
+        aggregated_result_type:
+          type: string
+        aggregated_result_data:
+          type: object
+        device_state:
+          type: object
+
+    ErrorResponse:
+      description: Error response to a request
+      type: object
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+    UserInfo:
+      description: User information
+      type: object
+      properties:
+        user_id:
+          type: string
+        user_name:
+          type: string
+        auth_token:
+          type: string
+        auth_session:
+          type: string
+
+    DeviceInfo:
+      description: Edge device information
+      type: object
+      properties:
+        device_id:
+          type: string
+        app_name:
+          type: string
+        app_version:
+          type: string
+        platform:
+          type: string
