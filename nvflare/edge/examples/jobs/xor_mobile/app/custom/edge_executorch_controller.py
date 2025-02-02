@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import base64
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import torch
 from executorch_export import export_model
@@ -43,14 +43,16 @@ class EdgeExecutorchController(Controller):
     def __init__(
         self,
         num_rounds: int,
+        input_shape: List,
+        output_shape: List,
     ):
         super().__init__()
         self.model = TrainingNet(Net())
-        self.input_tensor = torch.randn(1, 2)
-        self.label_tensor = torch.ones(1, dtype=torch.int64)
         self.num_rounds = num_rounds
         self.current_round = None
         self.aggregator = None
+        self.input_shape = input_shape
+        self.output_shape = output_shape
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.log_info(fl_ctx, "Initializing ExecuTorch mobile workflow.")
@@ -80,7 +82,10 @@ class EdgeExecutorchController(Controller):
 
     def _export_current_model(self) -> bytes:
         """Export current model in ExecutorTorch format."""
-        model_buffer = export_model(self.model, self.input_tensor, self.label_tensor).buffer
+        print("model is", self.model.state_dict())
+        input_tensor = torch.randn(self.input_shape)
+        label_tensor = torch.ones(self.output_shape, dtype=torch.int64)
+        model_buffer = export_model(self.model, input_tensor, label_tensor).buffer
         base64_encoded = base64.b64encode(model_buffer).decode("utf-8")
         return base64_encoded
 
@@ -97,7 +102,12 @@ class EdgeExecutorchController(Controller):
                     return
 
                 self.log_info(fl_ctx, f"Round {self.current_round} started.")
-                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=True)
+                fl_ctx.set_prop(
+                    AppConstants.CURRENT_ROUND,
+                    self.current_round,
+                    private=True,
+                    sticky=True,
+                )
                 self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
                 # Create task and send global model to clients
@@ -105,14 +115,7 @@ class EdgeExecutorchController(Controller):
 
                 # Compose shareable
                 task_data = Shareable()
-                model = {
-                    "weights": encoded_buffer,
-                    "format": "base64_encoded",
-                    "input_dim": list(self.input_tensor.size()),
-                    "label_dim": list(self.label_tensor.size()),
-                }
-                task_data["weights"] = model
-                task_data["task_done"] = self.current_round >= (self.num_rounds - 1)
+                task_data["model"] = encoded_buffer
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
                 task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self.current_round)
@@ -138,7 +141,12 @@ class EdgeExecutorchController(Controller):
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 aggr_result = self.aggregator.aggregate(fl_ctx)
                 self.log_info(fl_ctx, f"Aggregation result: {aggr_result}")
-                fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
+                fl_ctx.set_prop(
+                    AppConstants.AGGREGATION_RESULT,
+                    aggr_result,
+                    private=True,
+                    sticky=False,
+                )
                 self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
                 self.log_info(fl_ctx, "End aggregation.")
 
@@ -147,7 +155,7 @@ class EdgeExecutorchController(Controller):
 
                 # Convert aggregated gradients to PyTorch tensors
                 divide_factor = aggr_result["num_devices"]
-                aggregated_grads = self._tensor_from_json(aggr_result["weights"], divide_factor)
+                aggregated_grads = self._tensor_from_json(aggr_result["result"], divide_factor)
                 self.log_info(fl_ctx, f"Aggregated gradients as Tensor: {aggregated_grads}")
 
                 # Update model weights using aggregated gradients
@@ -188,10 +196,9 @@ class EdgeExecutorchController(Controller):
 
             return
 
-        self.log_info(fl_ctx, f"Weights: {result.get('weights', None)}")
-
         accepted = self.aggregator.accept(result, fl_ctx)
         accepted_msg = "ACCEPTED" if accepted else "REJECTED"
         self.log_info(
-            fl_ctx, f"Contribution from {client_name} {accepted_msg} by the aggregator at round {self.current_round}."
+            fl_ctx,
+            f"Contribution from {client_name} {accepted_msg} by the aggregator at round {self.current_round}.",
         )

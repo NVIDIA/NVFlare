@@ -11,7 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import base64
+import json
 import logging
+import os
+import shutil
+import subprocess
 
 import torch
 
@@ -23,33 +29,59 @@ from nvflare.edge.web.models.user_info import UserInfo
 
 log = logging.getLogger(__name__)
 
-import numpy as np
-import torch.nn as nn
-from torch.nn import functional as F
-
-default_model_updates = {
-    "net.linear2.weight": {"sizes": [2, 10], "strides": [10, 1], "data": np.ones(20).tolist()},
-    "net.linear.bias": {"sizes": [10], "strides": [1], "data": np.ones(10).tolist()},
-    "net.linear2.bias": {"sizes": [2], "strides": [1], "data": np.ones(2).tolist()},
-    "net.linear.weight": {"sizes": [10, 2], "strides": [2, 1], "data": np.ones(20).tolist()},
-}
+SOURCE_BINARY = "train_xor"
 
 
-# Net training logic on device
-# Basic Net for XOR
-class Net(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(2, 10)
-        self.linear2 = nn.Linear(10, 2)
-
-    def forward(self, x):
-        return self.linear2(F.sigmoid(self.linear(x)))
+def save_to_pte(model_string: str, filename: str):
+    binary_data = base64.b64decode(model_string)
+    with open(filename, "wb") as f:
+        f.write(binary_data)
 
 
-# XOR training data
-X = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
-Y = torch.tensor([0, 1, 1, 0], dtype=torch.long)
+def run_training_with_timeout(train_program: str, model_path: str, result_path: str, timeout_seconds: int = 300) -> int:
+    try:
+        process = subprocess.Popen(
+            [train_program, "--model_path", model_path, "--output_path", result_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        # Wait for process to complete with timeout
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+
+        if process.returncode != 0:
+            print(f"Error output: {stderr}")
+            raise subprocess.CalledProcessError(process.returncode, ["./train_xor"], stdout, stderr)
+
+        print(f"Output: {stdout}")
+        return process.returncode
+
+    except subprocess.TimeoutExpired:
+        process.kill()
+        print("Training timed out")
+        raise
+    except Exception as e:
+        print(f"Error during training: {e}")
+        raise
+
+
+def read_training_result(result_path: str = "training_result.json"):
+    try:
+        with open(result_path, "r") as f:
+            results = json.load(f)
+
+        return results
+
+    except FileNotFoundError:
+        print(f"Could not find file: {result_path}")
+        raise
+    except json.JSONDecodeError:
+        print(f"Error parsing JSON file: {result_path}")
+        raise
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        raise
 
 
 class XorTaskProcessor(DeviceTaskProcessor):
@@ -57,56 +89,58 @@ class XorTaskProcessor(DeviceTaskProcessor):
         super().__init__(device_info, user_info)
         self.job_id = None
         self.job_name = None
+        self.device_info = device_info
+
+        device_io_dir = f"{device_info.device_id}_output"
+        os.makedirs(device_io_dir, exist_ok=True)
+        self.model_path = os.path.abspath(os.path.join(device_io_dir, "xor.pte"))
+        self.result_path = os.path.abspath(os.path.join(device_io_dir, "training_result.json"))
+        self.train_binary = os.path.abspath(os.path.join(device_io_dir, "train.xor"))
+        self._setup_train_program()
+
+    def _setup_train_program(self):
+        if not os.path.exists(self.train_binary):
+            shutil.copy2(SOURCE_BINARY, self.train_binary)
+            # Make it executable
+            os.chmod(self.train_binary, 0o755)
 
     def setup(self, job: JobResponse) -> None:
         self.job_id = job.job_id
         self.job_name = job.job_name
-        # Setup training items
-        self.model = Net()
-        self.loss_fn = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.1)
 
     def shutdown(self) -> None:
         pass
 
     def process_task(self, task: TaskResponse) -> dict:
-        log.info(f"Processing task {task.task_name}")
-
-        # Load global model
-        # weights here is a buffer, to be loaded by ExecuTorch
-        global_weights = task.task_data["weights"]
-
-        # In this simulation, we skip the load process
-        # for key in global_weights:
-        #    global_weights[key] = torch.tensor(global_weights[key])
-        # self.model.load_state_dict(global_weights)
-
-        # Validate global model
-        pred = self.model(X)
-        # Calculate accuracy
-        correct = (pred.argmax(dim=1) == Y).sum().item()
-        accuracy = correct / len(Y)
+        log.info(f"Processing task {task}")
 
         # Local training or validation
         result = None
-        if task.task_name == "train":
-            for i in range(1):
-                self.optimizer.zero_grad()
-                pred = self.model(X)
-                loss = self.loss_fn(pred, Y)
-                loss.backward()
-                self.optimizer.step()
+	if task.task_name == "train":
+            # save received pte
+            save_to_pte(task.task_data["task_data"], self.model_path)
+            try:
+                result = run_training_with_timeout(
+                    self.train_binary, self.model_path, self.result_path, timeout_seconds=600
+                )
+                print("Training completed successfully")
+            except subprocess.TimeoutExpired:
+                print("Training took too long and was terminated")
+            except subprocess.CalledProcessError as e:
+                print(f"Training failed with return code {e.returncode}")
+            except Exception as e:
+                print(f"Training Unexpected error: {e}")
 
-            # Ignor the actual training at this time,
-            # return the default model updates
-            result = {"weights": default_model_updates, "accuracy": accuracy}
-        elif task.task_name == "validate":
-            # Validate the model on the data
-            pred = self.model(X)
-            # Calculate accuracy
-            correct = (pred.argmax(dim=1) == Y).sum().item()
-            accuracy = correct / len(Y)
-            result = {"accuracy": accuracy}
+            try:
+                diff_dict = read_training_result(self.result_path)
+
+            except Exception as e:
+                print(f"Failed to read results: {e}")
+                raise
+
+            result = {
+                "result": diff_dict,
+            }
         else:
             log.error(f"Received unknown task: {task.task_name}")
 

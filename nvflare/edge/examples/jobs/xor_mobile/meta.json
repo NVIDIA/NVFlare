@@ -5,5 +5,5 @@
         "app": ["@ALL"]
     },
     "min_clients": 2,
-    "edge_method": "cnn"
+    "edge_method": "xor"
 }

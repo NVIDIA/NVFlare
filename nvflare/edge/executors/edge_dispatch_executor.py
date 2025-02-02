@@ -56,8 +56,9 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
 
     def convert_task(self, task_data: Shareable) -> dict:
         """Convert task_data to a plain dict"""
+        # TODO: do we want to do this?
 
-        return {"weights": task_data.get("weights"), "task_id": self.task_id}
+        return {"task_data": task_data["model"], "task_id": self.task_id}
 
     def convert_result(self, result: dict) -> Shareable:
         """Convert result from device to shareable"""
