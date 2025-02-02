@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -19,7 +20,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 
 
-class TestTrainer(Executor):
+class SimpleExecutor(Executor):
     def __init__(self):
         super().__init__()
         self.aborted = False

@@ -387,7 +387,7 @@ class ReliableMessage:
         )
 
         cls._query_interval = query_interval
-        cls._executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_request_workers)
+        cls._executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_request_workers, thread_name_prefix="rm")
         engine = fl_ctx.get_engine()
         engine.register_aux_message_handler(
             topic=TOPIC_RELIABLE_REQUEST,
@@ -397,7 +397,7 @@ class ReliableMessage:
             topic=TOPIC_RELIABLE_REPLY,
             message_handle_func=cls._receive_reply,
         )
-        t = threading.Thread(target=cls._monitor_req_receivers, daemon=True)
+        t = threading.Thread(target=cls._monitor_req_receivers, name="rm_monitor", daemon=True)
         t.start()
         cls._logger.info(f"enabled reliable message: {max_request_workers=} {query_interval=}")
 
