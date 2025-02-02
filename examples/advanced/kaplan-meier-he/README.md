@@ -62,7 +62,7 @@ To run the baseline script, simply execute:
 ```commandline
 python utils/baseline_kaplan_meier.py
 ```
-By default, this will generate a KM curve image `km_curve_baseline.png` under `/tmp` directory. The resutling KM curve is shown below:
+By default, this will generate a KM curve image `km_curve_baseline.png` under `/tmp` directory. The resulting KM curve is shown below:
 ![KM survival baseline](figs/km_curve_baseline.png)
 Here, we show the survival curve for both daily (without binning) and weekly binning. The two curves aligns well with each other, while the weekly-binned curve has lower resolution.
 
