@@ -36,7 +36,15 @@ class FedAvg(BaseFedAvg):
         initial_model (nn.Module, optional): initial PyTorch model
     """
 
-    def __init__(self, *args, stop_cond: str, num_rounds: int, save_filename: str = "FL_global_model.pt", initial_model=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        stop_cond: str,
+        num_rounds: int,
+        save_filename: str = "FL_global_model.pt",
+        initial_model=None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
 
         self.stop_cond = stop_cond

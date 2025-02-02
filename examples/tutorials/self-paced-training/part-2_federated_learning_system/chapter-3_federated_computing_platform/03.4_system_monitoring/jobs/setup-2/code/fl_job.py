@@ -15,13 +15,12 @@
 import argparse
 import os
 
-from src.server import FedAvg
 from src.network import SimpleNetwork
-
-from nvflare.job_config.api import FedJob
+from src.server import FedAvg
 
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter
+from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
 from nvflare.metrics.metrics_keys import METRICS_EVENT_TYPE

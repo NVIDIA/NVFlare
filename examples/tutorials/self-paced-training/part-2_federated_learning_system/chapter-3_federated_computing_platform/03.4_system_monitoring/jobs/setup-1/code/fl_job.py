@@ -15,13 +15,11 @@
 import argparse
 import os
 
-
-from src.server import FedAvg
 from src.network import SimpleNetwork
-
-from nvflare.job_config.api import FedJob
+from src.server import FedAvg
 
 from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter
+from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
 
@@ -39,7 +37,6 @@ def main(job_configs_dir):
     num_rounds = 2
     train_script = "src/client.py"
     job_name = "fedavg"
-
 
     job = FedJob(name=job_name, min_clients=num_clients)
 
