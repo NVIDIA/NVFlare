@@ -87,7 +87,7 @@ Each client site and the server site will have its own monitoring system, includ
 | AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK | _after_process_result_of_unknown_task_count | _process_result_of_unknown_task_time_taken |
 | PRE_RUN_RESULT_AVAILABLE | _pre_run_result_available_count | |
 | BEFORE_CHECK_CLIENT_RESOURCES | _before_check_client_resources_count |  |
-| AFTER_CHECK_CLIENT_RESOURCES | _after_check_client_resources./ways_to_interact_with_fl_system.ipynb_count | _check_client_resources_time_taken |
+| AFTER_CHECK_CLIENT_RESOURCES | _after_check_client_resources_count | _check_client_resources_time_taken |
 | SUBMIT_JOB | _submit_job_count | |
 | DEPLOY_JOB_TO_SERVER | _deploy_job_to_server_count | |
 | DEPLOY_JOB_TO_CLIENT | _deploy_job_to_client_count | |
