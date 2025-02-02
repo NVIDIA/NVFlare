@@ -35,7 +35,7 @@ See the example :ref:`project_yml` for how these components are configured in St
 Overseer
 --------
 The Overseer is a system component that determines the hot FL server at any time for high availability.
-The name of the Overseer must be unique and in the format of fully qualified domain names.  During
+The name of the Overseer must be unique and in the format of a fully qualified domain name.  During
 provisioning time, if the name is specified incorrectly, either being duplicate or containing incompatible
 characters, the provision command will fail with an error message. It is possible to use a unique hostname rather than
 FQDN, with the IP mapped to the hostname by having it added to ``/etc/hosts``.

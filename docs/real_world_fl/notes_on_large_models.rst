@@ -17,7 +17,7 @@ The Azure VM size of the NVIDIA FLARE server was M32-8ms, which has 875GB memory
 
 Job of 128GB Models
 *******************
-We slightly modified the hello-numpy example to generate a model, which was a dictionary of 64 keys.  Each key held a 2GB numpy array.  The local training task was to add a small number to
+We slightly modified the hello-numpy example to generate a model, which was a dictionary of 64 keys.  Each key contained a 2GB NumPy array.  The local training task was to add a small number to
 those numpy arrays.  The aggregator on the server side was not changed.  This job required at least two clients and ran 3 rounds to finish.
 
 
@@ -31,13 +31,13 @@ On the ap-south-1 client, it took about 11000 seconds from the client to the ser
     - communication_timeout to 6000
 
 
-The `streaming_read_timeout` is used to check when a chunck of data is received but is not read out by the upper layer.  The `streaming_ack_wait` is how long the sender should wait for acknowledgement returned by the receiver for one chunck.
+The `streaming_read_timeout` is used to check when a chunk of data is received but not read by the upper layer.  The `streaming_ack_wait` is how long the sender should wait for acknowledgement returned by the receiver for one chunk.
 
 
 The `communication_timeout` is used on three consecutive stages for a single request and response.  When sending a large request (submit_update), the sender starts a timer with timeout = `communication_timeout`.
 When this timer expires, the sender checks if any progress is made during this period.  If yes, the sender resets the timer with the same timeout value and waits again.  If not, this request and response returns with timeout.
 After sending completes, the sender cancels the previous timer and starts a `remote processing` timer with timeout = `communication_timeout`.  This is to wait for the first returned byte from the receiver.  On
-large models, the server requires much longer time to prepare the task when the clients send `get_task` requests.  After receiving the first returned byte, the sender cancel the `remote processing` timer and starts
+large models, the server requires much longer time to prepare the task when the clients send `get_task` requests.  After receiving the first returned byte, the sender cancels the `remote processing` timer and starts
 a new timer.  It checks the receiving progress just like sending.
 
 
