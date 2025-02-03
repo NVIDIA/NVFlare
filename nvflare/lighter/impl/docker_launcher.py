@@ -30,6 +30,7 @@ class DockerLauncherBuilder(Builder):
     DockerJobLauncher as the job launcher (both server and client).
 
     """
+
     def __init__(
         self, docker_image="nvflare-docker:0.0.1", base_image="python:3.8", requirements_file="requirements.txt"
     ):
