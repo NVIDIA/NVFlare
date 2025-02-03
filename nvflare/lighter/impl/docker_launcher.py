@@ -26,6 +26,10 @@ from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class DockerLauncherBuilder(Builder):
+    """DockerLauncherBuilder is used for generating the docker build command and service startup command for using the
+    DockerJobLauncher as the job launcher (both server and client).
+
+    """
     def __init__(
         self, docker_image="nvflare-docker:0.0.1", base_image="python:3.8", requirements_file="requirements.txt"
     ):
