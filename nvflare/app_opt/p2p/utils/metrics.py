@@ -13,6 +13,7 @@
 # limitations under the License.
 import torch
 
+
 def compute_loss_over_dataset(
     model: torch.nn.Module | None = None,
     loss: torch.nn.modules.loss._Loss | None = None,
@@ -46,7 +47,7 @@ def compute_loss_over_dataset(
             pred = model(x)
             # Compute the loss
             ls = loss(pred, y)
-            # Accumulate the loss 
+            # Accumulate the loss
             epoch_loss += ls.item() * x.size(0)
     # Return the average loss
     return epoch_loss / len(dataloader.dataset)

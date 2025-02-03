@@ -118,18 +118,14 @@ class DGDExecutor(SyncAlgorithmExecutor):
             # run algorithm step
             # 1. exchange values
             with torch.no_grad():
-                self._exchange_values(
-                    fl_ctx, value=self.model.parameters(), iteration=iteration
-                )
+                self._exchange_values(fl_ctx, value=self.model.parameters(), iteration=iteration)
 
                 # compute consensus value
                 for idx, param in enumerate(self.model.parameters()):
                     if param.requires_grad:
                         param.mul_(self._weight)
                         for neighbor in self.neighbors:
-                            neighbor_param = self.neighbors_values[iteration][
-                                neighbor.id
-                            ][idx].to(self.device)
+                            neighbor_param = self.neighbors_values[iteration][neighbor.id][idx].to(self.device)
                             param.add_(
                                 neighbor_param,
                                 alpha=neighbor.weight,
@@ -158,12 +154,8 @@ class DGDExecutor(SyncAlgorithmExecutor):
         self._iterations = from_shareable(shareable).data["iterations"]
         self._stepsize = from_shareable(shareable).data["stepsize"]
 
-        init_train_loss = compute_loss_over_dataset(
-            self.model, self.loss, self.train_dataloader, device=self.device
-        )
-        init_test_loss = compute_loss_over_dataset(
-            self.model, self.loss, self.test_dataloader, device=self.device
-        )
+        init_train_loss = compute_loss_over_dataset(self.model, self.loss, self.train_dataloader, device=self.device)
+        init_test_loss = compute_loss_over_dataset(self.model, self.loss, self.test_dataloader, device=self.device)
 
         self.train_loss_sequence.append((0, init_train_loss))
         self.test_loss_sequence.append((0, init_test_loss))

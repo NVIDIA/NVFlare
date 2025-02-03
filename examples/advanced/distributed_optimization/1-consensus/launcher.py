@@ -45,10 +45,7 @@ if __name__ == "__main__":
     job.simulator_run("./tmp/runs/consensus")
 
     history = {
-        f"site-{i + 1}": torch.load(
-            f"tmp/runs/consensus/site-{i + 1}/value_sequence.pt"
-        )
-        for i in range(num_clients)
+        f"site-{i + 1}": torch.load(f"tmp/runs/consensus/site-{i + 1}/value_sequence.pt") for i in range(num_clients)
     }
     plt.figure()
     for i in range(num_clients):

@@ -30,7 +30,7 @@ class TwoMoonsDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 
-def get_dataloaders(data_seed:int):
+def get_dataloaders(data_seed: int):
     X, y = make_moons(n_samples=128, noise=0.1, random_state=data_seed)
 
     X_train = torch.from_numpy(X).float()
@@ -64,16 +64,12 @@ class NeuralNetwork(nn.Module):
 
 
 def plot_results(job, num_clients):
-    plt.style.use('ggplot')
+    plt.style.use("ggplot")
     train_loss = {}
     test_loss = {}
     for i in range(num_clients):
-        train_loss[f"site-{i + 1}"] = torch.load(
-            f"./tmp/runs/{job}/site-{i + 1}/train_loss_sequence.pt"
-        )
-        test_loss[f"site-{i + 1}"] = torch.load(
-            f"./tmp/runs/{job}/site-{i + 1}/test_loss_sequence.pt"
-        )
+        train_loss[f"site-{i + 1}"] = torch.load(f"./tmp/runs/{job}/site-{i + 1}/train_loss_sequence.pt")
+        test_loss[f"site-{i + 1}"] = torch.load(f"./tmp/runs/{job}/site-{i + 1}/test_loss_sequence.pt")
 
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
 

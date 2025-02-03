@@ -24,8 +24,8 @@ class GTADAMExecutor(GTExecutor):
     at each iteration. The model parameters are updated based on the neighbors' parameters and local gradient descent steps.
     The executor also tracks and records training, validation and test losses over time.
 
-    The number of iterations, the learning rate and the beta1, beta2 and epsilon hyperparameters must be provided 
-    by the controller when asing to run the algorithm.  They can be set in the extra parameters of the controller's 
+    The number of iterations, the learning rate and the beta1, beta2 and epsilon hyperparameters must be provided
+    by the controller when asing to run the algorithm.  They can be set in the extra parameters of the controller's
     config with the "iterations", "stepsize", "beta1", "beta2", and "epsilon" keys.
 
     Note:
@@ -47,6 +47,7 @@ class GTADAMExecutor(GTExecutor):
         train_loss_sequence (list[tuple]): Records of training loss over time.
         test_loss_sequence (list[tuple]): Records of testing loss over time.
     """
+
     def _pre_algorithm_run(self, fl_ctx, shareable, abort_signal):
         super()._pre_algorithm_run(fl_ctx, shareable, abort_signal)
 
@@ -61,14 +62,10 @@ class GTADAMExecutor(GTExecutor):
     def _update_local_state(self, stepsize):
         for i in range(len(self.tracker)):
             self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * self.tracker[i]
-            self.v[i] = torch.minimum(
-                self.beta2 * self.v[i] + (1 - self.beta2) * self.tracker[i] ** 2, self.G
-            )
+            self.v[i] = torch.minimum(self.beta2 * self.v[i] + (1 - self.beta2) * self.tracker[i] ** 2, self.G)
 
         with torch.no_grad():
             for idx, param in enumerate(self.model.parameters()):
                 if param.requires_grad:
-                    descent = torch.divide(
-                        self.m[idx], torch.sqrt(self.v[idx] + self.epsilon)
-                    )
+                    descent = torch.divide(self.m[idx], torch.sqrt(self.v[idx] + self.epsilon))
                     param.add_(descent, alpha=-stepsize)

@@ -91,17 +91,13 @@ class GTExecutor(SyncAlgorithmExecutor):
                 self.train_loss_sequence.append(
                     (
                         current_time,
-                        compute_loss_over_dataset(
-                            self.model, self.loss, self.train_dataloader, self.device
-                        ),
+                        compute_loss_over_dataset(self.model, self.loss, self.train_dataloader, self.device),
                     )
                 )
                 self.test_loss_sequence.append(
                     (
                         current_time,
-                        compute_loss_over_dataset(
-                            self.model, self.loss, self.test_dataloader, self.device
-                        ),
+                        compute_loss_over_dataset(self.model, self.loss, self.test_dataloader, self.device),
                     )
                 )
                 # restart after an epoch
@@ -116,9 +112,7 @@ class GTExecutor(SyncAlgorithmExecutor):
                     "parameters": self.model.parameters(),
                     "tracker": self.tracker,
                 }
-                self._exchange_values(
-                    fl_ctx, value=value_to_exchange, iteration=iteration
-                )
+                self._exchange_values(fl_ctx, value=value_to_exchange, iteration=iteration)
 
                 # 2. Update trainable parameters
                 # - a. compute consensus value
@@ -126,9 +120,9 @@ class GTExecutor(SyncAlgorithmExecutor):
                     if param.requires_grad:
                         param.mul_(self._weight)
                         for neighbor in self.neighbors:
-                            neighbor_param = self.neighbors_values[iteration][
-                                neighbor.id
-                            ]["parameters"][idx].to(self.device)
+                            neighbor_param = self.neighbors_values[iteration][neighbor.id]["parameters"][idx].to(
+                                self.device
+                            )
                             param.add_(
                                 neighbor_param,
                                 alpha=neighbor.weight,
@@ -142,9 +136,7 @@ class GTExecutor(SyncAlgorithmExecutor):
                 for idx, tracker in enumerate(iter(self.tracker)):
                     tracker.mul_(self._weight)
                     for neighbor in self.neighbors:
-                        neighbor_tracker = self.neighbors_values[iteration][
-                            neighbor.id
-                        ]["tracker"][idx].to(self.device)
+                        neighbor_tracker = self.neighbors_values[iteration][neighbor.id]["tracker"][idx].to(self.device)
                         tracker.add_(
                             neighbor_tracker,
                             alpha=neighbor.weight,
@@ -191,25 +183,15 @@ class GTExecutor(SyncAlgorithmExecutor):
         self._iterations = data["iterations"]
         self._stepsize = data["stepsize"]
 
-        init_train_loss = compute_loss_over_dataset(
-            self.model, self.loss, self.train_dataloader, self.device
-        )
-        init_test_loss = compute_loss_over_dataset(
-            self.model, self.loss, self.test_dataloader, self.device
-        )
+        init_train_loss = compute_loss_over_dataset(self.model, self.loss, self.train_dataloader, self.device)
+        init_test_loss = compute_loss_over_dataset(self.model, self.loss, self.test_dataloader, self.device)
 
         self.train_loss_sequence.append((0, init_train_loss))
         self.test_loss_sequence.append((0, init_test_loss))
 
         # initialize tracker
-        self.old_gradient = [
-            torch.zeros_like(param, device=self.device)
-            for param in self.model.parameters()
-        ]
-        self.tracker = [
-            torch.zeros_like(param, device=self.device)
-            for param in self.model.parameters()
-        ]
+        self.old_gradient = [torch.zeros_like(param, device=self.device) for param in self.model.parameters()]
+        self.tracker = [torch.zeros_like(param, device=self.device) for param in self.model.parameters()]
 
     def _post_algorithm_run(self, *args, **kwargs):
         torch.save(torch.tensor(self.train_loss_sequence), "train_loss_sequence.pt")

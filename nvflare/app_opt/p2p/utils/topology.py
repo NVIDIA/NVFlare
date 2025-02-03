@@ -31,9 +31,7 @@ def doubly_stochastic_adjacency(graph: nx.Graph) -> torch.Tensor:
 
 def get_matrix_steady_state(A: torch.Tensor):
     """Get the steady state of a matrix via eigendecomposition"""
-    eigenvalues, eigenvectors = torch.linalg.eig(
-        A
-    )  # unnormalized and unordered eigenvalues and eigenvectors
+    eigenvalues, eigenvectors = torch.linalg.eig(A)  # unnormalized and unordered eigenvalues and eigenvectors
     idx = eigenvalues.float().argsort(descending=True)
     eigenvectors = eigenvectors.float()[:, idx]
 

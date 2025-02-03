@@ -38,6 +38,7 @@ class SyncAlgorithmExecutor(BaseDistOptExecutor):
         sync_waiter (threading.Event): An event to synchronize the exchange of values.
         lock (threading.Lock): A lock to manage concurrent access to shared data structures.
     """
+
     def __init__(self, sync_timeout: int = 10):
         super().__init__()
 
@@ -89,9 +90,7 @@ class SyncAlgorithmExecutor(BaseDistOptExecutor):
                 self.system_panic("failed to receive values from all neighbors", fl_ctx)
                 return
 
-    def _handle_neighbor_value(
-        self, topic: str, request: Shareable, fl_ctx: FLContext
-    ) -> Shareable:
+    def _handle_neighbor_value(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         """Handles incoming values from neighbors.
 
         Processes the received value from a neighbor, stores it, and signals when all neighbor
@@ -123,6 +122,4 @@ class SyncAlgorithmExecutor(BaseDistOptExecutor):
             engine = fl_ctx.get_engine()
 
             # Register the message handler for receiving neighbor values
-            engine.register_aux_message_handler(
-                topic="send_value", message_handle_func=self._handle_neighbor_value
-            )
+            engine.register_aux_message_handler(topic="send_value", message_handle_func=self._handle_neighbor_value)

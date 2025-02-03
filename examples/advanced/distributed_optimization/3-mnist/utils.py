@@ -20,18 +20,11 @@ from config import NUM_CLIENTS
 
 
 def get_dataloaders(data_chunk):
-    training_data = datasets.MNIST(
-        root="data", train=True, download=True, transform=ToTensor()
-    )
-    test_data = datasets.MNIST(
-        root="data", train=False, download=True, transform=ToTensor()
-    )
+    training_data = datasets.MNIST(root="data", train=True, download=True, transform=ToTensor())
+    test_data = datasets.MNIST(root="data", train=False, download=True, transform=ToTensor())
 
     # split dataset so that each agent has a subset with (distinct) labels
-    labels = [
-        (training_data.targets == i).nonzero(as_tuple=True)[0].tolist()
-        for i in range(10)
-    ]
+    labels = [(training_data.targets == i).nonzero(as_tuple=True)[0].tolist() for i in range(10)]
     indices = torch.tensor_split(torch.arange(10), NUM_CLIENTS)[data_chunk]
     local_labels = []
     for i in indices:
@@ -62,19 +55,15 @@ class NeuralNetwork(nn.Module):
         x = self.flatten(x)
         logits = self.linear_relu_stack(x)
         return logits
-    
+
 
 def plot_results(job, num_clients):
-    plt.style.use('ggplot')
+    plt.style.use("ggplot")
     train_loss = {}
     test_loss = {}
     for i in range(num_clients):
-        train_loss[f"site-{i + 1}"] = torch.load(
-            f"./tmp/runs/{job}/site-{i + 1}/train_loss_sequence.pt"
-        )
-        test_loss[f"site-{i + 1}"] = torch.load(
-            f"./tmp/runs/{job}/site-{i + 1}/test_loss_sequence.pt"
-        )
+        train_loss[f"site-{i + 1}"] = torch.load(f"./tmp/runs/{job}/site-{i + 1}/train_loss_sequence.pt")
+        test_loss[f"site-{i + 1}"] = torch.load(f"./tmp/runs/{job}/site-{i + 1}/test_loss_sequence.pt")
 
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
 

@@ -90,6 +90,7 @@ class Config:
     The configuration includes the network topology and any extra algorithm-specific parameters.
     Algorithm-specific parameters in `extra` can include settings like 'stepsize', 'iterations', etc.
     """
+
     network: Network
 
     extra: dict = field(default_factory=dict)
@@ -110,6 +111,7 @@ class LocalConfig:
     The local configuration includes the node's neighbors and any extra algorithm-specific parameters.
     Algorithm-specific parameters in `extra` can include settings like 'stepsize', 'iterations', etc.
     """
+
     neighbors: list[Neighbor]
 
     extra: dict = field(default_factory=dict)

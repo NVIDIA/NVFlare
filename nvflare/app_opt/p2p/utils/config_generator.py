@@ -48,16 +48,14 @@ def generate_random_network(
         in_neighbors = np.nonzero(adjacency_matrix[:, j])[0].tolist()
         in_weights = weighted_adjacency_matrix[:, j].tolist()
 
-        neighbors = [
-            Neighbor(id=f"site-{i + 1}", weight=in_weights[i])
-            for i in in_neighbors
-            if i != j
-        ]
+        neighbors = [Neighbor(id=f"site-{i + 1}", weight=in_weights[i]) for i in in_neighbors if i != j]
 
-        network.append(Node(
-            id=f"site-{j + 1}",
-            neighbors=neighbors,
-        ))
+        network.append(
+            Node(
+                id=f"site-{j + 1}",
+                neighbors=neighbors,
+            )
+        )
 
     config = Network(
         nodes=network,

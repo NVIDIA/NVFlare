@@ -41,9 +41,7 @@ if __name__ == "__main__":
 
     # generate random config
     network, _ = generate_random_network(num_clients=NUM_CLIENTS)
-    config = Config(
-        network=network, extra={"iterations": ITERATIONS, "stepsize": STEPSIZE}
-    )
+    config = Config(network=network, extra={"iterations": ITERATIONS, "stepsize": STEPSIZE})
 
     # send controller to server
     controller = DistOptController(config=config)

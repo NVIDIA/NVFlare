@@ -33,6 +33,7 @@ class CustomGTADAMExecutor(GTADAMExecutor):
             test_dataloader=test_dataloader,
         )
 
+
 if __name__ == "__main__":
     # Create job
     job_name = "gtadam"
