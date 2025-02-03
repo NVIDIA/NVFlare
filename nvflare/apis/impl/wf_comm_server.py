@@ -93,7 +93,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         self._client_task_map = {}  # client_task_id => client_task
         self._all_done = False
         self._task_lock = Lock()
-        self._task_monitor = threading.Thread(target=self._monitor_tasks, args=(), daemon=True)
+        self._task_monitor = threading.Thread(target=self._monitor_tasks, args=(), name="wf_task", daemon=True)
         self._task_check_period = task_check_period
         self._dead_client_grace = 60.0
         self._dead_clients = {}  # clients reported dead: name => _DeadClientStatus
