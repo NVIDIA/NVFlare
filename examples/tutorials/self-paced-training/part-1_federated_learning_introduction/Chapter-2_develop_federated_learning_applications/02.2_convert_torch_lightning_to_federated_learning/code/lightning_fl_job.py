@@ -40,4 +40,5 @@ if __name__ == "__main__":
         )
         job.to(runner, f"site-{i+1}")
 
+    job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0", log_config="./log_config.json")
