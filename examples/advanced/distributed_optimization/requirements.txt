@@ -1,0 +1,8 @@
+omegaconf==2.3.0
+rich==13.9.4
+torch==2.5.1
+torchvision==0.20.1
+matplotlib==3.10.0
+scipy==1.15.0
+scikit-learn==1.6.1
+networkx==3.4.2
