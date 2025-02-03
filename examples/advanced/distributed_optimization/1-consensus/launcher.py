@@ -11,16 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import torch
 import random
+
 import matplotlib.pyplot as plt
-from nvflare.job_config.api import FedJob
+import torch
 
 from nvflare.app_opt.p2p.controllers import DistOptController
 from nvflare.app_opt.p2p.executors import ConsensusExecutor
 from nvflare.app_opt.p2p.types import Config
 from nvflare.app_opt.p2p.utils.config_generator import generate_random_network
-
+from nvflare.job_config.api import FedJob
 
 if __name__ == "__main__":
     # Create job

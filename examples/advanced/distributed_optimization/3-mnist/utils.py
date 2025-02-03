@@ -13,10 +13,10 @@
 # limitations under the License.
 import matplotlib.pyplot as plt
 import torch
+from config import NUM_CLIENTS
 from torch import nn
 from torchvision import datasets
 from torchvision.transforms import ToTensor
-from config import NUM_CLIENTS
 
 
 def get_dataloaders(data_chunk):

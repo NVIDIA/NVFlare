@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from .base_dist_opt_executor import BaseDistOptExecutor  # noqa
-from .sync_executor import SyncAlgorithmExecutor  # noqa
 from .consensus import ConsensusExecutor  # noqa
 from .distributed_gradient_descent import DGDExecutor  # noqa
 from .gradient_tracking import GTExecutor  # noqa
 from .gtadam import GTADAMExecutor  # noqa
+from .sync_executor import SyncAlgorithmExecutor  # noqa

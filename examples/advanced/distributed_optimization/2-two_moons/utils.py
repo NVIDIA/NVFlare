@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from torch import nn
-from sklearn.datasets import make_moons
-import torch
-from torch.utils.data import Dataset, DataLoader
 import matplotlib.pyplot as plt
+import torch
+from sklearn.datasets import make_moons
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
 
 
 class TwoMoonsDataset(Dataset):
