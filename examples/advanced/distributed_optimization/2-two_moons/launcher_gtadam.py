@@ -15,7 +15,7 @@ import torch
 from config import ITERATIONS, NUM_CLIENTS, STEPSIZE
 from utils import NeuralNetwork, get_dataloaders, plot_results
 
-from nvflare.app_opt.p2p.controllers import P2PAlgorithmController
+from nvflare.app_opt.p2p.controllers import DistOptController
 from nvflare.app_opt.p2p.executors import GTADAMExecutor
 from nvflare.app_opt.p2p.types import Config
 from nvflare.app_opt.p2p.utils.config_generator import generate_random_network
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     )
 
     # send controller to server
-    controller = P2PAlgorithmController(config=config)
+    controller = DistOptController(config=config)
     job.to_server(controller)
 
     # Add clients

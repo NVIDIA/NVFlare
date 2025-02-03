@@ -19,15 +19,18 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.app_opt.p2p.executors.base_p2p_executor import BaseP2PAlgorithmExecutor
+from nvflare.app_opt.p2p.executors.base_dist_opt_executor import BaseDistOptExecutor
 
 
-class SyncAlgorithmExecutor(BaseP2PAlgorithmExecutor):
+class SyncAlgorithmExecutor(BaseDistOptExecutor):
     """An executor to implement synchronous peer-to-peer (P2P) algorithms.
 
     This executor extends the BaseP2PAlgorithmExecutor to support synchronous execution
     of P2P algorithms. It manages the exchange of values with neighboring clients and ensures
     synchronization at each iteration.
+
+    Args:
+        sync_timeout (int): The timeout for waiting for values from neighbors. Defaults to 10 seconds.
 
     Attributes:
         neighbors_values (defaultdict): A dictionary to store values received from neighbors,
@@ -35,11 +38,12 @@ class SyncAlgorithmExecutor(BaseP2PAlgorithmExecutor):
         sync_waiter (threading.Event): An event to synchronize the exchange of values.
         lock (threading.Lock): A lock to manage concurrent access to shared data structures.
     """
-    def __init__(self):
+    def __init__(self, sync_timeout: int = 10):
         super().__init__()
 
         self.neighbors_values = defaultdict(dict)
 
+        self.sync_timeout = sync_timeout
         self.sync_waiter = threading.Event()
         self.lock = threading.Lock()
 
@@ -81,7 +85,7 @@ class SyncAlgorithmExecutor(BaseP2PAlgorithmExecutor):
         if len(self.neighbors_values[iteration]) < len(self.neighbors):
             # wait for all neighbors to send their values for the current iteration
             # if not received after timeout, abort the job
-            if not self.sync_waiter.wait(timeout=10):
+            if not self.sync_waiter.wait(timeout=self.sync_timeout):
                 self.system_panic("failed to receive values from all neighbors", fl_ctx)
                 return
 

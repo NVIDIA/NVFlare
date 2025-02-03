@@ -16,7 +16,7 @@ import random
 import matplotlib.pyplot as plt
 from nvflare.job_config.api import FedJob
 
-from nvflare.app_opt.p2p.controllers import P2PAlgorithmController
+from nvflare.app_opt.p2p.controllers import DistOptController
 from nvflare.app_opt.p2p.executors import ConsensusExecutor
 from nvflare.app_opt.p2p.types import Config
 from nvflare.app_opt.p2p.utils.config_generator import generate_random_network
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     config = Config(network=network, extra={"iterations": 50})
 
     # send controller to server
-    controller = P2PAlgorithmController(config=config)
+    controller = DistOptController(config=config)
     job.to_server(controller)
 
     # Add clients

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .base_p2p_executor import BaseP2PAlgorithmExecutor # noqa
+from .base_dist_opt_executor import BaseDistOptExecutor # noqa
 from .sync_executor import SyncAlgorithmExecutor # noqa
 from .consensus import ConsensusExecutor # noqa
 from .distributed_gradient_descent import DGDExecutor # noqa

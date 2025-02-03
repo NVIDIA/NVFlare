@@ -24,11 +24,11 @@ from nvflare.apis.signal import Signal
 from nvflare.app_opt.p2p.types import LocalConfig, Neighbor
 
 
-class BaseP2PAlgorithmExecutor(Executor, ABC):
-    """Base class for peer-to-peer (P2P) algorithm executors.
+class BaseDistOptExecutor(Executor, ABC):
+    """Base class for peer-to-peer distributed optimization algorithm executors.
 
-    This class provides the foundational structure for executors that run P2P algorithms
-    in a distributed/federated setting. It handles the configuration of the local network,
+    This class provides the foundational structure for executors that run P2P distributed 
+    optimization algorithms. It handles the configuration of the local network,
     execution flow based on tasks, and interaction with neighboring clients.
 
     Attributes:

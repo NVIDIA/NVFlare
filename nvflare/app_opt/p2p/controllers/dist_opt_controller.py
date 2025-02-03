@@ -19,12 +19,11 @@ from nvflare.apis.signal import Signal
 from nvflare.app_opt.p2p.types import Config
 
 
-class P2PAlgorithmController(Controller):
-    """Controller for running a peer-to-peer (P2P) algorithm on a network.
+class DistOptController(Controller):
+    """Controller for running a peer-to-peer distributed optimization algorithm on a network.
 
-    This controller manages the execution of a P2P algorithm by configuring
-    each client with its neighbors and initiating the algorithm execution across
-    the network.
+    This controller manages the execution of a distributed optimization algorithm by configuring
+    each client with its neighbors and initiating the algorithm execution across the network.
 
     Args:
         config (Config): The P2P network configuration containing node and neighbor information.
