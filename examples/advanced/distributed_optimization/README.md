@@ -113,7 +113,7 @@ Config(
 
 ### The controller
 
-In NVFlare, a `Controller` is a server-side component that manages the job execution and orchestration of tasks. Here, since we're running a P2P algorithm, we'll implement a custom controller whose main job is to load and broadcast the network configuration, and initiate/terminate the execution of a P2P algorithm. Let's call it `P2PAlgorithmController`. As a subclass of `Controller`, it must implement 3 methods:
+In NVFlare, a `Controller` is a server-side component that manages the job execution and orchestration of tasks. Here, since we're running a P2P algorithm, we'll implement a custom controller whose main job is to load and broadcast the network configuration, and initiate/terminate the execution of a P2P distributed optimization algorithm. Let's call it `DistOptController`. As a subclass of `Controller`, it must implement 3 methods:
 
 - `start_controller` which is called at the beginning of the run
 - `control_flow` defining the main control flow of the controller (in this case, broadcasting the configuration and asking clients to run the algorithm)
@@ -122,7 +122,7 @@ In NVFlare, a `Controller` is a server-side component that manages the job execu
 ```python
 from nvflare.apis.impl.controller import Controller
 
-class P2PAlgorithmController(Controller):
+class DistOptController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         # Broadcast configuration to clients
@@ -143,7 +143,7 @@ We won't do anything fancy during the start and stop phase, so let's focus on th
 ```python
 from nvflare.app_opt.p2p.types import Config
 
-class P2PAlgorithmController(Controller):
+class DistOptController(Controller):
     def __init__(
         self,
         config: Config,
@@ -167,7 +167,7 @@ from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 
-class P2PAlgorithmController(Controller):
+class DistOptController(Controller):
 
     ...
 
@@ -201,11 +201,11 @@ class P2PAlgorithmController(Controller):
     ... 
 ```
 
-And that's it, our `P2PAlgorithmController` is ready. The complete implementation of the `P2PAlgorithmController` can be found in `nvflare/app_opt/p2p/controllers/base.py`.
+And that's it, our `DistOptController` is ready. The complete implementation of the `DistOptController` can be found in `nvflare/app_opt/p2p/controllers/dist_opt_controller.py`.
 
 ### The executor
 
-Now that we have our `P2PAlgorithmController`, it's time to take care of the actual execution of the algorithm at the client level - we'll build on top of the NVFlare `Executor` to do to that.
+Now that we have our `DistOptController`, it's time to take care of the actual execution of the algorithm at the client level - we'll build on top of the NVFlare `Executor` to do to that.
 
 In NVFlare, an `Executor` is a client-side component that handles tasks received from the controller and executes them. For our purposes we'll need our executor to be able to do a few things:
 - receive the config from the server/controller
@@ -409,7 +409,7 @@ class SyncAlgorithmExecutor(Executor):
     ...
 ```
 
-And that's all. The full implementation is in `nvflare/app_opt/p2p/executors/base.py` - note that the implementation in `nvflare.app_opt.p2p` is split between a `BaseP2PAlgorithmExecutor` and the `SyncAlgorithmExecutor`. It contains a few additional attributes (namely `self.id` and `self.client_name`) to identify the client, which are potentially useful in algorithms, and two additional methods `_pre_algorithm_run` and `_post_algorithm_run` to be overridden by each specific algorithm to execute some code before and after the algorithm execution, respectively.
+And that's all. The full implementation is in `nvflare/app_opt/p2p/executors/sync_executor.py` - note that the implementation of the `SyncAlgorithmExecutor` in `nvflare.app_opt.p2p` is a subclass of `BaseDistOptExecutor`, defined in `nvflare/app_opt/p2p/executors/base_dist_opt_executor.py`. It contains a few additional attributes (namely `self.id` and `self.client_name`) to identify the client, which are potentially useful in algorithms, and two additional methods `_pre_algorithm_run` and `_post_algorithm_run` to be overridden by each specific algorithm to execute some code before and after the algorithm execution, respectively.
 
 ### An example: the `ConsensusExecutor`
 
