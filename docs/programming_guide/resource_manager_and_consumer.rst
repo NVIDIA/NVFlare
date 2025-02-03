@@ -166,7 +166,7 @@ You can easily write your own resource manager and consumer following the API sp
         @abstractmethod
         def report_resources(self, fl_ctx) -> dict:
             """Reports resources."""
-            Pass
+            pass
 
 
 A more friendly interface (AutoCleanResourceManager) is provided as well:
