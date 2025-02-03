@@ -19,7 +19,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 CS = DriverParams.CONNECTION_SECURITY.value
 S = DriverParams.SECURE.value
-IS = ConnectionSecurity.INSECURE
+IS = ConnectionSecurity.CLEAR
 T = ConnectionSecurity.TLS
 M = ConnectionSecurity.MTLS
 

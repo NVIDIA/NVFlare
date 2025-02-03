@@ -13,6 +13,7 @@
 # limitations under the License.
 
 _SECURE_SCHEME_MAPPING = {"tcp": "stcp", "grpc": "grpcs", "http": "https"}
+_CLEAR_SCHEME_MAPPING = {"stcp": "tcp", "grpcs": "grpc", "https": "http"}
 
 
 def make_url(scheme: str, address, secure: bool) -> str:
@@ -29,12 +30,28 @@ def make_url(scheme: str, address, secure: bool) -> str:
     Returns:
 
     """
-    secure_scheme = _SECURE_SCHEME_MAPPING.get(scheme)
-    if not secure_scheme:
-        raise ValueError(f"unsupported scheme '{scheme}'")
-
     if secure:
+        if scheme in _SECURE_SCHEME_MAPPING.values():
+            # already secure scheme
+            secure_scheme = scheme
+        else:
+            secure_scheme = _SECURE_SCHEME_MAPPING.get(scheme)
+
+        if not secure_scheme:
+            raise ValueError(f"unsupported scheme '{scheme}'")
+
         scheme = secure_scheme
+    else:
+        if scheme in _CLEAR_SCHEME_MAPPING.values():
+            # already clear scheme
+            clear_scheme = scheme
+        else:
+            clear_scheme = _CLEAR_SCHEME_MAPPING.get(scheme)
+
+        if not clear_scheme:
+            raise ValueError(f"unsupported scheme '{scheme}'")
+
+        scheme = clear_scheme
 
     if isinstance(address, str):
         if not address:

@@ -36,6 +36,12 @@ class TestUrlUtils:
             ("tcp", ["xyz.com", 1234], False, "tcp://xyz.com:1234"),
             ("tcp", {"host": "xyz.com"}, False, "tcp://xyz.com"),
             ("tcp", {"host": "xyz.com", "port": 1234}, False, "tcp://xyz.com:1234"),
+            ("stcp", {"host": "xyz.com"}, False, "tcp://xyz.com"),
+            ("https", {"host": "xyz.com"}, False, "http://xyz.com"),
+            ("grpcs", {"host": "xyz.com"}, False, "grpc://xyz.com"),
+            ("stcp", {"host": "xyz.com"}, True, "stcp://xyz.com"),
+            ("https", {"host": "xyz.com"}, True, "https://xyz.com"),
+            ("grpcs", {"host": "xyz.com"}, True, "grpcs://xyz.com"),
         ],
     )
     def test_make_url(self, scheme, address, secure, expected):

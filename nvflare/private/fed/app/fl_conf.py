@@ -306,7 +306,7 @@ class FLClientStarterConfiger(JsonConfigurator):
                 addr = relay_config.get(ConnPropKey.ADDRESS)
                 relay_conn_security = relay_config.get(ConnPropKey.CONNECTION_SECURITY)
                 secure = True
-                if relay_conn_security == ConnectionSecurity.INSECURE:
+                if relay_conn_security == ConnectionSecurity.CLEAR:
                     secure = False
                 relay_url = make_url(scheme, addr, secure)
                 print(f"connect to server via relay: {relay_url=} {relay_fqcn=}")

@@ -575,6 +575,6 @@ class ConnPropKey:
 
 
 class ConnectionSecurity:
-    INSECURE = "insecure"
+    CLEAR = "clear"
     TLS = "tls"
     MTLS = "mtls"

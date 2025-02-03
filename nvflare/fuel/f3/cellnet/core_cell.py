@@ -334,7 +334,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         # If configured, use it; otherwise keep the original value of 'secure'.
         conn_security = credentials.get(DriverParams.CONNECTION_SECURITY.value)
         if conn_security:
-            if conn_security == ConnectionSecurity.INSECURE:
+            if conn_security == ConnectionSecurity.CLEAR:
                 secure = False
             else:
                 secure = True

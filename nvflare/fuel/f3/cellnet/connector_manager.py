@@ -93,7 +93,7 @@ class ConnectorManager:
         # default conn sec
         conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY)
         if not conn_sec:
-            self.int_resources[DriverParams.CONNECTION_SECURITY] = ConnectionSecurity.INSECURE
+            self.int_resources[DriverParams.CONNECTION_SECURITY] = ConnectionSecurity.CLEAR
 
         self.logger.debug(f"internal scheme={self.int_scheme}, resources={self.int_resources}")
         self.logger.debug(f"adhoc scheme={self.adhoc_scheme}, resources={self.adhoc_resources}")

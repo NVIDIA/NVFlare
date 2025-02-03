@@ -138,7 +138,7 @@ def main(args):
     secure_conn = True
     if conn_security:
         credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
-        if conn_security == ConnectionSecurity.INSECURE:
+        if conn_security == ConnectionSecurity.CLEAR:
             secure_conn = False
     parent_url = make_url(parent_scheme, parent_address, secure_conn)
 
