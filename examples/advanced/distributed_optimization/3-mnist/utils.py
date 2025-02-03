@@ -101,4 +101,5 @@ def plot_results(job, num_clients):
     axs[1].set_title("Evolution of Test Loss")
 
     plt.tight_layout()
-    plt.savefig(f"{job}_results.png")
+    # plt.savefig(f"{job}_results.png")
+    plt.show()

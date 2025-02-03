@@ -81,24 +81,24 @@ def plot_results(job, num_clients):
     for i in range(num_clients):
         time = train_loss[f"site-{i + 1}"][:, 0]
         loss = train_loss[f"site-{i + 1}"][:, 1]
-        axs[0].plot(time, loss, label=f"site-{i + 1}")
+        axs[0].plot(range(len(loss)), loss, label=f"site-{i + 1}")
     axs[0].legend()
     axs[0].set_ylim(-0.1, 1)
     axs[0].set_ylabel("Loss")
-    axs[0].set_xlabel("Time (s)")
+    axs[0].set_xlabel("Iteration")
     axs[0].set_title("Evolution of Training Loss")
 
     # Second subplot: Evolution of test loss
     for i in range(num_clients):
         time = test_loss[f"site-{i + 1}"][:, 0]
         loss = test_loss[f"site-{i + 1}"][:, 1]
-        axs[1].plot(time, loss, label=f"site-{i + 1}")
+        axs[1].plot(range(len(loss)), loss, label=f"site-{i + 1}")
     axs[1].legend()
     axs[1].set_ylim(-0.1, 1)
     axs[1].set_ylabel("Loss")
-    axs[1].set_xlabel("Time (s)")
+    axs[1].set_xlabel("Iteration")
     axs[1].set_title("Evolution of Test Loss")
 
     plt.tight_layout()
     plt.savefig(f"{job}_results.png")
-    plt.show()
+    # plt.show()
