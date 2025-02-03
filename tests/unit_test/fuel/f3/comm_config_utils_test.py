@@ -13,7 +13,15 @@
 # limitations under the License.
 import pytest
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+
+CS = DriverParams.CONNECTION_SECURITY.value
+S = DriverParams.SECURE.value
+IS = ConnectionSecurity.INSECURE
+T = ConnectionSecurity.TLS
+M = ConnectionSecurity.MTLS
 
 
 class TestCommConfigUtils:
@@ -23,17 +31,17 @@ class TestCommConfigUtils:
         [
             ({}, False),
             ({"x": 1, "y": 2}, False),
-            ({"secure": True}, True),
-            ({"secure": False}, False),
-            ({"connection_security": "insecure"}, False),
-            ({"connection_security": "tls"}, True),
-            ({"connection_security": "mtls"}, True),
-            ({"connection_security": "mtls", "secure": False}, True),
-            ({"connection_security": "mtls", "secure": True}, True),
-            ({"connection_security": "tls", "secure": False}, True),
-            ({"connection_security": "tls", "secure": True}, True),
-            ({"connection_security": "insecure", "secure": False}, False),
-            ({"connection_security": "insecure", "secure": True}, False),
+            ({S: True}, True),
+            ({S: False}, False),
+            ({CS: IS}, False),
+            ({CS: T}, True),
+            ({CS: M}, True),
+            ({CS: M, S: False}, True),
+            ({CS: M, S: True}, True),
+            ({CS: T, S: False}, True),
+            ({CS: T, S: True}, True),
+            ({CS: IS, S: False}, False),
+            ({CS: IS, S: True}, False),
         ],
     )
     def test_requires_secure_connection(self, resources, expected):

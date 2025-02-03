@@ -26,7 +26,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.sec.authn import add_authentication_headers
+from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.config_service import search_file
 from nvflare.fuel.utils.constants import Mode
@@ -182,24 +182,8 @@ class CellPipe(Pipe):
                 ci = _CellInfo(site_name, cell, net_agent, auth_token, token_signature)
                 cls._cells_info[fqcn] = ci
 
-                # set filter to add additional auth headers
-                cell.core_cell.add_outgoing_reply_filter(
-                    channel="*",
-                    topic="*",
-                    cb=cls._add_auth_headers,
-                    ci=ci,
-                )
-                cell.core_cell.add_outgoing_request_filter(
-                    channel="*",
-                    topic="*",
-                    cb=cls._add_auth_headers,
-                    ci=ci,
-                )
+                set_add_auth_headers_filters(cell, ci.site_name, ci.auth_token, ci.token_signature)
             return ci
-
-    @classmethod
-    def _add_auth_headers(cls, message: CellMessage, ci: _CellInfo):
-        add_authentication_headers(message, ci.site_name, ci.auth_token, ci.token_signature)
 
     def __init__(
         self,

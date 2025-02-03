@@ -24,7 +24,7 @@ def requires_secure_connection(resources: dict):
     Returns: whether secure connection is required
 
     """
-    conn_sec = resources.get(DriverParams.CONNECTION_SECURITY)
+    conn_sec = resources.get(DriverParams.CONNECTION_SECURITY.value)
     if conn_sec:
         # if connection security is specified, it takes precedence over the "secure" flag
         if conn_sec == ConnectionSecurity.INSECURE:
@@ -33,4 +33,4 @@ def requires_secure_connection(resources: dict):
             return True
     else:
         # Connection security is not specified, check the "secure" flag.
-        return resources.get(DriverParams.SECURE, False)
+        return resources.get(DriverParams.SECURE.value, False)

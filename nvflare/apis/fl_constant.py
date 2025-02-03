@@ -466,6 +466,7 @@ class FLMetaKey:
 
 class CellMessageAuthHeaderKey:
     CLIENT_NAME = "client_name"
+    SSID = "ssid"
     TOKEN = "__token__"
     TOKEN_SIGNATURE = "__token_signature__"
 
@@ -557,6 +558,8 @@ class RunnerTask:
 
 class ConnPropKey:
 
+    PROJECT_NAME = "project_name"
+    SERVER_IDENTITY = "server_identity"
     IDENTITY = "identity"
     PARENT = "parent"
     FQCN = "fqcn"
