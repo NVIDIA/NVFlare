@@ -14,7 +14,7 @@
 from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.utils.validation_utils import check_object_type
+from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
 
 def add_authentication_headers(msg: Message, client_name: str, auth_token, token_signature, ssid=None):
@@ -40,8 +40,30 @@ def add_authentication_headers(msg: Message, client_name: str, auth_token, token
     msg.set_header(CellMessageAuthHeaderKey.TOKEN_SIGNATURE, token_signature if token_signature else "NA")
 
 
-def set_add_auth_headers_filters(cell: Cell, client_name: str, auth_token, token_signature, ssid=None):
+def set_add_auth_headers_filters(cell: Cell, client_name: str, auth_token: str, token_signature: str, ssid=None):
+    """Set filters for adding auth headers.
+
+    Args:
+        cell: the cell to add the filters to.
+        client_name: name of the client
+        auth_token: authentication token
+        token_signature: token signature
+        ssid: SSID, optional
+
+    Returns: None
+
+    """
     check_object_type("cell", cell, Cell)
+
+    if client_name:
+        check_str("client_name", client_name)
+
+    check_str("auth_token", auth_token)
+    check_str("token_signature", token_signature)
+
+    if ssid:
+        check_str("ssid", ssid)
+
     cell.core_cell.add_outgoing_reply_filter(
         channel="*",
         topic="*",

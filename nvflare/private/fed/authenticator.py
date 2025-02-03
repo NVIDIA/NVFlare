@@ -21,6 +21,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
@@ -58,7 +59,7 @@ def _get_client_ip():
 class Authenticator:
     def __init__(
         self,
-        cell,
+        cell: Cell,
         project_name: str,
         client_name: str,
         client_type: str,
@@ -70,6 +71,21 @@ class Authenticator:
         msg_timeout: float,
         retry_interval: float,
     ):
+        """Authenticator is to be used to register a client to the Server.
+
+        Args:
+            cell: the communication cell
+            project_name: name of the project
+            client_name: name of the client
+            client_type: type of the client: regular or relay
+            expected_sp_identity: identity of the service provider (i.e. server)
+            secure_mode: whether the project is in secure training mode
+            root_cert_file: file path of the root cert
+            private_key_file: file path of the private key
+            cert_file: file path of the client's certificate
+            msg_timeout: timeout for authentication messages
+            retry_interval: interval between tries
+        """
         self.cell = cell
         self.project_name = project_name
         self.client_name = client_name
@@ -258,8 +274,11 @@ class Authenticator:
 
 def validate_auth_headers(message: CellMessage, token_verifier: TokenVerifier, logger):
     """Validate auth headers from messages that go through the server.
+
     Args:
         message: the message to validate
+        token_verifier: the TokenVerifier to be used to verify the token and signature
+
     Returns:
     """
     headers = message.headers
