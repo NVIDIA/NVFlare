@@ -20,9 +20,10 @@ from nvflare.lighter import utils
 
 from .constants import CtxKey, PropKey, ProvisionMode
 from .entity import Entity, Project
+from .spec import Logger
 
 
-class ProvisionContext(dict):
+class ProvisionContext(dict, Logger):
     def __init__(self, workspace_root_dir: str, project: Project):
         super().__init__()
         self[CtxKey.WORKSPACE] = workspace_root_dir
@@ -72,6 +73,14 @@ class ProvisionContext(dict):
 
     def get_provision_mode(self):
         return self.get(CtxKey.PROVISION_MODE)
+
+    def set_logger(self, logger: Logger):
+        if not isinstance(logger, Logger):
+            raise ValueError(f"expect logger to be Logger but got {type(logger)}")
+        self[CtxKey.LOGGER] = logger
+
+    def get_logger(self):
+        return self.get(CtxKey.LOGGER)
 
     def get_wip_dir(self):
         return self.get(CtxKey.WIP)
@@ -133,3 +142,31 @@ class ProvisionContext(dict):
         if content_modify_cb:
             section = content_modify_cb(section, **cb_kwargs)
         utils.write(os.path.join(dest_dir, file_name), section, mode, exe=exe)
+
+    def info(self, msg: str):
+        logger = self.get_logger()
+        if logger:
+            logger.info(msg)
+        else:
+            print(f"INFO: {msg}")
+
+    def error(self, msg: str):
+        logger = self.get_logger()
+        if logger:
+            logger.info(msg)
+        else:
+            print(f"ERROR: {msg}")
+
+    def debug(self, msg: str):
+        logger = self.get_logger()
+        if logger:
+            logger.info(msg)
+        else:
+            print(f"DEBUG: {msg}")
+
+    def warning(self, msg: str):
+        logger = self.get_logger()
+        if logger:
+            logger.info(msg)
+        else:
+            print(f"WARNING: {msg}")

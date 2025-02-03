@@ -97,7 +97,7 @@ class Participant(Entity):
         own name, type, organization it belongs to, rules and other information.
 
         Args:
-            type (str): server, client, admin or other string that builders can handle
+            type (str): server, client, admin, relay or other string that builders can handle
             name (str): system-wide unique name
             org (str): system-wide unique organization
             props (dict): properties
@@ -173,6 +173,7 @@ class Project(Entity):
         self.overseer = None
         self.clients = []
         self.admins = []
+        self.relays = []
         self.all_names = {}
 
         if participants:
@@ -236,6 +237,14 @@ class Project(Entity):
     def get_clients(self):
         return self.clients
 
+    def add_relay(self, name: str, org: str, props: dict):
+        self._check_unique_name(name)
+        self.relays.append(Participant(ParticipantType.RELAY, name, org, props, self))
+        self.all_names[name] = True
+
+    def get_relays(self):
+        return self.relays
+
     def add_admin(self, name: str, org: str, props: dict):
         self._check_unique_name(name)
         admin = Participant(ParticipantType.ADMIN, name, org, props, self)
@@ -257,5 +266,6 @@ class Project(Entity):
             result.append(self.overseer)
 
         result.extend(self.clients)
+        result.extend(self.relays)
         result.extend(self.admins)
         return result

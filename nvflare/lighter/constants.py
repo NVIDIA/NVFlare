@@ -26,6 +26,7 @@ class ParticipantType:
     CLIENT = "client"
     ADMIN = "admin"
     OVERSEER = "overseer"
+    RELAY = "relay"
 
 
 class PropKey:
@@ -53,6 +54,7 @@ class CtxKey(WorkDir, PropKey):
     PROJECT = "__project__"
     TEMPLATE = "__template__"
     PROVISION_MODE = "__provision_model__"
+    LOGGER = "__logger__"
     LAST_PROD_STAGE = "last_prod_stage"
     TEMPLATE_FILES = "template_files"
     SERVER_NAME = "server_name"

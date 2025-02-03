@@ -350,7 +350,7 @@ class StaticFileBuilder(Builder):
                     if connect_to:
                         err = self._check_host_name(connect_to, server)
                         if err:
-                            raise ValueError(f"bad connect_to in {participant.subject}: {err}")
+                            ctx.warning(f"connect_to in {participant.subject} may be invalid: {err}")
                     else:
                         # connect_to is not explicitly specified: use the server's name by default
                         # Note: by doing this dynamically, we guarantee the sp_end_point to be correct, even if the
