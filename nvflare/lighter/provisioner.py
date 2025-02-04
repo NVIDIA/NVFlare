@@ -19,7 +19,7 @@ from typing import List
 from .constants import ProvisionMode, WorkDir
 from .ctx import ProvisionContext
 from .entity import Project
-from .spec import Builder, Logger
+from .spec import Builder
 
 
 class Provisioner:
@@ -55,7 +55,17 @@ class Provisioner:
             raise ValueError(f"template must be a dict but got {type(template)}")
         self.template.update(template)
 
-    def provision(self, project: Project, mode=None, logger: Logger = None):
+    def provision(self, project: Project, mode=None, logger=None):
+        if logger:
+            if not hasattr(logger, "info"):
+                raise ValueError(f"invalid logger {type(logger)}: missing info method")
+
+            if not hasattr(logger, "warning"):
+                raise ValueError(f"invalid logger {type(logger)}: missing warning method")
+
+            if not hasattr(logger, "error"):
+                raise ValueError(f"invalid logger {type(logger)}: missing error method")
+
         server = project.get_server()
         if not server:
             raise RuntimeError("missing server from the project")
@@ -70,8 +80,6 @@ class Provisioner:
         ctx.set_provision_mode(mode)
 
         if logger:
-            if not isinstance(logger, Logger):
-                raise ValueError(f"expect logger to be Logger but got {type(logger)}")
             ctx.set_logger(logger)
 
         try:
@@ -85,11 +93,11 @@ class Provisioner:
             for b in self.builders[::-1]:
                 b.finalize(project, ctx)
 
-        except Exception:
+        except Exception as ex:
             prod_dir = ctx.get(WorkDir.CURRENT_PROD_DIR)
             if prod_dir:
                 shutil.rmtree(prod_dir)
-            ctx.error("Exception raised during provision.  Incomplete prod_n folder removed.")
+            ctx.error(f"Exception {ex} raised during provision.  Incomplete prod_n folder removed.")
             traceback.print_exc()
         finally:
             wip_dir = ctx.get(WorkDir.WIP)

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from abc import ABC, abstractmethod
+from abc import ABC
 
 from .ctx import ProvisionContext
 from .entity import Project
@@ -25,23 +25,4 @@ class Builder(ABC):
         pass
 
     def finalize(self, project: Project, ctx: ProvisionContext):
-        pass
-
-
-class Logger(ABC):
-
-    @abstractmethod
-    def info(self, msg: str):
-        pass
-
-    @abstractmethod
-    def error(self, msg: str):
-        pass
-
-    @abstractmethod
-    def debug(self, msg: str):
-        pass
-
-    @abstractmethod
-    def warning(self, msg: str):
         pass

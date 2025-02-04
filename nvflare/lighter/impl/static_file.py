@@ -29,7 +29,7 @@ from nvflare.lighter.constants import (
     ProvisionMode,
     TemplateSectionKey,
 )
-from nvflare.lighter.entity import Participant
+from nvflare.lighter.entity import Participant, parse_connect_to
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
@@ -204,7 +204,7 @@ class StaticFileBuilder(Builder):
         dest_dir = ctx.get_ws_dir(server)
         ctx.build_from_template(dest_dir, TemplateSectionKey.SERVER_README, ProvFileName.README_TXT, exe=False)
 
-    def _build_client(self, client, ctx):
+    def _build_client(self, client: Participant, ctx):
         project = ctx.get_project()
         server = project.get_server()
         if not server:
@@ -276,6 +276,63 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(dest_dir, TemplateSectionKey.DEFAULT_AUTHZ, ProvFileName.AUTHORIZATION_JSON_DEFAULT)
 
+        # build relay__resources if relay is used by this client
+        connect_to = client.get_prop(PropKey.CONNECT_TO)
+        if connect_to:
+            name, host, port = parse_connect_to(connect_to)
+            if name:
+                # relay is used!
+                relay_map = ctx.get(CtxKey.RELAY_MAP)
+                if not relay_map:
+                    raise RuntimeError(f"missing {CtxKey.RELAY_MAP} from the provision context")
+
+                relay = relay_map.get(name)
+                if not relay:
+                    raise RuntimeError(f"cannot find relay {name} from the map")
+
+                assert isinstance(relay, Participant)
+                fqcn = relay.get_prop(PropKey.FQCN)
+                if not relay:
+                    raise RuntimeError(f"cannot find FQCN from relay {name}")
+
+                relay_port = relay.get_prop_fb(PropKey.RELAY_PORT)
+                if not relay_port:
+                    raise RuntimeError(f"cannot find relay_port from relay {name}")
+
+                if not host:
+                    # use the relay's default host
+                    host = relay.get_default_host()
+
+                scheme = relay.get_prop(PropKey.SCHEME, "grpc")
+                conn_sec = relay.get_prop(PropKey.CONN_SECURITY, "mtls")
+                if port:
+                    relay_port = port
+
+                addr = f"{host}:{relay_port}"
+
+                replacement_dict = {
+                    "scheme": scheme,
+                    "identity": relay.name,
+                    "address": addr,
+                    "fqcn": fqcn,
+                    "conn_sec": conn_sec,
+                }
+
+                ctx.build_from_template(
+                    dest_dir,
+                    TemplateSectionKey.RELAY_RESOURCES_JSON,
+                    ProvFileName.RELAY_RESOURCES_JSON,
+                    replacement_dict,
+                    exe=False,
+                )
+
+                # build comm config backbone gen
+                replacement_dict = {"conn_gen": 1}
+                section = ctx.build_section_from_template(
+                    temp_section=TemplateSectionKey.COMM_CONFIG_BACKBONE_GEN, replacement=replacement_dict
+                )
+                client.add_prop(PropKey.COMM_CONFIG_GEN, section)
+
         # workspace folder file
         dest_dir = ctx.get_ws_dir(client)
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
@@ -346,9 +403,20 @@ class StaticFileBuilder(Builder):
                 else:
                     connect_to = participant.get_prop(PropKey.CONNECT_TO)
                     if connect_to:
-                        err = self._check_host_name(connect_to, server)
-                        if err:
-                            ctx.warning(f"connect_to in {participant.subject} may be invalid: {err}")
+                        name, addr, port = parse_connect_to(connect_to)
+                        if not name:
+                            err = self._check_host_name(addr, server)
+                            if err:
+                                ctx.warning(f"connect_to in {participant.subject} may be invalid: {err}")
+                            connect_to = addr
+                        else:
+                            # uses relay
+                            # since relay config is done in relay__resources.json, we use default server here
+                            connect_to = server.get_default_host()
+
+                        if port:
+                            # override fl_port
+                            fl_port = port
                     else:
                         # connect_to is not explicitly specified: use the server's name by default
                         # Note: by doing this dynamically, we guarantee the sp_end_point to be correct, even if the
@@ -424,3 +492,79 @@ class StaticFileBuilder(Builder):
 
         for admin in project.get_admins():
             self._build_admin(admin, ctx)
+
+    def initialize(self, project: Project, ctx: ProvisionContext):
+        # name => relay
+        name_to_relay = {}
+
+        relays = project.get_relays()
+        if not relays:
+            # nothing to prepare
+            return
+
+        for r in relays:
+            assert isinstance(r, Participant)
+            name_to_relay[r.name] = r
+
+        # determine parents
+        for r in relays:
+            assert isinstance(r, Participant)
+            parent_def = r.get_prop(PropKey.CONNECT_TO)
+            print(f"determine parent for relay {r.name} {parent_def=}")
+            if parent_def:
+                parent_name, parent_addr, parent_port = parse_connect_to(parent_def)
+            else:
+                # default connect to server
+                parent_name, parent_addr, parent_port = None, None, None
+
+            if not parent_name:
+                parent = None
+            else:
+                parent = name_to_relay.get(parent_name)
+                if not parent:
+                    raise ValueError(f"undefined parent {parent_name} in relay {r.name}")
+            r.add_prop(PropKey.PARENT, (parent, parent_addr, parent_port))
+
+        # determine FQCNs
+        for r in relays:
+            fqcn_path = []
+            err = check_parent(r, fqcn_path)
+            if err:
+                raise ValueError(f"bad relay definitions: {err}")
+            fqcn = ".".join(fqcn_path)
+            r.add_prop(PropKey.FQCN, fqcn)
+
+        if name_to_relay:
+            ctx[CtxKey.RELAY_MAP] = name_to_relay
+
+    def finalize(self, project: Project, ctx: ProvisionContext):
+        for p in project.get_all_participants():
+            assert isinstance(p, Participant)
+            comm_config = {}
+            internal = p.get_prop(PropKey.COMM_CONFIG_INTERNAL, "")
+            if internal:
+                int_dict = json.loads(internal)
+                comm_config.update(int_dict)
+
+            gen = p.get_prop(PropKey.COMM_CONFIG_GEN, "")
+            if gen:
+                gen_dict = json.loads(gen)
+                comm_config.update(gen_dict)
+
+            if comm_config:
+                # create comm config file
+                # we create the comm_config here because multiple builders may create different portions of the file.
+                dest_dir = ctx.get_local_dir(p)
+                with open(os.path.join(dest_dir, ProvFileName.COMM_CONFIG), "w") as f:
+                    json.dump(comm_config, f, indent=2)
+
+
+def check_parent(c: Participant, path: list):
+    if c.name in path:
+        return f"circular parent ref {c.name}"
+
+    path.insert(0, c.name)
+    parent, _, _ = c.get_prop(PropKey.PARENT)
+    if not parent:
+        return ""
+    return check_parent(parent, path)

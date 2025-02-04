@@ -20,10 +20,9 @@ from nvflare.lighter import utils
 
 from .constants import CtxKey, PropKey, ProvisionMode
 from .entity import Entity, Project
-from .spec import Logger
 
 
-class ProvisionContext(dict, Logger):
+class ProvisionContext(dict):
     def __init__(self, workspace_root_dir: str, project: Project):
         super().__init__()
         self[CtxKey.WORKSPACE] = workspace_root_dir
@@ -61,7 +60,7 @@ class ProvisionContext(dict, Logger):
 
         section = template.get(section_key)
         if not section:
-            raise RuntimeError(f"missing section {section} in template")
+            raise RuntimeError(f"missing section {section_key} in template")
 
         return section
 
@@ -74,9 +73,7 @@ class ProvisionContext(dict, Logger):
     def get_provision_mode(self):
         return self.get(CtxKey.PROVISION_MODE)
 
-    def set_logger(self, logger: Logger):
-        if not isinstance(logger, Logger):
-            raise ValueError(f"expect logger to be Logger but got {type(logger)}")
+    def set_logger(self, logger):
         self[CtxKey.LOGGER] = logger
 
     def get_logger(self):
@@ -136,12 +133,22 @@ class ProvisionContext(dict, Logger):
             cb_kwargs: additional keyword arguments for the callback
 
         """
+        section = self.build_section_from_template(temp_section, replacement, content_modify_cb, **cb_kwargs)
+        utils.write(os.path.join(dest_dir, file_name), section, mode, exe=exe)
+
+    def build_section_from_template(
+        self,
+        temp_section: str,
+        replacement=None,
+        content_modify_cb=None,
+        **cb_kwargs,
+    ):
         section = self.get_template_section(temp_section)
         if replacement:
             section = utils.sh_replace(section, replacement)
         if content_modify_cb:
             section = content_modify_cb(section, **cb_kwargs)
-        utils.write(os.path.join(dest_dir, file_name), section, mode, exe=exe)
+        return section
 
     def info(self, msg: str):
         logger = self.get_logger()

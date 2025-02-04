@@ -22,6 +22,7 @@ import yaml
 from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher, ServerDockerJobLauncher
 from nvflare.lighter import utils
 from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
@@ -52,7 +53,7 @@ class DockerLauncherBuilder(Builder):
         info_dict["container_name"] = overseer.name
         self.services[overseer.name] = info_dict
 
-    def _build_server(self, server, ctx: ProvisionContext):
+    def _build_server(self, server: Participant, ctx: ProvisionContext):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
 
@@ -84,13 +85,11 @@ class DockerLauncherBuilder(Builder):
         communication_port = server.get_prop(CtxKey.DOCKER_COMM_PORT)
         if communication_port:
             replacement_dict = {"comm_host_name": "server-parent", "communication_port": communication_port}
-            ctx.build_from_template(
-                dest_dir,
-                TemplateSectionKey.COMM_CONFIG,
-                ProvFileName.COMM_CONFIG,
+            section = ctx.build_section_from_template(
+                TemplateSectionKey.COMM_CONFIG_INTERNAL,
                 replacement=replacement_dict,
-                exe=True,
             )
+            server.add_prop(PropKey.COMM_CONFIG_INTERNAL, section)
 
         dest_dir = ctx.get_kit_dir(server)
         replacement_dict = {
@@ -141,13 +140,11 @@ class DockerLauncherBuilder(Builder):
         communication_port = client.get_prop(PropKey.DOCKER_COMM_PORT)
         if communication_port:
             replacement_dict = {"comm_host_name": client.name + "-parent", "communication_port": communication_port}
-            ctx.build_from_template(
-                dest_dir,
-                TemplateSectionKey.COMM_CONFIG,
-                ProvFileName.COMM_CONFIG,
+            section = ctx.build_section_from_template(
+                TemplateSectionKey.COMM_CONFIG_INTERNAL,
                 replacement=replacement_dict,
-                exe=True,
             )
+            client.add_prop(PropKey.COMM_CONFIG_INTERNAL, section)
 
         dest_dir = ctx.get_kit_dir(client)
         replacement_dict = {

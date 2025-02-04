@@ -49,6 +49,13 @@ class PropKey:
     ALLOW_ERROR_SENDING = "allow_error_sending"
     CONN_SECURITY = "connection_security"
     CUSTOM_CA_CERT = "custom_ca_cert"
+    SCHEME = "scheme"
+    RELAY_PORT = "relay_port"
+
+    PARENT = "__parent__"
+    FQCN = "__fqcn__"
+    COMM_CONFIG_INTERNAL = "__comm_config_internal__"
+    COMM_CONFIG_GEN = "__comm_config_gen__"
 
 
 class CtxKey(WorkDir, PropKey):
@@ -61,6 +68,7 @@ class CtxKey(WorkDir, PropKey):
     SERVER_NAME = "server_name"
     ROOT_CERT = "root_cert"
     ROOT_PRI_KEY = "root_pri_key"
+    RELAY_MAP = "relay_map"
 
 
 class ProvisionMode:
@@ -103,7 +111,9 @@ class TemplateSectionKey:
     SUB_START_SH = "sub_start_sh"
     STOP_FL_SH = "stop_fl_sh"
     LOG_CONFIG = "log_config"
-    COMM_CONFIG = "comm_config"
+    COMM_CONFIG_INTERNAL = "comm_config_internal"
+    COMM_CONFIG_BACKBONE_GEN = "comm_config_backbone_gen"
+    COMM_CONFIG_JSON = "comm_config_json"
     LOCAL_SERVER_RESOURCES = "local_server_resources"
     LOCAL_CLIENT_RESOURCES = "local_client_resources"
     SAMPLE_PRIVACY = "sample_privacy"
@@ -122,6 +132,7 @@ class TemplateSectionKey:
     HELM_CHART_SERVICE_SERVER = "helm_chart_service_server"
     HELM_CHART_DEPLOYMENT_OVERSEER = "helm_chart_deployment_overseer"
     HELM_CHART_DEPLOYMENT_SERVER = "helm_chart_deployment_server"
+    RELAY_RESOURCES_JSON = "relay_resources_json"
 
 
 class ProvFileName:
@@ -159,6 +170,7 @@ class ProvFileName:
     VALUES_YAML = "values.yaml"
     HELM_CHART_TEMPLATES_DIR = "templates"
     CUSTOM_CA_CERT_FILE_NAME = "customRootCA.pem"
+    RELAY_RESOURCES_JSON = "relay__resources.json"
 
 
 class CertFileBasename:

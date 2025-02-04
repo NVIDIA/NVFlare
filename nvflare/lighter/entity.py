@@ -11,9 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Any
+
 from nvflare.apis.utils.format_check import name_check
 
-from .constants import AdminRole, ParticipantType, PropKey
+from .constants import AdminRole, ConnSecurity, ParticipantType, PropKey
 
 
 def _check_host_name(scope: str, prop_key: str, value):
@@ -36,15 +38,61 @@ def _check_admin_role(scope: str, prop_key: str, value):
         raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be one of {valid_roles}")
 
 
+def parse_connect_to(value, scope=None, prop_key=None) -> (str, str, int):
+    if isinstance(value, str):
+        # old format - for server only
+        return None, value, None
+    elif isinstance(value, list):
+        vl = len(value)
+        if vl == 1:
+            # name only
+            return value[0], None, None
+        elif vl == 2:
+            # name, address
+            return value[0], value[1], None
+        elif vl == 3:
+            # name, address, port
+            return value[0], value[1], value[2]
+        else:
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must contains 1 or 2 elements")
+    else:
+        raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: invalid type {type(value)}")
+
+
+def _check_connect_to(scope: str, prop_key: str, value):
+    # connect_to prop can take multiple formats:
+    # str - server host name or IP
+    # list - [parent_name, host name or IP]
+    name, addr, port = parse_connect_to(value, scope, prop_key)
+    if addr:
+        err, reason = name_check(addr, "host_name")
+        if err:
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: {reason}")
+
+    if port is not None:
+        if not isinstance(port, int):
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: port {port} must be int")
+
+        if port <= 0:
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: invalid port {port}")
+
+
+def _check_conn_security(scope: str, prop_key: str, value):
+    valid_conn_secs = [ConnSecurity.CLEAR, ConnSecurity.MTLS, ConnSecurity.TLS]
+    if value not in valid_conn_secs:
+        raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be one of {valid_conn_secs}")
+
+
 # validator functions for common properties
 # Validator function must follow this signature:
 # func(scope: str, prop_key: str, value)
 _PROP_VALIDATORS = {
     PropKey.HOST_NAMES: _check_host_names,
-    PropKey.CONNECT_TO: _check_host_name,
+    PropKey.CONNECT_TO: _check_connect_to,
     PropKey.LISTENING_HOST: _check_host_name,
     PropKey.DEFAULT_HOST: _check_host_name,
     PropKey.ROLE: _check_admin_role,
+    PropKey.CONN_SECURITY: _check_conn_security,
 }
 
 
@@ -63,6 +111,9 @@ class Entity:
 
     def get_prop(self, key: str, default=None):
         return self.props.get(key, default)
+
+    def add_prop(self, key: str, value: Any):
+        self.props[key] = value
 
     def get_prop_fb(self, key: str, fb_key=None, default=None):
         """Get property value with fallback.

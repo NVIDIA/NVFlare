@@ -240,7 +240,7 @@ local_server_resources: |
       ]
   }
 
-comm_config: |
+comm_config_internal: |
   {
     "internal": {
       "scheme": "tcp",
@@ -249,6 +249,12 @@ comm_config: |
         "port": {~~communication_port~~}
       }
     }
+  }
+
+comm_config_backbone_gen: |
+  {
+    "allow_adhoc_conns": false,
+    "backbone_conn_gen": {~~conn_gen~~}
   }
 
 fed_server: |
@@ -1067,3 +1073,14 @@ adm_notebook: |
   "nbformat_minor": 5
   }
 
+relay_resources_json: |
+  {
+    "format_version": 2,
+    "relay_config": {
+      "scheme": "{~~scheme~~}",
+      "identity": "{~~identity~~}",
+      "address": "{~~address~~}",
+      "fqcn": "{~~fqcn~~}",
+      "connection_security": "{~~conn_sec~~}"
+    }
+  }
