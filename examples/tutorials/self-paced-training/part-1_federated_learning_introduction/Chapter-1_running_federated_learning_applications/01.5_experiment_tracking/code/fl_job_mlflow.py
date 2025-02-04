@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
 from src.network import SimpleNetwork
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -26,14 +26,14 @@ if __name__ == "__main__":
 
     job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
     receiver = MLflowReceiver(
-            tracking_uri="file:///tmp/nvflare/jobs/workdir/server/simulate_job/mlruns",
-            kw_args={
-                "experiment_name": "nvflare-fedavg-experiment",
-                "run_name": "nvflare-fedavg-with-mlflow",
-                "experiment_tags": {"mlflow.note.content": "## **NVFlare FedAvg experiment with MLflow**"},
-                "run_tags": {"mlflow.note.content": "## Federated Experiment tracking with MLflow.\n"},
-            },
-        )
+        tracking_uri="file:///tmp/nvflare/jobs/workdir/server/simulate_job/mlruns",
+        kw_args={
+            "experiment_name": "nvflare-fedavg-experiment",
+            "run_name": "nvflare-fedavg-with-mlflow",
+            "experiment_tags": {"mlflow.note.content": "## **NVFlare FedAvg experiment with MLflow**"},
+            "run_tags": {"mlflow.note.content": "## Federated Experiment tracking with MLflow.\n"},
+        },
+    )
     job.to_server(receiver)
 
     # Add clients

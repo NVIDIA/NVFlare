@@ -24,7 +24,7 @@ from network import SimpleNetwork
 # (1) import nvflare client API
 import nvflare.client as flare
 from nvflare.app_common.app_constant import ModelName
-from nvflare.client.tracking import SummaryWriter
+from nvflare.client.tracking import MLflowWriter
 
 # (optional) set a fix place so we don't need to download everytime
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
@@ -91,7 +91,7 @@ def main():
 
     # (2) initialize NVFlare client API
     flare.init()
-    summary_writer = SummaryWriter()
+    mlflow_writer = MLflowWriter()
 
     # (3) run continously when launch_once=true
     while flare.is_running():
@@ -150,7 +150,7 @@ def main():
             # (5.2) evaluation on local trained model to save best model
             local_accuracy = evaluate(net.state_dict())
             global_step = input_model.current_round * n_loaders + i
-            summary_writer.add_scalar(tag="local_accuracy", scalar=local_accuracy, global_step=global_step)
+            mlflow_writer.log_metric(key="local_accuracy", value=local_accuracy, step=global_step)
             print(f"({client_id}) Evaluating local trained model. Accuracy on the 10000 test images: {local_accuracy}")
             if local_accuracy > best_accuracy:
                 best_accuracy = local_accuracy
