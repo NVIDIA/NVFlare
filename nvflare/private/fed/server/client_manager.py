@@ -23,7 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, InternalFLContextKey
+from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
 from nvflare.private.fed.utils.identity_utils import IdentityVerifier, load_crt_bytes
 from nvflare.security.logging import secure_format_exception
 
@@ -57,10 +57,17 @@ class ClientManager:
 
         # new client join
         with self.lock:
-            self.clients.update({client.token: client})
+            client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
+            if client_type == ClientType.REGULAR:
+                self.clients.update({client.token: client})
+                client_kind = "client"
+            else:
+                # do not update self.clients for non-regular clients
+                client_kind = client_type
+
             self.logger.info(
-                "Client: New client {} joined. Sent token: {}.  Total clients: {}".format(
-                    client.name + "@" + client_ip, client.token, len(self.clients)
+                "Client: New {} {} joined. Sent token: {}.  Total clients: {}".format(
+                    client_kind, client.name + "@" + client_ip, client.token, len(self.clients)
                 )
             )
         return client

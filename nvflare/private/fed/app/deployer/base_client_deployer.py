@@ -45,8 +45,9 @@ class BaseClientDeployer:
         self.components = build_ctx["client_components"]
         self.handlers = build_ctx["client_handlers"]
 
-    def set_model_manager(self, model_manager):
-        self.model_manager = model_manager
+        relay_config = build_ctx.get("relay_config")
+        if relay_config:
+            self.client_config["relay_config"] = relay_config
 
     def create_fed_client(self, args, sp_target=None):
         if sp_target:

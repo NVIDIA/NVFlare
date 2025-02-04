@@ -14,6 +14,7 @@
 
 from cryptography.x509.oid import NameOID
 
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import (
     load_crt,
     load_crt_bytes,
@@ -110,3 +111,18 @@ class IdentityVerifier:
         except Exception as ex:
             raise InvalidCNSignature(f"cannot verify common name signature: {secure_format_exception(ex)}")
         return True
+
+
+class TokenVerifier:
+    def __init__(self, cert):
+        self.cert = cert
+        self.public_key = cert.public_key()
+        self.logger = get_obj_logger(self)
+
+    def verify(self, client_name, token, signature):
+        try:
+            verify_content(content=client_name + token, signature=signature, public_key=self.public_key)
+            return True
+        except Exception as ex:
+            self.logger.error(f"exception verifying token: {client_name=} {token=}: {secure_format_exception(ex)}")
+            return False

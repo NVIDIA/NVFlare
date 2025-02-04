@@ -22,6 +22,7 @@ from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.dict_utils import augment
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.wfconf import resolve_var_refs
 from nvflare.security.logging import secure_format_exception
 
@@ -54,6 +55,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
             sys_vars: system vars
         """
         JsonObjectProcessor.__init__(self)
+        self.logger = get_obj_logger(self)
 
         if not isinstance(num_passes, int):
             raise TypeError(f"num_passes must be int but got {num_passes}")

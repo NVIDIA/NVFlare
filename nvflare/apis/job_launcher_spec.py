@@ -32,6 +32,7 @@ class JobProcessArgs:
     CLIENT_NAME = "client_name"
     ROOT_URL = "root_url"
     PARENT_URL = "parent_url"
+    PARENT_CONN_SEC = "parent_conn_sec"
     SERVICE_HOST = "service_host"
     SERVICE_PORT = "service_port"
     HA_MODE = "ha_mode"

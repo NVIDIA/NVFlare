@@ -15,13 +15,12 @@
 import os
 from typing import Optional
 
-from nvflare.apis.fl_constant import FLMetaKey, SecureTrainConst
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
+from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG
-from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 
 
@@ -126,22 +125,11 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             ConfigKey.HEARTBEAT_TIMEOUT: self.heartbeat_timeout,
         }
 
-        site_name = fl_ctx.get_identity_name()
-        auth_token = get_scope_property(scope_name=site_name, key=FLMetaKey.AUTH_TOKEN, default="NA")
-        signature = get_scope_property(scope_name=site_name, key=FLMetaKey.AUTH_TOKEN_SIGNATURE, default="NA")
-
         config_data = {
             ConfigKey.TASK_EXCHANGE: task_exchange_attributes,
-            FLMetaKey.SITE_NAME: site_name,
-            FLMetaKey.JOB_ID: fl_ctx.get_job_id(),
-            FLMetaKey.AUTH_TOKEN: auth_token,
-            FLMetaKey.AUTH_TOKEN_SIGNATURE: signature,
         }
 
-        conn_sec = get_scope_property(site_name, SecureTrainConst.CONNECTION_SECURITY)
-        if conn_sec:
-            config_data[SecureTrainConst.CONNECTION_SECURITY] = conn_sec
-
+        update_export_props(config_data, fl_ctx)
         config_file_path = self._get_external_config_file_path(fl_ctx)
         write_config_to_file(config_data=config_data, config_file_path=config_file_path)
 
