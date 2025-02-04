@@ -25,6 +25,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     ConfigVarName,
+    ConnPropKey,
     FLContextKey,
     MachineStatus,
     RunProcessKey,
@@ -63,13 +64,15 @@ from nvflare.private.defs import (
     CellChannelTopic,
     CellMessageHeaderKeys,
     ClientRegSession,
+    ClientType,
     InternalFLContextKey,
     JobFailureMsgKey,
     new_cell_message,
 )
+from nvflare.private.fed.authenticator import validate_auth_headers
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter
+from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 
@@ -169,7 +172,7 @@ class BaseServer(ABC):
                 DriverParams.SERVER_KEY.value: private_key,
             }
 
-            conn_security = grpc_args.get(SecureTrainConst.CONNECTION_SECURITY)
+            conn_security = grpc_args.get(ConnPropKey.CONNECTION_SECURITY)
             if conn_security:
                 credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
         else:
@@ -401,12 +404,15 @@ class FederatedServer(BaseServer):
         """
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         dest = message.get_header(MessageHeaderKey.DESTINATION)
-        if origin == FQCN.ROOT_SERVER and dest == origin:
-            if not self.my_own_token_signature:
-                self.my_own_token_signature = self.sign_auth_token(self.my_own_auth_client_name, self.my_own_token)
-            add_authentication_headers(
-                message, self.my_own_auth_client_name, self.my_own_token, self.my_own_token_signature
-            )
+        channel = message.get_header(MessageHeaderKey.CHANNEL)
+        topic = message.get_header(MessageHeaderKey.TOPIC)
+        if not self.my_own_token_signature:
+            self.my_own_token_signature = self.sign_auth_token(self.my_own_auth_client_name, self.my_own_token)
+
+        add_authentication_headers(
+            message, self.my_own_auth_client_name, self.my_own_token, self.my_own_token_signature
+        )
+        self.logger.debug(f"added auth headers:  {origin=} {dest=} {channel=} {topic=}")
 
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
@@ -414,45 +420,17 @@ class FederatedServer(BaseServer):
             message: the message to validate
         Returns:
         """
-        headers = message.headers
-        self.logger.debug(f"**** _validate_auth_headers: {headers=}")
-        topic = message.get_header(MessageHeaderKey.TOPIC)
-        channel = message.get_header(MessageHeaderKey.CHANNEL)
-
-        origin = message.get_header(MessageHeaderKey.ORIGIN)
-
-        if topic in [CellChannelTopic.Register, CellChannelTopic.Challenge] and channel == CellChannel.SERVER_MAIN:
-            # skip: client not registered yet
-            self.logger.debug(f"skip special message {topic=} {channel=}")
+        id_asserter = self._get_id_asserter()
+        if not id_asserter:
             return None
 
-        client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
-        err_text = f"unauthenticated msg ({channel=} {topic=}) received from {origin}"
-        if not client_name:
-            err = "missing client name"
-            self.logger.error(f"{err_text}: {err}")
-            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
+        token_verifier = TokenVerifier(id_asserter.cert)
 
-        token = message.get_header(CellMessageHeaderKeys.TOKEN)
-        if not token:
-            err = "missing auth token"
-            self.logger.error(f"{err_text}: {err}")
-            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
-
-        signature = message.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE)
-        if not signature:
-            err = "missing auth token signature"
-            self.logger.error(f"{err_text}: {err}")
-            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
-
-        if not self.verify_auth_token(client_name, token, signature):
-            err = "invalid auth token signature"
-            self.logger.error(f"{err_text}: {err}")
-            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
-
-        # all good
-        self.logger.debug(f"auth valid from {origin}: {topic=} {channel=}")
-        return None
+        return validate_auth_headers(
+            message=message,
+            token_verifier=token_verifier,
+            logger=self.logger,
+        )
 
     def sign_auth_token(self, client_name: str, token: str):
         id_asserter = self._get_id_asserter()
@@ -464,7 +442,9 @@ class FederatedServer(BaseServer):
         id_asserter = self._get_id_asserter()
         if not id_asserter:
             return True
-        return id_asserter.verify_signature(client_name + token, signature)
+
+        token_verifier = TokenVerifier(id_asserter.cert)
+        return token_verifier.verify(client_name, token, signature)
 
     def _check_regs(self):
         while True:
@@ -541,7 +521,7 @@ class FederatedServer(BaseServer):
                 DriverParams.SERVER_KEY.value: private_key,
             }
 
-            conn_security = server_config.get(SecureTrainConst.CONNECTION_SECURITY)
+            conn_security = server_config.get(ConnPropKey.CONNECTION_SECURITY)
             if conn_security:
                 credentials[DriverParams.CONNECTION_SECURITY.value] = conn_security
         else:
@@ -710,20 +690,22 @@ class FederatedServer(BaseServer):
 
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
-                    self.tokens[client.token] = self.task_meta_info(client.name)
-                    if self.admin_server:
-                        self.admin_server.client_heartbeat(client.token, client.name, client.get_fqcn())
+                    client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
+                    if client_type == ClientType.REGULAR:
+                        self.tokens[client.token] = self.task_meta_info(client.name)
+                        if self.admin_server:
+                            self.admin_server.client_heartbeat(client.token, client.name, client.get_fqcn())
 
                     token_signature = self.sign_auth_token(client.name, client.token)
-                    headers = {
+                    result = {
                         CellMessageHeaderKeys.TOKEN: client.token,
                         CellMessageHeaderKeys.TOKEN_SIGNATURE: token_signature,
                         CellMessageHeaderKeys.SSID: self.server_state.ssid,
                     }
                 else:
-                    headers = {}
+                    result = {}
                 self.engine.fire_event(EventType.CLIENT_REGISTER_PROCESSED, fl_ctx=fl_ctx)
-                return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
+                return self._generate_reply(headers={}, payload=result, fl_ctx=fl_ctx)
             except NotAuthenticated as e:
                 self.logger.error(f"Failed to authenticate the register_client: {secure_format_exception(e)}")
                 return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error="register_client unauthenticated")

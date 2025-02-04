@@ -17,7 +17,7 @@ import time
 from abc import ABC, abstractmethod
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemConfigs
+from nvflare.apis.fl_constant import AdminCommandNames, ConnPropKey, FLContextKey, RunProcessKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
@@ -201,6 +201,13 @@ class JobExecutor(ClientExecutor):
             JobProcessArgs.STARTUP_CONFIG_FILE: ("-s", "fed_client.json"),
             JobProcessArgs.OPTIONS: ("--set", command_options),
         }
+
+        params = client.cell.get_internal_listener_params()
+        if params:
+            parent_conn_sec = params.get(ConnPropKey.CONNECTION_SECURITY)
+            if parent_conn_sec:
+                job_args[JobProcessArgs.PARENT_CONN_SEC] = ("-pcs", parent_conn_sec)
+
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
         job_handle = job_launcher.launch_job(job_meta, fl_ctx)
         self.logger.info(f"Launch job_id: {job_id}  with job launcher: {type(job_launcher)} ")

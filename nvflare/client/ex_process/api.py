@@ -17,7 +17,7 @@ import os
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.fl_constant import FLMetaKey, SecureTrainConst
+from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
@@ -39,9 +39,18 @@ def _create_client_config(config: str) -> ClientConfig:
         raise ValueError(f"config should be a string but got: {type(config)}")
 
     site_name = client_config.get_site_name()
-    conn_sec = client_config.get_connection_security()
-    if conn_sec:
-        set_scope_property(site_name, SecureTrainConst.CONNECTION_SECURITY, conn_sec)
+
+    root_conn_props = client_config.get_root_conn_props()
+    if root_conn_props:
+        set_scope_property(site_name, ConnPropKey.ROOT_CONN_PROPS, root_conn_props)
+
+    cp_conn_props = client_config.get_cp_conn_props()
+    if cp_conn_props:
+        set_scope_property(site_name, ConnPropKey.CP_CONN_PROPS, cp_conn_props)
+
+    relay_conn_props = client_config.get_relay_conn_props()
+    if relay_conn_props:
+        set_scope_property(site_name, ConnPropKey.RELAY_CONN_PROPS, relay_conn_props)
 
     # get message auth info and put them into Databus for CellPipe to use
     auth_token = client_config.get_auth_token()

@@ -116,7 +116,9 @@ class ConfigService:
             if not os.path.isdir(d):
                 raise ValueError(f"'{d}' is not a valid directory")
 
-        cls._config_path = config_path
+        for d in config_path:
+            if d not in cls._config_path:
+                cls._config_path.append(d)
 
         for section, file_basename in section_files.items():
             cls._sections[section] = cls.load_config_dict(file_basename, cls._config_path)
@@ -185,7 +187,8 @@ class ConfigService:
         Returns: config data loaded, or None if the config file is not found.
 
         """
-        return ConfigFactory.load_config(file_basename, cls._config_path)
+        result = ConfigFactory.load_config(file_basename, cls._config_path)
+        return result
 
     @classmethod
     def load_config_dict(
