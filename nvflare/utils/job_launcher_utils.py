@@ -24,7 +24,10 @@ def _job_args_str(job_args, arg_names) -> str:
     result = ""
     sep = ""
     for name in arg_names:
-        n, v = job_args[name]
+        e = job_args.get(name)
+        if not e:
+            continue
+        n, v = e
         result += f"{sep}{n} {v}"
         sep = " "
     return result
@@ -45,6 +48,7 @@ def get_client_job_args(include_exe_module=True, include_set_options=True):
             JobProcessArgs.JOB_ID,
             JobProcessArgs.CLIENT_NAME,
             JobProcessArgs.PARENT_URL,
+            JobProcessArgs.PARENT_CONN_SEC,
             JobProcessArgs.TARGET,
             JobProcessArgs.SCHEME,
             JobProcessArgs.STARTUP_CONFIG_FILE,

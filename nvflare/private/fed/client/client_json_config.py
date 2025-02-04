@@ -16,8 +16,9 @@ import re
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
+from nvflare.apis.fl_constant import ConnPropKey, SystemConfigs, SystemVarName
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
@@ -64,11 +65,27 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         sp_target = args.sp_target
         sp_url = f"{sp_scheme}://{sp_target}"
 
+        # determine relay URL
+        # if relay is not used, use the root URL as relay URL
+        relay_conn_props = get_scope_property(args.client_name, ConnPropKey.RELAY_CONN_PROPS)
+        relay_url = None
+        if relay_conn_props:
+            relay_url = relay_conn_props.get(ConnPropKey.URL)
+        if not relay_url:
+            relay_url = sp_url
+
+        if hasattr(args, "parent_url") and args.parent_url:
+            parent_url = args.parent_url
+        else:
+            parent_url = sp_url
+
         sys_vars = {
             SystemVarName.JOB_ID: args.job_id,
             SystemVarName.SITE_NAME: args.client_name,
             SystemVarName.WORKSPACE: args.workspace,
             SystemVarName.ROOT_URL: sp_url,
+            SystemVarName.CP_URL: parent_url,
+            SystemVarName.RELAY_URL: relay_url,
             SystemVarName.SECURE_MODE: self.cmd_vars.get("secure_train", True),
             SystemVarName.JOB_CUSTOM_DIR: workspace_obj.get_app_custom_dir(args.job_id),
         }

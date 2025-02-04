@@ -17,6 +17,7 @@ import socket
 from socketserver import TCPServer, ThreadingTCPServer
 from typing import Any, Dict, List
 
+from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo, Driver
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
@@ -100,7 +101,7 @@ class TcpDriver(BaseDriver):
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
-        secure = resources.get(DriverParams.SECURE)
+        secure = requires_secure_connection(resources)
         if secure:
             scheme = "stcp"
 
