@@ -129,7 +129,7 @@ if __name__ == "__main__":
     sites = [("server", receiving, False)]
 
     for n in range(n_sites):
-        sites.append((f"site-{n+1}", False, streaming_to_server))
+        sites.append((f"site-{n + 1}", False, streaming_to_server))
 
     for site_name, receiving, streaming in sites:
         input_file_path = os.path.join(project_root_dir, site_name, "local", "resources.json.default")
