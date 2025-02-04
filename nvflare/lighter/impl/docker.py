@@ -13,24 +13,18 @@
 # limitations under the License.
 
 import copy
-import json
 import os
 import shutil
 
 import yaml
 
-from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher, ServerDockerJobLauncher
-from nvflare.lighter import utils
-from nvflare.lighter.constants import CtxKey, PropKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.constants import CtxKey, ProvFileName, TemplateSectionKey
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class DockerBuilder(Builder):
-    def __init__(
-        self, docker_image="nvflare-docker:0.0.1", base_image="python:3.8", requirements_file="requirements.txt"
-    ):
+    def __init__(self, base_image="python:3.8", requirements_file="requirements.txt"):
         """Build docker compose file."""
-        self.docker_image = docker_image
         self.base_image = base_image
         self.requirements_file = requirements_file
         self.services = {}
@@ -63,31 +57,7 @@ class DockerBuilder(Builder):
         info_dict["container_name"] = server.name
         self.services[server.name] = info_dict
 
-        # local folder creation
-        dest_dir = ctx.get_local_dir(server)
-        with open(os.path.join(dest_dir, ProvFileName.RESOURCES_JSON_DEFAULT), "rt") as f:
-            resources = json.load(f)
-            resources["components"].append(
-                {
-                    "id": "docker_launcher",
-                    "path": ServerDockerJobLauncher().__module__ + "." + "ServerDockerJobLauncher",
-                    "args": {},
-                }
-            )
-        utils.write(os.path.join(dest_dir, ProvFileName.RESOURCES_JSON_DEFAULT), json.dumps(resources, indent=4), "t")
-
-        communication_port = server.get_prop(CtxKey.DOCKER_COMM_PORT)
-        if communication_port:
-            replacement_dict = {"comm_host_name": "server-parent", "communication_port": communication_port}
-            ctx.build_from_template(
-                dest_dir,
-                TemplateSectionKey.COMM_CONFIG,
-                ProvFileName.COMM_CONFIG,
-                replacement=replacement_dict,
-                exe=True,
-            )
-
-    def _build_client(self, client, ctx: ProvisionContext):
+    def _build_client(self, client):
         info_dict = copy.deepcopy(self.services["__flclient__"])
         info_dict["volumes"] = [f"./{client.name}:" + "${WORKSPACE}"]
         info_dict["build"] = "nvflare_compose"
@@ -101,30 +71,6 @@ class DockerBuilder(Builder):
         info_dict["container_name"] = client.name
         self.services[client.name] = info_dict
 
-        # local folder creation
-        dest_dir = ctx.get_local_dir(client)
-        with open(os.path.join(dest_dir, ProvFileName.RESOURCES_JSON_DEFAULT), "rt") as f:
-            resources = json.load(f)
-            resources["components"].append(
-                {
-                    "id": "docker_launcher",
-                    "path": ClientDockerJobLauncher().__module__ + "." + "ClientDockerJobLauncher",
-                    "args": {},
-                }
-            )
-        utils.write(os.path.join(dest_dir, ProvFileName.RESOURCES_JSON_DEFAULT), json.dumps(resources, indent=4), "t")
-
-        communication_port = client.get_prop(PropKey.DOCKER_COMM_PORT)
-        if communication_port:
-            replacement_dict = {"comm_host_name": client.name + "-parent", "communication_port": communication_port}
-            ctx.build_from_template(
-                dest_dir,
-                TemplateSectionKey.COMM_CONFIG,
-                ProvFileName.COMM_CONFIG,
-                replacement=replacement_dict,
-                exe=True,
-            )
-
     def build(self, project: Project, ctx: ProvisionContext):
         compose = ctx.yaml_load_template_section(TemplateSectionKey.COMPOSE_YAML)
         self.services = compose.get("services")
@@ -137,7 +83,7 @@ class DockerBuilder(Builder):
             self._build_server(server, ctx)
 
         for client in project.get_clients():
-            self._build_client(client, ctx)
+            self._build_client(client)
 
         self.services.pop("__overseer__", None)
         self.services.pop("__flserver__", None)
@@ -155,14 +101,6 @@ class DockerBuilder(Builder):
         with open(os.path.join(compose_build_dir, ProvFileName.DOCKERFILE), "wt") as f:
             f.write(f"FROM {self.base_image}\n")
             f.write(ctx.get_template_section(TemplateSectionKey.DOCKERFILE))
-        replacement_dict = {"image": self.docker_image}
-        ctx.build_from_template(
-            compose_build_dir,
-            TemplateSectionKey.DOCKER_BUILD_SH,
-            ProvFileName.DOCKER_BUILD_SH,
-            replacement=replacement_dict,
-            exe=True,
-        )
         try:
             shutil.copyfile(self.requirements_file, os.path.join(compose_build_dir, ProvFileName.REQUIREMENTS_TXT))
         except Exception:
