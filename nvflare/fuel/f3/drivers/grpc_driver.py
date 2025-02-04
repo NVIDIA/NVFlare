@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Union
 import grpc
 
 from nvflare.fuel.f3.comm_config import CommConfigurator
+from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo
@@ -274,7 +275,7 @@ class GrpcDriver(BaseDriver):
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
-        secure = resources.get(DriverParams.SECURE)
+        secure = requires_secure_connection(resources)
         if secure:
             if use_aio_grpc():
                 scheme = "nagrpcs"

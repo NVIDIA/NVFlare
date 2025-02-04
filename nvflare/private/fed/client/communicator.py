@@ -12,10 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import socket
 import time
-import traceback
-import uuid
 from typing import List, Optional
 
 from nvflare.apis.event_type import EventType
@@ -26,41 +23,26 @@ from nvflare.apis.fl_constant import SecureTrainConst, ServerCommandKey, ServerC
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.data_event.utils import get_scope_property, set_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import format_size
-from nvflare.fuel.f3.message import Message as CellMessage
-from nvflare.fuel.sec.authn import add_authentication_headers
+from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
+from nvflare.private.defs import (
+    CellChannel,
+    CellChannelTopic,
+    CellMessageHeaderKeys,
+    ClientType,
+    SpecialTaskName,
+    new_cell_message,
+)
+from nvflare.private.fed.authenticator import Authenticator
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter, IdentityVerifier, load_crt_bytes
 from nvflare.security.logging import secure_format_exception
-
-
-def _get_client_ip():
-    """Return localhost IP.
-
-    More robust than ``socket.gethostbyname(socket.gethostname())``. See
-    https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib/28950776#28950776
-    for more details.
-
-    Returns:
-        The host IP
-
-    """
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("10.255.255.255", 1))  # doesn't even have to be reachable
-        ip = s.getsockname()[0]
-    except Exception:
-        ip = "127.0.0.1"
-    finally:
-        s.close()
-    return ip
 
 
 class Communicator:
@@ -88,7 +70,6 @@ class Communicator:
         self.secure_train = secure_train
 
         self.verbose = False
-        self.should_stop = False
         self.heartbeat_done = False
         self.client_state_processors = client_state_processors
         self.compression = compression
@@ -102,8 +83,17 @@ class Communicator:
         self.token_signature = None
         self.ssid = None
         self.client_name = None
+        self.token_verifier = None
+        self.abort_signal = Signal()
 
         self.logger = get_obj_logger(self)
+
+    """
+    To call set_add_auth_headers_filters, both cell and token must be available.
+    The set_cell is called when cell becomes available, set_auth is called when token becomes available.
+    In CP, set_cell happens before set_auth, hence we call set_add_auth_headers_filters in set_auth for CP.
+    In CJ, set_auth happens before set_cell, hence we call set_add_auth_headers_filters in set_cell for CJ.
+    """
 
     def set_auth(self, client_name, token, token_signature, ssid):
         self.ssid = ssid
@@ -111,69 +101,19 @@ class Communicator:
         self.token = token
         self.client_name = client_name
 
-        # put auth properties in databus so that they can be used elsewhere
+        if self.cell:
+            # for CP
+            set_add_auth_headers_filters(self.cell, client_name, token, token_signature, ssid)
+
+        # put auth properties in data bus so that they can be used elsewhere
         set_scope_property(scope_name=client_name, key=FLMetaKey.AUTH_TOKEN, value=token)
         set_scope_property(scope_name=client_name, key=FLMetaKey.AUTH_TOKEN_SIGNATURE, value=token_signature)
 
     def set_cell(self, cell):
         self.cell = cell
-
-        # set filter to add additional auth headers
-        cell.core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._add_auth_headers)
-        cell.core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._add_auth_headers)
-
-    def _add_auth_headers(self, message: CellMessage):
-        if self.ssid:
-            message.set_header(CellMessageHeaderKeys.SSID, self.ssid)
-
-        # Note that auth info (client_name, token and signature) is not available until the client is fully
-        # authenticated.
-        add_authentication_headers(message, self.client_name, self.token, self.token_signature)
-
-    def _challenge_server(self, client_name, expected_host, root_cert_file):
-        # ask server for its info and make sure that it matches expected host
-        my_nonce = str(uuid.uuid4())
-        headers = {IdentityChallengeKey.COMMON_NAME: client_name, IdentityChallengeKey.NONCE: my_nonce}
-        challenge = new_cell_message(headers, None)
-        result = self.cell.send_request(
-            target=FQCN.ROOT_SERVER,
-            channel=CellChannel.SERVER_MAIN,
-            topic=CellChannelTopic.Challenge,
-            request=challenge,
-            timeout=self.maint_msg_timeout,
-        )
-        return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
-        error = result.get_header(MessageHeaderKey.ERROR, "")
-        self.logger.info(f"challenge result: {return_code} {error}")
-        if return_code != ReturnCode.OK:
-            if return_code in [ReturnCode.TARGET_UNREACHABLE, ReturnCode.COMM_ERROR]:
-                # trigger retry
-                return None
-            err = result.get_header(MessageHeaderKey.ERROR, "")
-            raise FLCommunicationError(f"failed to challenge server: {return_code}: {err}")
-
-        reply = result.payload
-        assert isinstance(reply, Shareable)
-        server_nonce = reply.get(IdentityChallengeKey.NONCE)
-        cert_bytes = reply.get(IdentityChallengeKey.CERT)
-        server_cert = load_crt_bytes(cert_bytes)
-        server_signature = reply.get(IdentityChallengeKey.SIGNATURE)
-        server_cn = reply.get(IdentityChallengeKey.COMMON_NAME)
-
-        if server_cn != expected_host:
-            raise FLCommunicationError(f"expected server identity is '{expected_host}' but got '{server_cn}'")
-
-        # Use IdentityVerifier to validate:
-        # - the server cert can be validated with the root cert. Note that all sites have the same root cert!
-        # - the asserted CN matches the CN on the server cert
-        # - signature received from the server is valid
-        id_verifier = IdentityVerifier(root_cert_file=root_cert_file)
-        id_verifier.verify_common_name(
-            asserter_cert=server_cert, asserted_cn=server_cn, nonce=my_nonce, signature=server_signature
-        )
-
-        self.logger.info(f"verified server identity '{expected_host}'")
-        return server_nonce
+        if self.token:
+            # for CJ
+            set_add_auth_headers_filters(self.cell, self.client_name, self.token, self.token_signature, self.ssid)
 
     def client_registration(self, client_name, project_name, fl_ctx: FLContext):
         """Register the client with the FLARE Server.
@@ -223,12 +163,14 @@ class Communicator:
                 raise RuntimeError("Client cell could not be created. Failed to login the client.")
             time.sleep(0.5)
 
-        local_ip = _get_client_ip()
-        shareable = Shareable()
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+        private_key_file = None
+        root_cert_file = None
+        cert_file = None
 
         secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+        expected_host = None
+
         if secure_mode:
             # explicitly authenticate with the Server
             expected_host = None
@@ -253,60 +195,24 @@ class Communicator:
             cert_file = client_config.get(SecureTrainConst.SSL_CERT)
             root_cert_file = client_config.get(SecureTrainConst.SSL_ROOT_CERT)
 
-            while True:
-                server_nonce = self._challenge_server(client_name, expected_host, root_cert_file)
-                if server_nonce is None and not self.should_stop:
-                    # retry
-                    self.logger.info(f"re-challenge after {self.client_register_interval} seconds")
-                    time.sleep(self.client_register_interval)
-                else:
-                    break
+        authenticator = Authenticator(
+            cell=self.cell,
+            project_name=project_name,
+            client_name=client_name,
+            client_type=ClientType.REGULAR,
+            expected_sp_identity=expected_host,
+            secure_mode=secure_mode,
+            root_cert_file=root_cert_file,
+            private_key_file=private_key_file,
+            cert_file=cert_file,
+            msg_timeout=self.maint_msg_timeout,
+            retry_interval=self.client_register_interval,
+        )
 
-            id_asserter = IdentityAsserter(private_key_file=private_key_file, cert_file=cert_file)
-            cn_signature = id_asserter.sign_common_name(nonce=server_nonce)
-            shareable[IdentityChallengeKey.CERT] = id_asserter.cert_data
-            shareable[IdentityChallengeKey.SIGNATURE] = cn_signature
-            shareable[IdentityChallengeKey.COMMON_NAME] = id_asserter.cn
-            self.logger.info(f"sent identity info for client {client_name}")
-
-        headers = {
-            CellMessageHeaderKeys.CLIENT_NAME: client_name,
-            CellMessageHeaderKeys.CLIENT_IP: local_ip,
-            CellMessageHeaderKeys.PROJECT_NAME: project_name,
-        }
-        login_message = new_cell_message(headers, shareable)
-
-        self.logger.info("Trying to register with server ...")
-        while True:
-            try:
-                result = self.cell.send_request(
-                    target=FQCN.ROOT_SERVER,
-                    channel=CellChannel.SERVER_MAIN,
-                    topic=CellChannelTopic.Register,
-                    request=login_message,
-                    timeout=self.maint_msg_timeout,
-                )
-                return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
-                self.logger.info(f"register RC: {return_code}")
-                if return_code == ReturnCode.UNAUTHENTICATED:
-                    reason = result.get_header(MessageHeaderKey.ERROR)
-                    self.logger.error(f"registration rejected: {reason}")
-                    raise FLCommunicationError("error:client_registration " + reason)
-
-                token = result.get_header(CellMessageHeaderKeys.TOKEN)
-                token_signature = result.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE, "NA")
-                ssid = result.get_header(CellMessageHeaderKeys.SSID)
-                if not token and not self.should_stop:
-                    time.sleep(self.client_register_interval)
-                else:
-                    self.set_auth(client_name, token, token_signature, ssid)
-                    break
-
-            except Exception as ex:
-                traceback.print_exc()
-                raise FLCommunicationError("error:client_registration", ex)
-
-        return token, token_signature, ssid
+        token, signature, ssid, token_verifier = authenticator.authenticate(shared_fl_ctx, self.abort_signal)
+        self.token_verifier = token_verifier
+        self.set_auth(client_name, token, signature, ssid)
+        return token, signature, ssid
 
     def pull_task(self, project_name, token, ssid, fl_ctx: FLContext, timeout=None):
         """Get a task from server.
@@ -326,7 +232,6 @@ class Communicator:
         shareable = Shareable()
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
-        client_name = fl_ctx.get_identity_name()
         task_message = new_cell_message(
             {
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
@@ -444,10 +349,10 @@ class Communicator:
             server's reply to the last message
 
         """
+        self.abort_signal.trigger(True)
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable = Shareable()
         shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
-        client_name = fl_ctx.get_identity_name()
         quit_message = new_cell_message(
             {
                 CellMessageHeaderKeys.PROJECT_NAME: task_name,

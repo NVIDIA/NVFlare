@@ -79,7 +79,6 @@ class SimulatorRunManager(RunManager):
 
 
 class SimulatorIdentityAsserter(IdentityAsserter):
-
     def __init__(self, private_key_file: str, cert_file: str):
         self.private_key_file = private_key_file
         self.cert_file = cert_file

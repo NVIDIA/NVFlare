@@ -17,15 +17,16 @@ import threading
 import time
 from typing import Tuple, Union
 
-from nvflare.apis.fl_constant import FLMetaKey, SecureTrainConst, SystemVarName
+from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey, SystemVarName
 from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.sec.authn import add_authentication_headers
+from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.attributes_exportable import ExportMode
 from nvflare.fuel.utils.config_service import search_file
 from nvflare.fuel.utils.constants import Mode
@@ -44,12 +45,16 @@ _HEADER_START_TIME = _PREFIX + "start"
 _HEADER_HB_SEQ = _PREFIX + "hb_seq"
 
 
-def _cell_fqcn(mode, site_name, token):
+def _cell_fqcn(mode, site_name, token, parent_fqcn):
     # The FQCN of the cell must be unique in the whole cellnet.
     # We use the combination of mode, site_name, and token to derive the value of FQCN
     # Since the token is usually used across all sites, the "site_name" differentiate cell on one site from another.
     # The two peer pipes on the same site share the same site_name and token, but are differentiated by their modes.
-    return f"{site_name}_{token}_{mode}"
+    base = f"{site_name}_{token}_{mode}"
+    if parent_fqcn == FQCN.ROOT_SERVER:
+        return base
+    else:
+        return FQCN.join([parent_fqcn, base])
 
 
 def _to_cell_message(msg: Message, extra=None) -> CellMessage:
@@ -77,8 +82,11 @@ class _CellInfo:
     A cell could be used by multiple pipes (e.g. one pipe for task interaction, another for metrics logging).
     """
 
-    def __init__(self, cell, net_agent):
+    def __init__(self, site_name, cell, net_agent, auth_token, token_signature):
+        self.site_name = site_name
         self.cell = cell
+        self.auth_token = auth_token
+        self.token_signature = token_signature
         self.net_agent = net_agent
         self.started = False
         self.pipes = []
@@ -114,21 +122,15 @@ class CellPipe(Pipe):
 
     _lock = threading.Lock()
     _cells_info = {}  # (root_url, site_name, token) => _CellInfo
-    _auth_token = None
-    _token_signature = None
-    _site_name = None
 
     @classmethod
-    def _build_cell(cls, mode, root_url, site_name, token, secure_mode, workspace_dir):
+    def _build_cell(cls, site_name, fqcn, parent_conn_props, secure_mode, workspace_dir, logger):
         """Build a cell if necessary.
         The combination of (root_url, site_name, token) uniquely determine one cell.
         There can be multiple pipes on the same cell.
 
         Args:
-            root_url: root url of the cell net
-            mode: mode (passive or active) of the pipe
-            site_name: name of the site
-            token: the unique token
+            parent_conn_props: parent for this cell
             secure_mode: whether cellnet is in secure mode
             workspace_dir: workspace that contains startup kit for connecting to server. Needed only if secure_mode
 
@@ -136,11 +138,8 @@ class CellPipe(Pipe):
 
         """
         with cls._lock:
-            cls._site_name = site_name
-            cell_key = f"{root_url}.{site_name}.{token}"
-            ci = cls._cells_info.get(cell_key)
+            ci = cls._cells_info.get(fqcn)
             if not ci:
-                credentials = {}
                 if secure_mode:
                     root_cert_path = search_file(SSL_ROOT_CERT, workspace_dir)
                     if not root_cert_path:
@@ -149,35 +148,42 @@ class CellPipe(Pipe):
                     credentials = {
                         DriverParams.CA_CERT.value: root_cert_path,
                     }
+                else:
+                    credentials = {}
 
-                    conn_sec = get_scope_property(site_name, SecureTrainConst.CONNECTION_SECURITY)
-                    if conn_sec:
-                        credentials[DriverParams.CONNECTION_SECURITY.value] = conn_sec
+                conn_sec = parent_conn_props.get(ConnPropKey.CONNECTION_SECURITY)
+                if conn_sec:
+                    credentials[DriverParams.CONNECTION_SECURITY.value] = conn_sec
+
+                parent_url = parent_conn_props.get(ConnPropKey.URL)
+
+                if FQCN.get_parent(fqcn):
+                    # the cell has a parent: connect to the parent
+                    cell_root = None
+                    cell_parent_url = parent_url
+                else:
+                    # the cell has no parent: the parent_url is the root of the cellnet
+                    cell_root = parent_url
+                    cell_parent_url = None
 
                 cell = Cell(
-                    fqcn=_cell_fqcn(mode, site_name, token),
-                    root_url=root_url,
+                    fqcn=fqcn,
+                    root_url=cell_root,
                     secure=secure_mode,
                     credentials=credentials,
+                    parent_url=cell_parent_url,
                     create_internal_listener=False,
                 )
 
-                # set filter to add additional auth headers
-                cell.core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=cls._add_auth_headers)
-                cell.core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=cls._add_auth_headers)
+                auth_token = get_scope_property(scope_name=site_name, key=FLMetaKey.AUTH_TOKEN, default="NA")
+                token_signature = get_scope_property(site_name, FLMetaKey.AUTH_TOKEN_SIGNATURE, default="NA")
 
                 net_agent = NetAgent(cell)
-                ci = _CellInfo(cell, net_agent)
-                cls._cells_info[cell_key] = ci
+                ci = _CellInfo(site_name, cell, net_agent, auth_token, token_signature)
+                cls._cells_info[fqcn] = ci
+
+                set_add_auth_headers_filters(cell, ci.site_name, ci.auth_token, ci.token_signature)
             return ci
-
-    @classmethod
-    def _add_auth_headers(cls, message: CellMessage):
-        if not cls._auth_token:
-            cls._auth_token = get_scope_property(scope_name=cls._site_name, key=FLMetaKey.AUTH_TOKEN, default="NA")
-            cls._token_signature = get_scope_property(cls._site_name, FLMetaKey.AUTH_TOKEN_SIGNATURE, default="NA")
-
-        add_authentication_headers(message, cls._site_name, cls._auth_token, cls._token_signature)
 
     def __init__(
         self,
@@ -203,9 +209,9 @@ class CellPipe(Pipe):
 
         self.site_name = site_name
         self.token = token
-        self.root_url = root_url
         self.secure_mode = secure_mode
         self.workspace_dir = workspace_dir
+        self.root_url = root_url
 
         # this section is needed by job config to prevent building cell when using SystemVarName arguments
         # TODO: enhance this part
@@ -219,8 +225,49 @@ class CellPipe(Pipe):
         check_str("site_name", site_name)
         check_str("workspace_dir", workspace_dir)
 
+        # determine the endpoint for this pipe to connect to
+        root_conn_props = get_scope_property(site_name, ConnPropKey.ROOT_CONN_PROPS)
+
+        if root_conn_props:
+            # Not in simulator
+            if not isinstance(root_conn_props, dict):
+                raise RuntimeError(f"expect root_conn_props for {site_name} to be dict but got {type(root_conn_props)}")
+
+            cp_conn_props = get_scope_property(site_name, ConnPropKey.CP_CONN_PROPS)
+            if cp_conn_props:
+                if not isinstance(cp_conn_props, dict):
+                    raise RuntimeError(f"expect cp_conn_props to be dict but got {type(cp_conn_props)}")
+
+            url_to_conns = {
+                root_conn_props.get(ConnPropKey.URL): root_conn_props,
+                cp_conn_props.get(ConnPropKey.URL): cp_conn_props,
+            }
+
+            relay_conn_props = get_scope_property(site_name, ConnPropKey.RELAY_CONN_PROPS)
+            if relay_conn_props:
+                if not isinstance(relay_conn_props, dict):
+                    raise RuntimeError(f"expect relay_conn_props to be dict but got {type(relay_conn_props)}")
+                url_to_conns[relay_conn_props.get(ConnPropKey.URL)] = relay_conn_props
+
+            if not root_url:
+                # root_url not specified - use CP!
+                root_url = cp_conn_props.get(ConnPropKey.URL)
+                self.root_url = root_url
+
+            conn_props = url_to_conns.get(self.root_url)
+            if not conn_props:
+                raise RuntimeError(f"cannot determine conn props for '{root_url}'")
+        else:
+            # this is running in simulator
+            conn_props = {
+                ConnPropKey.URL: root_url,
+                ConnPropKey.FQCN: FQCN.ROOT_SERVER,
+            }
+
         mode = f"{mode}".strip().lower()  # convert to lower case string
-        self.ci = self._build_cell(mode, root_url, site_name, token, secure_mode, workspace_dir)
+        fqcn = _cell_fqcn(mode, site_name, token, conn_props.get(ConnPropKey.FQCN))
+
+        self.ci = self._build_cell(site_name, fqcn, conn_props, secure_mode, workspace_dir, self.logger)
         self.cell = self.ci.cell
         self.ci.add_pipe(self)
 
@@ -231,7 +278,7 @@ class CellPipe(Pipe):
         else:
             raise ValueError(f"invalid mode {mode} - must be 'active' or 'passive'")
 
-        self.peer_fqcn = _cell_fqcn(peer_mode, site_name, token)
+        self.peer_fqcn = _cell_fqcn(peer_mode, site_name, token, conn_props.get(ConnPropKey.FQCN))
         self.received_msgs = queue.Queue()  # contains Message(s), not CellMessage(s)!
         self.channel = None  # the cellnet message channel
         self.pipe_lock = threading.Lock()  # used to ensure no msg to be sent after closed
@@ -366,16 +413,14 @@ class CellPipe(Pipe):
     def export(self, export_mode: str) -> Tuple[str, dict]:
         if export_mode == ExportMode.SELF:
             mode = self.mode
-            root_url = self.root_url
         else:
             mode = Mode.ACTIVE if self.mode == Mode.PASSIVE else Mode.PASSIVE
-            root_url = self.cell.get_root_url_for_child()
 
         export_args = {
             "mode": mode,
             "site_name": self.site_name,
             "token": self.token,
-            "root_url": root_url,
+            "root_url": self.root_url,
             "secure_mode": self.cell.core_cell.secure,
             "workspace_dir": self.workspace_dir,
         }

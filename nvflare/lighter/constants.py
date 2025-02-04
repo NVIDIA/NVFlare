@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.apis.fl_constant import ConnectionSecurity
 
 
 class WorkDir:
@@ -68,10 +69,9 @@ class ProvisionMode:
 
 
 class ConnSecurity:
-    CLEAR = "clear"
-    INSECURE = "insecure"
-    TLS = "tls"
-    MTLS = "mtls"
+    CLEAR = ConnectionSecurity.CLEAR
+    TLS = ConnectionSecurity.TLS
+    MTLS = ConnectionSecurity.MTLS
 
 
 class AdminRole:
@@ -92,7 +92,9 @@ class TemplateSectionKey:
     START_CLIENT_SH = "start_cln_sh"
     DOCKER_BUILD_SH = "docker_build_sh"
     DOCKER_SERVER_SH = "docker_svr_sh"
+    DOCKER_LAUNCHER_SERVER_SH = "docker_launcher_svr_sh"
     DOCKER_CLIENT_SH = "docker_cln_sh"
+    DOCKER_LAUNCHER_CLIENT_SH = "docker_launcher_cln_sh"
     DOCKER_ADMIN_SH = "docker_adm_sh"
     GUNICORN_CONF_PY = "gunicorn_conf_py"
     START_OVERSEER_SH = "start_ovsr_sh"
@@ -113,6 +115,7 @@ class TemplateSectionKey:
     FED_ADMIN = "fed_admin"
     COMPOSE_YAML = "compose_yaml"
     DOCKERFILE = "dockerfile"
+    LAUNCHER_DOCKERFILE = "launcher_dockerfile"
     HELM_CHART_CHART = "helm_chart_chart"
     HELM_CHART_VALUES = "helm_chart_values"
     HELM_CHART_SERVICE_OVERSEER = "helm_chart_service_overseer"
@@ -126,7 +129,8 @@ class ProvFileName:
     SUB_START_SH = "sub_start.sh"
     PRIVILEGE_YML = "privilege.yml"
     DOCKER_BUILD_SH = "docker_build.sh"
-    DOCKER_SH = "start_docker.sh"
+    DOCKER_SH = "docker.sh"
+    DOCKER_LAUNCHER_SH = "docker_launcher.sh"
     GUNICORN_CONF_PY = "gunicorn.conf.py"
     FED_SERVER_JSON = "fed_server.json"
     FED_CLIENT_JSON = "fed_client.json"
@@ -144,6 +148,7 @@ class ProvFileName:
     ENV = ".env"
     COMPOSE_BUILD_DIR = "nvflare_compose"
     DOCKERFILE = "Dockerfile"
+    LAUNCHER_DOCKERFILE = "Dockerfile.launcher"
     REQUIREMENTS_TXT = "requirements.txt"
     SERVER_CONTEXT_TENSEAL = "server_context.tenseal"
     CLIENT_CONTEXT_TENSEAL = "client_context.tenseal"
