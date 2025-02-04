@@ -22,6 +22,7 @@ from typing import Any, Dict, List
 import grpc
 
 from nvflare.fuel.f3.comm_config import CommConfigurator
+from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection
 from nvflare.fuel.f3.drivers.aio_context import AioContext
@@ -409,7 +410,7 @@ class AioGrpcDriver(BaseDriver):
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
-        secure = resources.get(DriverParams.SECURE)
+        secure = requires_secure_connection(resources)
         if secure:
             if use_aio_grpc():
                 scheme = "grpcs"

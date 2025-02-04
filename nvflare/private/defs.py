@@ -143,16 +143,22 @@ ERROR_MSG_PREFIX = "NVFLARE_ERROR"
 class CellMessageHeaderKeys:
 
     CLIENT_NAME = CellMessageAuthHeaderKey.CLIENT_NAME
+    CLIENT_TYPE = "client_type"
     TOKEN = CellMessageAuthHeaderKey.TOKEN
     TOKEN_SIGNATURE = CellMessageAuthHeaderKey.TOKEN_SIGNATURE
     CLIENT_IP = "client_ip"
     PROJECT_NAME = "project_name"
-    SSID = "ssid"
+    SSID = CellMessageAuthHeaderKey.SSID
     UNAUTHENTICATED = "unauthenticated"
     JOB_ID = "job_id"
     JOB_IDS = "job_ids"
     MESSAGE = "message"
     ABORT_JOBS = "abort_jobs"
+
+
+class ClientType:
+    RELAY = "relay"
+    REGULAR = "regular"
 
 
 AUTH_CLIENT_NAME_FOR_SJ = "server_job"
