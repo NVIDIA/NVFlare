@@ -20,9 +20,9 @@ from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 5
-    num_rounds = 2
+    num_rounds = 20
 
-    train_script = "src/client.py"
+    train_script = "src/client_mlflow.py"
 
     job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
     receiver = MLflowReceiver(

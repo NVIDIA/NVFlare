@@ -19,7 +19,7 @@ from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 5
-    num_rounds = 2
+    num_rounds = 20
 
     train_script = "src/client.py"
 
