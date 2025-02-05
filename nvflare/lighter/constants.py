@@ -33,6 +33,7 @@ class ParticipantType:
 class PropKey:
     API_VERSION = "api_version"
     NAME = "name"
+    HOST = "host"
     DESCRIPTION = "description"
     ROLE = "role"
     HOST_NAMES = "host_names"
@@ -45,17 +46,16 @@ class PropKey:
     OVERSEER_END_POINT = "overseer_end_point"
     ADMIN_PORT = "admin_port"
     FED_LEARN_PORT = "fed_learn_port"
-    DOCKER_COMM_PORT = "docker_comm_port"
     ALLOW_ERROR_SENDING = "allow_error_sending"
     CONN_SECURITY = "connection_security"
     CUSTOM_CA_CERT = "custom_ca_cert"
     SCHEME = "scheme"
-    RELAY_PORT = "relay_port"
+    RUN_IN_DOCKER = "run_in_docker"
 
+    # the following are internal properties added by builders during provision
     PARENT = "__parent__"
     FQCN = "__fqcn__"
-    COMM_CONFIG_INTERNAL = "__comm_config_internal__"
-    COMM_CONFIG_GEN = "__comm_config_gen__"
+    COMM_CONFIG = "__comm_config__"
 
 
 class CtxKey(WorkDir, PropKey):

@@ -176,24 +176,35 @@ class CertBuilder(Builder):
         with open(os.path.join(dest_dir, f"{base_name}.key"), "wb") as f:
             f.write(serialize_pri_key(pri_key))
 
-        if base_name == CertFileBasename.CLIENT and (listening_host := participant.get_prop(PropKey.LISTENING_HOST)):
-            project = ctx.get_project()
-            tmp_participant = Participant(
-                type=ParticipantType.SERVER,
-                name=participant.name,
-                org=participant.org,
-                project=project,
-                props={PropKey.DEFAULT_HOST: listening_host},
-            )
-            tmp_pri_key, tmp_cert = self.get_pri_key_cert(tmp_participant)
-            bn = CertFileBasename.SERVER
-            with open(os.path.join(dest_dir, f"{bn}.crt"), "wb") as f:
-                f.write(serialize_cert(tmp_cert))
-            with open(os.path.join(dest_dir, f"{bn}.key"), "wb") as f:
-                f.write(serialize_pri_key(tmp_pri_key))
+        if participant.type in [ParticipantType.CLIENT, ParticipantType.RELAY]:
+            self._build_internal_listener_cert(participant, ctx)
 
         with open(os.path.join(dest_dir, "rootCA.pem"), "wb") as f:
             f.write(self.serialized_cert)
+
+    def _build_internal_listener_cert(self, participant: Participant, ctx: ProvisionContext):
+        lh = participant.get_listening_host()
+        if not lh:
+            return
+
+        dest_dir = ctx.get_kit_dir(participant)
+        project = ctx.get_project()
+        tmp_participant = Participant(
+            type=ParticipantType.SERVER,
+            name=participant.name,
+            org=participant.org,
+            project=project,
+            props={
+                PropKey.HOST_NAMES: lh.host_names,
+                PropKey.DEFAULT_HOST: lh.default_host,
+            },
+        )
+        tmp_pri_key, tmp_cert = self.get_pri_key_cert(tmp_participant)
+        bn = CertFileBasename.SERVER
+        with open(os.path.join(dest_dir, f"{bn}.crt"), "wb") as f:
+            f.write(serialize_cert(tmp_cert))
+        with open(os.path.join(dest_dir, f"{bn}.key"), "wb") as f:
+            f.write(serialize_pri_key(tmp_pri_key))
 
     def build(self, project: Project, ctx: ProvisionContext):
         self._build_root(project.name, subject_org=None)
@@ -210,6 +221,9 @@ class CertBuilder(Builder):
 
         for client in project.get_clients():
             self._build_write_cert_pair(client, CertFileBasename.CLIENT, ctx)
+
+        for relay in project.get_relays():
+            self._build_write_cert_pair(relay, CertFileBasename.CLIENT, ctx)
 
         for admin in project.get_admins():
             self._build_write_cert_pair(admin, CertFileBasename.CLIENT, ctx)
@@ -287,6 +301,9 @@ class CertBuilder(Builder):
             # Use SubjectAlternativeName for all host names
             default_host = server.get_default_host()
             host_names = server.get_prop(PropKey.HOST_NAMES)
+
+            print(f"creating server cert for {subject}: {default_host=} {host_names=}")
+
             sans = [x509.DNSName(default_host)]
             if host_names:
                 for h in host_names:

@@ -11,11 +11,42 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any
+from typing import Any, Optional
 
 from nvflare.apis.utils.format_check import name_check
 
 from .constants import AdminRole, ConnSecurity, ParticipantType, PropKey
+
+
+class ListeningHost:
+    def __init__(self, scheme, host_names, default_host, port, conn_sec):
+        self.scheme = scheme
+        self.host_names = host_names
+        self.default_host = default_host
+        self.port = port
+        self.conn_sec = conn_sec
+
+    def __str__(self):
+        scheme, host_names, default_host, port, conn_sec = (
+            self.scheme,
+            self.host_names,
+            self.default_host,
+            self.port,
+            self.conn_sec,
+        )
+        return f"ConnectTo[{scheme=} {host_names=} {default_host=} {port=} {conn_sec=}]"
+
+
+class ConnectTo:
+    def __init__(self, name, host, port, conn_sec):
+        self.name = name
+        self.host = host
+        self.port = port
+        self.conn_sec = conn_sec
+
+    def __str__(self):
+        name, host, port, conn_sec = self.name, self.host, self.port, self.conn_sec
+        return f"ConnectTo[{name=} {host=} {port=} {conn_sec=}]"
 
 
 def _check_host_name(scope: str, prop_key: str, value):
@@ -38,42 +69,44 @@ def _check_admin_role(scope: str, prop_key: str, value):
         raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be one of {valid_roles}")
 
 
-def parse_connect_to(value, scope=None, prop_key=None) -> (str, str, int):
+def parse_connect_to(value, scope=None, prop_key=None) -> ConnectTo:
+    """Parse the "connect_to" property.
+
+    Args:
+        value: value to be parsed. It is either a str or a dict.
+        scope: scope of the property
+        prop_key: key of the property
+
+    Returns: a tuple of (name, host, port, conn sec)
+
+    """
     if isinstance(value, str):
         # old format - for server only
-        return None, value, None
-    elif isinstance(value, list):
-        vl = len(value)
-        if vl == 1:
-            # name only
-            return value[0], None, None
-        elif vl == 2:
-            # name, address
-            return value[0], value[1], None
-        elif vl == 3:
-            # name, address, port
-            return value[0], value[1], value[2]
-        else:
-            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must contains 1 or 2 elements")
+        return ConnectTo(None, value, None, None)
+    elif isinstance(value, dict):
+        name = value.get(PropKey.NAME)
+        host = value.get(PropKey.HOST)
+        port = value.get(PropKey.PORT)
+        conn_sec = value.get(PropKey.CONN_SECURITY)
+        return ConnectTo(name, host, port, conn_sec)
     else:
-        raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: invalid type {type(value)}")
+        raise ValueError(
+            f"bad value for {prop_key} '{value}' in {scope}: invalid type {type(value)}; must be str or dict"
+        )
 
 
 def _check_connect_to(scope: str, prop_key: str, value):
-    # connect_to prop can take multiple formats:
-    # str - server host name or IP
-    # list - [parent_name, host name or IP]
-    name, addr, port = parse_connect_to(value, scope, prop_key)
-    if addr:
-        err, reason = name_check(addr, "host_name")
+    ct = parse_connect_to(value, scope, prop_key)
+    if ct.host:
+        err, reason = name_check(ct.host, "host_name")
         if err:
             raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: {reason}")
 
-    if port is not None:
-        if not isinstance(port, int):
+    if ct.port is not None:
+        if not isinstance(ct.port, int):
             raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: port {port} must be int")
 
-        if port <= 0:
+        if ct.port < 0:
             raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: invalid port {port}")
 
 
@@ -83,13 +116,55 @@ def _check_conn_security(scope: str, prop_key: str, value):
         raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be one of {valid_conn_secs}")
 
 
+def parse_listening_host(value, scope=None, prop_key=None) -> ListeningHost:
+    """Parse the "listening_host" property. It must be either str or a dict
+
+    Args:
+        value: value to be parsed
+        scope: scope of the prop
+        prop_key: key of the property
+
+    Returns: a tuple of (host_names, default_host, port, conn sec)
+    """
+    if isinstance(value, str):
+        # old format - for server only
+        return ListeningHost(None, None, value, None, None)
+    elif isinstance(value, dict):
+        scheme = value.get(PropKey.SCHEME)
+        host_names = value.get(PropKey.HOST_NAMES)
+        default_host = value.get(PropKey.DEFAULT_HOST)
+        port = value.get(PropKey.PORT)
+        conn_sec = value.get(PropKey.CONN_SECURITY)
+        return ListeningHost(scheme, host_names, default_host, port, conn_sec)
+    else:
+        raise ValueError(
+            f"bad value for {prop_key} '{value}' in {scope}: invalid type {type(value)}; must be str or dict"
+        )
+
+
+def _check_listening_host(scope: str, prop_key: str, value):
+    h = parse_listening_host(value, scope, prop_key)
+    if h.host_names:
+        _check_host_names(scope, prop_key, h.host_names)
+
+    if h.default_host:
+        _check_host_name(scope, prop_key, h.default_host)
+
+    if h.port is not None:
+        if not isinstance(h.port, int):
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: port {h.port} must be int")
+
+        if h.port < 0:
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: invalid port {h.port}")
+
+
 # validator functions for common properties
 # Validator function must follow this signature:
 # func(scope: str, prop_key: str, value)
 _PROP_VALIDATORS = {
     PropKey.HOST_NAMES: _check_host_names,
     PropKey.CONNECT_TO: _check_connect_to,
-    PropKey.LISTENING_HOST: _check_host_name,
+    PropKey.LISTENING_HOST: _check_listening_host,
     PropKey.DEFAULT_HOST: _check_host_name,
     PropKey.ROLE: _check_admin_role,
     PropKey.CONN_SECURITY: _check_conn_security,
@@ -184,6 +259,37 @@ class Participant(Entity):
             return h
         else:
             return self.name
+
+    def get_listening_host(self) -> Optional[ListeningHost]:
+        h = self.get_prop(PropKey.LISTENING_HOST)
+        if not h:
+            print(f"no LISTENING_HOST in {self.name}")
+            return None
+
+        lh = parse_listening_host(h)
+        if not lh.scheme:
+            lh.scheme = "tcp"
+
+        if not lh.port:
+            lh.port = 0  # any port
+
+        if not lh.conn_sec:
+            lh.conn_sec = ConnSecurity.CLEAR
+
+        if not lh.default_host:
+            if self.type == ParticipantType.SERVER:
+                lh.default_host = self.get_default_host()
+            else:
+                lh.default_host = "localhost"
+
+        return lh
+
+    def get_connect_to(self) -> Optional[ConnectTo]:
+        h = self.get_prop(PropKey.CONNECT_TO)
+        if not h:
+            return None
+        else:
+            return parse_connect_to(h)
 
 
 class Project(Entity):

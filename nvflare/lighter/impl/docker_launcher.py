@@ -82,32 +82,34 @@ class DockerLauncherBuilder(Builder):
             )
         utils.write(os.path.join(dest_dir, ProvFileName.RESOURCES_JSON_DEFAULT), json.dumps(resources, indent=4), "t")
 
-        communication_port = server.get_prop(CtxKey.DOCKER_COMM_PORT)
-        if communication_port:
-            replacement_dict = {"comm_host_name": "server-parent", "communication_port": communication_port}
-            section = ctx.build_section_from_template(
-                TemplateSectionKey.COMM_CONFIG_INTERNAL,
+        run_in_docker = server.get_prop(PropKey.RUN_IN_DOCKER)
+        if run_in_docker:
+            dest_dir = ctx.get_kit_dir(server)
+            lh = server.get_listening_host()
+            if not lh:
+                raise RuntimeError(f"running in docker requires listening_host but it's missing from {server.name}")
+
+            if not lh.port:
+                raise RuntimeError(
+                    f"running in docker requires listening_host.port but it's missing from {server.name}"
+                )
+
+            replacement_dict = {
+                "admin_port": admin_port,
+                "fed_learn_port": fed_learn_port,
+                "comm_host_name": lh.default_host,
+                "communication_port": lh.port,
+                "docker_image": self.docker_image,
+            }
+            ctx.build_from_template(
+                dest_dir,
+                TemplateSectionKey.DOCKER_LAUNCHER_SERVER_SH,
+                ProvFileName.DOCKER_LAUNCHER_SH,
                 replacement=replacement_dict,
+                exe=True,
             )
-            server.add_prop(PropKey.COMM_CONFIG_INTERNAL, section)
 
-        dest_dir = ctx.get_kit_dir(server)
-        replacement_dict = {
-            "admin_port": admin_port,
-            "fed_learn_port": fed_learn_port,
-            "comm_host_name": "server-parent",
-            "communication_port": communication_port,
-            "docker_image": self.docker_image,
-        }
-        ctx.build_from_template(
-            dest_dir,
-            TemplateSectionKey.DOCKER_LAUNCHER_SERVER_SH,
-            ProvFileName.DOCKER_LAUNCHER_SH,
-            replacement=replacement_dict,
-            exe=True,
-        )
-
-    def _build_client(self, client, ctx: ProvisionContext):
+    def _build_client(self, client: Participant, ctx: ProvisionContext):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
 
@@ -137,30 +139,31 @@ class DockerLauncherBuilder(Builder):
             )
         utils.write(os.path.join(dest_dir, ProvFileName.RESOURCES_JSON_DEFAULT), json.dumps(resources, indent=4), "t")
 
-        communication_port = client.get_prop(PropKey.DOCKER_COMM_PORT)
-        if communication_port:
-            replacement_dict = {"comm_host_name": client.name + "-parent", "communication_port": communication_port}
-            section = ctx.build_section_from_template(
-                TemplateSectionKey.COMM_CONFIG_INTERNAL,
-                replacement=replacement_dict,
-            )
-            client.add_prop(PropKey.COMM_CONFIG_INTERNAL, section)
+        run_in_docker = client.get_prop(PropKey.RUN_IN_DOCKER)
+        if run_in_docker:
+            lh = client.get_listening_host()
+            if not lh:
+                raise RuntimeError(f"docker requires listening_host but it's missing from {client.name}")
 
-        dest_dir = ctx.get_kit_dir(client)
-        replacement_dict = {
-            "admin_port": admin_port,
-            "fed_learn_port": fed_learn_port,
-            "comm_host_name": "server-parent",
-            "communication_port": communication_port,
-            "docker_image": self.docker_image,
-        }
-        ctx.build_from_template(
-            dest_dir,
-            TemplateSectionKey.DOCKER_LAUNCHER_CLIENT_SH,
-            ProvFileName.DOCKER_LAUNCHER_SH,
-            replacement=replacement_dict,
-            exe=True,
-        )
+            if not lh.port:
+                raise RuntimeError(f"docker requires listening_host.port but it's missing from {client.name}")
+
+            dest_dir = ctx.get_kit_dir(client)
+            replacement_dict = {
+                "admin_port": admin_port,
+                "fed_learn_port": fed_learn_port,
+                "comm_host_name": lh.default_host,
+                "communication_port": lh.port,
+                "docker_image": self.docker_image,
+                "client_name": client.name,
+            }
+            ctx.build_from_template(
+                dest_dir,
+                TemplateSectionKey.DOCKER_LAUNCHER_CLIENT_SH,
+                ProvFileName.DOCKER_LAUNCHER_SH,
+                replacement=replacement_dict,
+                exe=True,
+            )
 
     def build(self, project: Project, ctx: ProvisionContext):
         compose = ctx.yaml_load_template_section(TemplateSectionKey.COMPOSE_YAML)

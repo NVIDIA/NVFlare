@@ -243,10 +243,11 @@ local_server_resources: |
 comm_config_internal: |
   {
     "internal": {
-      "scheme": "tcp",
+      "scheme": "{~~scheme~~}",
       "resources": {
-        "host": "{~~comm_host_name~~}",
-        "port": {~~communication_port~~}
+        "host": "{~~host~~}",
+        "port": {~~port~~},
+        "connection_security": "{~~conn_sec~~}"
       }
     }
   }
@@ -1082,5 +1083,19 @@ relay_resources_json: |
       "address": "{~~address~~}",
       "fqcn": "{~~fqcn~~}",
       "connection_security": "{~~conn_sec~~}"
+    }
+  }
+
+fed_relay_json: |
+  {
+    "format_version": 2,
+    "project_name": "{~~project_name~~}",
+    "identity": "{~~identity~~}",
+    "server_identity": "{~~server_identity~~}",
+    "parent": {
+      "scheme": "{~~scheme~~}",
+      "identity": "{~~parent_identity~~}",
+      "address": "{~~address~~}",
+      "fqcn": "{~~fqcn~~}"
     }
   }

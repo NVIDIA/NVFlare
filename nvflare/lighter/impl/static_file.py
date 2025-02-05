@@ -29,7 +29,7 @@ from nvflare.lighter.constants import (
     ProvisionMode,
     TemplateSectionKey,
 )
-from nvflare.lighter.entity import Participant, parse_connect_to
+from nvflare.lighter.entity import Participant
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
@@ -138,7 +138,6 @@ class StaticFileBuilder(Builder):
         server_0["name"] = project.name
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
-        communication_port = server.get_prop(CtxKey.DOCKER_COMM_PORT)
         server_0["service"]["target"] = f"{server.name}:{fed_learn_port}"
         server_0["service"]["scheme"] = self.scheme
         server_0["admin_host"] = server.name
@@ -151,10 +150,11 @@ class StaticFileBuilder(Builder):
 
         utils.write(os.path.join(dest_dir, ProvFileName.FED_SERVER_JSON), json.dumps(config, indent=2), "t")
 
+        self._build_comm_config_for_internal_connection(server, ctx)
+
         replacement_dict = {
             "admin_port": admin_port,
             "fed_learn_port": fed_learn_port,
-            "communication_port": communication_port,
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
             "org_name": server.org,
@@ -204,6 +204,27 @@ class StaticFileBuilder(Builder):
         dest_dir = ctx.get_ws_dir(server)
         ctx.build_from_template(dest_dir, TemplateSectionKey.SERVER_README, ProvFileName.README_TXT, exe=False)
 
+    @staticmethod
+    def _build_comm_config_for_internal_connection(participant: Participant, ctx: ProvisionContext):
+        lh = participant.get_listening_host()
+        if not lh:
+            return None
+
+        replacement_dict = {
+            "scheme": lh.scheme,
+            "host": lh.default_host,
+            "port": lh.port,
+            "conn_sec": lh.conn_sec,
+        }
+        section = ctx.build_section_from_template(
+            TemplateSectionKey.COMM_CONFIG_INTERNAL,
+            replacement=replacement_dict,
+        )
+        section_dict = json.loads(section)
+        comm_config = participant.get_prop(PropKey.COMM_CONFIG)
+        comm_config.update(section_dict)
+        return lh
+
     def _build_client(self, client: Participant, ctx):
         project = ctx.get_project()
         server = project.get_server()
@@ -216,19 +237,6 @@ class StaticFileBuilder(Builder):
         config["servers"][0]["identity"] = server.name  # the official identity of the server
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
-        communication_port = client.get_prop(PropKey.DOCKER_COMM_PORT)
-        replacement_dict = {
-            "admin_port": admin_port,
-            "fed_learn_port": fed_learn_port,
-            "communication_port": communication_port,
-            "comm_host_name": client.name + "-parent",
-            "client_name": f"{client.subject}",
-            "config_folder": self.config_folder,
-            "docker_image": self.docker_image,
-            "org_name": client.org,
-            "type": "client",
-            "cln_uid": f"uid={client.subject}",
-        }
 
         self._prepare_overseer_agent(client, config, OverseerRole.CLIENT, ctx)
 
@@ -237,6 +245,20 @@ class StaticFileBuilder(Builder):
         self._build_conn_properties(client, ctx, client_conf)
 
         utils.write(os.path.join(dest_dir, ProvFileName.FED_CLIENT_JSON), json.dumps(config, indent=2), "t")
+
+        # build internal comm
+        self._build_comm_config_for_internal_connection(client, ctx)
+
+        replacement_dict = {
+            "admin_port": admin_port,
+            "fed_learn_port": fed_learn_port,
+            "client_name": f"{client.subject}",
+            "config_folder": self.config_folder,
+            "docker_image": self.docker_image,
+            "org_name": client.org,
+            "type": "client",
+            "cln_uid": f"uid={client.subject}",
+        }
 
         if self.docker_image:
             ctx.build_from_template(
@@ -277,61 +299,71 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(dest_dir, TemplateSectionKey.DEFAULT_AUTHZ, ProvFileName.AUTHORIZATION_JSON_DEFAULT)
 
         # build relay__resources if relay is used by this client
-        connect_to = client.get_prop(PropKey.CONNECT_TO)
-        if connect_to:
-            name, host, port = parse_connect_to(connect_to)
-            if name:
-                # relay is used!
-                relay_map = ctx.get(CtxKey.RELAY_MAP)
-                if not relay_map:
-                    raise RuntimeError(f"missing {CtxKey.RELAY_MAP} from the provision context")
+        ct = client.get_connect_to()
+        if ct and ct.name:
+            # relay is used!
+            relay_map = ctx.get(CtxKey.RELAY_MAP)
+            if not relay_map:
+                raise RuntimeError(f"missing {CtxKey.RELAY_MAP} from the provision context")
 
-                relay = relay_map.get(name)
-                if not relay:
-                    raise RuntimeError(f"cannot find relay {name} from the map")
+            relay = relay_map.get(ct.name)
+            if not relay:
+                raise RuntimeError(f"cannot find relay {ct.name} from the map")
 
-                assert isinstance(relay, Participant)
-                fqcn = relay.get_prop(PropKey.FQCN)
-                if not relay:
-                    raise RuntimeError(f"cannot find FQCN from relay {name}")
+            assert isinstance(relay, Participant)
+            fqcn = relay.get_prop(PropKey.FQCN)
+            if not relay:
+                raise RuntimeError(f"cannot find FQCN from relay {ct.name}")
 
-                relay_port = relay.get_prop_fb(PropKey.RELAY_PORT)
-                if not relay_port:
-                    raise RuntimeError(f"cannot find relay_port from relay {name}")
+            lh = relay.get_listening_host()
+            if not lh:
+                raise RuntimeError(f"missing listening_host in relay {relay.name}")
 
-                if not host:
-                    # use the relay's default host
-                    host = relay.get_default_host()
+            host = ct.host
+            if not host:
+                # use the relay's default host
+                host = lh.default_host
 
-                scheme = relay.get_prop(PropKey.SCHEME, "grpc")
-                conn_sec = relay.get_prop(PropKey.CONN_SECURITY, "mtls")
-                if port:
-                    relay_port = port
+            scheme = lh.scheme
+            if not scheme:
+                scheme = "grpc"
 
-                addr = f"{host}:{relay_port}"
+            conn_sec = ct.conn_sec
+            if not conn_sec:
+                conn_sec = lh.conn_sec
+            if not conn_sec:
+                conn_sec = "mtls"
 
-                replacement_dict = {
-                    "scheme": scheme,
-                    "identity": relay.name,
-                    "address": addr,
-                    "fqcn": fqcn,
-                    "conn_sec": conn_sec,
-                }
+            relay_port = ct.port
+            if not relay_port:
+                relay_port = lh.port
 
-                ctx.build_from_template(
-                    dest_dir,
-                    TemplateSectionKey.RELAY_RESOURCES_JSON,
-                    ProvFileName.RELAY_RESOURCES_JSON,
-                    replacement_dict,
-                    exe=False,
-                )
+            addr = f"{host}:{relay_port}"
 
-                # build comm config backbone gen
-                replacement_dict = {"conn_gen": 1}
-                section = ctx.build_section_from_template(
-                    temp_section=TemplateSectionKey.COMM_CONFIG_BACKBONE_GEN, replacement=replacement_dict
-                )
-                client.add_prop(PropKey.COMM_CONFIG_GEN, section)
+            replacement_dict = {
+                "scheme": scheme,
+                "identity": relay.name,
+                "address": addr,
+                "fqcn": fqcn,
+                "conn_sec": conn_sec,
+            }
+
+            ctx.build_from_template(
+                dest_dir,
+                TemplateSectionKey.RELAY_RESOURCES_JSON,
+                ProvFileName.RELAY_RESOURCES_JSON,
+                replacement_dict,
+                exe=False,
+            )
+
+            # build comm config backbone gen
+            replacement_dict = {"conn_gen": 1}
+            section = ctx.build_section_from_template(
+                temp_section=TemplateSectionKey.COMM_CONFIG_BACKBONE_GEN, replacement=replacement_dict
+            )
+            section_dict = json.loads(section)
+            comm_config = client.get_prop(PropKey.COMM_CONFIG)
+            comm_config.update(section_dict)
 
         # workspace folder file
         dest_dir = ctx.get_ws_dir(client)
@@ -399,37 +431,36 @@ class StaticFileBuilder(Builder):
                 if role == OverseerRole.SERVER:
                     # the server expects the "connect_to" to be the same as its name
                     # otherwise the host name generated by the dummy agent won't be accepted!
-                    connect_to = server.name
+                    conn_host = server.name
                 else:
-                    connect_to = participant.get_prop(PropKey.CONNECT_TO)
-                    if connect_to:
-                        name, addr, port = parse_connect_to(connect_to)
-                        if not name:
-                            err = self._check_host_name(addr, server)
+                    ct = participant.get_connect_to()
+                    if ct:
+                        if not ct.name:
+                            err = self._check_host_name(ct.host, server)
                             if err:
                                 ctx.warning(f"connect_to in {participant.subject} may be invalid: {err}")
-                            connect_to = addr
+                            conn_host = ct.host
                         else:
                             # uses relay
                             # since relay config is done in relay__resources.json, we use default server here
-                            connect_to = server.get_default_host()
+                            conn_host = server.get_default_host()
 
-                        if port:
+                        if ct.port:
                             # override fl_port
-                            fl_port = port
+                            fl_port = ct.port
                     else:
                         # connect_to is not explicitly specified: use the server's name by default
                         # Note: by doing this dynamically, we guarantee the sp_end_point to be correct, even if the
                         # project.yaml does not specify the default server host correctly!
-                        connect_to = server.get_default_host()
+                        conn_host = server.get_default_host()
 
-                # change the sp_end_point to use connect_to
+                # change the sp_end_point to use conn_host
                 agent_args = overseer_agent.get("args")
                 if agent_args:
                     sp_end_point = agent_args.get("sp_end_point")
                     if sp_end_point:
                         # format of the sp_end_point:  server_host_name:fl_port:admin_port
-                        agent_args["sp_end_point"] = f"{connect_to}:{fl_port}:{admin_port}"
+                        agent_args["sp_end_point"] = f"{conn_host}:{fl_port}:{admin_port}"
 
             overseer_agent.pop("overseer_exists", None)
             config["overseer_agent"] = overseer_agent
@@ -478,6 +509,13 @@ class StaticFileBuilder(Builder):
             config["admin"]["cred_type"] = "local_cert"
         return config
 
+    def _build_relay(self, relay: Participant, ctx: ProvisionContext):
+        # local folder creation
+        dest_dir = ctx.get_local_dir(relay)
+        ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
+
+        self._build_comm_config_for_internal_connection(relay, ctx)
+
     def build(self, project: Project, ctx: ProvisionContext):
         overseer = project.get_overseer()
         if overseer:
@@ -486,6 +524,9 @@ class StaticFileBuilder(Builder):
         server = project.get_server()
         if server:
             self._build_server(server, ctx)
+
+        for relay in project.get_relays():
+            self._build_relay(relay, ctx)
 
         for client in project.get_clients():
             self._build_client(client, ctx)
@@ -509,21 +550,15 @@ class StaticFileBuilder(Builder):
         # determine parents
         for r in relays:
             assert isinstance(r, Participant)
-            parent_def = r.get_prop(PropKey.CONNECT_TO)
-            print(f"determine parent for relay {r.name} {parent_def=}")
-            if parent_def:
-                parent_name, parent_addr, parent_port = parse_connect_to(parent_def)
-            else:
-                # default connect to server
-                parent_name, parent_addr, parent_port = None, None, None
+            ct = r.get_connect_to()
+            print(f"determine parent for relay {r.name} {ct}")
 
-            if not parent_name:
-                parent = None
-            else:
-                parent = name_to_relay.get(parent_name)
+            parent = None
+            if ct:
+                parent = name_to_relay.get(ct.name)
                 if not parent:
-                    raise ValueError(f"undefined parent {parent_name} in relay {r.name}")
-            r.add_prop(PropKey.PARENT, (parent, parent_addr, parent_port))
+                    raise ValueError(f"undefined parent {ct.name} in relay {r.name}")
+            r.add_prop(PropKey.PARENT, parent)
 
         # determine FQCNs
         for r in relays:
@@ -537,23 +572,28 @@ class StaticFileBuilder(Builder):
         if name_to_relay:
             ctx[CtxKey.RELAY_MAP] = name_to_relay
 
+        # prepare clients comm config
+        for p in project.get_all_participants():
+            assert isinstance(p, Participant)
+            p.add_prop(PropKey.COMM_CONFIG, {})
+
     def finalize(self, project: Project, ctx: ProvisionContext):
         for p in project.get_all_participants():
             assert isinstance(p, Participant)
-            comm_config = {}
-            internal = p.get_prop(PropKey.COMM_CONFIG_INTERNAL, "")
-            if internal:
-                int_dict = json.loads(internal)
-                comm_config.update(int_dict)
-
-            gen = p.get_prop(PropKey.COMM_CONFIG_GEN, "")
-            if gen:
-                gen_dict = json.loads(gen)
-                comm_config.update(gen_dict)
-
+            comm_config = p.get_prop(PropKey.COMM_CONFIG)
             if comm_config:
                 # create comm config file
                 # we create the comm_config here because multiple builders may create different portions of the file.
+                assert isinstance(comm_config, dict)
+
+                # remove port 0 if defined
+                resources = comm_config.get("internal", {}).get("resources")
+                if resources:
+                    port = resources.get(PropKey.PORT)
+                    if port is None or port == 0:
+                        # remove port 0
+                        resources.pop(PropKey.PORT, None)
+
                 dest_dir = ctx.get_local_dir(p)
                 with open(os.path.join(dest_dir, ProvFileName.COMM_CONFIG), "w") as f:
                     json.dump(comm_config, f, indent=2)
@@ -564,7 +604,7 @@ def check_parent(c: Participant, path: list):
         return f"circular parent ref {c.name}"
 
     path.insert(0, c.name)
-    parent, _, _ = c.get_prop(PropKey.PARENT)
+    parent = c.get_prop(PropKey.PARENT)
     if not parent:
         return ""
     return check_parent(parent, path)
