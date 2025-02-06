@@ -28,8 +28,8 @@ class BaseAppConfig(ABC):
     def __init__(self) -> None:
         super().__init__()
 
-        self.task_data_filters: [(List[str], Filter)] = []
-        self.task_result_filters: [(List[str], Filter)] = []
+        self.task_data_filters = []  # list of (task_set, list of filters)
+        self.task_result_filters = []  # list of (task_set, list of filters)
         self.components: Dict[str, object] = {}
         self.ext_scripts = []
         self.ext_dirs = []
@@ -66,14 +66,23 @@ class BaseAppConfig(ABC):
 
         self.ext_dirs.append(ext_dir)
 
-    def _add_task_filter(self, tasks, filter, filters):
+    def _add_task_filter(self, tasks, filter, filters: list):
         if not isinstance(filter, Filter):
             raise RuntimeError(f"filter must be type of Filter, but got {filter.__class__}")
-        for task in tasks:
-            for fd in filters:
-                if task in fd.tasks:
-                    raise RuntimeError(f"Task {task} already defined in the task filters.")
-        filters.append((tasks, filter))
+
+        # check whether "tasks" already exist
+        tasks = set(tasks)
+        for task_set, filter_list in filters:
+            if tasks == task_set:
+                # found it
+                filter_list.append(filter)
+                return
+            elif tasks.intersection(task_set):
+                # the tasks intersect with this task_set - not allowed
+                raise RuntimeError(f"cannot add filters for '{tasks}' since task set '{task_set}' already defined")
+
+        # no conflicting task_set
+        filters.append((tasks, [filter]))
 
     def add_file_source(self, src_path: str, dest_dir=None):
         self.file_sources.append((src_path, dest_dir))

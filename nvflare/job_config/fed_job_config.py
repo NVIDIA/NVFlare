@@ -316,34 +316,24 @@ class FedJobConfig:
                     "args": self._get_args(component, custom_dir),
                 }
             )
-        app_config["task_data_filters"] = []
-        for tasks, filter in app.task_data_filters:
-            app_config["task_data_filters"].append(
-                {
-                    "tasks": tasks,
-                    "filters": [
-                        {
-                            # self._get_filters(task_filter.filter, custom_dir)
-                            "path": self._get_class_path(filter, custom_dir),
-                            "args": self._get_args(filter, custom_dir),
-                        }
-                    ],
-                }
-            )
-        app_config["task_result_filters"] = []
-        for tasks, filter in app.task_result_filters:
-            app_config["task_result_filters"].append(
-                {
-                    "tasks": tasks,
-                    "filters": [
-                        {
-                            # self._get_filters(result_filer.filter, custom_dir)
-                            "path": self._get_class_path(filter, custom_dir),
-                            "args": self._get_args(filter, custom_dir),
-                        }
-                    ],
-                }
-            )
+
+        app_config["task_data_filters"] = self._process_filters(app.task_data_filters, custom_dir)
+        app_config["task_result_filters"] = self._process_filters(app.task_result_filters, custom_dir)
+
+    def _process_filters(self, task_filters: dict, custom_dir):
+        app_config_filters = []
+        for task_set, filter_list in task_filters:
+            filters = []
+            for f in filter_list:
+                filters.append(
+                    {
+                        "path": self._get_class_path(f, custom_dir),
+                        "args": self._get_args(f, custom_dir),
+                    }
+                )
+
+            app_config_filters.append({"tasks": list(task_set), "filters": filters})
+        return app_config_filters
 
     def _get_args(self, component, custom_dir):
         args = {}
