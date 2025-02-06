@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,14 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#!/bin/bash
-
 # Wait for Keycloak to be ready
 echo "Waiting for Keycloak to be ready..."
-until $(curl --output /dev/null --silent --head --fail http://keycloak:8080/realms/master); do
+until curl -sf http://keycloak:8080/realms/master > /dev/null; do
     printf '.'
     sleep 5
 done
+
 
 echo "Keycloak is ready!"
 
