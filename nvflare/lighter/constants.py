@@ -55,7 +55,7 @@ class PropKey:
     # the following are internal properties added by builders during provision
     PARENT = "__parent__"
     FQCN = "__fqcn__"
-    COMM_CONFIG = "__comm_config__"
+    COMM_CONFIG_ARGS = "__comm_config_args__"
 
 
 class CtxKey(WorkDir, PropKey):
@@ -111,9 +111,7 @@ class TemplateSectionKey:
     SUB_START_SH = "sub_start_sh"
     STOP_FL_SH = "stop_fl_sh"
     LOG_CONFIG = "log_config"
-    COMM_CONFIG_INTERNAL = "comm_config_internal"
-    COMM_CONFIG_BACKBONE_GEN = "comm_config_backbone_gen"
-    COMM_CONFIG_JSON = "comm_config_json"
+    COMM_CONFIG = "comm_config"
     LOCAL_SERVER_RESOURCES = "local_server_resources"
     LOCAL_CLIENT_RESOURCES = "local_client_resources"
     SAMPLE_PRIVACY = "sample_privacy"
@@ -133,6 +131,7 @@ class TemplateSectionKey:
     HELM_CHART_DEPLOYMENT_OVERSEER = "helm_chart_deployment_overseer"
     HELM_CHART_DEPLOYMENT_SERVER = "helm_chart_deployment_server"
     RELAY_RESOURCES_JSON = "relay_resources_json"
+    FED_RELAY = "fed_relay"
 
 
 class ProvFileName:
@@ -171,9 +170,18 @@ class ProvFileName:
     HELM_CHART_TEMPLATES_DIR = "templates"
     CUSTOM_CA_CERT_FILE_NAME = "customRootCA.pem"
     RELAY_RESOURCES_JSON = "relay__resources.json"
+    FED_RELAY_JSON = "fed_relay.json"
 
 
 class CertFileBasename:
     CLIENT = "client"
     SERVER = "server"
     OVERSEER = "overseer"
+
+
+class CommConfigArg:
+    SCHEME = "scheme"
+    HOST = "host"
+    PORT = "port"
+    CONN_GEN = "conn_gen"
+    CONN_SEC = "conn_sec"

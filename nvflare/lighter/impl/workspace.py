@@ -96,5 +96,5 @@ class WorkspaceBuilder(Builder):
             current_prod_dir = os.path.join(ctx.get_workspace(), f"prod_{current_prod_stage}")
             shutil.move(ctx.get_wip_dir(), current_prod_dir)
             ctx.pop(CtxKey.WIP, None)
-            print(f"Generated results can be found under {current_prod_dir}. ")
+            ctx.info(f"Generated results can be found under {current_prod_dir}. ")
             ctx[CtxKey.CURRENT_PROD_DIR] = current_prod_dir

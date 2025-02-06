@@ -263,7 +263,6 @@ class Participant(Entity):
     def get_listening_host(self) -> Optional[ListeningHost]:
         h = self.get_prop(PropKey.LISTENING_HOST)
         if not h:
-            print(f"no LISTENING_HOST in {self.name}")
             return None
 
         lh = parse_listening_host(h)

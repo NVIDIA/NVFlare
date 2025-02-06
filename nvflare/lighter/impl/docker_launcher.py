@@ -97,7 +97,7 @@ class DockerLauncherBuilder(Builder):
             replacement_dict = {
                 "admin_port": admin_port,
                 "fed_learn_port": fed_learn_port,
-                "comm_host_name": lh.default_host,
+                "comm_host_name": server.get_default_host(),
                 "communication_port": lh.port,
                 "docker_image": self.docker_image,
             }
@@ -112,6 +112,9 @@ class DockerLauncherBuilder(Builder):
     def _build_client(self, client: Participant, ctx: ProvisionContext):
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
+        project = ctx.get_project()
+        assert isinstance(project, Project)
+        server = project.get_server()
 
         info_dict = copy.deepcopy(self.services["__flclient__"])
         info_dict["volumes"] = [f"./{client.name}:" + "${WORKSPACE}"]
@@ -152,7 +155,7 @@ class DockerLauncherBuilder(Builder):
             replacement_dict = {
                 "admin_port": admin_port,
                 "fed_learn_port": fed_learn_port,
-                "comm_host_name": lh.default_host,
+                "server_host_name": server.get_default_host(),
                 "communication_port": lh.port,
                 "docker_image": self.docker_image,
                 "client_name": client.name,

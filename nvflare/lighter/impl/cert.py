@@ -301,9 +301,6 @@ class CertBuilder(Builder):
             # Use SubjectAlternativeName for all host names
             default_host = server.get_default_host()
             host_names = server.get_prop(PropKey.HOST_NAMES)
-
-            print(f"creating server cert for {subject}: {default_host=} {host_names=}")
-
             sans = [x509.DNSName(default_host)]
             if host_names:
                 for h in host_names:
