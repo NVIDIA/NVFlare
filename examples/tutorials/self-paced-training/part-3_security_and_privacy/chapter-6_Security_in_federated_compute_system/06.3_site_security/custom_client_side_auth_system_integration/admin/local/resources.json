@@ -6,7 +6,7 @@
         "path": "admin_auth.AdminAuth",
         "args": {
           "orgs": {
-            "site-a": "http://localhost:8080/realms/myrealm/protocol/openid-connect/token"
+            "site-1": "http://localhost:8080/realms/myrealm/protocol/openid-connect/token"
           }
         }
       }

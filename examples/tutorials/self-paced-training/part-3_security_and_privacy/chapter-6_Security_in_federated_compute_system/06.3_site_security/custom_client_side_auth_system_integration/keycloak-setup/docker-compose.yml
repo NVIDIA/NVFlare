@@ -2,10 +2,8 @@ version: '3.8'
 
 services:
   keycloak:
-   # image: quay.io/keycloak/keycloak:24.0.1
-    image: bitnami/keycloak:24
+    build: .
     container_name: keycloak
-    command: start-dev
     environment:
       - KEYCLOAK_ADMIN=admin
       - KEYCLOAK_ADMIN_PASSWORD=admin123
@@ -14,9 +12,12 @@ services:
     volumes:
       - .:/opt/keycloak-setup
     depends_on:
-      - db
-    entrypoint: ["/bin/sh", "-c", "/opt/keycloak-setup/init.sh && /opt/keycloak/bin/kc.sh start-dev"]
-    
+      db:
+        condition: service_healthy
+    networks:
+      - bridge_network
+
+
   db:
     image: postgres:15
     container_name: keycloak-db
@@ -28,6 +29,17 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - bridge_network
 
 volumes:
   pgdata:
+ 
+networks:
+  bridge_network:
+    driver: bridge
