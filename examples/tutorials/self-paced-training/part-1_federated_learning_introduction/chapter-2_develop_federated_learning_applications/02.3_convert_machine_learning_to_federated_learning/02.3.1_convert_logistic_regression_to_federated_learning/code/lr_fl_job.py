@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.client.config import ExchangeFormat
-from src.newton_raphson_workflow import FedAvgNewtonRaphson
 from src.newton_raphson_persistor import NewtonRaphsonModelPersistor
+from src.newton_raphson_workflow import FedAvgNewtonRaphson
 
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
