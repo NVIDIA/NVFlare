@@ -17,10 +17,18 @@ from typing import Dict, Optional
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 
-from .api import log
+# flake8: noqa
+from .api import default_context as default_context
+from .api import get_context, log
+from .api_context import APIContext
 
 
-class SummaryWriter:
+class _BaseWriter:
+    def __init__(self, ctx: Optional[APIContext] = None):
+        self.ctx = get_context(ctx)
+
+
+class SummaryWriter(_BaseWriter):
     """SummaryWriter mimics the usage of Tensorboard's SummaryWriter.
 
     Users can replace the import of Tensorboard's SummaryWriter with FLARE's SummaryWriter.
@@ -43,6 +51,7 @@ class SummaryWriter:
             data_type=AnalyticsDataType.SCALAR,
             global_step=global_step,
             writer=LogWriterName.TORCH_TB,
+            ctx=self.ctx,
             **kwargs,
         )
 
@@ -61,6 +70,7 @@ class SummaryWriter:
             data_type=AnalyticsDataType.SCALARS,
             global_step=global_step,
             writer=LogWriterName.TORCH_TB,
+            ctx=self.ctx,
             **kwargs,
         )
 
@@ -69,7 +79,7 @@ class SummaryWriter:
         pass
 
 
-class WandBWriter:
+class WandBWriter(_BaseWriter):
     """WandBWriter mimics the usage of weights and biases.
 
     Users can replace the import of wandb with FLARE's WandBWriter.
@@ -90,10 +100,11 @@ class WandBWriter:
             data_type=AnalyticsDataType.METRICS,
             global_step=step,
             writer=LogWriterName.WANDB,
+            ctx=self.ctx,
         )
 
 
-class MLflowWriter:
+class MLflowWriter(_BaseWriter):
     """MLflowWriter mimics the usage of MLflow.
 
     Users can replace the import of MLflow with FLARE's MLflowWriter.
@@ -113,7 +124,7 @@ class MLflowWriter:
                 All backend stores support values up to length 500, but some
                 may support larger values.
         """
-        log(key=key, value=value, data_type=AnalyticsDataType.PARAMETER, writer=LogWriterName.MLFLOW)
+        log(key=key, value=value, data_type=AnalyticsDataType.PARAMETER, writer=LogWriterName.MLFLOW, ctx=self.ctx)
 
     def log_params(self, values: dict) -> None:
         """Log a batch of params for the current run.
@@ -121,7 +132,13 @@ class MLflowWriter:
         Args:
             values (dict): Dictionary of param_name: String -> value: (String, but will be string-ified if not)
         """
-        log(key="params", value=values, data_type=AnalyticsDataType.PARAMETERS, writer=LogWriterName.MLFLOW)
+        log(
+            key="params",
+            value=values,
+            data_type=AnalyticsDataType.PARAMETERS,
+            writer=LogWriterName.MLFLOW,
+            ctx=self.ctx,
+        )
 
     def log_metric(self, key: str, value: float, step: Optional[int] = None) -> None:
         """Log a metric under the current run.
@@ -136,7 +153,14 @@ class MLflowWriter:
                 support larger values.
             step (int, optional): Metric step. Defaults to zero if unspecified.
         """
-        log(key=key, value=value, data_type=AnalyticsDataType.METRIC, global_step=step, writer=LogWriterName.MLFLOW)
+        log(
+            key=key,
+            value=value,
+            data_type=AnalyticsDataType.METRIC,
+            global_step=step,
+            writer=LogWriterName.MLFLOW,
+            ctx=self.ctx,
+        )
 
     def log_metrics(self, metrics: Dict[str, float], step: Optional[int] = None) -> None:
         """Log multiple metrics for the current run.
@@ -154,6 +178,7 @@ class MLflowWriter:
             data_type=AnalyticsDataType.METRICS,
             global_step=step,
             writer=LogWriterName.MLFLOW,
+            ctx=self.ctx,
         )
 
     def log_text(self, text: str, artifact_file_path: str) -> None:
@@ -170,6 +195,7 @@ class MLflowWriter:
             data_type=AnalyticsDataType.TEXT,
             path=artifact_file_path,
             writer=LogWriterName.MLFLOW,
+            ctx=self.ctx,
         )
 
     def set_tag(self, key: str, tag: any) -> None:
@@ -181,7 +207,7 @@ class MLflowWriter:
                 All backend stores will support values up to length 5000, but some
                 may support larger values.
         """
-        log(key=key, value=tag, data_type=AnalyticsDataType.TAG, writer=LogWriterName.MLFLOW)
+        log(key=key, value=tag, data_type=AnalyticsDataType.TAG, writer=LogWriterName.MLFLOW, ctx=self.ctx)
 
     def set_tags(self, tags: dict) -> None:
         """Log a batch of tags for the current run.
@@ -190,4 +216,4 @@ class MLflowWriter:
             tags (dict): Dictionary of tag_name: String -> value: (String, but will be string-ified if
                 not)
         """
-        log(key="tags", value=tags, data_type=AnalyticsDataType.TAGS, writer=LogWriterName.MLFLOW)
+        log(key="tags", value=tags, data_type=AnalyticsDataType.TAGS, writer=LogWriterName.MLFLOW, ctx=self.ctx)
