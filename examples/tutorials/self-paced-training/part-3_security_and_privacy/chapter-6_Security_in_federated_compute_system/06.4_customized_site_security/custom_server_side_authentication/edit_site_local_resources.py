@@ -27,7 +27,7 @@ def get_security_handler() -> dict:
         }
         """
     )
- 
+
 
 def add_components_to_json(input_file_path, output_file_path, site: str):
 
@@ -43,7 +43,7 @@ def add_components_to_json(input_file_path, output_file_path, site: str):
         return
 
     new_components = [get_security_handler()]
- 
+
     # Append new components to the list
     data["components"].extend(new_components)
 
@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     site_name = sys.argv[1]
     project_root_dir = sys.argv[2]
- 
+
     input_file_path = os.path.join(project_root_dir, site_name, "local", "resources.json.default")
     output_file_path = os.path.join(project_root_dir, site_name, "local", "resources.json")
     add_components_to_json(input_file_path, output_file_path, site_name)
