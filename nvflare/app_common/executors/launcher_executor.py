@@ -129,6 +129,7 @@ class LauncherExecutor(TaskExchanger):
 
     def finalize(self, fl_ctx: FLContext) -> None:
         self._execute_launcher_method_in_thread_executor(method_name="finalize", fl_ctx=fl_ctx)
+        self._thread_pool_executor.shutdown()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext) -> None:
         if event_type == EventType.START_RUN:
@@ -295,7 +296,7 @@ class LauncherExecutor(TaskExchanger):
 
             run_status = self.launcher.check_run_status(task_name, fl_ctx)
             if run_status != LauncherRunStatus.RUNNING:
-                self.log_info(
+                self.log_error(
                     fl_ctx, f"External process has not called flare.init and run status becomes {run_status}."
                 )
                 return False
@@ -316,7 +317,7 @@ class LauncherExecutor(TaskExchanger):
             fl_ctx=fl_ctx,
         )
         if not self._received_result.is_set() and check_run_status != LauncherRunStatus.COMPLETE_SUCCESS:
-            self.log_warning(fl_ctx, f"Try to stop task ({task_name}) when launcher run status is {check_run_status}")
+            self.log_debug(fl_ctx, f"Try to stop task ({task_name}) when launcher run status is {check_run_status}")
 
         self.log_info(fl_ctx, f"Calling stop task ({task_name}).")
         stop_task_success = self._execute_launcher_method_in_thread_executor(
@@ -407,11 +408,11 @@ class LauncherExecutor(TaskExchanger):
                         self._launcher_finish = True
                         self.log_info(
                             fl_ctx,
-                            f"launcher completed {task_name} with status {run_status} at time {self._launcher_finish_time}",
+                            f"launcher completed with status {run_status} at time {self._launcher_finish_time}",
                         )
 
                     if run_status == LauncherRunStatus.COMPLETE_FAILED:
-                        msg = f"Launcher failed with at time {self._launcher_finish_time} "
+                        msg = f"Launcher failed at time {self._launcher_finish_time} "
                         self._abort_signal.trigger(msg)
                         break
 

@@ -168,7 +168,7 @@ def define_parser():
         "--quantize_mode",
         type=str,
         default=None,
-        help="quantization mode, float16 or blockwise8, default to None (no quantization)",
+        help="quantization mode, default to None (no quantization)",
     )
     parser.add_argument(
         "--message_mode",

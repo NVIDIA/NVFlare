@@ -234,3 +234,8 @@ class InProcessClientAPI(APISpec):
             return False
 
         return True
+
+    def shutdown(self):
+        self.stop = True
+        self.event_manager.fire_event(TOPIC_STOP)
+        self.stop_reason = "API shutdown called."
