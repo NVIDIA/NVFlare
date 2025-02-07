@@ -17,6 +17,8 @@ DATA_TYPE = [
     "FLOAT32",
     "FLOAT16",
     "BFLOAT16",
+    "UINT8",
+    "INT8",
 ]
 
 QUANTIZATION_TYPE = [
