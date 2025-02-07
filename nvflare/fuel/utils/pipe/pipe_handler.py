@@ -178,6 +178,10 @@ class PipeHandler(object):
         self.msg_cb_kwargs = kwargs
 
     def _send_to_pipe(self, msg: Message, timeout=None, abort_signal: Signal = None):
+        if self._is_stopped_or_aborted(abort_signal):
+            self.logger.debug("cannot send message to pipe since PipeHandler is asked to stop")
+            return False
+
         pipe = self.pipe
         if not pipe:
             self.logger.error("cannot send message to pipe since it's already closed")
@@ -199,25 +203,28 @@ class PipeHandler(object):
                 self.logger.error(f"abort sending after {num_sends} tries")
                 return False
 
-            if self.asked_to_stop:
-                return False
-
-            if abort_signal and abort_signal.triggered:
+            if self._is_stopped_or_aborted(abort_signal):
                 return False
 
             # wait for resend_interval before resend, but return if asked_to_stop is set during the wait
             self.logger.info(f"will resend '{msg.topic}' in {self.resend_interval} secs")
             start_wait = time.time()
             while True:
-                if self.asked_to_stop:
-                    return False
-
-                if abort_signal and abort_signal.triggered:
+                if self._is_stopped_or_aborted(abort_signal):
                     return False
 
                 if time.time() - start_wait > self.resend_interval:
                     break
                 time.sleep(0.1)
+        return False
+
+    def _is_stopped_or_aborted(self, abort_signal: Optional[Signal] = None):
+        if self.asked_to_stop:
+            return True
+
+        if abort_signal and abort_signal.triggered:
+            return True
+
         return False
 
     def start(self):

@@ -1,0 +1,45 @@
+version: '3.7'
+
+services:
+
+  statsd-exporter:
+    image: prom/statsd-exporter:latest
+    container_name: statsd-exporter
+    ports:
+      - "9102:9102" # Prometheus metrics endpoint
+      - "9125:9125"
+      - "9125:9125/udp"
+    networks:
+      - monitoring
+
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    depends_on:
+      - statsd-exporter
+    networks:
+      - monitoring
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - monitoring
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: always
+    depends_on:
+      - prometheus
+
+networks:
+  monitoring:
+    driver: bridge

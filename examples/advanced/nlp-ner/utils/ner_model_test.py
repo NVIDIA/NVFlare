@@ -17,9 +17,9 @@ import os
 
 import pandas as pd
 import torch
-from custom.models.nlp_models import BertModel, GPTModel
-from custom.utils.data_sequence import DataSequence
 from seqeval.metrics import classification_report
+from src.data_sequence import DataSequence
+from src.nlp_models import BertModel, GPTModel
 from torch.utils.data import DataLoader
 
 os.environ["TOKENIZERS_PARALLELISM"] = "False"
