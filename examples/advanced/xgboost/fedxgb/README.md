@@ -52,7 +52,7 @@ have part of the whole features, while each site has all the overlapping instanc
 
 ### Private Set Intersection (PSI)
 Since not every site will have the same set of data samples (rows), we will use PSI to first compare encrypted versions of the sites' datasets in order to jointly compute the intersection based on common IDs. In the following example, we add a `uid_{idx}` to each instance and give each site 
-a portion of the dataset that includes a common overlap. After PSI, the identifiers are dropped since they are only used for matching, and training is then done on the intersected data. To learn more about our PSI protocol implementation, see our [psi example](../psi/README.md).
+a portion of the dataset that includes a common overlap. After PSI, the identifiers are dropped since they are only used for matching, and training is then done on the intersected data. To learn more about our PSI protocol implementation, see our [psi example](../../psi/README.md).
 > **_NOTE:_** The uid can be a composition of multiple variables with a transformation, however in this example we use indices for simplicity. PSI can also be used for computing the intersection of overlapping features, but here we give each site unique features.
 
 ### Histogram-based Collaboration
