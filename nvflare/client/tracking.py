@@ -19,7 +19,7 @@ from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 # flake8: noqa
 from .api import default_context as default_context
-from .api import log, get_context
+from .api import get_context, log
 from .api_context import APIContext
 
 
