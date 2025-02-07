@@ -24,7 +24,7 @@ from nvflare.job_config.script_runner import ScriptRunner
 if __name__ == "__main__":
     num_clients = 2
     num_rounds = 2
-    job_names = ["fedavg", "secret-job"] 
+    job_names = ["fedavg", "secret-job"]
     train_script = "src/client.py"
     config_dir = "/tmp/nvflare/jobs/workdir"
 
@@ -46,8 +46,6 @@ if __name__ == "__main__":
             job.to(executor, f"site-{i+1}")
 
         job_config_dir = os.path.join(config_dir, job_name)
-        print(f"job-config for {job_name} is at ",job_config_dir)
+        print(f"job-config for {job_name} is at ", job_config_dir)
         job.export_job(config_dir)
-       # job.simulator_run(config_dir)
-
-    
+    # job.simulator_run(config_dir)

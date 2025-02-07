@@ -13,9 +13,9 @@
 # limitations under the License.
 
 
-
 import os
 import shutil
+
 from src.fedavg import FedAvg
 from src.network import SimpleNetwork
 
@@ -46,13 +46,9 @@ if __name__ == "__main__":
         for site_name in ["site_a", "site_b"]:
             executor = ScriptRunner(script=train_script)
             job.to(executor, site_name)
-        
+
         print("job-config is at ", os.path.join(job_config_dir, job_name))
         job.export_job(job_config_dir)
-        source_meta_file =  os.path.join(f"job{i + 1}", "meta.json")
-        dest_meta_file =  os.path.join(job_config_dir, job_name, "meta.json")
-        shutil.copy2(source_meta_file, dest_meta_file) 
-   
-    
-
-    
+        source_meta_file = os.path.join(f"job{i + 1}", "meta.json")
+        dest_meta_file = os.path.join(job_config_dir, job_name, "meta.json")
+        shutil.copy2(source_meta_file, dest_meta_file)

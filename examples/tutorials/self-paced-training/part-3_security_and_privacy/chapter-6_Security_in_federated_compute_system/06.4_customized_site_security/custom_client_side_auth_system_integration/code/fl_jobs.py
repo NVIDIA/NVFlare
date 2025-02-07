@@ -28,26 +28,23 @@ if __name__ == "__main__":
     train_script = "src/client.py"
     config_dir = "/tmp/nvflare/jobs/workdir"
 
-    
-    job = FedJob(name = job_name, min_clients = num_clients)
+    job = FedJob(name=job_name, min_clients=num_clients)
     controller = FedAvg(
-            stop_cond = "accuracy > 25",
-            save_filename = "global_model.pt",
-            initial_model = SimpleNetwork(),
-            num_clients = num_clients,
-            num_rounds = num_rounds,
+        stop_cond="accuracy > 25",
+        save_filename="global_model.pt",
+        initial_model=SimpleNetwork(),
+        num_clients=num_clients,
+        num_rounds=num_rounds,
     )
 
     job.to_server(controller)
 
-        # Add clients
+    # Add clients
     for i in range(num_clients):
         executor = ScriptRunner(script=train_script, script_args="")
         job.to(executor, f"site-{i+1}")
 
     job_config_dir = os.path.join(config_dir, job_name)
-    print(f"job-config for {job_name} is at ",job_config_dir)
+    print(f"job-config for {job_name} is at ", job_config_dir)
     job.export_job(config_dir)
     # job.simulator_run(config_dir)
-
-    
