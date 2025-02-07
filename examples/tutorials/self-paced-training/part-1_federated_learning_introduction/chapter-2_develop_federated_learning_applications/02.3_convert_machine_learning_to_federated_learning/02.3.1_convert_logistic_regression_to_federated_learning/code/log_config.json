@@ -1,0 +1,87 @@
+{
+    "version": 1,
+    "disable_existing_loggers": false,
+    "formatters": {
+        "baseFormatter": {
+            "()": "nvflare.fuel.utils.log_utils.BaseFormatter",
+            "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s"
+        },
+        "colorFormatter": {
+            "()": "nvflare.fuel.utils.log_utils.ColorFormatter",
+            "fmt": "%(asctime)s - %(levelname)s - %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S"
+        },
+        "jsonFormatter": {
+            "()": "nvflare.fuel.utils.log_utils.JsonFormatter",
+            "fmt": "%(asctime)s - %(identity)s - %(name)s - %(fullName)s - %(levelname)s - %(fl_ctx)s - %(message)s"
+        }
+    },
+    "filters": {
+        "FLFilter": {
+            "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
+            "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+        }
+    },
+    "handlers": {
+        "consoleHandler": {
+            "class": "logging.StreamHandler",
+            "level": "INFO",
+            "formatter": "colorFormatter",
+            "filters": ["FLFilter"],
+            "stream": "ext://sys.stdout"
+        },
+        "logFileHandler": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "level": "DEBUG",
+            "formatter": "baseFormatter",
+            "filename": "log.txt",
+            "mode": "a",
+            "maxBytes": 20971520,
+            "backupCount": 10
+        },
+        "errorFileHandler": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "level": "ERROR",
+            "formatter": "baseFormatter",
+            "filename": "log_error.txt",
+            "mode": "a",
+            "maxBytes": 20971520,
+            "backupCount": 10
+        },
+        "jsonFileHandler": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "level": "DEBUG",
+            "formatter": "jsonFormatter",
+            "filename": "log.json",
+            "mode": "a",
+            "maxBytes": 20971520,
+            "backupCount": 10
+        },
+        "FLFileHandler": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "level": "DEBUG",
+            "formatter": "baseFormatter",
+            "filters": ["FLFilter"],
+            "filename": "log_fl.txt",
+            "mode": "a",
+            "maxBytes": 20971520,
+            "backupCount": 10,
+            "delay": true
+        }
+    },
+    "loggers": {
+        "root": {
+            "level": "INFO",
+            "handlers": ["consoleHandler", "logFileHandler", "errorFileHandler", "jsonFileHandler", "FLFileHandler"]
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
