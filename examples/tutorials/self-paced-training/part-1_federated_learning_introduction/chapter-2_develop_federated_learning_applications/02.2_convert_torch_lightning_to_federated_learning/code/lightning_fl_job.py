@@ -38,7 +38,7 @@ if __name__ == "__main__":
         runner = ScriptRunner(
             script="src/cifar10_lightning_fl.py", script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
-        job.to(runner, f"site-{i+1}")
+        job.to(runner, f"site-{i + 1}")
 
     job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0", log_config="./log_config.json")
