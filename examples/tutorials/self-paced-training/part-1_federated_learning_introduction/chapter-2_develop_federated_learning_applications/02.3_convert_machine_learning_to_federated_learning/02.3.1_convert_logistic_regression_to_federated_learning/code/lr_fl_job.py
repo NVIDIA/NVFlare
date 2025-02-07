@@ -44,7 +44,7 @@ if __name__ == "__main__":
             launch_external_process=True,
             params_exchange_format=ExchangeFormat.RAW,
         )
-        job.to(runner, f"site-{i+1}")
+        job.to(runner, f"site-{i + 1}")
 
     job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0", log_config="./log_config.json")
