@@ -28,8 +28,8 @@ class BaseAppConfig(ABC):
     def __init__(self) -> None:
         super().__init__()
 
-        self.task_data_filters: [(List[str], Filter)] = []
-        self.task_result_filters: [(List[str], Filter)] = []
+        self.task_data_filters = []  # list of tuples: (task_set, list of filters)
+        self.task_result_filters = []  # list of tuples: (task_set, list of filters)
         self.components: Dict[str, object] = {}
         self.ext_scripts = []
         self.ext_dirs = []
@@ -66,14 +66,43 @@ class BaseAppConfig(ABC):
 
         self.ext_dirs.append(ext_dir)
 
-    def _add_task_filter(self, tasks, filter, filters):
+    @staticmethod
+    def _add_task_filter(tasks, filter, taskset_filters: list):
+        """Add a filter for a set of tasks.
+
+        Args:
+            tasks: the tasks that the filter will be added to.
+            filter: the filter to be added.
+            taskset_filters: this is a list of tuples. Each tuple contains a taskset and a list of filters
+                already added to the taskset.
+
+        Returns: None
+
+        We first check whether the "tasks" already matches an entry's taskset in taskset_filters.
+        If so, then add the filter to the entry.
+
+        Otherwise, we then check whether the "tasks" overlaps with any entry's taskset. If so, this is not allowed
+        and an exception will be raised.
+
+        If the "tasks" doesn't exist nor conflicts with any entry in taskset_filters, we add a new entry to
+        taskset_filters.
+        """
         if not isinstance(filter, Filter):
             raise RuntimeError(f"filter must be type of Filter, but got {filter.__class__}")
-        for task in tasks:
-            for fd in filters:
-                if task in fd.tasks:
-                    raise RuntimeError(f"Task {task} already defined in the task filters.")
-        filters.append((tasks, filter))
+
+        # check whether "tasks" already exist
+        tasks = set(tasks)
+        for task_set, filter_list in taskset_filters:
+            if tasks == task_set:
+                # found it
+                filter_list.append(filter)
+                return
+            elif tasks.intersection(task_set):
+                # the tasks intersect with this task_set - not allowed
+                raise RuntimeError(f"cannot add filters for '{tasks}' since it overlaps task set '{task_set}'")
+
+        # no conflicting task_set
+        taskset_filters.append((tasks, [filter]))
 
     def add_file_source(self, src_path: str, dest_dir=None):
         self.file_sources.append((src_path, dest_dir))
