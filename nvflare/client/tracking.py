@@ -19,14 +19,13 @@ from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 # flake8: noqa
 from .api import default_context as default_context
-from .api import log
+from .api import log, get_context
 from .api_context import APIContext
 
 
 class _BaseWriter:
     def __init__(self, ctx: Optional[APIContext] = None):
-        global default_context
-        self.ctx = ctx if ctx else default_context
+        self.ctx = get_context(ctx)
 
 
 class SummaryWriter(_BaseWriter):

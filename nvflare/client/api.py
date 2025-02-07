@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+from threading import Lock
 from typing import Any, Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
@@ -20,8 +21,30 @@ from nvflare.app_common.abstract.fl_model import FLModel
 
 from .api_context import APIContext
 
+global_context_lock = Lock()
 context_dict = {}
 default_context = None
+
+
+def get_context(ctx: Optional[APIContext] = None) -> APIContext:
+    """Gets an APIContext.
+
+    Args:
+        ctx (Optional[APIContext]): The context to use,
+            if None means use default context. Defaults to None.
+
+    Raises:
+        RuntimeError: if can't get a valid APIContext.
+
+    Returns:
+        An APIContext.
+    """
+    if ctx:
+        return ctx
+    elif default_context:
+        return default_context
+    else:
+        raise RuntimeError("APIContext is None")
 
 
 def init(rank: Optional[str] = None, config_file: Optional[str] = None) -> APIContext:
@@ -35,19 +58,20 @@ def init(rank: Optional[str] = None, config_file: Optional[str] = None) -> APICo
     Returns:
         APIContext
     """
-    global context_dict
-    global default_context
-    local_ctx = context_dict.get((rank, config_file))
+    with global_context_lock:
+        global context_dict
+        global default_context
+        local_ctx = context_dict.get((rank, config_file))
 
-    if local_ctx is None:
-        local_ctx = APIContext(rank=rank, config_file=config_file)
-        context_dict[(rank, config_file)] = local_ctx
-        default_context = local_ctx
-    else:
-        logging.warning(
-            "Warning: called init() more than once with same parameters." "The subsequence calls are ignored"
-        )
-    return local_ctx
+        if local_ctx is None:
+            local_ctx = APIContext(rank=rank, config_file=config_file)
+            context_dict[(rank, config_file)] = local_ctx
+            default_context = local_ctx
+        else:
+            logging.warning(
+                "Warning: called init() more than once with same parameters." "The subsequence calls are ignored"
+            )
+        return local_ctx
 
 
 def receive(timeout: Optional[float] = None, ctx: Optional[APIContext] = None) -> Optional[FLModel]:
@@ -56,8 +80,7 @@ def receive(timeout: Optional[float] = None, ctx: Optional[APIContext] = None) -
     Returns:
         An FLModel received.
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.receive(timeout)
 
 
@@ -70,8 +93,7 @@ def send(model: FLModel, clear_cache: bool = True, ctx: Optional[APIContext] = N
     """
     if not isinstance(model, FLModel):
         raise TypeError("model needs to be an instance of FLModel")
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.send(model, clear_cache)
 
 
@@ -88,8 +110,7 @@ def system_info(ctx: Optional[APIContext] = None) -> Dict:
        A dict of system information.
 
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.system_info()
 
 
@@ -99,8 +120,7 @@ def get_config(ctx: Optional[APIContext] = None) -> Dict:
     Returns:
         A dict of the configuration used in Client API.
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.get_config()
 
 
@@ -110,8 +130,7 @@ def get_job_id(ctx: Optional[APIContext] = None) -> str:
     Returns:
         The current job id.
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.get_job_id()
 
 
@@ -121,8 +140,7 @@ def get_site_name(ctx: Optional[APIContext] = None) -> str:
     Returns:
         The site name of this client.
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.get_site_name()
 
 
@@ -132,8 +150,7 @@ def get_task_name(ctx: Optional[APIContext] = None) -> str:
     Returns:
         The task name.
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.get_task_name()
 
 
@@ -143,8 +160,7 @@ def is_running(ctx: Optional[APIContext] = None) -> bool:
     Returns:
         True, if the system is up and running. False, otherwise.
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.is_running()
 
 
@@ -154,8 +170,7 @@ def is_train(ctx: Optional[APIContext] = None) -> bool:
     Returns:
         True, if the current task is a training task. False, otherwise.
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.is_train()
 
 
@@ -165,8 +180,7 @@ def is_evaluate(ctx: Optional[APIContext] = None) -> bool:
     Returns:
         True, if the current task is an evaluate task. False, otherwise.
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.is_evaluate()
 
 
@@ -176,8 +190,7 @@ def is_submit_model(ctx: Optional[APIContext] = None) -> bool:
     Returns:
         True, if the current task is a submit_model. False, otherwise.
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.is_submit_model()
 
 
@@ -195,20 +208,17 @@ def log(key: str, value: Any, data_type: AnalyticsDataType, ctx: Optional[APICon
     Returns:
         whether the key value pair is logged successfully
     """
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.log(key, value, data_type, **kwargs)
 
 
 def clear(ctx: Optional[APIContext] = None):
     """Clears the cache."""
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.clear()
 
 
 def shutdown(ctx: Optional[APIContext] = None):
     """Releases all threads and resources used by the API and stops operation."""
-    global default_context
-    local_ctx = ctx if ctx else default_context
+    local_ctx = get_context(ctx)
     return local_ctx.api.shutdown()

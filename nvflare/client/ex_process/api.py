@@ -78,6 +78,7 @@ class ExProcessClientAPI(APISpec):
         self.logger = get_obj_logger(self)
         self.receive_called = False
         self.config_file = config_file
+        self.flare_agent = None
 
     def get_model_registry(self) -> ModelRegistry:
         """Gets the ModelRegistry."""
@@ -133,6 +134,7 @@ class ExProcessClientAPI(APISpec):
                 flare_agent.start()
 
             self.model_registry = ModelRegistry(client_config, rank, flare_agent)
+            self.flare_agent = flare_agent
         except Exception as e:
             self.logger.error(f"flare.init failed: {e}")
             raise e
@@ -216,5 +218,5 @@ class ExProcessClientAPI(APISpec):
         self.receive_called = False
 
     def shutdown(self):
-        model_registry = self.get_model_registry()
-        model_registry.shutdown()
+        if self.flare_agent:
+            self.flare_agent.stop()

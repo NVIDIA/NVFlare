@@ -22,6 +22,7 @@ from nvflare.fuel.data_event.data_bus import DataBus
 
 from .api_spec import CLIENT_API_KEY, CLIENT_API_TYPE_KEY, APISpec
 from .ex_process.api import ExProcessClientAPI
+from .in_process.api import InProcessClientAPI
 
 DEFAULT_CONFIG = f"config/{CLIENT_API_CONFIG}"
 data_bus = DataBus()
@@ -54,6 +55,9 @@ class APIContext:
     def _create_client_api(self, api_type: ClientAPIType) -> APISpec:
         """Creates a new client_api based on the provided API type."""
         if api_type == ClientAPIType.IN_PROCESS_API:
-            return data_bus.get_data(CLIENT_API_KEY)
+            api = data_bus.get_data(CLIENT_API_KEY)
+            if not isinstance(api, InProcessClientAPI):
+                raise RuntimeError(f"api {api} is not a valid InProcessClientAPI")
+            return api
         else:
             return ExProcessClientAPI(config_file=self.config_file)
