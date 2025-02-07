@@ -1,5 +1,5 @@
 {
-  "name": "Test Job 2",
+  "name": "job_2",
   "resource_spec": {},
   "min_clients" : 1,
   "deploy_map": {
