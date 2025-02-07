@@ -1088,7 +1088,7 @@ fed_relay: |
     "project_name": "{~~project_name~~}",
     "identity": "{~~identity~~}",
     "server_identity": "{~~server_identity~~}",
-    "parent": {
+    "connect_to": {
       "scheme": "{~~scheme~~}",
       "identity": "{~~parent_identity~~}",
       "address": "{~~address~~}",
