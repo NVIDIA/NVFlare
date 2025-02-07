@@ -3,7 +3,7 @@ name: fed_policy
 description: NVFlare example for federated policies
 
 participants:
-  - name: server1
+  - name: rtx
     type: server
     org: org_a
     fed_learn_port: 8002
