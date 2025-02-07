@@ -53,8 +53,9 @@ class PropKey:
     RUN_IN_DOCKER = "run_in_docker"
 
     # the following are internal properties added by builders during provision
-    PARENT = "__parent__"
+    PARENT = "parent"
     FQCN = "__fqcn__"
+    FQSN = "__fqsn__"
     COMM_CONFIG_ARGS = "__comm_config_args__"
 
 
@@ -69,6 +70,7 @@ class CtxKey(WorkDir, PropKey):
     ROOT_CERT = "root_cert"
     ROOT_PRI_KEY = "root_pri_key"
     RELAY_MAP = "relay_map"
+    CLIENT_MAP = "client_map"
 
 
 class ProvisionMode:

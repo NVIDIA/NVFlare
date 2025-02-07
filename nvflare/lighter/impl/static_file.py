@@ -223,7 +223,7 @@ class StaticFileBuilder(Builder):
         comm_config_args.update(replacement_dict)
         return lh
 
-    def _build_client(self, client: Participant, ctx):
+    def _build_client(self, client: Participant, ctx: ProvisionContext):
         project = ctx.get_project()
         server = project.get_server()
         if not server:
@@ -240,6 +240,11 @@ class StaticFileBuilder(Builder):
 
         # set connection properties
         client_conf = config["client"]
+
+        fqsn = client.get_prop(PropKey.FQSN)
+        if fqsn and fqsn != client.name:
+            client_conf["fqsn"] = fqsn
+
         self._build_conn_properties(client, ctx, client_conf)
 
         utils.write(os.path.join(dest_dir, ProvFileName.FED_CLIENT_JSON), json.dumps(config, indent=2), "t")
@@ -364,19 +369,24 @@ class StaticFileBuilder(Builder):
         dest_dir = ctx.get_ws_dir(client)
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
 
-    def _modify_error_sender(self, section: dict, client: Participant):
-        if not isinstance(section, dict):
-            return section
+    def _modify_error_sender(self, section: str, client: Participant) -> str:
         allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, False)
+        if allow:
+            return section
+
         if not allow:
-            components = section.get("components")
+            section_dict = json.loads(section)
+            components = section_dict.get("components")
+            if not components:
+                return section
+
             assert isinstance(components, list)
             for c in components:
                 if c["id"] == "error_log_sender":
                     components.remove(c)
                     break
 
-        return section
+            return json.dumps(section_dict, indent=2)
 
     @staticmethod
     def _check_host_name(host_name: str, server: Participant) -> str:
@@ -622,7 +632,8 @@ class StaticFileBuilder(Builder):
         for admin in project.get_admins():
             self._build_admin(admin, ctx)
 
-    def initialize(self, project: Project, ctx: ProvisionContext):
+    @staticmethod
+    def _determine_relay_hierarchy(project: Project, ctx: ProvisionContext):
         # name => relay
         name_to_relay = {}
 
@@ -635,7 +646,7 @@ class StaticFileBuilder(Builder):
             assert isinstance(r, Participant)
             name_to_relay[r.name] = r
 
-        # determine parents
+        # determine relay parents
         for r in relays:
             assert isinstance(r, Participant)
             ct = r.get_connect_to()
@@ -659,6 +670,48 @@ class StaticFileBuilder(Builder):
 
         if name_to_relay:
             ctx[CtxKey.RELAY_MAP] = name_to_relay
+
+    @staticmethod
+    def _determine_client_hierarchy(project: Project, ctx: ProvisionContext):
+        # name => relay
+        client_map = {}
+
+        clients = project.get_clients()
+        if not clients:
+            # nothing to prepare
+            return
+
+        for c in clients:
+            assert isinstance(c, Participant)
+            client_map[c.name] = c
+
+        # determine client parents
+        for c in clients:
+            assert isinstance(c, Participant)
+            parent_name = c.get_prop(PropKey.PARENT)
+            parent_client = None
+            if parent_name:
+                parent_client = client_map.get(parent_name)
+                if not parent_client:
+                    raise ValueError(f"undefined parent client '{parent_name}' in client {c.name}")
+            c.add_prop(PropKey.PARENT, parent_client)
+
+        # determine FQSNs (fully qualified site name)
+        for c in clients:
+            fqsn_path = []
+            err = check_parent(c, fqsn_path)
+            if err:
+                raise ValueError(f"bad client definitions: {err}")
+            fqsn = ".".join(fqsn_path)
+            c.add_prop(PropKey.FQSN, fqsn)
+            ctx.debug(f"Client {c.name} FQSN: {fqsn}")
+
+        if client_map:
+            ctx[CtxKey.CLIENT_MAP] = client_map
+
+    def initialize(self, project: Project, ctx: ProvisionContext):
+        self._determine_relay_hierarchy(project, ctx)
+        self._determine_client_hierarchy(project, ctx)
 
         # prepare clients comm config
         for p in project.get_all_participants():
@@ -692,15 +745,15 @@ class StaticFileBuilder(Builder):
                     content_modify_cb=self._remove_undefined_port,
                 )
 
-    def _remove_undefined_port(self, section: str):
-        d = json.loads(section)
-        resources = d.get("internal", {}).get("resources")
+    def _remove_undefined_port(self, section: str) -> str:
+        section_dict = json.loads(section)
+        resources = section_dict.get("internal", {}).get("resources")
         if resources:
             port = resources.get(PropKey.PORT)
             if port is None or port == 0:
                 # remove port 0
                 resources.pop(PropKey.PORT, None)
-            return json.dumps(d, indent=2)
+            return json.dumps(section_dict, indent=2)
         else:
             # no change
             return section
