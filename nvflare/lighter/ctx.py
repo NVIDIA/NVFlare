@@ -44,7 +44,7 @@ class ProvisionContext(dict):
         self[CtxKey.FED_LEARN_PORT] = fed_learn_port
         self[CtxKey.SERVER_NAME] = server.name
 
-    def get_project(self):
+    def get_project(self) -> Project:
         return self.get(CtxKey.PROJECT)
 
     def set_template(self, template: dict):

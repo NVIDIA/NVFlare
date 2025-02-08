@@ -304,7 +304,7 @@ class StaticFileBuilder(Builder):
 
         # build relay__resources if relay is used by this client
         ct = client.get_connect_to()
-        if ct and ct.name:
+        if ct and ct.name and ct.name != server.name:
             # relay is used!
             relay_map = ctx.get(CtxKey.RELAY_MAP)
             if not relay_map:
@@ -327,6 +327,16 @@ class StaticFileBuilder(Builder):
             if not host:
                 # use the relay's default host
                 host = lh.default_host
+            else:
+                # validate against the relay's host names
+                err = self._validate_host_name_against_listener(
+                    host_name=host,
+                    listener_name=relay.name,
+                    listener_default_host=lh.default_host,
+                    listener_available_host_names=lh.host_names,
+                )
+                if err:
+                    ctx.warning(f"the connect_to.host '{host}' in client {client.name} may be invalid: {err}")
 
             scheme = lh.scheme
             if not scheme:
@@ -389,17 +399,42 @@ class StaticFileBuilder(Builder):
             return json.dumps(section_dict, indent=2)
 
     @staticmethod
-    def _check_host_name(host_name: str, server: Participant) -> str:
-        if host_name == server.get_default_host():
+    def _check_host_name_against_server(host_name: str, server: Participant) -> str:
+        return StaticFileBuilder._validate_host_name_against_listener(
+            host_name,
+            listener_name=server.name,
+            listener_default_host=server.get_default_host(),
+            listener_available_host_names=server.get_prop(PropKey.HOST_NAMES)
+        )
+
+    @staticmethod
+    def _validate_host_name_against_listener(
+        host_name: str,
+        listener_name: str,
+        listener_default_host: str,
+        listener_available_host_names: list
+    ) -> str:
+        """Validate specified host_name against default host and available host names of the listener.
+        This is to make sure that host_name used by a connector is valid.
+
+        Args:
+            host_name: the host name to be validated
+            listener_name: name of the listener
+            listener_default_host: the default host of the listener
+            listener_available_host_names: other available host names of the listener
+
+        Returns: error message if any
+
+        """
+        if host_name == listener_default_host:
             # Use the default host - OK
             return ""
 
-        available_host_names = server.get_prop(PropKey.HOST_NAMES)
-        if available_host_names and host_name in available_host_names:
+        if listener_available_host_names and host_name in listener_available_host_names:
             # use alternative host name - OK
             return ""
 
-        return f"unknown host name '{host_name}'"
+        return f"host name '{host_name}' is not defined in '{listener_name}'"
 
     def _prepare_overseer_agent(self, participant, config, role, ctx: ProvisionContext):
         project = ctx.get_project()
@@ -440,14 +475,18 @@ class StaticFileBuilder(Builder):
                 else:
                     ct = participant.get_connect_to()
                     if ct:
-                        if not ct.name:
-                            err = self._check_host_name(ct.host, server)
+                        if not ct.name or ct.name == server.name:
+                            # connect to server directly - no relay
+                            err = self._check_host_name_against_server(ct.host, server)
                             if err:
-                                ctx.warning(f"connect_to in {participant.subject} may be invalid: {err}")
+                                ctx.warning(
+                                    f"connect_to.host '{ct.host}' in {participant.subject} may be invalid: {err}"
+                                )
                             conn_host = ct.host
                         else:
                             # uses relay
-                            # since relay config is done in relay__resources.json, we use default server here
+                            # since relay config is done in relay__resources.json, host name doesn't matter here.
+                            # we use default server here
                             conn_host = server.get_default_host()
 
                         if ct.port:
@@ -543,6 +582,7 @@ class StaticFileBuilder(Builder):
 
         ct = relay.get_connect_to()
         lh = None
+        parent_relay = None
         if ct:
             if ct.name:
                 parent_identity = ct.name
@@ -559,6 +599,17 @@ class StaticFileBuilder(Builder):
                     parent_scheme = lh.scheme
                     parent_fqcn = parent_relay.get_prop(PropKey.FQCN)
 
+                    # check whether the specified ct.host is valid
+                    if ct.host:
+                        err = self._validate_host_name_against_listener(
+                            host_name=ct.host,
+                            listener_name=parent_relay.name,
+                            listener_default_host=lh.default_host,
+                            listener_available_host_names=lh.host_names,
+                        )
+                        if err:
+                            ctx.warning(f"the connect_to.host '{ct.host}' in relay {relay.name} may be invalid: {err}")
+
             if ct.host:
                 parent_host = ct.host
             elif lh:
@@ -573,6 +624,12 @@ class StaticFileBuilder(Builder):
                 parent_conn_sec = ct.conn_sec
             elif lh:
                 parent_conn_sec = lh.conn_sec
+
+            if not parent_relay and ct.host:
+                # directly connect to server
+                err = self._check_host_name_against_server(ct.host, server)
+                if err:
+                    ctx.warning(f"the connect_to.host '{ct.host}' in relay {relay.name} may be invalid: {err}")
 
         parent_addr = f"{parent_host}:{parent_port}"
         replacement_dict = {
@@ -650,7 +707,6 @@ class StaticFileBuilder(Builder):
         for r in relays:
             assert isinstance(r, Participant)
             ct = r.get_connect_to()
-            ctx.debug(f"determine parent for relay {r.name} {ct}")
 
             parent = None
             if ct:
@@ -704,7 +760,6 @@ class StaticFileBuilder(Builder):
                 raise ValueError(f"bad client definitions: {err}")
             fqsn = ".".join(fqsn_path)
             c.add_prop(PropKey.FQSN, fqsn)
-            ctx.debug(f"Client {c.name} FQSN: {fqsn}")
 
         if client_map:
             ctx[CtxKey.CLIENT_MAP] = client_map
@@ -744,6 +799,26 @@ class StaticFileBuilder(Builder):
                     replacement=replacement_dict,
                     content_modify_cb=self._remove_undefined_port,
                 )
+
+        # create start_all.sh
+        content = "#!/usr/bin/env bash\n"
+
+        server = ctx.get_project().get_server()
+        content += f"./{server.name}/startup/start.sh\n"
+
+        # include all relays
+        relays = project.get_relays()
+        if relays:
+            # sort relays based on their FQCNs
+            relays.sort(key=lambda x: len(x.get_prop(PropKey.FQCN)))
+            for r in relays:
+                content += f"./{r.name}/startup/start.sh\n"
+
+        # include all clients
+        for c in project.get_clients():
+            content += f"./{c.name}/startup/start.sh\n"
+
+        utils.write(os.path.join(ctx.get_wip_dir(), "start_all.sh"), content, "t", exe=True)
 
     def _remove_undefined_port(self, section: str) -> str:
         section_dict = json.loads(section)
