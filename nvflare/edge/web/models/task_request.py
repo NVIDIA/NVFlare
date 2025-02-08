@@ -1,9 +1,11 @@
-from nvflare.edge.web.models.base_model import DictModel
+from nvflare.edge.web.models.base_model import BaseModel
 
 
-class TaskRequest(DictModel):
-    def __init__(self, session_id: str, study_id: str, device_state: dict = None):
+class TaskRequest(BaseModel):
+    def __init__(self, session_id: str, job_id: str, **kwargs):
+        super().__init__()
         self.session_id = session_id
-        self.study_id = study_id
-        self.device_state = device_state
+        self.job_id = job_id
 
+        if kwargs:
+            self.update(kwargs)

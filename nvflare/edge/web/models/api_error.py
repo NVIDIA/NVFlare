@@ -11,7 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.edge.web.web_server import run_server
+from typing import Optional
 
-if __name__ == "__main__":
-    run_server(4321)
+
+class ApiError(Exception):
+    def __init__(self, status_code: int, status: str, message=None, details: Optional[dict] = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.status = status
+        self.details = details
+
+    def to_dict(self):
+        return {
+            "status": self.status,
+            "message": str(self),
+            "details": self.details,
+        }

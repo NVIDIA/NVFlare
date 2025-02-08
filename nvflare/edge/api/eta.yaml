@@ -1,28 +1,42 @@
 openapi: 3.0.0
 info:
   title: NVFlare Edge Training API (ETA)
-  version: 0.1.0
+  version: 1.0.1
 
 servers:
   - url: http://flare.nvidia.com/edge/v1
     description: Edge device training API for NVFlare
 
 paths:
-  /study:
+  /job:
     post:
-      summary: Get the study
+      summary: Request to participate in a job
+      parameters:
+        - $ref: "#/components/parameters/X-Flare-Device-ID"
+        - $ref: "#/components/parameters/X-Flare-Device-Info"
+        - $ref: "#/components/parameters/X-Flare-User-Info"
+
       requestBody:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StudyRequest"
+              $ref: "#/components/schemas/JobRequest"
+
       responses:
         "200":
-          description: Response for study request
+          description: Response for job request
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StudyResponse"
+                $ref: "#/components/schemas/JobResponse"
+
+        "400":
+          description: Request error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
         "403":
           description: Authentication/permission error
           content:
@@ -30,14 +44,33 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /task:
-    post:
+    get:
       summary: Get a task
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TaskRequest"
+      parameters:
+        - $ref: "#/components/parameters/X-Flare-Device-ID"
+        - $ref: "#/components/parameters/X-Flare-Device-Info"
+        - $ref: "#/components/parameters/X-Flare-User-Info"
+        - name: session_id
+          in: query
+          description: The training session ID
+          required: true
+          schema:
+            type: string
+        - name: job_id
+          in: query
+          description: The job ID associated with the session
+          required: false
+          schema:
+            type: string
+
       responses:
         "200":
           description: Response for task request
@@ -45,8 +78,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskResponse"
+        "400":
+          description: Request error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
         "403":
           description: Authentication/permission error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+        "500":
+          description: Server error
           content:
             application/json:
               schema:
@@ -55,11 +102,35 @@ paths:
   /result:
     post:
       summary: Report result for the task
+      parameters:
+        - $ref: "#/components/parameters/X-Flare-Device-ID"
+        - $ref: "#/components/parameters/X-Flare-Device-Info"
+        - $ref: "#/components/parameters/X-Flare-User-Info"
+        - name: session_id
+          in: query
+          description: The training session ID
+          required: true
+          schema:
+            type: string
+        - name: task_id
+          in: query
+          description: The task ID
+          required: true
+          schema:
+            type: string
+        - name: task_name
+          in: query
+          description: The task name
+          required: false
+          schema:
+            type: string
+
       requestBody:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/TaskResult"
+              $ref: "#/components/schemas/ResultReport"
+
       responses:
         "200":
           description: Response for task result reporting
@@ -67,6 +138,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResultResponse"
+
+        "400":
+          description: Request error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
         "403":
           description: Authentication/permission error
           content:
@@ -74,88 +153,100 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
+
+  headers:
+
+    X-Flare-Device-ID:
+      description: The device ID
+      schema:
+        type: string
+
+  parameters:
+
+    X-Flare-Device-ID:
+      name: X-Flare-Device-ID
+      in: header
+      description: The device ID
+      required: true
+      schema:
+        type: string
+
+    X-Flare-Device-Info:
+      name: X-Flare-Device-Info
+      in: header
+      description: Extra device info encoded as query string
+      required: false
+      schema:
+        type: string
+
+    X-Flare-User-Info:
+      name: X-Flare-User-Info
+      in: header
+      description: User and auth info encoded as query string
+      required: false
+      schema:
+        type: string
+
+
   schemas:
 
-    StudyRequest:
+    JobRequest:
       description: A request to join studies
       type: object
       properties:
-        user_info:
-          $ref: "#/components/schemas/UserInfo"
-        device_info:
-          $ref: "#/components/schemas/DeviceInfo"
         capabilities:
           type: object
-        device_state:
-          type: object
 
-    StudyResponse:
-      description: Response to study request
+    JobResponse:
+      description: Response to job request
       type: object
       properties:
         status:
           type: string
-          enum: [ok, retry, done]
+          enum: [OK, RETRY, DONE]
         session_id:
-          type: string
-        study_id:
           type: string
         job_id:
           type: string
+        job_name:
+          type: string
+        method:
+          type: string
+        job_data:
+          type: object
         retry_wait:
           type: integer
           format: int64
-        device_state:
-          type: object
-
-    TaskRequest:
-      description: Request a task to execute
-      type: object
-      properties:
-        session_id:
-          type: string
-        study_id:
-          type: string
-        device_state:
-          type: object
 
     TaskResponse:
-      description: Response to study request
+      description: Response to task request
       type: object
       properties:
         status:
           type: string
-          enum: [ok, retry, done]
+          enum: [OK, DONE, RETRY]
         session_id:
           type: string
-        study_id:
-          type: string
-        job_id:
-          type: string
-        retry_wait:
-          type: integer
-          format: int64
         task_name:
+          type: string
+        task_id:
           type: string
         task_data:
           type: object
-        device_state:
-          type: object
 
-    TaskResult:
+    ResultReport:
       description: Report result back for the task
       type: object
       properties:
-        session_id:
-          type: string
-        task_name:
-          type: string
-        result_type:
-          type: string
-        result_data:
-          type: object
-        device_state:
+        result:
           type: object
 
     ResultResponse:
@@ -164,7 +255,11 @@ components:
       properties:
         status:
           type: string
-          enum: [ok, done, retry, invalid]
+          enum: [OK, DONE, INVALID]
+        task_id:
+          type: string
+        task_name:
+          type: string
         message:
           type: string
         session_id:
@@ -172,14 +267,6 @@ components:
         retry_wait:
           type: integer
           format: int64
-        task_name:
-          type: string
-        aggregated_result_type:
-          type: string
-        aggregated_result_data:
-          type: object
-        device_state:
-          type: object
 
     ErrorResponse:
       description: Error response to a request
@@ -193,12 +280,14 @@ components:
           type: object
 
     UserInfo:
-      description: User information
+      description: User and auth information in the header, encoded as query-string
       type: object
       properties:
         user_id:
           type: string
         user_name:
+          type: string
+        access_token:
           type: string
         auth_token:
           type: string
@@ -206,7 +295,7 @@ components:
           type: string
 
     DeviceInfo:
-      description: Edge device information
+      description: Edge device information in the header, encoded as query-string
       type: object
       properties:
         device_id:
@@ -216,4 +305,6 @@ components:
         app_version:
           type: string
         platform:
+          type: string
+        platform_version:
           type: string
