@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,35 +15,34 @@ import asyncio
 import logging
 from typing import Any, Dict, List
 
-import websockets
-from websockets.exceptions import ConnectionClosedOK
+import aiohttp
+from aiohttp import web
 
 from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
-from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection
 from nvflare.fuel.f3.drivers import net_utils
 from nvflare.fuel.f3.drivers.aio_context import AioContext
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
-from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE, get_tcp_urls
-from nvflare.fuel.f3.sfm.conn_manager import Mode
+from nvflare.fuel.f3.drivers.net_utils import get_tcp_urls
 from nvflare.fuel.hci.security import get_certificate_common_name
 from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
 
-THREAD_POOL_SIZE = 8
+WS_PATH = "f3"
 
 
 class WsConnection(Connection):
-    def __init__(self, websocket: Any, aio_context: AioContext, connector: ConnectorInfo, secure: bool):
+    def __init__(self, websocket: Any, aio_context: AioContext, connector: ConnectorInfo, ssl_context):
         super().__init__(connector)
         self.websocket = websocket
         self.aio_context = aio_context
         self.closing = False
-        self.secure = secure
-        self.conn_props = self._get_socket_properties()
+        self.ssl_context = ssl_context
+
+        self.conn_props = self._get_ws_properties()
 
     def get_conn_properties(self) -> dict:
         return self.conn_props
@@ -55,22 +54,22 @@ class WsConnection(Connection):
     def send_frame(self, frame: BytesAlike):
         self.aio_context.run_coro(self._async_send_frame(frame))
 
-    def _get_socket_properties(self) -> dict:
+    def _get_ws_properties(self) -> dict:
+
         conn_props = {}
+        local_sock = self.websocket.get_extra_info("sockname")
+        if local_sock:
+            conn_props[DriverParams.LOCAL_ADDR.value] = f"{local_sock[0]}:{local_sock[1]}"
 
-        addr = self.websocket.remote_address
-        if addr:
-            conn_props[DriverParams.PEER_ADDR.value] = f"{addr[0]}:{addr[1]}"
+        peer_sock = self.websocket.get_extra_info("peername")
+        if peer_sock:
+            conn_props[DriverParams.PEER_ADDR.value] = f"{peer_sock[0]}:{peer_sock[1]}"
 
-        addr = self.websocket.local_address
-        if addr:
-            conn_props[DriverParams.LOCAL_ADDR.value] = f"{addr[0]}:{addr[1]}"
-
-        peer_cert = self.websocket.transport.get_extra_info("peercert")
+        peer_cert = self.websocket.get_extra_info("peercert")
         if peer_cert:
             cn = get_certificate_common_name(peer_cert)
         else:
-            if self.secure:
+            if self.ssl_context:
                 cn = "N/A"
             else:
                 cn = None
@@ -82,9 +81,7 @@ class WsConnection(Connection):
 
     async def _async_send_frame(self, frame: BytesAlike):
         try:
-            await self.websocket.send(frame)
-            # This is to yield control. See bug: https://github.com/aaugustin/websockets/issues/865
-            await asyncio.sleep(0)
+            await self.websocket.send_bytes(frame)
         except Exception as ex:
             log.error(f"Error sending frame for connection {self}, closing: {secure_format_exception(ex)}")
             self.close()
@@ -96,8 +93,11 @@ class AioHttpDriver(BaseDriver):
     def __init__(self):
         super().__init__()
         self.aio_context = AioContext.get_global_context()
-        self.stop_event = None
+        self.loop = self.aio_context.get_event_loop()
         self.ssl_context = None
+        self.app = None
+        self.site = None
+        self.runner = None
 
     @staticmethod
     def supported_transports() -> List[str]:
@@ -108,16 +108,43 @@ class AioHttpDriver(BaseDriver):
         return {DriverCap.SEND_HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: True}
 
     def listen(self, connector: ConnectorInfo):
-        self._event_loop(Mode.PASSIVE, connector)
+        self.connector = connector
+        self.ssl_context = net_utils.get_ssl_context(self.connector.params, True)
+
+        params = connector.params
+        host = params.get(DriverParams.HOST.value)
+        port = params.get(DriverParams.PORT.value)
+
+        self.app = web.Application()
+        self.app.router.add_get(f"/{WS_PATH}", self._websocket_handler)
+
+        async def setup():
+            self.runner = web.AppRunner(self.app)
+            await self.runner.setup()
+            self.site = web.TCPSite(self.runner, host, port, ssl_context=self.ssl_context)
+            await self.site.start()
+
+        self.aio_context.run_coro(setup()).result()
 
     def connect(self, connector: ConnectorInfo):
-        self._event_loop(Mode.ACTIVE, connector)
+        self.connector = connector
+        self.ssl_context = net_utils.get_ssl_context(self.connector.params, False)
+
+        async def async_connect():
+            params = connector.params
+            host = params.get(DriverParams.HOST.value)
+            port = params.get(DriverParams.PORT.value)
+            scheme = "wss" if self.ssl_context else "ws"
+            url = f"{scheme}://{host}:{port}/{WS_PATH}"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.ws_connect(url, ssl_context=self.ssl_context) as ws:
+                    await self._handler(ws)
+
+        self.aio_context.run_coro(async_connect()).result()
 
     def shutdown(self):
-        self.close_all()
-
-        if self.stop_event:
-            self.stop_event.set_result(None)
+        self.aio_context.run_coro(self._async_shutdown())
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
@@ -129,48 +156,6 @@ class AioHttpDriver(BaseDriver):
 
     # Internal methods
 
-    def _event_loop(self, mode: Mode, connector: ConnectorInfo):
-        self.connector = connector
-        if mode != connector.mode:
-            raise CommError(CommError.ERROR, f"Connector mode doesn't match driver mode for {self.connector}")
-
-        self.aio_context.run_coro(self._async_event_loop(mode)).result()
-
-    async def _async_event_loop(self, mode: Mode):
-
-        self.stop_event = self.aio_context.get_event_loop().create_future()
-
-        params = self.connector.params
-        host = params.get(DriverParams.HOST.value)
-        port = params.get(DriverParams.PORT.value)
-
-        if mode == Mode.ACTIVE:
-            coroutine = self._async_connect(host, port)
-        else:
-            coroutine = self._async_listen(host, port)
-
-        await coroutine
-
-    async def _async_connect(self, host, port):
-
-        self.ssl_context = net_utils.get_ssl_context(self.connector.params, False)
-        if self.ssl_context:
-            scheme = "wss"
-        else:
-            scheme = "ws"
-        async with websockets.connect(
-            f"{scheme}://{host}:{port}", ssl=self.ssl_context, ping_interval=None, max_size=MAX_FRAME_SIZE
-        ) as ws:
-            await self._handler(ws)
-
-    async def _async_listen(self, host, port):
-        self.ssl_context = net_utils.get_ssl_context(self.connector.params, True)
-
-        async with websockets.serve(
-            self._handler, host, port, ssl=self.ssl_context, ping_interval=None, max_size=MAX_FRAME_SIZE
-        ):
-            await self.stop_event
-
     async def _handler(self, websocket):
         conn = None
         try:
@@ -178,19 +163,57 @@ class AioHttpDriver(BaseDriver):
             self.add_connection(conn)
             await self._read_loop(conn)
             self.close_connection(conn)
-        except ConnectionClosedOK as ex:
+        except Exception as ex:
             conn_info = str(conn) if conn else "N/A"
-            log.debug(f"Connection {conn_info} is closed by peer: {secure_format_exception(ex)}")
+            log.error(f"Connection {conn_info} is closed due to error: {secure_format_exception(ex)}")
+
+    async def _websocket_handler(self, request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        await self._handler(ws)
 
     @staticmethod
     async def _read_loop(conn: WsConnection):
-        while not conn.closing:
-            # Reading from websocket and call receiver CB
-            try:
-                frame = await conn.websocket.recv()
-                conn.process_frame(frame)
-            except ConnectionClosedOK as ex:
-                raise ex
-            except Exception as ex:
-                log.error(f"Exception {type(ex)} on connection {conn}: {ex}")
-                raise ex
+
+        async for msg in conn.websocket:
+            if msg.type == aiohttp.WSMsgType.BINARY:
+                conn.process_frame(msg.data)
+            elif msg.type == aiohttp.WSMsgType.CLOSE:
+                log.info(f"{conn} is closed by peer")
+                break
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                log.error(f"{conn} is closed due to error: {conn.websocket.exception()}")
+                break
+            else:
+                log.info(f"Unknown message type {msg.type} received, ignored")
+
+            if conn.closing:
+                log.info(f"Connection {conn} is closed by calling close()")
+                break
+
+    async def _async_shutdown(self):
+        self.close_all()
+
+        if self.site:
+            await self.site.stop()
+
+        if self.runner:
+            await self.runner.cleanup()
+
+        if self.app:
+            await self.app.shutdown()
+            await self.app.cleanup()
+            self.app = None
+
+    @staticmethod
+    def _websocket_url(params: dict, secure: bool) -> str:
+
+        host = params.get(DriverParams.HOST.value)
+        port = params.get(DriverParams.PORT.value)
+
+        if secure:
+            scheme = "wss"
+        else:
+            scheme = "ws"
+
+        return f"{scheme}://{host}:{port}/{WS_PATH}"
