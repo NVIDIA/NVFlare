@@ -203,9 +203,6 @@ def main():
     )
     job.to_server(persistor, id="persistor")
 
-    # Define the executor and send to all clients
-    runner = SKLearnExecutor(learner_id="kmeans_learner")
-    job.to_clients(runner, tasks=["train"])
 
     # Get the data split numbers and send to each client
     # generate data split
@@ -215,7 +212,12 @@ def main():
         valid_frac,
         SplitMethod(split_mode),
     )
+
     for i in range(1, num_clients + 1):
+        # Define the executor and send to clients
+        runner = SKLearnExecutor(learner_id="kmeans_learner")
+        job.to(runner, f"site-{i}", tasks=["train"])
+
         learner = KMeansLearner(
             data_path=data_path,
             train_start=site_indices[i]["start"],
@@ -231,8 +233,8 @@ def main():
     job.export_job(job_dir)
 
     # Run the job
-    # print("workspace_dir=", workspace_dir)
-    # job.simulator_run(workspace_dir, n_clients=num_clients)
+    print("workspace_dir=", workspace_dir)
+    job.simulator_run(workspace_dir)
 
 
 if __name__ == "__main__":

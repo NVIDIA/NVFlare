@@ -81,43 +81,43 @@ python kmeans_job.py --num_clients 3 --split_mode uniform
 Below is a sample config for site-1, saved to `/tmp/nvflare/workspace/jobs/kmeans/sklearn_kmeans_uniform_3_clients/app_site-1/config/config_fed_client.json`:
 ```json
 {
-    "format_version": 2,
-    "executors": [
-        {
-            "tasks": [
-                "train"
-            ],
-            "executor": {
-                "id": "Executor",
-                "path": "app_opt.sklearn.sklearn_executor.SKLearnExecutor",
-                "args": {
-                    "learner_id": "kmeans_learner"
-                }
-            }
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_opt.sklearn.sklearn_executor.SKLearnExecutor",
+        "args": {
+          "learner_id": "kmeans_learner"
         }
-    ],
-    "task_result_filters": [],
-    "task_data_filters": [],
-    "components": [
-        {
-            "id": "kmeans_learner",
-            "path": "kmeans_learner.KMeansLearner",
-            "args": {
-                "data_path": "/tmp/nvflare/dataset/sklearn_iris.csv",
-                "train_start": 0,
-                "train_end": 50,
-                "valid_start": 0,
-                "valid_end": 150,
-                "random_state": 0
-            }
-        }
-    ]
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "kmeans_learner",
+      "path": "kmeans_learner.KMeansLearner",
+      "args": {
+        "data_path": "/tmp/nvflare/dataset/sklearn_iris.csv",
+        "train_start": 0,
+        "train_end": 50,
+        "valid_start": 0,
+        "valid_end": 150,
+        "random_state": 0
+      }
+    }
+  ]
 }
 ```
 
-Running with the deterministic setting `random_state=0`, the resulting curve for `homogeneity_score` is
+The resulting curve for `homogeneity_score` is
 ![minibatch curve](./figs/minibatch.png)
 It can be visualized using
 ```commandline
-tensorboard --logdir ./workspaces
+tensorboard --logdir /tmp/nvflare/workspace/works/kmeans/sklearn_kmeans_uniform_3_clients
 ```
