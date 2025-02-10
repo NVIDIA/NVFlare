@@ -175,20 +175,24 @@ class ProcessManager:
         Returns: the exit code of the process. If killed, returns -9.
 
         """
+        self.logger.info(f"stopping process: {self.cmd_desc.cmd}")
         rc = self.poll()
         if rc is None:
             # process is still alive
             try:
+                self.logger.info(f"still running - killing process: {self.cmd_desc.cmd}")
                 self.process.kill()
                 rc = -9
             except:
                 # ignore kill error
                 pass
+        else:
+            self.logger.info(f"already done: {rc=}")
 
         # close the log file if any
         with self.file_lock:
             if self.log_file:
-                self.logger.debug("closed subprocess log file!")
+                self.logger.info("closed subprocess log file!")
                 self.log_file.close()
                 self.log_file = None
         return rc
@@ -207,3 +211,29 @@ def start_process(cmd_desc: CommandDescriptor, fl_ctx: FLContext) -> ProcessMana
     mgr = ProcessManager(cmd_desc)
     mgr.start(fl_ctx)
     return mgr
+
+
+def run_command(cmd_desc: CommandDescriptor) -> str:
+    env = os.environ.copy()
+    if cmd_desc.env:
+        env.update(cmd_desc.env)
+
+    command_seq = shlex.split(cmd_desc.cmd)
+    p = subprocess.Popen(
+        command_seq,
+        stderr=subprocess.STDOUT,
+        cwd=cmd_desc.cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+    )
+
+    output = []
+    while True:
+        line = p.stdout.readline()
+        if not line:
+            break
+
+        assert isinstance(line, bytes)
+        line = line.decode("utf-8")
+        output.append(line)
+    return "".join(output)

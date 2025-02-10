@@ -77,7 +77,6 @@ class FlowerJob(FedJob):
 
         controller = FlowerController(
             database=database,
-            server_app_args=server_app_args,
             superlink_ready_timeout=superlink_ready_timeout,
             configure_task_timeout=configure_task_timeout,
             start_task_timeout=start_task_timeout,

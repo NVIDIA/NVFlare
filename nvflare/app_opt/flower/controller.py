@@ -17,7 +17,7 @@ from nvflare.app_common.tie.controller import TieController
 from nvflare.app_common.tie.defs import Constant as TieConstant
 from nvflare.app_opt.flower.applet import FlowerServerApplet
 from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
-from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number
+from nvflare.fuel.utils.validation_utils import check_positive_number
 
 from .defs import Constant
 
@@ -27,8 +27,9 @@ class FlowerController(TieController):
         self,
         num_rounds=1,
         database: str = "",
-        server_app_args: list = None,
         superlink_ready_timeout: float = 10.0,
+        superlink_grace_period: float = 2.0,
+        monitor_interval: float = 0.5,
         configure_task_name=TieConstant.CONFIG_TASK_NAME,
         configure_task_timeout=TieConstant.CONFIG_TASK_TIMEOUT,
         start_task_name=TieConstant.START_TASK_NAME,
@@ -43,8 +44,8 @@ class FlowerController(TieController):
         Args:
             num_rounds: number of rounds. Not used in this version.
             database: database name
-            server_app_args: additional server app CLI args
             superlink_ready_timeout: how long to wait for the superlink to become ready before starting server app
+            superlink_grace_period: how long to wait before stopping superlink after stopping the app
             configure_task_name: name of the config task
             configure_task_timeout: max time allowed for config task to complete
             start_task_name: name of the start task
@@ -66,26 +67,27 @@ class FlowerController(TieController):
         )
 
         check_positive_number("superlink_ready_timeout", superlink_ready_timeout)
-
-        if server_app_args:
-            check_object_type("server_app_args", server_app_args, list)
+        check_positive_number("superlink_grace_period", superlink_grace_period)
+        check_positive_number("monitor_interval", monitor_interval)
 
         self.num_rounds = num_rounds
         self.database = database
-        self.server_app_args = server_app_args
+        self.superlink_grace_period = superlink_grace_period
         self.superlink_ready_timeout = superlink_ready_timeout
         self.int_client_grpc_options = int_client_grpc_options
+        self.monitor_interval = monitor_interval
 
     def get_connector(self, fl_ctx: FLContext):
         return GrpcServerConnector(
             int_client_grpc_options=self.int_client_grpc_options,
+            monitor_interval=self.monitor_interval,
         )
 
     def get_applet(self, fl_ctx: FLContext):
         return FlowerServerApplet(
             database=self.database,
             superlink_ready_timeout=self.superlink_ready_timeout,
-            server_app_args=self.server_app_args,
+            superlink_grace_period=self.superlink_grace_period,
         )
 
     def get_client_config_params(self, fl_ctx: FLContext) -> dict:

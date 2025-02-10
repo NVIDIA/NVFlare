@@ -76,6 +76,8 @@ class CLIApplet(Applet, ABC):
         if not mgr:
             raise RuntimeError("no process manager to stop")
 
+        self.logger.info(f"stopping applet: {timeout=}")
+
         if timeout > 0:
             # wait for the applet to stop by itself
             start = time.time()
@@ -84,10 +86,13 @@ class CLIApplet(Applet, ABC):
                 if rc is not None:
                     # already stopped
                     self.logger.info(f"applet stopped ({rc=}) after {time.time() - start} seconds")
-                    break
+                    return rc
                 time.sleep(0.1)
 
         rc = mgr.stop()
+
+        self.logger.info(f"applet stopped: {rc=}")
+
         if rc is None:
             self.logger.warning(f"killed the applet process after waiting {timeout} seconds")
             return -9
