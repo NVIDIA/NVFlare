@@ -404,15 +404,12 @@ class StaticFileBuilder(Builder):
             host_name,
             listener_name=server.name,
             listener_default_host=server.get_default_host(),
-            listener_available_host_names=server.get_prop(PropKey.HOST_NAMES)
+            listener_available_host_names=server.get_prop(PropKey.HOST_NAMES),
         )
 
     @staticmethod
     def _validate_host_name_against_listener(
-        host_name: str,
-        listener_name: str,
-        listener_default_host: str,
-        listener_available_host_names: list
+        host_name: str, listener_name: str, listener_default_host: str, listener_available_host_names: list
     ) -> str:
         """Validate specified host_name against default host and available host names of the listener.
         This is to make sure that host_name used by a connector is valid.
