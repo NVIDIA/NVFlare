@@ -61,7 +61,6 @@ aggregate the gradient information from each site and update the global model ac
 the same model as the centralized / histogram-based horizontal training. 
 We leverage the [vertical federated learning support](https://github.com/dmlc/xgboost/issues/8424) in the XGBoost open-source library. This allows for the distributed XGBoost algorithm to operate in a federated manner on vertically split data.
 
-
 ## Data Preparation
 Assuming the HIGGS data has been downloaded following [the instructions](../README.md), we further split the data 
 horizontally and vertically for federated learning.
@@ -97,7 +96,9 @@ In this example, we generate data splits with three client sizes: 2, 5 and 20, u
 ### Vertical Data Split
 For vertical, we simulate a realistic 2-client scenario where participants share overlapping data samples (rows) with different features (columns).
 We split the HIGGS dataset both horizontally and vertically. As a result, each site has an overlapping subset of the rows and a  subset of the 29 columns. Since the first column of HIGGS is the class label, we give site-1 the label column for simplicity's sake.
-<img src="./figs/vertical_fl.png" alt="vertical fl diagram" width="500"/>
+<img src="./figs/vertical_fl.png" alt="vertical fl diagram" width="500"/> 
+
+PSI will be performed first to identify and match the overlapping samples, then the training will be done on the intersected data.
 
 
 ## Experiments
@@ -186,6 +187,14 @@ An example validation AUC graph (red) from running vertical XGBoost on HIGGS as 
 Since in this case we only used ~50k samples, the performance is worse than centralized training using full dataset.
 
 ![Vertical XGBoost graph](./figs/vertical_xgb.png)
+
+## GPU Support
+By default, CPU based training is used.
+
+In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least one GPU.
+In `XGBFedController` set `"use_gpus": true`.
+Then, in `FedXGBHistogramExecutor` we can use the `device` parameter to map each rank to a GPU device ordinal in `xgb_params`.
+If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
 
 
 ## Reference

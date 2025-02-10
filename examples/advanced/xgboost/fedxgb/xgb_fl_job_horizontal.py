@@ -133,7 +133,7 @@ def main():
             num_rounds=args.round_num,
             data_split_mode=0,
             secure_training=False,
-            xgb_options={"early_stopping_rounds": 2},
+            xgb_options={"early_stopping_rounds": 2, "use_gpus": False},
             xgb_params={
                 "max_depth": 8,
                 "eta": 0.1,
