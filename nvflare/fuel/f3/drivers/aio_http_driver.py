@@ -170,7 +170,7 @@ class AioHttpDriver(BaseDriver):
             log.error(f"Connection {conn_info} is closed due to error: {secure_format_exception(ex)}")
 
     async def _websocket_handler(self, request: Request) -> StreamResponse:
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(max_msg_size=MAX_FRAME_SIZE)
         await ws.prepare(request)
         await self._connection_handler(ws)
         return ws
