@@ -20,7 +20,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.tie.applet import Applet
 from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.defs import Constant as TieConstant
-from nvflare.app_common.tie.process_mgr import CommandDescriptor, ProcessManager, run_command, start_process, StopMethod
+from nvflare.app_common.tie.process_mgr import CommandDescriptor, ProcessManager, StopMethod, run_command, start_process
 from nvflare.app_opt.flower.defs import Constant
 from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.security.logging import secure_format_exception
