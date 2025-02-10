@@ -24,6 +24,11 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
 
+class StopMethod:
+    KILL = "kill"
+    TERMINATE = "terminate"
+
+
 class CommandDescriptor:
     def __init__(
         self,
@@ -33,6 +38,7 @@ class CommandDescriptor:
         log_file_name: str = "",
         log_stdout: bool = True,
         stdout_msg_prefix: str = None,
+        stop_method=StopMethod.KILL,
     ):
         """Constructor of CommandDescriptor.
         A CommandDescriptor describes the requirements of the new process to be started.
@@ -46,6 +52,7 @@ class CommandDescriptor:
             stdout_msg_prefix: prefix to be prepended to log message when writing to stdout.
                 Since multiple processes could be running within the same terminal window, the prefix can help
                 differentiate log messages from these processes.
+            stop_method: how to stop the command (kill or terminate)
         """
         check_str("cmd", cmd)
 
@@ -61,12 +68,17 @@ class CommandDescriptor:
         if stdout_msg_prefix:
             check_str("stdout_msg_prefix", stdout_msg_prefix)
 
+        valid_stop_methods = [StopMethod.KILL, StopMethod.TERMINATE]
+        if stop_method not in valid_stop_methods:
+            raise ValueError(f"invalid stop_method '{stop_method}': must be one of {valid_stop_methods}")
+
         self.cmd = cmd
         self.cwd = cwd
         self.env = env
         self.log_file_name = log_file_name
         self.log_stdout = log_stdout
         self.stdout_msg_prefix = stdout_msg_prefix
+        self.stop_method = stop_method
 
 
 class ProcessManager:
@@ -179,15 +191,21 @@ class ProcessManager:
         rc = self.poll()
         if rc is None:
             # process is still alive
+            stop_method = self.cmd_desc.stop_method
+            self.logger.info(f"process still running - {stop_method} process: {self.cmd_desc.cmd}")
             try:
-                self.logger.info(f"still running - killing process: {self.cmd_desc.cmd}")
-                self.process.kill()
-                rc = -9
-            except:
+                if stop_method == StopMethod.KILL:
+                    self.process.kill()
+                    rc = -9
+                else:
+                    self.process.terminate()
+                    rc = -15
+            except Exception as ex:
                 # ignore kill error
+                self.logger.debug(f"ignored exception {ex} from {stop_method}")
                 pass
         else:
-            self.logger.info(f"already done: {rc=}")
+            self.logger.info(f"process already stopped: {rc=}")
 
         # close the log file if any
         with self.file_lock:

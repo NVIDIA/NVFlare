@@ -74,10 +74,10 @@ class CLIApplet(Applet, ABC):
         self._proc_mgr = None
 
         if not mgr:
-            raise RuntimeError("no process manager to stop")
+            self.logger.debug("no process manager to stop")
+            return 0
 
         self.logger.info(f"stopping applet: {timeout=}")
-
         if timeout > 0:
             # wait for the applet to stop by itself
             start = time.time()
