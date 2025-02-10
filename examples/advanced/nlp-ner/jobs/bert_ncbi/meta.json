@@ -1,9 +1,0 @@
-{
-  "name": "bert_ncbi",
-  "resource_spec": {},
-  "deploy_map": {
-    "app": [
-      "@ALL"
-    ]
-  }
-}

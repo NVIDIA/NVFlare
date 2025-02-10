@@ -277,3 +277,16 @@ class APISpec(ABC):
 
         """
         pass
+
+    @abstractmethod
+    def shutdown(self):
+        """Releases all threads and resources used by the API and stops operation.
+
+        Example:
+
+            .. code-block:: python
+
+                nvflare.client.shutdown()
+
+        """
+        pass

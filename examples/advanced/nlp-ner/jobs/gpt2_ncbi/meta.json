@@ -1,9 +1,0 @@
-{
-  "name": "gpt2_ncbi",
-  "resource_spec": {},
-  "deploy_map": {
-    "app": [
-      "@ALL"
-    ]
-  }
-}
