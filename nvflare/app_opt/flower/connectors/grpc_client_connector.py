@@ -73,7 +73,7 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
 
         # do not stop the applet until should-exit is sent
         if not self._exit_waiter.wait(timeout=2.0):
-            self.logger.warning(f"did not send should-exit before shutting down supernode")
+            self.logger.warning("did not send should-exit before shutting down supernode")
 
         # give 1 sec for the supernode to quite gracefully
         self.logger.debug("about to stop applet")
