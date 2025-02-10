@@ -28,7 +28,7 @@ class GrpcServerConnector(FlowerServerConnector):
         self,
         int_client_grpc_options=None,
         flower_server_ready_timeout=Constant.FLOWER_SERVER_READY_TIMEOUT,
-        monitor_interval: float = 0.5,
+        monitor_interval: float = 1.0,
     ):
         FlowerServerConnector.__init__(self, monitor_interval)
         self.int_client_grpc_options = int_client_grpc_options

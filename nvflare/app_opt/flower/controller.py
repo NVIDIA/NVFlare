@@ -73,7 +73,6 @@ class FlowerController(TieController):
         self.num_rounds = num_rounds
         self.database = database
         self.superlink_ready_timeout = superlink_ready_timeout
-        self.flower_run_status_check_interval = flower_run_status_check_interval
         self.int_client_grpc_options = int_client_grpc_options
         self.monitor_interval = monitor_interval
 
@@ -87,7 +86,6 @@ class FlowerController(TieController):
         return FlowerServerApplet(
             database=self.database,
             superlink_ready_timeout=self.superlink_ready_timeout,
-            status_check_interval=self.flower_run_status_check_interval,
         )
 
     def get_client_config_params(self, fl_ctx: FLContext) -> dict:
