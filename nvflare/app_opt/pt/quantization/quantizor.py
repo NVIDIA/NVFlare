@@ -44,6 +44,7 @@ class ModelQuantizor(DXOFilter):
 
         # assign quantization type and check if it is valid
         self.logger.info("Using model quantizator.")
+        quantization_type = quantization_type.lower()
         if quantization_type.upper() not in QUANTIZATION_TYPE:
             raise ValueError(f"Invalid quantization type: {quantization_type}, valid: {QUANTIZATION_TYPE}")
         else:
