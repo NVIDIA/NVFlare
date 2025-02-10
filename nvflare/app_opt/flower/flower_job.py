@@ -35,7 +35,6 @@ class FlowerJob(FedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         database: str = "",
-        server_app_args: list = None,
         superlink_ready_timeout: float = 10.0,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
         start_task_timeout=Constant.START_TASK_TIMEOUT,
@@ -57,7 +56,6 @@ class FlowerJob(FedJob):
             min_clients (int, optional): The minimum number of clients for the job. Defaults to 1.
             mandatory_clients (List[str], optional): List of mandatory clients for the job. Defaults to None.
             database (str, optional): Database string. Defaults to "".
-            server_app_args (list, optional): List of arguments to pass to the server application. Defaults to None.
             superlink_ready_timeout (float, optional): Timeout for the superlink to be ready. Defaults to 10.0 seconds.
             configure_task_timeout (float, optional): Timeout for configuring the task. Defaults to Constant.CONFIG_TASK_TIMEOUT.
             start_task_timeout (float, optional): Timeout for starting the task. Defaults to Constant.START_TASK_TIMEOUT.
@@ -112,7 +110,7 @@ class FlowerJob(FedJob):
             mode="PASSIVE",
             site_name="{SITE_NAME}",
             token="{JOB_ID}",
-            root_url="{ROOT_URL}",
+            root_url="{CP_URL}",
             secure_mode="{SECURE_MODE}",
             workspace_dir="{WORKSPACE}",
         )
