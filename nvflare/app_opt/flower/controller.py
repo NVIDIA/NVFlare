@@ -45,7 +45,7 @@ class FlowerController(TieController):
             num_rounds: number of rounds. Not used in this version.
             database: database name
             superlink_ready_timeout: how long to wait for the superlink to become ready before starting server app
-            superlink_grace_period: how long to wait before stopping superlink after stopping the app
+            flower_run_status_check_interval: how often to check flower run status
             configure_task_name: name of the config task
             configure_task_timeout: max time allowed for config task to complete
             start_task_name: name of the start task
@@ -72,8 +72,8 @@ class FlowerController(TieController):
 
         self.num_rounds = num_rounds
         self.database = database
-        self.superlink_grace_period = superlink_grace_period
         self.superlink_ready_timeout = superlink_ready_timeout
+        self.flower_run_status_check_interval = flower_run_status_check_interval
         self.int_client_grpc_options = int_client_grpc_options
         self.monitor_interval = monitor_interval
 
@@ -87,7 +87,7 @@ class FlowerController(TieController):
         return FlowerServerApplet(
             database=self.database,
             superlink_ready_timeout=self.superlink_ready_timeout,
-            superlink_grace_period=self.superlink_grace_period,
+            status_check_interval=self.flower_run_status_check_interval,
         )
 
     def get_client_config_params(self, fl_ctx: FLContext) -> dict:
