@@ -203,7 +203,6 @@ def main():
     )
     job.to_server(persistor, id="persistor")
 
-
     # Get the data split numbers and send to each client
     # generate data split
     site_indices = split_data(
