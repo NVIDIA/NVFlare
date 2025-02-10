@@ -11,12 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import asyncio
 import logging
+import os
 from typing import Any, Dict, List
 
 import aiohttp
 from aiohttp import web
+from aiohttp.web_request import Request
+from aiohttp.web_response import StreamResponse
 
 from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
 from nvflare.fuel.f3.connection import BytesAlike, Connection
@@ -32,6 +34,7 @@ from nvflare.security.logging import secure_format_exception
 log = logging.getLogger(__name__)
 
 WS_PATH = "f3"
+MAX_FRAME_SIZE = 2*1024*1024*1024 # Set it to 2GB
 
 
 class WsConnection(Connection):
@@ -69,10 +72,7 @@ class WsConnection(Connection):
         if peer_cert:
             cn = get_certificate_common_name(peer_cert)
         else:
-            if self.ssl_context:
-                cn = "N/A"
-            else:
-                cn = None
+            cn = "N/A" if self.ssl_context else None
 
         if cn:
             conn_props[DriverParams.PEER_CN.value] = cn
@@ -88,13 +88,14 @@ class WsConnection(Connection):
 
 
 class AioHttpDriver(BaseDriver):
-    """Async HTTP driver using websocket extension"""
+    """Async HTTP driver using aiohttp library"""
 
     def __init__(self):
         super().__init__()
         self.aio_context = AioContext.get_global_context()
         self.loop = self.aio_context.get_event_loop()
         self.ssl_context = None
+        self.stop_event = self.loop.create_future()
         self.app = None
         self.site = None
         self.runner = None
@@ -115,14 +116,15 @@ class AioHttpDriver(BaseDriver):
         host = params.get(DriverParams.HOST.value)
         port = params.get(DriverParams.PORT.value)
 
-        self.app = web.Application()
+        self.app = web.Application(client_max_size=MAX_FRAME_SIZE)
         self.app.router.add_get(f"/{WS_PATH}", self._websocket_handler)
 
         async def setup():
-            self.runner = web.AppRunner(self.app)
+            self.runner = web.AppRunner(self.app, access_log=None)
             await self.runner.setup()
             self.site = web.TCPSite(self.runner, host, port, ssl_context=self.ssl_context)
             await self.site.start()
+            await self.stop_event
 
         self.aio_context.run_coro(setup()).result()
 
@@ -139,7 +141,7 @@ class AioHttpDriver(BaseDriver):
 
             async with aiohttp.ClientSession() as session:
                 async with session.ws_connect(url, ssl_context=self.ssl_context) as ws:
-                    await self._handler(ws)
+                    await self._connection_handler(ws)
 
         self.aio_context.run_coro(async_connect()).result()
 
@@ -156,7 +158,7 @@ class AioHttpDriver(BaseDriver):
 
     # Internal methods
 
-    async def _handler(self, websocket):
+    async def _connection_handler(self, websocket):
         conn = None
         try:
             conn = WsConnection(websocket, self.aio_context, self.connector, self.ssl_context)
@@ -167,10 +169,11 @@ class AioHttpDriver(BaseDriver):
             conn_info = str(conn) if conn else "N/A"
             log.error(f"Connection {conn_info} is closed due to error: {secure_format_exception(ex)}")
 
-    async def _websocket_handler(self, request):
+    async def _websocket_handler(self, request: Request) -> StreamResponse:
         ws = web.WebSocketResponse()
         await ws.prepare(request)
-        await self._handler(ws)
+        await self._connection_handler(ws)
+        return ws
 
     @staticmethod
     async def _read_loop(conn: WsConnection):
@@ -205,15 +208,6 @@ class AioHttpDriver(BaseDriver):
             await self.app.cleanup()
             self.app = None
 
-    @staticmethod
-    def _websocket_url(params: dict, secure: bool) -> str:
+        if self.stop_event:
+            self.stop_event.set_result(None)
 
-        host = params.get(DriverParams.HOST.value)
-        port = params.get(DriverParams.PORT.value)
-
-        if secure:
-            scheme = "wss"
-        else:
-            scheme = "ws"
-
-        return f"{scheme}://{host}:{port}/{WS_PATH}"
