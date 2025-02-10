@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import threading
+import time
+
 import flwr.proto.grpcadapter_pb2 as pb2
 from flwr.proto.grpcadapter_pb2_grpc import GrpcAdapterServicer
 
@@ -49,6 +52,8 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
         self.internal_server_addr = None
         self._training_stopped = False
         self._client_name = None
+        self._stopping = False
+        self._exit_waiter = threading.Event()
 
     def initialize(self, fl_ctx: FLContext):
         super().initialize(fl_ctx)
@@ -64,6 +69,14 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
 
     def _stop_client(self):
         self._training_stopped = True
+
+        # do not stop the applet until should-exit is sent
+        if not self._exit_waiter.wait(timeout=2.0):
+            self.logger.warning(f"did not send should-exit before shutting down supernode")
+
+        # give 1 sec for the supernode to quite gracefully
+        self.logger.info("about to stop applet")
+        time.sleep(1.0)
         self.stop_applet(self.client_shutdown_timeout)
 
     def _is_stopped(self) -> (bool, int):
@@ -72,6 +85,10 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
             return applet_stopped, ec
 
         if self._training_stopped:
+            return True, 0
+
+        if self._stopping:
+            self.stop(fl_ctx=None)
             return True, 0
 
         return False, 0
@@ -127,6 +144,12 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
 
         """
         try:
+            if self.stopped:
+                self._stopping = True
+                self._exit_waiter.set()
+                self.logger.info("asked supernode to exit_1!")
+                return reply_should_exit()
+
             reply = self._send_flower_request(msg_container_to_shareable(request))
             rc = reply.get_return_code()
             if rc == ReturnCode.OK:
@@ -134,6 +157,13 @@ class GrpcClientConnector(FlowerClientConnector, GrpcAdapterServicer):
             else:
                 # server side already ended
                 self.logger.warning(f"Flower server has stopped with RC {rc}")
+                self._stopping = True
+                self._exit_waiter.set()
+                self.logger.info("asked supernode to exit_2!")
                 return reply_should_exit()
         except Exception as ex:
             self._abort(reason=f"_send_flower_request exception: {secure_format_exception(ex)}")
+            self._stopping = True
+            self._exit_waiter.set()
+            self.logger.info("asked supernode to exit_3!")
+            return reply_should_exit()

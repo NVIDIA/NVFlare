@@ -429,6 +429,7 @@ class TieController(Controller, ABC):
         # configure all clients
         if not self._configure_clients(abort_signal, fl_ctx):
             self.system_panic("failed to configure all clients", fl_ctx)
+            abort_signal.trigger(True)
             return
 
         # configure and start the connector
@@ -441,6 +442,7 @@ class TieController(Controller, ABC):
             error = f"failed to start connector: {secure_format_exception(ex)}"
             self.log_error(fl_ctx, error)
             self.system_panic(error, fl_ctx)
+            abort_signal.trigger(True)
             return
 
         self.connector.monitor(fl_ctx, self._app_stopped)
@@ -448,6 +450,7 @@ class TieController(Controller, ABC):
         # start all clients
         if not self._start_clients(abort_signal, fl_ctx):
             self.system_panic("failed to start all clients", fl_ctx)
+            abort_signal.trigger(True)
             return
 
         # monitor client health
@@ -456,7 +459,8 @@ class TieController(Controller, ABC):
         while not abort_signal.triggered:
             done = self._check_job_status(fl_ctx)
             if done:
-                break
+                self.connector.stop(fl_ctx)
+                return
             time.sleep(self.job_status_check_interval)
 
     def _app_stopped(self, rc, fl_ctx: FLContext):

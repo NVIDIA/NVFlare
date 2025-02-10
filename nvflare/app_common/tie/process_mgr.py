@@ -82,7 +82,7 @@ class CommandDescriptor:
 
 
 class ProcessManager:
-    def __init__(self, cmd_desc: CommandDescriptor):
+    def __init__(self, cmd_desc: CommandDescriptor, stop_method="kill"):
         """Constructor of ProcessManager.
         ProcessManager provides methods for managing the lifecycle of a subprocess (start, stop, poll), as well
         as the handling of log file to be used by the subprocess.
@@ -96,6 +96,7 @@ class ProcessManager:
         check_object_type("cmd_desc", cmd_desc, CommandDescriptor)
         self.process = None
         self.cmd_desc = cmd_desc
+        self.stop_method = stop_method
         self.log_file = None
         self.msg_prefix = None
         self.file_lock = threading.Lock()
@@ -143,7 +144,6 @@ class ProcessManager:
             env=env,
             stdout=subprocess.PIPE,
         )
-
         log_writer = threading.Thread(target=self._write_log, daemon=True)
         log_writer.start()
 
@@ -216,17 +216,18 @@ class ProcessManager:
         return rc
 
 
-def start_process(cmd_desc: CommandDescriptor, fl_ctx: FLContext) -> ProcessManager:
+def start_process(cmd_desc: CommandDescriptor, fl_ctx: FLContext, stop_method="kill") -> ProcessManager:
     """Convenience function for starting a subprocess.
 
     Args:
         cmd_desc: the CommandDescriptor the describes the command to be executed
         fl_ctx: FLContext object
+        stop_method: how to stop the process
 
     Returns: a ProcessManager object.
 
     """
-    mgr = ProcessManager(cmd_desc)
+    mgr = ProcessManager(cmd_desc, stop_method)
     mgr.start(fl_ctx)
     return mgr
 

@@ -16,12 +16,15 @@ import os.path
 import threading
 import time
 
+import tomli
+import tomli_w
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.tie.applet import Applet
 from nvflare.app_common.tie.cli_applet import CLIApplet
 from nvflare.app_common.tie.defs import Constant as TieConstant
-from nvflare.app_common.tie.process_mgr import CommandDescriptor, ProcessManager, run_command, start_process, StopMethod
+from nvflare.app_common.tie.process_mgr import CommandDescriptor, ProcessManager, run_command, start_process
 from nvflare.app_opt.flower.defs import Constant
 from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.security.logging import secure_format_exception
@@ -72,14 +75,12 @@ class FlowerClientApplet(CLIApplet):
             f"--clientappio-api-address {clientapp_api_addr}"
         )
 
+        # use app_dir as the cwd for flower's client app.
+        # this is necessary for client_api to be used with the flower client app for metrics logging
+        # client_api expects config info from the "config" folder in the cwd!
         self.logger.info(f"starting flower client app: {cmd}")
         return CommandDescriptor(
-            cmd=cmd,
-            cwd=app_dir,
-            env=self.extra_env,
-            log_file_name="client_app_log.txt",
-            stdout_msg_prefix="FLWR-CA",
-            stop_method=StopMethod.TERMINATE,
+            cmd=cmd, cwd=app_dir, env=self.extra_env, log_file_name="client_app_log.txt", stdout_msg_prefix="FLWR-CA"
         )
 
 
@@ -106,7 +107,6 @@ class FlowerServerApplet(Applet):
         self.last_check_status = None
         self.last_check_time = None
         self.last_check_stopped = False
-        self.exec_api_addr = None
         self.flower_app_dir = None
         self.flower_run_finished = False
         self.flower_run_stopped = False  # have we issued 'flwr stop'?
@@ -122,11 +122,66 @@ class FlowerServerApplet(Applet):
             self.logger.error(f"exception starting applet: {secure_format_exception(ex)}")
             self._start_error = True
 
+    def _modify_flower_app_config(self, exec_api_addr: str):
+        """Currently the exec-api-address must be specified in pyproject.toml to be able to submit to the
+        superlink with "flwr run" command.
+
+        Args:
+            exec_api_addr:
+
+        Returns:
+
+        """
+        config_file = os.path.join(self.flower_app_dir, "pyproject.toml")
+        if not os.path.isfile(config_file):
+            raise RuntimeError(f"invalid flower app: missing {config_file}")
+
+        with open(config_file, mode="rb") as fp:
+            config = tomli.load(fp)
+
+        # add or modify address
+        tool = config.get("tool")
+        if not tool:
+            tool = {}
+            config["tool"] = tool
+
+        flwr = tool.get("flwr")
+        if not flwr:
+            flwr = {}
+            tool["flwr"] = flwr
+
+        fed = flwr.get("federations")
+        if not fed:
+            fed = {}
+            flwr["federations"] = fed
+
+        default_mode = fed.get("default")
+        if not default_mode:
+            default_mode = "local-poc"
+            fed["default"] = default_mode
+
+        mode_config = fed.get(default_mode)
+        if not mode_config:
+            mode_config = {}
+            fed[default_mode] = mode_config
+
+        mode_config["address"] = exec_api_addr
+        mode_config["insecure"] = True
+
+        # recreate the app config
+        with open(config_file, mode="wb") as fp:
+            tomli_w.dump(config, fp)
+
     def start(self, app_ctx: dict):
         """Start the applet.
 
-        We start the superlink, and wait for it to become ready.
-        We then use "flwr run" command to submit the app to superlink.
+        Flower requires two processes for server application:
+            superlink: this process is responsible for client communication
+            server_app: this process performs server side of training.
+
+        We start the superlink first, and wait for it to become ready, then start the server app.
+        Each process will have its own log file in the job's run dir. The superlink's log file is named
+        "superlink_log.txt". The server app's log file is named "server_app_log.txt".
 
         Args:
             app_ctx: the run context of the applet.
@@ -134,10 +189,10 @@ class FlowerServerApplet(Applet):
         Returns:
 
         """
-        # try to start superlink
+        # try to start superlink first
         serverapp_api_addr = app_ctx.get(Constant.APP_CTX_SERVERAPP_API_ADDR)
         fleet_api_addr = app_ctx.get(Constant.APP_CTX_FLEET_API_ADDR)
-        self.exec_api_addr = app_ctx.get(Constant.APP_CTX_EXEC_API_ADDR)
+        exec_api_addr = app_ctx.get(Constant.APP_CTX_EXEC_API_ADDR)
         fl_ctx = app_ctx.get(Constant.APP_CTX_FL_CONTEXT)
         if not isinstance(fl_ctx, FLContext):
             self.logger.error(f"expect APP_CTX_FL_CONTEXT to be FLContext but got {type(fl_ctx)}")
@@ -149,13 +204,10 @@ class FlowerServerApplet(Applet):
             self.logger.error(f"expect workspace to be Workspace but got {type(ws)}")
             raise RuntimeError("invalid workspace")
 
-        job_id = fl_ctx.get_job_id()
-        custom_dir = ws.get_app_custom_dir(job_id)
-        app_dir = ws.get_app_dir(job_id)
-        if not os.path.isabs(custom_dir):
-            custom_dir = os.path.relpath(custom_dir, app_dir)
-
+        custom_dir = ws.get_app_custom_dir(fl_ctx.get_job_id())
         self.flower_app_dir = custom_dir
+
+        self._modify_flower_app_config(exec_api_addr)
 
         db_arg = ""
         if self.database:
@@ -171,16 +223,10 @@ class FlowerServerApplet(Applet):
             f"flower-superlink --insecure --fleet-api-type grpc-adapter {db_arg} "
             f"--serverappio-api-address {serverapp_api_addr} "
             f"--fleet-api-address {fleet_api_addr}  "
-            f"--exec-api-address {self.exec_api_addr}"
+            f"--exec-api-address {exec_api_addr}"
         )
 
-        cmd_desc = CommandDescriptor(
-            cmd=superlink_cmd,
-            cwd=app_dir,
-            log_file_name="superlink_log.txt",
-            stdout_msg_prefix="FLWR-SL",
-            stop_method=StopMethod.TERMINATE,
-        )
+        cmd_desc = CommandDescriptor(cmd=superlink_cmd, log_file_name="superlink_log.txt", stdout_msg_prefix="FLWR-SL")
 
         self._superlink_process_mgr = self._start_process(name="superlink", cmd_desc=cmd_desc, fl_ctx=fl_ctx)
         if not self._superlink_process_mgr:
@@ -197,9 +243,9 @@ class FlowerServerApplet(Applet):
         )
         self.logger.info(f"superlink is ready for server app in {time.time() - start_time} seconds")
 
-        # submit the app using "flwr run" command
-        # flwr_run_cmd = f"flwr run --format json -c 'address={exec_api_addr}' {flower_app_dir}"
-        flwr_run_cmd = f"flwr run {self._flwr_cmd_option()} {self.flower_app_dir}"
+        # submitting the server app using "flwr run" command
+        # flwr_run_cmd = f"flwr run --format json -c 'address={exec_api_addr}' {custom_dir}"
+        flwr_run_cmd = f"flwr run --format json {self.flower_app_dir}"
         run_info = self._run_flower_command(flwr_run_cmd)
         run_id = run_info.get("run-id")
         if not run_id:
@@ -207,9 +253,6 @@ class FlowerServerApplet(Applet):
 
         self.logger.info(f"submitted Flower App and got run id {run_id}")
         self.run_id = run_id
-
-    def _flwr_cmd_option(self):
-        return f"--format json --federation-config 'address=\"{self.exec_api_addr}\"'"
 
     def _run_flower_command(self, command: str):
         self.logger.info(f"running flower command: {command}")
@@ -265,7 +308,7 @@ class FlowerServerApplet(Applet):
                 # stop the server app
                 # we may not be able to issue 'flwr stop' more than once!
                 self.flower_run_stopped = True
-                flwr_stop_cmd = f"flwr stop {self._flwr_cmd_option()} {self.run_id} {self.flower_app_dir}"
+                flwr_stop_cmd = f"flwr stop --format json {self.run_id} {self.flower_app_dir}"
                 try:
                     self._run_flower_command(flwr_stop_cmd)
                 except Exception as ex:
@@ -293,7 +336,7 @@ class FlowerServerApplet(Applet):
 
     def _check_flower_run_status(self):
         # check whether the app is finished
-        flwr_ls_cmd = f"flwr ls {self._flwr_cmd_option()} {self.flower_app_dir}"
+        flwr_ls_cmd = f"flwr ls --format json {self.flower_app_dir}"
         try:
             run_info = self._run_flower_command(flwr_ls_cmd)
         except Exception as ex:

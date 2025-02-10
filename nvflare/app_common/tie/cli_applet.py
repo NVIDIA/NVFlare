@@ -22,9 +22,10 @@ from .process_mgr import CommandDescriptor, start_process
 
 
 class CLIApplet(Applet, ABC):
-    def __init__(self):
+    def __init__(self, stop_method="kill"):
         """Constructor of CLIApplet, which runs the applet as a subprocess started with CLI command."""
         Applet.__init__(self)
+        self.stop_method = stop_method
         self._proc_mgr = None
         self._start_error = False
 
@@ -55,7 +56,7 @@ class CLIApplet(Applet, ABC):
 
         fl_ctx = app_ctx.get(Constant.APP_CTX_FL_CONTEXT)
         try:
-            self._proc_mgr = start_process(cmd_desc, fl_ctx)
+            self._proc_mgr = start_process(cmd_desc, fl_ctx, stop_method=self.stop_method)
         except Exception as ex:
             self.logger.error(f"exception starting applet '{cmd_desc.cmd}': {secure_format_exception(ex)}")
             self._start_error = True
@@ -89,8 +90,8 @@ class CLIApplet(Applet, ABC):
                     return rc
                 time.sleep(0.1)
 
+        self.logger.info(f"about to stop process manager: {type(mgr)}")
         rc = mgr.stop()
-
         self.logger.info(f"applet stopped: {rc=}")
 
         if rc is None:
