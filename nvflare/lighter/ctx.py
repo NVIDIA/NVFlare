@@ -161,20 +161,20 @@ class ProvisionContext(dict):
     def error(self, msg: str):
         logger = self.get_logger()
         if logger:
-            logger.info(msg)
+            logger.error(msg)
         else:
             print(f"ERROR: {msg}")
 
     def debug(self, msg: str):
         logger = self.get_logger()
         if logger:
-            logger.info(msg)
+            logger.debug(msg)
         else:
             print(f"DEBUG: {msg}")
 
     def warning(self, msg: str):
         logger = self.get_logger()
         if logger:
-            logger.info(msg)
+            logger.warning(msg)
         else:
             print(f"WARNING: {msg}")
