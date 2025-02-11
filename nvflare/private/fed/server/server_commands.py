@@ -443,8 +443,13 @@ class ConfigureJobLogCommand(CommandProcessor):
 
         """
         engine = fl_ctx.get_engine()
+        workspace = engine.get_workspace()
         try:
-            dynamic_log_config(data, engine.get_workspace(), fl_ctx.get_job_id())
+            dynamic_log_config(
+                config=data,
+                dir_path=workspace.get_run_dir(fl_ctx.get_job_id()),
+                reload_path=workspace.get_log_config_file_path(),
+            )
         except Exception as e:
             return secure_format_exception(e)
 

@@ -95,7 +95,9 @@ class ConfigureSiteLogProcessor(RequestProcessor):
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
 
         try:
-            dynamic_log_config(req.body, workspace)
+            dynamic_log_config(
+                config=req.body, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
+            )
         except Exception as e:
             return error_reply(secure_format_exception(e))
 
