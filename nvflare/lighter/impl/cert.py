@@ -183,12 +183,29 @@ class CertBuilder(Builder):
             f.write(self.serialized_cert)
 
     def _build_internal_listener_cert(self, participant: Participant, ctx: ProvisionContext):
+        """Build server cert if the participant has internal listeners.
+        Note that internal listener used to be only used for connecting SJ to SP, and CJ to SP, but now
+        relay hierarchy is connected to internal listeners.
+
+        Just like the FL Server, a relay could offer one or more hosts for other relays and clients to
+        connect to. Therefore, the relay's server cert must include all these host names and IP addresses
+        for others to make SSL-based connections using any one of these host names/addresses.
+
+        Args:
+            participant: the participant being provisioned
+            ctx: a ProvisionContext object
+
+        Returns: None
+
+        """
         lh = participant.get_listening_host()
         if not lh:
             return
 
         dest_dir = ctx.get_kit_dir(participant)
         project = ctx.get_project()
+
+        # make a fake/temp server participant to use the get_pri_key_cert() method!
         tmp_participant = Participant(
             type=ParticipantType.SERVER,
             name=participant.name,
@@ -200,6 +217,8 @@ class CertBuilder(Builder):
             },
         )
         tmp_pri_key, tmp_cert = self.get_pri_key_cert(tmp_participant)
+
+        # The listener cert is a Server Cert.
         bn = CertFileBasename.SERVER
         with open(os.path.join(dest_dir, f"{bn}.crt"), "wb") as f:
             f.write(serialize_cert(tmp_cert))
@@ -249,7 +268,8 @@ class CertBuilder(Builder):
         )
         return pri_key, cert
 
-    def _generate_keys(self):
+    @staticmethod
+    def _generate_keys():
         pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
         pub_key = pri_key.public_key()
         return pri_key, pub_key

@@ -129,7 +129,8 @@ class ProvisionContext(dict):
             replacement: replacement dict
             mode: file mode
             exe: executable
-            content_modify_cb: content modification callback, can be included to take the section content as the first argument and return the modified content
+            content_modify_cb: content modification callback. If specified, it takes the section content as the
+                first argument and returns the modified content
             cb_kwargs: additional keyword arguments for the callback
 
         """

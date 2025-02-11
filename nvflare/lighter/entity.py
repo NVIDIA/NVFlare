@@ -34,7 +34,7 @@ class ListeningHost:
             self.port,
             self.conn_sec,
         )
-        return f"ConnectTo[{scheme=} {host_names=} {default_host=} {port=} {conn_sec=}]"
+        return f"ListeningHost[{scheme=} {host_names=} {default_host=} {port=} {conn_sec=}]"
 
 
 class ConnectTo:
@@ -77,7 +77,7 @@ def parse_connect_to(value, scope=None, prop_key=None) -> ConnectTo:
         scope: scope of the property
         prop_key: key of the property
 
-    Returns: a tuple of (name, host, port, conn sec)
+    Returns: a ConnectTo object
 
     """
     if isinstance(value, str):
@@ -104,10 +104,10 @@ def _check_connect_to(scope: str, prop_key: str, value):
 
     if ct.port is not None:
         if not isinstance(ct.port, int):
-            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: port {port} must be int")
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: port {ct.port} must be int")
 
         if ct.port < 0:
-            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: invalid port {port}")
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: invalid port {ct.port}")
 
 
 def _check_conn_security(scope: str, prop_key: str, value):
@@ -124,7 +124,7 @@ def parse_listening_host(value, scope=None, prop_key=None) -> ListeningHost:
         scope: scope of the prop
         prop_key: key of the property
 
-    Returns: a tuple of (host_names, default_host, port, conn sec)
+    Returns: a ListeningHost object
     """
     if isinstance(value, str):
         # old format - for server only

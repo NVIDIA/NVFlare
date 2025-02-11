@@ -151,7 +151,7 @@ class StaticFileBuilder(Builder):
 
         utils.write(os.path.join(dest_dir, ProvFileName.FED_SERVER_JSON), json.dumps(config, indent=2), "t")
 
-        self._build_comm_config_for_internal_connection(server, ctx)
+        self._build_comm_config_for_internal_listener(server)
 
         replacement_dict = {
             "admin_port": admin_port,
@@ -207,10 +207,23 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(dest_dir, TemplateSectionKey.SERVER_README, ProvFileName.README_TXT, exe=False)
 
     @staticmethod
-    def _build_comm_config_for_internal_connection(participant: Participant, ctx: ProvisionContext):
+    def _build_comm_config_for_internal_listener(participant: Participant):
+        """Build template args for comm_config, which will be used to create internal listener
+
+        Args:
+            participant:the participant that will create internal listener
+
+        Returns: None
+
+        Note: we only build template args but do not build the comm_config.json here. This is because
+        comm_config.json contains multiple sections that are built in different places. The creation of
+        comm_config.json happens during "finalize" of this builder, which will apply all template args
+        to the "comm_config" template.
+
+        """
         lh = participant.get_listening_host()
         if not lh:
-            return None
+            return
 
         replacement_dict = {
             CommConfigArg.SCHEME: lh.scheme,
@@ -221,7 +234,6 @@ class StaticFileBuilder(Builder):
 
         comm_config_args = participant.get_prop(PropKey.COMM_CONFIG_ARGS)
         comm_config_args.update(replacement_dict)
-        return lh
 
     def _build_client(self, client: Participant, ctx: ProvisionContext):
         project = ctx.get_project()
@@ -250,7 +262,7 @@ class StaticFileBuilder(Builder):
         utils.write(os.path.join(dest_dir, ProvFileName.FED_CLIENT_JSON), json.dumps(config, indent=2), "t")
 
         # build internal comm
-        self._build_comm_config_for_internal_connection(client, ctx)
+        self._build_comm_config_for_internal_listener(client)
 
         replacement_dict = {
             "admin_port": admin_port,
@@ -380,23 +392,37 @@ class StaticFileBuilder(Builder):
         ctx.build_from_template(dest_dir, TemplateSectionKey.CLIENT_README, ProvFileName.README_TXT)
 
     def _modify_error_sender(self, section: str, client: Participant) -> str:
+        """Modify the local resources section and remove the "error_log_sender" component if necessary.
+        By default, the "error_log_sender" component is included in local resources.
+        However, if the project does not allow errors to be sent, then this component must be removed.
+
+        Args:
+            section: the local resources section generated from template
+            client: the client being provisioned
+
+        Returns: modified section content
+
+        """
         allow = client.get_prop_fb(PropKey.ALLOW_ERROR_SENDING, False)
         if allow:
+            # error sending is allowed - so no change needed.
             return section
 
-        if not allow:
-            section_dict = json.loads(section)
-            components = section_dict.get("components")
-            if not components:
-                return section
+        # convert to dict for easy modification
+        section_dict = json.loads(section)
+        components = section_dict.get("components")
+        if not components:
+            return section
 
-            assert isinstance(components, list)
-            for c in components:
-                if c["id"] == "error_log_sender":
-                    components.remove(c)
-                    break
+        assert isinstance(components, list)
+        for c in components:
+            if c["id"] == "error_log_sender":
+                # must remove this component
+                components.remove(c)
+                break
 
-            return json.dumps(section_dict, indent=2)
+        # Must convert to Json string
+        return json.dumps(section_dict, indent=2)
 
     @staticmethod
     def _check_host_name_against_server(host_name: str, server: Participant) -> str:
@@ -558,10 +584,11 @@ class StaticFileBuilder(Builder):
 
         # build comm config backbone gen - relay's backbone_conn_gen is always 1, so it won't
         # connect to the server.
+        # Note: the default gen is 2, we change to 1 for relay.
         replacement_dict = {CommConfigArg.CONN_GEN: 1}
         comm_config_args = relay.get_prop(PropKey.COMM_CONFIG_ARGS)
         comm_config_args.update(replacement_dict)
-        self._build_comm_config_for_internal_connection(relay, ctx)
+        self._build_comm_config_for_internal_listener(relay)
 
         # build fed_relay.json
         project = ctx.get_project()
@@ -596,7 +623,7 @@ class StaticFileBuilder(Builder):
                     parent_scheme = lh.scheme
                     parent_fqcn = parent_relay.get_prop(PropKey.FQCN)
 
-                    # check whether the specified ct.host is valid
+                    # check whether the specified ct.host is available from the parent relay
                     if ct.host:
                         err = self._validate_host_name_against_listener(
                             host_name=ct.host,
@@ -605,8 +632,12 @@ class StaticFileBuilder(Builder):
                             listener_available_host_names=lh.host_names,
                         )
                         if err:
+                            # even though ct.host is not available from the parent relay, we do not
+                            # treat it as a hard error since the customer may intentionally connect to
+                            # a different host (BYOConn).
                             ctx.warning(f"the connect_to.host '{ct.host}' in relay {relay.name} may be invalid: {err}")
 
+            # general logic: properties defined in connect_to overrides parent's listening_host.
             if ct.host:
                 parent_host = ct.host
             elif lh:
@@ -623,9 +654,14 @@ class StaticFileBuilder(Builder):
                 parent_conn_sec = lh.conn_sec
 
             if not parent_relay and ct.host:
-                # directly connect to server
+                # no parent relay - directly connect to server
+                # if host is specified explicitly in connect_to, check whether the specified host
+                # is available from the server.
                 err = self._check_host_name_against_server(ct.host, server)
                 if err:
+                    # the host specified in connect_to is not available from the server.
+                    # we do not treat it as a hard error because in the case of BYOConn, the customer
+                    # may intentionally connect the relay to another host.
                     ctx.warning(f"the connect_to.host '{ct.host}' in relay {relay.name} may be invalid: {err}")
 
         parent_addr = f"{parent_host}:{parent_port}"
@@ -688,7 +724,18 @@ class StaticFileBuilder(Builder):
 
     @staticmethod
     def _determine_relay_hierarchy(project: Project, ctx: ProvisionContext):
-        # name => relay
+        """Relays are organized hierarchically. Relay hierarchy must be determined before we can generate
+        their FQCNs properly. This method determines relay hierarchy based on the connect_to properties
+        in all specified relays. Circular refs are not allowed. FQCN for each relay is determined.
+
+        Args:
+            project: the project being provisioned
+            ctx: the ProvisionContext object
+
+        Returns:
+
+        """
+        # Build name => relay map
         name_to_relay = {}
 
         relays = project.get_relays()
@@ -700,16 +747,20 @@ class StaticFileBuilder(Builder):
             assert isinstance(r, Participant)
             name_to_relay[r.name] = r
 
-        # determine relay parents
+        # determine relay parents based connect_to
+        server = project.get_server()
         for r in relays:
             assert isinstance(r, Participant)
             ct = r.get_connect_to()
 
-            parent = None
-            if ct:
+            if ct and ct.name and ct.name != server.name:
+                # parent is another relay
                 parent = name_to_relay.get(ct.name)
                 if not parent:
                     raise ValueError(f"undefined parent {ct.name} in relay {r.name}")
+            else:
+                # parent is the server
+                parent = None  # None parent represents server
             r.add_prop(PropKey.PARENT, parent)
 
         # determine FQCNs
@@ -726,7 +777,19 @@ class StaticFileBuilder(Builder):
 
     @staticmethod
     def _determine_client_hierarchy(project: Project, ctx: ProvisionContext):
-        # name => relay
+        """Client hierarchy is used to enable hierarchical FL algorithms.
+        This method determines client hierarchy based on the "parent" property.
+        FQSN (fully qualified site name) defines the position of the client in the hierarchy.
+        FQSN is computed for each client.
+
+        Args:
+            project: the project being provisioned
+            ctx: a ProvisionContext object
+
+        Returns:
+
+        """
+        # Build name => client map
         client_map = {}
 
         clients = project.get_clients()
@@ -739,11 +802,13 @@ class StaticFileBuilder(Builder):
             client_map[c.name] = c
 
         # determine client parents
+        server = project.get_server()
         for c in clients:
             assert isinstance(c, Participant)
             parent_name = c.get_prop(PropKey.PARENT)
-            parent_client = None
-            if parent_name:
+            parent_client = None  # parent is server by default
+            if parent_name and parent_name != server.name:
+                # parent is another client
                 parent_client = client_map.get(parent_name)
                 if not parent_client:
                     raise ValueError(f"undefined parent client '{parent_name}' in client {c.name}")
@@ -798,6 +863,20 @@ class StaticFileBuilder(Builder):
                 )
 
         # create start_all.sh
+        self._create_start_all(project, ctx)
+
+    @staticmethod
+    def _create_start_all(project: Project, ctx: ProvisionContext):
+        """Create the start_all.sh script to be used for starting all sites (server, relays and clients).
+        This is a convenience script and not part of any site's startup kit.
+
+        Args:
+            project: project being provisioned
+            ctx: a ProvisionContext object
+
+        Returns: None
+
+        """
         content = "#!/usr/bin/env bash\n"
 
         server = ctx.get_project().get_server()
@@ -818,13 +897,27 @@ class StaticFileBuilder(Builder):
         utils.write(os.path.join(ctx.get_wip_dir(), "start_all.sh"), content, "t", exe=True)
 
     def _remove_undefined_port(self, section: str) -> str:
+        """This is the callback for checking and removing undefined port number for comm_config.
+        Since the templating system does not allow conditional args, each arg must have a value when
+        generating the section from the template. We used port 0 to represent undefined port number.
+        We must remove undefined port number from comm_config; otherwise Flare wouldn't work in run time.
+
+        Args:
+            section: the section data to be checked
+
+        Returns: modified section data
+
+        """
+        # section is JSON string - convert to dict for easy check and modification
         section_dict = json.loads(section)
         resources = section_dict.get("internal", {}).get("resources")
         if resources:
             port = resources.get(PropKey.PORT)
             if port is None or port == 0:
-                # remove port 0
+                # this is undefined port - remove it
                 resources.pop(PropKey.PORT, None)
+
+            # convert dict back to JSON string
             return json.dumps(section_dict, indent=2)
         else:
             # no change

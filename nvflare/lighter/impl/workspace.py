@@ -89,8 +89,8 @@ class WorkspaceBuilder(Builder):
 
     def finalize(self, project: Project, ctx: ProvisionContext):
         if ctx[CtxKey.LAST_PROD_STAGE] >= 99:
-            print(f"Please clean up {ctx['workspace']} by removing prod_N folders")
-            print("After clean-up, rerun the provision command.")
+            ctx.info(f"Please clean up {ctx['workspace']} by removing prod_N folders")
+            ctx.info("After clean-up, rerun the provision command.")
         else:
             current_prod_stage = str(ctx[CtxKey.LAST_PROD_STAGE] + 1).zfill(2)
             current_prod_dir = os.path.join(ctx.get_workspace(), f"prod_{current_prod_stage}")
