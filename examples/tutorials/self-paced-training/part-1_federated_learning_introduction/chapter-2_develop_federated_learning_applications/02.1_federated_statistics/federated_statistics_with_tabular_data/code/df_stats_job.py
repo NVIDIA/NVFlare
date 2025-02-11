@@ -60,7 +60,6 @@ def main():
     sites = [f"site-{i + 1}" for i in range(n_clients)]
     job.setup_clients(sites)
 
-
     job.export_job(job_dir)
 
     job.simulator_run(work_dir)
