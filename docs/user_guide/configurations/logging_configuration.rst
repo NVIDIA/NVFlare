@@ -20,7 +20,8 @@ Logging Configuration and Features
 Default Logging Configuration
 =============================
 
-The default logging configuration json file **log_config.json.default** is divided into 3 main sections: formatters, handlers, and loggers.
+The default logging configuration json file (**log_config.json.default**, ``default``) is divided into 3 main sections: formatters, handlers, and loggers.
+This file can be found at :github_nvflare_link:`log_config.json <nvflare/fuel/utils/log_config.json>`.
 See the `configuration dictionary schema <(https://docs.python.org/3/library/logging.config.html#configuration-dictionary-schema)>`_ for more details.
 
 .. code-block:: json
@@ -288,7 +289,7 @@ Modifying Logging Configurations
 Simulator log configuration
 ===========================
 
-Users can specify a log configuration file in the simulator command with the ``-l`` simulator argument:
+Users can specify a log configuration in the simulator command with the ``-l`` simulator argument:
 
 .. code-block:: shell
 
@@ -299,6 +300,13 @@ Or using the ``log_config`` argument of the Job API simulator run:
 .. code-block:: python
 
     job.simulator_run("/tmp/nvflare/hello-numpy-sag", log_config="log_config.json")
+
+
+The log config argument be one of the following:
+
+- path to a log configuration json file (``/path/to/my_log_config.json``)
+- preconfigured log mode (``default``, ``concise``, ``verbose``)
+- log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
 
 
 POC log configurations
@@ -342,16 +350,23 @@ We also recommend using the :ref:`Dynamic Logging Configuration Commands <dynami
 Dynamic Logging Configuration Commands
 **************************************
 
-We provide two admin commands to enable users to dynamically configure the site or job level logging.
+When running the FLARE system (POC mode or production mode), there are two sets of logs: the site logs and job logs.
+The current site log configuration will be used for the site logs as well as the log config of any new job started on that site.
+In order to access the generated logs in the workspaces refer to :ref:`access_server_workspace` and :ref:`client_workspace`.
+
+We provide two admin commands to enable users to dynamically configure the site or job level logging when running the FLARE system.
+Note these command effects will last until reconfiguration or as long as the corresponding site or job is running.
+However these commands do not overwrite the log configuration file in the workspace- the log configuration file can be reloaded using "reload".
 
 - **target**: ``server``, ``client <clients>...``, or ``all``
 - **config**: log configuration
 
     - path to a json log configuration file (``/path/to/my_log_config.json``)
+    - predefined log mode (``default``, ``concise``, ``verbose``)
     - log level name/number (``debug``, ``INFO``, ``30``)
-    - read the current log configuration file (``reload``)
+    - read the current log configuration file from the workspace (``reload``)
 
-To configure the target site logging (does not affect jobs):
+To configure the target site logging (does not affect currently running jobs):
 
 .. code-block:: shell
 

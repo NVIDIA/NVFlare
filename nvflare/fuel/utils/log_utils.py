@@ -19,8 +19,18 @@ import os
 import re
 from logging import Logger
 from logging.handlers import RotatingFileHandler
+from typing import Union
 
 from nvflare.apis.workspace import Workspace
+
+DEFAULT_LOG_JSON = "log_config.json"
+
+
+class LogMode:
+    RELOAD = "reload"
+    DEFAULT = "default"
+    CONCISE = "concise"
+    VERBOSE = "verbose"
 
 
 class ANSIColor:
@@ -277,40 +287,59 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
     logging.config.dictConfig(dict_config)
 
 
-def dynamic_log_config(config: str, workspace: Workspace, job_id: str = None):
-    # Dynamically configure log given a config (filepath, levelname, levelnumber, 'reload'), apply the config to the proper locations.
-    if not isinstance(config, str):
-        raise ValueError(
-            f"Unsupported config type. Expect config to be string filepath, levelname, levelnumber, or 'reload' but got {type(config)}"
-        )
+def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str):
+    # Dynamically configure log given a config (dict, filepath, LogMode, or level), apply the config to the proper locations.
 
-    if config == "reload":
-        config = workspace.get_log_config_file_path()
+    with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
+        default_log_json = json.load(f)
 
-    if os.path.isfile(config):
-        # Read confg file
-        with open(config, "r") as f:
-            dict_config = json.load(f)
+    if isinstance(config, dict):
+        apply_log_config(config, dir_path)
+    elif isinstance(config, str):
+        # Handle pre-defined LogModes
+        if config == LogMode.RELOAD:
+            config = reload_path
+        elif config == LogMode.DEFAULT:
+            apply_log_config(default_log_json, dir_path)
+            return
+        elif config == LogMode.CONCISE:
+            concise_dict = default_log_json
+            concise_dict["formatters"]["consoleFormatter"][
+                "fmt"
+            ] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            concise_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
+            apply_log_config(concise_dict, dir_path)
+            return
+        elif config == LogMode.VERBOSE:
+            verbose_dict = default_log_json
+            verbose_dict["formatters"]["consoleFormatter"][
+                "fmt"
+            ] = "%(asctime)s - %(identity)s - %(name)s - %(levelname)s - %(message)s"
+            verbose_dict["loggers"]["root"]["level"] = "DEBUG"
+            apply_log_config(verbose_dict, dir_path)
+            return
 
-        if job_id:
-            dir_path = workspace.get_run_dir(job_id)
+        if os.path.isfile(config):
+            # Read config file
+            with open(config, "r") as f:
+                dict_config = json.load(f)
+
+            apply_log_config(dict_config, dir_path)
         else:
-            dir_path = workspace.get_root_dir()
+            # If logging is not yet configured, use default config
+            if not logging.getLogger().hasHandlers():
+                apply_log_config(default_log_json, dir_path)
 
-        apply_log_config(dict_config, dir_path)
-
-    else:
-        # Set level of root logger based on levelname or levelnumber
-        if config.isdigit():
-            level = int(config)
-            if not (0 <= level <= 50):
-                raise ValueError(f"Invalid logging level: {level}")
-        else:
-            level = getattr(logging, config.upper(), None)
-            if level is None:
+            # Set level of root logger based on levelname or levelnumber
+            level = int(config) if config.isdigit() else getattr(logging, config.upper(), None)
+            if level is None or not (0 <= level <= 50):
                 raise ValueError(f"Invalid logging level: {config}")
 
-        logging.getLogger().setLevel(level)
+            logging.getLogger().setLevel(level)
+    else:
+        raise ValueError(
+            f"Unsupported config type. Expect config to be a dict, filepath, level, or LogMode but got {type(config)}"
+        )
 
 
 def add_log_file_handler(log_file_name):
