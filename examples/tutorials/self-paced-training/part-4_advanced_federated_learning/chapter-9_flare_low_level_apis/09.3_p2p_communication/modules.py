@@ -15,7 +15,7 @@ from nvflare.apis.controller_spec import Task
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable, make_reply
@@ -74,7 +74,7 @@ class P2PExecutor(Executor):
             engine.register_aux_message_handler(topic="hello", message_handle_func=self._handle_aux_request)
 
     def _handle_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        sender = request.get_peer_props()["__identity_name__"]  # extract sender name
+        sender = request.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default=None)
         received_message = from_shareable(request).data["message"]
 
         # log received message
