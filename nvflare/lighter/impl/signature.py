@@ -38,20 +38,6 @@ class SignatureBuilder(Builder):
         if not root_pri_key:
             raise RuntimeError(f"missing {CtxKey.ROOT_PRI_KEY} in ProvisionContext")
 
-        overseer = project.get_overseer()
-        if overseer:
-            dest_dir = ctx.get_kit_dir(overseer)
-            self._do_sign(root_pri_key, dest_dir)
-
-        server = project.get_server()
-        if server:
-            dest_dir = ctx.get_kit_dir(server)
-            self._do_sign(root_pri_key, dest_dir)
-
-        for p in project.get_clients():
+        for p in project.get_all_participants():
             dest_dir = ctx.get_kit_dir(p)
-            self._do_sign(root_pri_key, dest_dir)
-
-        for admin in project.get_admins():
-            dest_dir = ctx.get_kit_dir(admin)
             self._do_sign(root_pri_key, dest_dir)
