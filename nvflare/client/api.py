@@ -19,6 +19,8 @@ from typing import Any, Dict, Optional
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
 
+# this import is to let existing scripts import client.api
+from .api_context import ClientAPIType  # noqa: F401
 from .api_context import APIContext
 
 global_context_lock = Lock()

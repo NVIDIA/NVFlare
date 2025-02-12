@@ -39,5 +39,6 @@ class Constant:
 
     EXIT_CODE_CANT_START = 101
     EXIT_CODE_FATAL_ERROR = 102
+    EXIT_CODE_FAILED = 103
 
     APP_CTX_FL_CONTEXT = "tie.fl_context"

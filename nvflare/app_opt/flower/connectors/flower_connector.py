@@ -26,8 +26,8 @@ class FlowerServerConnector(Connector):
     FlowerServerConnector specifies commonly required methods for server connector implementations.
     """
 
-    def __init__(self):
-        Connector.__init__(self)
+    def __init__(self, monitor_interval):
+        Connector.__init__(self, monitor_interval)
         self.num_rounds = None
 
     def configure(self, config: dict, fl_ctx: FLContext):
@@ -79,7 +79,7 @@ class FlowerServerConnector(Connector):
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
         reply = self.send_request_to_flower(request, fl_ctx)
-        self.log_info(fl_ctx, f"received reply for '{op}'")
+        self.log_debug(fl_ctx, f"received reply for '{op}'")
         return reply
 
 
