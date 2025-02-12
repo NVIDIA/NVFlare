@@ -52,16 +52,15 @@ used for training since k-Means clustering is an unsupervised method.
 The entire dataset with labels will be used for performance evaluation 
 based on [homogeneity_score](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.homogeneity_score.html).
 
-## Prepare clients' configs with proper data information 
+## Run FL with proper data split 
 For real-world FL applications, the config JSON files are expected to be 
 specified by each client individually, according to their own local data path and splits for training and validation.
 
-In this simulated study, to efficiently generate the config files for a 
-study under a particular setting, we provide a script to automate the process. 
-Note that manual copying and content modification can achieve the same.
+In this simulated study, we generate automatic data split and run experiments with different data heterogeneity levels.
 
 For an experiment with `K` clients, we split one dataset into `K+1` parts in a non-overlapping fashion: 
 `K` clients' training data and `1` common validation data. 
+
 To simulate data imbalance among clients, we provided several options for client data splits by specifying how a client's data amount correlates with its ID number (from `1` to `K`):
 - Uniform
 - Linear
@@ -73,59 +72,52 @@ data imbalance (linear), and high data imbalance (square for larger client
 number, e.g. `K=20`, exponential for smaller client number, e.g. `K=5` as 
 it will be too aggressive for a larger number of clients)
 
-This step is performed by 
-```commandline
-bash prepare_job_config.sh
-```
 In this example, we experiment with 3 clients under a uniform data split. 
+We run the federated training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html):
+```commandline
+python kmeans_job.py --num_clients 3 --split_mode uniform
+```
 
-Below is a sample config for site-1, saved to `./jobs/sklearn_kmeans_3_uniform/app_site-1/config/config_fed_client.json`:
+Below is a sample config for site-1, saved to `/tmp/nvflare/workspace/jobs/kmeans/sklearn_kmeans_uniform_3_clients/app_site-1/config/config_fed_client.json`:
 ```json
 {
-    "format_version": 2,
-    "executors": [
-        {
-            "tasks": [
-                "train"
-            ],
-            "executor": {
-                "id": "Executor",
-                "path": "app_opt.sklearn.sklearn_executor.SKLearnExecutor",
-                "args": {
-                    "learner_id": "kmeans_learner"
-                }
-            }
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_opt.sklearn.sklearn_executor.SKLearnExecutor",
+        "args": {
+          "learner_id": "kmeans_learner"
         }
-    ],
-    "task_result_filters": [],
-    "task_data_filters": [],
-    "components": [
-        {
-            "id": "kmeans_learner",
-            "path": "kmeans_learner.KMeansLearner",
-            "args": {
-                "data_path": "/tmp/nvflare/dataset/sklearn_iris.csv",
-                "train_start": 0,
-                "train_end": 50,
-                "valid_start": 0,
-                "valid_end": 150,
-                "random_state": 0
-            }
-        }
-    ]
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "kmeans_learner",
+      "path": "kmeans_learner.KMeansLearner",
+      "args": {
+        "data_path": "/tmp/nvflare/dataset/sklearn_iris.csv",
+        "train_start": 0,
+        "train_end": 50,
+        "valid_start": 0,
+        "valid_end": 150,
+        "random_state": 0
+      }
+    }
+  ]
 }
 ```
 
-## Run experiment with FL simulator
-The [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) simulates FL experiments or debugging codes,
-not for real-world FL deployment.
-We can run the FL simulator with 3 clients under the uniform data split with
-```commandline
-bash run_experiment_simulator.sh
-```
-Running with the deterministic setting `random_state=0`, the resulting curve for `homogeneity_score` is
+The resulting curve for `homogeneity_score` is
 ![minibatch curve](./figs/minibatch.png)
 It can be visualized using
 ```commandline
-tensorboard --logdir ./workspaces
+tensorboard --logdir /tmp/nvflare/workspace/works/kmeans/sklearn_kmeans_uniform_3_clients
 ```
