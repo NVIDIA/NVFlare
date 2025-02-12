@@ -82,7 +82,6 @@ class _EntryConsumer(ObjectConsumer):
 
 
 class _EntryConsumerFactory(ConsumerFactory):
-
     def get_consumer(self, stream_ctx: StreamContext, fl_ctx: FLContext) -> ObjectConsumer:
         return _EntryConsumer(stream_ctx)
 

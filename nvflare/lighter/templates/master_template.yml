@@ -242,11 +242,14 @@ local_server_resources: |
 
 comm_config: |
   {
+    "allow_adhoc_conns": false,
+    "backbone_conn_gen": {~~conn_gen~~},
     "internal": {
-      "scheme": "tcp",
+      "scheme": "{~~scheme~~}",
       "resources": {
-        "host": "{~~comm_host_name~~}",
-        "port": {~~communication_port~~}
+        "host": "{~~host~~}",
+        "port": {~~port~~},
+        "connection_security": "{~~conn_sec~~}"
       }
     }
   }
@@ -527,7 +530,7 @@ sub_start_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.{~~type~~}.{~~type~~}_train -m $DIR/.. -s fed_{~~type~~}.json --set secure_train=true {~~cln_uid~~} org={~~org_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
+  ((python3 -u -m nvflare.private.fed.app.{~~type~~}.{~~app_name~~} -m $DIR/.. -s fed_{~~type~~}.json --set secure_train=true {~~cln_uid~~} org={~~org_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -1067,3 +1070,29 @@ adm_notebook: |
   "nbformat_minor": 5
   }
 
+relay_resources_json: |
+  {
+    "format_version": 2,
+    "relay_config": {
+      "scheme": "{~~scheme~~}",
+      "identity": "{~~identity~~}",
+      "address": "{~~address~~}",
+      "fqcn": "{~~fqcn~~}",
+      "connection_security": "{~~conn_sec~~}"
+    }
+  }
+
+fed_relay: |
+  {
+    "format_version": 2,
+    "project_name": "{~~project_name~~}",
+    "identity": "{~~identity~~}",
+    "server_identity": "{~~server_identity~~}",
+    "connect_to": {
+      "scheme": "{~~scheme~~}",
+      "identity": "{~~parent_identity~~}",
+      "address": "{~~address~~}",
+      "fqcn": "{~~fqcn~~}",
+      "connection_security": "{~~conn_sec~~}"
+    }
+  }
