@@ -11,9 +11,42 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Any, Optional
+
 from nvflare.apis.utils.format_check import name_check
 
-from .constants import AdminRole, ParticipantType, PropKey
+from .constants import AdminRole, ConnSecurity, ParticipantType, PropKey
+
+
+class ListeningHost:
+    def __init__(self, scheme, host_names, default_host, port, conn_sec):
+        self.scheme = scheme
+        self.host_names = host_names
+        self.default_host = default_host
+        self.port = port
+        self.conn_sec = conn_sec
+
+    def __str__(self):
+        scheme, host_names, default_host, port, conn_sec = (
+            self.scheme,
+            self.host_names,
+            self.default_host,
+            self.port,
+            self.conn_sec,
+        )
+        return f"ListeningHost[{scheme=} {host_names=} {default_host=} {port=} {conn_sec=}]"
+
+
+class ConnectTo:
+    def __init__(self, name, host, port, conn_sec):
+        self.name = name
+        self.host = host
+        self.port = port
+        self.conn_sec = conn_sec
+
+    def __str__(self):
+        name, host, port, conn_sec = self.name, self.host, self.port, self.conn_sec
+        return f"ConnectTo[{name=} {host=} {port=} {conn_sec=}]"
 
 
 def _check_host_name(scope: str, prop_key: str, value):
@@ -36,15 +69,105 @@ def _check_admin_role(scope: str, prop_key: str, value):
         raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be one of {valid_roles}")
 
 
+def parse_connect_to(value, scope=None, prop_key=None) -> ConnectTo:
+    """Parse the "connect_to" property.
+
+    Args:
+        value: value to be parsed. It is either a str or a dict.
+        scope: scope of the property
+        prop_key: key of the property
+
+    Returns: a ConnectTo object
+
+    """
+    if isinstance(value, str):
+        # old format - for server only
+        return ConnectTo(None, value, None, None)
+    elif isinstance(value, dict):
+        name = value.get(PropKey.NAME)
+        host = value.get(PropKey.HOST)
+        port = value.get(PropKey.PORT)
+        conn_sec = value.get(PropKey.CONN_SECURITY)
+        return ConnectTo(name, host, port, conn_sec)
+    else:
+        raise ValueError(
+            f"bad value for {prop_key} '{value}' in {scope}: invalid type {type(value)}; must be str or dict"
+        )
+
+
+def _check_connect_to(scope: str, prop_key: str, value):
+    ct = parse_connect_to(value, scope, prop_key)
+    if ct.host:
+        err, reason = name_check(ct.host, "host_name")
+        if err:
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: {reason}")
+
+    if ct.port is not None:
+        if not isinstance(ct.port, int):
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: port {ct.port} must be int")
+
+        if ct.port < 0:
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: invalid port {ct.port}")
+
+
+def _check_conn_security(scope: str, prop_key: str, value):
+    valid_conn_secs = [ConnSecurity.CLEAR, ConnSecurity.MTLS, ConnSecurity.TLS]
+    if value not in valid_conn_secs:
+        raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be one of {valid_conn_secs}")
+
+
+def parse_listening_host(value, scope=None, prop_key=None) -> ListeningHost:
+    """Parse the "listening_host" property. It must be either str or a dict
+
+    Args:
+        value: value to be parsed
+        scope: scope of the prop
+        prop_key: key of the property
+
+    Returns: a ListeningHost object
+    """
+    if isinstance(value, str):
+        # old format - for server only
+        return ListeningHost(None, None, value, None, None)
+    elif isinstance(value, dict):
+        scheme = value.get(PropKey.SCHEME)
+        host_names = value.get(PropKey.HOST_NAMES)
+        default_host = value.get(PropKey.DEFAULT_HOST)
+        port = value.get(PropKey.PORT)
+        conn_sec = value.get(PropKey.CONN_SECURITY)
+        return ListeningHost(scheme, host_names, default_host, port, conn_sec)
+    else:
+        raise ValueError(
+            f"bad value for {prop_key} '{value}' in {scope}: invalid type {type(value)}; must be str or dict"
+        )
+
+
+def _check_listening_host(scope: str, prop_key: str, value):
+    h = parse_listening_host(value, scope, prop_key)
+    if h.host_names:
+        _check_host_names(scope, prop_key, h.host_names)
+
+    if h.default_host:
+        _check_host_name(scope, prop_key, h.default_host)
+
+    if h.port is not None:
+        if not isinstance(h.port, int):
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: port {h.port} must be int")
+
+        if h.port < 0:
+            raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: invalid port {h.port}")
+
+
 # validator functions for common properties
 # Validator function must follow this signature:
 # func(scope: str, prop_key: str, value)
 _PROP_VALIDATORS = {
     PropKey.HOST_NAMES: _check_host_names,
-    PropKey.CONNECT_TO: _check_host_name,
-    PropKey.LISTENING_HOST: _check_host_name,
+    PropKey.CONNECT_TO: _check_connect_to,
+    PropKey.LISTENING_HOST: _check_listening_host,
     PropKey.DEFAULT_HOST: _check_host_name,
     PropKey.ROLE: _check_admin_role,
+    PropKey.CONN_SECURITY: _check_conn_security,
 }
 
 
@@ -63,6 +186,9 @@ class Entity:
 
     def get_prop(self, key: str, default=None):
         return self.props.get(key, default)
+
+    def add_prop(self, key: str, value: Any):
+        self.props[key] = value
 
     def get_prop_fb(self, key: str, fb_key=None, default=None):
         """Get property value with fallback.
@@ -97,7 +223,7 @@ class Participant(Entity):
         own name, type, organization it belongs to, rules and other information.
 
         Args:
-            type (str): server, client, admin or other string that builders can handle
+            type (str): server, client, admin, relay or other string that builders can handle
             name (str): system-wide unique name
             org (str): system-wide unique organization
             props (dict): properties
@@ -133,6 +259,36 @@ class Participant(Entity):
             return h
         else:
             return self.name
+
+    def get_listening_host(self) -> Optional[ListeningHost]:
+        h = self.get_prop(PropKey.LISTENING_HOST)
+        if not h:
+            return None
+
+        lh = parse_listening_host(h)
+        if not lh.scheme:
+            lh.scheme = "tcp"
+
+        if not lh.port:
+            lh.port = 0  # any port
+
+        if not lh.conn_sec:
+            lh.conn_sec = ConnSecurity.CLEAR
+
+        if not lh.default_host:
+            if self.type == ParticipantType.SERVER:
+                lh.default_host = self.get_default_host()
+            else:
+                lh.default_host = "localhost"
+
+        return lh
+
+    def get_connect_to(self) -> Optional[ConnectTo]:
+        h = self.get_prop(PropKey.CONNECT_TO)
+        if not h:
+            return None
+        else:
+            return parse_connect_to(h)
 
 
 class Project(Entity):
@@ -173,6 +329,7 @@ class Project(Entity):
         self.overseer = None
         self.clients = []
         self.admins = []
+        self.relays = []
         self.all_names = {}
 
         if participants:
@@ -236,6 +393,14 @@ class Project(Entity):
     def get_clients(self):
         return self.clients
 
+    def add_relay(self, name: str, org: str, props: dict):
+        self._check_unique_name(name)
+        self.relays.append(Participant(ParticipantType.RELAY, name, org, props, self))
+        self.all_names[name] = True
+
+    def get_relays(self):
+        return self.relays
+
     def add_admin(self, name: str, org: str, props: dict):
         self._check_unique_name(name)
         admin = Participant(ParticipantType.ADMIN, name, org, props, self)
@@ -257,5 +422,6 @@ class Project(Entity):
             result.append(self.overseer)
 
         result.extend(self.clients)
+        result.extend(self.relays)
         result.extend(self.admins)
         return result

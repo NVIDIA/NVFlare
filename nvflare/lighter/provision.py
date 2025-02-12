@@ -164,6 +164,8 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
             project.set_server(name, org, props=p)
         elif participant_type == ParticipantType.CLIENT:
             project.add_client(name, org, p)
+        elif participant_type == ParticipantType.RELAY:
+            project.add_relay(name, org, p)
         elif participant_type == ParticipantType.ADMIN:
             project.add_admin(name, org, p)
         elif participant_type == ParticipantType.OVERSEER:
