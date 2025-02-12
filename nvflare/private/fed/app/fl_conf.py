@@ -228,8 +228,6 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         config_files = workspace.get_config_files_for_startup(is_server=False, for_job=True if args.job_id else False)
 
-        print(f"got all config files: {config_files}")
-
         JsonConfigurator.__init__(
             self,
             config_file_name=config_files,
@@ -295,10 +293,8 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         # relay info is set in the client's relay__resources.json.
         # If relay is used, then connect via the specified relay; if not, try to connect the Server directly
-        print(f"Config data: {config_data=}")
-        print(f"Args: {self.args=}")
         relay_config = config_data.get(ConnPropKey.RELAY_CONFIG)
-        self.logger.info(f"got relay config: {relay_config}")
+        self.logger.debug(f"got relay config: {relay_config}")
         if relay_config:
             if relay_config:
                 relay_fqcn = relay_config.get(ConnPropKey.FQCN)
@@ -309,11 +305,10 @@ class FLClientStarterConfiger(JsonConfigurator):
                 if relay_conn_security == ConnectionSecurity.CLEAR:
                     secure = False
                 relay_url = make_url(scheme, addr, secure)
-                print(f"connect to server via relay: {relay_url=} {relay_fqcn=}")
             else:
-                print("no relay defined: connect to server directly")
+                self.logger.debug("no relay defined: connect to server directly")
         else:
-            print("no relay_config: connect to server directly")
+            self.logger.debug("no relay_config: connect to server directly")
 
         if relay_fqcn:
             cp_fqcn = FQCN.join([relay_fqcn, client_name])
