@@ -24,6 +24,11 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type, check_str
 
 
+class StopMethod:
+    KILL = "kill"
+    TERMINATE = "terminate"
+
+
 class CommandDescriptor:
     def __init__(
         self,
@@ -33,6 +38,7 @@ class CommandDescriptor:
         log_file_name: str = "",
         log_stdout: bool = True,
         stdout_msg_prefix: str = None,
+        stop_method=StopMethod.KILL,
     ):
         """Constructor of CommandDescriptor.
         A CommandDescriptor describes the requirements of the new process to be started.
@@ -46,6 +52,7 @@ class CommandDescriptor:
             stdout_msg_prefix: prefix to be prepended to log message when writing to stdout.
                 Since multiple processes could be running within the same terminal window, the prefix can help
                 differentiate log messages from these processes.
+            stop_method: how to stop the command (kill or terminate)
         """
         check_str("cmd", cmd)
 
@@ -61,16 +68,21 @@ class CommandDescriptor:
         if stdout_msg_prefix:
             check_str("stdout_msg_prefix", stdout_msg_prefix)
 
+        valid_stop_methods = [StopMethod.KILL, StopMethod.TERMINATE]
+        if stop_method not in valid_stop_methods:
+            raise ValueError(f"invalid stop_method '{stop_method}': must be one of {valid_stop_methods}")
+
         self.cmd = cmd
         self.cwd = cwd
         self.env = env
         self.log_file_name = log_file_name
         self.log_stdout = log_stdout
         self.stdout_msg_prefix = stdout_msg_prefix
+        self.stop_method = stop_method
 
 
 class ProcessManager:
-    def __init__(self, cmd_desc: CommandDescriptor):
+    def __init__(self, cmd_desc: CommandDescriptor, stop_method="kill"):
         """Constructor of ProcessManager.
         ProcessManager provides methods for managing the lifecycle of a subprocess (start, stop, poll), as well
         as the handling of log file to be used by the subprocess.
@@ -84,6 +96,7 @@ class ProcessManager:
         check_object_type("cmd_desc", cmd_desc, CommandDescriptor)
         self.process = None
         self.cmd_desc = cmd_desc
+        self.stop_method = stop_method
         self.log_file = None
         self.msg_prefix = None
         self.file_lock = threading.Lock()
@@ -131,7 +144,6 @@ class ProcessManager:
             env=env,
             stdout=subprocess.PIPE,
         )
-
         log_writer = threading.Thread(target=self._write_log, daemon=True)
         log_writer.start()
 
@@ -175,35 +187,72 @@ class ProcessManager:
         Returns: the exit code of the process. If killed, returns -9.
 
         """
+        self.logger.info(f"stopping process: {self.cmd_desc.cmd}")
         rc = self.poll()
         if rc is None:
             # process is still alive
+            stop_method = self.cmd_desc.stop_method
+            self.logger.info(f"process still running - {stop_method} process: {self.cmd_desc.cmd}")
             try:
-                self.process.kill()
-                rc = -9
-            except:
+                if stop_method == StopMethod.KILL:
+                    self.process.kill()
+                    rc = -9
+                else:
+                    self.process.terminate()
+                    rc = -15
+            except Exception as ex:
                 # ignore kill error
+                self.logger.debug(f"ignored exception {ex} from {stop_method}")
                 pass
+        else:
+            self.logger.info(f"process already stopped: {rc=}")
 
         # close the log file if any
         with self.file_lock:
             if self.log_file:
-                self.logger.debug("closed subprocess log file!")
+                self.logger.info("closed subprocess log file!")
                 self.log_file.close()
                 self.log_file = None
         return rc
 
 
-def start_process(cmd_desc: CommandDescriptor, fl_ctx: FLContext) -> ProcessManager:
+def start_process(cmd_desc: CommandDescriptor, fl_ctx: FLContext, stop_method="kill") -> ProcessManager:
     """Convenience function for starting a subprocess.
 
     Args:
         cmd_desc: the CommandDescriptor the describes the command to be executed
         fl_ctx: FLContext object
+        stop_method: how to stop the process
 
     Returns: a ProcessManager object.
 
     """
-    mgr = ProcessManager(cmd_desc)
+    mgr = ProcessManager(cmd_desc, stop_method)
     mgr.start(fl_ctx)
     return mgr
+
+
+def run_command(cmd_desc: CommandDescriptor) -> str:
+    env = os.environ.copy()
+    if cmd_desc.env:
+        env.update(cmd_desc.env)
+
+    command_seq = shlex.split(cmd_desc.cmd)
+    p = subprocess.Popen(
+        command_seq,
+        stderr=subprocess.STDOUT,
+        cwd=cmd_desc.cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+    )
+
+    output = []
+    while True:
+        line = p.stdout.readline()
+        if not line:
+            break
+
+        assert isinstance(line, bytes)
+        line = line.decode("utf-8")
+        output.append(line)
+    return "".join(output)
