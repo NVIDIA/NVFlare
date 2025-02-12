@@ -176,24 +176,54 @@ class CertBuilder(Builder):
         with open(os.path.join(dest_dir, f"{base_name}.key"), "wb") as f:
             f.write(serialize_pri_key(pri_key))
 
-        if base_name == CertFileBasename.CLIENT and (listening_host := participant.get_prop(PropKey.LISTENING_HOST)):
-            project = ctx.get_project()
-            tmp_participant = Participant(
-                type=ParticipantType.SERVER,
-                name=participant.name,
-                org=participant.org,
-                project=project,
-                props={PropKey.DEFAULT_HOST: listening_host},
-            )
-            tmp_pri_key, tmp_cert = self.get_pri_key_cert(tmp_participant)
-            bn = CertFileBasename.SERVER
-            with open(os.path.join(dest_dir, f"{bn}.crt"), "wb") as f:
-                f.write(serialize_cert(tmp_cert))
-            with open(os.path.join(dest_dir, f"{bn}.key"), "wb") as f:
-                f.write(serialize_pri_key(tmp_pri_key))
+        if participant.type in [ParticipantType.CLIENT, ParticipantType.RELAY]:
+            self._build_internal_listener_cert(participant, ctx)
 
         with open(os.path.join(dest_dir, "rootCA.pem"), "wb") as f:
             f.write(self.serialized_cert)
+
+    def _build_internal_listener_cert(self, participant: Participant, ctx: ProvisionContext):
+        """Build server cert if the participant has internal listeners.
+        Note that internal listener used to be only used for connecting SJ to SP, and CJ to SP, but now
+        relay hierarchy is connected to internal listeners.
+
+        Just like the FL Server, a relay could offer one or more hosts for other relays and clients to
+        connect to. Therefore, the relay's server cert must include all these host names and IP addresses
+        for others to make SSL-based connections using any one of these host names/addresses.
+
+        Args:
+            participant: the participant being provisioned
+            ctx: a ProvisionContext object
+
+        Returns: None
+
+        """
+        lh = participant.get_listening_host()
+        if not lh:
+            return
+
+        dest_dir = ctx.get_kit_dir(participant)
+        project = ctx.get_project()
+
+        # make a fake/temp server participant to use the get_pri_key_cert() method!
+        tmp_participant = Participant(
+            type=ParticipantType.SERVER,
+            name=participant.name,
+            org=participant.org,
+            project=project,
+            props={
+                PropKey.HOST_NAMES: lh.host_names,
+                PropKey.DEFAULT_HOST: lh.default_host,
+            },
+        )
+        tmp_pri_key, tmp_cert = self.get_pri_key_cert(tmp_participant)
+
+        # The listener cert is a Server Cert.
+        bn = CertFileBasename.SERVER
+        with open(os.path.join(dest_dir, f"{bn}.crt"), "wb") as f:
+            f.write(serialize_cert(tmp_cert))
+        with open(os.path.join(dest_dir, f"{bn}.key"), "wb") as f:
+            f.write(serialize_pri_key(tmp_pri_key))
 
     def build(self, project: Project, ctx: ProvisionContext):
         self._build_root(project.name, subject_org=None)
@@ -210,6 +240,9 @@ class CertBuilder(Builder):
 
         for client in project.get_clients():
             self._build_write_cert_pair(client, CertFileBasename.CLIENT, ctx)
+
+        for relay in project.get_relays():
+            self._build_write_cert_pair(relay, CertFileBasename.CLIENT, ctx)
 
         for admin in project.get_admins():
             self._build_write_cert_pair(admin, CertFileBasename.CLIENT, ctx)
@@ -235,7 +268,8 @@ class CertBuilder(Builder):
         )
         return pri_key, cert
 
-    def _generate_keys(self):
+    @staticmethod
+    def _generate_keys():
         pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
         pub_key = pri_key.public_key()
         return pri_key, pub_key

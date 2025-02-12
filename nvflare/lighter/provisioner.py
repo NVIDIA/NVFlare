@@ -55,7 +55,34 @@ class Provisioner:
             raise ValueError(f"template must be a dict but got {type(template)}")
         self.template.update(template)
 
-    def provision(self, project: Project, mode=None):
+    @staticmethod
+    def _check_method(logger, method_name: str):
+        if not hasattr(logger, method_name):
+            raise ValueError(f"invalid logger {type(logger)}: missing method '{method_name}'")
+        elif not callable(getattr(logger, method_name)):
+            raise ValueError(f"invalid logger {type(logger)}: method '{method_name}' is not callable")
+
+    def provision(self, project: Project, mode=None, logger=None):
+        """Provision a specified project.
+
+        Args:
+            project: the project to be provisioned.
+            mode: provision mode: either "poc" or "normal". If not specified, default to "normal".
+            logger: a logger object to be used for message logging. If not specified, default to print.
+                The logger must implement 4 methods: debug, info, warning, error.
+                The logger object does NOT have to be based on logging.Logger. It could be used for
+                collecting information into memory and displayed to end user at the end of provision.
+
+        Returns: a ProvisionContext that contains properties created during provision, especially a
+            property (CtxKey.CURRENT_PROD_DIR) that specifies where the provision result is stored.
+
+        """
+        if logger:
+            self._check_method(logger, "info")
+            self._check_method(logger, "debug")
+            self._check_method(logger, "warning")
+            self._check_method(logger, "error")
+
         server = project.get_server()
         if not server:
             raise RuntimeError("missing server from the project")
@@ -67,7 +94,14 @@ class Provisioner:
 
         if not mode:
             mode = ProvisionMode.NORMAL
+
+        valid_modes = [ProvisionMode.NORMAL, ProvisionMode.POC]
+        if mode not in valid_modes:
+            raise ValueError(f"invalid mode '{mode}': must be one of {valid_modes}")
         ctx.set_provision_mode(mode)
+
+        if logger:
+            ctx.set_logger(logger)
 
         try:
             for b in self.builders:
@@ -80,11 +114,11 @@ class Provisioner:
             for b in self.builders[::-1]:
                 b.finalize(project, ctx)
 
-        except Exception:
+        except Exception as ex:
             prod_dir = ctx.get(WorkDir.CURRENT_PROD_DIR)
             if prod_dir:
                 shutil.rmtree(prod_dir)
-            print("Exception raised during provision.  Incomplete prod_n folder removed.")
+            ctx.error(f"Exception {ex} raised during provision.  Incomplete prod_n folder removed.")
             traceback.print_exc()
         finally:
             wip_dir = ctx.get(WorkDir.WIP)
