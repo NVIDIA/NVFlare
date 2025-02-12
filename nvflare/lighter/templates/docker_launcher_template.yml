@@ -12,12 +12,12 @@ docker_launcher_cln_sh: |
       docker network create $NETWORK_NAME
   fi
   
-  docker run --name {~~comm_host_name~~} --network nvflare-network \
+  docker run --name {~~client_name~~} --network nvflare-network \
     -v $DIR/..:/workspace \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -p {~~communication_port~~}:{~~communication_port~~} \
     -it --rm $DOCKER_IMAGE /bin/bash -c "export NVFL_DOCKER_WORKSPACE=$DIR/..;startup/sub_start.sh \
-    {~~client_name~~} server-parent:{~~fed_learn_port~~}:{~~admin_port~~}"
+    {~~client_name~~} {~~server_host_name~~}:{~~fed_learn_port~~}:{~~admin_port~~}"
 
 docker_launcher_svr_sh: |
   #!/usr/bin/env bash

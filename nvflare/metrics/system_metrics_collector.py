@@ -19,7 +19,6 @@ from nvflare.metrics.metrics_collector import MetricsCollector
 
 
 class SysMetricsCollector(MetricsCollector):
-
     def __init__(self, tags: dict, streaming_to_server: bool = False):
         """
         Args:

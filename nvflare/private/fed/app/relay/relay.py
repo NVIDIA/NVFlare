@@ -53,6 +53,13 @@ class CellnetMonitor:
         self.stop_event.set()
 
 
+class _ConfigKey:
+    PROJECT_NAME = "project_name"
+    SERVER_IDENTITY = "server_identity"
+    IDENTITY = "identity"
+    CONNECT_TO = "connect_to"
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
@@ -83,21 +90,21 @@ def main(args):
     if not isinstance(relay_config, dict):
         raise RuntimeError(f"invalid relay config file {args.relay_config}")
 
-    project_name = relay_config.get(ConnPropKey.PROJECT_NAME)
+    project_name = relay_config.get(_ConfigKey.PROJECT_NAME)
     if not project_name:
-        raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {ConnPropKey.PROJECT_NAME}")
+        raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {_ConfigKey.PROJECT_NAME}")
 
-    server_identity = relay_config.get(ConnPropKey.SERVER_IDENTITY)
+    server_identity = relay_config.get(_ConfigKey.SERVER_IDENTITY)
     if not server_identity:
-        raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {ConnPropKey.SERVER_IDENTITY}")
+        raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {_ConfigKey.SERVER_IDENTITY}")
 
-    my_identity = relay_config.get(ConnPropKey.IDENTITY)
+    my_identity = relay_config.get(_ConfigKey.IDENTITY)
     if not my_identity:
-        raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {ConnPropKey.IDENTITY}")
+        raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {_ConfigKey.IDENTITY}")
 
-    parent = relay_config.get(ConnPropKey.PARENT)
+    parent = relay_config.get(_ConfigKey.CONNECT_TO)
     if not parent:
-        raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {ConnPropKey.PARENT}")
+        raise RuntimeError(f"invalid relay config file {args.relay_config}: missing {_ConfigKey.CONNECT_TO}")
 
     parent_address = parent.get(ConnPropKey.ADDRESS)
     if not parent_address:
