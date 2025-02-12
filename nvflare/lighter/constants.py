@@ -27,11 +27,13 @@ class ParticipantType:
     CLIENT = "client"
     ADMIN = "admin"
     OVERSEER = "overseer"
+    RELAY = "relay"
 
 
 class PropKey:
     API_VERSION = "api_version"
     NAME = "name"
+    HOST = "host"
     DESCRIPTION = "description"
     ROLE = "role"
     HOST_NAMES = "host_names"
@@ -44,21 +46,31 @@ class PropKey:
     OVERSEER_END_POINT = "overseer_end_point"
     ADMIN_PORT = "admin_port"
     FED_LEARN_PORT = "fed_learn_port"
-    DOCKER_COMM_PORT = "docker_comm_port"
     ALLOW_ERROR_SENDING = "allow_error_sending"
     CONN_SECURITY = "connection_security"
     CUSTOM_CA_CERT = "custom_ca_cert"
+    SCHEME = "scheme"
+    RUN_IN_DOCKER = "run_in_docker"
+
+    # the following are internal properties added by builders during provision
+    PARENT = "parent"
+    FQCN = "__fqcn__"
+    FQSN = "__fqsn__"
+    COMM_CONFIG_ARGS = "__comm_config_args__"
 
 
 class CtxKey(WorkDir, PropKey):
     PROJECT = "__project__"
     TEMPLATE = "__template__"
     PROVISION_MODE = "__provision_model__"
+    LOGGER = "__logger__"
     LAST_PROD_STAGE = "last_prod_stage"
     TEMPLATE_FILES = "template_files"
     SERVER_NAME = "server_name"
     ROOT_CERT = "root_cert"
     ROOT_PRI_KEY = "root_pri_key"
+    RELAY_MAP = "relay_map"
+    CLIENT_MAP = "client_map"
 
 
 class ProvisionMode:
@@ -120,6 +132,8 @@ class TemplateSectionKey:
     HELM_CHART_SERVICE_SERVER = "helm_chart_service_server"
     HELM_CHART_DEPLOYMENT_OVERSEER = "helm_chart_deployment_overseer"
     HELM_CHART_DEPLOYMENT_SERVER = "helm_chart_deployment_server"
+    RELAY_RESOURCES_JSON = "relay_resources_json"
+    FED_RELAY = "fed_relay"
 
 
 class ProvFileName:
@@ -157,9 +171,19 @@ class ProvFileName:
     VALUES_YAML = "values.yaml"
     HELM_CHART_TEMPLATES_DIR = "templates"
     CUSTOM_CA_CERT_FILE_NAME = "customRootCA.pem"
+    RELAY_RESOURCES_JSON = "relay__resources.json"
+    FED_RELAY_JSON = "fed_relay.json"
 
 
 class CertFileBasename:
     CLIENT = "client"
     SERVER = "server"
     OVERSEER = "overseer"
+
+
+class CommConfigArg:
+    SCHEME = "scheme"
+    HOST = "host"
+    PORT = "port"
+    CONN_GEN = "conn_gen"
+    CONN_SEC = "conn_sec"

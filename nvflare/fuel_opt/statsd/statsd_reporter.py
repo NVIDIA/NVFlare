@@ -24,7 +24,6 @@ from nvflare.metrics.metrics_keys import MetricKeys, MetricTypes
 
 
 class StatsDReporter:
-
     def __init__(self, site: str = "", host="localhost", port=9125):
 
         # Initialize the DataDog StatsD client
