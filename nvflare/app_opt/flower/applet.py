@@ -97,7 +97,7 @@ class FlowerServerApplet(Applet):
         Args:
             database: database spec to be used by the server app
             superlink_ready_timeout: how long to wait for the superlink process to become ready
-            status_check_interval: how often to check status with superlink
+            superlink_grace_period: how long to wait for superlink to gracefully shutdown
         """
         Applet.__init__(self)
         self._superlink_process_mgr = None
@@ -110,7 +110,7 @@ class FlowerServerApplet(Applet):
         self.flower_app_dir = None
         self.exec_api_addr = None
         self.flower_run_finished = False
-        self.flower_run_stopped = False  # have we issued 'flwr stop'?
+        self.flwr_stop_called = False  # have we called 'flwr stop'?
         self.flower_run_rc = None
 
         self._start_error = False
@@ -189,7 +189,7 @@ class FlowerServerApplet(Applet):
             raise RuntimeError("cannot start superlink process")
 
         # wait until superlink's fleet_api_addr is ready before starting server app
-        # note: the server app will connect to serverapp_api_addr, not fleet_api_addr
+        # fleet_api_addr is superlink's gRPC server address for Flare to connect to.
         start_time = time.time()
         create_channel(
             server_addr=fleet_api_addr,
@@ -265,10 +265,10 @@ class FlowerServerApplet(Applet):
 
         """
         with self.stop_lock:
-            if self.run_id and not self.flower_run_stopped and not self.flower_run_finished:
+            if self.run_id and not self.flwr_stop_called and not self.flower_run_finished:
                 # stop the server app
                 # we may not be able to issue 'flwr stop' more than once!
-                self.flower_run_stopped = True
+                self.flwr_stop_called = True
                 flwr_stop_cmd = self._flower_command("stop", self.run_id)
                 self.logger.info(f"Issued command to stop Flower App: {flwr_stop_cmd}")
                 try:

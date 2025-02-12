@@ -216,7 +216,8 @@ class TieController(Controller, ABC):
     def _trigger_stop(self, fl_ctx: FLContext, error=None):
         # first trigger the abort_signal to tell all components (mainly the controller's control_flow and connector)
         # that check this signal to abort.
-        self.abort_signal.trigger(value=True)
+        if self.abort_signal:
+            self.abort_signal.trigger(value=True)
 
         # if there is error, call system_panic to terminate the job with proper status.
         # if no error, the job will end normally.
