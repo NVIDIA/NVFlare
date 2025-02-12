@@ -25,7 +25,6 @@ def define_parser():
     parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/stats.json")
     parser.add_argument("-j", "--job_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/image_stats")
     parser.add_argument("-w", "--work_dir", type=str, nargs="?", default="/tmp/nvflare/workspace/image_stats")
-    parser.add_argument("-co", "--export_config", action="store_true", help="config only mode, export config")
 
     return parser.parse_args()
 
@@ -38,7 +37,6 @@ def main():
     output_path = args.stats_output_path
     job_dir = args.job_dir
     work_dir = args.work_dir
-    export_config = args.export_config
 
     statistic_configs = {"count": {}, "histogram": {"*": {"bins": 20, "range": [0, 256]}}}
     # define local stats generator
@@ -54,10 +52,9 @@ def main():
     sites = [f"site-{i + 1}" for i in range(n_clients)]
     job.setup_clients(sites)
 
-    if export_config:
-        job.export_job(job_dir)
-    else:
-        job.simulator_run(work_dir, gpu="0")
+    job.export_job(job_dir)
+
+    job.simulator_run(work_dir, gpu="0")
 
 
 if __name__ == "__main__":
