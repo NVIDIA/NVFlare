@@ -25,7 +25,6 @@ from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_st
 
 
 class DFStatisticsCore(Statistics, ABC):
-
     def __init__(self):
         # assumption: the data can be loaded and cached in the memory
         self.data: Optional[Dict[str, pd.DataFrame]] = None
