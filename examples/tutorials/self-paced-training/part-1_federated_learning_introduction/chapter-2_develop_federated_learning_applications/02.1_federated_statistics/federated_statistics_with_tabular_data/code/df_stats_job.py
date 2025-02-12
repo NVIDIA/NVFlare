@@ -13,7 +13,7 @@
 # limitations under the License.
 import argparse
 
-from src.image_statistics import ImageStatistics
+from src.df_statistics import DFStatistics
 
 from nvflare.job_config.stats_job import StatsJob
 
@@ -21,10 +21,10 @@ from nvflare.job_config.stats_job import StatsJob
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--n_clients", type=int, default=3)
-    parser.add_argument("-d", "--data_root_dir", type=str, nargs="?", default="/tmp/nvflare/image_stats/data")
-    parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/stats.json")
-    parser.add_argument("-j", "--job_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/image_stats")
-    parser.add_argument("-w", "--work_dir", type=str, nargs="?", default="/tmp/nvflare/workspace/image_stats")
+    parser.add_argument("-d", "--data_root_dir", type=str, nargs="?", default="/tmp/nvflare/df_stats/data")
+    parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/adult_stats.json")
+    parser.add_argument("-j", "--job_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/stats_df")
+    parser.add_argument("-w", "--work_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/stats_df")
 
     return parser.parse_args()
 
@@ -38,14 +38,22 @@ def main():
     job_dir = args.job_dir
     work_dir = args.work_dir
 
-    statistic_configs = {"count": {}, "histogram": {"*": {"bins": 20, "range": [0, 256]}}}
+    statistic_configs = {
+        "count": {},
+        "mean": {},
+        "sum": {},
+        "stddev": {},
+        "histogram": {"*": {"bins": 20}},
+        "Age": {"bins": 20, "range": [0, 10]},
+        "percentile": {"*": [25, 50, 75], "Age": [50, 95]},
+    }
     # define local stats generator
-    stats_generator = ImageStatistics(data_root_dir)
+    df_stats_generator = DFStatistics(data_root_dir=data_root_dir)
 
     job = StatsJob(
-        job_name="stats_image",
+        job_name="stats_df",
         statistic_configs=statistic_configs,
-        stats_generator=stats_generator,
+        stats_generator=df_stats_generator,
         output_path=output_path,
     )
 
@@ -54,7 +62,7 @@ def main():
 
     job.export_job(job_dir)
 
-    job.simulator_run(work_dir, gpu="0")
+    job.simulator_run(work_dir)
 
 
 if __name__ == "__main__":
