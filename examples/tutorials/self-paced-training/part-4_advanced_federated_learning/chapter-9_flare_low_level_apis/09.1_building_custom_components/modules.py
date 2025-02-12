@@ -19,7 +19,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 
 
-class DummyController(Controller):
+class PlaceholderController(Controller):
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         pass
 
@@ -30,7 +30,7 @@ class DummyController(Controller):
         pass
 
 
-class DummyExecutor(Executor):
+class PlaceholderExecutor(Executor):
     def execute(
         self,
         task_name: str,
@@ -41,7 +41,7 @@ class DummyExecutor(Executor):
         pass
 
 
-class DummyLoggingController(Controller):
+class LoggingController(Controller):
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         pass
 
@@ -52,7 +52,7 @@ class DummyLoggingController(Controller):
         self.log_info(fl_ctx, "Stopping the controller...")
 
 
-class DummyLoggingExecutor(Executor):
+class LoggingExecutor(Executor):
     def execute(
         self,
         task_name: str,
