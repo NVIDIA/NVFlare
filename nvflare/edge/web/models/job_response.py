@@ -8,7 +8,7 @@ class JobResponse(BaseModel):
     def __init__(
         self,
         status: str,
-        session_id: str,
+        session_id: str = None,
         job_id: str = None,
         job_name: str = None,
         method: str = None,

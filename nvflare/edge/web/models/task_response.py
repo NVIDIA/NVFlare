@@ -6,7 +6,7 @@ class TaskResponse(BaseModel):
     def __init__(
         self,
         status: str,
-        session_id: str,
+        session_id: str = None,
         retry_wait: int = None,
         task_id: str = None,
         task_name: str = None,

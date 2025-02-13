@@ -11,15 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional
+import traceback
+from typing import Any
 
 
 class ApiError(Exception):
-    def __init__(self, status_code: int, status: str, message=None, details: Optional[dict] = None):
+    def __init__(self, status_code: int, status: str, message=None, details: Any = None):
         super().__init__(message)
         self.status_code = status_code
         self.status = status
-        self.details = details
+        if isinstance(details, Exception):
+            tb = traceback.format_tb(details.__traceback__)
+            self.details = {"traceback": tb}
+        else:
+            self.details = details
 
     def to_dict(self):
         return {

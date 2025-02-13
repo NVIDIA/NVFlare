@@ -26,7 +26,7 @@ from nvflare.edge.web.models.user_info import UserInfo
 
 jobs = [
     JobResponse("OK", str(uuid.uuid4()), str(uuid.uuid4()), "demo_job", "ExecuTorch",
-                job_data={"execu_torch_parameters": [1.2, 3.4, 5.6]}),
+                job_data={"executorch_parameters": [1.2, 3.4, 5.6]}),
     JobResponse("OK", str(uuid.uuid4()), str(uuid.uuid4()), "xgb_job", "xgboost"),
     JobResponse("OK", str(uuid.uuid4()), str(uuid.uuid4()), "core_job", "coreML"),
     JobResponse("RETRY", str(uuid.uuid4()), retry_wait=60),
