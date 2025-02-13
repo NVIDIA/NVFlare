@@ -138,6 +138,9 @@ class TieExecutor(Executor):
             self._notify_client_done(Constant.EXIT_CODE_FATAL_ERROR, fl_ctx)
         elif event_type == EventType.END_RUN:
             self.abort_signal.trigger(True)
+            if self.connector:
+                self.logger.info(f"stopping connector {type(self.connector)}")
+                self.connector.stop(fl_ctx)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.configure_task_name:

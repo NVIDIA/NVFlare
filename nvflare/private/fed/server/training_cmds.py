@@ -106,7 +106,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return err
         else:
-            conn.append_string("FL app has been shutdown.")
+            conn.append_string("Flare Server has been shutdown.")
             conn.append_shutdown("Goodbye!")
             return ""
 

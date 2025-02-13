@@ -39,8 +39,13 @@ class Constant:
     MAX_CLIENT_OP_INTERVAL = TieConstant.MAX_CLIENT_OP_INTERVAL
     WORKFLOW_PROGRESS_TIMEOUT = TieConstant.WORKFLOW_PROGRESS_TIMEOUT
 
-    APP_CTX_SERVER_ADDR = "flower_server_addr"
-    APP_CTX_PORT = "flower_port"
+    APP_CTX_SERVERAPP_API_ADDR = "flower_serverapp_api_addr"
+    APP_CTX_FLEET_API_ADDR = "flower_fleet_api_addr"
+    APP_CTX_EXEC_API_ADDR = "flower_exec_api_addr"
+
+    APP_CTX_CLIENTAPP_API_ADDR = "flower_clientapp_api_addr"
+    APP_CTX_SUPERLINK_ADDR = "flower_superlink_addr"
+
     APP_CTX_CLIENT_NAME = "flower_client_name"
     APP_CTX_NUM_ROUNDS = "flower_num_rounds"
     APP_CTX_FL_CONTEXT = TieConstant.APP_CTX_FL_CONTEXT
