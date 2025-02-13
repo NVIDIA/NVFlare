@@ -44,7 +44,7 @@ class ProvisionContext(dict):
         self[CtxKey.FED_LEARN_PORT] = fed_learn_port
         self[CtxKey.SERVER_NAME] = server.name
 
-    def get_project(self):
+    def get_project(self) -> Project:
         return self.get(CtxKey.PROJECT)
 
     def set_template(self, template: dict):
@@ -60,7 +60,7 @@ class ProvisionContext(dict):
 
         section = template.get(section_key)
         if not section:
-            raise RuntimeError(f"missing section {section} in template")
+            raise RuntimeError(f"missing section {section_key} in template")
 
         return section
 
@@ -72,6 +72,12 @@ class ProvisionContext(dict):
 
     def get_provision_mode(self):
         return self.get(CtxKey.PROVISION_MODE)
+
+    def set_logger(self, logger):
+        self[CtxKey.LOGGER] = logger
+
+    def get_logger(self):
+        return self.get(CtxKey.LOGGER)
 
     def get_wip_dir(self):
         return self.get(CtxKey.WIP)
@@ -123,13 +129,52 @@ class ProvisionContext(dict):
             replacement: replacement dict
             mode: file mode
             exe: executable
-            content_modify_cb: content modification callback, can be included to take the section content as the first argument and return the modified content
+            content_modify_cb: content modification callback. If specified, it takes the section content as the
+                first argument and returns the modified content
             cb_kwargs: additional keyword arguments for the callback
 
         """
+        section = self.build_section_from_template(temp_section, replacement, content_modify_cb, **cb_kwargs)
+        utils.write(os.path.join(dest_dir, file_name), section, mode, exe=exe)
+
+    def build_section_from_template(
+        self,
+        temp_section: str,
+        replacement=None,
+        content_modify_cb=None,
+        **cb_kwargs,
+    ):
         section = self.get_template_section(temp_section)
         if replacement:
             section = utils.sh_replace(section, replacement)
         if content_modify_cb:
             section = content_modify_cb(section, **cb_kwargs)
-        utils.write(os.path.join(dest_dir, file_name), section, mode, exe=exe)
+        return section
+
+    def info(self, msg: str):
+        logger = self.get_logger()
+        if logger:
+            logger.info(msg)
+        else:
+            print(f"INFO: {msg}")
+
+    def error(self, msg: str):
+        logger = self.get_logger()
+        if logger:
+            logger.error(msg)
+        else:
+            print(f"ERROR: {msg}")
+
+    def debug(self, msg: str):
+        logger = self.get_logger()
+        if logger:
+            logger.debug(msg)
+        else:
+            print(f"DEBUG: {msg}")
+
+    def warning(self, msg: str):
+        logger = self.get_logger()
+        if logger:
+            logger.warning(msg)
+        else:
+            print(f"WARNING: {msg}")

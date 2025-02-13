@@ -72,7 +72,7 @@ class GrpcClient:
         Returns: a pb2.MessageContainer object
 
         """
-        self.logger.info(f"sending {len(request.grpc_message_content)} bytes: {request.grpc_message_name=}")
+        self.logger.debug(f"sending {len(request.grpc_message_content)} bytes: {request.grpc_message_name=}")
         try:
             result = self.stub.SendReceive(request)
         except Exception as ex:

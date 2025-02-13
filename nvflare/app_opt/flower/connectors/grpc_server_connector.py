@@ -19,7 +19,8 @@ from nvflare.app_opt.flower.connectors.flower_connector import FlowerServerConne
 from nvflare.app_opt.flower.defs import Constant
 from nvflare.app_opt.flower.grpc_client import GrpcClient
 from nvflare.app_opt.flower.utils import msg_container_to_shareable, shareable_to_msg_container
-from nvflare.fuel.f3.drivers.net_utils import get_open_tcp_port
+from nvflare.fuel.utils.network_utils import get_local_addresses
+from nvflare.security.logging import secure_format_exception
 
 
 class GrpcServerConnector(FlowerServerConnector):
@@ -27,17 +28,20 @@ class GrpcServerConnector(FlowerServerConnector):
         self,
         int_client_grpc_options=None,
         flower_server_ready_timeout=Constant.FLOWER_SERVER_READY_TIMEOUT,
+        monitor_interval: float = 1.0,
     ):
-        FlowerServerConnector.__init__(self)
+        FlowerServerConnector.__init__(self, monitor_interval)
         self.int_client_grpc_options = int_client_grpc_options
         self.flower_server_ready_timeout = flower_server_ready_timeout
         self.internal_grpc_client = None
         self._server_stopped = False
         self._exit_code = 0
 
-    def _start_server(self, addr: str, fl_ctx: FLContext):
+    def _start_server(self, serverapp_api_addr: str, fleet_api_addr: str, exec_api_addr: str, fl_ctx: FLContext):
         app_ctx = {
-            Constant.APP_CTX_SERVER_ADDR: addr,
+            Constant.APP_CTX_SERVERAPP_API_ADDR: serverapp_api_addr,
+            Constant.APP_CTX_FLEET_API_ADDR: fleet_api_addr,
+            Constant.APP_CTX_EXEC_API_ADDR: exec_api_addr,
             Constant.APP_CTX_NUM_ROUNDS: self.num_rounds,
         }
         self.start_applet(app_ctx, fl_ctx)
@@ -49,7 +53,7 @@ class GrpcServerConnector(FlowerServerConnector):
     def _is_stopped(self) -> (bool, int):
         runner_stopped, ec = self.is_applet_stopped()
         if runner_stopped:
-            self.logger.info("applet is stopped!")
+            self.logger.debug("applet is stopped!")
             return runner_stopped, ec
 
         if self._server_stopped:
@@ -60,16 +64,24 @@ class GrpcServerConnector(FlowerServerConnector):
 
     def start(self, fl_ctx: FLContext):
         # we dynamically create server address on localhost
-        port = get_open_tcp_port(resources={})
-        if not port:
-            raise RuntimeError("failed to get a port for Flower grpc server")
+        # we need 3 free local addresses for flwr's superlink:
+        # - address for client to connect to (fleet-api-address)
+        # - address for serverapp to connect to (serverapp-api-address)
+        # - address for "flwr run" to connect to (exec-api-address)
+        try:
+            addresses = get_local_addresses(3)
+        except Exception as ex:
+            raise RuntimeError(f"failed to get addresses for Flower grpc server: {secure_format_exception(ex)}")
 
-        server_addr = f"127.0.0.1:{port}"
-        self.log_info(fl_ctx, f"starting grpc connector: {server_addr=}")
-        self._start_server(server_addr, fl_ctx)
+        serverapp_api_addr = addresses[0]
+        fleet_api_addr = addresses[1]
+        exec_api_addr = addresses[2]
+
+        self.log_info(fl_ctx, f"starting grpc connector: {serverapp_api_addr=} {fleet_api_addr=} {exec_api_addr=}")
+        self._start_server(serverapp_api_addr, fleet_api_addr, exec_api_addr, fl_ctx)
 
         # start internal grpc client
-        self.internal_grpc_client = GrpcClient(server_addr, self.int_client_grpc_options)
+        self.internal_grpc_client = GrpcClient(fleet_api_addr, self.int_client_grpc_options)
         self.internal_grpc_client.start(ready_timeout=self.flower_server_ready_timeout)
 
     def stop(self, fl_ctx: FLContext):
@@ -101,7 +113,11 @@ class GrpcServerConnector(FlowerServerConnector):
             self.log_warning(fl_ctx, "dropped app request since applet is already stopped")
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
-        result = self.internal_grpc_client.send_request(shareable_to_msg_container(request))
+        grpc_client = self.internal_grpc_client
+        if not grpc_client:
+            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+
+        result = grpc_client.send_request(shareable_to_msg_container(request))
 
         if isinstance(result, pb2.MessageContainer):
             return msg_container_to_shareable(result)

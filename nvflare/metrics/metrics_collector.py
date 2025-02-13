@@ -25,7 +25,6 @@ from nvflare.metrics.metrics_publisher import collect_metrics
 
 
 class MetricsCollector(FLComponent, ABC):
-
     def __init__(self, tags: dict, streaming_to_server: bool = False):
         """
         Args:

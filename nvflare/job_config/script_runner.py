@@ -227,6 +227,7 @@ class BaseScriptRunner:
                 if self._launcher
                 else SubprocessLauncher(
                     script=self._command + " custom/" + self._script + " " + self._script_args,
+                    shutdown_timeout=0.0,
                 )
             )
             launcher_id = job.add_component("launcher", launcher, ctx)

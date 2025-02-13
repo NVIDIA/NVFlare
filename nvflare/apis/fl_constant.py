@@ -557,11 +557,6 @@ class RunnerTask:
 
 
 class ConnPropKey:
-
-    PROJECT_NAME = "project_name"
-    SERVER_IDENTITY = "server_identity"
-    IDENTITY = "identity"
-    PARENT = "parent"
     FQCN = "fqcn"
     URL = "url"
     SCHEME = "scheme"
