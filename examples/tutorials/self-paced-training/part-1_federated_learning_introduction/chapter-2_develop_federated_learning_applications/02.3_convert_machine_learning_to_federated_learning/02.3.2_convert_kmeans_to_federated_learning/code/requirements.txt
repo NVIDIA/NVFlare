@@ -1,0 +1,4 @@
+pandas
+scikit-learn
+joblib
+tensorboard
