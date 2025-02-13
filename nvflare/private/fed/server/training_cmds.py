@@ -269,8 +269,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
             if clients:
                 table = conn.append_table(
-                    ["client", "fqcn", "fqsn", "leaf", "token", "last connect time"],
-                    name=MetaKey.CLIENTS
+                    ["client", "fqcn", "fqsn", "leaf", "token", "last connect time"], name=MetaKey.CLIENTS
                 )
 
                 for c in clients:

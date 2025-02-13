@@ -68,7 +68,7 @@ def get_parent_site_name(fqsn: str):
     parts = fqsn.split(".")
     if len(parts) <= 1:
         return None
-    return parts[len(parts)-2]
+    return parts[len(parts) - 2]
 
 
 class IdentityAsserter:

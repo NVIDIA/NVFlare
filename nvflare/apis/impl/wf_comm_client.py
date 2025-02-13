@@ -20,7 +20,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, SiteType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import make_reply, Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.apis.wf_comm_spec import WFCommSpec

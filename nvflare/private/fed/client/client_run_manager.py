@@ -96,7 +96,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         self.cell = None
 
         self.all_clients = None
-        self.name_to_clients = dict()   # client name => Client
+        self.name_to_clients = dict()  # client name => Client
 
         if not components:
             self.components = {}

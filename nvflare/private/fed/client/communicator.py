@@ -23,7 +23,7 @@ from nvflare.apis.fl_constant import ReturnCode as ShareableRC
 from nvflare.apis.fl_constant import SecureTrainConst, ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.apis.shareable import make_copy, Shareable
+from nvflare.apis.shareable import Shareable, make_copy
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.data_event.utils import get_scope_property, set_scope_property
@@ -89,8 +89,8 @@ class Communicator:
         self.token_verifier = None
         self.abort_signal = Signal()
         self.engine = None
-        self.last_task_id = None   # ID of the last task received
-        self.pending_task = None   # the task currently being processed
+        self.last_task_id = None  # ID of the last task received
+        self.pending_task = None  # the task currently being processed
         self.logger = get_obj_logger(self)
         self._state_lock = threading.Lock()
         self._peer_ctx = None

@@ -18,7 +18,7 @@ import uuid
 from typing import Optional
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, SecureTrainConst
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
@@ -334,5 +334,7 @@ class ClientManager:
     def get_client_from_name(self, client_name):
         result = self.name_to_clients.get(client_name)
         if not result:
-            self.logger.error(f"no client for {client_name}: I have {self.name_to_clients.keys()} {self.clients.keys()}")
+            self.logger.error(
+                f"no client for {client_name}: I have {self.name_to_clients.keys()} {self.clients.keys()}"
+            )
         return result
