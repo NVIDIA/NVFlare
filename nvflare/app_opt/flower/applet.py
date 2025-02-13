@@ -238,7 +238,7 @@ class FlowerServerApplet(Applet):
 
         success = result.get("success", False)
         if not success:
-            err = f"failed command '{command}': {success=}"
+            err = f"failed command '{command}': {success=} {result=}"
             self.logger.error(err)
             raise RuntimeError(err)
 
