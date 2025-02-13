@@ -58,6 +58,19 @@ def load_cert_bytes(data: bytes):
     return load_crt_bytes(data)
 
 
+def get_parent_site_name(fqsn: str):
+    if not fqsn:
+        return None
+
+    if not isinstance(fqsn, str):
+        raise ValueError(f"expect fqsn to be str but got {type(fqsn)}")
+
+    parts = fqsn.split(".")
+    if len(parts) <= 1:
+        return None
+    return parts[len(parts)-2]
+
+
 class IdentityAsserter:
     def __init__(self, private_key_file: str, cert_file: str):
         with open(cert_file, "rb") as f:

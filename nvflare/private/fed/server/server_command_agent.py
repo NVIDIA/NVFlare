@@ -117,7 +117,7 @@ class ServerCommandAgent(object):
             self.logger.debug("Before gen_new_peer_ctx")
             shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
             self.logger.debug("After gen_new_peer_ctx")
-            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+            reply.set_peer_context(shared_fl_ctx)
 
             if reply is not None:
                 return_message = new_cell_message({}, reply)

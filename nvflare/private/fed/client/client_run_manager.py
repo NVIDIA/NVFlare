@@ -96,6 +96,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         self.cell = None
 
         self.all_clients = None
+        self.name_to_clients = dict()   # client name => Client
 
         if not components:
             self.components = {}
@@ -177,10 +178,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         return valid_inputs, invalid_inputs
 
     def get_client_from_name(self, client_name):
-        for _, c in self.all_clients.items():
-            if client_name == c.name:
-                return c
-        return None
+        return self.name_to_clients.get(client_name)
 
     def get_clients(self):
         return list(self.all_clients.values())
@@ -316,6 +314,8 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             if return_data.payload:
                 data = return_data.payload
                 self.all_clients = data.get(ServerCommandKey.CLIENTS)
+                for _, c in self.all_clients.items():
+                    self.name_to_clients[c.name] = c
             else:
                 raise RuntimeError("Empty clients data from server")
         else:

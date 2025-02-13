@@ -187,7 +187,7 @@ class Entity:
     def get_prop(self, key: str, default=None):
         return self.props.get(key, default)
 
-    def add_prop(self, key: str, value: Any):
+    def set_prop(self, key: str, value: Any):
         self.props[key] = value
 
     def get_prop_fb(self, key: str, fb_key=None, default=None):

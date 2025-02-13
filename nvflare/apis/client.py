@@ -18,6 +18,8 @@ import time
 class ClientPropKey:
 
     FQCN = "fqcn"
+    FQSN = "fqsn"
+    IS_LEAF = "is_leaf"
 
 
 class Client:
@@ -53,3 +55,15 @@ class Client:
 
     def get_fqcn(self):
         return self.get_prop(ClientPropKey.FQCN)
+
+    def set_fqsn(self, value: str):
+        self.set_prop(ClientPropKey.FQSN, value)
+
+    def get_fqsn(self):
+        return self.get_prop(ClientPropKey.FQSN)
+
+    def set_is_leaf(self, value: bool):
+        self.set_prop(ClientPropKey.IS_LEAF, value)
+
+    def get_is_leaf(self):
+        return self.get_prop(ClientPropKey.IS_LEAF)

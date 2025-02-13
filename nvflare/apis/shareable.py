@@ -14,7 +14,7 @@
 import copy
 
 from ..fuel.utils import fobs
-from .fl_constant import ReservedKey, ReturnCode
+from .fl_constant import ReservedKey, ReturnCode, ServerCommandKey
 
 
 class ReservedHeaderKey(object):
@@ -32,6 +32,7 @@ class ReservedHeaderKey(object):
     CONTENT_TYPE = "__content_type__"
     TASK_OPERATOR = "__task_operator__"
     ERROR = "__error__"
+    PEER_CTX = ServerCommandKey.PEER_FL_CONTEXT
 
 
 class Shareable(dict):
@@ -110,6 +111,12 @@ class Shareable(dict):
         if not isinstance(props, dict):
             return default
         return props.get(key, default)
+
+    def set_peer_context(self, peer_ctx):
+        self.set_header(ReservedHeaderKey.PEER_CTX, peer_ctx)
+
+    def get_peer_context(self):
+        return self.get_header(ReservedHeaderKey.PEER_CTX)
 
     def to_bytes(self) -> bytes:
         """Serialize the Model object into bytes.

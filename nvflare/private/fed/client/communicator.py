@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import threading
 import time
 from typing import List, Optional
 
+from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
@@ -22,7 +23,7 @@ from nvflare.apis.fl_constant import ReturnCode as ShareableRC
 from nvflare.apis.fl_constant import SecureTrainConst, ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import make_copy, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.data_event.utils import get_scope_property, set_scope_property
@@ -30,6 +31,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import format_size
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import (
@@ -42,13 +44,14 @@ from nvflare.private.defs import (
 )
 from nvflare.private.fed.authenticator import Authenticator
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.fed.utils.identity_utils import get_parent_site_name
 from nvflare.security.logging import secure_format_exception
 
 
 class Communicator:
     def __init__(
         self,
-        ssl_args=None,
+        client_config=None,
         secure_train=False,
         client_state_processors: Optional[List[Filter]] = None,
         compression=None,
@@ -60,13 +63,13 @@ class Communicator:
         """To init the Communicator.
 
         Args:
-            ssl_args: SSL args
+            client_config: client configuration data
             secure_train: True/False to indicate if secure train
             client_state_processors: Client state processor filters
             compression: communicate compression algorithm
         """
         self.cell = cell
-        self.ssl_args = ssl_args
+        self.client_config = client_config
         self.secure_train = secure_train
 
         self.verbose = False
@@ -85,8 +88,12 @@ class Communicator:
         self.client_name = None
         self.token_verifier = None
         self.abort_signal = Signal()
-
+        self.engine = None
+        self.last_task_id = None   # ID of the last task received
+        self.pending_task = None   # the task currently being processed
         self.logger = get_obj_logger(self)
+        self._state_lock = threading.Lock()
+        self._peer_ctx = None
 
     """
     To call set_add_auth_headers_filters, both cell and token must be available.
@@ -114,6 +121,80 @@ class Communicator:
         if self.token:
             # for CJ
             set_add_auth_headers_filters(self.cell, self.client_name, self.token, self.token_signature, self.ssid)
+
+        # set CB to receive task messages from children
+        cell.register_request_cb(
+            channel=CellChannel.SERVER_COMMAND,
+            topic=ServerCommandNames.GET_TASK,
+            cb=self._process_get_task,
+        )
+
+        cell.register_request_cb(
+            channel=CellChannel.SERVER_COMMAND,
+            topic=CellChannelTopic.SUBMIT_RESULT,
+            cb=self._process_submit_result,
+        )
+
+    def _make_try_again(self):
+        shareable = Shareable()
+        shareable.set_header(key=FLContextKey.TASK_ID, value="")
+        shareable.set_header(key=ServerCommandKey.TASK_NAME, value=SpecialTaskName.TRY_AGAIN)
+        return shareable
+
+    def _process_get_task(self, request: CellMessage):
+        req = request.payload
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        if not isinstance(req, Shareable):
+            self.logger.error(f"Bad get_task request from {origin}")
+
+        # note: the self.pending_task is unset by "submit_update", which could happen at any time.
+        # we first assign self.pending_task to a different var (pending_task) and use this var in our processing.
+        pending_task = self.pending_task
+        if not self.engine or not pending_task:
+            task = self._make_try_again()
+        else:
+            assert isinstance(pending_task, Shareable)
+            last_task_id = req.get_header(ServerCommandKey.LAST_TASK_ID)
+            if last_task_id == pending_task.get_header(FLContextKey.TASK_ID):
+                task = self._make_try_again()
+            else:
+                task = pending_task
+
+        if self.engine:
+            task.set_peer_context(self._peer_ctx)
+            if task == pending_task:
+                # fire event to notify others that the pending task is sent to a client
+                with self.engine.new_context() as fl_ctx:
+                    requesting_client_ctx = req.get_peer_context()
+                    fl_ctx.set_peer_context(requesting_client_ctx)
+                    pending_task_id = pending_task.get_header(FLContextKey.TASK_ID)
+                    fl_ctx.set_prop(FLContextKey.TASK_ID, pending_task_id)
+                    self.engine.fire_event(EventType.TASK_ASSIGNMENT_SENT, fl_ctx)
+
+        return new_cell_message({}, task)
+
+    def _process_submit_result(self, request: CellMessage):
+        if not self.engine:
+            # this could happen only when we crashed after task was pulled and restarted
+            # since we don't have CJ restart capability this is impossible currently.
+            self.logger.error("received submit_result while no engine")
+            return new_cell_message({}, Shareable())
+
+        with self.engine.new_context() as fl_ctx:
+            assert isinstance(fl_ctx, FLContext)
+            result = request.payload
+            assert isinstance(result, Shareable)
+            peer_ctx = result.get_peer_context()
+            if peer_ctx:
+                fl_ctx.set_peer_context(peer_ctx)
+
+            fl_ctx.set_prop(
+                key=FLContextKey.TASK_RESULT,
+                value=result,
+                private=True,
+                sticky=False,
+            )
+            self.engine.fire_event(EventType.TASK_RESULT_RECEIVED, fl_ctx)
 
     def client_registration(self, client_name, project_name, fl_ctx: FLContext):
         """Register the client with the FLARE Server.
@@ -214,6 +295,22 @@ class Communicator:
         self.set_auth(client_name, token, signature, ssid)
         return token, signature, ssid
 
+    def _determine_parent_fqcn(self, fl_ctx: FLContext):
+        fqsn = self.client_config.get("fqsn")
+        parent_client_name = get_parent_site_name(fqsn)
+        if parent_client_name:
+            engine = fl_ctx.get_engine()
+            parent_client = engine.get_client_from_name(parent_client_name)
+            if not parent_client:
+                raise RuntimeError(f"cannot find parent '{parent_client_name}'")
+
+            if not isinstance(parent_client, Client):
+                raise RuntimeError(f"expect parent_client to be Client but got {type(parent_client)}")
+
+            return parent_client.get_fqcn()
+        else:
+            return FQCN.ROOT_SERVER
+
     def pull_task(self, project_name, token, ssid, fl_ctx: FLContext, timeout=None):
         """Get a task from server.
 
@@ -228,22 +325,32 @@ class Communicator:
             A CurrentTask message from server
 
         """
+        if not self.engine:
+            self.engine = fl_ctx.get_engine()
+            self._peer_ctx = fl_ctx.get_peer_context()
+
         start_time = time.time()
         shareable = Shareable()
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+        shareable.set_peer_context(shared_fl_ctx)
+        if self.last_task_id:
+            shareable.set_header(ServerCommandKey.LAST_TASK_ID, self.last_task_id)
+
         task_message = new_cell_message(
             {
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
             shareable,
         )
-        job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
+        job_id = fl_ctx.get_job_id()
 
         if not timeout:
             timeout = self.timeout
 
-        fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        parent_fqcn = self._determine_parent_fqcn(fl_ctx)
+        self.logger.info(f"pull task from parent FQCN: {parent_fqcn}")
+
+        fqcn = FQCN.join([parent_fqcn, job_id])
         task = self.cell.send_request(
             target=fqcn,
             channel=CellChannel.SERVER_COMMAND,
@@ -258,16 +365,21 @@ class Communicator:
 
         if return_code == ReturnCode.OK:
             size = task.get_header(MessageHeaderKey.PAYLOAD_LEN)
-            task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
+            task_content = task.payload
+            if not isinstance(task_content, Shareable):
+                self.logger.error(f"bad task from {parent_fqcn}: expect Shareable but got {type(task_content)}")
+
+            task_name = task_content.get_header(ServerCommandKey.TASK_NAME)
             fl_ctx.set_prop(FLContextKey.SSID, ssid, sticky=False)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
                 self.logger.info(
-                    f"Received from {project_name} server. getTask: {task_name} size: {format_size(size)} "
+                    f"Received from {project_name} {parent_fqcn}. getTask: {task_name} size: {format_size(size)} "
                     f"({size} Bytes) time: {end_time - start_time:.6f} seconds"
                 )
+                self.last_task_id = task_content.get_header(FLContextKey.TASK_ID)
+                self.pending_task = make_copy(task_content)
         elif return_code == ReturnCode.AUTHENTICATION_ERROR:
             self.logger.warning("get_task request authentication failed.")
-            time.sleep(5.0)
             return None
         else:
             task = None
@@ -295,7 +407,7 @@ class Communicator:
         """
         start_time = time.time()
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+        shareable.set_peer_context(shared_fl_ctx)
 
         # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
         shareable.set_header(FLContextKey.TASK_NAME, execute_task_name)
@@ -317,7 +429,10 @@ class Communicator:
         if not timeout:
             timeout = self.timeout
 
-        fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        parent_fqcn = self._determine_parent_fqcn(fl_ctx)
+        self.logger.info(f"submit update to parent FQCN: {parent_fqcn}")
+
+        fqcn = FQCN.join([parent_fqcn, job_id])
         result = self.cell.send_request(
             target=fqcn,
             channel=CellChannel.SERVER_COMMAND,
@@ -333,7 +448,7 @@ class Communicator:
         self.logger.info(
             f" SubmitUpdate size: {format_size(size)} ({size} Bytes). time: {end_time - start_time:.6f} seconds"
         )
-
+        self.pending_task = None
         return return_code
 
     def quit_remote(self, servers, task_name, token, ssid, fl_ctx: FLContext):
@@ -352,7 +467,7 @@ class Communicator:
         self.abort_signal.trigger(True)
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable = Shareable()
-        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+        shareable.set_peer_context(shared_fl_ctx)
         quit_message = new_cell_message(
             {
                 CellMessageHeaderKeys.PROJECT_NAME: task_name,
@@ -389,7 +504,7 @@ class Communicator:
                 engine.fire_event(EventType.BEFORE_CLIENT_HEARTBEAT, fl_ctx)
                 shareable = Shareable()
                 shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-                shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+                shareable.set_peer_context(shared_fl_ctx)
 
                 job_ids = engine.get_all_job_ids()
                 heartbeat_message = new_cell_message(

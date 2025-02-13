@@ -268,13 +268,20 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_string("Registered clients: {} ".format(len(clients)))
 
             if clients:
-                table = conn.append_table(["client", "fqcn", "token", "last connect time"], name=MetaKey.CLIENTS)
+                table = conn.append_table(
+                    ["client", "fqcn", "fqsn", "leaf", "token", "last connect time"],
+                    name=MetaKey.CLIENTS
+                )
+
                 for c in clients:
                     if not isinstance(c, Client):
                         raise TypeError("c must be Client but got {}".format(type(c)))
                     fqcn = c.get_fqcn()
+                    fqsn = c.get_fqsn()
+                    leaf = c.get_is_leaf()
+                    last_connect_time = time.asctime(time.localtime(c.last_connect_time))
                     table.add_row(
-                        [c.name, fqcn, str(c.token), time.asctime(time.localtime(c.last_connect_time))],
+                        [c.name, fqcn, fqsn, str(leaf), str(c.token), last_connect_time],
                         meta={
                             MetaKey.CLIENT_NAME: c.name,
                             MetaKey.CLIENT_LAST_CONNECT_TIME: c.last_connect_time,

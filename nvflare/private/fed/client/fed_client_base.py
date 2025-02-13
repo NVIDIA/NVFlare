@@ -87,7 +87,7 @@ class FederatedClientBase:
         self.cell_check_frequency = client_args.get("cell_check_frequency", 0.005)
 
         self.communicator = Communicator(
-            ssl_args=client_args,
+            client_config=client_args,
             secure_train=secure_train,
             client_state_processors=client_state_processors,
             compression=compression,

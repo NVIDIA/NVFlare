@@ -40,7 +40,7 @@ class CustomExecutor(Executor):
         abort_signal: Signal,
     ) -> Shareable:
         if task_name == self.task_name:
-            peer_ctx = fl_ctx.get_prop(FLContextKey.PEER_CONTEXT)
+            peer_ctx = fl_ctx.get_peer_context()
             r = peer_ctx.get_prop("current_round")
 
             number = random.random()

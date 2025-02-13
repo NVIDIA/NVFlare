@@ -99,7 +99,7 @@ class FederatedClient(FederatedClientBase):
         #     peer_context = fobs.loads(proto_to_bytes(item.data.params["fl_context"]))
 
         # shareable = fobs.loads(responses.payload)
-        peer_context = responses.get_header(FLContextKey.PEER_CONTEXT)
+        peer_context = responses.get_peer_context()
 
         fl_ctx.set_peer_context(peer_context)
         responses.set_peer_props(peer_context.get_all_public_props())
