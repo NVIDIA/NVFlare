@@ -20,7 +20,6 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.private.defs import SpecialTaskName

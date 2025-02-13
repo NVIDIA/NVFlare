@@ -16,7 +16,6 @@ import time
 import traceback
 import uuid
 
-from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable

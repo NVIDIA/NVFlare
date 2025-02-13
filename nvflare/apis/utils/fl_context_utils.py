@@ -134,7 +134,7 @@ def get_client(client_name, fl_ctx: FLContext) -> Optional[Client]:
     """
     engine = fl_ctx.get_engine()
     if not engine:
-        raise RuntimeError(f"Bad fl_ctx: no engine")
+        raise RuntimeError("Bad fl_ctx: no engine")
     return engine.get_client_from_name(client_name)
 
 
@@ -152,7 +152,7 @@ def get_my_client(fl_ctx: FLContext) -> Optional[Client]:
         raise RuntimeError(f"this method can only be called from {ProcessType.CLIENT_JOB}, but we are {ptype}")
     engine = fl_ctx.get_engine()
     if not engine:
-        raise RuntimeError(f"Bad fl_ctx: no engine")
+        raise RuntimeError("Bad fl_ctx: no engine")
 
     my_name = fl_ctx.get_identity_name()
     return engine.get_client_from_name(my_name)

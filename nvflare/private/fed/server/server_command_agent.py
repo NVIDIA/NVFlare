@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
+from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make_reply
