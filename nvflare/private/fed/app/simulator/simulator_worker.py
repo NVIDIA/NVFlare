@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import argparse
-import json
 import os
 import sys
 import threading
@@ -30,7 +29,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.utils.log_utils import apply_log_config
+from nvflare.fuel.utils.log_utils import dynamic_log_config
 from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
 from nvflare.private.fed.app.utils import check_parent_alive, init_security_content_service
 from nvflare.private.fed.client.client_engine import ClientEngine
@@ -240,17 +239,16 @@ def main(args):
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
-    with open(args.logging_config, "r") as f:
-        dict_config = json.load(f)
-
-    apply_log_config(dict_config, args.workspace)
-
     os.chdir(args.workspace)
     startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
     os.makedirs(startup, exist_ok=True)
     local = os.path.join(args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
     os.makedirs(local, exist_ok=True)
     workspace = Workspace(root_dir=args.workspace, site_name=args.client)
+
+    dynamic_log_config(
+        config=args.logging_config, dir_path=args.workspace, reload_path=workspace.get_log_config_file_path()
+    )
 
     fobs_initialize(workspace, job_id=SimulatorConstants.JOB_NAME)
     register_ext_decomposers(args.decomposer_module)
