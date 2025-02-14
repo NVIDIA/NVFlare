@@ -14,8 +14,7 @@
 
 from typing import Dict, Optional
 
-from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.app_common.tracking.tracker_types import LogWriterName
+from nvflare.apis.analytix import AnalyticsDataType, LogWriterName
 
 # flake8: noqa
 from .api import default_context as default_context

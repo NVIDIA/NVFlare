@@ -14,10 +14,8 @@
 
 from typing import Dict, Optional
 
-from nvflare.apis.analytix import AnalyticsDataType
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsDataType, LogWriterName
 from nvflare.app_common.tracking.log_writer import LogWriter
-from nvflare.app_common.tracking.tracker_types import LogWriterName
-from nvflare.app_common.widgets.streaming import ANALYTIC_EVENT_TYPE
 
 
 class MLflowWriter(LogWriter):
