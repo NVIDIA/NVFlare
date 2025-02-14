@@ -8,10 +8,11 @@ version = "1.0.0"
 description = ""
 license = "Apache-2.0"
 dependencies = [
-    "flwr[simulation]>=1.11.0,<2.0",
-    "nvflare~=2.5.0rc",
+    "flwr[simulation]>=1.15.2,<2.0",
+    "nvflare~=2.6.0rc",
     "torch==2.2.1",
     "torchvision==0.17.1",
+    "tensorboard"
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -32,3 +33,5 @@ default = "local-simulation"
 
 [tool.flwr.federations.local-simulation]
 options.num-supernodes = 2
+address = "127.0.0.1:9093"
+insecure = true
