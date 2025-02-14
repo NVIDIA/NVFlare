@@ -294,12 +294,12 @@ class ClientManager:
 
     @staticmethod
     def _set_client_props(client: Client, fqcn: str, fl_ctx: FLContext):
-        peer_ctx = fl_ctx.get_peer_context()
-        assert isinstance(peer_ctx, FLContext)
         client.set_fqcn(fqcn)
         client.last_connect_time = time.time()
-        client.set_fqsn(peer_ctx.get_prop(ReservedKey.FQSN, "?"))
-        client.set_is_leaf(peer_ctx.get_prop(ReservedKey.IS_LEAF, "?"))
+        peer_ctx = fl_ctx.get_peer_context()
+        if peer_ctx:
+            client.set_fqsn(peer_ctx.get_prop(ReservedKey.FQSN, "?"))
+            client.set_is_leaf(peer_ctx.get_prop(ReservedKey.IS_LEAF, "?"))
 
     def get_clients(self):
         """Get the list of registered clients.
