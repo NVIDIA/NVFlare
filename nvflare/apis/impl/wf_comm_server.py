@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import threading
 import time
 from threading import Lock
@@ -196,7 +197,10 @@ class WFCommServer(FLComponent, WFCommSpec):
         client_task_to_send = None
         with self._task_lock:
             self.logger.debug("self._tasks: {}".format(self._tasks))
-            for task in self._tasks:
+            for t in self._tasks:
+                task = copy.copy(t)
+                task.data = copy.deepcopy(t.data)
+
                 if task.completion_status is not None:
                     # this task is finished (and waiting for the monitor to exit it)
                     continue
