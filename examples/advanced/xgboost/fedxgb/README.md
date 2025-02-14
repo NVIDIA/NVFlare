@@ -64,6 +64,15 @@ We leverage the [vertical federated learning support](https://github.com/dmlc/xg
 ## Data Preparation
 Assuming the HIGGS data has been downloaded following [the instructions](../README.md), we further split the data 
 horizontally and vertically for federated learning.
+
+In horizontal settings, each party holds different data samples with the same set of features.
+To simulate this, we split the HIGGS data by rows, and assigning each party a subset of the data samples.
+In vertical settings, each party holds different features of the same data samples, and usually, the population 
+on each site will not fully overlap. To simulate this, we split the HIGGS data by both columns and rows, each site
+will have different features with overlapping data samples.
+More details will be provided in the following sub-sections.
+ 
+
 Data splits used in this example can be generated with
 ```
 DATASET_ROOT=~/.cache/dataset/HIGGS

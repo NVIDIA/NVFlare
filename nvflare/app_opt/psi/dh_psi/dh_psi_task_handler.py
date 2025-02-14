@@ -49,6 +49,7 @@ class DhPSITaskHandler(TaskHandler):
         self.local_psi_handler: Optional[PSI] = None
         self.client_name = None
         self.items = None
+        # needed by JobAPI, add the following line to the constructor
         self.local_psi_id = local_psi_id
 
     def initialize(self, fl_ctx: FLContext):

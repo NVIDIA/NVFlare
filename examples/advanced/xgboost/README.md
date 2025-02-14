@@ -5,7 +5,7 @@ Several potential variations of federated XGBoost are illustrated, including:
 - non-secure vertical collaboration with histogram-based mechanism.
 - secure horizontal and vertical collaboration with histogram-based mechanism and homomorphic encryption.
 
-For running the examples and notebooks, please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
+To run the examples and notebooks, please make sure you set up a virtual environment and Jupyterlab, following [the example root readme](../../README.md)
 and install the additional requirements:
 ```
 python3 -m pip install -r requirements.txt
