@@ -229,7 +229,7 @@ class ModelQuantizor(DXOFilter):
             new_dxo.set_meta_prop(key="quantized", value=True)
             self.log_info(fl_ctx, f"Quantized from {source_datatype} to {self.quantization_type}")
         else:
-            self.log_info(fl_ctx, ("Skipping quantization, already quantized"))
+            self.log_info(fl_ctx, "Skipping quantization, already quantized")
             new_dxo = dxo
 
         return new_dxo
