@@ -3,3 +3,4 @@ torch
 torchvision
 jsonargparse[signatures]>=4.17.0
 pytorch_lightning
+tensorboard
