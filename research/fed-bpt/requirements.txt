@@ -1,4 +1,4 @@
-transformers==4.38.2
+transformers==4.48.0
 fastNLP==0.6.0
 datasets
 cma==3.4.0
