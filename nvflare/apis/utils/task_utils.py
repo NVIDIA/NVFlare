@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 
 from nvflare.apis.fl_constant import FilterKey, FLContextKey
 
@@ -29,6 +30,8 @@ def apply_filters(filters_name, filter_data, fl_ctx, config_filters, task_name, 
         filter_list.extend(task_filter_list)
 
     if filter_list:
+        # A deep copy is needed here to prevent filter from changing task data
+        filter_data = copy.deepcopy(filter_data)
         for f in filter_list:
             filter_data = f.process(filter_data, fl_ctx)
     return filter_data
