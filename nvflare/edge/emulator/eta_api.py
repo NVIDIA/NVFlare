@@ -83,35 +83,3 @@ class EtaApi:
             return ResultResponse(**response.json())
 
         raise ApiError(code, "ERROR", f"API Call failed with status code {code}", response.json())
-
-
-def run_test():
-    device_info = DeviceInfo("1234", "flare_mobile", "1.0")
-    user_info = UserInfo("demo_id", "demo_user")
-
-    try:
-        api = EtaApi("http://localhost:4321", device_info, user_info)
-
-        job = api.get_job({})
-        print(job)
-
-        while True:
-            task = api.get_task(job)
-            print(task)
-            if task.task_name == "end_run":
-                break
-
-            test_result = {"test": f"Result for task_id: {task.task_id}"}
-            result_response = api.report_result(task, test_result)
-            print(result_response)
-
-            if result_response.status == "DONE":
-                break
-
-        print("Test run ended")
-    except ApiError as error:
-        print(f"Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}")
-
-
-if __name__ == "__main__":
-    run_test()

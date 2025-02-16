@@ -14,31 +14,54 @@
 from abc import ABC, abstractmethod
 
 from nvflare.edge.web.models.device_info import DeviceInfo
-from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
-from nvflare.edge.web.models.result_report import ResultReport
-from nvflare.edge.web.models.result_response import ResultResponse
-from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.edge.web.models.user_info import UserInfo
 
 
-class JobHandlerApi(ABC):
+class DeviceTaskProcessor(ABC):
+    """
+    The spec for a task processor that handles tasks on edge devices
+    """
 
     def __init__(self, device_info: DeviceInfo, user_info: UserInfo):
         self.device_info = device_info
         self.user_info = user_info
 
     @abstractmethod
-    def handle_job(self, job_request: JobRequest) -> JobResponse:
+    def setup(self, job: JobResponse) -> None:
+        """
+        Setup for a new job
+
+        Args
+            job: Job information returned by server
+        """
         pass
 
     @abstractmethod
-    def handle_task(self, task_request: TaskRequest) -> TaskResponse:
+    def shutdown(self) -> None:
+        """
+        Clean-up the resources allocated for the job and get ready for next
+        """
+        pass
+
+    def cancel(self) -> None:
+        """
+        Cancel the task processing
+        """
         pass
 
     @abstractmethod
-    def handle_result(self, result_report: ResultReport) -> ResultResponse:
-        pass
+    def process_task(self, task: TaskResponse) -> dict:
+        """
+        Process a task and return the result. This method is repeated for
+        each task until all tasks are done
 
+        Args:
+            task: The task information from server
+
+        Returns:
+            The result as a dict
+        """
+        pass
 

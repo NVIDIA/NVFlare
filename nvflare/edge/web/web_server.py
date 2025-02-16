@@ -46,3 +46,7 @@ def run_server(port):
     app.json = FilteredJSONProvider(app)
     app.register_blueprint(eta_bp)
     app.run(port=port, debug=True)
+
+
+if __name__ == "__main__":
+    run_server(8101)
