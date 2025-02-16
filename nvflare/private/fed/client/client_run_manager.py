@@ -22,7 +22,7 @@ from nvflare.apis.fl_constant import (
     ReservedKey,
     ServerCommandKey,
     ServerCommandNames,
-    SiteType
+    SiteType,
 )
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
@@ -127,7 +127,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
                 ReservedKey.FQSN: fqsn,
                 ReservedKey.IS_LEAF: is_leaf,
             },
-            private_stickers=job_ctx_props
+            private_stickers=job_ctx_props,
         )
 
         self.run_info = ClientRunInfo(job_id=job_id)

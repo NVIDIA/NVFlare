@@ -564,8 +564,7 @@ class ClientRunner(TBI):
             reply = resp.get(self.parent_target)
             if not isinstance(reply, Shareable):
                 self.log_error(
-                    fl_ctx,
-                    f"bad task_check reply from {self.parent_target}: expect Shareable but got {type(reply)}"
+                    fl_ctx, f"bad task_check reply from {self.parent_target}: expect Shareable but got {type(reply)}"
                 )
                 return _TASK_CHECK_RESULT_TRY_AGAIN
 
@@ -613,18 +612,15 @@ class ClientRunner(TBI):
     def init_run(self, app_root, args):
         # set up syncing for children
         self.engine.register_aux_message_handler(
-            topic=ReservedTopic.SYNC_RUNNER,
-            message_handle_func=self._handle_sync_runner
+            topic=ReservedTopic.SYNC_RUNNER, message_handle_func=self._handle_sync_runner
         )
 
         self.engine.register_aux_message_handler(
-            topic=ReservedTopic.JOB_HEART_BEAT,
-            message_handle_func=self._handle_job_heartbeat
+            topic=ReservedTopic.JOB_HEART_BEAT, message_handle_func=self._handle_job_heartbeat
         )
 
         self.engine.register_aux_message_handler(
-            topic=ReservedTopic.TASK_CHECK,
-            message_handle_func=self._handle_task_check
+            topic=ReservedTopic.TASK_CHECK, message_handle_func=self._handle_task_check
         )
 
         sync_timeout = self.get_positive_float_var(

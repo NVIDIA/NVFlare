@@ -13,8 +13,8 @@
 # limitations under the License.
 from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext
-from nvflare.private.fed.utils.identity_utils import get_parent_site_name
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.private.fed.utils.identity_utils import get_parent_site_name
 
 
 def determine_parent_name(client_config: dict):
