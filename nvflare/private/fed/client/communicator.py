@@ -15,10 +15,9 @@ import threading
 import time
 from typing import List, Optional
 
-from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.filter import Filter
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReservedKey
 from nvflare.apis.fl_constant import ReturnCode as ShareableRC
 from nvflare.apis.fl_constant import SecureTrainConst, ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
@@ -44,8 +43,9 @@ from nvflare.private.defs import (
 )
 from nvflare.private.fed.authenticator import Authenticator
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.utils.identity_utils import get_parent_site_name
 from nvflare.security.logging import secure_format_exception
+
+from .utils import determine_parent_fqcn
 
 
 class Communicator:
@@ -93,7 +93,14 @@ class Communicator:
         self.pending_task = None  # the task currently being processed
         self.logger = get_obj_logger(self)
         self._state_lock = threading.Lock()
-        self._peer_ctx = None
+        tmp_ctx = FLContext()
+        tmp_ctx.set_prop(
+            key=ReservedKey.IDENTITY_NAME,
+            value=client_config["client_name"],
+            private=False,
+            sticky=True,
+        )
+        self._peer_ctx = tmp_ctx
 
     """
     To call set_add_auth_headers_filters, both cell and token must be available.
@@ -131,7 +138,7 @@ class Communicator:
 
         cell.register_request_cb(
             channel=CellChannel.SERVER_COMMAND,
-            topic=CellChannelTopic.SUBMIT_RESULT,
+            topic=ServerCommandNames.SUBMIT_UPDATE,
             cb=self._process_submit_result,
         )
 
@@ -156,22 +163,23 @@ class Communicator:
             assert isinstance(pending_task, Shareable)
             last_task_id = req.get_header(ServerCommandKey.LAST_TASK_ID)
             if last_task_id == pending_task.get_header(FLContextKey.TASK_ID):
+                self.logger.debug(f"same task request from {origin=}: {last_task_id=} - ask it to try again")
                 task = self._make_try_again()
             else:
                 task = pending_task
 
         if self.engine:
-            task.set_peer_context(self._peer_ctx)
             if task == pending_task:
                 # fire event to notify others that the pending task is sent to a client
                 with self.engine.new_context() as fl_ctx:
                     requesting_client_ctx = req.get_peer_context()
                     fl_ctx.set_peer_context(requesting_client_ctx)
-                    pending_task_id = pending_task.get_header(FLContextKey.TASK_ID)
-                    fl_ctx.set_prop(FLContextKey.TASK_ID, pending_task_id)
+                    pending_task_id = pending_task.get_header(ReservedKey.TASK_ID)
+                    fl_ctx.set_prop(FLContextKey.TASK_ID, pending_task_id, private=True, sticky=False)
                     self.engine.fire_event(EventType.TASK_ASSIGNMENT_SENT, fl_ctx)
 
-        return new_cell_message({}, task)
+        task.set_peer_context(self._peer_ctx)
+        return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, task)
 
     def _process_submit_result(self, request: CellMessage):
         if not self.engine:
@@ -187,6 +195,7 @@ class Communicator:
             peer_ctx = result.get_peer_context()
             if peer_ctx:
                 fl_ctx.set_peer_context(peer_ctx)
+                result.set_peer_props(peer_ctx.get_all_public_props())
 
             fl_ctx.set_prop(
                 key=FLContextKey.TASK_RESULT,
@@ -195,6 +204,8 @@ class Communicator:
                 sticky=False,
             )
             self.engine.fire_event(EventType.TASK_RESULT_RECEIVED, fl_ctx)
+
+        return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, Shareable())
 
     def client_registration(self, client_name, project_name, fl_ctx: FLContext):
         """Register the client with the FLARE Server.
@@ -295,22 +306,6 @@ class Communicator:
         self.set_auth(client_name, token, signature, ssid)
         return token, signature, ssid
 
-    def _determine_parent_fqcn(self, fl_ctx: FLContext):
-        fqsn = self.client_config.get("fqsn")
-        parent_client_name = get_parent_site_name(fqsn)
-        if parent_client_name:
-            engine = fl_ctx.get_engine()
-            parent_client = engine.get_client_from_name(parent_client_name)
-            if not parent_client:
-                raise RuntimeError(f"cannot find parent '{parent_client_name}'")
-
-            if not isinstance(parent_client, Client):
-                raise RuntimeError(f"expect parent_client to be Client but got {type(parent_client)}")
-
-            return parent_client.get_fqcn()
-        else:
-            return FQCN.ROOT_SERVER
-
     def pull_task(self, project_name, token, ssid, fl_ctx: FLContext, timeout=None):
         """Get a task from server.
 
@@ -327,7 +322,7 @@ class Communicator:
         """
         if not self.engine:
             self.engine = fl_ctx.get_engine()
-            self._peer_ctx = fl_ctx.get_peer_context()
+            self._peer_ctx = gen_new_peer_ctx(fl_ctx)
 
         start_time = time.time()
         shareable = Shareable()
@@ -347,8 +342,8 @@ class Communicator:
         if not timeout:
             timeout = self.timeout
 
-        parent_fqcn = self._determine_parent_fqcn(fl_ctx)
-        self.logger.info(f"pull task from parent FQCN: {parent_fqcn}")
+        parent_fqcn = determine_parent_fqcn(self.client_config, fl_ctx)
+        self.logger.debug(f"pulling task from parent FQCN: {parent_fqcn}")
 
         fqcn = FQCN.join([parent_fqcn, job_id])
         task = self.cell.send_request(
@@ -370,10 +365,11 @@ class Communicator:
                 self.logger.error(f"bad task from {parent_fqcn}: expect Shareable but got {type(task_content)}")
 
             task_name = task_content.get_header(ServerCommandKey.TASK_NAME)
+            self.logger.debug(f"received task from parent {parent_fqcn}: {task_name=}")
             fl_ctx.set_prop(FLContextKey.SSID, ssid, sticky=False)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
                 self.logger.info(
-                    f"Received from {project_name} {parent_fqcn}. getTask: {task_name} size: {format_size(size)} "
+                    f"Received from {parent_fqcn}. getTask: {task_name} size: {format_size(size)} "
                     f"({size} Bytes) time: {end_time - start_time:.6f} seconds"
                 )
                 self.last_task_id = task_content.get_header(FLContextKey.TASK_ID)
@@ -383,7 +379,7 @@ class Communicator:
             return None
         else:
             task = None
-            self.logger.warning(f"Failed to get_task from {project_name} server. Will try it again.")
+            self.logger.warning(f"Failed to get_task from {parent_fqcn}. Will try it again.")
 
         return task
 
@@ -429,8 +425,8 @@ class Communicator:
         if not timeout:
             timeout = self.timeout
 
-        parent_fqcn = self._determine_parent_fqcn(fl_ctx)
-        self.logger.info(f"submit update to parent FQCN: {parent_fqcn}")
+        parent_fqcn = determine_parent_fqcn(self.client_config, fl_ctx)
+        self.logger.debug(f"submitting update to parent FQCN: {parent_fqcn}")
 
         fqcn = FQCN.join([parent_fqcn, job_id])
         result = self.cell.send_request(
@@ -446,7 +442,7 @@ class Communicator:
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
         size = task_message.get_header(MessageHeaderKey.PAYLOAD_LEN)
         self.logger.info(
-            f" SubmitUpdate size: {format_size(size)} ({size} Bytes). time: {end_time - start_time:.6f} seconds"
+            f"SubmitUpdate to: {parent_fqcn}. size: {format_size(size)} ({size} Bytes). time: {end_time - start_time:.6f} seconds"
         )
         self.pending_task = None
         return return_code

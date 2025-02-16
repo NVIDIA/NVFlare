@@ -16,7 +16,14 @@ import time
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ProcessType, ServerCommandKey, ServerCommandNames, SiteType
+from nvflare.apis.fl_constant import (
+    FLContextKey,
+    ProcessType,
+    ReservedKey,
+    ServerCommandKey,
+    ServerCommandNames,
+    SiteType
+)
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
@@ -107,8 +114,20 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         # get job meta!
         job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
         job_ctx_props.update({FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB})
+
+        client_config = client.client_args
+        fqsn = client_config.get("fqsn", client.client_name)
+        is_leaf = client_config.get("is_leaf", True)
+
         self.fl_ctx_mgr = FLContextManager(
-            engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
+            engine=self,
+            identity_name=client_name,
+            job_id=job_id,
+            public_stickers={
+                ReservedKey.FQSN: fqsn,
+                ReservedKey.IS_LEAF: is_leaf,
+            },
+            private_stickers=job_ctx_props
         )
 
         self.run_info = ClientRunInfo(job_id=job_id)

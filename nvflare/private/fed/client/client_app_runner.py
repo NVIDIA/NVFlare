@@ -114,7 +114,12 @@ class ClientAppRunner(Runner):
         federated_client.handlers = conf.runner_config.handlers
         with run_manager.new_context() as fl_ctx:
             self._set_fl_context(fl_ctx, app_root, args, workspace, secure_train)
-            client_runner = ClientRunner(config=conf.runner_config, job_id=args.job_id, engine=run_manager)
+            client_runner = ClientRunner(
+                config=conf.runner_config,
+                client_config=federated_client.client_args,
+                job_id=args.job_id,
+                engine=run_manager,
+            )
             run_manager.add_handler(client_runner)
             fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
 
