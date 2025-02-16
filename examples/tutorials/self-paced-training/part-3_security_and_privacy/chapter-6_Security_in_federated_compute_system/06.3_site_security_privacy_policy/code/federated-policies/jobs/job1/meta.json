@@ -1,5 +1,5 @@
 {
-  "name": "iob_1",
+  "name": "job_1",
   "resource_spec": {},
   "min_clients" : 1,
   "deploy_map": {
