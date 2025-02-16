@@ -18,15 +18,7 @@ import time
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import (
-    ConfigVarName,
-    FilterKey,
-    FLContextKey,
-    ReservedKey,
-    ReservedTopic,
-    ReturnCode,
-    SiteType,
-)
+from nvflare.apis.fl_constant import ConfigVarName, FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
@@ -149,6 +141,8 @@ class ClientRunner(TBI):
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
         self.default_task_fetch_interval = config.default_task_fetch_interval
+
+        # parent target is where we will pull task and send task results to
         self.parent_target = self._determine_parent_target()
         self.job_id = job_id
         self.engine = engine

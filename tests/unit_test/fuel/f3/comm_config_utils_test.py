@@ -25,7 +25,6 @@ M = ConnectionSecurity.MTLS
 
 
 class TestCommConfigUtils:
-
     @pytest.mark.parametrize(
         "resources, expected",
         [
