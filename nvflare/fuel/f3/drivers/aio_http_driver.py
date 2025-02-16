@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-import os
 from typing import Any, Dict, List
 
 import aiohttp
@@ -34,7 +33,7 @@ from nvflare.security.logging import secure_format_exception
 log = logging.getLogger(__name__)
 
 WS_PATH = "f3"
-MAX_FRAME_SIZE = 2*1024*1024*1024 # Set it to 2GB
+MAX_FRAME_SIZE = 2 * 1024 * 1024 * 1024  # Set it to 2GB
 
 
 class WsConnection(Connection):
@@ -210,4 +209,3 @@ class AioHttpDriver(BaseDriver):
 
         if self.stop_event:
             self.stop_event.set_result(None)
-
