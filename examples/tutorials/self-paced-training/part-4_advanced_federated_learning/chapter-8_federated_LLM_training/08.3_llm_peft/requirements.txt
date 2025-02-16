@@ -1,0 +1,8 @@
+nvflare
+torch==2.5.1
+datasets
+tensorboard
+transformers==4.48.0
+peft==0.14.0
+trl==0.13.0
+bitsandbytes
