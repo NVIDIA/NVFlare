@@ -99,7 +99,7 @@ class DFStatisticsCore(Statistics, ABC):
         for p in percents:
             v = round(digest.percentile(p), 4)
             p_results[p] = v
-        results[StatisticsConstants.STATS_PERCENTILES_KEY] = p_results
+        results[StatisticsConstants.STATS_QUANTILE_KEY] = p_results
 
         # Extract centroids (mean, count) from the digest to used for merge for the global
         x = digest.centroids_to_list()

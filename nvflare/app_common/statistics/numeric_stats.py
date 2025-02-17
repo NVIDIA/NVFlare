@@ -19,7 +19,7 @@ from tdigest import TDigest
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.statistics_config_utils import get_target_percents
+from nvflare.app_common.statistics.statistics_config_utils import get_target_quantiles
 
 T = TypeVar("T")
 
@@ -85,14 +85,13 @@ def get_global_stats(
                     ds_stddev[ds_name][feature] = round(sqrt(feature_vars[feature]), precision)
 
                 global_metrics[StC.STATS_STDDEV] = ds_stddev
-        elif metric == StC.STATS_PERCENTILE:
+        elif metric == StC.STATS_QUANTILE:
             global_digest = {}
             for client_name in stats:
-
                 global_digest = aggregate_centroids(stats[client_name], global_digest)
 
-            percent_config = statistic_configs.get(StC.STATS_PERCENTILE)
-            global_metrics[metric] = compute_percentiles(global_digest, percent_config, precision)
+            percent_config = statistic_configs.get(StC.STATS_QUANTILE)
+            global_metrics[metric] = compute_quantiles(global_digest, percent_config, precision)
 
     return global_metrics
 
@@ -253,7 +252,7 @@ def aggregate_centroids(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> 
     return g_digest
 
 
-def compute_percentiles(g_digest: Dict[str, Dict[str, TDigest]], quantile_config: Dict, precision: int = 4) -> dict:
+def compute_quantiles(g_digest: Dict[str, Dict[str, TDigest]], quantile_config: Dict, precision: int = 4) -> dict:
     g_ds_metrics = {}
     for ds_name in g_digest:
         if ds_name not in g_ds_metrics:
@@ -262,7 +261,7 @@ def compute_percentiles(g_digest: Dict[str, Dict[str, TDigest]], quantile_config
         feature_metrics = g_digest[ds_name]
         for feature_name in feature_metrics:
             digest = feature_metrics[feature_name]
-            percentiles = get_target_percents(quantile_config, feature_name)
+            percentiles = get_target_quantiles(quantile_config, feature_name)
             percentile_values = {}
             for percentile in percentiles:
                 percentile_values[percentile] = round(digest.percentile(percentile), precision)

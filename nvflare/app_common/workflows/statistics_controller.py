@@ -70,7 +70,7 @@ class StatisticsController(Controller):
                     "*": {"bins": 20},
                     "Age": {"bins": 10, "range": [0, 120]}
                 },
-                percentile: {
+                quantile: {
                     "*": [25, 50, 75, 90],
                     "Age": [50, 75, 95]
                 }
@@ -211,7 +211,7 @@ class StatisticsController(Controller):
             StC.STATS_MEAN: StatisticConfig(StC.STATS_MEAN, {}),
             StC.STATS_VAR: StatisticConfig(StC.STATS_VAR, {}),
             StC.STATS_STDDEV: StatisticConfig(StC.STATS_STDDEV, {}),
-            StC.STATS_PERCENTILE: StatisticConfig(StC.STATS_PERCENTILE, {}),
+            StC.STATS_QUANTILE: StatisticConfig(StC.STATS_QUANTILE, {}),
         }
 
         if StC.STATS_HISTOGRAM in self.statistic_configs:
@@ -409,14 +409,14 @@ class StatisticsController(Controller):
                             hist: Histogram = self.client_statistics[statistic][client][ds][feature_name]
                             buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
                             result[feature_name][statistic][client][ds] = buckets
-                        elif statistic == StC.STATS_PERCENTILE:
-                            percentiles = self.client_statistics[statistic][client][ds][feature_name][
-                                StC.STATS_PERCENTILES_KEY
+                        elif statistic == StC.STATS_QUANTILE:
+                            quantiles = self.client_statistics[statistic][client][ds][feature_name][
+                                StC.STATS_QUANTILE_KEY
                             ]
-                            formatted_percentiles = {}
-                            for p in percentiles:
-                                formatted_percentiles[p] = round(percentiles.get(p), self.precision)
-                            result[feature_name][statistic][client][ds] = formatted_percentiles
+                            formatted_quantiles = {}
+                            for p in quantiles:
+                                formatted_quantiles[p] = round(quantiles.get(p), self.precision)
+                            result[feature_name][statistic][client][ds] = formatted_quantiles
                         else:
                             result[feature_name][statistic][client][ds] = round(
                                 self.client_statistics[statistic][client][ds][feature_name], self.precision
@@ -434,9 +434,9 @@ class StatisticsController(Controller):
                     if statistic == StC.STATS_HISTOGRAM:
                         hist: Histogram = self.global_statistics[statistic][ds][feature_name]
                         result[feature_name][statistic][StC.GLOBAL][ds] = hist.bins
-                    elif statistic == StC.STATS_PERCENTILE:
-                        percentiles = self.global_statistics[statistic][ds][feature_name]
-                        result[feature_name][statistic][StC.GLOBAL][ds] = percentiles
+                    elif statistic == StC.STATS_QUANTILE:
+                        quantiles = self.global_statistics[statistic][ds][feature_name]
+                        result[feature_name][statistic][StC.GLOBAL][ds] = quantiles
                     else:
                         result[feature_name][statistic][StC.GLOBAL].update(
                             {ds: self.global_statistics[statistic][ds][feature_name]}

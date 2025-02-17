@@ -19,7 +19,7 @@ import pandas as pd
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import StatisticsConstants
-from nvflare.app_common.statistics.numeric_stats import aggregate_centroids, compute_percentiles
+from nvflare.app_common.statistics.numeric_stats import aggregate_centroids, compute_quantiles
 from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
 
 
@@ -65,7 +65,7 @@ class TestPercentiles:
         stats_generator = MockDFStats(given_median=100)
         stats_generator.load_data()
         percentiles = stats_generator.percentiles("train", "Feature", percents=[50])
-        result = percentiles.get(StatisticsConstants.STATS_PERCENTILES_KEY)
+        result = percentiles.get(StatisticsConstants.STATS_QUANTILE_KEY)
         print(f"{percentiles=}")
         assert result is not None
         assert result.get(50) == stats_generator.median
@@ -83,7 +83,7 @@ class TestPercentiles:
             local_percentiles = g.percentiles("train", "Feature", percents=[50])
             local_metrics = {"train": {"Feature": local_percentiles}}
             aggregate_centroids(local_metrics, global_digest)
-            result = compute_percentiles(global_digest, {"Feature": [50]}, 2)
+            result = compute_quantiles(global_digest, {"Feature": [50]}, 2)
 
         expected_median = 10
         assert result["train"]["Feature"].get(50) == expected_median
