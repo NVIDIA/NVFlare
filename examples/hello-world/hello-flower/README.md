@@ -23,7 +23,10 @@ If you haven't already, we recommend creating a virtual environment.
 python3 -m venv nvflare_flwr
 source nvflare_flwr/bin/activate
 ```
-
+We recommend installing an older version of NumPy as torch/torchvision doesn't support NumPy 2 at this time.
+```bash
+pip install numpy==1.26.4
+```
 ## 2.1 Run a simulation
 
 To run flwr-pt job with NVFlare, we first need to install its dependencies.
@@ -49,3 +52,23 @@ the TensorBoard metrics to the server at each iteration using NVFlare's metric s
 ```bash
 python job.py --job_name "flwr-pt-tb" --content_dir "./flwr-pt-tb" --stream_metrics
 ```
+
+You can visualize the metrics streamed to the server using TensorBoard.
+```bash
+tensorboard --logdir /tmp/nvflare/hello-flower
+```
+![tensorboard training curve](./train.png)
+
+## Notes
+Make sure your `pyproject.toml` files in the Flower apps contain an "address" field. This needs to be present as the `--federation-config` option of the `flwr run` command tries to override the `“address”` field.
+Your `pyproject.toml` should include a section similar to this:
+```
+[tool.flwr.federations]
+default = "xxx"
+
+[tool.flwr.federations.xxx]
+options.num-supernodes = 2
+address = "127.0.0.1:9093"
+insecure = false
+```
+The number `options.num-supernodes` should match the number of NVFlare clients defined in [job.py](./job.py), e.g., `job.simulator_run(args.workdir, gpu="0", n_clients=2)`.

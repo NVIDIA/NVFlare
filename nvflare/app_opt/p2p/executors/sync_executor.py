@@ -16,7 +16,7 @@ from collections import defaultdict
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.app_opt.p2p.executors.base_dist_opt_executor import BaseDistOptExecutor
@@ -104,7 +104,7 @@ class SyncAlgorithmExecutor(BaseDistOptExecutor):
         Returns:
             Shareable: A reply message indicating successful reception.
         """
-        sender = request.get_peer_props()["__identity_name__"]
+        sender = request.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default=None)
         data = from_shareable(request).data
         iteration = data["iteration"]
 
