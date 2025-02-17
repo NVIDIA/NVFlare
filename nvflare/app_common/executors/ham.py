@@ -63,14 +63,28 @@ class HierarchicalAggregationManager(Executor):
             self.aggregator = aggr
         elif event_type == EventType.TASK_ASSIGNMENT_SENT:
             # the task was sent to a child client
+            if not self.pending_task_id:
+                # I don't have a pending task
+                return
+
             child_client_ctx = fl_ctx.get_peer_context()
             assert isinstance(child_client_ctx, FLContext)
             child_client_name = child_client_ctx.get_identity_name()
             self._update_client_status(child_client_name, None)
             task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
+
+            # indicate that this event has been processed by me
+            fl_ctx.set_prop(FLContextKey.EVENT_PROCESSED, True, private=True, sticky=False)
             self.log_info(fl_ctx, f"sent task {task_id} to child {child_client_name}")
         elif event_type == EventType.TASK_RESULT_RECEIVED:
             # received results from a child client
+            if not self.pending_task_id:
+                # I don't have a pending task
+                return
+
+            # indicate that this event has been processed by me
+            fl_ctx.set_prop(FLContextKey.EVENT_PROCESSED, True, private=True, sticky=False)
+
             result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
             assert isinstance(result, Shareable)
             task_id = result.get_header(ReservedKey.TASK_ID)
@@ -161,6 +175,11 @@ class HierarchicalAggregationManager(Executor):
         self.log_debug(fl_ctx, f"got current_round: {self.current_round}")
         self.pending_task_id = shareable.get_header(ReservedKey.TASK_ID)
 
+        # set header to indicate that we are ready to manage child clients
+        # Note: when a child comes to pull task, the communicator only sends it after the task is ready.
+        # This is to avoid the potential race condition that the client gets the task and then quickly submits
+        # result before we can even ready.
+        shareable.set_header(ReservedKey.TASK_IS_READY, True)
         result = self._do_execute(fl_ctx, abort_signal)
 
         self.pending_task_id = None

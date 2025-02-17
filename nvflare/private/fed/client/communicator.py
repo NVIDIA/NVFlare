@@ -142,7 +142,8 @@ class Communicator:
             cb=self._process_submit_result,
         )
 
-    def _make_try_again(self):
+    @staticmethod
+    def _make_try_again():
         shareable = Shareable()
         shareable.set_header(key=FLContextKey.TASK_ID, value="")
         shareable.set_header(key=ServerCommandKey.TASK_NAME, value=SpecialTaskName.TRY_AGAIN)
@@ -157,26 +158,39 @@ class Communicator:
         # note: the self.pending_task is unset by "submit_update", which could happen at any time.
         # we first assign self.pending_task to a different var (pending_task) and use this var in our processing.
         pending_task = self.pending_task
+        pending_task_id = None
         if not self.engine or not pending_task:
             task = self._make_try_again()
         else:
             assert isinstance(pending_task, Shareable)
             last_task_id = req.get_header(ServerCommandKey.LAST_TASK_ID)
-            if last_task_id == pending_task.get_header(FLContextKey.TASK_ID):
+            task_id = pending_task.get_header(FLContextKey.TASK_ID)
+            if last_task_id == task_id:
                 self.logger.debug(f"same task request from {origin=}: {last_task_id=} - ask it to try again")
                 task = self._make_try_again()
+            elif not pending_task.get_header(ReservedKey.TASK_IS_READY):
+                self.logger.debug(f"task {task_id} not ready - ask it to try again")
+                task = self._make_try_again()
             else:
-                task = pending_task
+                # we'll send the pending task to the child.
+                # make a copy of the task - only headers are copied!
+                task = make_copy(pending_task, exclude_headers=[ReservedKey.TASK_IS_READY])
+                pending_task_id = task_id
 
         if self.engine:
-            if task == pending_task:
-                # fire event to notify others that the pending task is sent to a client
+            if pending_task_id:
+                # fire event to notify others that the pending task is sent to a child client
                 with self.engine.new_context() as fl_ctx:
                     requesting_client_ctx = req.get_peer_context()
                     fl_ctx.set_peer_context(requesting_client_ctx)
-                    pending_task_id = pending_task.get_header(ReservedKey.TASK_ID)
                     fl_ctx.set_prop(FLContextKey.TASK_ID, pending_task_id, private=True, sticky=False)
                     self.engine.fire_event(EventType.TASK_ASSIGNMENT_SENT, fl_ctx)
+                    is_processed = fl_ctx.get_prop(FLContextKey.EVENT_PROCESSED)
+                    if not is_processed:
+                        # no one listened or processed this event
+                        self.logger.warning(
+                            f"event {EventType.TASK_ASSIGNMENT_SENT} for task {pending_task_id} is not processed"
+                        )
 
         task.set_peer_context(self._peer_ctx)
         return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, task)
@@ -195,6 +209,8 @@ class Communicator:
             peer_ctx = result.get_peer_context()
             if peer_ctx:
                 fl_ctx.set_peer_context(peer_ctx)
+
+                # we also need to set peer_props since some app code expects it.
                 result.set_peer_props(peer_ctx.get_all_public_props())
 
             fl_ctx.set_prop(
@@ -204,6 +220,11 @@ class Communicator:
                 sticky=False,
             )
             self.engine.fire_event(EventType.TASK_RESULT_RECEIVED, fl_ctx)
+            is_processed = fl_ctx.get_prop(FLContextKey.EVENT_PROCESSED)
+            if not is_processed:
+                # no one listened or processed this event
+                task_id = result.get_header(ReservedKey.TASK_ID)
+                self.logger.warning(f"event {EventType.TASK_RESULT_RECEIVED} for task {task_id} is not processed")
 
         return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, Shareable())
 
@@ -360,11 +381,11 @@ class Communicator:
 
         if return_code == ReturnCode.OK:
             size = task.get_header(MessageHeaderKey.PAYLOAD_LEN)
-            task_content = task.payload
-            if not isinstance(task_content, Shareable):
-                self.logger.error(f"bad task from {parent_fqcn}: expect Shareable but got {type(task_content)}")
+            task_data = task.payload
+            if not isinstance(task_data, Shareable):
+                self.logger.error(f"bad task from {parent_fqcn}: expect Shareable but got {type(task_data)}")
 
-            task_name = task_content.get_header(ServerCommandKey.TASK_NAME)
+            task_name = task_data.get_header(ServerCommandKey.TASK_NAME)
             self.logger.debug(f"received task from parent {parent_fqcn}: {task_name=}")
             fl_ctx.set_prop(FLContextKey.SSID, ssid, sticky=False)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
@@ -372,8 +393,8 @@ class Communicator:
                     f"Received from {parent_fqcn}. getTask: {task_name} size: {format_size(size)} "
                     f"({size} Bytes) time: {end_time - start_time:.6f} seconds"
                 )
-                self.last_task_id = task_content.get_header(FLContextKey.TASK_ID)
-                self.pending_task = make_copy(task_content)
+                self.last_task_id = task_data.get_header(FLContextKey.TASK_ID)
+                self.pending_task = task_data
         elif return_code == ReturnCode.AUTHENTICATION_ERROR:
             self.logger.warning("get_task request authentication failed.")
             return None
@@ -401,6 +422,10 @@ class Communicator:
         Returns:
             ReturnCode
         """
+        # Set the pending_task to None immediately to reduce the chance that we send this task to a child
+        # while we are still processing.
+        self.pending_task = None
+
         start_time = time.time()
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
         shareable.set_peer_context(shared_fl_ctx)
@@ -420,7 +445,7 @@ class Communicator:
             },
             shareable,
         )
-        job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
+        job_id = fl_ctx.get_job_id()
 
         if not timeout:
             timeout = self.timeout
@@ -444,7 +469,6 @@ class Communicator:
         self.logger.info(
             f"SubmitUpdate to: {parent_fqcn}. size: {format_size(size)} ({size} Bytes). time: {end_time - start_time:.6f} seconds"
         )
-        self.pending_task = None
         return return_code
 
     def quit_remote(self, servers, task_name, token, ssid, fl_ctx: FLContext):
