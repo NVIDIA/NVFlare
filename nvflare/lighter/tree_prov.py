@@ -85,7 +85,7 @@ def _build_tree(depth: int, width: int, max_depth: int, parent: _Node, num_clien
         # the parent is a leaf node - add leaf clients
         Stats.num_leaf_relays += 1
         for i in range(num_clients):
-            name = _make_client_name(parent.name) + str(i+1)
+            name = _make_client_name(parent.name) + str(i + 1)
             client = _new_participant(
                 name, ParticipantType.CLIENT, props={"parent": parent.client_name, "connect_to": {"name": parent.name}}
             )
@@ -100,7 +100,7 @@ def _build_tree(depth: int, width: int, max_depth: int, parent: _Node, num_clien
 
     for i in range(width):
         child = _Node()
-        child.name = parent.name + str(i+1)
+        child.name = parent.name + str(i + 1)
         child.client_name = _make_client_name(child.name)
         child.parent = parent
         parent.children.append(child)
