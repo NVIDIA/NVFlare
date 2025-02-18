@@ -32,7 +32,7 @@ def _new_participant(name: str, ptype: str, props: dict) -> Participant:
     return Participant(type=ptype, name=name, org="nvidia", props=props)
 
 
-def _make_client_name(relay_name: str):
+def _make_client_name(relay_name: str) -> str:
     return relay_name.replace("R", "C")
 
 
@@ -85,7 +85,7 @@ def _build_tree(depth: int, width: int, max_depth: int, parent: _Node, num_clien
         # the parent is a leaf node - add leaf clients
         Stats.num_leaf_relays += 1
         for i in range(num_clients):
-            name = f"{_make_client_name(parent.name)}{i+1}"
+            name = _make_client_name(parent.name) + str(i+1)
             client = _new_participant(
                 name, ParticipantType.CLIENT, props={"parent": parent.client_name, "connect_to": {"name": parent.name}}
             )
@@ -100,7 +100,7 @@ def _build_tree(depth: int, width: int, max_depth: int, parent: _Node, num_clien
 
     for i in range(width):
         child = _Node()
-        child.name = f"{parent.name}{i+1}"
+        child.name = parent.name + str(i+1)
         child.client_name = _make_client_name(child.name)
         child.parent = parent
         parent.children.append(child)
