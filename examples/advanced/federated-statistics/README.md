@@ -27,6 +27,37 @@ Assume that clients will provide the following:
 We only support **numerical features**, not categorical features. But user can return all types of features
 the non-numerical features will be removed.
 
+## Statistics
+
+  Federated statistics includes numerics statistics measures for 
+  * count
+  * mean 
+  * sum
+  * std_dev
+  * histogram 
+  * quantile
+    
+  We did not include min, max value to avoid data privacy concern. 
+
+### Quantile
+
+Quantile statistics refers to statistical measures that divide a probability distribution or dataset into intervals with equal probabilities or proportions. Quantiles help summarize the distribution of data by providing key points that indicate how values are spread.
+
+#### Key Quantiles:
+1. Median (50th percentile): The middle value of a dataset, dividing it into two equal halves.
+2. Quartiles (25th, 50th, 75th percentiles): Divide the data into four equal parts:
+* Q1 (25th percentile): Lower quartile, below which 25% of the data falls.
+* Q2 (50th percentile): Median.
+* Q3 (75th percentile): Upper quartile, below which 75% of the data falls.
+3. Deciles (10th, 20th, ..., 90th percentiles): Divide the data into ten equal parts.
+4. Percentiles (1st, 2nd, ..., 99th): Divide the data into 100 equal parts.
+
+#### Usage of Quantiles:
+* Descriptive Statistics: Summarizes the spread of data.
+* Outlier Detection: Helps identify extreme values.
+* Machine Learning: Used in feature engineering, normalization, and decision tree algorithms.
+* Risk Analysis: Used in finance (e.g., Value at Risk, VaR).
+
 ## Examples
 
 We provide several examples to demonstrate how should the operators be used. 
@@ -56,6 +87,7 @@ The main steps are
 * provide client side configuration to specify data input location
 
 The detailed example instructions can be found [Data frame statistics](df_stats/README.md)
+
 
 ### COVID 19 Radiology Image Examples
 
@@ -154,6 +186,7 @@ The main steps are
 * implement the local statistics generator (statistics_spec)
 * provide client side configuration to specify data input location
 * provide hierarchy specification file providing details about all the clients and their hierarchy.
+
 
 ## Privacy Policy and Privacy Filters
 
@@ -303,11 +336,49 @@ sequenceDiagram
     Server->>FileStore: save to file
 ```
 
+### Quantile Calculation
+
+We updated the statistics with quantile implementation. Although there are many quantile packages can be used, few satisfy our constraint conditions
+
+* Works in distributed systems
+* Does not copy the original data (avoiding privacy leaks)
+* Avoids transmitting large amounts of data
+* ideally, no system-level dependency 
+
+The choice we have are the followings:
+ 
+| Method               | Mergeable? | Retains Raw Data? | Transmission Size | Accuracy          | Privacy       |
+|----------------------|------------|-------------------|-------------------|-------------------|---------------|
+| t-Digest             | ✅ Yes     | ❌ No             | 🔹 Small          | 🔹 High           | 🟢 Good       |
+| Randomized Response  | ✅ Yes     | ❌ No             | 🔹 Small          | 🔸 Slightly Noisy | 🟢 Strong     |
+| Q-Digest             | ✅ Yes     | ❌ No             | 🔹 Small          | 🔹 High           | 🟢 Good       |
+| Count-Min Sketch     | ✅ Yes     | ❌ No             | 🔹 Small          | 🔸 Moderate       | 🟢 Strong     | 
+
+We initially choose the t-digest with python tdigest python package, but noticed that it requires python3-dev system package. The tdigest library in Python requires python3-dev  because it includes C extensions that need to be compiled during installation.
+
+This is really un-desirable. The eventually we implemented Q-Digest without any depdendency. 
+
+#### How Q-Digest Works
+Q-Digest is a quantile approximation algorithm that compresses data using a hierarchical structure (like a binary tree). It is designed for streaming data and distributed systems with the following properties:
+
+* No raw data storage (good for privacy)
+* Mergeable across distributed nodes
+* Memory-efficient (reduces transmission size)
+
+#### Q-Digest Structure
+1. **Binary Tree Compression**: 
+The range of input values is mapped onto a binary tree. Each node stores counters instead of raw data. 
+
+2. **Merging Rules**:
+If the sum of two child nodes' counts is below a threshold, they are merged. This reduces storage and makes it memory-efficient.
+
+3. **Querying Quantiles**:
+To estimate a quantile (e.g., 90th percentile), we traverse the tree and sum frequencies.
+The algorithm efficiently finds the approximate quantile without scanning the full dataset.
 
 
 
 ## Summary
 
-We provided federated statistics operators that can easily aggregate and visualize the local statistics for 
+We provided federated statistics operators that can easily aggregate and visualize the local statistics for
 different data site and features. We hope this feature will make it easier to perform federated data analysis. 
-

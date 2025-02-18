@@ -20,7 +20,7 @@ from nvflare.job_config.stats_job import StatsJob
 
 def define_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-n", "--n_clients", type=int, default=3)
+    parser.add_argument("-n", "--n_clients", type=int, default=2)
     parser.add_argument("-d", "--data_root_dir", type=str, nargs="?", default="/tmp/nvflare/dataset/output")
     parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/stats.json")
     parser.add_argument("-j", "--job_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/stats_df")
@@ -47,10 +47,10 @@ def main():
         "stddev": {},
         "histogram": {"*": {"bins": 20}},
         "Age": {"bins": 20, "range": [0, 10]},
-        "percentile": {"*": [25, 50, 75], "Age": [50, 95]},
+        "quantile": {"*": [25, 50, 75], "Age": [50, 95]},
     }
     # define local stats generator
-    df_stats_generator = DFStatistics(data_root_dir=data_root_dir)
+    df_stats_generator = DFStatistics(filename="data.csv", data_root_dir=data_root_dir)
 
     job = StatsJob(
         job_name="stats_df",

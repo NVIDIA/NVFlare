@@ -410,9 +410,7 @@ class StatisticsController(Controller):
                             buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
                             result[feature_name][statistic][client][ds] = buckets
                         elif statistic == StC.STATS_QUANTILE:
-                            quantiles = self.client_statistics[statistic][client][ds][feature_name][
-                                StC.STATS_QUANTILE_KEY
-                            ]
+                            quantiles = self.client_statistics[statistic][client][ds][feature_name][StC.STATS_QUANTILE]
                             formatted_quantiles = {}
                             for p in quantiles:
                                 formatted_quantiles[p] = round(quantiles.get(p), self.precision)

@@ -165,8 +165,12 @@ statistics computing, we will only need to provide the followings
           "stddev": {},
           "histogram": { "*": {"bins": 10 },
                          "Age": {"bins": 5, "range":[0,120]}
-                       }
+                       },
+          "quantile": {
+            "*": [25, 50, 75]
+          }
         },
+        
         "writer_id": "stats_writer"
       }
     }
@@ -310,6 +314,8 @@ to calculate the local statistics, we will need to implements few methods
     def variance_with_mean(self, dataset_name: str, feature_name: str, global_mean: float, global_count: float) -> float:
  
     def histogram(self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float) -> Histogram:
+
+    def quantiles(self, dataset_name: str, feature_name: str, percentiles: List) -> Dict:
 
 ```
 since some of features do not provide histogram bin range, we will need to calculate based on local min/max to estimate

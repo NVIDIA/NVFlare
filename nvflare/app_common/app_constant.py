@@ -174,8 +174,7 @@ class StatisticsConstants(AppConstants):
     STATS_BIN_RANGE = "range"
     STATS_TARGET_STATISTICS = "statistics"
 
-    STATS_QUANTILE_KEY = "percentiles"
-    STATS_CENTROIDS_KEY = "centroids"
+    STATS_Q_DIGEST = "q_digest"
 
     FED_STATS_PRE_RUN = "fed_stats_pre_run"
     FED_STATS_TASK = "fed_stats"
@@ -196,7 +195,7 @@ class StatisticsConstants(AppConstants):
             STATS_MEAN,
             STATS_MIN,
             STATS_MAX,
-            STATS_PERCENTILE,
+            STATS_QUANTILE,
         ],
         STATS_2nd_STATISTICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
     }

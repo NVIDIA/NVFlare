@@ -329,7 +329,7 @@ class StatisticsTaskHandler(TaskHandler):
     ) -> dict:
         percentile_config = statistic_configs.config
         target_percents = get_target_quantiles(percentile_config, feature_name)
-        result = self.stats_generator.percentiles(dataset_name, feature_name, target_percents)
+        result = self.stats_generator.quantiles(dataset_name, feature_name, target_percents)
         return result
 
     def _get_global_value_from_input(self, statistic_key: str, dataset_name: str, feature_name: str, inputs):

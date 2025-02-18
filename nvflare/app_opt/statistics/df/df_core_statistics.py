@@ -17,18 +17,19 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 from pandas.core.series import Series
-from tdigest import TDigest
 
 from nvflare.app_common.abstract.statistics_spec import BinRange, Feature, Histogram, HistogramType, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants
 from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_std_histogram_buckets
+from nvflare.app_common.statistics.q_digest import QDigest
 
 
 class DFStatisticsCore(Statistics, ABC):
-    def __init__(self):
+    def __init__(self, q_bin_precision=1000):
         # assumption: the data can be loaded and cached in the memory
         self.data: Optional[Dict[str, pd.DataFrame]] = None
         super(DFStatisticsCore, self).__init__()
+        self.q_digest_bin_precision = q_bin_precision
 
     def features(self) -> Dict[str, List[Feature]]:
         results: Dict[str, List[Feature]] = {}
@@ -92,24 +93,23 @@ class DFStatisticsCore(Statistics, ABC):
         df = self.data[dataset_name]
         return df[feature_name].min()
 
-    def percentiles(self, dataset_name: str, feature_name: str, percents: List) -> Dict:
-        digest = self._prepare_t_digest(dataset_name, feature_name)
+    def quantiles(self, dataset_name: str, feature_name: str, percents: List) -> Dict:
+        digest = self._prepare_q_digest(dataset_name, feature_name)
         results = {}
         p_results = {}
         for p in percents:
-            v = round(digest.percentile(p), 4)
+            v = round(digest.quantile(p), 4)
             p_results[p] = v
-        results[StatisticsConstants.STATS_QUANTILE_KEY] = p_results
+        results[StatisticsConstants.STATS_QUANTILE] = p_results
 
-        # Extract centroids (mean, count) from the digest to used for merge for the global
-        x = digest.centroids_to_list()
-        results[StatisticsConstants.STATS_CENTROIDS_KEY] = x
+        # Extract the Q-Digest into a dictionary
+        results[StatisticsConstants.STATS_Q_DIGEST] = digest.serialize()
         return results
 
-    def _prepare_t_digest(self, dataset_name: str, feature_name: str) -> TDigest:
+    def _prepare_q_digest(self, dataset_name: str, feature_name: str) -> QDigest:
         df = self.data[dataset_name]
         data = df[feature_name]
-        digest = TDigest()
+        q_digest = QDigest(bin_precision=self.q_digest_bin_precision)
         for value in data:
-            digest.update(value)
-        return digest
+            q_digest.insert(value)
+        return q_digest

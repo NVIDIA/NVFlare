@@ -15,10 +15,9 @@
 from math import sqrt
 from typing import Dict, List, TypeVar
 
-from tdigest import TDigest
-
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
+from nvflare.app_common.statistics.q_digest import QDigest
 from nvflare.app_common.statistics.statistics_config_utils import get_target_quantiles
 
 T = TypeVar("T")
@@ -88,7 +87,7 @@ def get_global_stats(
         elif metric == StC.STATS_QUANTILE:
             global_digest = {}
             for client_name in stats:
-                global_digest = aggregate_centroids(stats[client_name], global_digest)
+                global_digest = merge_quantiles(stats[client_name], global_digest)
 
             percent_config = statistic_configs.get(StC.STATS_QUANTILE)
             global_metrics[metric] = compute_quantiles(global_digest, percent_config, precision)
@@ -232,7 +231,7 @@ def filter_numeric_features(ds_features: Dict[str, List[Feature]]) -> Dict[str, 
     return numeric_ds_features
 
 
-def aggregate_centroids(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict:
+def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict:
     for ds_name in metrics:
         if ds_name not in g_digest:
             g_digest[ds_name] = {}
@@ -240,19 +239,17 @@ def aggregate_centroids(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> 
         feature_metrics = metrics[ds_name]
         for feature_name in feature_metrics:
             if feature_metrics[feature_name] is not None:
-                centroids: List = feature_metrics[feature_name].get(StC.STATS_CENTROIDS_KEY)
+                q_digest_dict: Dict = feature_metrics[feature_name].get(StC.STATS_Q_DIGEST)
+                feature_digest = QDigest.deserialize(q_digest_dict)
                 if feature_name not in g_digest[ds_name]:
-                    g_digest[ds_name][feature_name] = TDigest()
+                    g_digest[ds_name][feature_name] = QDigest()
 
-                for centroid in centroids:
-                    mean = centroid.get("m")
-                    count = centroid.get("c")
-                    g_digest[ds_name][feature_name].update(mean, count)
+                g_digest[ds_name][feature_name].merge(feature_digest)
 
     return g_digest
 
 
-def compute_quantiles(g_digest: Dict[str, Dict[str, TDigest]], quantile_config: Dict, precision: int = 4) -> dict:
+def compute_quantiles(g_digest: Dict[str, Dict[str, QDigest]], quantile_config: Dict, precision: int = 4) -> dict:
     g_ds_metrics = {}
     for ds_name in g_digest:
         if ds_name not in g_ds_metrics:
@@ -264,7 +261,7 @@ def compute_quantiles(g_digest: Dict[str, Dict[str, TDigest]], quantile_config: 
             percentiles = get_target_quantiles(quantile_config, feature_name)
             percentile_values = {}
             for percentile in percentiles:
-                percentile_values[percentile] = round(digest.percentile(percentile), precision)
+                percentile_values[percentile] = round(digest.quantile(percentile), precision)
 
             g_ds_metrics[ds_name][feature_name] = percentile_values
 
