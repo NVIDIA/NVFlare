@@ -17,9 +17,9 @@ import time
 
 class ClientPropKey:
 
-    FQCN = "fqcn"           # Fully Qualified Cell Name: position in Cellnet
-    FQSN = "fqsn"           # Fully Qualified Site Name: position in client hierarchy
-    IS_LEAF = "is_leaf"     # Whether the client is a leaf node in client hierarchy
+    FQCN = "fqcn"  # Fully Qualified Cell Name: position in Cellnet
+    FQSN = "fqsn"  # Fully Qualified Site Name: position in client hierarchy
+    IS_LEAF = "is_leaf"  # Whether the client is a leaf node in client hierarchy
 
 
 class Client:
