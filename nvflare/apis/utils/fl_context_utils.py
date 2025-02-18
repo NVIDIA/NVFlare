@@ -16,7 +16,7 @@ import copy
 from typing import Optional
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey, NonSerializableKeys, ProcessType
+from nvflare.apis.fl_constant import FLContextKey, NonSerializableKeys
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.sec.audit import AuditService
@@ -136,23 +136,3 @@ def get_client(client_name, fl_ctx: FLContext) -> Optional[Client]:
     if not engine:
         raise RuntimeError("Bad fl_ctx: no engine")
     return engine.get_client_from_name(client_name)
-
-
-def get_my_client(fl_ctx: FLContext) -> Optional[Client]:
-    """Get my Client object. This call only works for CJ.
-
-    Args:
-        fl_ctx: the FLContext object
-
-    Returns:
-
-    """
-    ptype = fl_ctx.get_process_type()
-    if ptype != ProcessType.CLIENT_JOB:
-        raise RuntimeError(f"this method can only be called from {ProcessType.CLIENT_JOB}, but we are {ptype}")
-    engine = fl_ctx.get_engine()
-    if not engine:
-        raise RuntimeError("Bad fl_ctx: no engine")
-
-    my_name = fl_ctx.get_identity_name()
-    return engine.get_client_from_name(my_name)

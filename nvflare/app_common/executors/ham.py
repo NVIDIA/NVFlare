@@ -29,6 +29,7 @@ from nvflare.security.logging import secure_format_exception
 class HierarchicalAggregationManager(Executor):
     def __init__(
         self,
+        learner_id: str,
         aggregator_id: str,
         aggr_timeout: float,
         min_responses: int,
@@ -36,11 +37,13 @@ class HierarchicalAggregationManager(Executor):
     ):
         Executor.__init__(self)
 
+        check_str("learner_id", learner_id)
         check_str("aggregator_id", aggregator_id)
         check_positive_number("aggr_timeout", aggr_timeout)
         check_non_negative_int("min_responses", min_responses)
         check_positive_number("wait_time_after_min_resps_received", wait_time_after_min_resps_received)
 
+        self.learner_id = learner_id
         self.aggregator_id = aggregator_id
         self.aggr_timeout = aggr_timeout
         self.pending_task_id = None
@@ -57,10 +60,16 @@ class HierarchicalAggregationManager(Executor):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             engine = fl_ctx.get_engine()
+
             aggr = engine.get_component(self.aggregator_id)
             if not isinstance(aggr, Aggregator):
                 self.log_error(fl_ctx, f"component '{self.aggregator_id}' must be Aggregator but got {type(aggr)}")
             self.aggregator = aggr
+
+            learner = engine.get_component(self.learner_id)
+            if not isinstance(learner, Executor):
+                self.log_error(fl_ctx, f"component '{self.learner_id}' must be Executor but got {type(learner)}")
+            self.learner = learner
         elif event_type == EventType.TASK_ASSIGNMENT_SENT:
             # the task was sent to a child client
             if not self.pending_task_id:
@@ -158,30 +167,21 @@ class HierarchicalAggregationManager(Executor):
         """
         is_leaf = fl_ctx.get_prop(ReservedKey.IS_LEAF)
         if is_leaf:
-            runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-            if not runner:
-                raise RuntimeError("cannot get ClientRunner from fl_ctx")
-            leaf_task_name = f"exec_{task_name}"
-            executor = runner.find_executor(leaf_task_name)
-            if not executor:
-                self.log_error(fl_ctx, f"no executor available for task {leaf_task_name}")
-                return make_reply(ReturnCode.TASK_UNKNOWN)
-            else:
-                self.log_info(fl_ctx, f"invoking executor {type(executor)} for task {leaf_task_name}")
-                return executor.execute(task_name, shareable, fl_ctx, abort_signal)
+            return self.learner.execute(task_name, shareable, fl_ctx, abort_signal)
 
         self.log_info(fl_ctx, "waiting for results from children ...")
         self.current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
         self.log_debug(fl_ctx, f"got current_round: {self.current_round}")
         self.pending_task_id = shareable.get_header(ReservedKey.TASK_ID)
 
-        # set header to indicate that we are ready to manage child clients
+        # Set header to indicate that we are ready to manage child clients
         # Note: when a child comes to pull task, the communicator only sends it after the task is ready.
         # This is to avoid the potential race condition that the client gets the task and then quickly submits
-        # result before we can even ready.
+        # result before we are even ready.
         shareable.set_header(ReservedKey.TASK_IS_READY, True)
         result = self._do_execute(fl_ctx, abort_signal)
 
+        # reset state
         self.pending_task_id = None
         self.pending_clients = {}
         self.aggregator.reset(fl_ctx)
@@ -196,23 +196,26 @@ class HierarchicalAggregationManager(Executor):
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             if self._process_error:
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                # we bail out when any processing error encountered
+                break
 
             current_time = time.time()
             if current_time - start_time > self.aggr_timeout:
+                # we have waited long enough
                 break
 
             # have we received all results?
             received, total = self._pending_clients_status()
             if received < self.min_responses:
-                # we have not received min responses
+                # we have not received min responses - continue to wait
                 continue
 
             if not min_received_time:
+                # received min responses - remember the time at which this happened
                 min_received_time = current_time
 
             if current_time - min_received_time >= self.wait_time_after_min_resps_received:
-                # we have waited long enough after min resps received
+                # we have waited long enough after min responses received
                 break
 
             time.sleep(0.5)
@@ -231,7 +234,7 @@ class HierarchicalAggregationManager(Executor):
             return make_reply(ReturnCode.TIMEOUT)
 
         try:
-            self.log_info(fl_ctx, "return aggregated result!")
+            self.log_info(fl_ctx, "return aggregation result")
             return self.aggregator.aggregate(fl_ctx)
         except Exception as ex:
             self.log_error(fl_ctx, f"exception 'aggregate' from {type(self.aggregator)}: {secure_format_exception(ex)}")
