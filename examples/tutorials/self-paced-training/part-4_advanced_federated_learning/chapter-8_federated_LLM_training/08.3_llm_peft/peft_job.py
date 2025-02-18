@@ -74,9 +74,9 @@ def main():
 
     # Define the model persistor and send to server
     # First send the model to the server
-    job.to("src/hf_sft_model.py", "server")
+    job.to("src/hf_peft_model.py", "server")
     # Then send the model persistor to the server
-    model_args = {"path": "src.hf_sft_model.CausalLMModel", "args": {"model_name_or_path": model_name_or_path}}
+    model_args = {"path": "src.hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": model_name_or_path}}
     job.to(PTFileModelPersistor(model=model_args), "server", id="persistor")
 
     # Add model selection widget and send to server
@@ -132,7 +132,7 @@ def define_parser():
         "--num_rounds",
         type=int,
         default=3,
-        help="Number of rounds, default to 5",
+        help="Number of rounds, default to 3",
     )
     parser.add_argument(
         "--workspace_dir",

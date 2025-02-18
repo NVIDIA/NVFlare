@@ -55,8 +55,8 @@ def main():
         raise ValueError(f"Invalid model_name: {model_name}, only Bert and GPT are supported.")
 
     # Local training parameters
-    num_rounds = 50
-    dataset_path = f"/tmp/nvflare/data/nlp_ner/{num_clients}_split"
+    num_rounds = 5
+    dataset_path = f"/tmp/nvflare/dataset/nlp_ner/{num_clients}_split"
     train_script = "src/nlp_fl.py"
     train_args = f"--dataset_path {dataset_path} --model_name {train_model_name}"
 

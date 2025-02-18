@@ -47,12 +47,12 @@ def main():
     parser.add_argument(
         "--data_path_train",
         type=str,
-        default="./dataset/dolly/training.jsonl",
+        default="/tmp/nvflare/dataset/llm/dolly/training.jsonl",
     )
     parser.add_argument(
         "--data_path_valid",
         type=str,
-        default="./dataset/dolly/validation.jsonl",
+        default="/tmp/nvflare/dataset/llm/dolly/validation.jsonl",
     )
     parser.add_argument(
         "--output_path",

@@ -132,7 +132,7 @@ def define_parser():
         "--num_rounds",
         type=int,
         default=3,
-        help="Number of rounds, default to 5",
+        help="Number of rounds, default to 3",
     )
     parser.add_argument(
         "--workspace_dir",

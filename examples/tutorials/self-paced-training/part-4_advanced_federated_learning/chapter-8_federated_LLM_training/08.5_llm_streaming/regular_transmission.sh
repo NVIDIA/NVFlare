@@ -1,4 +1,3 @@
-pkill -9 python
-mkdir /tmp/nvflare/workspace/
-bash utils/log_memory.sh >>/tmp/nvflare/workspace/regular.txt &
+mkdir /tmp/nvflare/logs/
+bash utils/log_memory.sh >>/tmp/nvflare/logs/regular.txt &
 python streaming_job.py
