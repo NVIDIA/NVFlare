@@ -291,6 +291,22 @@ class Participant(Entity):
             return parse_connect_to(h)
 
 
+def participant_from_dict(participant_def: dict, project=None) -> Participant:
+    name = participant_def.pop("name", None)
+    if not name:
+        raise ValueError("missing participant name")
+
+    type = participant_def.pop("type", None)
+    if not type:
+        raise ValueError("missing participant type")
+
+    org = participant_def.pop("org", None)
+    if org:
+        raise ValueError("missing participant org")
+
+    return Participant(type=type, name=name, org=org, props=participant_def, project=project)
+
+
 class Project(Entity):
     def __init__(
         self,
@@ -384,6 +400,27 @@ class Project(Entity):
 
         """
         return self.overseer
+
+    def add_participant(self, participant: Participant):
+        self._check_unique_name(participant.name)
+        participant.parent = self
+        if participant.type == ParticipantType.CLIENT:
+            self.clients.append(participant)
+        elif participant.type == ParticipantType.RELAY:
+            self.relays.append(participant)
+        elif participant.type == ParticipantType.SERVER:
+            if self.server:
+                raise ValueError(f"cannot add participant {participant.name} as server - server already exists")
+            self.server = participant
+        elif participant.type == ParticipantType.ADMIN:
+            self.admins.append(participant)
+        elif participant.type == ParticipantType.OVERSEER:
+            if self.overseer:
+                raise ValueError(f"cannot add participant {participant.name} as overseer - overseer already exists")
+            self.overseer = participant
+        else:
+            raise ValueError(f"invalid participant type: {participant.type}")
+        self.all_names[participant.name] = True
 
     def add_client(self, name: str, org: str, props: dict):
         self._check_unique_name(name)
