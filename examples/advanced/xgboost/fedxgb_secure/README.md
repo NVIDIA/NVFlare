@@ -24,7 +24,7 @@ The build process will generate 2 .so files: libcuda_paillier.so and libnvflare.
 ## Data Preparation
 ### Download and Store Data
 To run the examples, we first download the dataset from this [link](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud), which is a single `.csv` file.
-By default, we assume the dataset is downloaded, uncompressed, and stored in `${PWD}/dataset/creditcard.csv`.
+By default, we assume the dataset is downloaded, uncompressed, and stored in `/tmp/nvflare/dataset/creditcard.csv`.
 
 > **_NOTE:_** If the dataset is downloaded in another place,
 > make sure to modify the corresponding `DATASET_PATH` inside `prepare_data.sh`.
@@ -68,47 +68,27 @@ bash run_training_standalone.sh
 This will cover baseline centralized training, federated xgboost run in the same machine
 (server and clients are running in different processes) with and without secure feature.
 
-## Generates the FLARE Job
-We can use our job template and the `nvflare job` command to generate different jobs for different scenarios:
+> **_NOTE:_** In this example, we use the `mock` plugin to simulate the homomorphic encryption process.
+> The actual encyption plugin will be used in the next step.
+
+## Federated Experiments with NVFlare
+We then run the federated XGBoost training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html), without and with homomorphic encryption.
 
 ```
-# config the job template directory
-nvflare config -jt ../../../job_templates/
-
-# create horizontal job
-nvflare job create -force -w xgboost -j ./jobs/xgb_hori \
-    -f config_fed_server.conf secure_training=false data_split_mode=0 \
-    -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/horizontal_xgb_data"
-
-# create horizontal secure job
-nvflare job create -force -w xgboost -j ./jobs/xgb_hori_secure \
-    -f config_fed_server.conf secure_training=true data_split_mode=0 \
-    -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/horizontal_xgb_data"
-
-# create vertical job
-nvflare job create -force -w xgboost -j ./jobs/xgb_vert \
-    -f config_fed_server.conf secure_training=false data_split_mode=1 \
-    -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/vertical_xgb_data"
-
-# create vertical secure job
-nvflare job create -force -w xgboost -j ./jobs/xgb_vert_secure \
-    -f config_fed_server.conf secure_training=true data_split_mode=1 \
-    -f config_fed_client.conf folder="/tmp/nvflare/xgb_dataset/vertical_xgb_data"
-
+python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal
+python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal --secure True
+python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical
+python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --secure True
 ```
 
-Or you can just run the script:
+Secure horizontal needs additional tenseal context provisioning. 
 ```
-bash prepare_flare_job.sh
+jobdir=/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs/horizontal_secure
+workdir=/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/horizontal_secure
+nvflare provision -p project.yml -w ${workdir}
+nvflare simulator ${jobdir} -w ${workdir}/example_project/prod_00/site-1 -n 3 -t 3
 ```
 
-## Run Federated Experiments with NVFlare
-Next, we run the federated XGBoost training without and with homomorphic encryption using NVFlare. 
-We run the NVFlare jobs using simulator with: 
-```
-bash run_training_flare.sh
-```
-The running time of each job depends mainly on the encryption workload. 
 
 ## Results
 Comparing the AUC results with centralized baseline, we have four observations:
