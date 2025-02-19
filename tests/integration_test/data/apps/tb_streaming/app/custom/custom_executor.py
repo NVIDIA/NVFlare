@@ -17,7 +17,6 @@ import time
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -40,7 +39,7 @@ class CustomExecutor(Executor):
         abort_signal: Signal,
     ) -> Shareable:
         if task_name == self.task_name:
-            peer_ctx = fl_ctx.get_prop(FLContextKey.PEER_CONTEXT)
+            peer_ctx = fl_ctx.get_peer_context()
             r = peer_ctx.get_prop("current_round")
 
             number = random.random()

@@ -61,7 +61,6 @@ class MockDFStats2(DFStatisticsCore):
 
 
 class TestPercentiles:
-
     def test_percentile_metrics(self):
         stats_generator = MockDFStats(given_median=100)
         stats_generator.load_data()

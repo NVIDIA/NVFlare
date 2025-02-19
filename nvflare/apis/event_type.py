@@ -90,3 +90,6 @@ class EventType(object):
     AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
     BEFORE_BUILD_COMPONENT = "_before_build_component"
     BEFORE_JOB_LAUNCH = "_before_job_launch"
+
+    TASK_RESULT_RECEIVED = "_task_result_received"
+    TASK_ASSIGNMENT_SENT = "_task_assignment_sent"

@@ -480,7 +480,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         with self.new_context() as fl_ctx:
             reply = self.run_manager.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
             shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+            reply.set_peer_context(shared_fl_ctx)
 
             if reply is not None:
                 return_message = new_cell_message({}, reply)
@@ -713,7 +713,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         while True:
             clients = self._retrieve_clients_data(job_id)
             if clients:
-                self.client_manager.clients = clients
+                self.client_manager.set_clients(clients)
                 self.logger.debug(f"received participating clients {clients}")
                 return
 
