@@ -208,7 +208,7 @@ class ModelQuantizor(DXOFilter):
         # server job in this case is 1-N communication with identical quantization operation
         # the first communication to client will apply quantization and change the data on the server
         # thus the subsequent communications to the rest of clients will no longer need to apply quantization
-        # This is not needed for client job, since the client job will be 1-N and quantization applies to each client
+        # This is not needed for client job, since the client job will be 1-1 and quantization applies to each client
         # The behavior will also be different if each server-client filter is different, in which case
         # a deep copy of the server data should be made by filter before applying the process
         filter_flag = True
