@@ -3,7 +3,7 @@ This example illustrates the use of [NVIDIA FLARE](https://nvflare.readthedocs.i
 The examples are based on a [finance dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) to perform fraud detection.
 
 ## Secure Federated Training of XGBoost
-Several mechanisms have been proposed for training an XGBoost model in a federated learning setting, e.g. [vertical](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_xgboost/README.md), [histogram-based horizontal](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/histogram-based/README.md), and [tree-based horizontal](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/tree-based/README.md). 
+Several mechanisms have been proposed for training an XGBoost model in a federated learning setting, e.g. [vertical, histogram-based horizontal, and tree-based horizontal](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/fedxgb/README.md). 
 
 In this example, we further extend the existing horizontal and vertical federated learning approaches to support secure federated learning using homomorphic encryption. Depending on the characteristics of the data to be encrypted, we can choose between [CKKS](https://github.com/OpenMined/TenSEAL) and [Paillier](https://github.com/intel/pailliercryptolib_python).
 
@@ -48,8 +48,8 @@ This will generate data splits for 3 clients under all experimental settings.
 > assuming that the datasets from different sites have already been joined using Private Set
 > Intersection (PSI). However, in practice, each site initially has its own separate dataset. To
 > combine these datasets accurately, you need to use PSI to match records with the same ID across
-> different sites. For more information on how to perform PSI, please refer to the
-> [vertical xgboost example](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/vertical_xgboost).
+> different sites. For more information on how to perform PSI, please refer to the 
+> [PSI example](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/psi).
 
 
 > **_NOTE:_** The generated data files will be stored in the folder `/tmp/nvflare/xgb_dataset/`,
