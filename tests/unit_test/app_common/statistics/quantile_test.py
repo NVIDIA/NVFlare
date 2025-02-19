@@ -71,9 +71,9 @@ class TestQuantile:
         # Insert values
         np_data = pd.Series(data)
 
-        assert fd.estimate_quantile(0.25) == np_data.quantile(0.25)
-        assert fd.estimate_quantile(0.5) == np_data.quantile(0.5)
-        assert fd.estimate_quantile(0.75) == np_data.quantile(0.75)
+        assert fd.quantile(0.25) == np_data.quantile(0.25)
+        assert fd.quantile(0.5) == np_data.quantile(0.5)
+        assert fd.quantile(0.75) == np_data.quantile(0.75)
 
     def test_tdigest2(self):
         # Small dataset
@@ -82,9 +82,9 @@ class TestQuantile:
       # Insert values
         np_data = pd.Series(data)
 
-        assert fd.estimate_quantile(0.25) == np_data.quantile(0.25)
-        assert fd.estimate_quantile(0.5) == np_data.quantile(0.5)
-        assert fd.estimate_quantile(0.75) == np_data.quantile(0.75)
+        assert fd.quantile(0.25) == np_data.quantile(0.25)
+        assert fd.quantile(0.5) == np_data.quantile(0.5)
+        assert fd.quantile(0.75) == np_data.quantile(0.75)
 
     def test_tdigest3(self):
         # Small dataset
@@ -93,9 +93,9 @@ class TestQuantile:
       
         np_data = pd.Series(data)
 
-        assert round(fd.estimate_quantile(0.25), 2) == np_data.quantile(0.25)
-        assert round(fd.estimate_quantile(0.5), 2) == np_data.quantile(0.5)
-        assert round(fd.estimate_quantile(0.75), 2) == np_data.quantile(0.75)
+        assert round(fd.quantile(0.25), 2) == np_data.quantile(0.25)
+        assert round(fd.quantile(0.5), 2) == np_data.quantile(0.5)
+        assert round(fd.quantile(0.75), 2) == np_data.quantile(0.75)
 
     def test_tdigest4(self):
         # Small dataset
@@ -104,9 +104,9 @@ class TestQuantile:
       
         np_data = pd.Series(data)
 
-        assert round(fd.estimate_quantile(0.25), 2) == np_data.quantile(0.25)
-        assert round(fd.estimate_quantile(0.5), 2) == np_data.quantile(0.5)
-        assert round(fd.estimate_quantile(0.75), 2) == np_data.quantile(0.75)
+        assert round(fd.quantile(0.25), 2) == np_data.quantile(0.25)
+        assert round(fd.quantile(0.5), 2) == np_data.quantile(0.5)
+        assert round(fd.quantile(0.75), 2) == np_data.quantile(0.75)
 
     def test_tdigest5(self):
         # Small dataset
@@ -115,9 +115,9 @@ class TestQuantile:
         data = data1 + data2
         fd = TDigest(data)
 
-        assert fd.estimate_quantile(0.5) == 0
-        assert fd.estimate_quantile(0.1) == -4
-        assert fd.estimate_quantile(0.9) == 4
+        assert fd.quantile(0.5) == 0
+        assert fd.quantile(0.1) == -4
+        assert fd.quantile(0.9) == 4
 
     def test_tdigest6(self):
         # Small dataset
@@ -130,8 +130,8 @@ class TestQuantile:
 
         np_data = pd.Series( data1 + data2)
 
-        assert fdx.estimate_quantile(0.5) == np_data.quantile(0.5)
-        assert merged_fd.estimate_quantile(0.5) == np_data.quantile(0.5)
+        assert fdx.quantile(0.5) == np_data.quantile(0.5)
+        assert merged_fd.quantile(0.5) == np_data.quantile(0.5)
         
 
 
@@ -143,7 +143,7 @@ class TestQuantile:
 
         fd = TDigest(data)
 
-        v = fd.estimate_quantile(0.5)
+        v = fd.quantile(0.5)
 
         print(sorted(data), v, median)
 
@@ -168,7 +168,7 @@ class TestQuantile:
         fd.merge(fd2)
  
 
-        v = fd.estimate_quantile(0.5)
+        v = fd.quantile(0.5)
 
         print(sorted(data), v, median)
 
@@ -193,7 +193,7 @@ class TestQuantile:
         fd.merge(fd1.from_dict(fd1.to_dict()))
         fd.merge(fd2.from_dict(fd2.to_dict()))
 
-        v = fd.estimate_quantile(0.5)
+        v = fd.quantile(0.5)
 
         print(sorted(data), v, median)
 
@@ -204,9 +204,9 @@ class TestQuantile:
         digest = TDigest(range(101))
         print(f"Before: {len(digest)} centroids")
         
-        before_median = digest.estimate_quantile(0.5)
-        before_25 = digest.estimate_quantile(0.25)
-        before_75 = digest.estimate_quantile(0.75)
+        before_median = digest.quantile(0.5)
+        before_25 = digest.quantile(0.25)
+        before_75 = digest.quantile(0.75)
         
         digest.compress(10)  # compress to 10 (or fewer) centroids
         
@@ -214,9 +214,9 @@ class TestQuantile:
         
         print(json.dumps(digest.to_dict(), indent=2))
 
-        after_median = digest.estimate_quantile(0.5)
-        after_25 = digest.estimate_quantile(0.25)
-        after_75 = digest.estimate_quantile(0.75)
+        after_median = digest.quantile(0.5)
+        after_25 = digest.quantile(0.25)
+        after_75 = digest.quantile(0.75)
         
         
         assert before_median == after_median

@@ -103,7 +103,7 @@ class DFStatisticsCore(Statistics, ABC):
         results = {}
         p_results = {}
         for p in percents:
-            v = round(digest.estimate_quantile(p), 4)
+            v = round(digest.quantile(p), 4)
             p_results[p] = v
         results[StatisticsConstants.STATS_QUANTILE] = p_results
 

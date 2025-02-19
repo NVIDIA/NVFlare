@@ -262,7 +262,7 @@ def compute_quantiles(g_digest: Dict[str, Dict[str, TDigest]], quantile_config: 
             percentiles = get_target_quantiles(quantile_config, feature_name)
             percentile_values = {}
             for percentile in percentiles:
-                percentile_values[percentile] = round(digest.estimate_quantile(percentile), precision)
+                percentile_values[percentile] = round(digest.quantile(percentile), precision)
 
             g_ds_metrics[ds_name][feature_name] = percentile_values
 
