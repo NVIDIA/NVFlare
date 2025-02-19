@@ -677,7 +677,8 @@ class FederatedServer(BaseServer):
                         )
 
                 data = request.payload
-                shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+                assert isinstance(data, Shareable)
+                shared_fl_ctx = data.get_peer_context()
                 fl_ctx.set_peer_context(shared_fl_ctx)
 
                 self.engine.fire_event(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=fl_ctx)
@@ -732,7 +733,8 @@ class FederatedServer(BaseServer):
                 self.logout_client(token)
 
                 data = request.payload
-                shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+                assert isinstance(data, Shareable)
+                shared_fl_ctx = data.get_peer_context()
                 fl_ctx.set_peer_context(shared_fl_ctx)
                 self.engine.fire_event(EventType.CLIENT_QUIT, fl_ctx=fl_ctx)
 
@@ -770,7 +772,8 @@ class FederatedServer(BaseServer):
                 return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
             data = request.payload
-            shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+            assert isinstance(data, Shareable)
+            shared_fl_ctx = data.get_peer_context()
             fl_ctx.set_peer_context(shared_fl_ctx)
             self.engine.fire_event(EventType.CLIENT_HEARTBEAT_RECEIVED, fl_ctx=fl_ctx)
 
