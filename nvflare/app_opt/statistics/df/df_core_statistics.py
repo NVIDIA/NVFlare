@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC
+from math import sqrt
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -21,15 +22,15 @@ from pandas.core.series import Series
 from nvflare.app_common.abstract.statistics_spec import BinRange, Feature, Histogram, HistogramType, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants
 from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_std_histogram_buckets
-from nvflare.app_common.statistics.q_digest import QDigest
+from fastdigest import TDigest
 
 
 class DFStatisticsCore(Statistics, ABC):
-    def __init__(self, q_bin_precision=1000):
+    def __init__(self, max_bin=None):
         # assumption: the data can be loaded and cached in the memory
         self.data: Optional[Dict[str, pd.DataFrame]] = None
         super(DFStatisticsCore, self).__init__()
-        self.q_digest_bin_precision = q_bin_precision
+        self.max_bin = max_bin
 
     def features(self) -> Dict[str, List[Feature]]:
         results: Dict[str, List[Feature]] = {}
@@ -94,22 +95,18 @@ class DFStatisticsCore(Statistics, ABC):
         return df[feature_name].min()
 
     def quantiles(self, dataset_name: str, feature_name: str, percents: List) -> Dict:
-        digest = self._prepare_q_digest(dataset_name, feature_name)
+        df = self.data[dataset_name]
+        data = df[feature_name]
+        max_bin = self.max_bin if self.max_bin else round(sqrt(len(data)))
+        digest = TDigest(data)
+        # digest.compress(max_bin)
         results = {}
         p_results = {}
         for p in percents:
-            v = round(digest.quantile(p), 4)
+            v = round(digest.estimate_quantile(p), 4)
             p_results[p] = v
         results[StatisticsConstants.STATS_QUANTILE] = p_results
 
         # Extract the Q-Digest into a dictionary
-        results[StatisticsConstants.STATS_Q_DIGEST] = digest.serialize()
+        results[StatisticsConstants.STATS_DIGEST_COORD] = digest.to_dict()
         return results
-
-    def _prepare_q_digest(self, dataset_name: str, feature_name: str) -> QDigest:
-        df = self.data[dataset_name]
-        data = df[feature_name]
-        q_digest = QDigest(bin_precision=self.q_digest_bin_precision)
-        for value in data:
-            q_digest.insert(value)
-        return q_digest

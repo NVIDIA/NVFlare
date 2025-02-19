@@ -74,3 +74,4 @@ class DFStatistics(DFStatisticsCore):
 
     def initialize(self, fl_ctx: FLContext):
         self.data = self.load_data(fl_ctx)
+        

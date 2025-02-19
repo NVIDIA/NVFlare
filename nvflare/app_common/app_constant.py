@@ -174,7 +174,7 @@ class StatisticsConstants(AppConstants):
     STATS_BIN_RANGE = "range"
     STATS_TARGET_STATISTICS = "statistics"
 
-    STATS_Q_DIGEST = "q_digest"
+    STATS_DIGEST_COORD = "digest_coord"
 
     FED_STATS_PRE_RUN = "fed_stats_pre_run"
     FED_STATS_TASK = "fed_stats"

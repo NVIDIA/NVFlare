@@ -14,10 +14,10 @@
 
 from math import sqrt
 from typing import Dict, List, TypeVar
+from fastdigest import TDigest
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.q_digest import QDigest
 from nvflare.app_common.statistics.statistics_config_utils import get_target_quantiles
 
 T = TypeVar("T")
@@ -239,17 +239,18 @@ def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict
         feature_metrics = metrics[ds_name]
         for feature_name in feature_metrics:
             if feature_metrics[feature_name] is not None:
-                q_digest_dict: Dict = feature_metrics[feature_name].get(StC.STATS_Q_DIGEST)
-                feature_digest = QDigest.deserialize(q_digest_dict)
+                digest_dict: Dict = feature_metrics[feature_name].get(StC.STATS_DIGEST_COORD)
+                feature_digest = TDigest.from_dict(digest_dict)
                 if feature_name not in g_digest[ds_name]:
-                    g_digest[ds_name][feature_name] = QDigest()
+                    g_digest[ds_name][feature_name] = feature_digest
+                else:
+                    g_digest[ds_name][feature_name] = g_digest[ds_name][feature_name].merge(feature_digest)
 
-                g_digest[ds_name][feature_name].merge(feature_digest)
 
     return g_digest
 
 
-def compute_quantiles(g_digest: Dict[str, Dict[str, QDigest]], quantile_config: Dict, precision: int = 4) -> dict:
+def compute_quantiles(g_digest: Dict[str, Dict[str, TDigest]], quantile_config: Dict, precision: int = 4) -> dict:
     g_ds_metrics = {}
     for ds_name in g_digest:
         if ds_name not in g_ds_metrics:
@@ -261,7 +262,7 @@ def compute_quantiles(g_digest: Dict[str, Dict[str, QDigest]], quantile_config: 
             percentiles = get_target_quantiles(quantile_config, feature_name)
             percentile_values = {}
             for percentile in percentiles:
-                percentile_values[percentile] = round(digest.quantile(percentile), precision)
+                percentile_values[percentile] = round(digest.estimate_quantile(percentile), precision)
 
             g_ds_metrics[ds_name][feature_name] = percentile_values
 

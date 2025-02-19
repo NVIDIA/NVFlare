@@ -224,32 +224,32 @@ class TestQuantile:
         assert before_75 == after_75
         assert len(digest) == 10
 
-    # def test_percentile_metrics(self):
-    #     stats_generator = MockDFStats(given_median=100)
-    #     stats_generator.load_data()
-    #     percentiles = stats_generator.quantiles("train", "Feature", percents=[0.5])
-    #     result = percentiles.get(StatisticsConstants.STATS_QUANTILE)
-    #     tdigest = percentiles.get(StatisticsConstants.STATS_tdigest)
-    #     assert tdigest is not None
-    #     assert result is not None
-    #     print(sorted(stats_generator.data["train"]["Feature"]))
+    def test_percentile_metrics(self):
+        stats_generator = MockDFStats(given_median=100)
+        stats_generator.load_data()
+        percentiles = stats_generator.quantiles("train", "Feature", percents=[0.5])
+        result = percentiles.get(StatisticsConstants.STATS_QUANTILE)
+        digest_dict = percentiles.get(StatisticsConstants.STATS_DIGEST_COORD)
+        assert digest_dict is not None
+        assert result is not None
+        print(sorted(stats_generator.data["train"]["Feature"]))
 
-    #     assert result.get(0.5) == stats_generator.median
+        assert result.get(0.5) == stats_generator.median
 
-    # def test_percentile_metrics_aggregation(self):
-    #     stats_generators = [
-    #         MockDFStats2(data_array=[0, 1, 2, 3, 4, 5, 6]),
-    #         MockDFStats(given_median=10),
-    #         MockDFStats2(data_array=[100, 110, 120, 130, 140, 150, 160]),
-    #     ]
-    #     global_digest = {}
-    #     for g in stats_generators:  # each site/client
-    #         g.load_data()
-    #         local_quantiles = g.quantiles("train", "Feature", percents=[0.5])
-    #         local_metrics = {"train": {"Feature": local_quantiles}}
-    #         global_digest = merge_quantiles(local_metrics, global_digest)
+    def test_percentile_metrics_aggregation(self):
+        stats_generators = [
+            MockDFStats2(data_array=[0, 1, 2, 3, 4, 5, 6]),
+            MockDFStats(given_median=10),
+            MockDFStats2(data_array=[100, 110, 120, 130, 140, 150, 160]),
+        ]
+        global_digest = {}
+        for g in stats_generators:  # each site/client
+            g.load_data()
+            local_quantiles = g.quantiles("train", "Feature", percents=[0.5])
+            local_metrics = {"train": {"Feature": local_quantiles}}
+            global_digest = merge_quantiles(local_metrics, global_digest)
 
-    #     result = compute_quantiles(global_digest, {"Feature": [0.5]}, 2)
+        result = compute_quantiles(global_digest, {"Feature": [0.5]}, 2)
 
-    #     expected_median = 10
-    #     assert result["train"]["Feature"].get(0.5) == expected_median
+        expected_median = 10
+        assert result["train"]["Feature"].get(0.5) == expected_median
