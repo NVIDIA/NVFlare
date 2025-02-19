@@ -14,6 +14,7 @@
 
 from math import sqrt
 from typing import Dict, List, TypeVar
+
 from fastdigest import TDigest
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
@@ -245,7 +246,6 @@ def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict
                     g_digest[ds_name][feature_name] = feature_digest
                 else:
                     g_digest[ds_name][feature_name] = g_digest[ds_name][feature_name].merge(feature_digest)
-
 
     return g_digest
 

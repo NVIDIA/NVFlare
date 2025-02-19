@@ -16,11 +16,11 @@ from typing import List
 
 import numpy as np
 import pandas as pd
+from fastdigest import TDigest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import StatisticsConstants
 from nvflare.app_common.statistics.numeric_stats import compute_quantiles, merge_quantiles
-from fastdigest import TDigest
 from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
 
 
@@ -67,7 +67,7 @@ class TestQuantile:
         # Small dataset
         data = [1, 2, 3, 4, 5]
         fd = TDigest(data)
-        
+
         # Insert values
         np_data = pd.Series(data)
 
@@ -79,7 +79,7 @@ class TestQuantile:
         # Small dataset
         data = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
         fd = TDigest(data)
-      # Insert values
+        # Insert values
         np_data = pd.Series(data)
 
         assert fd.quantile(0.25) == np_data.quantile(0.25)
@@ -90,7 +90,7 @@ class TestQuantile:
         # Small dataset
         data = [-50.0, -40.4, -30.3, -20.3, -10.1, 0, 1.1, 2.2, 3.3, 4.4, 5.5]
         fd = TDigest(data)
-      
+
         np_data = pd.Series(data)
 
         assert round(fd.quantile(0.25), 2) == np_data.quantile(0.25)
@@ -101,7 +101,7 @@ class TestQuantile:
         # Small dataset
         data = [-5, -4, -3, -2, -1, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
         fd = TDigest(data)
-      
+
         np_data = pd.Series(data)
 
         assert round(fd.quantile(0.25), 2) == np_data.quantile(0.25)
@@ -128,12 +128,10 @@ class TestQuantile:
 
         fdx = TDigest(data1 + data2)
 
-        np_data = pd.Series( data1 + data2)
+        np_data = pd.Series(data1 + data2)
 
         assert fdx.quantile(0.5) == np_data.quantile(0.5)
         assert merged_fd.quantile(0.5) == np_data.quantile(0.5)
-        
-
 
     def test_tdigest7(self):
         median = 10
@@ -160,20 +158,17 @@ class TestQuantile:
 
         fd1 = TDigest(data1)
         fd2 = TDigest(data2)
-        
 
         fd = TDigest(data)
 
         fd.merge(fd1)
         fd.merge(fd2)
- 
 
         v = fd.quantile(0.5)
 
         print(sorted(data), v, median)
 
         assert v == median
-
 
     def test_tdigest_merge_serde(self):
 
@@ -188,7 +183,6 @@ class TestQuantile:
         fd2 = TDigest(data2)
 
         fd = TDigest(data)
-        
 
         fd.merge(fd1.from_dict(fd1.to_dict()))
         fd.merge(fd2.from_dict(fd2.to_dict()))
@@ -203,22 +197,21 @@ class TestQuantile:
 
         digest = TDigest(range(101))
         print(f"Before: {len(digest)} centroids")
-        
+
         before_median = digest.quantile(0.5)
         before_25 = digest.quantile(0.25)
         before_75 = digest.quantile(0.75)
-        
+
         digest.compress(10)  # compress to 10 (or fewer) centroids
-        
+
         print(f" After: {len(digest)} centroids")
-        
+
         print(json.dumps(digest.to_dict(), indent=2))
 
         after_median = digest.quantile(0.5)
         after_25 = digest.quantile(0.25)
         after_75 = digest.quantile(0.75)
-        
-        
+
         assert before_median == after_median
         assert before_25 == after_25
         assert before_75 == after_75

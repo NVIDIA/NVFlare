@@ -17,12 +17,12 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from fastdigest import TDigest
 from pandas.core.series import Series
 
 from nvflare.app_common.abstract.statistics_spec import BinRange, Feature, Histogram, HistogramType, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants
 from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_std_histogram_buckets
-from fastdigest import TDigest
 
 
 class DFStatisticsCore(Statistics, ABC):
