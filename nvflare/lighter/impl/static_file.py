@@ -254,8 +254,10 @@ class StaticFileBuilder(Builder):
         client_conf = config["client"]
 
         fqsn = client.get_prop(PropKey.FQSN)
-        if fqsn and fqsn != client.name:
-            client_conf["fqsn"] = fqsn
+        client_conf["fqsn"] = fqsn
+
+        is_leaf = client.get_prop(PropKey.IS_LEAF, True)
+        client_conf["is_leaf"] = is_leaf
 
         self._build_conn_properties(client, ctx, client_conf)
 
@@ -761,7 +763,7 @@ class StaticFileBuilder(Builder):
             else:
                 # parent is the server
                 parent = None  # None parent represents server
-            r.add_prop(PropKey.PARENT, parent)
+            r.set_prop(PropKey.PARENT, parent)
 
         # determine FQCNs
         for r in relays:
@@ -770,7 +772,7 @@ class StaticFileBuilder(Builder):
             if err:
                 raise ValueError(f"bad relay definitions: {err}")
             fqcn = ".".join(fqcn_path)
-            r.add_prop(PropKey.FQCN, fqcn)
+            r.set_prop(PropKey.FQCN, fqcn)
 
         if name_to_relay:
             ctx[CtxKey.RELAY_MAP] = name_to_relay
@@ -812,7 +814,7 @@ class StaticFileBuilder(Builder):
                 parent_client = client_map.get(parent_name)
                 if not parent_client:
                     raise ValueError(f"undefined parent client '{parent_name}' in client {c.name}")
-            c.add_prop(PropKey.PARENT, parent_client)
+            c.set_prop(PropKey.PARENT, parent_client)
 
         # determine FQSNs (fully qualified site name)
         for c in clients:
@@ -821,7 +823,7 @@ class StaticFileBuilder(Builder):
             if err:
                 raise ValueError(f"bad client definitions: {err}")
             fqsn = ".".join(fqsn_path)
-            c.add_prop(PropKey.FQSN, fqsn)
+            c.set_prop(PropKey.FQSN, fqsn)
 
         if client_map:
             ctx[CtxKey.CLIENT_MAP] = client_map
@@ -833,7 +835,7 @@ class StaticFileBuilder(Builder):
         # prepare clients comm config
         for p in project.get_all_participants():
             assert isinstance(p, Participant)
-            p.add_prop(PropKey.COMM_CONFIG_ARGS, {})
+            p.set_prop(PropKey.COMM_CONFIG_ARGS, {})
 
     def finalize(self, project: Project, ctx: ProvisionContext):
         for p in project.get_all_participants():
@@ -932,4 +934,6 @@ def check_parent(c: Participant, path: list):
     parent = c.get_prop(PropKey.PARENT)
     if not parent:
         return ""
+    assert isinstance(parent, Participant)
+    parent.set_prop(PropKey.IS_LEAF, False)
     return check_parent(parent, path)

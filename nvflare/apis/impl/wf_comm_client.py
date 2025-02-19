@@ -20,7 +20,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, SiteType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import make_reply
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.apis.wf_comm_spec import WFCommSpec
@@ -134,8 +134,8 @@ class WFCommClient(FLComponent, WFCommSpec):
         self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
         for target, reply in replies.items():
-
-            peer_ctx = reply.get_header(FLContextKey.PEER_CONTEXT)
+            assert isinstance(reply, Shareable)
+            peer_ctx = reply.get_peer_context()
             peer_ctx.set_prop(FLContextKey.SHAREABLE, reply, private=True)
             fl_ctx.set_peer_context(peer_ctx)
 

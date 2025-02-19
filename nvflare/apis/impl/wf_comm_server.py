@@ -451,8 +451,19 @@ class WFCommServer(FLComponent, WFCommSpec):
         # task.targets = targets
         target_names = list()
         if targets is None:
+            # all currently registered clients
+            # note: this is a fixed list of clients!
             for client in self._engine.get_clients():
                 target_names.append(client.name)
+        elif isinstance(targets, str):
+            if targets == "*":
+                # Any clients that send us task request, including currently registered and
+                # registered later.
+                # Do not add anything to target_names to keep it empty since this means "any"
+                pass
+            else:
+                # one client only
+                target_names.append(targets)
         else:
             if not isinstance(targets, list):
                 raise ValueError("task targets must be a list, but got {}".format(type(targets)))
