@@ -8,7 +8,6 @@ class JobResponse(BaseModel):
     def __init__(
         self,
         status: str,
-        session_id: str = None,
         job_id: str = None,
         job_name: str = None,
         method: str = None,
@@ -18,7 +17,6 @@ class JobResponse(BaseModel):
     ):
         super().__init__()
         self.status = status
-        self.session_id = session_id
         self.job_id = job_id
         self.job_name = job_name
         self.method = method

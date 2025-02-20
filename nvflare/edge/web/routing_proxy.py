@@ -84,4 +84,4 @@ def routing_proxy(path):
 
 if __name__ == '__main__':
     app.json = FilteredJSONProvider(app)
-    app.run(host='0.0.0.0', port=4321, debug=True)
+    app.run(host='0.0.0.0', port=4321, debug=False)

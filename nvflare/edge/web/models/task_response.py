@@ -6,7 +6,7 @@ class TaskResponse(BaseModel):
     def __init__(
         self,
         status: str,
-        session_id: str = None,
+        job_id: str = None,
         retry_wait: int = None,
         task_id: str = None,
         task_name: str = None,
@@ -15,7 +15,7 @@ class TaskResponse(BaseModel):
     ):
         super().__init__()
         self.status = status
-        self.session_id = session_id
+        self.job_id = job_id
         self.retry_wait = retry_wait
         self.task_id = task_id
         self.task_name = task_name

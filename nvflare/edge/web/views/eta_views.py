@@ -60,10 +60,9 @@ def job_view():
 @eta_bp.route("/task", methods=["GET"])
 def task_view():
     device_info, user_info = process_header(request.headers)
-    session_id = request.args.get("session_id")
     job_id = request.args.get("job_id")
 
-    req = TaskRequest(session_id, job_id)
+    req = TaskRequest(job_id)
 
     return handle_task_request(device_info, user_info, req)
 
@@ -71,12 +70,11 @@ def task_view():
 @eta_bp.route("/result", methods=["POST"])
 def result_view():
     device_info, user_info = process_header(request.headers)
-    session_id = request.args.get("session_id")
     task_id = request.args.get("task_id")
     task_name = request.args.get("task_name")
     data = request.get_json()
 
-    req = ResultReport(session_id, task_id, task_name)
+    req = ResultReport(task_id, task_name)
     req.update(data)
 
     return handle_result_report(device_info, user_info, req)

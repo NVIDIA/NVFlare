@@ -6,7 +6,6 @@ class ResultResponse(BaseModel):
         self,
         status: str,
         message: str = None,
-        session_id: str = None,
         task_id: str = None,
         task_name: str = None,
         **kwargs,
@@ -14,7 +13,6 @@ class ResultResponse(BaseModel):
         super().__init__()
         self.status = status
         self.message = message
-        self.session_id = session_id
         self.task_id = task_id
         self.task_name = task_name
 

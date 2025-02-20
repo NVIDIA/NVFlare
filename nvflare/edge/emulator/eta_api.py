@@ -56,7 +56,6 @@ class EtaApi:
     def get_task(self, job: JobResponse) -> TaskResponse:
         url = urljoin(self.endpoint, "task")
         params = {
-            "session_id": job.session_id,
             "job_id": job.job_id,
         }
         response = requests.get(url, params=params, headers=self.common_headers)
@@ -72,7 +71,6 @@ class EtaApi:
         headers = {"Content-Type": "application/json"}
         headers.update(self.common_headers)
         params = {
-            "session_id": task.session_id,
             "task_name": task.task_name,
             "task_id": task.task_id,
         }

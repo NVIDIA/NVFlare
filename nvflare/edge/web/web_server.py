@@ -42,10 +42,10 @@ def handle_api_error(error: ApiError):
     return response
 
 
-def run_server(port):
+def run_server(host, port):
     app.json = FilteredJSONProvider(app)
     app.register_blueprint(eta_bp)
-    app.run(port=port, debug=True)
+    app.run(host=host, port=port, debug=True)
 
 
 if __name__ == "__main__":

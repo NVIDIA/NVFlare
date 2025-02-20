@@ -58,15 +58,8 @@ paths:
         - $ref: "#/components/parameters/X-Flare-Device-ID"
         - $ref: "#/components/parameters/X-Flare-Device-Info"
         - $ref: "#/components/parameters/X-Flare-User-Info"
-        - name: session_id
-          in: query
-          description: The training session ID
-          required: true
-          schema:
-            type: string
         - name: job_id
           in: query
-          description: The job ID associated with the session
           required: false
           schema:
             type: string
@@ -106,9 +99,8 @@ paths:
         - $ref: "#/components/parameters/X-Flare-Device-ID"
         - $ref: "#/components/parameters/X-Flare-Device-Info"
         - $ref: "#/components/parameters/X-Flare-User-Info"
-        - name: session_id
+        - name: job_id
           in: query
-          description: The training session ID
           required: true
           schema:
             type: string
@@ -212,8 +204,6 @@ components:
         status:
           type: string
           enum: [OK, RETRY, DONE]
-        session_id:
-          type: string
         job_id:
           type: string
         job_name:
@@ -233,8 +223,6 @@ components:
         status:
           type: string
           enum: [OK, DONE, RETRY]
-        session_id:
-          type: string
         task_name:
           type: string
         task_id:
@@ -261,8 +249,6 @@ components:
         task_name:
           type: string
         message:
-          type: string
-        session_id:
           type: string
         retry_wait:
           type: integer

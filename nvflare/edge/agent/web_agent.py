@@ -20,17 +20,19 @@ from nvflare.edge.web.web_server import run_server
 
 
 class WebAgent(FLComponent):
-    def __init__(self, port, job_handler_id=None):
+    def __init__(self, port, host=""):
         FLComponent.__init__(self)
 
         self.port = port
+        self.host = host
         self.job_handler_id = job_handler_id
         self.web_thread = None
+        self.engine = None
 
     def run_web_server(self, fl_ctx: FLContext):
         try:
 
-            run_server(self.port)
+            run_server(self.host, self.port)
 
         except Exception as e:
             self.log_error(fl_ctx, f"Web server on port {self.port} stopped due to error: {e}")
@@ -42,11 +44,11 @@ class WebAgent(FLComponent):
 
         self.log_info(fl_ctx, f"Edge web API endpoint is running on port {self.port}")
 
-    def shutdown(self, fl_ctx: FLContext):
+    def shutdown(self, engine:):
         self.log_info(fl_ctx, f"Edge web API endpoint on port {self.port} is shutting down")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            self.startup(fl_ctx)
+            self.startup(fl_ctx.get_engine())
         elif event_type == EventType.END_RUN:
             self.shutdown(fl_ctx)
