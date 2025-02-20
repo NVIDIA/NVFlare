@@ -336,47 +336,6 @@ sequenceDiagram
     Server->>FileStore: save to file
 ```
 
-### Quantile Calculation
-
-We updated the statistics with quantile implementation. Although there are many quantile packages can be used, few satisfy our constraint conditions
-
-* Works in distributed systems
-* Does not copy the original data (avoiding privacy leaks)
-* Avoids transmitting large amounts of data
-* ideally, no system-level dependency 
-
-The choice we have are the followings:
- 
-| Method               | Mergeable? | Retains Raw Data? | Transmission Size | Accuracy          | Privacy       |
-|----------------------|------------|-------------------|-------------------|-------------------|---------------|
-| t-Digest             | ✅ Yes     | ❌ No             | 🔹 Small          | 🔹 High           | 🟢 Good       |
-| Randomized Response  | ✅ Yes     | ❌ No             | 🔹 Small          | 🔸 Slightly Noisy | 🟢 Strong     |
-| Q-Digest             | ✅ Yes     | ❌ No             | 🔹 Small          | 🔹 High           | 🟢 Good       |
-| Count-Min Sketch     | ✅ Yes     | ❌ No             | 🔹 Small          | 🔸 Moderate       | 🟢 Strong     | 
-
-We initially choose the t-digest with python tdigest python package, but noticed that it requires python3-dev system package. The tdigest library in Python requires python3-dev  because it includes C extensions that need to be compiled during installation.
-
-This is really un-desirable. The eventually we implemented Q-Digest without any depdendency. 
-
-#### How Q-Digest Works
-Q-Digest is a quantile approximation algorithm that compresses data using a hierarchical structure (like a binary tree). It is designed for streaming data and distributed systems with the following properties:
-
-* No raw data storage (good for privacy)
-* Mergeable across distributed nodes
-* Memory-efficient (reduces transmission size)
-
-#### Q-Digest Structure
-1. **Binary Tree Compression**: 
-The range of input values is mapped onto a binary tree. Each node stores counters instead of raw data. 
-
-2. **Merging Rules**:
-If the sum of two child nodes' counts is below a threshold, they are merged. This reduces storage and makes it memory-efficient.
-
-3. **Querying Quantiles**:
-To estimate a quantile (e.g., 90th percentile), we traverse the tree and sum frequencies.
-The algorithm efficiently finds the approximate quantile without scanning the full dataset.
-
-
 
 ## Summary
 

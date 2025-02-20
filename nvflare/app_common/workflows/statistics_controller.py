@@ -379,9 +379,13 @@ class StatisticsController(Controller):
             ds_stats = self._combine_all_statistics()
             self.log_info(fl_ctx, "save statistics result to persistence store")
             writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
+            print(f"{ds_stats=}")
             writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
 
     def _combine_all_statistics(self):
+
+        print(f"{self.statistic_configs=}")
+        
         result = {}
         filtered_client_statistics = [
             statistic for statistic in self.client_statistics if statistic in self.statistic_configs

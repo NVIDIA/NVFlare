@@ -17,6 +17,51 @@ cd NVFlare/examples/advanced/federated-statistics/df_stats
 pip install -r requirements.txt
 ```
 
+
+## Install fastdigest
+
+If you intend to calculate quantiles, you need to install fastdigest. 
+
+```
+pip install fastdigest==0.4.0
+```
+
+on ubuntu, you might get the following error:
+
+  Cargo, the Rust package manager, is not installed or is not on PATH.
+  This package requires Rust and Cargo to compile extensions. Install it through
+  the system's package manager or via https://rustup.rs/
+      
+  Checking for Rust toolchain....
+
+This is because fastdigest (or its dependencies) requires Rust and Cargo to build. 
+
+You need to install Rust and Cargo on your Ubuntu system. Follow these steps:
+Install Rust and Cargo
+Run the following command to install Rust using rustup:
+
+```
+cd NVFlare/examples/advanced/federated-statistics/df_stats
+./install_cargo.sh
+```
+
+Then you can install fastdigest again
+```
+pip install fastdigest==0.4.0
+```
+
+### Quantile Calculation
+
+ We updated the statistics with quantile implementation. Although there are many quantile packages can be used, few satisfy our constraint conditions
+
+* Works in distributed systems
+* Does not copy the original data (avoiding privacy leaks)
+* Avoids transmitting large amounts of data
+* ideally, no system-level dependency 
+
+We choose the fastdigest python package, a rust-based package. tdigest only carry the the cluster coordinates, initially eaach data is in its own cluster. By default, we will comprress with max_bin = sqrt(datasize) to compress the coordinates. so the data won't leaked. You can alwasy overite max_bins if prefer more or less compression. 
+
+
 ## 1. Prepare data
 
 In this example, we are using UCI (University of California, Irvine) [adult dataset](https://archive.ics.uci.edu/dataset/2/adult)

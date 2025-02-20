@@ -96,7 +96,7 @@ class StatisticsTaskHandler(TaskHandler):
             StC.STATS_HISTOGRAM: self.get_histogram,
             StC.STATS_MAX: self.get_max_value,
             StC.STATS_MIN: self.get_min_value,
-            StC.STATS_PERCENTILE: self.get_percentiles_and_centroids,
+            StC.STATS_QUANTILE: self.get_quantiles_and_centroids,
         }
 
     def _populate_result_statistics(self, statistics_result, ds_features, tm: StatisticConfig, shareable, fl_ctx, fn):
@@ -319,7 +319,7 @@ class StatisticsTaskHandler(TaskHandler):
 
         return bin_range
 
-    def get_percentiles_and_centroids(
+    def get_quantiles_and_centroids(
         self,
         dataset_name: str,
         feature_name: str,
