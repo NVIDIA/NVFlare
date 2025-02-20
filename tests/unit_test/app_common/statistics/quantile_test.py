@@ -16,12 +16,20 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-from fastdigest import TDigest
+import pytest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import StatisticsConstants
 from nvflare.app_common.statistics.numeric_stats import compute_quantiles, merge_quantiles
 from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
+from nvflare.fuel.utils.import_utils import optional_import
+
+try:
+    from fastdigest import TDigest
+
+    TDIGEST_AVAILABLE = True
+except ImportError:
+    TDIGEST_AVAILABLE = False
 
 
 class MockDFStats(DFStatisticsCore):
@@ -62,7 +70,7 @@ class MockDFStats2(DFStatisticsCore):
 
 
 class TestQuantile:
-
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest1(self):
         # Small dataset
         data = [1, 2, 3, 4, 5]
@@ -75,6 +83,7 @@ class TestQuantile:
         assert fd.quantile(0.5) == np_data.quantile(0.5)
         assert fd.quantile(0.75) == np_data.quantile(0.75)
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest2(self):
         # Small dataset
         data = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
@@ -86,6 +95,7 @@ class TestQuantile:
         assert fd.quantile(0.5) == np_data.quantile(0.5)
         assert fd.quantile(0.75) == np_data.quantile(0.75)
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest3(self):
         # Small dataset
         data = [-50.0, -40.4, -30.3, -20.3, -10.1, 0, 1.1, 2.2, 3.3, 4.4, 5.5]
@@ -97,6 +107,7 @@ class TestQuantile:
         assert round(fd.quantile(0.5), 2) == np_data.quantile(0.5)
         assert round(fd.quantile(0.75), 2) == np_data.quantile(0.75)
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest4(self):
         # Small dataset
         data = [-5, -4, -3, -2, -1, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
@@ -108,6 +119,7 @@ class TestQuantile:
         assert round(fd.quantile(0.5), 2) == np_data.quantile(0.5)
         assert round(fd.quantile(0.75), 2) == np_data.quantile(0.75)
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest5(self):
         # Small dataset
         data1 = [x for x in range(-5, 0)]
@@ -119,6 +131,7 @@ class TestQuantile:
         assert fd.quantile(0.1) == -4
         assert fd.quantile(0.9) == 4
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest6(self):
         # Small dataset
         data1 = [x for x in range(-10000, 0)]
@@ -133,6 +146,7 @@ class TestQuantile:
         assert fdx.quantile(0.5) == np_data.quantile(0.5)
         assert merged_fd.quantile(0.5) == np_data.quantile(0.5)
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest7(self):
         median = 10
         data = np.concatenate((np.arange(0, median), [median], np.arange(median + 1, median * 2 + 1)))
@@ -147,6 +161,7 @@ class TestQuantile:
 
         assert v == median
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest8(self):
 
         median = 10
@@ -170,6 +185,7 @@ class TestQuantile:
 
         assert v == median
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest_merge_serde(self):
 
         median = 10
@@ -193,6 +209,7 @@ class TestQuantile:
 
         assert v == median
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_tdigest_compress(self):
 
         digest = TDigest(range(101))
@@ -217,6 +234,7 @@ class TestQuantile:
         assert before_75 == after_75
         assert len(digest) == 10
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest is not installed")
     def test_percentile_metrics(self):
         stats_generator = MockDFStats(given_median=100)
         stats_generator.load_data()
@@ -229,6 +247,7 @@ class TestQuantile:
 
         assert result.get(0.5) == stats_generator.median
 
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="TDigest package not installed")
     def test_percentile_metrics_aggregation(self):
         stats_generators = [
             MockDFStats2(data_array=[0, 1, 2, 3, 4, 5, 6]),

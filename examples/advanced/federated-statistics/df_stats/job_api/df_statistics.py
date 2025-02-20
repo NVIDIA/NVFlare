@@ -21,7 +21,6 @@ from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
 
 
 class DFStatistics(DFStatisticsCore):
-
     def __init__(self, filename, data_root_dir="/tmp/nvflare/df_stats/data"):
         super().__init__()
         self.data_root_dir = data_root_dir

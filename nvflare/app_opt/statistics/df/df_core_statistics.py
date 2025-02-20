@@ -17,11 +17,11 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-from fastdigest import TDigest
 from pandas.core.series import Series
 
 from nvflare.app_common.abstract.statistics_spec import BinRange, Feature, Histogram, HistogramType, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants
+from nvflare.app_common.statistics.numeric_stats import check_and_import_tdigest
 from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_std_histogram_buckets
 
 
@@ -95,6 +95,10 @@ class DFStatisticsCore(Statistics, ABC):
         return df[feature_name].min()
 
     def quantiles(self, dataset_name: str, feature_name: str, percents: List) -> Dict:
+        TDigest = check_and_import_tdigest()
+        if TDigest is None:
+            return {}
+
         df = self.data[dataset_name]
         data = df[feature_name]
         max_bin = self.max_bin if self.max_bin else round(sqrt(len(data)))

@@ -12,20 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+import sys
 from math import sqrt
 from typing import Dict, List, TypeVar
-
-from fastdigest import TDigest
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.statistics.statistics_config_utils import get_target_quantiles
+from nvflare.fuel.utils.import_utils import optional_import
 
 T = TypeVar("T")
 
+logger = logging.getLogger(__name__)
+
 
 def get_global_feature_data_types(
-    client_feature_dts: Dict[str, Dict[str, List[Feature]]]
+    client_feature_dts: Dict[str, Dict[str, List[Feature]]],
 ) -> Dict[str, Dict[str, DataType]]:
     global_feature_data_types = {}
     for client_name in client_feature_dts:
@@ -86,6 +89,9 @@ def get_global_stats(
 
                 global_metrics[StC.STATS_STDDEV] = ds_stddev
         elif metric == StC.STATS_QUANTILE:
+            if not check_fastdigest_installed():
+                continue
+
             global_digest = {}
             for client_name in stats:
                 global_digest = merge_quantiles(stats[client_name], global_digest)
@@ -233,6 +239,12 @@ def filter_numeric_features(ds_features: Dict[str, List[Feature]]) -> Dict[str, 
 
 
 def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict:
+    TDigest = check_and_import_tdigest()
+    if TDigest is None:
+        return g_digest
+
+    from fastdigest import TDigest
+
     for ds_name in metrics:
         if ds_name not in g_digest:
             g_digest[ds_name] = {}
@@ -250,7 +262,26 @@ def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict
     return g_digest
 
 
-def compute_quantiles(g_digest: Dict[str, Dict[str, TDigest]], quantile_config: Dict, precision: int = 4) -> dict:
+def check_fastdigest_installed():
+    fastdigest, flag = optional_import("fastdigest")
+    if not flag:
+        logger.error("fastdigest is not installed. Please install it using 'pip install fastdigest'.")
+        return False
+    return True
+
+
+def check_and_import_tdigest():
+    TDigest, flag = optional_import("fastdigest", name="TDigest")
+    if not flag:
+        logger.error("TDigest is not installed. Please install it using 'pip install fastdigest'.")
+        return None
+    return TDigest
+
+
+def compute_quantiles(g_digest, quantile_config: Dict, precision: int = 4) -> dict:
+    if not check_fastdigest_installed():
+        return {}
+
     g_ds_metrics = {}
     for ds_name in g_digest:
         if ds_name not in g_ds_metrics:

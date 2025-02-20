@@ -23,7 +23,6 @@ from nvflare.fuel.utils import fobs
 
 
 class FedAvgV1(BaseFedAvg):
-
     def __init__(
         self,
         *args,

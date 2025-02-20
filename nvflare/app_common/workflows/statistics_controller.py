@@ -27,7 +27,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, StatisticConfig
 from nvflare.app_common.abstract.statistics_writer import StatisticsWriter
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.numeric_stats import get_global_stats
+from nvflare.app_common.statistics.numeric_stats import check_fastdigest_installed, get_global_stats
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
 from nvflare.fuel.utils import fobs
 
@@ -410,6 +410,10 @@ class StatisticsController(Controller):
                             buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
                             result[feature_name][statistic][client][ds] = buckets
                         elif statistic == StC.STATS_QUANTILE:
+
+                            if not check_fastdigest_installed():
+                                continue
+
                             quantiles = self.client_statistics[statistic][client][ds][feature_name][StC.STATS_QUANTILE]
                             formatted_quantiles = {}
                             for p in quantiles:
