@@ -56,6 +56,7 @@ class PropKey:
     PARENT = "parent"
     FQCN = "__fqcn__"
     FQSN = "__fqsn__"
+    IS_LEAF = "__is_leaf__"
     COMM_CONFIG_ARGS = "__comm_config_args__"
 
 

@@ -18,15 +18,7 @@ import time
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import (
-    ConfigVarName,
-    FilterKey,
-    FLContextKey,
-    ReservedKey,
-    ReservedTopic,
-    ReturnCode,
-    SiteType,
-)
+from nvflare.apis.fl_constant import ConfigVarName, FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
@@ -42,6 +34,8 @@ from nvflare.private.json_configer import ConfigError
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
+
+from .utils import determine_parent_name
 
 _TASK_CHECK_RESULT_OK = 0
 _TASK_CHECK_RESULT_TRY_AGAIN = 1
@@ -127,24 +121,29 @@ class ClientRunnerConfig(object):
 class ClientRunner(TBI):
     def __init__(
         self,
+        client_config: dict,
         config: ClientRunnerConfig,
-        job_id,
+        job_id: str,
         engine: ClientEngineExecutorSpec,
     ):
         """Initializes the ClientRunner.
 
         Args:
+            client_config: provisioned client config.
             config: ClientRunnerConfig
             job_id: job id
             engine: ClientEngine object
         """
 
         TBI.__init__(self)
+        self.client_config = client_config
         self.task_router = config.task_router
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
         self.default_task_fetch_interval = config.default_task_fetch_interval
 
+        # parent target is where we will pull task and send task results to
+        self.parent_target = self._determine_parent_target()
         self.job_id = job_id
         self.engine = engine
         self.run_abort_signal = Signal()
@@ -196,6 +195,7 @@ class ClientRunner(TBI):
         if cookie_jar:
             reply.set_cookie_jar(cookie_jar)
         reply.set_header(ReservedHeaderKey.TASK_NAME, task.name)
+        reply.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
         return reply
 
     def _do_process_task(self, task: TaskAssignment, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -433,7 +433,7 @@ class ClientRunner(TBI):
             if time.time() - last_heartbeat_sent_time > self.job_heartbeat_interval:
                 with self.engine.new_context() as fl_ctx:
                     self.engine.send_aux_request(
-                        targets=[FQCN.ROOT_SERVER],
+                        targets=[self.parent_target],
                         topic=ReservedTopic.JOB_HEART_BEAT,
                         request=request,
                         timeout=0,
@@ -523,13 +523,13 @@ class ClientRunner(TBI):
                 time.sleep(self.task_check_interval)
 
         # try to send the result
-        self.log_info(fl_ctx, "start to send task result to server")
+        self.log_info(fl_ctx, f"start to send task result to {self.parent_target}")
         reply_sent = self.engine.send_task_result(result, fl_ctx, timeout=self.submit_task_result_timeout)
         if reply_sent:
-            self.log_info(fl_ctx, "task result sent to server")
+            self.log_info(fl_ctx, f"task result sent to {self.parent_target}")
             return _TASK_CHECK_RESULT_OK
         else:
-            self.log_error(fl_ctx, "failed to send task result to server - will try again")
+            self.log_error(fl_ctx, f"failed to send task result to {self.parent_target} - will try again")
             return _TASK_CHECK_RESULT_TRY_AGAIN
 
     def _check_task_once(self, task_id: str, fl_ctx: FLContext) -> int:
@@ -543,11 +543,11 @@ class ClientRunner(TBI):
             fl_ctx:
         Returns:
         """
-        self.log_info(fl_ctx, "checking task ...")
+        self.log_info(fl_ctx, f"checking task with {self.parent_target} ...")
         task_check_req = Shareable()
         task_check_req.set_header(ReservedKey.TASK_ID, task_id)
         resp = self.engine.send_aux_request(
-            targets=[FQCN.ROOT_SERVER],
+            targets=[self.parent_target],
             topic=ReservedTopic.TASK_CHECK,
             request=task_check_req,
             timeout=self.task_check_timeout,
@@ -555,29 +555,31 @@ class ClientRunner(TBI):
             optional=True,
         )
         if resp and isinstance(resp, dict):
-            reply = resp.get(FQCN.ROOT_SERVER)
+            reply = resp.get(self.parent_target)
             if not isinstance(reply, Shareable):
-                self.log_error(fl_ctx, f"bad task_check reply from server: expect Shareable but got {type(reply)}")
+                self.log_error(
+                    fl_ctx, f"bad task_check reply from {self.parent_target}: expect Shareable but got {type(reply)}"
+                )
                 return _TASK_CHECK_RESULT_TRY_AGAIN
 
             rc = reply.get_return_code()
             if rc == ReturnCode.OK:
                 return _TASK_CHECK_RESULT_OK
             elif rc == ReturnCode.COMMUNICATION_ERROR:
-                self.log_error(fl_ctx, f"failed task_check: {rc}")
+                self.log_error(fl_ctx, f"failed task_check with {self.parent_target}: {rc}")
                 return _TASK_CHECK_RESULT_TRY_AGAIN
             elif rc == ReturnCode.SERVER_NOT_READY:
-                self.log_error(fl_ctx, f"server rejected task_check: {rc}")
+                self.log_error(fl_ctx, f"{self.parent_target} rejected task_check: {rc}")
                 return _TASK_CHECK_RESULT_TRY_AGAIN
             elif rc == ReturnCode.TASK_UNKNOWN:
-                self.log_debug(fl_ctx, f"task no longer exists on server: {rc}")
+                self.log_debug(fl_ctx, f"task no longer exists on {self.parent_target}: {rc}")
                 return _TASK_CHECK_RESULT_TASK_GONE
             else:
                 # this should never happen
-                self.log_error(fl_ctx, f"programming error: received {rc} from server")
+                self.log_error(fl_ctx, f"programming error: received {rc} from {self.parent_target}")
                 return _TASK_CHECK_RESULT_OK  # try to push the result regardless
         else:
-            self.log_error(fl_ctx, f"bad task_check reply from server: invalid resp {type(resp)}")
+            self.log_error(fl_ctx, f"bad task_check reply from {self.parent_target}: invalid resp {type(resp)}")
             return _TASK_CHECK_RESULT_TRY_AGAIN
 
     def run(self, app_root, args):
@@ -595,7 +597,26 @@ class ClientRunner(TBI):
             with self.task_lock:
                 self.running_tasks = {}
 
+    def _determine_parent_target(self):
+        target = determine_parent_name(self.client_config)
+        if not target:
+            target = FQCN.ROOT_SERVER
+        return target
+
     def init_run(self, app_root, args):
+        # set up syncing for children
+        self.engine.register_aux_message_handler(
+            topic=ReservedTopic.SYNC_RUNNER, message_handle_func=self._handle_sync_runner
+        )
+
+        self.engine.register_aux_message_handler(
+            topic=ReservedTopic.JOB_HEART_BEAT, message_handle_func=self._handle_job_heartbeat
+        )
+
+        self.engine.register_aux_message_handler(
+            topic=ReservedTopic.TASK_CHECK, message_handle_func=self._handle_task_check
+        )
+
         sync_timeout = self.get_positive_float_var(
             var_name=ConfigVarName.RUNNER_SYNC_TIMEOUT,
             default=2.0,
@@ -604,13 +625,15 @@ class ClientRunner(TBI):
             var_name=ConfigVarName.MAX_RUNNER_SYNC_TIMEOUT,
             default=60.0,
         )
-        target = SiteType.SERVER
         synced = False
         sync_start = time.time()
         with self.engine.new_context() as fl_ctx:
+            target = self.parent_target
             while True:
                 # sync with server runner before starting
                 time.sleep(0.5)
+
+                self.log_info(fl_ctx, f"syncing to parent {target} ...")
                 resp = self.engine.send_aux_request(
                     targets=[target],
                     topic=ReservedTopic.SYNC_RUNNER,
@@ -637,9 +660,9 @@ class ClientRunner(TBI):
                     break
 
             if not synced:
-                raise RuntimeError(f"cannot sync with Server Runner after {max_sync_timeout} seconds")
+                raise RuntimeError(f"cannot sync with {target} Runner after {max_sync_timeout} seconds")
 
-            self.log_info(fl_ctx, f"synced to Server Runner in {time.time() - sync_start} seconds")
+            self.log_info(fl_ctx, f"synced to parent {target} in {time.time() - sync_start} seconds")
             ReliableMessage.enable(fl_ctx)
             self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
@@ -648,6 +671,28 @@ class ClientRunner(TBI):
             self.log_debug(fl_ctx, "firing event EventType.START_RUN")
             self.fire_event(EventType.START_RUN, fl_ctx)
             self.log_info(fl_ctx, "client runner started")
+
+    def _handle_sync_runner(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        # simply ack
+        return make_reply(ReturnCode.OK)
+
+    def _handle_task_check(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        task_id = request.get_header(ReservedHeaderKey.TASK_ID)
+        if not task_id:
+            self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_ID} in task_check request")
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
+
+        self.log_debug(fl_ctx, f"received task_check on task {task_id}")
+        with self.task_lock:
+            if task_id not in self.running_tasks:
+                self.log_info(fl_ctx, f"task {task_id} is not found")
+                return make_reply(ReturnCode.TASK_UNKNOWN)
+            else:
+                return make_reply(ReturnCode.OK)
+
+    def _handle_job_heartbeat(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        self.log_debug(fl_ctx, "received client job_heartbeat")
+        return make_reply(ReturnCode.OK)
 
     def end_run_events_sequence(self):
         with self.engine.new_context() as fl_ctx:
