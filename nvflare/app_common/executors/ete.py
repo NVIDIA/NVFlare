@@ -91,15 +91,14 @@ class EdgeTaskExecutor(Executor):
         pass
 
     def _handle_edge_request(self, event_type: str, fl_ctx: FLContext):
-        self.log_debug(fl_ctx, f"handling event {event_type}")
         if not self.current_task:
-            self.logger.debug(f"received edge request but I don't have pending task")
+            self.logger.debug(f"received edge event {event_type} but I don't have pending task")
             return
 
         try:
             msg = fl_ctx.get_prop(FLContextKey.CELL_MESSAGE)
             assert isinstance(msg, CellMessage)
-            self.log_info(fl_ctx, f"received edge request: {msg.payload}")
+            self.log_debug(fl_ctx, f"received edge request: {msg.payload}")
             reply = self.process_edge_request(request=msg.payload, fl_ctx=fl_ctx)
             fl_ctx.set_prop(FLContextKey.TASK_RESULT, reply, private=True, sticky=False)
         except Exception as ex:

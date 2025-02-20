@@ -181,7 +181,7 @@ class ClientRunner(TBI):
 
                 reply = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
                 if not reply:
-                    self.logger.debug(f"no result for edge request")
+                    self.logger.debug("no result for edge request")
                     return make_cell_reply(EdgeStatus.NO_TASK)
                 else:
                     self.logger.info(f"sending back edge result: {reply}")

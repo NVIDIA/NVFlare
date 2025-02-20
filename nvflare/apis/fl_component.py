@@ -234,7 +234,7 @@ class FLComponent(StatePersistable):
         if isinstance(event_types, str):
             event_types = [event_types]
         elif not isinstance(event_types, list):
-            raise ValueError(f"event_types must be string or list of strings")
+            raise ValueError(f"event_types must be string or list of strings but got {type(event_types)}")
 
         if not callable(handler):
             raise ValueError(f"handler {handler.__name__} is not callable")
