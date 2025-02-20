@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import sys
 from math import sqrt
 from typing import Dict, List, TypeVar
 

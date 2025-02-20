@@ -22,7 +22,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import StatisticsConstants
 from nvflare.app_common.statistics.numeric_stats import compute_quantiles, merge_quantiles
 from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
-from nvflare.fuel.utils.import_utils import optional_import
 
 try:
     from fastdigest import TDigest
