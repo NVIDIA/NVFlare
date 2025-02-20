@@ -20,6 +20,10 @@ from nvflare.app_common.executors.ete import EdgeTaskExecutor
 
 
 class EdgeSurvey(EdgeTaskExecutor):
+    """This executor is for test purpose only. It is to be used as the "learner" for the
+    HierarchicalAggregationManager.
+    """
+
     def __init__(self, timeout=10.0):
         EdgeTaskExecutor.__init__(self)
         self.timeout = timeout
