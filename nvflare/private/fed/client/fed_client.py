@@ -20,7 +20,6 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.private.defs import SpecialTaskName
@@ -99,7 +98,7 @@ class FederatedClient(FederatedClientBase):
         #     peer_context = fobs.loads(proto_to_bytes(item.data.params["fl_context"]))
 
         # shareable = fobs.loads(responses.payload)
-        peer_context = responses.get_header(FLContextKey.PEER_CONTEXT)
+        peer_context = responses.get_peer_context()
 
         fl_ctx.set_peer_context(peer_context)
         responses.set_peer_props(peer_context.get_all_public_props())

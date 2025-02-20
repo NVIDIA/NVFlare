@@ -16,7 +16,6 @@ import time
 import traceback
 import uuid
 
-from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
@@ -179,15 +178,15 @@ class Authenticator:
         also used for SSL connections, which already validate expiration.
 
         Args:
-            fl_ctx: FLContext
+            shared_fl_ctx: the FLContext content to be shared with peer
+            abort_signal: signal to notify abort
 
-        Returns:
-            The client's token
+        Returns: A tuple of (token, token_signature, ssid, token_verifier)
 
         """
         local_ip = _get_client_ip()
         shareable = Shareable()
-        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+        shareable.set_peer_context(shared_fl_ctx)
 
         token_verifier = None
         if self.secure_mode:

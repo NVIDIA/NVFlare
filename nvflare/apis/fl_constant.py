@@ -65,6 +65,8 @@ class ReservedKey(object):
     AUX_RUNNER = "__aux_runner__"
     RUN_NUM = "__run_num__"
     IDENTITY_NAME = "__identity_name__"  # identity of the endpoint (e.g. client name)
+    FQSN = "__fqsn__"
+    IS_LEAF = "__is_leaf__"
     PEER_CTX = "__peer_ctx__"
     RC = "__rc__"
     COOKIE_JAR = "__cookie_jar__"
@@ -107,6 +109,7 @@ class ReservedKey(object):
     EXCEPTIONS = "__exceptions__"
     PROCESS_TYPE = "__process_type__"  # type of the current process (SP, CP, SJ, CJ)
     JOB_PROCESS_ARGS = "__job_process_args__"
+    TASK_IS_READY = "__task_is_ready__"
 
 
 class FLContextKey(object):
@@ -189,6 +192,7 @@ class FLContextKey(object):
     SERVER_HOST_NAME = "__server_host_name__"
     PROCESS_TYPE = ReservedKey.PROCESS_TYPE
     JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
+    EVENT_PROCESSED = "__event_processed__"
 
 
 class ProcessType:
@@ -277,10 +281,11 @@ class ServerCommandKey(object):
     COMMAND = "command"
     DATA = "data"
     FL_CONTEXT = "fl_context"
-    PEER_FL_CONTEXT = "peer_fl_ctx"
+    PEER_FL_CONTEXT = FLContextKey.PEER_CONTEXT
     SHAREABLE = "shareable"
     TASK_NAME = "task_name"
     TASK_ID = "task_id"
+    LAST_TASK_ID = "last_task_id"
     FL_CLIENT = "fl_client"
     TOPIC = "topic"
     AUX_REPLY = "aux_reply"
