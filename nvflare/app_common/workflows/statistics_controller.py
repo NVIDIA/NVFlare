@@ -385,7 +385,7 @@ class StatisticsController(Controller):
     def _combine_all_statistics(self):
 
         print(f"{self.statistic_configs=}")
-        
+
         result = {}
         filtered_client_statistics = [
             statistic for statistic in self.client_statistics if statistic in self.statistic_configs
