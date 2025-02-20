@@ -13,21 +13,17 @@
 # limitations under the License.
 
 import argparse
-import json
-import os
-
-from src.higgs_data_loader import HIGGSDataLoader
 
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.app_opt.tracking.tb.tb_writer import TBWriter
+from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
 from nvflare.job_config.api import FedJob
 
 ALGO_DIR_MAP = {
     "bagging": "tree-based",
     "cyclic": "tree-based",
     "histogram": "histogram-based",
-    "histogram_v2": "histogram-based",
 }
 
 
@@ -36,16 +32,14 @@ def define_parser():
     parser.add_argument(
         "--data_root",
         type=str,
-        default="/tmp/nvflare/dataset/xgboost_higgs",
+        default="/tmp/nvflare/dataset/xgb_dataset",
         help="Path to dataset files for each site",
     )
-    parser.add_argument("--site_num", type=int, default=2, help="Total number of sites")
-    parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
+    parser.add_argument("--site_num", type=int, default=3, help="Total number of sites")
+    parser.add_argument("--round_num", type=int, default=30, help="Total number of training rounds")
     parser.add_argument(
         "--training_algo", type=str, default="histogram", choices=list(ALGO_DIR_MAP.keys()), help="Training algorithm"
     )
-    parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
-    parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
     parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
     parser.add_argument(
         "--tree_method", type=str, default="hist", help="tree_method for xgboost - use hist for best perf"
@@ -61,88 +55,42 @@ def define_parser():
 
 
 def _get_job_name(args) -> str:
-    return f"higgs_{args.site_num}_{args.training_algo}_{args.split_method}_split_{args.lr_mode}_lr"
+    return f"fedxgb_{args.site_num}_sites_{args.data_split_mode}_{args.training_algo}"
 
 
 def _get_data_path(args) -> str:
-    return f"{args.data_root}_{args.data_split_mode}/{args.site_num}_{args.split_method}"
-
-
-def _read_json(filename):
-    if not os.path.isfile(filename):
-        raise ValueError(f"{filename} does not exist!")
-    with open(filename, "r") as f:
-        return json.load(f)
-
-
-def _get_lr_scale_from_split_json(data_split: dict):
-    split = {}
-    total_data_num = 0
-    for k, v in data_split["data_index"].items():
-        if k == "valid":
-            continue
-        data_num = int(v["end"] - v["start"])
-        total_data_num += data_num
-        split[k] = data_num
-
-    lr_scales = {}
-    for k in split:
-        lr_scales[k] = split[k] / total_data_num
-
-    return lr_scales
+    return f"{args.data_root}/{args.data_split_mode}_xgb_data"
 
 
 def main():
     args = define_parser()
     job_name = _get_job_name(args)
     dataset_path = _get_data_path(args)
-
     site_num = args.site_num
     job = FedJob(name=job_name, min_clients=site_num)
-
+    if args.data_split_mode == "horizontal":
+        data_split_mode = 0
+    else:
+        data_split_mode = 1
     # Define the controller workflow and send to server
     if args.training_algo == "histogram":
-        from nvflare.app_opt.xgboost.histogram_based.controller import XGBFedController
-
-        controller = XGBFedController()
-        from nvflare.app_opt.xgboost.histogram_based.executor import FedXGBHistogramExecutor
-
-        executor = FedXGBHistogramExecutor(
-            data_loader_id="dataloader",
-            num_rounds=args.round_num,
-            early_stopping_rounds=2,
-            metrics_writer_id="metrics_writer",
-            xgb_params={
-                "max_depth": 8,
-                "eta": 0.1,
-                "objective": "binary:logistic",
-                "eval_metric": "auc",
-                "tree_method": "hist",
-                "nthread": 16,
-            },
-        )
-        # Add tensorboard receiver to server
-        tb_receiver = TBAnalyticsReceiver(
-            tb_folder="tb_events",
-        )
-        job.to_server(tb_receiver, id="tb_receiver")
-    elif args.training_algo == "histogram_v2":
         from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
 
         controller = XGBFedController(
             num_rounds=args.round_num,
-            data_split_mode=0,
+            data_split_mode=data_split_mode,
             secure_training=False,
-            xgb_options={"early_stopping_rounds": 2, "use_gpus": False},
+            xgb_options={"early_stopping_rounds": 3, "use_gpus": False},
             xgb_params={
-                "max_depth": 8,
+                "max_depth": 3,
                 "eta": 0.1,
                 "objective": "binary:logistic",
                 "eval_metric": "auc",
                 "tree_method": "hist",
-                "nthread": 16,
+                "nthread": 1,
             },
         )
+
         from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
 
         executor = FedXGBHistogramExecutor(
@@ -209,14 +157,10 @@ def main():
     # Add executor and other components to clients
     for site_id in range(1, site_num + 1):
         if args.training_algo in ["bagging", "cyclic"]:
-            lr_scale = 1
             num_client_bagging = 1
             if args.training_algo == "bagging":
                 num_client_bagging = args.site_num
-            if args.lr_mode == "scaled":
-                data_split = _read_json(f"{dataset_path}/data_site-{site_id}.json")
-                lr_scales = _get_lr_scale_from_split_json(data_split)
-                lr_scale = lr_scales[f"site-{site_id}"]
+
             from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
             executor = FedXGBTreeExecutor(
@@ -229,19 +173,18 @@ def main():
                 global_model_path="model_global.json",
                 learning_rate=0.1,
                 objective="binary:logistic",
-                max_depth=8,
+                max_depth=3,
+                lr_scale=1,
                 eval_metric="auc",
                 tree_method="hist",
-                nthread=16,
-                lr_scale=lr_scale,
-                lr_mode=args.lr_mode,
+                nthread=1,
             )
         job.to(executor, f"site-{site_id}")
 
-        dataloader = HIGGSDataLoader(data_split_filename=f"{dataset_path}/data_site-{site_id}.json")
+        dataloader = CSVDataLoader(folder=dataset_path)
         job.to(dataloader, f"site-{site_id}", id="dataloader")
 
-        if args.training_algo in ["histogram", "histogram_v2"]:
+        if args.training_algo in ["histogram"]:
             metrics_writer = TBWriter(event_type="analytix_log_stats")
             job.to(metrics_writer, f"site-{site_id}", id="metrics_writer")
 
@@ -252,8 +195,8 @@ def main():
             job.to(event_to_fed, f"site-{site_id}", id="event_to_fed")
 
     # Export job config and run the job
-    job.export_job("/tmp/nvflare/workspace/jobs/")
-    job.simulator_run(f"/tmp/nvflare/workspace/works/{job_name}")
+    job.export_job("/tmp/nvflare/workspace/fedxgb/jobs/")
+    job.simulator_run(f"/tmp/nvflare/workspace/fedxgb/works/{job_name}")
 
 
 if __name__ == "__main__":

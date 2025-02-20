@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,45 +13,29 @@
 # limitations under the License.
 
 import argparse
-import json
 import os
+import shutil
 
 import numpy as np
+import pandas as pd
 
 
 def data_split_args_parser():
     parser = argparse.ArgumentParser(description="Generate data split for dataset")
     parser.add_argument("--data_path", type=str, help="Path to data file")
-    parser.add_argument("--site_num", type=int, help="Total number of sites")
-    parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
-    parser.add_argument("--size_total", type=int, help="Total number of instances")
+    parser.add_argument("--site_num", type=int, default=3, help="Total number of sites")
     parser.add_argument(
-        "--size_valid", type=int, help="Validation size, the first N instances to be treated as validation data"
-    )
-    parser.add_argument(
-        "--split_method",
+        "--out_path",
         type=str,
-        default="uniform",
-        choices=["uniform", "linear", "square", "exponential"],
-        help="How to split the dataset",
+        default="./dataset",
+        help="Output path for the data split file",
     )
-    parser.add_argument("--out_path", type=str, default="~/dataset", help="Output path for the data split json file")
     return parser
 
 
-def split_num_proportion(n, site_num, option: str):
+def split_num_proportion(n, site_num):
     split = []
-    if option == "uniform":
-        ratio_vec = np.ones(site_num)
-    elif option == "linear":
-        ratio_vec = np.linspace(1, site_num, num=site_num)
-    elif option == "square":
-        ratio_vec = np.square(np.linspace(1, site_num, num=site_num))
-    elif option == "exponential":
-        ratio_vec = np.exp(np.linspace(1, site_num, num=site_num))
-    else:
-        raise ValueError("Split method not implemented!")
-
+    ratio_vec = np.ones(site_num)
     total = sum(ratio_vec)
     left = n
     for site in range(site_num - 1):
@@ -66,22 +50,44 @@ def main():
     parser = data_split_args_parser()
     args = parser.parse_args()
 
-    json_data = {"data_path": args.data_path, "data_index": {"valid": {"start": 0, "end": args.size_valid}}}
+    df = pd.read_csv(args.data_path, header=None)
 
-    site_size = split_num_proportion((args.size_total - args.size_valid), args.site_num, args.split_method)
+    rows_total, cols_total = df.shape[0], df.shape[1]
+
+    print(f"site_num: {args.site_num}")
+    print(f"rows_total: {rows_total}, cols_total: {cols_total}")
+
+    # split row
+    site_row_size = split_num_proportion(int(0.8 * rows_total), args.site_num)
+    print(f"site_row_size: {site_row_size}")
+
+    if os.path.exists(args.out_path):
+        shutil.rmtree(args.out_path)
+
+    # assign first 80% rows to train
+    df_train = df.iloc[: int(0.8 * rows_total), :]
+    # assign last 20% rows to valid
+    df_valid = df.iloc[int(0.8 * rows_total) :, :]
 
     for site in range(args.site_num):
-        site_id = args.site_name_prefix + str(site + 1)
-        idx_start = args.size_valid + sum(site_size[:site])
-        idx_end = args.size_valid + sum(site_size[: site + 1])
-        json_data["data_index"][site_id] = {"start": idx_start, "end": idx_end}
+        # sort df_train by an arbitrary feature, 7,
+        # creating distribution shift between sites
+        # to illustrate the horizontal split quantile difference
+        df_train = df_train.sort_values(by=7)
 
-    if not os.path.exists(args.out_path):
-        os.makedirs(args.out_path, exist_ok=True)
-    for site in range(args.site_num):
-        output_file = os.path.join(args.out_path, f"data_{args.site_name_prefix}{site + 1}.json")
-        with open(output_file, "w") as f:
-            json.dump(json_data, f, indent=4)
+        row_start = sum(site_row_size[:site])
+        row_end = sum(site_row_size[: site + 1])
+
+        df_split = df_train.iloc[row_start:row_end, :]
+        print(f"site-{site + 1} split rows [{row_start}:{row_end}]")
+
+        data_path = os.path.join(args.out_path, f"site-{site + 1}")
+        if not os.path.exists(data_path):
+            os.makedirs(data_path, exist_ok=True)
+
+        # save train and valid data
+        df_split.to_csv(path_or_buf=os.path.join(data_path, "train.csv"), index=False, header=False)
+        df_valid.to_csv(path_or_buf=os.path.join(data_path, "valid.csv"), index=False, header=False)
 
 
 if __name__ == "__main__":

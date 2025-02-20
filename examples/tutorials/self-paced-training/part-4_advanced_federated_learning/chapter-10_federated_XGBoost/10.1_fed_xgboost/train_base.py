@@ -41,7 +41,7 @@ def train_base_args_parser():
     parser.add_argument(
         "--out_path",
         type=str,
-        default="/tmp/nvflare/workspace/fedxgb_secure/train_standalone/base",
+        default="/tmp/nvflare/workspace/fedxgb/train_base",
         help="Output path for the data split file",
     )
     return parser
@@ -103,7 +103,7 @@ def main():
 
     # Specify validations set to watch performance
     watchlist = [(dvalid, "eval"), (dtrain, "train")]
-    num_round = 3
+    num_round = 30
 
     # Run training, all the features in training API is available.
     bst = xgb.train(param, dtrain, num_round, evals=watchlist)
