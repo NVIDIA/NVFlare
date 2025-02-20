@@ -133,7 +133,7 @@ def define_parser():
         "--data_path",
         type=str,
         default="/tmp/nvflare/dataset/sklearn_iris.csv",
-        help="work directory, default to '/tmp/nvflare/dataset/sklearn_iris.csv'",
+        help="data path, default to '/tmp/nvflare/dataset/sklearn_iris.csv'",
     )
     parser.add_argument(
         "--num_clients",
