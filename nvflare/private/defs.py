@@ -19,6 +19,7 @@ from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
 
 # this import is to let existing scripts import from nvflare.private.defs
 from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, SSLConstants  # noqa: F401
+from nvflare.fuel.f3.cellnet.utils import new_cell_message  # noqa: F401
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.hci.server.constants import ConnProps
 
@@ -181,10 +182,3 @@ class ClientRegSession:
         self.client_name = client_name
         self.nonce = str(uuid.uuid4())
         self.reg_start_time = time.time()
-
-
-def new_cell_message(headers: dict, payload=None):
-    msg_headers = {}
-    if headers:
-        msg_headers.update(headers)
-    return Message(msg_headers, payload)

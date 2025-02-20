@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import List, Union
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -35,6 +36,7 @@ class FLComponent(StatePersistable):
         """
         self._name = self.__class__.__name__
         self.logger = get_obj_logger(self)
+        self._event_handlers = {}
 
     @property
     def name(self):
@@ -227,3 +229,31 @@ class FLComponent(StatePersistable):
         dxo = event_data.to_dxo()
         fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
         self.fire_event(event_type=event_type, fl_ctx=fl_ctx)
+
+    def register_event_handler(self, event_types: Union[str, List[str]], handler, **kwargs):
+        if isinstance(event_types, str):
+            event_types = [event_types]
+        elif not isinstance(event_types, list):
+            raise ValueError(f"event_types must be string or list of strings")
+
+        if not callable(handler):
+            raise ValueError(f"handler {handler.__name__} is not callable")
+
+        for e in event_types:
+            entries = self._event_handlers.get(e)
+            if not entries:
+                entries = []
+                self._event_handlers[e] = entries
+
+            already_registered = False
+            for h, _ in entries:
+                if handler == h:
+                    # already registered: either by a super class or by the class itself.
+                    already_registered = True
+                    break
+
+            if not already_registered:
+                entries.append((handler, kwargs))
+
+    def get_event_handlers(self):
+        return self._event_handlers
