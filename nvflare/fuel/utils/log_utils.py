@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import inspect
 import json
 import logging
@@ -291,8 +292,25 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
 def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str):
     # Dynamically configure log given a config (dict, filepath, LogMode, or level), apply the config to the proper locations.
 
+    # Predefined log dicts based from DEFAULT_LOG_JSON
     with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
-        default_log_json = json.load(f)
+        default_log_dict = json.load(f)
+
+    concise_log_dict = copy.deepcopy(default_log_dict)
+    concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
+
+    verbose_log_dict = copy.deepcopy(default_log_dict)
+    verbose_log_dict["formatters"]["consoleFormatter"][
+        "fmt"
+    ] = "%(asctime)s - %(identity)s - %(name)s - %(levelname)s - %(message)s"
+    verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
+
+    log_mode_config_dict = {
+        LogMode.DEFAULT: default_log_dict,
+        LogMode.CONCISE: concise_log_dict,
+        LogMode.VERBOSE: verbose_log_dict,
+    }
 
     if isinstance(config, dict):
         apply_log_config(config, dir_path)
@@ -300,28 +318,12 @@ def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str
         # Handle pre-defined LogModes
         if config == LogMode.RELOAD:
             config = reload_path
-        elif config == LogMode.DEFAULT:
-            apply_log_config(default_log_json, dir_path)
-            return
-        elif config == LogMode.CONCISE:
-            concise_dict = default_log_json
-            concise_dict["formatters"]["consoleFormatter"][
-                "fmt"
-            ] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            concise_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
-            apply_log_config(concise_dict, dir_path)
-            return
-        elif config == LogMode.VERBOSE:
-            verbose_dict = default_log_json
-            verbose_dict["formatters"]["consoleFormatter"][
-                "fmt"
-            ] = "%(asctime)s - %(identity)s - %(name)s - %(levelname)s - %(message)s"
-            verbose_dict["loggers"]["root"]["level"] = "DEBUG"
-            apply_log_config(verbose_dict, dir_path)
+        elif log_config := log_mode_config_dict.get(config):
+            apply_log_config(log_config, dir_path)
             return
 
+        # Read config file
         if os.path.isfile(config):
-            # Read config file
             with open(config, "r") as f:
                 dict_config = json.load(f)
 
@@ -329,7 +331,7 @@ def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str
         else:
             # If logging is not yet configured, use default config
             if not logging.getLogger().hasHandlers():
-                apply_log_config(default_log_json, dir_path)
+                apply_log_config(default_log_dict, dir_path)
 
             # Set level of root logger based on levelname or levelnumber
             level = int(config) if config.isdigit() else getattr(logging, config.upper(), None)
