@@ -39,16 +39,19 @@ def train_federated_args_parser():
     parser.add_argument(
         "--data_train_root",
         type=str,
-        default="/tmp/nvflare/xgb_dataset/base_xgb_data",
+        default="/tmp/nvflare/dataset/xgb_dataset/base_xgb_data",
         help="Path to training data folder",
     )
     parser.add_argument(
-        "--data_test_file", type=str, default="/tmp/nvflare/xgb_dataset/test.csv", help="Path to testing data file"
+        "--data_test_file",
+        type=str,
+        default="/tmp/nvflare/dataset/xgb_dataset/test.csv",
+        help="Path to testing data file",
     )
     parser.add_argument(
         "--out_path",
         type=str,
-        default="/tmp/nvflare/fedxgb_secure/train_standalone/federated",
+        default="/tmp/nvflare/workspace/fedxgb_secure/train_standalone/federated",
         help="Output path for the data split file",
     )
     return parser
@@ -63,7 +66,7 @@ def load_test_data(data_path: str):
 
 
 def run_server(port: int, world_size: int) -> None:
-    xgboost.federated.run_federated_server(n_workers=world_size, port=port)
+    xgboost.federated.run_federated_server(port=port, n_workers=world_size)
 
 
 def run_worker(port: int, world_size: int, rank: int, args) -> None:
@@ -186,7 +189,7 @@ def main():
     port = 1111
     world_size = args.world_size
 
-    server = multiprocessing.Process(target=run_server, args=(world_size, port))
+    server = multiprocessing.Process(target=run_server, args=(port, world_size))
     server.start()
     time.sleep(1)
     if not server.is_alive():
