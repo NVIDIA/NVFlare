@@ -401,6 +401,21 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
 
         return "Abort signal has been sent to the client App."
 
+    def send_to_job(self, job_id, channel: str, topic: str, msg: CellMessage, timeout: float) -> CellMessage:
+        """Send a message to CJ
+
+        Args:
+            job_id: id of the job
+            channel: message channel
+            topic: message topic
+            msg: the message to be sent
+            timeout: how long to wait for reply
+
+        Returns: reply from CJ
+
+        """
+        return self.client_executor.send_to_job(job_id, channel, topic, msg, timeout)
+
     def abort_task(self, job_id: str) -> str:
         status = self.client_executor.get_status(job_id)
         if status == ClientStatus.NOT_STARTED:
