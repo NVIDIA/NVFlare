@@ -18,6 +18,8 @@ This tool automatically provisions a project with relay and client hierarchy bas
 """
 
 import argparse
+import json
+import os.path
 
 from nvflare.lighter.entity import Participant, ParticipantType, Project
 from nvflare.lighter.impl.cert import CertBuilder
@@ -45,20 +47,33 @@ class Stats:
     num_non_leaf_clients = 0
 
 
-class _Node:
-
+class PortManager:
     last_port_number = 9000
 
+    @classmethod
+    def get_port(cls):
+        cls.last_port_number += 1
+        return cls.last_port_number
+
+
+class _Node:
     def __init__(self):
         self.name = None
         self.client_name = None
         self.parent = None
         self.children = []
-        self.port = _Node.last_port_number
-        _Node.last_port_number += 1
+        self.port = PortManager.get_port()
 
 
-def _build_tree(depth: int, width: int, max_depth: int, parent: _Node, num_clients: int, project: Project):
+def _build_tree(
+    depth: int,
+    width: int,
+    max_depth: int,
+    parent: _Node,
+    num_clients: int,
+    project: Project,
+    lcp_map: dict,
+):
     """Build relay hierarchy and client hierarchy, recursively.
 
     Relays are organized hierarchically. Attach a client to each relay. Such clients are non-leaf clients (a.k.a
@@ -81,7 +96,7 @@ def _build_tree(depth: int, width: int, max_depth: int, parent: _Node, num_clien
 
     """
     if depth == max_depth:
-        # the parent is a leaf node - add leaf clients
+        # the parent is a leaf node - add leaf clients (LCPs)
         Stats.num_leaf_relays += 1
         for i in range(num_clients):
             name = _make_client_name(parent.name) + str(i + 1)
@@ -91,6 +106,8 @@ def _build_tree(depth: int, width: int, max_depth: int, parent: _Node, num_clien
             project.add_participant(client)
             Stats.num_clients += 1
             Stats.num_leaf_clients += 1
+
+            lcp_map[name] = {"host": "localhost", "port": PortManager.get_port()}
         return
 
     if depth > 0:
@@ -127,7 +144,7 @@ def _build_tree(depth: int, width: int, max_depth: int, parent: _Node, num_clien
         Stats.num_non_leaf_clients += 1
 
         # depth-first recursion
-        _build_tree(depth + 1, width, max_depth, child, num_clients, project)
+        _build_tree(depth + 1, width, max_depth, child, num_clients, project, lcp_map)
 
 
 def main():
@@ -205,7 +222,8 @@ def main():
     # add relays and clients
     root_relay = _Node()
     root_relay.name = "R"
-    _build_tree(0, args.width, args.depth, root_relay, args.clients, project)
+    lcp_map = {}
+    _build_tree(0, args.width, args.depth, root_relay, args.clients, project, lcp_map)
 
     total_sites = Stats.num_clients + Stats.num_relays + 1
 
@@ -225,7 +243,12 @@ def main():
         "admin@nvidia.com", ParticipantType.ADMIN, props={"role": "project_admin", "connect_to": "localhost"}
     )
     project.add_participant(admin)
-    provisioner.provision(project)
+    ctx = provisioner.provision(project)
+    location = ctx.get_result_location()
+    lcp_map_file_name = os.path.join(location, "lcp_map.json")
+    with open(lcp_map_file_name, "wt") as f:
+        json.dump(lcp_map, f, indent=4)
+    print(f"Generated LCP Map: {lcp_map_file_name}")
 
 
 if __name__ == "__main__":
