@@ -14,10 +14,7 @@
 
 import argparse
 import os
-from enum import Enum
-from typing import List
 
-import numpy as np
 from src.kmeans_assembler import KMeansAssembler
 from src.kmeans_learner import KMeansLearner
 from utils.split_data import split_data
