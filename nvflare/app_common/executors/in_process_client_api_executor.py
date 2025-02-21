@@ -11,23 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import threading
 import time
 from typing import Optional
 
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.analytix_utils import create_analytic_dxo
+from nvflare.apis.utils.analytix_utils import create_analytic_dxo, send_analytic_dxo
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
-from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
-from nvflare.app_common.widgets.streaming import send_analytic_dxo
 from nvflare.client.api_spec import CLIENT_API_KEY
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.in_process.api import (
