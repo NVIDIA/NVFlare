@@ -57,67 +57,77 @@ class HierarchicalAggregationManager(Executor):
         self._aggr_lock = threading.Lock()
         self._process_error = None
 
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            engine = fl_ctx.get_engine()
+        self.register_event_handler(EventType.START_RUN, self._handle_start_run)
+        self.register_event_handler(EventType.TASK_ASSIGNMENT_SENT, self._handle_task_sent)
+        self.register_event_handler(EventType.TASK_RESULT_RECEIVED, self._handle_result_received)
 
-            aggr = engine.get_component(self.aggregator_id)
-            if not isinstance(aggr, Aggregator):
-                self.log_error(fl_ctx, f"component '{self.aggregator_id}' must be Aggregator but got {type(aggr)}")
-            self.aggregator = aggr
+    def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
+        self.log_debug(fl_ctx, f"handling event {event_type}")
+        engine = fl_ctx.get_engine()
 
-            learner = engine.get_component(self.learner_id)
-            if not isinstance(learner, Executor):
-                self.log_error(fl_ctx, f"component '{self.learner_id}' must be Executor but got {type(learner)}")
-            self.learner = learner
-        elif event_type == EventType.TASK_ASSIGNMENT_SENT:
-            # the task was sent to a child client
-            if not self.pending_task_id:
-                # I don't have a pending task
-                return
+        aggr = engine.get_component(self.aggregator_id)
+        if not isinstance(aggr, Aggregator):
+            self.log_error(fl_ctx, f"component '{self.aggregator_id}' must be Aggregator but got {type(aggr)}")
+        self.aggregator = aggr
 
-            child_client_ctx = fl_ctx.get_peer_context()
-            assert isinstance(child_client_ctx, FLContext)
-            child_client_name = child_client_ctx.get_identity_name()
-            self._update_client_status(child_client_name, None)
-            task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
+        learner = engine.get_component(self.learner_id)
+        if not isinstance(learner, Executor):
+            self.log_error(fl_ctx, f"component '{self.learner_id}' must be Executor but got {type(learner)}")
+        self.learner = learner
 
-            # indicate that this event has been processed by me
-            fl_ctx.set_prop(FLContextKey.EVENT_PROCESSED, True, private=True, sticky=False)
-            self.log_info(fl_ctx, f"sent task {task_id} to child {child_client_name}")
-        elif event_type == EventType.TASK_RESULT_RECEIVED:
-            # received results from a child client
-            if not self.pending_task_id:
-                # I don't have a pending task
-                return
+    def _handle_task_sent(self, event_type: str, fl_ctx: FLContext):
+        # the task was sent to a child client
+        self.log_debug(fl_ctx, f"handling event {event_type}")
 
-            # indicate that this event has been processed by me
-            fl_ctx.set_prop(FLContextKey.EVENT_PROCESSED, True, private=True, sticky=False)
+        if not self.pending_task_id:
+            # I don't have a pending task
+            return
 
-            result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
-            assert isinstance(result, Shareable)
-            task_id = result.get_header(ReservedKey.TASK_ID)
-            peer_ctx = fl_ctx.get_peer_context()
-            assert isinstance(peer_ctx, FLContext)
-            child_client_name = peer_ctx.get_identity_name()
-            self.log_info(fl_ctx, f"received result for task {task_id} from child {child_client_name}")
+        child_client_ctx = fl_ctx.get_peer_context()
+        assert isinstance(child_client_ctx, FLContext)
+        child_client_name = child_client_ctx.get_identity_name()
+        self._update_client_status(child_client_name, None)
+        task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
 
-            if task_id != self.pending_task_id:
-                self.log_warning(
-                    fl_ctx,
-                    f"dropped the received result from child {child_client_name} "
-                    f"for task {task_id} while waiting for task {self.pending_task_id}",
-                )
-                return
+        # indicate that this event has been processed by me
+        fl_ctx.set_prop(FLContextKey.EVENT_PROCESSED, True, private=True, sticky=False)
+        self.log_info(fl_ctx, f"sent task {task_id} to child {child_client_name}")
 
-            rc = result.get_return_code(ReturnCode.OK)
-            if rc == ReturnCode.OK:
-                self.log_info(fl_ctx, f"accepting result from client {child_client_name}")
-                self._do_aggregation(result, fl_ctx)
-            else:
-                self.log_error(fl_ctx, f"Received bad result from client {child_client_name}: {rc=}")
-            self.log_info(fl_ctx, f"received result from child {child_client_name}")
-            self._update_client_status(child_client_name, time.time())
+    def _handle_result_received(self, event_type: str, fl_ctx: FLContext):
+        # received results from a child client
+        self.log_debug(fl_ctx, f"handling event {event_type}")
+
+        if not self.pending_task_id:
+            # I don't have a pending task
+            return
+
+        # indicate that this event has been processed by me
+        fl_ctx.set_prop(FLContextKey.EVENT_PROCESSED, True, private=True, sticky=False)
+
+        result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
+        assert isinstance(result, Shareable)
+        task_id = result.get_header(ReservedKey.TASK_ID)
+        peer_ctx = fl_ctx.get_peer_context()
+        assert isinstance(peer_ctx, FLContext)
+        child_client_name = peer_ctx.get_identity_name()
+        self.log_info(fl_ctx, f"received result for task {task_id} from child {child_client_name}")
+
+        if task_id != self.pending_task_id:
+            self.log_warning(
+                fl_ctx,
+                f"dropped the received result from child {child_client_name} "
+                f"for task {task_id} while waiting for task {self.pending_task_id}",
+            )
+            return
+
+        rc = result.get_return_code(ReturnCode.OK)
+        if rc == ReturnCode.OK:
+            self.log_info(fl_ctx, f"accepting result from client {child_client_name}")
+            self._do_aggregation(result, fl_ctx)
+        else:
+            self.log_error(fl_ctx, f"Received bad result from client {child_client_name}: {rc=}")
+        self.log_info(fl_ctx, f"received result from child {child_client_name}")
+        self._update_client_status(child_client_name, time.time())
 
     def _do_aggregation(self, result: Shareable, fl_ctx: FLContext):
         with self._aggr_lock:
