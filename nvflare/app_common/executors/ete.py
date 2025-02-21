@@ -134,7 +134,7 @@ class EdgeTaskExecutor(Executor):
 
             time.sleep(0.2)
 
-        self.log_debug(fl_ctx, f"task done after {time.time()-start_time} seconds")
+        self.log_debug(fl_ctx, f"task done after {time.time() - start_time} seconds")
         try:
             result = self.get_task_result(fl_ctx)
 
