@@ -26,7 +26,7 @@ If you intend to calculate quantiles, you need to install fastdigest.
 pip install fastdigest==0.4.0
 ```
 
-on ubuntu, you might get the following error:
+on Ubuntu, you might get the following error:
 
   Cargo, the Rust package manager, is not installed or is not on PATH.
   This package requires Rust and Cargo to compile extensions. Install it through
@@ -52,7 +52,7 @@ pip install fastdigest==0.4.0
 
 ### Quantile Calculation
 
- We updated the statistics with quantile implementation. Although there are many quantile packages can be used, few satisfy our constraint conditions
+To calculate federated quantiles, we needed to select a package that satisfies the following constraints:
 
 * Works in distributed systems
 * Does not copy the original data (avoiding privacy leaks)

@@ -25,7 +25,6 @@ from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
 
 try:
     from fastdigest import TDigest
-
     TDIGEST_AVAILABLE = True
 except ImportError:
     TDIGEST_AVAILABLE = False
@@ -246,7 +245,7 @@ class TestQuantile:
 
         assert result.get(0.5) == stats_generator.median
 
-    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="TDigest package not installed")
+    @pytest.mark.skipif(not TDIGEST_AVAILABLE, reason="fastdigest package not installed")
     def test_percentile_metrics_aggregation(self):
         stats_generators = [
             MockDFStats2(data_array=[0, 1, 2, 3, 4, 5, 6]),
