@@ -139,8 +139,6 @@ class ModelDequantizor(DXOFilter):
                         params[param_name] = params[param_name].astype(np.float64)
                     elif source_data_type == "float16":
                         params[param_name] = params[param_name].astype(np.float16)
-                    elif source_data_type == "uint8":
-                        params[param_name] = params[param_name].astype(np.uint8)
                 elif source_data_format == "torch":
                     # convert back to original data type
                     if source_data_type == "float32":
@@ -151,8 +149,6 @@ class ModelDequantizor(DXOFilter):
                         params[param_name] = params[param_name].half()
                     elif source_data_type == "bfloat16":
                         params[param_name] = params[param_name].bfloat16()
-                    elif source_data_type == "uint8":
-                        params[param_name] = params[param_name].byte()
 
             n_bytes_after += params[param_name].nbytes
 
