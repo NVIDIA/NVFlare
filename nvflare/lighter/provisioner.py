@@ -62,7 +62,7 @@ class Provisioner:
         elif not callable(getattr(logger, method_name)):
             raise ValueError(f"invalid logger {type(logger)}: method '{method_name}' is not callable")
 
-    def provision(self, project: Project, mode=None, logger=None):
+    def provision(self, project: Project, mode=None, logger=None) -> ProvisionContext:
         """Provision a specified project.
 
         Args:

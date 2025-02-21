@@ -148,7 +148,9 @@ class SystemCommandModule(CommandModule, CommandUtil):
 
             workspace = engine.get_workspace()
             try:
-                dynamic_log_config(config, workspace)
+                dynamic_log_config(
+                    config=config, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
+                )
             except Exception as e:
                 conn.append_error(
                     secure_format_exception(e),
