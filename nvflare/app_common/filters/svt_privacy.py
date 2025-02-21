@@ -45,10 +45,10 @@ class SVTPrivacy(DXOFilter):
 
         super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
 
-        self.frac = fraction  # fraction of the model to upload
-        self.eps_1 = epsilon
+        self.fraction = fraction  # fraction of the model to upload
+        self.epsilon = epsilon
         self.eps_2 = None  # to be derived from eps_1
-        self.eps_3 = noise_var
+        self.noise_var = noise_var
         self.gamma = gamma
         self.tau = tau
         self.replace = replace
@@ -76,21 +76,21 @@ class SVTPrivacy(DXOFilter):
         )
 
         # precompute thresholds
-        n_upload = np.minimum(np.ceil(np.float64(delta_w.size) * self.frac), np.float64(delta_w.size))
+        n_upload = np.minimum(np.ceil(np.float64(delta_w.size) * self.fraction), np.float64(delta_w.size))
 
         # eps_1: threshold with noise
-        lambda_rho = self.gamma * 2.0 / self.eps_1
+        lambda_rho = self.gamma * 2.0 / self.epsilon
         threshold = self.tau + np.random.laplace(scale=lambda_rho)
         # eps_2: query with noise
-        self.eps_2 = self.eps_1 * (2.0 * n_upload) ** (2.0 / 3.0)
+        self.eps_2 = self.epsilon * (2.0 * n_upload) ** (2.0 / 3.0)
         lambda_nu = self.gamma * 4.0 * n_upload / self.eps_2
         self.logger.info(
             "total params: %s, epsilon: %s, "
             "perparam budget %s, threshold tau: %s + f(eps_1) = %s, "
             "clip gamma: %s",
             delta_w.size,
-            self.eps_1,
-            self.eps_1 / n_upload,
+            self.epsilon,
+            self.epsilon / n_upload,
             self.tau,
             threshold,
             self.gamma,
@@ -107,7 +107,7 @@ class SVTPrivacy(DXOFilter):
             self.log_info(fl_ctx, "selected {} responses, requested {}".format(len(accepted), n_upload))
         accepted = np.random.choice(accepted, size=np.int64(n_upload), replace=self.replace)
         # eps_3 return with noise
-        noise = np.random.laplace(scale=self.gamma * 2.0 / self.eps_3, size=accepted.shape)
+        noise = np.random.laplace(scale=self.gamma * 2.0 / self.noise_var, size=accepted.shape)
         self.log_info(fl_ctx, "noise max: {}, median {}".format(np.max(np.abs(noise)), np.median(np.abs(noise))))
         delta_w[accepted] = np.clip(delta_w[accepted] + noise, a_min=-self.gamma, a_max=self.gamma)
         candidate_idx = list(set(np.arange(delta_w.size)) - set(accepted))
