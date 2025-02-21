@@ -17,6 +17,8 @@ import time
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
+from regex import P
+
 
 class MonitorReturnCode(int, enum.Enum):
 
@@ -193,6 +195,29 @@ class SessionSpec(ABC):
         If the job size is smaller than the maximum size set on the server, the job will download to the download_dir
         set in Session through the admin config, and the path to the downloaded result will be returned. If the size
         of the job is larger than the maximum size, the location to download the job will be returned.
+
+        """
+        pass
+
+    @abstractmethod
+    def list_job_components(self, job_id: str) -> List[str]:
+        """Get the list of additional job components for the specified job.
+
+        Args:
+            job_id (str): ID of the job
+
+        Returns: a list of the additional job components
+
+        """
+        pass
+
+    def download_job_components(self, job_id: str) -> str:
+        """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
+
+        Args:
+            job_id (str): ID of the job
+
+        Returns: folder path to the location of the downloaded additional job components
 
         """
         pass
