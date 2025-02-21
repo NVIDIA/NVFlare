@@ -211,7 +211,7 @@ class ModelQuantizor(DXOFilter):
         quantized_flag = dxo.get_meta_prop("quantized_flag")
         if quantized_flag:
             self.log_info(fl_ctx, "Already quantized, skip quantization")
-            new_dxo = dxo        
+            new_dxo = dxo
         else:
             # apply quantization
             quantized_params, quant_state, source_datatype = self.quantization(params=dxo.data, fl_ctx=fl_ctx)
