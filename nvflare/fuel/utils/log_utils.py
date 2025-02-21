@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import inspect
 import json
 import logging
@@ -19,8 +20,39 @@ import os
 import re
 from logging import Logger
 from logging.handlers import RotatingFileHandler
+from typing import Union
 
 from nvflare.apis.workspace import Workspace
+
+DEFAULT_LOG_JSON = "log_config.json"
+
+
+class LogMode:
+    RELOAD = "reload"
+    FULL = "full"
+    CONCISE = "concise"
+    VERBOSE = "verbose"
+
+
+# Predefined log dicts based from DEFAULT_LOG_JSON
+with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
+    default_log_dict = json.load(f)
+
+concise_log_dict = copy.deepcopy(default_log_dict)
+concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
+
+verbose_log_dict = copy.deepcopy(default_log_dict)
+verbose_log_dict["formatters"]["consoleFormatter"][
+    "fmt"
+] = "%(asctime)s - %(identity)s - %(name)s - %(levelname)s - %(message)s"
+verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
+
+logmode_config_dict = {
+    LogMode.FULL: default_log_dict,
+    LogMode.CONCISE: concise_log_dict,
+    LogMode.VERBOSE: verbose_log_dict,
+}
 
 
 class ANSIColor:
@@ -229,6 +261,7 @@ class LoggerNameFilter(logging.Filter):
 
 
 def get_module_logger(module=None, name=None):
+    # Get module logger name adhering to logger hierarchy. Optionally add name as a suffix.
     if module is None:
         caller_globals = inspect.stack()[1].frame.f_globals
         module = caller_globals.get("__name__", "")
@@ -237,11 +270,12 @@ def get_module_logger(module=None, name=None):
 
 
 def get_obj_logger(obj):
-    return logging.getLogger(f"{obj.__module__}.{obj.__class__.__qualname__}")
+    # Get object logger name adhering to logger hierarchy.
+    return logging.getLogger(f"{obj.__module__}.{obj.__class__.__qualname__}") if obj else None
 
 
 def get_script_logger():
-    # Get script logger name based on filename and package. If not in a package, default to custom.
+    # Get script logger name adhering to logger hierarchy. Based on package and filename. If not in a package, default to custom.
     caller_frame = inspect.stack()[1]
     package = caller_frame.frame.f_globals.get("__package__", "")
     file = caller_frame.frame.f_globals.get("__file__", "")
@@ -278,40 +312,40 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
     logging.config.dictConfig(dict_config)
 
 
-def dynamic_log_config(config: str, workspace: Workspace, job_id: str = None):
-    # Dynamically configure log given a config (filepath, levelname, levelnumber, 'reload'), apply the config to the proper locations.
-    if not isinstance(config, str):
-        raise ValueError(
-            f"Unsupported config type. Expect config to be string filepath, levelname, levelnumber, or 'reload' but got {type(config)}"
-        )
+def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str):
+    # Dynamically configure log given a config (dict, filepath, LogMode, or level), apply the config to the proper locations.
 
-    if config == "reload":
-        config = workspace.get_log_config_file_path()
+    if isinstance(config, dict):
+        apply_log_config(config, dir_path)
+    elif isinstance(config, str):
+        # Handle pre-defined LogModes
+        if config == LogMode.RELOAD:
+            config = reload_path
+        elif log_config := logmode_config_dict.get(config):
+            apply_log_config(copy.deepcopy(log_config), dir_path)
+            return
 
-    if os.path.isfile(config):
-        # Read confg file
-        with open(config, "r") as f:
-            dict_config = json.load(f)
+        # Read config file
+        if os.path.isfile(config):
+            with open(config, "r") as f:
+                dict_config = json.load(f)
 
-        if job_id:
-            dir_path = workspace.get_run_dir(job_id)
+            apply_log_config(dict_config, dir_path)
         else:
-            dir_path = workspace.get_root_dir()
+            # If logging is not yet configured, use default config
+            if not logging.getLogger().hasHandlers():
+                apply_log_config(default_log_dict, dir_path)
 
-        apply_log_config(dict_config, dir_path)
-
-    else:
-        # Set level of root logger based on levelname or levelnumber
-        if config.isdigit():
-            level = int(config)
-            if not (0 <= level <= 50):
-                raise ValueError(f"Invalid logging level: {level}")
-        else:
-            level = getattr(logging, config.upper(), None)
-            if level is None:
+            # Set level of root logger based on levelname or levelnumber
+            level = int(config) if config.isdigit() else getattr(logging, config.upper(), None)
+            if level is None or not (0 <= level <= 50):
                 raise ValueError(f"Invalid logging level: {config}")
 
-        logging.getLogger().setLevel(level)
+            logging.getLogger().setLevel(level)
+    else:
+        raise ValueError(
+            f"Unsupported config type. Expect config to be a dict, filepath, level, or LogMode but got {type(config)}"
+        )
 
 
 def add_log_file_handler(log_file_name):
