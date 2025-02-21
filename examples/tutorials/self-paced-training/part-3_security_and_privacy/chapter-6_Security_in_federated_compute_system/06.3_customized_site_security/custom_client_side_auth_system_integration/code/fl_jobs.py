@@ -42,7 +42,7 @@ if __name__ == "__main__":
     # Add clients
     for i in range(num_clients):
         executor = ScriptRunner(script=train_script, script_args="")
-        job.to(executor, f"site-{i+1}")
+        job.to(executor, f"site-{i + 1}")
 
     job_config_dir = os.path.join(config_dir, job_name)
     print(f"job-config for {job_name} is at ", job_config_dir)
