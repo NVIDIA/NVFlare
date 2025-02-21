@@ -17,8 +17,6 @@ import time
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from regex import P
-
 
 class MonitorReturnCode(int, enum.Enum):
 
