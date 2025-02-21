@@ -93,7 +93,7 @@ def main():
     meta_cfg["name"] = os.path.basename(args.job_folder)
     meta_cfg["deploy_map"] = {"server": ["server"]}
     for i in range(args.num_clients):
-        meta_cfg["deploy_map"][f"app{i+1}"] = [f"site-{i+1}"]
+        meta_cfg["deploy_map"][f"app{i+1}"] = [f"site-{i + 1}"]
     save_config(meta_cfg_file, meta_cfg)
 
     print(f"Created configs for {args.num_clients} clients")
