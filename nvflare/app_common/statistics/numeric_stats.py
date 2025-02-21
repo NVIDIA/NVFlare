@@ -18,8 +18,7 @@ from typing import Dict, List, TypeVar
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.statistics_config_utils import get_target_quantiles
-from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.app_opt.statistics.quantile_stats import get_quantiles
 
 T = TypeVar("T")
 
@@ -48,6 +47,7 @@ def get_global_stats(
     # we need to calculate the metrics in specified order
     ordered_target_metrics = StC.ordered_statistics[metric_task]
     ordered_metrics = [metric for metric in ordered_target_metrics if metric in client_metrics]
+
 
     for metric in ordered_metrics:
         if metric not in global_metrics:
@@ -88,15 +88,8 @@ def get_global_stats(
 
                 global_metrics[StC.STATS_STDDEV] = ds_stddev
         elif metric == StC.STATS_QUANTILE:
-            if not check_fastdigest_installed():
-                continue
-
-            global_digest = {}
-            for client_name in stats:
-                global_digest = merge_quantiles(stats[client_name], global_digest)
-
-            percent_config = statistic_configs.get(StC.STATS_QUANTILE)
-            global_metrics[metric] = compute_quantiles(global_digest, percent_config, precision)
+            
+            global_metrics[metric] = get_quantiles(client_metrics, statistic_configs, precision)
 
     return global_metrics
 
@@ -235,65 +228,3 @@ def filter_numeric_features(ds_features: Dict[str, List[Feature]]) -> Dict[str, 
         numeric_ds_features[ds_name] = n_features
 
     return numeric_ds_features
-
-
-def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict:
-    TDigest = check_and_import_tdigest()
-    if TDigest is None:
-        return g_digest
-
-    from fastdigest import TDigest
-
-    for ds_name in metrics:
-        if ds_name not in g_digest:
-            g_digest[ds_name] = {}
-
-        feature_metrics = metrics[ds_name]
-        for feature_name in feature_metrics:
-            if feature_metrics[feature_name] is not None:
-                digest_dict: Dict = feature_metrics[feature_name].get(StC.STATS_DIGEST_COORD)
-                feature_digest = TDigest.from_dict(digest_dict)
-                if feature_name not in g_digest[ds_name]:
-                    g_digest[ds_name][feature_name] = feature_digest
-                else:
-                    g_digest[ds_name][feature_name] = g_digest[ds_name][feature_name].merge(feature_digest)
-
-    return g_digest
-
-
-def check_fastdigest_installed():
-    fastdigest, flag = optional_import("fastdigest")
-    if not flag:
-        logger.error("fastdigest is not installed. Please install it using 'pip install fastdigest'.")
-        return False
-    return True
-
-
-def check_and_import_tdigest():
-    TDigest, flag = optional_import("fastdigest", name="TDigest")
-    if not flag:
-        logger.error("TDigest is not installed. Please install it using 'pip install fastdigest'.")
-        return None
-    return TDigest
-
-
-def compute_quantiles(g_digest, quantile_config: Dict, precision: int = 4) -> dict:
-    if not check_fastdigest_installed():
-        return {}
-
-    g_ds_metrics = {}
-    for ds_name in g_digest:
-        if ds_name not in g_ds_metrics:
-            g_ds_metrics[ds_name] = {}
-
-        feature_metrics = g_digest[ds_name]
-        for feature_name in feature_metrics:
-            digest = feature_metrics[feature_name]
-            percentiles = get_target_quantiles(quantile_config, feature_name)
-            percentile_values = {}
-            for percentile in percentiles:
-                percentile_values[percentile] = round(digest.quantile(percentile), precision)
-
-            g_ds_metrics[ds_name][feature_name] = percentile_values
-
-    return g_ds_metrics
