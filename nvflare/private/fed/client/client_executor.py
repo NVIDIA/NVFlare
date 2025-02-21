@@ -25,6 +25,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
@@ -210,7 +211,11 @@ class JobExecutor(ClientExecutor):
 
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
         job_handle = job_launcher.launch_job(job_meta, fl_ctx)
-        self.logger.info(f"Launch job_id: {job_id}  with job launcher: {type(job_launcher)} ")
+        self.logger.info(f"Launched job {job_id} with job launcher: {type(job_launcher)} ")
+
+        fl_ctx.set_prop(FLContextKey.JOB_META, job_meta, private=True, sticky=False)
+        engine = fl_ctx.get_engine()
+        engine.fire_event(EventType.AFTER_JOB_LAUNCH, fl_ctx)
 
         client.multi_gpu = False
 
@@ -419,6 +424,29 @@ class JobExecutor(ClientExecutor):
 
         self.logger.info("Client worker process is terminated.")
 
+    def send_to_job(self, job_id, channel: str, topic: str, msg: CellMessage, timeout: float) -> CellMessage:
+        """Send a message to CJ
+
+        Args:
+            job_id: id of the job
+            channel: message channel
+            topic: message topic
+            msg: the message to be sent
+            timeout: how long to wait for reply
+
+        Returns: reply from CJ
+
+        """
+        # send any serializable data to the job cell
+        return self.client.cell.send_request(
+            target=self._job_fqcn(job_id),
+            channel=channel,
+            topic=topic,
+            request=msg,
+            optional=False,
+            timeout=timeout,
+        )
+
     def _terminate_job(self, job_handle, job_id):
         max_wait = 10.0
         done = False
@@ -500,6 +528,7 @@ class JobExecutor(ClientExecutor):
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client.client_name, private=True, sticky=False)
         engine.fire_event(EventType.JOB_COMPLETED, fl_ctx)
+        self.logger.info(f"Fired event JOB_COMPLETED {EventType.JOB_COMPLETED}")
 
     def get_status(self, job_id):
         process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)
