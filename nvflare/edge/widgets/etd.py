@@ -14,12 +14,13 @@
 import threading
 from random import randrange
 
-from nvflare.apis.edge_def import EdgeContextKey, EdgeProtoKey
-from nvflare.apis.edge_def import Status as EdgeStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.edge.constants import EdgeContextKey, EdgeProtoKey
+from nvflare.edge.constants import EventType as EdgeEventType
+from nvflare.edge.constants import Status as EdgeStatus
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message as CellMessage
@@ -46,11 +47,11 @@ class EdgeTaskDispatcher(Widget):
             self._handle_job_done,
         )
         self.register_event_handler(
-            EventType.EDGE_JOB_REQUEST_RECEIVED,
+            EdgeEventType.EDGE_JOB_REQUEST_RECEIVED,
             self._handle_edge_job_request,
         )
         self.register_event_handler(
-            EventType.EDGE_REQUEST_RECEIVED,
+            EdgeEventType.EDGE_REQUEST_RECEIVED,
             self._handle_edge_request,
         )
         self.logger.info("EdgeTaskDispatcher created!")

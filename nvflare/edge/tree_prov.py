@@ -19,13 +19,12 @@ This tool automatically provisions a project with relay and client hierarchy bas
 
 import argparse
 
+from nvflare.lighter.entity import Participant, ParticipantType, Project
 from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.impl.signature import SignatureBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
-
-from .entity import Participant, ParticipantType, Project
-from .provisioner import Provisioner
+from nvflare.lighter.provisioner import Provisioner
 
 
 def _new_participant(name: str, ptype: str, props: dict) -> Participant:

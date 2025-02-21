@@ -16,10 +16,10 @@ from typing import Any
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
-from nvflare.app_common.executors.ete import EdgeTaskExecutor
+from nvflare.edge.executors.ete import EdgeTaskExecutor
 
 
-class EdgeSurvey(EdgeTaskExecutor):
+class EdgeSurveyExecutor(EdgeTaskExecutor):
     """This executor is for test purpose only. It is to be used as the "learner" for the
     HierarchicalAggregationManager.
     """

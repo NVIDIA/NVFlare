@@ -15,7 +15,6 @@ import fnmatch
 import threading
 import time
 
-from nvflare.apis.edge_def import Status as EdgeStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
@@ -27,6 +26,8 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.edge.constants import EventType as EdgeEventType
+from nvflare.edge.constants import Status as EdgeStatus
 from nvflare.fuel.f3.cellnet.defs import CellChannel
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
@@ -174,7 +175,7 @@ class ClientRunner(TBI):
             try:
                 # place the cell message into fl_ctx in case it's needed by process_edge_request.
                 fl_ctx.set_prop(FLContextKey.CELL_MESSAGE, request, private=True, sticky=False)
-                self.engine.fire_event(EventType.EDGE_REQUEST_RECEIVED, fl_ctx)
+                self.engine.fire_event(EdgeEventType.EDGE_REQUEST_RECEIVED, fl_ctx)
                 exception = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
                 if exception:
                     return make_cell_reply(EdgeStatus.PROCESS_EXCEPTION)

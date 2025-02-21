@@ -15,12 +15,12 @@ import time
 from abc import abstractmethod
 from typing import Any
 
-from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.edge.constants import EventType as EdgeEventType
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.security.logging import secure_format_exception
 
@@ -35,7 +35,7 @@ class EdgeTaskExecutor(Executor):
         Executor.__init__(self)
         self.current_task = None
 
-        self.register_event_handler(EventType.EDGE_REQUEST_RECEIVED, self._handle_edge_request)
+        self.register_event_handler(EdgeEventType.EDGE_REQUEST_RECEIVED, self._handle_edge_request)
 
     @abstractmethod
     def process_edge_request(self, request: Any, fl_ctx: FLContext) -> Any:

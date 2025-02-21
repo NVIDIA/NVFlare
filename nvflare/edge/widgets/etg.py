@@ -19,10 +19,12 @@ import threading
 import time
 import uuid
 
-from nvflare.apis.edge_def import EdgeContextKey, EdgeProtoKey, Status
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
+from nvflare.edge.constants import EdgeContextKey, EdgeProtoKey
+from nvflare.edge.constants import EventType as EdgeEventType
+from nvflare.edge.constants import Status
 from nvflare.widgets.widget import Widget
 
 
@@ -63,7 +65,7 @@ class EdgeTaskGenerator(Widget):
                 assert isinstance(fl_ctx, FLContext)
                 if not self.job_id:
                     fl_ctx.set_prop(EdgeContextKey.EDGE_CAPABILITIES, caps, private=True, sticky=False)
-                    self.fire_event(EventType.EDGE_JOB_REQUEST_RECEIVED, fl_ctx)
+                    self.fire_event(EdgeEventType.EDGE_JOB_REQUEST_RECEIVED, fl_ctx)
                     result = fl_ctx.get_prop(EdgeContextKey.REPLY_TO_EDGE)
                     if result:
                         assert isinstance(result, dict)
@@ -73,15 +75,15 @@ class EdgeTaskGenerator(Widget):
                         if job_id:
                             self.job_id = job_id
                     else:
-                        self.logger.error(f"no result from ETD for event {EventType.EDGE_JOB_REQUEST_RECEIVED}")
+                        self.logger.error(f"no result from ETD for event {EdgeEventType.EDGE_JOB_REQUEST_RECEIVED}")
                 else:
                     task = self._make_task()
                     fl_ctx.set_prop(EdgeContextKey.JOB_ID, self.job_id, sticky=False, private=True)
                     fl_ctx.set_prop(EdgeContextKey.REQUEST_FROM_EDGE, task, sticky=False, private=True)
-                    self.fire_event(EventType.EDGE_REQUEST_RECEIVED, fl_ctx)
+                    self.fire_event(EdgeEventType.EDGE_REQUEST_RECEIVED, fl_ctx)
                     result = fl_ctx.get_prop(EdgeContextKey.REPLY_TO_EDGE)
                     if not result:
-                        self.logger.error(f"no result from ETD for event {EventType.EDGE_REQUEST_RECEIVED}")
+                        self.logger.error(f"no result from ETD for event {EdgeEventType.EDGE_REQUEST_RECEIVED}")
                     else:
                         status = result[EdgeProtoKey.STATUS]
                         edge_reply = result[EdgeProtoKey.DATA]

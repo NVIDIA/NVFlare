@@ -94,5 +94,3 @@ class EventType(object):
 
     TASK_RESULT_RECEIVED = "_task_result_received"
     TASK_ASSIGNMENT_SENT = "_task_assignment_sent"
-    EDGE_REQUEST_RECEIVED = "_edge_request_received"
-    EDGE_JOB_REQUEST_RECEIVED = "_edge_job_request_received"
