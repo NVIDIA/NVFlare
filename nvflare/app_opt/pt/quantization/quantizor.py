@@ -206,7 +206,7 @@ class ModelQuantizor(DXOFilter):
         # If clients talks to each other, it will also be 1-N and same rule applies
         # If 1-N server-client filters can be different (Filter_1 applies to server-client_subset_1, etc.), then
         # a deep copy of the server data should be made by filter before applying a different filter
-        process_type = fl_ctx.get_process_type()
+
         # quantized_flag None if does not exist in meta
         quantized_flag = dxo.get_meta_prop("quantized_flag")
         if quantized_flag:
