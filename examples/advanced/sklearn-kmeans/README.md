@@ -128,4 +128,3 @@ It can be visualized using
 ```commandline
 tensorboard --logdir /tmp/nvflare/workspace/works/kmeans/sklearn_kmeans_uniform_3_clients
 ```
-Note that there will be certain amount of randomness in the results.
