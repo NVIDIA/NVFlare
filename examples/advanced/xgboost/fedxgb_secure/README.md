@@ -82,10 +82,10 @@ python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_d
 python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --secure True
 ```
 
-Due to the design that secure horizontal scheme will perform secure aggregation at server-side, we need to provision additional 
-tenseal context before starting the job to get server prepared (in contrast, secure vertical scheme does not have such needs
-because server only performs message routing without doing the actual secure message aggregation). The following steps are needed
-to continue the secure horizontal job experiment:
+In the secure horizontal scheme, secure aggregation is performed on the server-side. To support this, additional tenseal context must be provisioned before starting the job to prepare the server. In contrast, the secure vertical scheme doesn't require this step because the server's role is limited to message routing, without performing the actual secure message aggregation.
+
+To enable this, we have implemented the nvflare.lighter.impl.he.HEBuilder, which is included in the prepared project.yml. You can provision the server by running the following commands:
+
 ```
 jobdir=/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs/horizontal_secure
 workdir=/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/horizontal_secure
