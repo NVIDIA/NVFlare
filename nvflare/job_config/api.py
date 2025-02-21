@@ -533,7 +533,7 @@ class FedJob:
             n_clients: number of clients.
             threads: number of threads.
             gpu: gpu assignments for simulating clients, comma separated
-            log_config: log config json file path
+            log_config: log config mode ('concise', 'default', 'verbose'), filepath, or level
 
         Returns:
 
