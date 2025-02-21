@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,16 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-
-class ExpTrackingException(Exception):
-    def __init__(self, message, **kwargs):
-        """
-        Args:
-            message: The message or exception describing the error that occurred.
-            **kwargs: Additional key-value pairs
-        """
-        message = str(message)
-        self.message = message
-        self.kwargs = kwargs
-        super().__init__(message)

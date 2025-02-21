@@ -58,7 +58,19 @@ def fire_event(event: str, handlers: list, ctx: FLContext):
                 ctx.set_prop(key=FLContextKey.EVENT_DATA, value=event_data, private=True, sticky=False)
                 ctx.set_prop(key=FLContextKey.EVENT_ORIGIN, value=event_origin, private=True, sticky=False)
                 ctx.set_prop(key=FLContextKey.EVENT_SCOPE, value=event_scope, private=True, sticky=False)
-                h.handle_event(event, ctx)
+
+                event_table = h.get_event_handlers()
+                if event_table:
+                    entries = event_table.get(event)
+                    if entries:
+                        for cb, kwargs in entries:
+                            cb(event, ctx, **kwargs)
+                    else:
+                        # no CB explicitly for this event - call the default handler.
+                        h.handle_event(event, ctx)
+                else:
+                    # no explicitly defined CBs - call the default handler.
+                    h.handle_event(event, ctx)
             except Exception as e:
                 h.log_exception(
                     ctx, f'Exception when handling event "{event}": {secure_format_exception(e)}', fire_event=False

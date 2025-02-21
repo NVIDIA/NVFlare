@@ -22,9 +22,8 @@ import torch
 from monai.config import IgniteInfo
 from monai.utils import is_scalar, min_version, optional_import
 
-from nvflare.apis.analytix import AnalyticsDataType
+from nvflare.apis.analytix import AnalyticsDataType, LogWriterName
 from nvflare.app_common.tracking.log_writer import LogWriter
-from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 Events, _ = optional_import("ignite.engine", IgniteInfo.OPT_IMPORT_VERSION, min_version, "Events")
 
