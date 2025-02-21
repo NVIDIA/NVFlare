@@ -118,7 +118,7 @@ def main():
     if do_clean_chains:
         train_df = clean_chains(train_df)
         test_df = clean_chains(test_df)
-    
+
     _split_dir = os.path.join(split_dir, "train")
     if not os.path.isdir(_split_dir):
         os.makedirs(_split_dir)

@@ -13,19 +13,15 @@
 # limitations under the License.
 
 from typing import Union
-from torch import Tensor
 
-from nvflare.apis.dxo import DXO, DataKind, MetaKey
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
 class BioNeMoParamsFilter(DXOFilter):
-    def __init__(
-        self,
-        precision="bf16-mixed"
-    ):
+    def __init__(self, precision="bf16-mixed"):
         """Filter to add a prefix to global state dict to avoid key mismatches between global and local state dictionaries.
         This is needed because of NeMo training framework adding module wrappers depending on the used training precision.
 
@@ -60,18 +56,15 @@ class BioNeMoParamsFilter(DXOFilter):
         params = dxo.data
         new_params = {}
         for k, v in params.items():
-           new_key = self._prefix + k
-           new_params[new_key] = v       
-        
+            new_key = self._prefix + k
+            new_params[new_key] = v
+
         dxo.data = new_params
         return dxo
 
 
 class BioNeMoExcludeParamsFilter(DXOFilter):
-    def __init__(
-        self,
-        exclude_vars="head"
-    ):
+    def __init__(self, exclude_vars="head"):
         """Filter to remove parameters from state dictionary that shouldn't be shared with other party.
 
         Args:
@@ -83,7 +76,6 @@ class BioNeMoExcludeParamsFilter(DXOFilter):
         super().__init__(supported_data_kinds=data_kinds, data_kinds_to_filter=data_kinds)
 
         self.exclude_vars = exclude_vars
-
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Filter process apply to the Shareable object.
@@ -100,14 +92,13 @@ class BioNeMoExcludeParamsFilter(DXOFilter):
         params = dxo.data
         new_params = {}
         for k, v in params.items():
-           if self.exclude_vars not in k:
-               new_params[k] = v    
-        
+            if self.exclude_vars not in k:
+                new_params[k] = v
+
         if len(new_params) < len(params):
             self.log_info(fl_ctx, f"Excluded {len(params)-len(new_params)} parameters matching '{self.exclude_vars}'")
         else:
-            raise ValueError(f"State dictionary did not match any exclude keys that matched '{self.exclude_vars}'")                     
-        
+            raise ValueError(f"State dictionary did not match any exclude keys that matched '{self.exclude_vars}'")
+
         dxo.data = new_params
         return dxo
-    

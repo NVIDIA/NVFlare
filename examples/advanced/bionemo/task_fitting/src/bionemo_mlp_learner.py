@@ -18,12 +18,11 @@ import os
 import pickle
 from distutils.util import strtobool
 from typing import Union
-import torch
-
 
 import numpy as np
 import pandas as pd
 import sklearn
+import torch
 from sklearn.metrics import accuracy_score
 from sklearn.neural_network import MLPClassifier
 from torch.utils.tensorboard import SummaryWriter
@@ -46,7 +45,7 @@ class BioNeMoMLPLearner(ModelLearner):  # does not support CIFAR10ScaffoldLearne
         analytic_sender_id: str = "analytic_sender",
         batch_size: int = 128,
         num_workers: int = 0,
-        embedding_dimensions: int = 320  # embedding dimensions of ESM2-8m
+        embedding_dimensions: int = 320,  # embedding dimensions of ESM2-8m
     ):
         """BioNeMo MLP Trainer.
 
@@ -121,7 +120,7 @@ class BioNeMoMLPLearner(ModelLearner):  # does not support CIFAR10ScaffoldLearne
 
         # Read embeddings
         results = torch.load(self.inference_result)
-        protein_embeddings = results['embeddings']
+        protein_embeddings = results["embeddings"]
         self.info(f"Loaded {len(protein_embeddings)} embeddings")
 
         # Read labels

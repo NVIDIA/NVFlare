@@ -84,7 +84,7 @@ def main():
         # rename columns to fit BioNeMo convention of "sequences" and "labels"
         for s in ["train", "valid", "test"]:
             split[s] = split[s].rename(columns={"Antibody": "sequences"})
-        
+
         train_split = pd.concat([split["train"], split["valid"]])
         if train_df is None:
             train_df = train_split

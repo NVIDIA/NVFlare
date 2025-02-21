@@ -12,11 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import pprint
-
-from bionemo_constants import BioNeMoConstants
-from omegaconf import OmegaConf
 
 from nvflare.apis.client import Client
 from nvflare.apis.dxo import DXO, from_shareable
@@ -30,8 +26,7 @@ class BioNeMoInferenceProcessor(ResponseProcessor):
     def __init__(
         self,
     ):
-        """Creates task data, runs BioNeMo model inference, and summarizes results.
-        """
+        """Creates task data, runs BioNeMo model inference, and summarizes results."""
         super().__init__()
         self._inference_responses = {}
 

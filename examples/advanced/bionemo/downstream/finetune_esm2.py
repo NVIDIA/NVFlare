@@ -15,39 +15,29 @@
 # Copied and adapted for NVFlare from https://github.com/NVIDIA/bionemo-framework/blob/main/sub-packages/bionemo-esm2/src/bionemo/esm2/scripts/finetune_esm2.py
 
 import shutil
-import argparse
-import random
 from pathlib import Path
-from lightning import seed_everything
-from typing import Dict, List, Optional, Sequence, Tuple, Type, get_args
+from typing import List, Optional, Tuple, Type
 
+from bionemo.core.utils.dtypes import PrecisionTypes, get_autocast_dtype
+from bionemo.esm2.data.tokenizer import get_tokenizer
+from bionemo.esm2.model.finetune.datamodule import ESM2FineTuneDataModule
+from bionemo.esm2.model.finetune.dataset import InMemoryProteinDataset, InMemorySingleValueDataset
+from bionemo.esm2.model.finetune.sequence_model import ESM2FineTuneSeqConfig
+
+# Resue parser and config constants from bionemo
+from bionemo.esm2.scripts.finetune_esm2 import get_parser
+from bionemo.llm.model.biobert.lightning import biobert_lightning_module
+from bionemo.llm.model.biobert.model import BioBertConfig
+from bionemo.llm.model.config import TorchmetricsConfig
+from bionemo.llm.utils.datamodule_utils import infer_global_batch_size
+from bionemo.llm.utils.logger_utils import WandbConfig, setup_nemo_lightning_logger
 from lightning.pytorch.callbacks import Callback, LearningRateMonitor, RichModelSummary
 from megatron.core.distributed import DistributedDataParallelConfig
 from megatron.core.optimizer import OptimizerConfig
 from nemo import lightning as nl
 from nemo.collections import llm
-from nemo.lightning import resume
 from nemo.lightning.pytorch import callbacks as nl_callbacks
 from nemo.lightning.pytorch.optim import MegatronOptimizerModule
-
-from bionemo.core.utils.dtypes import PrecisionTypes, get_autocast_dtype
-from bionemo.esm2.data.tokenizer import get_tokenizer
-from bionemo.esm2.model.finetune.datamodule import ESM2FineTuneDataModule
-from bionemo.esm2.model.finetune.dataset import (
-    InMemoryPerTokenValueDataset,
-    InMemoryProteinDataset,
-    InMemorySingleValueDataset,
-)
-from bionemo.esm2.model.finetune.sequence_model import ESM2FineTuneSeqConfig
-from bionemo.esm2.model.finetune.token_model import ESM2FineTuneTokenConfig
-from bionemo.llm.model.biobert.lightning import biobert_lightning_module
-from bionemo.llm.model.biobert.model import BioBertConfig
-from bionemo.llm.model.config import TorchmetricsConfig
-from bionemo.llm.utils.datamodule_utils import float_or_int_or_none, infer_global_batch_size
-from bionemo.llm.utils.logger_utils import WandbConfig, setup_nemo_lightning_logger
-
-# Resue parser and config constants from bionemo
-from bionemo.esm2.scripts.finetune_esm2 import get_parser, SUPPORTED_CONFIGS, SUPPORTED_DATASETS
 
 # (1) import nvflare lightning client API
 import nvflare.client.lightning as flare
@@ -111,7 +101,7 @@ def train_model(
     average_in_collective: bool = True,
     grad_reduce_in_fp32: bool = False,
     label_column: str = "labels",
-    classes: List[str] = None
+    classes: List[str] = None,
 ) -> Tuple[Path, Callback | None, nl.Trainer]:
     """Train an ESM2 model on UR data.
 
@@ -265,7 +255,9 @@ def train_model(
     # because after flare.patch the trainer.fit/validate will get the
     # global model internally
     input_model = flare.receive()
-    print(f"\n[Current Round={input_model.current_round}, Site = {flare.get_site_name()}, Global model = {input_model} ({len(input_model.params)} params)]\n")
+    print(
+        f"\n[Current Round={input_model.current_round}, Site = {flare.get_site_name()}, Global model = {input_model} ({len(input_model.params)} params)]\n"
+    )
     # use a unique result directory for each round
 
     # Remove previous checkpoints to preserve disk space
@@ -274,21 +266,21 @@ def train_model(
         previous_ckpt_dir = result_dir / f"round{input_model.current_round-1}" / experiment_name / "dev" / "checkpoints"
         if previous_ckpt_dir.is_dir():
             print(f"Removing previous checkpoint directory {previous_ckpt_dir}")
-            shutil.rmtree(previous_ckpt_dir)          
+            shutil.rmtree(previous_ckpt_dir)
 
     # create output folder for this round
     result_dir = result_dir / f"round{input_model.current_round}"
-    
+
     # add a learning rate decay for each round
     if input_model.current_round > 0:
         lr_step_reduce = 1.05  # TODO: make lr_step_reduce configurable
-        new_lr = lr/(input_model.current_round*lr_step_reduce)
-        new_lr_multiplier = lr_multiplier/(input_model.current_round*lr_step_reduce)
+        new_lr = lr / (input_model.current_round * lr_step_reduce)
+        new_lr_multiplier = lr_multiplier / (input_model.current_round * lr_step_reduce)
         print(f"Reduce lr {lr} by {input_model.current_round*lr_step_reduce}: {new_lr}")
     else:
         new_lr = lr
-        new_lr_multiplier = lr_multiplier      
-              
+        new_lr_multiplier = lr_multiplier
+
     # remaining bionemo training code
     tokenizer = get_tokenizer()
 
@@ -302,7 +294,7 @@ def train_model(
             train_dataset.label_tokenizer.build_vocab([classes])
             print(f"Build custom label tokenizer based on label classes: {classes}")
         valid_dataset.label_tokenizer = train_dataset.label_tokenizer
-        
+
     data_module = ESM2FineTuneDataModule(
         train_dataset=train_dataset,
         valid_dataset=valid_dataset,
@@ -379,7 +371,7 @@ def train_model(
 
     module = biobert_lightning_module(config=config, tokenizer=tokenizer, optimizer=optimizer)
 
-    #If client should save best local checkpoints, set to `save_local_ckpt=True`,  
+    # If client should save best local checkpoints, set to `save_local_ckpt=True`,
     save_local_ckpt = False
     if save_local_ckpt:
         # Configure our custom Checkpointer
@@ -393,7 +385,7 @@ def train_model(
         )
     else:
         checkpoint_callback = None
-    
+
     # Setup the logger and train the model
     nemo_logger = setup_nemo_lightning_logger(
         root_dir=result_dir,
@@ -402,7 +394,7 @@ def train_model(
         wandb_config=wandb_config,
         ckpt_callback=checkpoint_callback,
     )
-    
+
     # perform local training starting with the received global model
     llm.train(
         model=module,
@@ -410,7 +402,7 @@ def train_model(
         trainer=trainer,
         log=nemo_logger,
         resume=None,
-        )
+    )
 
     if checkpoint_callback:
         ckpt_path = Path(checkpoint_callback.last_model_path.replace(".ckpt", ""))
@@ -431,7 +423,7 @@ def finetune_esm2_entrypoint():
         required=False,
         default=None,
         help="Unique strings describing the classes for classification. Used to build the same label vocabulary on each client. Should be comma separate list of strings, e.g. 'pos,neg'",
-    )    
+    )
     args = parser.parse_args()
 
     if args.classes:
@@ -440,7 +432,6 @@ def finetune_esm2_entrypoint():
         classes = args.classes.split(",")
     else:
         classes = None
-        
 
     # to avoid padding for single value labels:
     if args.min_seq_length is not None and args.datset_class is InMemorySingleValueDataset:
@@ -503,10 +494,10 @@ def finetune_esm2_entrypoint():
         average_in_collective=not args.no_average_in_collective,
         grad_reduce_in_fp32=args.grad_reduce_in_fp32,
         label_column=args.label_column,
-        classes=classes
+        classes=classes,
     )
-    
+
+
 if __name__ == "__main__":
     finetune_esm2_entrypoint()
     flare.shutdown()
-

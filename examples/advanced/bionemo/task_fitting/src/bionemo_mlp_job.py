@@ -13,19 +13,16 @@
 # limitations under the License.
 
 from typing import List, Optional
-from torch import nn as nn
 
 from bionemo_mlp_model_persistor import BioNeMoMLPModelPersistor
+from torch import nn as nn
 
-from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
-from nvflare.app_common.abstract.model_locator import ModelLocator
-from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.app_opt.pt.job_config.model import PTModel
+from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.job_config.api import FedJob, validate_object_for_job
 
@@ -42,7 +39,7 @@ class BioNeMoMLPJob(FedJob):
         intime_model_selector: Optional[IntimeModelSelector] = None,
         convert_to_fed_event: Optional[ConvertToFedEvent] = None,
         analytics_receiver: Optional[AnalyticsReceiver] = None,
-        embedding_dimensions: int = 320  # embedding dimensions of ESM2-8m
+        embedding_dimensions: int = 320,  # embedding dimensions of ESM2-8m
     ):
         """PyTorch BaseFedJob.
 
@@ -106,7 +103,7 @@ class BioNeMoMLPJob(FedJob):
         )
 
         self.to_server(id="persistor", obj=BioNeMoMLPModelPersistor(embedding_dimensions=embedding_dimensions))
-        
+
         self.to_server(id="locator", obj=PTFileModelLocator(pt_persistor_id="persistor"))
 
     def set_up_client(self, target: str):
