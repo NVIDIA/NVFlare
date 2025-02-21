@@ -188,7 +188,7 @@ class ModelDequantizor(DXOFilter):
         )
         # Compose new DXO with dequantized data
         dxo.data = dequantized_params
-        dxo.remove_meta_props([MetaKey.PROCESSED_ALGORITHM, "quant_state", "source_datatype", "quantized"])
+        dxo.remove_meta_props([MetaKey.PROCESSED_ALGORITHM, "quant_state", "source_datatype", "quantized_flag"])
         dxo.update_shareable(shareable)
         self.log_info(fl_ctx, f"Dequantized back to {source_datatype}")
 
