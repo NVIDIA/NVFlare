@@ -256,7 +256,7 @@ The following log file handlers are pre-configured:
 - jsonFileHandler with jsonFormatter to write json formatted logs to ``log.json``
 - FLFileHandler with baseFormatter and FLFilter to write fl training and custom logs to ``log_fl.txt``
 
-
+.. _loggers:
 Loggers
 =======
 

@@ -29,9 +29,30 @@ DEFAULT_LOG_JSON = "log_config.json"
 
 class LogMode:
     RELOAD = "reload"
-    DEFAULT = "default"
+    FULL = "full"
     CONCISE = "concise"
     VERBOSE = "verbose"
+
+
+# Predefined log dicts based from DEFAULT_LOG_JSON
+with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
+    default_log_dict = json.load(f)
+
+concise_log_dict = copy.deepcopy(default_log_dict)
+concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
+
+verbose_log_dict = copy.deepcopy(default_log_dict)
+verbose_log_dict["formatters"]["consoleFormatter"][
+    "fmt"
+] = "%(asctime)s - %(identity)s - %(name)s - %(levelname)s - %(message)s"
+verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
+
+logmode_config_dict = {
+    LogMode.FULL: default_log_dict,
+    LogMode.CONCISE: concise_log_dict,
+    LogMode.VERBOSE: verbose_log_dict,
+}
 
 
 class ANSIColor:
@@ -240,6 +261,7 @@ class LoggerNameFilter(logging.Filter):
 
 
 def get_module_logger(module=None, name=None):
+    # Get module logger name adhering to logger hierarchy. Optionally add name as a suffix.
     if module is None:
         caller_globals = inspect.stack()[1].frame.f_globals
         module = caller_globals.get("__name__", "")
@@ -248,11 +270,12 @@ def get_module_logger(module=None, name=None):
 
 
 def get_obj_logger(obj):
-    return logging.getLogger(f"{obj.__module__}.{obj.__class__.__qualname__}")
+    # Get object logger name adhering to logger hierarchy.
+    return logging.getLogger(f"{obj.__module__}.{obj.__class__.__qualname__}") if obj else None
 
 
 def get_script_logger():
-    # Get script logger name based on filename and package. If not in a package, default to custom.
+    # Get script logger name adhering to logger hierarchy. Based on package and filename. If not in a package, default to custom.
     caller_frame = inspect.stack()[1]
     package = caller_frame.frame.f_globals.get("__package__", "")
     file = caller_frame.frame.f_globals.get("__file__", "")
@@ -292,34 +315,14 @@ def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):
 def dynamic_log_config(config: Union[dict, str], dir_path: str, reload_path: str):
     # Dynamically configure log given a config (dict, filepath, LogMode, or level), apply the config to the proper locations.
 
-    # Predefined log dicts based from DEFAULT_LOG_JSON
-    with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
-        default_log_dict = json.load(f)
-
-    concise_log_dict = copy.deepcopy(default_log_dict)
-    concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
-
-    verbose_log_dict = copy.deepcopy(default_log_dict)
-    verbose_log_dict["formatters"]["consoleFormatter"][
-        "fmt"
-    ] = "%(asctime)s - %(identity)s - %(name)s - %(levelname)s - %(message)s"
-    verbose_log_dict["loggers"]["root"]["level"] = "DEBUG"
-
-    log_mode_config_dict = {
-        LogMode.DEFAULT: default_log_dict,
-        LogMode.CONCISE: concise_log_dict,
-        LogMode.VERBOSE: verbose_log_dict,
-    }
-
     if isinstance(config, dict):
         apply_log_config(config, dir_path)
     elif isinstance(config, str):
         # Handle pre-defined LogModes
         if config == LogMode.RELOAD:
             config = reload_path
-        elif log_config := log_mode_config_dict.get(config):
-            apply_log_config(log_config, dir_path)
+        elif log_config := logmode_config_dict.get(config):
+            apply_log_config(copy.deepcopy(log_config), dir_path)
             return
 
         # Read config file
