@@ -143,15 +143,9 @@ class ModelQuantizor(DXOFilter):
                         n_bytes_meta += quant_state[param_name]["code"].nbytes
                     else:
                         if source_data_format == "numpy":
-                            if source_data_bits == 8:
-                                # int8 cannot be directly quantized to 4bit, need to convert to float first
-                                values = values.astype(np.float32)
                             # if numpy, first convert numpy array to tensor, need to use GPU
                             values_tensor = torch.as_tensor(values).cuda()
                         elif source_data_format == "torch":
-                            if source_data_bits == 8:
-                                # int8 cannot be directly quantized to 4bit, need to convert to float first
-                                values = values.float()
                             # if torch, directly use the tensor, need to use GPU
                             values_tensor = values.cuda()
                         # then quantize the tensor
@@ -213,7 +207,7 @@ class ModelQuantizor(DXOFilter):
         # a deep copy of the server data should be made by filter before applying the process
         filter_flag = True
         process_type = fl_ctx.get_process_type()
-        quantized_flag = dxo.get_meta_prop("quantized")
+        quantized_flag = dxo.get_meta_prop("quantized_flag")
         if process_type == ProcessType.SERVER_JOB and quantized_flag:
             filter_flag = False
 
@@ -226,10 +220,10 @@ class ModelQuantizor(DXOFilter):
             new_dxo.set_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, value=self.quantization_type)
             new_dxo.set_meta_prop(key="quant_state", value=quant_state)
             new_dxo.set_meta_prop(key="source_datatype", value=source_datatype)
-            new_dxo.set_meta_prop(key="quantized", value=True)
+            new_dxo.set_meta_prop(key="quantized_flag", value=True)
             self.log_info(fl_ctx, f"Quantized from {source_datatype} to {self.quantization_type}")
         else:
-            self.log_info(fl_ctx, "Skipping quantization, already quantized")
+            self.log_info(fl_ctx, "Already quantized, skip quantization")
             new_dxo = dxo
 
         return new_dxo
