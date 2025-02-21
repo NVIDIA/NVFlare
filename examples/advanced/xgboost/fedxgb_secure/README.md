@@ -73,6 +73,7 @@ This will cover baseline centralized training, federated xgboost run in the same
 
 ## Federated Experiments with NVFlare
 We then run the federated XGBoost training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html), without and with homomorphic encryption.
+The running time of each job depends mainly on the encryption workload. 
 
 ```
 python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal
@@ -81,14 +82,16 @@ python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_d
 python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --secure True
 ```
 
-Secure horizontal needs additional tenseal context provisioning. 
+Due to the design that secure horizontal scheme will perform secure aggregation at server-side, we need to provision additional 
+tenseal context before starting the job to get server prepared (in contrast, secure vertical scheme does not have such needs
+because server only performs message routing without doing the actual secure message aggregation). The following steps are needed
+to continue the secure horizontal job experiment:
 ```
 jobdir=/tmp/nvflare/workspace/fedxgb_secure/train_fl/jobs/horizontal_secure
 workdir=/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/horizontal_secure
 nvflare provision -p project.yml -w ${workdir}
 nvflare simulator ${jobdir} -w ${workdir}/example_project/prod_00/site-1 -n 3 -t 3
 ```
-
 
 ## Results
 Comparing the AUC results with centralized baseline, we have four observations:

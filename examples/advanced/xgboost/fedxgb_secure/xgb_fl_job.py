@@ -45,8 +45,7 @@ def define_parser():
     )
     parser.add_argument(
         "--secure",
-        type=bool,
-        default=False,
+        action="store_true",
         help="Whether to use secure training",
     )
     return parser.parse_args()

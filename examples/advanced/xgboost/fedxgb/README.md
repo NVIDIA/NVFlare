@@ -172,6 +172,11 @@ Create the psi job using the predefined psi_csv template:
 bash run_experiment_vertical.sh
 ```
 
+Model accuracy can be visualized in tensorboard:
+```
+tensorboard --logdir /tmp/nvflare/workspace/works/xgboost_vertical
+```
+
 An example validation AUC graph (red) from running vertical XGBoost on HIGGS as compared with baseline centralized (blue):
 Since in this case we only used ~50k samples, the performance is worse than centralized training using full dataset.
 
