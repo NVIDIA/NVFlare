@@ -21,7 +21,6 @@ from bitsandbytes.functional import quantize_4bit, quantize_blockwise
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
-from nvflare.apis.fl_constant import ProcessType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.pt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
@@ -197,21 +196,23 @@ class ModelQuantizor(DXOFilter):
 
         self.log_info(fl_ctx, "Running quantization...")
 
-        # for server job and already quantized message, skip quantization
-        # The reason is:
+        # for already quantized message, skip quantization
+        # The reason in this current example:
         # server job in this case is 1-N communication with identical quantization operation
         # the first communication to client will apply quantization and change the data on the server
         # thus the subsequent communications to the rest of clients will no longer need to apply quantization
-        # This is not needed for client job, since the client job will be 1-1 and quantization applies to each client
-        # The behavior will also be different if each server-client filter is different, in which case
-        # a deep copy of the server data should be made by filter before applying the process
-        filter_flag = True
+        # This will not apply to client job, since the client job will be 1-1 and quantization applies to each client
+        # Potentially:
+        # If clients talks to each other, it will also be 1-N and same rule applies
+        # If 1-N server-client filters can be different (Filter_1 applies to server-client_subset_1, etc.), then
+        # a deep copy of the server data should be made by filter before applying a different filter
         process_type = fl_ctx.get_process_type()
+        # quantized_flag None if does not exist in meta
         quantized_flag = dxo.get_meta_prop("quantized_flag")
-        if process_type == ProcessType.SERVER_JOB and quantized_flag:
-            filter_flag = False
-
-        if filter_flag:
+        if quantized_flag:
+            self.log_info(fl_ctx, "Already quantized, skip quantization")
+            new_dxo = dxo        
+        else:
             # apply quantization
             quantized_params, quant_state, source_datatype = self.quantization(params=dxo.data, fl_ctx=fl_ctx)
             # Compose new DXO with quantized data
@@ -222,8 +223,5 @@ class ModelQuantizor(DXOFilter):
             new_dxo.set_meta_prop(key="source_datatype", value=source_datatype)
             new_dxo.set_meta_prop(key="quantized_flag", value=True)
             self.log_info(fl_ctx, f"Quantized from {source_datatype} to {self.quantization_type}")
-        else:
-            self.log_info(fl_ctx, "Already quantized, skip quantization")
-            new_dxo = dxo
 
         return new_dxo
