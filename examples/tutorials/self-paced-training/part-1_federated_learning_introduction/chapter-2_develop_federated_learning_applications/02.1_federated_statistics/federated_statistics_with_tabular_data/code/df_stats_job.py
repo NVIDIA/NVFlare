@@ -45,7 +45,6 @@ def main():
         "stddev": {},
         "histogram": {"*": {"bins": 20}},
         "Age": {"bins": 20, "range": [0, 10]},
-        "percentile": {"*": [25, 50, 75], "Age": [50, 95]},
     }
     # define local stats generator
     df_stats_generator = DFStatistics(data_root_dir=data_root_dir)
