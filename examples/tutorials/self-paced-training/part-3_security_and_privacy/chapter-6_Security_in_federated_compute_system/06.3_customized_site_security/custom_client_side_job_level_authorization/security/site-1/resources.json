@@ -1,0 +1,36 @@
+{
+  "format_version": 2,
+  "client": {
+    "retry_timeout": 30,
+    "compression": "Gzip"
+  },
+  "components": [
+    {
+      "id": "resource_manager",
+      "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
+      "args": {
+        "num_of_gpus": 0,
+        "mem_per_gpu_in_GiB": 0
+      }
+    },
+    {
+      "id": "resource_consumer",
+      "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
+      "args": {}
+    },
+    {
+      "id": "process_launcher",
+      "path": "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
+      "args": {}
+    },
+    {
+        "id": "error_log_sender",
+        "path": "nvflare.app_common.logging.log_sender.ErrorLogSender",
+        "args": {}
+    }, 
+    {
+            "id": "security_handler",
+            "path": "security_handler.CustomSecurityHandler"
+    }
+  ]
+}
