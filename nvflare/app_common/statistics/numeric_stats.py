@@ -88,8 +88,7 @@ def get_global_stats(
 
                 global_metrics[StC.STATS_STDDEV] = ds_stddev
         elif metric == StC.STATS_QUANTILE:
-            
-            global_metrics[metric] = get_quantiles(client_metrics, statistic_configs, precision)
+            global_metrics[metric] = get_quantiles(stats, statistic_configs, precision)
 
     return global_metrics
 

@@ -14,6 +14,7 @@
 
 from typing import Dict
 from nvflare.app_common.app_constant import StatisticsConstants as StC
+from nvflare.fuel.utils.log_utils import get_module_logger
 
 
 try:
@@ -23,10 +24,15 @@ except ImportError:
     TDIGEST_AVAILABLE = False
 
 
-def get_quantiles(global_metrics: Dict, stats: Dict, statistic_configs: Dict, precision: int):
+logger = get_module_logger(name="quantile_stats")
+
+
+def get_quantiles(stats: Dict, statistic_configs: Dict, precision: int):
+    
+    logger.info(f"get_quantiles: stats: {TDIGEST_AVAILABLE=}")
 
     if not TDIGEST_AVAILABLE:
-        return global_metrics
+        return {}
 
     global_digest = {}
     for client_name in stats:
@@ -48,6 +54,7 @@ def get_target_quantiles(quantile_config: dict, feature_name: str):
 
 
 def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict:
+
     if not TDIGEST_AVAILABLE:
         return g_digest
 

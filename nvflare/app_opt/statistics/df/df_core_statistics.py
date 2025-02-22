@@ -96,15 +96,17 @@ class DFStatisticsCore(Statistics, ABC):
 
     def quantiles(self, dataset_name: str, feature_name: str, percents: List) -> Dict:
         TDigest, flag = optional_import("fastdigest", name="TDigest")
+        results = {}
         if not flag:
-            return {}
-
+            results[StatisticsConstants.STATS_QUANTILE] = {}
+            return results
+        
         df = self.data[dataset_name]
         data = df[feature_name]
         max_bin = self.max_bin if self.max_bin else round(sqrt(len(data)))
         digest = TDigest(data)
         digest.compress(max_bin)
-        results = {}
+
         p_results = {}
         for p in percents:
             v = round(digest.quantile(p), 4)
