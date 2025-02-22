@@ -262,6 +262,7 @@ class FederatedClientBase:
                 time.sleep(self.cell_check_frequency)
             self.logger.info(f"Got client_runner after {time.time() - start} seconds")
             self.client_runner.engine.cell = self.cell
+            self.client_runner.set_cell(self.cell)
         else:
             start = time.time()
             self.logger.info("Wait for engine to be created.")

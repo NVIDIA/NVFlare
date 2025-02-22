@@ -15,12 +15,11 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from nvflare.apis.analytix import AnalyticsDataType
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsDataType, LogWriterName
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.tracking.tracker_types import LogWriterName
-from nvflare.app_common.widgets.streaming import ANALYTIC_EVENT_TYPE, AnalyticsSender
+from nvflare.app_common.widgets.streaming import AnalyticsSender
 
 
 class LogWriter(FLComponent, ABC):
