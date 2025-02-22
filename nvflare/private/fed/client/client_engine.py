@@ -21,7 +21,14 @@ from typing import List
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ProcessType, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import (
+    FLContextKey,
+    MachineStatus,
+    ProcessType,
+    ReservedKey,
+    SystemComponents,
+    WorkspaceConstants,
+)
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
@@ -78,11 +85,18 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         self.object_streamer = ObjectStreamer(self.aux_runner)
         self.cell = None
 
+        client_config = client.client_args
+        fqsn = client_config.get("fqsn", client.client_name)
+        is_leaf = client_config.get("is_leaf", True)
+
         self.fl_ctx_mgr = FLContextManager(
             engine=self,
             identity_name=self.client_name,
             job_id="",
-            public_stickers={},
+            public_stickers={
+                ReservedKey.FQSN: fqsn,
+                ReservedKey.IS_LEAF: is_leaf,
+            },
             private_stickers={
                 SystemComponents.DEFAULT_APP_DEPLOYER: AppDeployer(),
                 SystemComponents.JOB_META_VALIDATOR: JobMetaValidator(),
@@ -138,8 +152,9 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         topic = request.get_header(MessageHeaderKey.TOPIC)
         with self.new_context() as fl_ctx:
             reply = self.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
+            assert isinstance(reply, Shareable)
             shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+            reply.set_peer_context(shared_fl_ctx)
 
             if reply is not None:
                 return_message = new_cell_message({}, reply)
@@ -385,6 +400,21 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         self.client_executor.abort_app(job_id)
 
         return "Abort signal has been sent to the client App."
+
+    def send_to_job(self, job_id, channel: str, topic: str, msg: CellMessage, timeout: float) -> CellMessage:
+        """Send a message to CJ
+
+        Args:
+            job_id: id of the job
+            channel: message channel
+            topic: message topic
+            msg: the message to be sent
+            timeout: how long to wait for reply
+
+        Returns: reply from CJ
+
+        """
+        return self.client_executor.send_to_job(job_id, channel, topic, msg, timeout)
 
     def abort_task(self, job_id: str) -> str:
         status = self.client_executor.get_status(job_id)

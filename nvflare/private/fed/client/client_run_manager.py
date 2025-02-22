@@ -16,7 +16,14 @@ import time
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ProcessType, ServerCommandKey, ServerCommandNames, SiteType
+from nvflare.apis.fl_constant import (
+    FLContextKey,
+    ProcessType,
+    ReservedKey,
+    ServerCommandKey,
+    ServerCommandNames,
+    SiteType,
+)
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
@@ -96,6 +103,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         self.cell = None
 
         self.all_clients = None
+        self.name_to_clients = dict()  # client name => Client
 
         if not components:
             self.components = {}
@@ -106,8 +114,20 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         # get job meta!
         job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
         job_ctx_props.update({FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB})
+
+        client_config = client.client_args
+        fqsn = client_config.get("fqsn", client.client_name)
+        is_leaf = client_config.get("is_leaf", True)
+
         self.fl_ctx_mgr = FLContextManager(
-            engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
+            engine=self,
+            identity_name=client_name,
+            job_id=job_id,
+            public_stickers={
+                ReservedKey.FQSN: fqsn,
+                ReservedKey.IS_LEAF: is_leaf,
+            },
+            private_stickers=job_ctx_props,
         )
 
         self.run_info = ClientRunInfo(job_id=job_id)
@@ -177,10 +197,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         return valid_inputs, invalid_inputs
 
     def get_client_from_name(self, client_name):
-        for _, c in self.all_clients.items():
-            if client_name == c.name:
-                return c
-        return None
+        return self.name_to_clients.get(client_name)
 
     def get_clients(self):
         return list(self.all_clients.values())
@@ -316,6 +333,8 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             if return_data.payload:
                 data = return_data.payload
                 self.all_clients = data.get(ServerCommandKey.CLIENTS)
+                for _, c in self.all_clients.items():
+                    self.name_to_clients[c.name] = c
             else:
                 raise RuntimeError("Empty clients data from server")
         else:

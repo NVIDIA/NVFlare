@@ -18,7 +18,7 @@ import uuid
 from typing import Optional
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, SecureTrainConst
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
@@ -42,10 +42,17 @@ class ClientManager:
         self.min_num_clients = min_num_clients
         self.max_num_clients = max_num_clients
         self.clients = dict()  # token => Client
+        self.name_to_clients = dict()  # name => Client
         self.id_verifier = None
         self.lock = threading.Lock()
 
         self.logger = get_obj_logger(self)
+
+    def set_clients(self, clients: dict):
+        self.clients = clients
+        self.name_to_clients = {}
+        for c in clients.values():
+            self.name_to_clients[c.name] = c
 
     def authenticate(self, request, fl_ctx: FLContext) -> Optional[Client]:
         client = self.login_client(request, fl_ctx)
@@ -59,6 +66,7 @@ class ClientManager:
         with self.lock:
             client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
             if client_type == ClientType.REGULAR:
+                self.name_to_clients[client.name] = client
                 self.clients.update({client.token: client})
                 client_kind = "client"
             else:
@@ -82,7 +90,9 @@ class ClientManager:
             The removed Client object
         """
         with self.lock:
-            client = self.clients.pop(token)
+            client = self.clients.pop(token, None)
+            if client:
+                self.name_to_clients.pop(client.name, None)
             self.logger.info(
                 "Client Name:{} \tToken: {} left.  Total clients: {}".format(client.name, token, len(self.clients))
             )
@@ -161,60 +171,60 @@ class ClientManager:
             Client object.
         """
         client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
-        client = self.clients.get(client_name)
         shareable = request.payload
         if not isinstance(shareable, Shareable):
             self.logger.error(f"payload must be Shareable but got {type(shareable)}")
             return None
 
-        if not client:
-            secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
-            if secure_mode:
-                # verify client identity
-                asserter_cert_data = shareable.get(IdentityChallengeKey.CERT)
-                if not asserter_cert_data:
-                    self.logger.error("missing client cert in register request")
-                    return None
+        secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+        if secure_mode:
+            # verify client identity
+            asserter_cert_data = shareable.get(IdentityChallengeKey.CERT)
+            if not asserter_cert_data:
+                self.logger.error("missing client cert in register request")
+                return None
 
-                signature = shareable.get(IdentityChallengeKey.SIGNATURE)
-                if not signature:
-                    self.logger.error("missing signature in register request")
-                    return None
+            signature = shareable.get(IdentityChallengeKey.SIGNATURE)
+            if not signature:
+                self.logger.error("missing signature in register request")
+                return None
 
-                asserter_cert = load_crt_bytes(asserter_cert_data)
-                id_verifier = self._get_id_verifier(fl_ctx)
-                reg = fl_ctx.get_prop(InternalFLContextKey.CLIENT_REG_SESSION)
-                if not reg:
-                    self.logger.error(f"missing {InternalFLContextKey.CLIENT_REG_SESSION} in FLContext!")
-                    return None
+            asserter_cert = load_crt_bytes(asserter_cert_data)
+            id_verifier = self._get_id_verifier(fl_ctx)
+            reg = fl_ctx.get_prop(InternalFLContextKey.CLIENT_REG_SESSION)
+            if not reg:
+                self.logger.error(f"missing {InternalFLContextKey.CLIENT_REG_SESSION} in FLContext!")
+                return None
 
-                if not isinstance(reg, ClientRegSession):
-                    self.logger.error(f"reg should be ClientRegSession but got {type(reg)}")
-                    return None
+            if not isinstance(reg, ClientRegSession):
+                self.logger.error(f"reg should be ClientRegSession but got {type(reg)}")
+                return None
 
-                try:
-                    id_verifier.verify_common_name(
-                        asserted_cn=client_name,
-                        asserter_cert=asserter_cert,
-                        signature=signature,
-                        nonce=reg.nonce,
-                    )
-                except Exception as ex:
-                    self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")
-                    return None
+            try:
+                id_verifier.verify_common_name(
+                    asserted_cn=client_name,
+                    asserter_cert=asserter_cert,
+                    signature=signature,
+                    nonce=reg.nonce,
+                )
+            except Exception as ex:
+                self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")
+                return None
 
-                self.logger.info(f"identity verified for client '{client_name}'")
+            self.logger.info(f"identity verified for client '{client_name}'")
 
-            with self.lock:
-                clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
-                for item in clients_to_be_removed:
-                    self.clients.pop(item)
-                    self.logger.info(f"Client: {client_name} already registered. Re-login the client with a new token.")
+        with self.lock:
+            clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
+            for item in clients_to_be_removed:
+                client = self.clients.pop(item, None)
+                if client:
+                    self.name_to_clients.pop(client.name, None)
+                self.logger.info(f"Client: {client_name} already registered. Re-login the client with a new token.")
 
-            client = Client(client_name, str(uuid.uuid4()))
-            client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
-            client.set_fqcn(client_fqcn)
-            self.logger.info(f"authenticated client {client_name}: {client_fqcn=}")
+        client = Client(client_name, str(uuid.uuid4()))
+        client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
+        self._set_client_props(client, client_fqcn, fl_ctx)
+        self.logger.info(f"authenticated client {client_name}: {client_fqcn=}")
 
         if len(self.clients) >= self.max_num_clients:
             fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Maximum number of clients reached", sticky=False)
@@ -276,11 +286,20 @@ class ClientManager:
                         return False
 
                 client = Client(client_name, token)
-                client.set_fqcn(client_fqcn)
-                client.last_connect_time = time.time()
+                self._set_client_props(client, client_fqcn, fl_ctx)
                 self.clients.update({token: client})
+                self.name_to_clients[client.name] = client
                 self.logger.info(f"Re-activate the client: {client_name} at {client_fqcn} with token: {token}")
                 return True
+
+    @staticmethod
+    def _set_client_props(client: Client, fqcn: str, fl_ctx: FLContext):
+        client.set_fqcn(fqcn)
+        client.last_connect_time = time.time()
+        peer_ctx = fl_ctx.get_peer_context()
+        if peer_ctx:
+            client.set_fqsn(peer_ctx.get_prop(ReservedKey.FQSN, "?"))
+            client.set_is_leaf(peer_ctx.get_prop(ReservedKey.IS_LEAF, "?"))
 
     def get_clients(self):
         """Get the list of registered clients.
@@ -313,8 +332,9 @@ class ClientManager:
         return clients, invalid_inputs
 
     def get_client_from_name(self, client_name):
-        clients = list(self.get_clients().values())
-        for c in clients:
-            if client_name == c.name:
-                return c
-        return None
+        result = self.name_to_clients.get(client_name)
+        if not result:
+            self.logger.error(
+                f"no client for {client_name}: I have {self.name_to_clients.keys()} {self.clients.keys()}"
+            )
+        return result

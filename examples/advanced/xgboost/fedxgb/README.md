@@ -169,27 +169,12 @@ bagging training boosts a forest consisting of individually trained trees from e
 
 Create the psi job using the predefined psi_csv template:
 ```
-nvflare job create -j ./jobs/vertical_xgb_psi -w psi_csv -sd ./code/psi -force
-```
-
-Run the psi job to calculate the dataset intersection of the clients at `psi/intersection.txt` inside the psi workspace:
-```
-nvflare simulator ./jobs/vertical_xgb_psi -w /tmp/nvflare/vertical_xgb_psi -n 2 -t 2
-```
-
-Create the vertical xgboost job using the predefined vertical_xgb template:
-```
-nvflare job create -j ./jobs/vertical_xgb -w vertical_xgb -sd ./code/vertical_xgb -force
-```
-
-Run the vertical xgboost job:
-```
-nvflare simulator ./jobs/vertical_xgb -w /tmp/nvflare/vertical_xgb -n 2 -t 2
+bash run_experiment_vertical.sh
 ```
 
 Model accuracy can be visualized in tensorboard:
 ```
-tensorboard --logdir /tmp/nvflare/vertical_xgb/server/simulate_job/tb_events
+tensorboard --logdir /tmp/nvflare/workspace/works/xgboost_vertical
 ```
 
 An example validation AUC graph (red) from running vertical XGBoost on HIGGS as compared with baseline centralized (blue):

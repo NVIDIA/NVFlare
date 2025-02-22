@@ -43,7 +43,8 @@ def prepare_data(
     x = dataset.data
     y = dataset.target
     if randomize:
-        np.random.seed(0)
+        print("Randomizing data sequence")
+
         idx_random = np.random.permutation(len(y))
         x = x[idx_random, :]
         y = y[idx_random]

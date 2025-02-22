@@ -35,6 +35,13 @@ msg_mapping = {
 }
 
 
+def new_cell_message(headers: dict, payload=None):
+    msg_headers = {}
+    if headers:
+        msg_headers.update(headers)
+    return Message(msg_headers, payload)
+
+
 def make_reply(rc: str, error: str = "", body=None) -> Message:
     headers = {MessageHeaderKey.RETURN_CODE: rc}
     if error:

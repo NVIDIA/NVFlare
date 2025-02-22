@@ -17,7 +17,6 @@ from nvflare.fuel.utils.url_utils import make_url
 
 
 class TestUrlUtils:
-
     @pytest.mark.parametrize(
         "scheme, address, secure, expected",
         [

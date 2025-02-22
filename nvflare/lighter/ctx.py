@@ -13,6 +13,7 @@
 # limitations under the License.
 import json
 import os
+from typing import Optional
 
 import yaml
 
@@ -178,3 +179,12 @@ class ProvisionContext(dict):
             logger.warning(msg)
         else:
             print(f"WARNING: {msg}")
+
+    def get_result_location(self) -> Optional[str]:
+        """Get the directory of the provision result.
+        This should be called after the provision is done.
+
+        Returns: the name of the directory that holds the provisioned result.
+
+        """
+        return self.get(CtxKey.CURRENT_PROD_DIR)

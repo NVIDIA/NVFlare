@@ -180,3 +180,12 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
 
         """
         pass
+
+    @abstractmethod
+    def get_cell(self):
+        """Get communication cell
+
+        Returns:
+
+        """
+        pass
