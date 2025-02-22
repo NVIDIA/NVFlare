@@ -1,5 +1,5 @@
-DATASET_PATH="${PWD}/dataset/creditcard.csv"
-SPLIT_PATH="/tmp/nvflare/xgb_dataset/"
+DATASET_PATH="/tmp/nvflare/dataset/creditcard.csv"
+SPLIT_PATH="/tmp/nvflare/dataset/xgb_dataset/"
 
 if [ ! -f "${DATASET_PATH}" ]
 then
