@@ -242,6 +242,7 @@ class JsonFormatter(BaseFormatter):
 class LoggerNameFilter(logging.Filter):
     def __init__(self, logger_names=["nvflare"], exclude_logger_names=[]):
         """Filter log records based on logger names.
+        Additionally allows all log records with levelno > logging.INFO through.
 
         Args:
             logger_names (List[str]): list of logger names to allow through filter
@@ -253,8 +254,12 @@ class LoggerNameFilter(logging.Filter):
         self.exclude_logger_names = exclude_logger_names
 
     def filter(self, record):
-        name = record.fullName if hasattr(record, "fullName") else record.name
-        return not self.matches_name(name, self.exclude_logger_names) and self.matches_name(name, self.logger_names)
+        name = getattr(record, "fullName", record.name)
+
+        is_logger_included = self.matches_name(name, self.logger_names)
+        is_logger_excluded = self.matches_name(name, self.exclude_logger_names)
+
+        return (record.levelno > logging.INFO) or (not is_logger_excluded and is_logger_included)
 
     def matches_name(self, name, logger_names) -> bool:
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
