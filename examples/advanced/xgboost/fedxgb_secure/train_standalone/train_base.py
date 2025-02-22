@@ -29,16 +29,19 @@ def train_base_args_parser():
     parser.add_argument(
         "--data_train_root",
         type=str,
-        default="/tmp/nvflare/xgb_dataset/base_xgb_data",
+        default="/tmp/nvflare/dataset/xgb_dataset/base_xgb_data",
         help="Path to training data folder",
     )
     parser.add_argument(
-        "--data_test_file", type=str, default="/tmp/nvflare/xgb_dataset/test.csv", help="Path to testing data file"
+        "--data_test_file",
+        type=str,
+        default="/tmp/nvflare/dataset/xgb_dataset/test.csv",
+        help="Path to testing data file",
     )
     parser.add_argument(
         "--out_path",
         type=str,
-        default="/tmp/nvflare/fedxgb_secure/train_standalone/base",
+        default="/tmp/nvflare/workspace/fedxgb_secure/train_standalone/base",
         help="Output path for the data split file",
     )
     return parser
