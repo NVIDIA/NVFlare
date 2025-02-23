@@ -12,17 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 from math import sqrt
 from typing import Dict, List, TypeVar
 
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_opt.statistics.quantile_stats import get_quantiles
+from nvflare.fuel.utils.log_utils import get_module_logger
+ 
 
 T = TypeVar("T")
 
-logger = logging.getLogger(__name__)
+logger = get_module_logger(name=__name__)
 
 
 def get_global_feature_data_types(
