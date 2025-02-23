@@ -17,7 +17,6 @@ from typing import List
 
 import numpy as np
 
-from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
@@ -54,7 +53,6 @@ class FedAvgNewtonRaphson(BaseFedAvg):
         # converted `FLModel` by `ModelController`.
         #
         model = self.load_model()
-
         model.start_round = self.start_round
         model.total_rounds = self.num_rounds
 
@@ -119,7 +117,7 @@ class FedAvgNewtonRaphson(BaseFedAvg):
         for curr_result in results:
             self.aggregator.add(
                 data=curr_result.params,
-                weight=curr_result.meta.get(FLMetaKey.NUM_STEPS_CURRENT_ROUND, 1.0),
+                weight=curr_result.meta.get("sample_size", 1.0),
                 contributor_name=curr_result.meta.get("client_name", AppConstants.CLIENT_UNKNOWN),
                 contribution_round=curr_result.current_round,
             )
