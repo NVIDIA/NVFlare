@@ -12,39 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from src.newton_raphson_persistor import NewtonRaphsonModelPersistor
-from src.newton_raphson_workflow import FedAvgNewtonRaphson
+from src.lit_net import LitNet
 
+from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
-from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
-    n_clients = 4
-    num_rounds = 5
+    n_clients = 5
+    num_rounds = 2
 
     job = BaseFedJob(
-        name="logistic_regression_fedavg",
-        model_persistor=NewtonRaphsonModelPersistor(n_features=13),
+        name="cifar10_lightning_fedavg",
+        initial_model=LitNet(),
     )
 
-    controller = FedAvgNewtonRaphson(
+    controller = FedAvg(
         num_clients=n_clients,
         num_rounds=num_rounds,
-        damping_factor=0.8,
-        persistor_id="newton_raphson_persistor",
     )
     job.to(controller, "server")
 
     # Add clients
     for i in range(n_clients):
         runner = ScriptRunner(
-            script="src/newton_raphson_train.py",
-            script_args="--data_root /tmp/flare/dataset/heart_disease_data",
-            launch_external_process=True,
-            params_exchange_format=ExchangeFormat.RAW,
+            script="src/cifar10_lightning_fl.py", script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
         job.to(runner, f"site-{i + 1}")
 
     job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0", log_config="./log_config.json")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

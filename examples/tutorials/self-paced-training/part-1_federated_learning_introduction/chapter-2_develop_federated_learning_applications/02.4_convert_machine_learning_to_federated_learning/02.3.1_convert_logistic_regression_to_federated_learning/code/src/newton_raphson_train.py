@@ -20,9 +20,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, precision_score
 
 import nvflare.client as flare
-from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.np.constants import NPConstants
 from nvflare.client.tracking import SummaryWriter
 
 
@@ -146,7 +144,8 @@ def main():
 
         # Get the weights, aka parameter theta for
         # logistic regression.
-        global_weights = global_model.params[NPConstants.NUMPY_KEY]
+        # global_weights = global_model.params[NPConstants.NUMPY_KEY]
+        global_weights = global_model.params["weights"]
         print("[ROUND {}] - global model weights: {}".format(curr_round, global_weights))
 
         # Local validation before training
@@ -169,7 +168,7 @@ def main():
 
         # Send result to server for aggregation.
         result_model = FLModel(params=result_dict, params_type=ParamsType.FULL)
-        result_model.meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND] = data["train_X"].shape[0]
+        result_model.meta["sample_size"] = data["train_X"].shape[0]
 
         print(
             (
