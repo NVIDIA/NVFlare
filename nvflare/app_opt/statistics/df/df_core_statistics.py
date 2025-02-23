@@ -100,7 +100,7 @@ class DFStatisticsCore(Statistics, ABC):
         if not flag:
             results[StatisticsConstants.STATS_QUANTILE] = {}
             return results
-        
+
         df = self.data[dataset_name]
         data = df[feature_name]
         max_bin = self.max_bin if self.max_bin else round(sqrt(len(data)))
@@ -116,4 +116,3 @@ class DFStatisticsCore(Statistics, ABC):
         # Extract the Q-Digest into a dictionary
         results[StatisticsConstants.STATS_DIGEST_COORD] = digest.to_dict()
         return results
-    

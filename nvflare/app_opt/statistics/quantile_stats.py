@@ -13,12 +13,13 @@
 # limitations under the License.
 
 from typing import Dict
+
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.fuel.utils.log_utils import get_module_logger
 
-
 try:
     from fastdigest import TDigest
+
     TDIGEST_AVAILABLE = True
 except ImportError:
     TDIGEST_AVAILABLE = False
@@ -28,7 +29,7 @@ logger = get_module_logger(name="quantile_stats")
 
 
 def get_quantiles(stats: Dict, statistic_configs: Dict, precision: int):
-    
+
     logger.info(f"get_quantiles: stats: {TDIGEST_AVAILABLE=}")
 
     if not TDIGEST_AVAILABLE:
@@ -36,7 +37,7 @@ def get_quantiles(stats: Dict, statistic_configs: Dict, precision: int):
 
     global_digest = {}
     for client_name in stats:
-        global_digest = merge_quantiles(stats[client_name],global_digest)
+        global_digest = merge_quantiles(stats[client_name], global_digest)
 
     quantile_config = statistic_configs.get(StC.STATS_QUANTILE)
     return compute_quantiles(global_digest, quantile_config, precision)
@@ -87,7 +88,7 @@ def compute_quantiles(g_digest: dict, quantile_config: Dict, precision: int) -> 
         feature_metrics = g_digest[ds_name]
         for feature_name in feature_metrics:
             digest = feature_metrics[feature_name]
-            percentiles = get_target_quantiles(quantile_config,feature_name)
+            percentiles = get_target_quantiles(quantile_config, feature_name)
             quantile_values = {}
             for percentile in percentiles:
                 quantile_values[percentile] = round(digest.quantile(percentile), precision)
@@ -95,4 +96,3 @@ def compute_quantiles(g_digest: dict, quantile_config: Dict, precision: int) -> 
             g_ds_metrics[ds_name][feature_name] = quantile_values
 
     return g_ds_metrics
-

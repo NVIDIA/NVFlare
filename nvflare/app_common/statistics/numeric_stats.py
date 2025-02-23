@@ -19,7 +19,6 @@ from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType,
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_opt.statistics.quantile_stats import get_quantiles
 from nvflare.fuel.utils.log_utils import get_module_logger
- 
 
 T = TypeVar("T")
 
@@ -48,7 +47,6 @@ def get_global_stats(
     # we need to calculate the metrics in specified order
     ordered_target_metrics = StC.ordered_statistics[metric_task]
     ordered_metrics = [metric for metric in ordered_target_metrics if metric in client_metrics]
-
 
     for metric in ordered_metrics:
         if metric not in global_metrics:

@@ -25,6 +25,7 @@ from nvflare.app_opt.statistics.quantile_stats import compute_quantiles, merge_q
 
 try:
     from fastdigest import TDigest
+
     TDIGEST_AVAILABLE = True
 except ImportError:
     TDIGEST_AVAILABLE = False
