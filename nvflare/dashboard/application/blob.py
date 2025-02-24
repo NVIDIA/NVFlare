@@ -123,8 +123,7 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
         ctx = provisioner.provision(prov_project, logger=DummyLogger())
         result_dir = ctx.get_result_location()
         ent_dir = os.path.join(result_dir, target.name)
-        run_args = ["zip", "-rq", "-P", download_key, "tmp.zip", "."]
-        subprocess.run(run_args, cwd=ent_dir)
+        subprocess.run(["zip", "-rq", "-P", download_key, "tmp.zip", "."], cwd=ent_dir)
         fileobj = io.BytesIO()
         with open(os.path.join(ent_dir, "tmp.zip"), "rb") as fo:
             fileobj.write(fo.read())
