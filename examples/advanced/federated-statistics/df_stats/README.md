@@ -57,9 +57,10 @@ To calculate federated quantiles, we needed to select a package that satisfies t
 * Works in distributed systems
 * Does not copy the original data (avoiding privacy leaks)
 * Avoids transmitting large amounts of data
-* ideally, no system-level dependency 
+* Ideally, no system-level dependency 
 
-We choose the fastdigest python package, a rust-based package. tdigest only carry the the cluster coordinates, initially eaach data is in its own cluster. By default, we will comprress with max_bin = sqrt(datasize) to compress the coordinates. so the data won't leaked. You can alwasy overite max_bins if prefer more or less compression. 
+We chose the fastdigest python package, a rust-based package. tdigest only carries the cluster coordinates, initially each data point is in its own cluster. By default, we will compress with max_bin = sqrt(datasize) to compress the coordinates, so the data won't leak. You can always override max_bins if you prefer more or less compression.
+
 
 
 ## 1. Prepare data
@@ -244,7 +245,8 @@ in FLARE job store.
 
 ### 5.2 client side configuration
  
-First, we specify the built-in client side executor: `StatisticsExecutor`, which takes a local stats generator Id
+First, we specify the built-in client side executor: `StatisticsExecutor`, which takes a local stats generator ID
+
 
 ```
  "executor": {
@@ -297,7 +299,7 @@ In this example, task_result_filters is defined as task privacy filter : `Statis
 `StatisticsPrivacyFilter` is using three separate the `StatisticsPrivacyCleanser`, you can find more details in
 [local privacy policy](../local/privacy.json) and in later discussion on privacy.
 
-The privacy cleansers specify policy can be find in
+The privacy cleansers specify policies can be found in
 ```
   "components": [
     {

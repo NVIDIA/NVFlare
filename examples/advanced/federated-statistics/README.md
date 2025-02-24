@@ -2,7 +2,7 @@
 
 ## Objective
 NVIDIA FLARE will provide built-in federated statistics operators (controllers and executors) that 
-can generate global statistics based on local client side statistics.
+can generate global statistics based on local client-side statistics.
 
 At each client site, we could have one or more datasets (such as "train" and "test" datasets); each dataset may have many 
 features. For each feature in the dataset, we will calculate the statistics and then combine them to produce 
@@ -19,13 +19,15 @@ The result should be visualized via the visualization utility in the notebook.
 
 ## Assumptions
  
-Assume that clients will provide the following: 
-   * user needs to provide target statistics such as count, histogram only
-   * user needs to provide the local statistics for the target statistics (by implementing the statistic_spec)
-   * user needs to provide the data sets and dataset features (feature name, data type)
-   * * Note: count is always required as we use count to enforce data privacy policy
-We only support **numerical features**, not categorical features. But user can return all types of features
+Assume that clients will provide the following:
+* Users need to provide target statistics such as count, histogram only
+* Users need to provide the local statistics for the target statistics (by implementing the statistics_spec)
+* Users need to provide the datasets and dataset features (feature name, data type)
+* Note: count is always required as we use count to enforce data privacy policy
+
+We only support **numerical features**, not categorical features. However, users can return all types of features;
 the non-numerical features will be removed.
+
 
 ## Statistics
 
@@ -91,18 +93,18 @@ The detailed example instructions can be found [Data frame statistics](df_stats/
 
 ### COVID 19 Radiology Image Examples
 
-The second example provided is image histogram example. Different from **Tabular** data example, 
+The second example provided is an image histogram example. Unlike the **Tabular** data example:
 
-The image examples show the followings
+The image examples show the following:
 * The [image_statistics.py](image_stats/jobs/image_stats/app/custom/image_statistics.py) only needs
-to calculate the count and histogram target statistics, then user only needs to provide the calculation count, failure_count and histogram functions. There is no need to implement other metrics functions
- (sum, mean,std_dev etc.) ( get_failure_count by default return 0 )
-* For each site's dataset, there are several thousands of images, the local histogram is aggregate histogram of all the image histograms.  
-* The image files are large, we can't load everything in memory, then calculate the statistics. 
-We will need to iterate through files for each calculation. For single feature, such as example. This is ok. If there are multiple features,
-such as multiple channels, reload image to memory for each channel to do histogram calculation is really wasteful.
-* Unlike [Data frame statistics](df_stats/README.md), the histogram bin's global range is pre-defined by user [0, 256]
-where in [Data frame statistics](df_stats/README.md), besides "Age", all other features histogram global bin range
+to calculate the count and histogram target statistics. Users only need to provide the calculation count, failure_count and histogram functions. There is no need to implement other metrics functions
+(sum, mean, std_dev etc.) (get_failure_count by default returns 0)
+* For each site's dataset, there are several thousand images; the local histogram is an aggregate histogram of all the image histograms
+* The image files are large, so we can't load everything into memory and then calculate the statistics. 
+We will need to iterate through files for each calculation. For a single feature, this is acceptable. If there are multiple features,
+such as multiple channels, reloading images to memory for each channel to do histogram calculation is wasteful
+* Unlike [Data frame statistics](df_stats/README.md), the histogram bin's global range is pre-defined by users [0, 256],
+whereas in [Data frame statistics](df_stats/README.md), besides "Age", all other features' histogram global bin range
 is dynamically estimated based on local min/max values
 
 An example of image histogram (the underline image files have only 1 channel)
@@ -211,22 +213,21 @@ defined and job doesn't specify the privacy scope, the job deployment will fail,
 
 ### Privacy Policy Instrumentation 
 
-There are different ways to set privacy filter depending the use cases
+There are different ways to set privacy filters depending on the use cases:
 
 ####  Set Privacy Policy as researcher
 
 You can specify the "task_result_filters" in config_fed_client.json to specify
-the privacy control.  This is useful when you develop these filters
+the privacy control. This is useful when you develop these filters.
 
 #### Setup site privacy policy as org admin
 
-Once the company decides to instrument certain privacy policy independent of individual
-job, one can copy the local directory privacy.json content to clients' local privacy.json ( merge not overwrite).
-in this example, since we only has one app, we can simply copy the private.json from local directory to
+Once the company decides to implement certain privacy policies independent of individual
+jobs, one can copy the local directory privacy.json content to clients' local privacy.json (merge, not overwrite).
+In this example, since we only have one app, we can simply copy the privacy.json from the local directory to:
 
 * site-1/local/privacy.json
 * site-2/local/privacy.json
-
 We need to remove the same filters from the job definition in config_fed_client.json
 by simply set the "task_result_filters" to empty list to avoid **double filtering**
 ```
