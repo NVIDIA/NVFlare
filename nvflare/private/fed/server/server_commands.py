@@ -155,8 +155,8 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         """
 
         start_time = time.time()
-        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
-        data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
+        shared_fl_ctx = data.get_peer_context()
+        data.set_peer_context(FLContext())
         client = data.get_header(ServerCommandKey.FL_CLIENT)
         self.logger.debug(f"Got the GET_TASK request from client: {client.name}")
         fl_ctx.set_peer_context(shared_fl_ctx)
@@ -183,7 +183,7 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         shareable.set_header(key=ServerCommandKey.TASK_NAME, value=taskname)
 
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-        shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+        shareable.set_peer_context(shared_fl_ctx)
 
         if taskname != SpecialTaskName.TRY_AGAIN:
             self.logger.info(
@@ -222,8 +222,8 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         """
 
         start_time = time.time()
-        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
-        data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
+        shared_fl_ctx = data.get_peer_context()
+        data.set_peer_context(FLContext())
         shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
 
         client = data.get_header(ServerCommandKey.FL_CLIENT)
@@ -443,8 +443,13 @@ class ConfigureJobLogCommand(CommandProcessor):
 
         """
         engine = fl_ctx.get_engine()
+        workspace = engine.get_workspace()
         try:
-            dynamic_log_config(data, engine.get_workspace(), fl_ctx.get_job_id())
+            dynamic_log_config(
+                config=data,
+                dir_path=workspace.get_run_dir(fl_ctx.get_job_id()),
+                reload_path=workspace.get_log_config_file_path(),
+            )
         except Exception as e:
             return secure_format_exception(e)
 

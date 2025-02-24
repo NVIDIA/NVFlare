@@ -85,9 +85,10 @@ class FederatedClientBase:
         self.args = args
         self.engine_create_timeout = client_args.get("engine_create_timeout", 30.0)
         self.cell_check_frequency = client_args.get("cell_check_frequency", 0.005)
+        client_args["client_name"] = client_name
 
         self.communicator = Communicator(
-            ssl_args=client_args,
+            client_config=client_args,
             secure_train=secure_train,
             client_state_processors=client_state_processors,
             compression=compression,
@@ -261,6 +262,7 @@ class FederatedClientBase:
                 time.sleep(self.cell_check_frequency)
             self.logger.info(f"Got client_runner after {time.time() - start} seconds")
             self.client_runner.engine.cell = self.cell
+            self.client_runner.set_cell(self.cell)
         else:
             start = time.time()
             self.logger.info("Wait for engine to be created.")

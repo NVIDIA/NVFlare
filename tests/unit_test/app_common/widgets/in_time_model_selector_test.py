@@ -83,7 +83,7 @@ class TestInTimeModelSelector:
 
             peer_ctx.set_prop(FLContextKey.SHAREABLE, dxo.to_shareable(), private=True)
             fl_ctx = engine.fl_ctx_mgr.new_context()
-            fl_ctx.set_prop(FLContextKey.PEER_CONTEXT, peer_ctx)
+            fl_ctx.set_peer_context(peer_ctx)
 
             handler.handle_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
         handler.handle_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)

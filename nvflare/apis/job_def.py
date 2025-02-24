@@ -74,6 +74,7 @@ class JobMetaKey(str, Enum):
     STATS_POOL_CONFIG = "stats_pool_config"
     FROM_HUB_SITE = "from_hub_site"
     CUSTOM_PROPS = "custom_props"
+    EDGE_METHOD = "edge_method"
 
     def __repr__(self):
         return self.value

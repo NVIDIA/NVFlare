@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Optional
 
 from cryptography.x509.oid import NameOID
 
@@ -56,6 +57,27 @@ def load_cert_file(path: str):
 
 def load_cert_bytes(data: bytes):
     return load_crt_bytes(data)
+
+
+def get_parent_site_name(fqsn: str) -> Optional[str]:
+    """Get the parent site's name for a specified FQSN (fully qualified site name)
+
+    Args:
+        fqsn: the FQSN to find parent for
+
+    Returns: the parent site's name or None if the FQSN doesn't have a parent
+
+    """
+    if not fqsn:
+        return None
+
+    if not isinstance(fqsn, str):
+        raise ValueError(f"expect fqsn to be str but got {type(fqsn)}")
+
+    parts = fqsn.split(".")
+    if len(parts) <= 1:
+        return None
+    return parts[len(parts) - 2]
 
 
 class IdentityAsserter:

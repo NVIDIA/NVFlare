@@ -17,7 +17,9 @@ import time
 
 class ClientPropKey:
 
-    FQCN = "fqcn"
+    FQCN = "fqcn"  # Fully Qualified Cell Name: position in Cellnet
+    FQSN = "fqsn"  # Fully Qualified Site Name: position in client hierarchy
+    IS_LEAF = "is_leaf"  # Whether the client is a leaf node in client hierarchy
 
 
 class Client:
@@ -53,3 +55,15 @@ class Client:
 
     def get_fqcn(self):
         return self.get_prop(ClientPropKey.FQCN)
+
+    def set_fqsn(self, value: str):
+        self.set_prop(ClientPropKey.FQSN, value)
+
+    def get_fqsn(self):
+        return self.get_prop(ClientPropKey.FQSN)
+
+    def set_is_leaf(self, value: bool):
+        self.set_prop(ClientPropKey.IS_LEAF, value)
+
+    def get_is_leaf(self):
+        return self.get_prop(ClientPropKey.IS_LEAF)
