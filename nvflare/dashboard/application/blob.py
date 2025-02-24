@@ -96,9 +96,6 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
         # the root key is protected by password
         root_pri_key = deserialize_ca_key(project.root_key)
 
-        # need to serialize without password
-        # serialized_root_private_key = serialize_pri_key(root_pri_key)
-
         prov_project = ProvProject(
             project.short_name,
             project.description,
