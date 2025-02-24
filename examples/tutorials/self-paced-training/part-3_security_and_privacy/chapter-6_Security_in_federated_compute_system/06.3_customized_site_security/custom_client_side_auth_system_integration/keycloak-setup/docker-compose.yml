@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  keycloak:
+    build: .
+    container_name: keycloak
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin123
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/opt/keycloak-setup
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - bridge_network
+
+
+  db:
+    image: postgres:15
+    container_name: keycloak-db
+    environment:
+      - POSTGRES_DB=keycloak
+      - POSTGRES_USER=keycloak
+      - POSTGRES_PASSWORD=keycloak
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - bridge_network
+
+volumes:
+  pgdata:
+ 
+networks:
+  bridge_network:
+    driver: bridge
