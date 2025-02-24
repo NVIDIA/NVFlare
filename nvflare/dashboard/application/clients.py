@@ -18,6 +18,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 
+from .blob import gen_client_blob
 from .store import Store, check_role
 
 
@@ -82,7 +83,7 @@ def client_blob(id):
     c, p = check_role(creator_id, get_jwt(), get_jwt_identity())
     if p or c:
         pin = request.json.get("pin")
-        fileobj, filename = Store.get_client_blob(pin, id)
+        fileobj, filename = gen_client_blob(pin, id)
         response = make_response(fileobj.read())
         response.headers.set("Content-Type", "zip")
         response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
