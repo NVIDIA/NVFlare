@@ -15,15 +15,14 @@
 import os
 import time
 from multiprocessing import Process, Queue
-from typing import NamedTuple, Optional
+from typing import List, NamedTuple, Optional
 
 import wandb
 
-from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
+from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType, LogWriterName
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.tracking.tracker_types import LogWriterName
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 
@@ -35,9 +34,9 @@ class WandBTask(NamedTuple):
 
 
 class WandBReceiver(AnalyticsReceiver):
-    def __init__(self, kwargs: dict, mode: str = "offline", events=None, process_timeout=10):
-        if events is None:
-            events = ["fed.analytix_log_stats"]
+    def __init__(
+        self, kwargs: dict, mode: str = "offline", events: Optional[List[str]] = None, process_timeout: float = 10.0
+    ):
         super().__init__(events=events)
         self.fl_ctx = None
         self.mode = mode
@@ -49,7 +48,7 @@ class WandBReceiver(AnalyticsReceiver):
         # os.environ["WANDB_API_KEY"] = YOUR_KEY_HERE
         os.environ["WANDB_MODE"] = self.mode
 
-    def job(self, queue):
+    def process_queue_tasks(self, queue):
         cnt = 0
         run = None
         try:
@@ -75,7 +74,6 @@ class WandBReceiver(AnalyticsReceiver):
                 run.finish()
 
     def initialize(self, fl_ctx: FLContext):
-        self.fl_ctx = fl_ctx
         sites = fl_ctx.get_engine().get_clients()
         run_group_id = str(int(time.time()))
 
@@ -103,11 +101,10 @@ class WandBReceiver(AnalyticsReceiver):
 
             q = Queue()
             wandb_task = WandBTask(task_owner=site.name, task_type="init", task_data=self.kwargs, step=0)
-            # q.put_nowait(wandb_task)
             q.put(wandb_task)
 
             self.queues[site.name] = q
-            p = Process(target=self.job, args=(q,))
+            p = Process(target=self.process_queue_tasks, args=(q,))
             self.processes[site.name] = p
             p.start()
             time.sleep(0.2)
@@ -125,7 +122,7 @@ class WandBReceiver(AnalyticsReceiver):
         if not data:
             return
 
-        q: Optional[Queue] = self.get_job_queue(record_origin)
+        q: Optional[Queue] = self.get_task_queue(record_origin)
         if q:
             if data.data_type == AnalyticsDataType.PARAMETER or data.data_type == AnalyticsDataType.METRIC:
                 log_data = {data.tag: data.value}
@@ -141,7 +138,7 @@ class WandBReceiver(AnalyticsReceiver):
         """
         for site in self.processes:
             self.log_info(self.fl_ctx, f"inform {site} to stop")
-            q: Optional[Queue] = self.get_job_queue(site)
+            q: Optional[Queue] = self.get_task_queue(site)
             q.put(WandBTask(task_owner=site, task_type="stop", task_data={}, step=0))
 
         for site in self.processes:
@@ -149,15 +146,15 @@ class WandBReceiver(AnalyticsReceiver):
             p.join(self.process_timeout)
             p.terminate()
 
-    def get_job_queue(self, record_origin):
+    def get_task_queue(self, record_origin):
         return self.queues.get(record_origin, None)
 
     def check_kwargs(self, kwargs):
         if "project" not in kwargs:
-            raise ValueError("must provide `project' value")
+            raise ValueError("must provide 'project' value")
 
         if "group" not in kwargs:
-            raise ValueError("must provide `group' value")
+            raise ValueError("must provide 'group' value")
 
         if "job_type" not in kwargs:
-            raise ValueError("must provide `job_type' value")
+            raise ValueError("must provide 'job_type' value")

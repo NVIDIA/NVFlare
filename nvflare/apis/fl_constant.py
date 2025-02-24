@@ -193,6 +193,7 @@ class FLContextKey(object):
     PROCESS_TYPE = ReservedKey.PROCESS_TYPE
     JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
     EVENT_PROCESSED = "__event_processed__"
+    CELL_MESSAGE = "__cell_message__"
 
 
 class ProcessType:

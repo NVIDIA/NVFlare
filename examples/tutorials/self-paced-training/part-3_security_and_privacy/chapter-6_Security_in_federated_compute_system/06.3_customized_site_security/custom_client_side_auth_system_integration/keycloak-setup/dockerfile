@@ -1,0 +1,18 @@
+FROM bitnami/keycloak:24
+
+USER root
+
+# Install jq (and any other necessary dependencies)
+RUN apt-get update && apt-get install -y jq
+
+# Set working directory
+WORKDIR /opt/keycloak-setup
+
+# Copy the setup scripts to the container
+COPY ./init.sh /opt/keycloak-setup/init.sh
+
+# Set permissions to ensure init.sh is executable
+RUN chmod +x /opt/keycloak-setup/init.sh
+
+# Set the entrypoint
+ENTRYPOINT ["/bin/sh", "-c", "/opt/bitnami/scripts/keycloak/run.sh & sleep 10 && /opt/keycloak-setup/init.sh && tail -f /dev/null"]

@@ -14,11 +14,11 @@
 
 from typing import Tuple
 
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.analytix_utils import send_analytic_dxo
-from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
 from nvflare.client.config import ConfigKey
 from nvflare.fuel.utils.attributes_exportable import AttributesExportable
 from nvflare.fuel.utils.constants import PipeChannelName
