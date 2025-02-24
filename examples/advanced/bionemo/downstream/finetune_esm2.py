@@ -293,7 +293,6 @@ def train_model(
                 raise ValueError(f"classes is expected to be list of strings but received {type(classes)}: {classes}")
             train_dataset.label_tokenizer.build_vocab([classes])
             print(f"Build custom label tokenizer based on label classes: {classes}")
-        valid_dataset.label_tokenizer = train_dataset.label_tokenizer
 
     data_module = ESM2FineTuneDataModule(
         train_dataset=train_dataset,
