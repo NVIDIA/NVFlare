@@ -263,7 +263,7 @@ def train_model(
     # Remove previous checkpoints to preserve disk space
     keep_last_ckpt_only = True  # TODO: make configurable
     if keep_last_ckpt_only:
-        previous_ckpt_dir = result_dir / f"round{input_model.current_round-1}" / experiment_name / "dev" / "checkpoints"
+        previous_ckpt_dir = result_dir / f"round{input_model.current_round - 1}" / experiment_name / "dev" / "checkpoints"
         if previous_ckpt_dir.is_dir():
             print(f"Removing previous checkpoint directory {previous_ckpt_dir}")
             shutil.rmtree(previous_ckpt_dir)
@@ -276,7 +276,7 @@ def train_model(
         lr_step_reduce = 1.05  # TODO: make lr_step_reduce configurable
         new_lr = lr / (input_model.current_round * lr_step_reduce)
         new_lr_multiplier = lr_multiplier / (input_model.current_round * lr_step_reduce)
-        print(f"Reduce lr {lr} by {input_model.current_round*lr_step_reduce}: {new_lr}")
+        print(f"Reduce lr {lr} by {input_model.current_round * lr_step_reduce}: {new_lr}")
     else:
         new_lr = lr
         new_lr_multiplier = lr_multiplier

@@ -4,7 +4,7 @@ DOCKER_IMAGE="nvcr.io/nvidia/clara/bionemo-framework:nightly"
 
 NB_DIR="/bionemo_nvflare_examples"
 
-echo "Starting ${DOCKER_IMAGE} with GPU=${GPU}"
+echo "Starting ${DOCKER_IMAGE} with all GPUs"
 echo ""
 echo "${COMMAND}"
 docker run \

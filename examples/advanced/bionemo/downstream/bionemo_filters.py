@@ -96,7 +96,7 @@ class BioNeMoExcludeParamsFilter(DXOFilter):
                 new_params[k] = v
 
         if len(new_params) < len(params):
-            self.log_info(fl_ctx, f"Excluded {len(params)-len(new_params)} parameters matching '{self.exclude_vars}'")
+            self.log_info(fl_ctx, f"Excluded {len(params) - len(new_params)} parameters matching '{self.exclude_vars}'")
         else:
             raise ValueError(f"State dictionary did not match any exclude keys that matched '{self.exclude_vars}'")
 

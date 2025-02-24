@@ -47,7 +47,7 @@ def main(args):
 
     # Add clients
     for i in range(args.num_clients):
-        client_name = f"site-{i+1}"
+        client_name = f"site-{i + 1}"
 
         # define data paths
         # We use the same validation set for each client to make their metrics comparable

@@ -46,7 +46,7 @@ def main(args):
 
     # Add clients
     for i, label_column in zip(range(args.num_clients), label_columns):
-        client_name = f"site-{i+1}"
+        client_name = f"site-{i + 1}"
 
         # define data paths
         # We use the same validation set for each client to make their metrics comparable
