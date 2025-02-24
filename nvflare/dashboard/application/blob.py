@@ -14,6 +14,7 @@
 
 import io
 import os
+import re
 import subprocess
 import tempfile
 
@@ -77,6 +78,11 @@ def gen_server_blob(key):
 
 
 def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
+    # validate download_key
+    allowed_pattern = r"^[A-Za-z0-9]+$"
+    if not re.match(allowed_pattern, download_key):
+        raise RuntimeError(f"ERROR: detected unsafe download key: {download_key}")
+
     u = Store.get_user(1)
     super_user = u.get("user")
     fl_port = 8002
