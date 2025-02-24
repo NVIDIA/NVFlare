@@ -27,7 +27,7 @@ from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provisioner import Provisioner
 
-from .cert import deserialize_ca_key, serialize_pri_key
+from .cert import deserialize_ca_key
 from .models import Client, Project, User
 from .store import Store, inc_dl
 
