@@ -34,7 +34,7 @@ from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateTyp
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 
 
-class BioNeMoMLPLearner(ModelLearner):  # does not support CIFAR10ScaffoldLearner
+class BioNeMoMLPLearner(ModelLearner):
     def __init__(
         self,
         data_path: str,
