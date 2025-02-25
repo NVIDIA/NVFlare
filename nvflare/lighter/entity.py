@@ -315,7 +315,7 @@ class Project(Entity):
         participants=None,
         props: dict = None,
         serialized_root_cert=None,
-        serialized_root_private_key=None,
+        root_private_key=None,
     ):
         """A container class to hold information about this FL project.
 
@@ -327,7 +327,7 @@ class Project(Entity):
             participants: if provided, list of participants of the project
             props: properties of the project
             serialized_root_cert: if provided, the root cert to be used for the project
-            serialized_root_private_key: if provided, the root private key for signing certs of sites and admins
+            root_private_key: if provided, the root private key for signing certs of sites and admins
 
         Raises:
             ValueError: when participant criteria is violated
@@ -335,12 +335,12 @@ class Project(Entity):
         Entity.__init__(self, "project", name, props)
 
         if serialized_root_cert:
-            if not serialized_root_private_key:
-                raise ValueError("missing serialized_root_private_key while serialized_root_cert is provided")
+            if not root_private_key:
+                raise ValueError("missing root_private_key while serialized_root_cert is provided")
 
         self.description = description
         self.serialized_root_cert = serialized_root_cert
-        self.serialized_root_private_key = serialized_root_private_key
+        self.root_private_key = root_private_key
         self.server = None
         self.overseer = None
         self.clients = []
@@ -377,6 +377,7 @@ class Project(Entity):
         self._check_unique_name(name)
         self.server = Participant(ParticipantType.SERVER, name, org, props, self)
         self.all_names[name] = True
+        return self.server
 
     def get_server(self):
         """Get the server definition. Only one server is supported!
@@ -424,8 +425,10 @@ class Project(Entity):
 
     def add_client(self, name: str, org: str, props: dict):
         self._check_unique_name(name)
-        self.clients.append(Participant(ParticipantType.CLIENT, name, org, props, self))
+        client = Participant(ParticipantType.CLIENT, name, org, props, self)
+        self.clients.append(client)
         self.all_names[name] = True
+        return client
 
     def get_clients(self):
         return self.clients
@@ -446,6 +449,7 @@ class Project(Entity):
             raise ValueError(f"missing role in admin '{name}'")
         self.admins.append(admin)
         self.all_names[name] = True
+        return admin
 
     def get_admins(self):
         return self.admins

@@ -20,11 +20,13 @@ from nvflare.job_config.stats_job import StatsJob
 
 def define_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-n", "--n_clients", type=int, default=3)
+    parser.add_argument("-n", "--n_clients", type=int, default=2)
     parser.add_argument("-d", "--data_root_dir", type=str, nargs="?", default="/tmp/nvflare/df_stats/data")
-    parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/adult_stats.json")
+    parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/adults_stats.json")
     parser.add_argument("-j", "--job_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/stats_df")
-    parser.add_argument("-w", "--work_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/stats_df")
+    parser.add_argument("-w", "--work_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/stats_df/work_dir")
+    parser.add_argument("-co", "--export_config", action="store_true", help="config only mode, export config")
+    parser.add_argument("-l", "--log_config", type=str, default="concise")
 
     return parser.parse_args()
 
@@ -37,18 +39,19 @@ def main():
     output_path = args.stats_output_path
     job_dir = args.job_dir
     work_dir = args.work_dir
+    export_config = args.export_config
+    log_config = args.log_config
 
     statistic_configs = {
         "count": {},
         "mean": {},
         "sum": {},
         "stddev": {},
-        "histogram": {"*": {"bins": 20}},
-        "Age": {"bins": 20, "range": [0, 10]},
-        "percentile": {"*": [25, 50, 75], "Age": [50, 95]},
+        "histogram": {"*": {"bins": 20}, "Age": {"bins": 20, "range": [0, 100]}},
+        "quantile": {"*": [0.1, 0.5, 0.9], "Age": [0.5, 0.9]},
     }
     # define local stats generator
-    df_stats_generator = DFStatistics(data_root_dir=data_root_dir)
+    df_stats_generator = DFStatistics(filename="data.csv", data_root_dir=data_root_dir)
 
     job = StatsJob(
         job_name="stats_df",
@@ -60,9 +63,11 @@ def main():
     sites = [f"site-{i + 1}" for i in range(n_clients)]
     job.setup_clients(sites)
 
-    job.export_job(job_dir)
-
-    job.simulator_run(work_dir)
+    if export_config:
+        print("Exporting job config...", job_dir)
+        job.export_job(job_dir)
+    else:
+        job.simulator_run(work_dir, log_config=log_config)
 
 
 if __name__ == "__main__":

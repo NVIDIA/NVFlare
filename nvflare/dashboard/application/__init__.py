@@ -40,9 +40,13 @@ def init_app():
             if credential is None:
                 print("Please set env var NVFL_CREDENTIAL")
                 exit(1)
-            email = credential.split(":")[0]
-            pwd = credential.split(":")[1]
-            Store.seed_user(email, pwd)
+            parts = credential.split(":")
+            if len(parts) != 3:
+                print(f"Invalid value '{credential}' for env var NVFL_CREDENTIAL: it must be email:password:org")
+            email = parts[0]
+            pwd = parts[1]
+            org = parts[2]
+            Store.seed_user(email, pwd, org)
     with open(os.path.join(web_root, ".db_init_done"), "ab") as f:
         f.write(bytes())
     return app

@@ -16,8 +16,8 @@ from typing import List, Optional
 
 import tensorflow as tf
 
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
