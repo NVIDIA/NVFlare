@@ -68,6 +68,7 @@ def main():
 
         # (optional) use GPU to speed things up
         net.to(DEVICE)
+        net.train()
         # (optional) calculate total steps
         steps = epochs * len(trainloader)
         for epoch in range(epochs):  # loop over the dataset multiple times
@@ -108,6 +109,7 @@ def main():
             net.load_state_dict(input_weights)
             # (optional) use GPU to speed things up
             net.to(DEVICE)
+            net.eval()
 
             correct = 0
             total = 0
