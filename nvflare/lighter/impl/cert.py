@@ -12,21 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import datetime
 import json
 import os
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.constants import CertFileBasename, CtxKey, ParticipantType, PropKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
-from nvflare.lighter.utils import serialize_cert, serialize_pri_key
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
 
 class _CertState:
@@ -115,7 +113,16 @@ class CertBuilder(Builder):
         self.persistent_state = _CertState(state_dir)
         state = self.persistent_state
 
-        if state.is_available:
+        if project.root_private_key:
+            # using project provided credentials
+            self.serialized_cert = project.serialized_root_cert
+            self.root_cert = x509.load_pem_x509_certificate(self.serialized_cert, default_backend())
+            self.pri_key = project.root_private_key
+            self.pub_key = self.pri_key.public_key()
+            self.subject = self.root_cert.subject
+            self.issuer = self.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+            state.is_available = True
+        elif state.is_available:
             state_root_cert = state.get_root_cert()
             self.serialized_cert = state_root_cert.encode("ascii")
             self.root_cert = x509.load_pem_x509_certificate(self.serialized_cert, default_backend())
@@ -132,7 +139,7 @@ class CertBuilder(Builder):
     def _build_root(self, subject, subject_org):
         assert isinstance(self.persistent_state, _CertState)
         if not self.persistent_state.is_available:
-            pri_key, pub_key = self._generate_keys()
+            pri_key, pub_key = generate_keys()
             self.issuer = subject
             self.root_cert = self._generate_cert(subject, subject_org, self.issuer, pri_key, pub_key, ca=True)
             self.pri_key = pri_key
@@ -248,7 +255,7 @@ class CertBuilder(Builder):
             self._build_write_cert_pair(admin, CertFileBasename.CLIENT, ctx)
 
     def get_pri_key_cert(self, participant: Participant):
-        pri_key, pub_key = self._generate_keys()
+        pri_key, pub_key = generate_keys()
         subject = participant.subject
         subject_org = participant.org
         if participant.type == ParticipantType.ADMIN:
@@ -269,13 +276,7 @@ class CertBuilder(Builder):
         return pri_key, cert
 
     @staticmethod
-    def _generate_keys():
-        pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
-        pub_key = pri_key.public_key()
-        return pri_key, pub_key
-
     def _generate_cert(
-        self,
         subject,
         subject_org,
         issuer,
@@ -286,58 +287,25 @@ class CertBuilder(Builder):
         role=None,
         server: Participant = None,
     ):
-        x509_subject = self._x509_name(subject, subject_org, role)
-        x509_issuer = self._x509_name(issuer)
-
-        builder = (
-            x509.CertificateBuilder()
-            .subject_name(x509_subject)
-            .issuer_name(x509_issuer)
-            .public_key(subject_pub_key)
-            .serial_number(x509.random_serial_number())
-            .not_valid_before(datetime.datetime.utcnow())
-            .not_valid_after(
-                # Our certificate will be valid for 360 days
-                datetime.datetime.utcnow()
-                + datetime.timedelta(days=valid_days)
-                # Sign our certificate with our private key
-            )
-        )
-        if ca:
-            builder = (
-                builder.add_extension(
-                    x509.SubjectKeyIdentifier.from_public_key(subject_pub_key),
-                    critical=False,
-                )
-                .add_extension(
-                    x509.AuthorityKeyIdentifier.from_issuer_public_key(subject_pub_key),
-                    critical=False,
-                )
-                .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=False)
-            )
+        server_default_host = None
+        server_additional_hosts = None
 
         if server:
             # This is to generate a server cert.
             # Use SubjectAlternativeName for all host names
-            default_host = server.get_default_host()
-            host_names = server.get_prop(PropKey.HOST_NAMES)
-            sans = [x509.DNSName(default_host)]
-            if host_names:
-                for h in host_names:
-                    if h != default_host:
-                        sans.append(x509.DNSName(h))
-            builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
-        else:
-            builder = builder.add_extension(x509.SubjectAlternativeName([x509.DNSName(subject)]), critical=False)
-        return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
+            server_default_host = server.get_default_host()
+            server_additional_hosts = server.get_prop(PropKey.HOST_NAMES)
 
-    def _x509_name(self, cn_name, org_name=None, role=None):
-        name = [x509.NameAttribute(NameOID.COMMON_NAME, cn_name)]
-        if org_name is not None:
-            name.append(x509.NameAttribute(NameOID.ORGANIZATION_NAME, org_name))
-        if role:
-            name.append(x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, role))
-        return x509.Name(name)
+        return generate_cert(
+            subject=Identity(subject, subject_org, role),
+            issuer=Identity(issuer),
+            signing_pri_key=signing_pri_key,
+            subject_pub_key=subject_pub_key,
+            valid_days=valid_days,
+            ca=ca,
+            server_default_host=server_default_host,
+            server_additional_hosts=server_additional_hosts,
+        )
 
     def finalize(self, project: Project, ctx: ProvisionContext):
         assert isinstance(self.persistent_state, _CertState)
