@@ -17,6 +17,52 @@ cd NVFlare/examples/advanced/federated-statistics/df_stats
 pip install -r requirements.txt
 ```
 
+
+## Install fastdigest
+
+If you intend to calculate quantiles, you need to install fastdigest. 
+
+```
+pip install fastdigest==0.4.0
+```
+
+on Ubuntu, you might get the following error:
+
+  Cargo, the Rust package manager, is not installed or is not on PATH.
+  This package requires Rust and Cargo to compile extensions. Install it through
+  the system's package manager or via https://rustup.rs/
+      
+  Checking for Rust toolchain....
+
+This is because fastdigest (or its dependencies) requires Rust and Cargo to build. 
+
+You need to install Rust and Cargo on your Ubuntu system. Follow these steps:
+Install Rust and Cargo
+Run the following command to install Rust using rustup:
+
+```
+cd NVFlare/examples/advanced/federated-statistics/df_stats
+./install_cargo.sh
+```
+
+Then you can install fastdigest again
+```
+pip install fastdigest==0.4.0
+```
+
+### Quantile Calculation
+
+To calculate federated quantiles, we needed to select a package that satisfies the following constraints:
+
+* Works in distributed systems
+* Does not copy the original data (avoiding privacy leaks)
+* Avoids transmitting large amounts of data
+* Ideally, no system-level dependency 
+
+We chose the fastdigest python package, a rust-based package. tdigest only carries the cluster coordinates, initially each data point is in its own cluster. By default, we will compress with max_bin = sqrt(datasize) to compress the coordinates, so the data won't leak. You can always override max_bins if you prefer more or less compression.
+
+
+
 ## 1. Prepare data
 
 In this example, we are using UCI (University of California, Irvine) [adult dataset](https://archive.ics.uci.edu/dataset/2/adult)
@@ -165,8 +211,12 @@ statistics computing, we will only need to provide the followings
           "stddev": {},
           "histogram": { "*": {"bins": 10 },
                          "Age": {"bins": 5, "range":[0,120]}
-                       }
+                       },
+          "quantile": {
+            "*": [25, 50, 75]
+          }
         },
+        
         "writer_id": "stats_writer"
       }
     }
@@ -195,7 +245,8 @@ in FLARE job store.
 
 ### 5.2 client side configuration
  
-First, we specify the built-in client side executor: `StatisticsExecutor`, which takes a local stats generator Id
+First, we specify the built-in client side executor: `StatisticsExecutor`, which takes a local stats generator ID
+
 
 ```
  "executor": {
@@ -248,7 +299,7 @@ In this example, task_result_filters is defined as task privacy filter : `Statis
 `StatisticsPrivacyFilter` is using three separate the `StatisticsPrivacyCleanser`, you can find more details in
 [local privacy policy](../local/privacy.json) and in later discussion on privacy.
 
-The privacy cleansers specify policy can be find in
+The privacy cleansers specify policies can be found in
 ```
   "components": [
     {
@@ -310,6 +361,8 @@ to calculate the local statistics, we will need to implements few methods
     def variance_with_mean(self, dataset_name: str, feature_name: str, global_mean: float, global_count: float) -> float:
  
     def histogram(self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float) -> Histogram:
+
+    def quantiles(self, dataset_name: str, feature_name: str, percentiles: List) -> Dict:
 
 ```
 since some of features do not provide histogram bin range, we will need to calculate based on local min/max to estimate
