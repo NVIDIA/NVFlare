@@ -89,8 +89,6 @@ class Provisioner:
 
         workspace_root_dir = os.path.join(self.root_dir, project.name)
         ctx = ProvisionContext(workspace_root_dir, project)
-        if self.template:
-            ctx.set_template(self.template)
 
         if not mode:
             mode = ProvisionMode.NORMAL

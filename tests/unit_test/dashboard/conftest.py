@@ -32,7 +32,7 @@ def app():
     if os.path.exists(sqlite_file):
         os.remove(sqlite_file)
     os.environ["DATABASE_URL"] = f"sqlite:///{sqlite_file}"
-    os.environ["NVFL_CREDENTIAL"] = f"{TEST_USER}:{TEST_PW}"
+    os.environ["NVFL_CREDENTIAL"] = f"{TEST_USER}:{TEST_PW}:nvidia"
     app = init_app()
     app.config.update(
         {
