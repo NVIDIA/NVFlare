@@ -29,13 +29,14 @@ from nvflare.client.tracking import SummaryWriter
 DATASET_PATH = "/tmp/nvflare/data"
 # If available, we use GPU to speed things up.
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Running on device {DEVICE}")
 
 
 def main():
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-    batch_size = 4
-    epochs = 2
+    batch_size = 32
+    epochs = 1
 
     trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
@@ -63,7 +64,7 @@ def main():
         net.load_state_dict(input_model.params)
 
         criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+        optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
 
         # (optional) use GPU to speed things up
         net.to(DEVICE)
@@ -88,11 +89,11 @@ def main():
 
                 # print statistics
                 running_loss += loss.item()
-                if i % 2000 == 1999:  # print every 2000 mini-batches
-                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
+                if i % 100 == 99:  # print every 100 mini-batches
+                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss/100:.3f}")
                     global_step = input_model.current_round * steps + epoch * len(trainloader) + i
 
-                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
+                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss/100, global_step=global_step)
                     running_loss = 0.0
 
         print("Finished Training")
