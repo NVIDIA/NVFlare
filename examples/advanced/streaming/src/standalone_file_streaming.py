@@ -27,7 +27,6 @@ SIZE = 100 * 1024 * 1024  # 100 MB
 
 
 class FileSender(FLComponent):
-
     def __init__(self):
         super().__init__()
         self.seq = 0
@@ -73,7 +72,6 @@ class FileSender(FLComponent):
 
 
 class FileReceiver(FLComponent):
-
     def __init__(self):
         super().__init__()
         self.done = False
