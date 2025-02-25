@@ -84,17 +84,18 @@ class ModelDequantizor(DXOFilter):
                     params[param_name] = values
                 elif quantization_type in ["blockwise8", "float4", "normfloat4"]:
                     # use bitsandbytes to dequantize the values
+                    # need GPU for general support
                     # extract quantization state
                     if quantization_type == "blockwise8":
                         if source_data_format == "numpy":
                             # first convert numpy array to tensor if numpy
-                            quantized = torch.as_tensor(values)
-                            absmax = torch.as_tensor(quant_state[param_name]["absmax"])
-                            code = torch.as_tensor(quant_state[param_name]["code"])
+                            quantized = torch.as_tensor(values).cuda()
+                            absmax = torch.as_tensor(quant_state[param_name]["absmax"]).cuda()
+                            code = torch.as_tensor(quant_state[param_name]["code"]).cuda()
                         elif source_data_format == "torch":
-                            quantized = values
-                            absmax = quant_state[param_name]["absmax"]
-                            code = quant_state[param_name]["code"]
+                            quantized = values.cuda()
+                            absmax = quant_state[param_name]["absmax"].cuda()
+                            code = quant_state[param_name]["code"].cuda()
                         # de-quanitze
                         dequantized = dequantize_blockwise(quantized, absmax=absmax, code=code)
                     else:
@@ -125,6 +126,7 @@ class ModelDequantizor(DXOFilter):
                             dequantized = dequantize_4bit(quantized, quantize_state, quant_type="fp4")
                         else:
                             dequantized = dequantize_4bit(quantized, quantize_state, quant_type="nf4")
+
                     if source_data_format == "numpy":
                         params[param_name] = dequantized.cpu().numpy()
                     elif source_data_format == "torch":
@@ -135,16 +137,12 @@ class ModelDequantizor(DXOFilter):
                     # convert back to original data type
                     if source_data_type == "float32":
                         params[param_name] = params[param_name].astype(np.float32)
-                    elif source_data_type == "float64":
-                        params[param_name] = params[param_name].astype(np.float64)
                     elif source_data_type == "float16":
                         params[param_name] = params[param_name].astype(np.float16)
                 elif source_data_format == "torch":
                     # convert back to original data type
                     if source_data_type == "float32":
                         params[param_name] = params[param_name].float()
-                    elif source_data_type == "float64":
-                        params[param_name] = params[param_name].double()
                     elif source_data_type == "float16":
                         params[param_name] = params[param_name].half()
                     elif source_data_type == "bfloat16":

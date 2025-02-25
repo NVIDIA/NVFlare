@@ -120,33 +120,31 @@ class ModelQuantizor(DXOFilter):
                 elif self.quantization_type in ["blockwise8", "float4", "normfloat4"]:
                     # use bitsandbytes to quantize the values
                     # input is a tensor, output is a tuple of (quantized tensor, quantized_state)
-                    if self.quantization_type == "blockwise8":
-                        if source_data_format == "numpy":
-                            # if numpy, first convert numpy array to tensor
-                            values_tensor = torch.as_tensor(values)
-                        elif source_data_format == "torch":
-                            values_tensor = values
 
-                        # then quantize the tensor
+                    # CPU has limited support for 8- and 4-bits quantization
+                    # For general purpose, here we use GPU
+                    if source_data_format == "numpy":
+                        # if numpy, first convert numpy array to tensor, need to use GPU
+                        values_tensor = torch.as_tensor(values).cuda()
+                    elif source_data_format == "torch":
+                        # if torch, directly use the tensor, need to use GPU
+                        values_tensor = values.cuda()
+
+                    if self.quantization_type == "blockwise8":
+                        # quantize the tensor
                         quantized, quantized_state = quantize_blockwise(values_tensor)
                         # add the quantization state and values, keep source data format
                         if source_data_format == "numpy":
-                            quant_state[param_name]["absmax"] = quantized_state.absmax.numpy()
-                            quant_state[param_name]["code"] = quantized_state.code.numpy()
-                            values = quantized.numpy()
+                            quant_state[param_name]["absmax"] = quantized_state.absmax.cpu().numpy()
+                            quant_state[param_name]["code"] = quantized_state.code.cpu().numpy()
+                            values = quantized.cpu().numpy()
                         elif source_data_format == "torch":
-                            quant_state[param_name]["absmax"] = quantized_state.absmax
-                            quant_state[param_name]["code"] = quantized_state.code
-                            values = quantized
+                            quant_state[param_name]["absmax"] = quantized_state.absmax.cpu()
+                            quant_state[param_name]["code"] = quantized_state.code.cpu()
+                            values = quantized.cpu()
                         n_bytes_meta += quant_state[param_name]["absmax"].nbytes
                         n_bytes_meta += quant_state[param_name]["code"].nbytes
                     else:
-                        if source_data_format == "numpy":
-                            # if numpy, first convert numpy array to tensor, need to use GPU
-                            values_tensor = torch.as_tensor(values).cuda()
-                        elif source_data_format == "torch":
-                            # if torch, directly use the tensor, need to use GPU
-                            values_tensor = values.cuda()
                         # then quantize the tensor
                         if self.quantization_type == "float4":
                             quantized, quantized_state = quantize_4bit(values_tensor, quant_type="fp4")
@@ -154,7 +152,7 @@ class ModelQuantizor(DXOFilter):
                             quantized, quantized_state = quantize_4bit(values_tensor, quant_type="nf4")
                         # add the quantization state and values, keep source data format
                         quantized_state = quantized_state.as_dict()
-
+                        # prepared the message
                         for state_name, state in quantized_state.items():
                             if isinstance(state, torch.Tensor):
                                 if source_data_format == "numpy":
@@ -171,6 +169,7 @@ class ModelQuantizor(DXOFilter):
                             values = quantized.cpu().numpy()
                         elif source_data_format == "torch":
                             values = quantized.cpu()
+
                     params[param_name] = values
                 n_bytes_after += params[param_name].nbytes
 
@@ -203,8 +202,8 @@ class ModelQuantizor(DXOFilter):
         # thus the subsequent communications to the rest of clients will no longer need to apply quantization
         # This will not apply to client job, since the client job will be 1-1 and quantization applies to each client
         # Potentially:
-        # If clients talks to each other, it will also be 1-N and same rule applies
-        # If 1-N server-client filters can be different (Filter_1 applies to server-client_subset_1, etc.), then
+        # - If clients talks to each other, it will also be 1-N and same rule applies
+        # - If 1-N server-client filters can be different (Filter_1 applies to server-client_subset_1, etc.), then
         # a deep copy of the server data should be made by filter before applying a different filter
 
         # quantized_flag None if does not exist in meta
