@@ -20,6 +20,7 @@ from flask_jwt_extended import create_access_token, get_jwt, jwt_required
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 
 from . import jwt
+from .blob import gen_server_blob
 from .store import Store
 
 
@@ -108,12 +109,7 @@ def login():
 def overseer_blob():
     claims = get_jwt()
     if claims.get("role") == "project_admin":
-        pin = request.json.get("pin")
-        fileobj, filename = Store.get_overseer_blob(pin)
-        response = make_response(fileobj.read())
-        response.headers.set("Content-Type", "zip")
-        response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
-        return response
+        return jsonify({"status": "unauthorized"}), 403
     else:
         return jsonify({"status": "unauthorized"}), 403
 
@@ -124,7 +120,7 @@ def server_blob(id):
     claims = get_jwt()
     if claims.get("role") == "project_admin":
         pin = request.json.get("pin")
-        fileobj, filename = Store.get_server_blob(pin, id == 1)
+        fileobj, filename = gen_server_blob(pin)
         response = make_response(fileobj.read())
         response.headers.set("Content-Type", "zip")
         response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')

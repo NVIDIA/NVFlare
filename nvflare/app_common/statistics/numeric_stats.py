@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,17 +15,18 @@
 from math import sqrt
 from typing import Dict, List, TypeVar
 
-from tdigest import TDigest
-
 from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, DataType, Feature, Histogram, HistogramType
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.statistics_config_utils import get_target_percents
+from nvflare.app_opt.statistics.quantile_stats import get_quantiles
+from nvflare.fuel.utils.log_utils import get_module_logger
 
 T = TypeVar("T")
 
+logger = get_module_logger(name=__name__)
+
 
 def get_global_feature_data_types(
-    client_feature_dts: Dict[str, Dict[str, List[Feature]]]
+    client_feature_dts: Dict[str, Dict[str, List[Feature]]],
 ) -> Dict[str, Dict[str, DataType]]:
     global_feature_data_types = {}
     for client_name in client_feature_dts:
@@ -85,14 +86,8 @@ def get_global_stats(
                     ds_stddev[ds_name][feature] = round(sqrt(feature_vars[feature]), precision)
 
                 global_metrics[StC.STATS_STDDEV] = ds_stddev
-        elif metric == StC.STATS_PERCENTILE:
-            global_digest = {}
-            for client_name in stats:
-
-                global_digest = aggregate_centroids(stats[client_name], global_digest)
-
-            percent_config = statistic_configs.get(StC.STATS_PERCENTILE)
-            global_metrics[metric] = compute_percentiles(global_digest, percent_config, precision)
+        elif metric == StC.STATS_QUANTILE:
+            global_metrics[metric] = get_quantiles(stats, statistic_configs, precision)
 
     return global_metrics
 
@@ -231,42 +226,3 @@ def filter_numeric_features(ds_features: Dict[str, List[Feature]]) -> Dict[str, 
         numeric_ds_features[ds_name] = n_features
 
     return numeric_ds_features
-
-
-def aggregate_centroids(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict:
-    for ds_name in metrics:
-        if ds_name not in g_digest:
-            g_digest[ds_name] = {}
-
-        feature_metrics = metrics[ds_name]
-        for feature_name in feature_metrics:
-            if feature_metrics[feature_name] is not None:
-                centroids: List = feature_metrics[feature_name].get(StC.STATS_CENTROIDS_KEY)
-                if feature_name not in g_digest[ds_name]:
-                    g_digest[ds_name][feature_name] = TDigest()
-
-                for centroid in centroids:
-                    mean = centroid.get("m")
-                    count = centroid.get("c")
-                    g_digest[ds_name][feature_name].update(mean, count)
-
-    return g_digest
-
-
-def compute_percentiles(g_digest: Dict[str, Dict[str, TDigest]], quantile_config: Dict, precision: int = 4) -> dict:
-    g_ds_metrics = {}
-    for ds_name in g_digest:
-        if ds_name not in g_ds_metrics:
-            g_ds_metrics[ds_name] = {}
-
-        feature_metrics = g_digest[ds_name]
-        for feature_name in feature_metrics:
-            digest = feature_metrics[feature_name]
-            percentiles = get_target_percents(quantile_config, feature_name)
-            percentile_values = {}
-            for percentile in percentiles:
-                percentile_values[percentile] = round(digest.percentile(percentile), precision)
-
-            g_ds_metrics[ds_name][feature_name] = percentile_values
-
-    return g_ds_metrics

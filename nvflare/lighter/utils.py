@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import json
 import os
 import random
@@ -22,21 +23,103 @@ import yaml
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.x509.oid import NameOID
 
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE, NVFLARE_SUBMITTER_CRT_FILE
 
 
-def serialize_pri_key(pri_key):
-    return pri_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.NoEncryption(),
+class Identity:
+    def __init__(self, name: str, org: str = None, role: str = None):
+        self.name = name
+        self.org = org
+        self.role = role
+
+
+def generate_cert(
+    subject: Identity,
+    issuer: Identity,
+    signing_pri_key,
+    subject_pub_key,
+    valid_days=360,
+    ca=False,
+    server_default_host=None,
+    server_additional_hosts=None,
+):
+    if isinstance(server_additional_hosts, str):
+        server_additional_hosts = [server_additional_hosts]
+
+    x509_subject = x509_name(subject.name, subject.org, subject.role)
+    x509_issuer = x509_name(issuer.name, issuer.org, issuer.role)
+
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(x509_subject)
+        .issuer_name(x509_issuer)
+        .public_key(subject_pub_key)
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=valid_days))
     )
+    if ca:
+        builder = (
+            builder.add_extension(
+                x509.SubjectKeyIdentifier.from_public_key(subject_pub_key),
+                critical=False,
+            )
+            .add_extension(
+                x509.AuthorityKeyIdentifier.from_issuer_public_key(subject_pub_key),
+                critical=False,
+            )
+            .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=False)
+        )
+
+    if server_default_host:
+        # This is to generate a server cert.
+        # Use SubjectAlternativeName for all host names
+        sans = [x509.DNSName(server_default_host)]
+        if server_additional_hosts:
+            for h in server_additional_hosts:
+                if h != server_default_host:
+                    sans.append(x509.DNSName(h))
+        builder = builder.add_extension(x509.SubjectAlternativeName(sans), critical=False)
+    else:
+        builder = builder.add_extension(x509.SubjectAlternativeName([x509.DNSName(subject.name)]), critical=False)
+    return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
+
+
+def serialize_pri_key(pri_key, passphrase=None):
+    if passphrase is None or not isinstance(passphrase, bytes):
+        return pri_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    else:
+        return pri_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.BestAvailableEncryption(password=passphrase),
+        )
 
 
 def serialize_cert(cert):
     return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def generate_keys():
+    pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+    pub_key = pri_key.public_key()
+    return pri_key, pub_key
+
+
+def x509_name(cn_name, org_name=None, role=None):
+    name = [x509.NameAttribute(NameOID.COMMON_NAME, cn_name)]
+    if org_name is not None:
+        name.append(x509.NameAttribute(NameOID.ORGANIZATION_NAME, org_name))
+    if role:
+        name.append(x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, role))
+    return x509.Name(name)
 
 
 def load_crt(path):
@@ -326,69 +409,3 @@ def _write(file_full_path, content, mode, exe=False):
 
 def write(file_full_path, content, mode, exe=False):
     _write(file_full_path, content, mode, exe)
-
-
-def _write_common(type, dest_dir, template, tplt, replacement_dict, config):
-    mapping = {"server": "svr", "client": "cln"}
-    write(os.path.join(dest_dir, f"fed_{type}.json"), json.dumps(config, indent=2), "t")
-    write(
-        os.path.join(dest_dir, "docker.sh"),
-        sh_replace(template[f"docker_{mapping[type]}_sh"], replacement_dict),
-        "t",
-        exe=True,
-    )
-    write(
-        os.path.join(dest_dir, "start.sh"),
-        sh_replace(template[f"start_{mapping[type]}_sh"], replacement_dict),
-        "t",
-        exe=True,
-    )
-    write(
-        os.path.join(dest_dir, "sub_start.sh"),
-        sh_replace(tplt.get_sub_start_sh(), replacement_dict),
-        "t",
-        exe=True,
-    )
-    write(
-        os.path.join(dest_dir, "stop_fl.sh"),
-        template["stop_fl_sh"],
-        "t",
-        exe=True,
-    )
-
-
-def _write_local(type, dest_dir, template, capacity=""):
-    write(
-        os.path.join(dest_dir, "log_config.json.default"),
-        template["log_config"],
-        "t",
-    )
-    write(
-        os.path.join(dest_dir, "privacy.json.sample"),
-        template["sample_privacy"],
-        "t",
-    )
-    write(
-        os.path.join(dest_dir, "authorization.json.default"),
-        template["default_authz"],
-        "t",
-    )
-    if type == "server":
-        resources = json.loads(template["local_server_resources"])
-    elif type == "client":
-        resources = json.loads(template["local_client_resources"])
-        for component in resources["components"]:
-            if "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager" == component["path"]:
-                component["args"] = json.loads(capacity)
-                break
-    write(
-        os.path.join(dest_dir, "resources.json.default"),
-        json.dumps(resources, indent=2),
-        "t",
-    )
-
-
-def _write_pki(type, dest_dir, cert_pair, root_cert):
-    write(os.path.join(dest_dir, f"{type}.crt"), cert_pair.ser_cert, "b", exe=False)
-    write(os.path.join(dest_dir, f"{type}.key"), cert_pair.ser_pri_key, "b", exe=False)
-    write(os.path.join(dest_dir, "rootCA.pem"), root_cert, "b", exe=False)
