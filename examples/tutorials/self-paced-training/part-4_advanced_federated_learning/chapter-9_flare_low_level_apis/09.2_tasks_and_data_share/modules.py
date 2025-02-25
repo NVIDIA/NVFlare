@@ -22,7 +22,6 @@ from nvflare.apis.signal import Signal
 
 
 class HelloController(Controller):
-
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         # Create the task with name "hello"
         task = Task(name="hello", data=Shareable())
@@ -43,7 +42,6 @@ class HelloController(Controller):
 
 
 class HelloExecutor(Executor):
-
     def execute(
         self,
         task_name: str,
@@ -57,7 +55,6 @@ class HelloExecutor(Executor):
 
 
 class HelloDataController(Controller):
-
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         # Prepare any extra parameters to send to the clients
         data = DXO(
@@ -84,7 +81,6 @@ class HelloDataController(Controller):
 
 
 class HelloDataExecutor(Executor):
-
     def execute(
         self,
         task_name: str,
@@ -100,7 +96,6 @@ class HelloDataExecutor(Executor):
 
 
 class HelloResponseController(Controller):
-
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         # Prepare any extra parameters to send to the clients
         dxo = DXO(
@@ -136,7 +131,6 @@ class HelloResponseController(Controller):
 
 
 class HelloResponseExecutor(Executor):
-
     def execute(
         self,
         task_name: str,

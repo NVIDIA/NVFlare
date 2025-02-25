@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 
 class SimpleController(Controller):
-
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         logger.info(f"Entering control loop of {self.__class__.__name__}")
         engine = fl_ctx.get_engine()

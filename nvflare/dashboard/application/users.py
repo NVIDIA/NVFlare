@@ -18,6 +18,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
 from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 
+from .blob import gen_user_blob
 from .store import Store, check_role
 
 
@@ -83,7 +84,7 @@ def user_blob(id):
     if not c and not p:
         return jsonify({"status": "unauthorized"}), 403
     pin = request.json.get("pin")
-    fileobj, filename = Store.get_user_blob(pin, id)
+    fileobj, filename = gen_user_blob(pin, id)
     response = make_response(fileobj.read())
     response.headers.set("Content-Type", "zip")
     response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
