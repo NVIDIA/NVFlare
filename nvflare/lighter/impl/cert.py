@@ -117,9 +117,6 @@ class CertBuilder(Builder):
             # using project provided credentials
             self.serialized_cert = project.serialized_root_cert
             self.root_cert = x509.load_pem_x509_certificate(self.serialized_cert, default_backend())
-            # self.pri_key = serialization.load_pem_private_key(
-            #     project.serialized_root_private_key, password=None, backend=default_backend()
-            # )
             self.pri_key = project.root_private_key
             self.pub_key = self.pri_key.public_key()
             self.subject = self.root_cert.subject
