@@ -15,10 +15,9 @@
 import os
 import shutil
 
-import nvflare.lighter as prov
 from nvflare.lighter.constants import CtxKey
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
-from nvflare.lighter.utils import load_yaml, make_dirs
+from nvflare.lighter.utils import make_dirs
 
 
 class WorkspaceBuilder(Builder):
@@ -47,23 +46,7 @@ class WorkspaceBuilder(Builder):
         Args:
             template_file: one or more template file names
         """
-        self.template_files = template_file
-
-    def _build_template(self, ctx: ProvisionContext):
-        prov_folder = os.path.dirname(prov.__file__)
-        temp_folder = os.path.join(prov_folder, "templates")
-
-        temp_files_to_load = self.template_files
-        if not temp_files_to_load:
-            # load everything
-            temp_files_to_load = [f for f in os.listdir(temp_folder) if os.path.isfile(f)]
-        elif isinstance(temp_files_to_load, str):
-            temp_files_to_load = [temp_files_to_load]
-
-        template = dict()
-        for f in temp_files_to_load:
-            template.update(load_yaml(os.path.join(temp_folder, f)))
-        ctx.set_template(template)
+        self.template_files = template_file  # obsolete
 
     def initialize(self, project: Project, ctx: ProvisionContext):
         workspace_dir = ctx.get_workspace()
@@ -74,7 +57,6 @@ class WorkspaceBuilder(Builder):
             if stage > last:
                 last = stage
         ctx[CtxKey.LAST_PROD_STAGE] = last
-        self._build_template(ctx)
 
     def build(self, project: Project, ctx: ProvisionContext):
         participants = project.get_all_participants()

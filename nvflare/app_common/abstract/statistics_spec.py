@@ -318,7 +318,7 @@ class Statistics(InitFinalComponent, ABC):
         """
         return 0
 
-    def percentiles(self, dataset_name: str, feature_name: str, percentiles: List) -> Dict:
+    def quantiles(self, dataset_name: str, feature_name: str, percentiles: List) -> Dict:
         """Return failed count for given dataset and feature.
 
         To perform data privacy min_count check, failure_count is always required.

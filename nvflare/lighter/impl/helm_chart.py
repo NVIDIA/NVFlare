@@ -33,6 +33,7 @@ class HelmChartBuilder(Builder):
         self.helm_chart_templates_directory = None
 
     def initialize(self, project: Project, ctx: ProvisionContext):
+        ctx.load_templates("master_template.yml")
         self.helm_chart_directory = os.path.join(ctx.get_wip_dir(), ProvFileName.HELM_CHART_DIR)
         os.mkdir(self.helm_chart_directory)
 

@@ -23,7 +23,6 @@ from nvflare.apis.signal import Signal
 
 
 class BasicController(Controller):
-
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         self.broadcast_and_wait(
             task=Task(name="talk", data=Shareable()),
@@ -40,7 +39,6 @@ class BasicController(Controller):
 
 
 class P2PExecutor(Executor):
-
     def execute(
         self,
         task_name: str,

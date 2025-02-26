@@ -168,6 +168,9 @@ class DockerLauncherBuilder(Builder):
                 exe=True,
             )
 
+    def initialize(self, project: Project, ctx: ProvisionContext):
+        ctx.load_templates("docker_launcher_template.yml")
+
     def build(self, project: Project, ctx: ProvisionContext):
         compose = ctx.yaml_load_template_section(TemplateSectionKey.COMPOSE_YAML)
         self.services = compose.get("services")

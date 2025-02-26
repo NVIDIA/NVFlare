@@ -22,7 +22,7 @@ def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--n_clients", type=int, default=3)
     parser.add_argument("-d", "--data_root_dir", type=str, nargs="?", default="/tmp/nvflare/image_stats/data")
-    parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/stats.json")
+    parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/image_stats.json")
     parser.add_argument("-j", "--job_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/image_stats")
     parser.add_argument("-w", "--work_dir", type=str, nargs="?", default="/tmp/nvflare/workspace/image_stats")
 

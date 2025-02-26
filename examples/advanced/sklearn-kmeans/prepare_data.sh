@@ -8,6 +8,7 @@ if [ -f "$DATASET_PATH" ]; then
 else
     python3 "${script_dir}"/utils/prepare_data.py \
         --dataset_name iris \
+        --randomize 0 \
         --out_path ${DATASET_PATH}
     echo "Data loaded and saved in ${DATASET_PATH}"
 fi

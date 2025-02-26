@@ -17,7 +17,6 @@ import logging
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from .blob import gen_client, gen_overseer, gen_server, gen_user
 from .cert import Entity, make_root_cert
 from .models import Capacity, Client, Organization, Project, Role, User, db
 
@@ -64,12 +63,12 @@ class Store(object):
         return user.approval_state >= 100 if user else False
 
     @classmethod
-    def seed_user(cls, email, pwd):
+    def seed_user(cls, email, pwd, org):
         seed_user = {
             "name": "super_name",
             "email": email,
             "password": pwd,
-            "organization": "",
+            "organization": org,
             "role": "project_admin",
             "approval_state": 200,
         }
@@ -133,16 +132,6 @@ class Store(object):
         project_dict = _dict_or_empty(Project.query.first())
         project_dict = cls._add_registered_info(project_dict)
         return add_ok({"project": project_dict})
-
-    @classmethod
-    def get_overseer_blob(cls, key):
-        fileobj, filename = gen_overseer(key)
-        return fileobj, filename
-
-    @classmethod
-    def get_server_blob(cls, key, first_server=True):
-        fileobj, filename = gen_server(key, first_server)
-        return fileobj, filename
 
     @classmethod
     def get_orgs(cls):
@@ -257,12 +246,6 @@ class Store(object):
         return add_ok({})
 
     @classmethod
-    def get_client_blob(cls, key, id):
-        fileobj, filename = gen_client(key, id)
-        inc_dl(Client, id)
-        return fileobj, filename
-
-    @classmethod
     def create_user(cls, req):
         name = req.get("name", "")
         email = req.get("email")
@@ -374,9 +357,3 @@ class Store(object):
         db.session.commit()
 
         return add_ok({})
-
-    @classmethod
-    def get_user_blob(cls, key, id):
-        fileobj, filename = gen_user(key, id)
-        inc_dl(User, id)
-        return fileobj, filename

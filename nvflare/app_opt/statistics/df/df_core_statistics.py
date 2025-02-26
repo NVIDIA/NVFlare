@@ -12,23 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC
+from math import sqrt
 from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 from pandas.core.series import Series
-from tdigest import TDigest
 
 from nvflare.app_common.abstract.statistics_spec import BinRange, Feature, Histogram, HistogramType, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants
 from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_std_histogram_buckets
+from nvflare.fuel.utils.import_utils import optional_import
 
 
 class DFStatisticsCore(Statistics, ABC):
-    def __init__(self):
+    def __init__(self, max_bin=None):
         # assumption: the data can be loaded and cached in the memory
         self.data: Optional[Dict[str, pd.DataFrame]] = None
         super(DFStatisticsCore, self).__init__()
+        self.max_bin = max_bin
 
     def features(self) -> Dict[str, List[Feature]]:
         results: Dict[str, List[Feature]] = {}
@@ -92,24 +94,25 @@ class DFStatisticsCore(Statistics, ABC):
         df = self.data[dataset_name]
         return df[feature_name].min()
 
-    def percentiles(self, dataset_name: str, feature_name: str, percents: List) -> Dict:
-        digest = self._prepare_t_digest(dataset_name, feature_name)
+    def quantiles(self, dataset_name: str, feature_name: str, percents: List) -> Dict:
+        TDigest, flag = optional_import("fastdigest", name="TDigest")
         results = {}
-        p_results = {}
-        for p in percents:
-            v = round(digest.percentile(p), 4)
-            p_results[p] = v
-        results[StatisticsConstants.STATS_PERCENTILES_KEY] = p_results
+        if not flag:
+            results[StatisticsConstants.STATS_QUANTILE] = {}
+            return results
 
-        # Extract centroids (mean, count) from the digest to used for merge for the global
-        x = digest.centroids_to_list()
-        results[StatisticsConstants.STATS_CENTROIDS_KEY] = x
-        return results
-
-    def _prepare_t_digest(self, dataset_name: str, feature_name: str) -> TDigest:
         df = self.data[dataset_name]
         data = df[feature_name]
-        digest = TDigest()
-        for value in data:
-            digest.update(value)
-        return digest
+        max_bin = self.max_bin if self.max_bin else round(sqrt(len(data)))
+        digest = TDigest(data)
+        digest.compress(max_bin)
+
+        p_results = {}
+        for p in percents:
+            v = round(digest.quantile(p), 4)
+            p_results[p] = v
+        results[StatisticsConstants.STATS_QUANTILE] = p_results
+
+        # Extract the Q-Digest into a dictionary
+        results[StatisticsConstants.STATS_DIGEST_COORD] = digest.to_dict()
+        return results

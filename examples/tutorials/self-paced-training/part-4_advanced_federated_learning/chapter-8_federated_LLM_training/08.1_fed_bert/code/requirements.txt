@@ -1,0 +1,6 @@
+torch
+torchvision
+tensorboard
+transformers
+pandas
+seqeval

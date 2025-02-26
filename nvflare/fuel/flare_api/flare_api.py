@@ -370,6 +370,36 @@ class Session(SessionSpec):
         location = meta.get(MetaKey.LOCATION)
         return location
 
+    def list_job_components(self, job_id: str) -> List[str]:
+        """Get the list of additional job components for the specified job.
+
+        Args:
+            job_id (str): ID of the job
+
+        Returns: a list of the additional job components
+
+        """
+        self._validate_job_id(job_id)
+        result = self._do_command(AdminCommandNames.LIST_JOB + " " + job_id)
+        meta = result[ResultKey.META]
+        job_components_list = meta.get(MetaKey.JOB_COMPONENTS, [])
+        return job_components_list
+
+    def download_job_components(self, job_id: str) -> str:
+        """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
+
+        Args:
+            job_id (str): ID of the job
+
+        Returns: folder path to the location of the downloaded additional job components
+
+        """
+        self._validate_job_id(job_id)
+        result = self._do_command(AdminCommandNames.DOWNLOAD_JOB_COMPONENTS + " " + job_id)
+        meta = result[ResultKey.META]
+        location = meta.get(MetaKey.LOCATION)
+        return location
+
     def abort_job(self, job_id: str):
         """Abort the specified job.
 

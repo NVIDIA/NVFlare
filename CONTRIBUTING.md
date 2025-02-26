@@ -44,9 +44,6 @@ To collaborate efficiently, please read through this section and follow them.
 * [Building documentation](#building-the-documentation)
 * [Signing your work](#signing-your-work)
 
-> Note: 
-  > some package dependencies requires python<version>-dev in local development such as 
-  > python3.12-dev. 
 
 #### Checking the coding style
 We check code style using flake8 and isort.

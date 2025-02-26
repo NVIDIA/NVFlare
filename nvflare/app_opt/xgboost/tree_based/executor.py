@@ -174,7 +174,9 @@ class FedXGBTreeExecutor(Executor):
         if self.writer:
             # note: writing auc before current training step, for passed in global model
             self.writer.add_scalar(
-                "AUC", auc, int((self.bst.num_boosted_rounds() - self.num_local_round - 1) / self.num_client_bagging)
+                "train_metrics",
+                auc,
+                int((self.bst.num_boosted_rounds() - self.num_local_round - 1) / self.num_client_bagging),
             )
         return bst
 
@@ -193,7 +195,7 @@ class FedXGBTreeExecutor(Executor):
             f"Client {self.client_id} AUC after training: {auc}",
         )
         if self.writer:
-            self.writer.add_scalar("AUC", auc, self.bst.num_boosted_rounds() - 1)
+            self.writer.add_scalar("train_metrics", auc, self.bst.num_boosted_rounds() - 1)
         return self.bst
 
     def train(

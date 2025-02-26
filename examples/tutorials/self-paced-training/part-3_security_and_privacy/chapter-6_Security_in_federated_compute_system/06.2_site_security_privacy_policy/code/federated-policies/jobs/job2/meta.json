@@ -1,0 +1,11 @@
+{
+  "name": "job_2",
+  "resource_spec": {},
+  "min_clients" : 1,
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  },
+  "scope": "test"
+}

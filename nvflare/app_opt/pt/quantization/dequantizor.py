@@ -178,20 +178,18 @@ class ModelDequantizor(DXOFilter):
         quantization_type = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
         if quantization_type.upper() not in QUANTIZATION_TYPE:
             raise ValueError(f"Invalid quantization type: {quantization_type}, valid: {QUANTIZATION_TYPE}")
-
+        source_datatype = dxo.get_meta_prop(key="source_datatype", default=None)
         dequantized_params = self.dequantization(
             params=dxo.data,
             quant_state=dxo.meta["quant_state"],
             quantization_type=quantization_type,
-            source_datatype=dxo.meta["source_datatype"],
+            source_datatype=source_datatype,
             fl_ctx=fl_ctx,
         )
         # Compose new DXO with dequantized data
         dxo.data = dequantized_params
-        dxo.remove_meta_props(MetaKey.PROCESSED_ALGORITHM)
-        dxo.remove_meta_props("quant_state")
-        dxo.remove_meta_props("source_datatype")
+        dxo.remove_meta_props([MetaKey.PROCESSED_ALGORITHM, "quant_state", "source_datatype", "quantized_flag"])
         dxo.update_shareable(shareable)
-        self.log_info(fl_ctx, "Dequantized back")
+        self.log_info(fl_ctx, f"Dequantized back to {source_datatype}")
 
         return dxo

@@ -43,7 +43,6 @@ class StaticFileBuilder(Builder):
         download_job_url="",
         docker_image="",
         overseer_agent: dict = None,
-        components="",
     ):
         """Build all static files from template.
 
@@ -67,7 +66,6 @@ class StaticFileBuilder(Builder):
         self.download_job_url = download_job_url
         self.app_validator = app_validator
         self.overseer_agent = overseer_agent
-        self.components = components
 
     def _build_overseer(self, overseer: Participant, ctx: ProvisionContext):
         dest_dir = ctx.get_kit_dir(overseer)
@@ -829,6 +827,7 @@ class StaticFileBuilder(Builder):
             ctx[CtxKey.CLIENT_MAP] = client_map
 
     def initialize(self, project: Project, ctx: ProvisionContext):
+        ctx.load_templates("master_template.yml")
         self._determine_relay_hierarchy(project, ctx)
         self._determine_client_hierarchy(project, ctx)
 
