@@ -27,7 +27,6 @@ from nvflare.apis.fl_constant import (
     ProcessType,
     ReservedKey,
     SystemComponents,
-    WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable

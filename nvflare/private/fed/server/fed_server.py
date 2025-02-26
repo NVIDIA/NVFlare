@@ -36,7 +36,6 @@ from nvflare.apis.fl_constant import (
     SnapshotKey,
     SystemComponents,
     SystemConfigs,
-    WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
