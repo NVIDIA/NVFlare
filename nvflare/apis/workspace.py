@@ -68,7 +68,6 @@ class Workspace:
                 root_dir = f"{root_dir}:{ws_root}"
                 parts = root_dir.split(":")
                 num_parts = len(parts)
-                print(f"==== WS ROOT: {root_dir}")
 
         if num_parts > 1:
             data_root = parts[1]
@@ -115,8 +114,6 @@ class Workspace:
 
         self.site_name = site_name
         self.config_folder = config_folder
-
-        print(f"===== Final WS: {self.root_dir=} {self.data_root=} {self.log_root=} {self.audit_root=}")
 
         startup_dir = self.get_startup_kit_dir()
         if not os.path.isdir(startup_dir):
