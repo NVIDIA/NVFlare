@@ -21,13 +21,7 @@ from typing import List
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import (
-    FLContextKey,
-    MachineStatus,
-    ProcessType,
-    ReservedKey,
-    SystemComponents,
-)
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ProcessType, ReservedKey, SystemComponents
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
