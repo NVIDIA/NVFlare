@@ -49,6 +49,9 @@ class WorkspaceBuilder(Builder):
         self.template_files = template_file  # obsolete
 
     def initialize(self, project: Project, ctx: ProvisionContext):
+        # be backward compatible: load template files if specified.
+        ctx.load_templates(self.template_files)
+
         workspace_dir = ctx.get_workspace()
         prod_dirs = [_ for _ in os.listdir(workspace_dir) if _.startswith("prod_")]
         last = -1

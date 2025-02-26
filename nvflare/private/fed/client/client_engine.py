@@ -326,7 +326,8 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
     def get_engine_status(self):
         running_jobs = []
         for job_id in self.get_all_job_ids():
-            run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+            ws = Workspace(self.args.workspace)
+            run_folder = ws.get_run_dir(job_id)
             app_name = ""
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
@@ -357,11 +358,11 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         if status == ClientStatus.STARTED:
             return "Client app already started."
 
-        app_root = os.path.join(
+        workspace = Workspace(
             self.args.workspace,
-            WorkspaceConstants.WORKSPACE_PREFIX + str(job_id),
-            WorkspaceConstants.APP_PREFIX + self.client.client_name,
+            site_name=self.client.client_name,
         )
+        app_root = workspace.get_app_dir(job_id)
         if not os.path.exists(app_root):
             return f"{ERROR_MSG_PREFIX}: Client app does not exist. Please deploy it before starting client."
 
@@ -469,7 +470,8 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         return ""
 
     def delete_run(self, job_id: str) -> str:
-        job_id_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+        ws = Workspace(self.args.workspace)
+        job_id_folder = ws.get_run_dir(job_id)
         if os.path.exists(job_id_folder):
             shutil.rmtree(job_id_folder)
         return f"Delete run folder: {job_id_folder}."

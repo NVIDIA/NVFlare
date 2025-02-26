@@ -53,13 +53,70 @@ class Workspace:
             site_name: site name of the workspace
             config_folder: where to find required config inside an app
         """
-        self.root_dir = root_dir
+        parts = root_dir.split(":")
+        self.root_dir = parts[0]
+        log_root = None
+        data_root = None
+        audit_root = None
+
+        num_parts = len(parts)
+
+        if num_parts == 1:
+            # check env var for other roots (Data, Log, Audit)
+            ws_root = os.environ.get("NVFL_WS_ROOT")
+            if ws_root:
+                root_dir = f"{root_dir}:{ws_root}"
+                parts = root_dir.split(":")
+                num_parts = len(parts)
+                print(f"==== WS ROOT: {root_dir}")
+
+        if num_parts > 1:
+            data_root = parts[1]
+        if num_parts > 2:
+            log_root = parts[2]
+        if num_parts > 3:
+            audit_root = parts[3]
+
+        # check to make sure the workspace is valid
+        if not os.path.isdir(self.root_dir):
+            raise ValueError(f"invalid workspace {self.root_dir}: it does not exist or not a valid dir")
+
+        if data_root:
+            if not os.path.isdir(data_root):
+                raise ValueError(f"invalid data root {data_root}: it does not exist or not a valid dir")
+
+            self.data_root = data_root
+            if site_name:
+                # create the site folder
+                os.makedirs(os.path.join(data_root, site_name), exist_ok=True)
+
+        else:
+            self.data_root = None
+
+        if log_root:
+            if not os.path.isdir(log_root):
+                raise ValueError(f"invalid log root {log_root}: it does not exist or not a valid dir")
+            self.log_root = log_root
+            if site_name:
+                # create the site folder
+                os.makedirs(os.path.join(log_root, site_name), exist_ok=True)
+        else:
+            self.log_root = self.data_root
+
+        if audit_root:
+            if not os.path.isdir(audit_root):
+                raise ValueError(f"invalid audit root {audit_root}: it does not exist or not a valid dir")
+            self.audit_root = audit_root
+            if site_name:
+                # create the site folder
+                os.makedirs(os.path.join(audit_root, site_name), exist_ok=True)
+        else:
+            self.audit_root = self.log_root
+
         self.site_name = site_name
         self.config_folder = config_folder
 
-        # check to make sure the workspace is valid
-        if not os.path.isdir(root_dir):
-            raise RuntimeError(f"invalid workspace {root_dir}: it does not exist or not a valid dir")
+        print(f"===== Final WS: {self.root_dir=} {self.data_root=} {self.log_root=} {self.audit_root=}")
 
         startup_dir = self.get_startup_kit_dir()
         if not os.path.isdir(startup_dir):
@@ -136,10 +193,27 @@ class Workspace:
         return os.path.join(self.root_dir, WorkspaceConstants.STARTUP_FOLDER_NAME)
 
     def get_audit_file_path(self) -> str:
-        return os.path.join(self.root_dir, WorkspaceConstants.AUDIT_LOG)
+        file_name = WorkspaceConstants.AUDIT_LOG
+        if self.audit_root:
+            return os.path.join(self._get_site_root_dir(self.audit_root), file_name)
+        else:
+            return os.path.join(self.root_dir, file_name)
+
+    def _get_site_root_dir(self, root, job_id=None):
+        if job_id:
+            result = os.path.join(root, self.site_name, job_id)
+            if not os.path.exists(result):
+                os.makedirs(result, exist_ok=True)
+            return result
+        else:
+            return os.path.join(root, self.site_name)
 
     def get_log_file_path(self) -> str:
-        return os.path.join(self.root_dir, WorkspaceConstants.LOG_FILE_NAME)
+        file_name = WorkspaceConstants.LOG_FILE_NAME
+        if self.log_root:
+            return os.path.join(self._get_site_root_dir(self.log_root), file_name)
+        else:
+            return os.path.join(self.root_dir, file_name)
 
     def get_root_dir(self) -> str:
         return self.root_dir
@@ -150,11 +224,17 @@ class Workspace:
     def get_app_dir(self, job_id: str) -> str:
         return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.APP_PREFIX + self.site_name)
 
+    def _get_any_app_log_file_path(self, job_id: str, file_name: str):
+        if self.log_root:
+            return os.path.join(self._get_site_root_dir(self.log_root, job_id), file_name)
+        else:
+            return os.path.join(self.get_run_dir(job_id), file_name)
+
     def get_app_log_file_path(self, job_id: str) -> str:
-        return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.LOG_FILE_NAME)
+        return self._get_any_app_log_file_path(job_id, WorkspaceConstants.LOG_FILE_NAME)
 
     def get_app_error_log_file_path(self, job_id: str) -> str:
-        return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.ERROR_LOG_FILE_NAME)
+        return self._get_any_app_log_file_path(job_id, WorkspaceConstants.ERROR_LOG_FILE_NAME)
 
     def get_app_config_dir(self, job_id: str) -> str:
         return os.path.join(self.get_app_dir(job_id), self.config_folder)
@@ -175,13 +255,19 @@ class Workspace:
         file_name = WorkspaceConstants.STATS_POOL_SUMMARY_FILE_NAME
         if prefix:
             file_name = f"{prefix}.{file_name}"
-        return os.path.join(self.get_run_dir(job_id), file_name)
+        return self._get_any_app_log_file_path(job_id, file_name)
 
     def get_stats_pool_records_path(self, job_id: str, prefix=None) -> str:
         file_name = WorkspaceConstants.STATS_POOL_RECORDS_FILE_NAME
         if prefix:
             file_name = f"{prefix}.{file_name}"
-        return os.path.join(self.get_run_dir(job_id), file_name)
+        return self._get_any_app_log_file_path(job_id, file_name)
+
+    def get_data_root(self, job_id: str):
+        if self.data_root:
+            return self._get_site_root_dir(self.data_root, job_id)
+        else:
+            return self.get_run_dir(job_id)
 
     def get_config_files_for_startup(self, is_server: bool, for_job: bool) -> list:
         """Get all config files to be used for startup of the process (SP, SJ, CP, CJ).
