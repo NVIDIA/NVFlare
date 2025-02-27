@@ -71,6 +71,18 @@ Your subclass of DXOFilter benefits from the features of DXOFilter:
     - Filtering history recording. If a DXO node is processed by your filter, your filter's class name will be appended to the DXO's "filter_history"
     - Auditing. If your filter is applied, a job audit event will be created to record the fact that the filter is applied to data.
 
+DXO Filter Behavior in 1-N Communication
+==========
+Based on the design, when a DXO filter is applied to a DXO object, it modifies the DXO object in place. This is fine when the DXO object is expected to be sent to only one recipient, as in the case of 1-1 communication.
+But in the case of 1-N communication, the DXO object will be expected by multiple recipients.
+Assuming a common filter is being used, given the DXO object is modified in place, then the DXO object sent to the second and other recipients
+should not be filtered again, otherwise they will be different from the one sent to the first recipient.
+
+Therefore, when designing and implementing filters, such behavior needs to be considered with care:
+
+    - If the DXO object is modified in place, then the filter should be applied only once to the DXO object.
+    - If different filters are expected to be applied to the same DXO object, then the DXO object should not be modified in place. Instead, a deep copy should be created and used by the filter.
+
 Creating a DXO Filter
 ---------------------
 You create a new DXO-based filter by extending the DXOFilter class, and provide the "process_dxo" method.
@@ -81,3 +93,4 @@ Specifying supported_data_kinds makes it clear what the filter is capable of, an
 Pay attention to the return value of the "process_dxo" method that you will write. You must return None if no processing is done to the DXO object passed to you. You must return a DXO object (could be the same DXO passed to you or a newly created one) if processing is applied to the DXO passed to you.
 
 In the past, filters were written with implicitly assumed data kinds. They did not explicitly specify what kinds of data they can process. This worked sort of okay because filters could only be specified in the job configuration by a researcher, who usually knows what filters are applicable to the job. But this won't work for site privacy policy where specified filters are for all jobs. DXO based filters work in a different way now: instead of assuming the data is always to be processed, DXOFilter only filters the DXO objects that are configured to be processed based on their data kinds - if a DXO object is not a configured kind, then it won't be processed. This makes it possible for the Org Admin to simply specify filters based on data kinds they want to control.
+
