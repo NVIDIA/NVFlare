@@ -12,15 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Supported Input Data Type
+# Message quantization is mainly for reducing the message that can be
+# significantly large, e.g. LLMs. Thus, the supported input data types
+# we consider are common ones during LLM training, including fp32, fp16, and bf16.
 DATA_TYPE = [
-    "FLOAT64",
     "FLOAT32",
     "FLOAT16",
     "BFLOAT16",
-    "UINT8",
-    "INT8",
 ]
 
+# Supported Quantization Type to reduce the above input data types
+# The quantization types are mainly for reducing the model size,
+# Hence, we support 16-, 8-, and 4-bits quantization.
+# Note that 8- and 4-bits quantization needs GPU support.
 QUANTIZATION_TYPE = [
     "FLOAT16",
     "BLOCKWISE8",

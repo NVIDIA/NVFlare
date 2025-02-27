@@ -19,8 +19,8 @@ from nvflare import FedJob, FilterType
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.app_opt.pt.quantization.dequantizor import ModelDequantizor
-from nvflare.app_opt.pt.quantization.quantizor import ModelQuantizor
+from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
+from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 from nvflare.job_config.script_runner import ScriptRunner
 
 
@@ -67,10 +67,10 @@ def main():
 
     if args.quantize_mode:
         # If using quantization, add quantize filters.
-        quantizor = ModelQuantizor(quantization_type=args.quantize_mode)
-        dequantizor = ModelDequantizor()
-        job.to(quantizor, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
-        job.to(dequantizor, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
+        quantizer = ModelQuantizer(quantization_type=args.quantize_mode)
+        dequantizer = ModelDequantizer()
+        job.to(quantizer, "server", tasks=["train"], filter_type=FilterType.TASK_DATA)
+        job.to(dequantizer, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
     # Define the model persistor and send to server
     # First send the model to the server
@@ -106,8 +106,8 @@ def main():
         job.to(runner, site_name, tasks=["train"])
 
         if args.quantize_mode:
-            job.to(quantizor, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
-            job.to(dequantizor, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
+            job.to(quantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
+            job.to(dequantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
 
     # Export the job
     print("job_dir=", job_dir)
