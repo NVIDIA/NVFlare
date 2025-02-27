@@ -58,8 +58,8 @@ class Workspace:
         self.config_folder = config_folder
 
         # check to make sure the workspace is valid
-        if not os.path.isdir(self.root_dir):
-            raise ValueError(f"invalid workspace {self.root_dir}: it does not exist or not a valid dir")
+        if not os.path.isdir(root_dir):
+            raise ValueError(f"invalid workspace {root_dir}: it does not exist or not a valid dir")
 
         startup_dir = self.get_startup_kit_dir()
         if not os.path.isdir(startup_dir):
@@ -73,7 +73,7 @@ class Workspace:
                 f"invalid workspace {root_dir}: missing site config folder '{site_dir}' or not a valid dir"
             )
 
-        # check env var for other roots (Result, Log, Audit)
+        # check env vars for other roots (Result, Log, Audit)
         self.result_root = self._setup_root(WorkspaceConstants.ENV_VAR_RESULT_ROOT)
         self.audit_root = self._setup_root(WorkspaceConstants.ENV_VAR_AUDIT_ROOT)
         self.log_root = self._setup_root(WorkspaceConstants.ENV_VAR_LOG_ROOT)
@@ -89,8 +89,10 @@ class Workspace:
 
         if not self.audit_root:
             if self.log_root:
+                # if log root is defined, use it for auditing too since they are all for output only
                 self.audit_root = self.log_root
             else:
+                # otherwise we use the result root
                 self.audit_root = self.result_root
 
     def _setup_root(self, env_var: str):
