@@ -26,7 +26,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.pt.quantization.constant import QUANTIZATION_TYPE
 
 
-class ModelDequantizor(DXOFilter):
+class ModelDequantizer(DXOFilter):
     def __init__(self):
         """Filter to dequantize Shareable object to recover from quantization
 
