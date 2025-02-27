@@ -18,7 +18,6 @@ from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.edge.constants import EdgeContextKey, EdgeEventType, EdgeProtoKey, Status
 from nvflare.edge.web.handlers.edge_task_handler import EdgeTaskHandler
-from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
@@ -29,20 +28,16 @@ from nvflare.edge.web.models.task_response import TaskResponse
 
 class LcpTaskHandler(EdgeTaskHandler):
 
-    def __init__(self, engine: ClientEngineSpec):
-        self.engine = engine
-        self.job_id = None
+    def __init__(self):
+        self.engine = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def reset(self):
-        self.job_id = None
+    def set_engine(self, engine: ClientEngineSpec):
+        self.engine = engine
 
     def handle_job(self, job_request: JobRequest) -> JobResponse:
+
         with self.engine.new_context() as fl_ctx:
-            if self.job_id:
-                msg = f"Job {self.job_id} is not done yet"
-                self.logger.error(msg)
-                raise ApiError(400, "INVALID_REQUEST", msg)
 
             fl_ctx.set_prop(EdgeContextKey.EDGE_CAPABILITIES, job_request.capabilities, private=True, sticky=False)
 
@@ -84,12 +79,8 @@ class LcpTaskHandler(EdgeTaskHandler):
 
     def _handle_task_request(self, request: Any) -> dict:
         with self.engine.new_context() as fl_ctx:
-            if not self.job_id:
-                msg = "No job request yet"
-                self.logger.error(msg)
-                raise ApiError(400, "INVALID_REQUEST", msg)
 
-            fl_ctx.set_prop(EdgeContextKey.JOB_ID, self.job_id, private=True, sticky=False)
+            fl_ctx.set_prop(EdgeContextKey.JOB_ID, request.job_id, private=True, sticky=False)
             fl_ctx.set_prop(EdgeContextKey.REQUEST_FROM_EDGE, request, private=True, sticky=False)
 
             self.engine.fire_event(EdgeEventType.EDGE_REQUEST_RECEIVED, fl_ctx)

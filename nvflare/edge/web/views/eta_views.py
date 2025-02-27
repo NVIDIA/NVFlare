@@ -16,6 +16,7 @@ from typing import Optional
 from flask import Blueprint, request
 
 from nvflare.edge.web.handlers.edge_task_handler import EdgeTaskHandler
+from nvflare.edge.web.handlers.lcp_task_handler import LcpTaskHandler
 from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_request import JobRequest
@@ -24,7 +25,7 @@ from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.user_info import UserInfo
 
 eta_bp = Blueprint("eta", __name__)
-task_handler: EdgeTaskHandler = None
+task_handler: EdgeTaskHandler = LcpTaskHandler()
 
 
 def process_header(headers) -> (DeviceInfo, Optional[UserInfo]):
@@ -75,4 +76,4 @@ def result_view():
     req = ResultReport(device_info, user_info, task_id, task_name)
     req.update(data)
 
-    return handle_result_report(device_info, user_info, req)
+    return task_handler.handle_result(req)

@@ -13,17 +13,20 @@
 # limitations under the License.
 from abc import ABC, abstractmethod
 
-from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.models.user_info import UserInfo
 
 
 class EdgeTaskHandler(ABC):
+
+    @abstractmethod
+    def set_engine(self, engine: ClientEngineSpec):
+        pass
 
     @abstractmethod
     def handle_job(self, job_request: JobRequest) -> JobResponse:
@@ -36,5 +39,4 @@ class EdgeTaskHandler(ABC):
     @abstractmethod
     def handle_result(self, result_report: ResultReport) -> ResultResponse:
         pass
-
 

@@ -15,6 +15,6 @@ from nvflare.edge.web.models.base_model import BaseModel
 
 
 class Capabilities(BaseModel):
-    def __init__(self, supported_methods: list):
+    def __init__(self, methods: list):
         super().__init__()
-        self.supported_methods = supported_methods
+        self.methods = methods

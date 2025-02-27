@@ -11,6 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
+import os
+import sys
+from typing import Tuple
 from urllib.parse import urljoin
 
 from flask import Flask, request, Response, jsonify
@@ -20,15 +24,31 @@ from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.web_server import FilteredJSONProvider
 
 app = Flask(__name__)
-lcp_list = [
-    "http://localhost:8101",
-    "http://localhost:8101"
-]
 
 
-def find_lcp_url(device_id: str) -> str:
-    index = hash(device_id) % len(lcp_list)
-    return lcp_list[index]
+class LcpMapper:
+
+    def __init__(self):
+        self.lcp_list = []
+
+    def add_lcp(self, name: str, url: str):
+        self.lcp_list.append((name, url))
+
+    def map(self, device_id: str) -> Tuple[str, str]:
+        if not self.lcp_list:
+            raise RuntimeError("No LCP is configured")
+        index = hash(device_id) % len(self.lcp_list)
+        return self.lcp_list[index]
+
+    def load_lcp_map(self, mapping_file: str):
+        with open(mapping_file, "r") as f:
+            mapping = json.load(f)
+
+        for name, config in mapping.items():
+            host = config["host"]
+            port = config["port"]
+            url = f"http://{host}:{port}"
+            self.add_lcp(name, url)
 
 
 @app.errorhandler(ApiError)
@@ -38,6 +58,9 @@ def handle_api_error(error: ApiError):
     return response
 
 
+mapper = LcpMapper()
+
+
 @app.route('/<path:path>', methods=['GET', 'POST'])
 def routing_proxy(path):
 
@@ -45,11 +68,11 @@ def routing_proxy(path):
     if not device_id:
         raise ApiError(400, "INVALID_REQUEST", "Device ID is missing")
 
-    target_url = find_lcp_url(device_id)
-    if not target_url:
+    name_url = mapper.map(device_id)
+    if not name_url:
         raise ApiError(500, "CONFIG_ERROR", f"No LCP configured for device ID {device_id}")
 
-    target_url = urljoin(target_url, path)
+    target_url = urljoin(name_url[1], path)
 
     try:
         # Prepare headers (remove 'Host' to avoid conflicts)
@@ -83,5 +106,13 @@ def routing_proxy(path):
 
 
 if __name__ == '__main__':
+
+    if len(sys.argv) != 3:
+        print(f"Usage: python {os.path.basename(sys.argv[0])} <port> <mapping_file>")
+        sys.exit(1)
+
+    mapper.load_lcp_map(sys.argv[2])
+    port = int(sys.argv[1])
+
     app.json = FilteredJSONProvider(app)
-    app.run(host='0.0.0.0', port=4321, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False)
