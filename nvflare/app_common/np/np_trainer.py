@@ -206,7 +206,7 @@ class NPTrainer(Executor):
         # Save local model
         engine = fl_ctx.get_engine()
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-        data_dir = engine.get_workspace().get_data_root(job_id)
+        data_dir = engine.get_workspace().get_result_root(job_id)
         model_path = os.path.join(data_dir, self._model_dir)
         if not os.path.exists(model_path):
             os.makedirs(model_path)
