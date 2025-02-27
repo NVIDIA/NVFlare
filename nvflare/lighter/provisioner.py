@@ -62,7 +62,7 @@ class Provisioner:
         elif not callable(getattr(logger, method_name)):
             raise ValueError(f"invalid logger {type(logger)}: method '{method_name}' is not callable")
 
-    def provision(self, project: Project, mode=None, logger=None):
+    def provision(self, project: Project, mode=None, logger=None) -> ProvisionContext:
         """Provision a specified project.
 
         Args:
@@ -89,8 +89,6 @@ class Provisioner:
 
         workspace_root_dir = os.path.join(self.root_dir, project.name)
         ctx = ProvisionContext(workspace_root_dir, project)
-        if self.template:
-            ctx.set_template(self.template)
 
         if not mode:
             mode = ProvisionMode.NORMAL

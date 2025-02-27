@@ -18,6 +18,7 @@ import argparse
 import sys
 from sys import platform
 
+from nvflare.fuel.utils.log_utils import LogMode
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 from nvflare.private.fed.app.utils import version_check
 
@@ -29,7 +30,13 @@ def define_simulator_parser(simulator_parser):
     simulator_parser.add_argument("-c", "--clients", type=str, help="client names list")
     simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
     simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
-    simulator_parser.add_argument("-l", "--log_config", type=str, help="log config file path")
+    simulator_parser.add_argument(
+        "-l",
+        "--log_config",
+        type=str,
+        default=LogMode.CONCISE,
+        help="log config mode ('concise', 'full', 'verbose'), filepath, or level",
+    )
     simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
     simulator_parser.add_argument(
         "--end_run_for_all",

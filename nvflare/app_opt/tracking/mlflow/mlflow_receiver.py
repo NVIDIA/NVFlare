@@ -15,18 +15,16 @@
 import os
 import time
 import timeit
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import mlflow
 from mlflow.entities import Metric, Param, RunTag
 from mlflow.tracking.client import MlflowClient
 
-from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsData, AnalyticsDataType, LogWriterName, TrackConst
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.tracking.track_exception import ExpTrackingException
-from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE, LogWriterName, TrackConst
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 
@@ -46,7 +44,7 @@ class MLflowReceiver(AnalyticsReceiver):
         tracking_uri: Optional[str] = None,
         kw_args: Optional[dict] = None,
         artifact_location: Optional[str] = None,
-        events=None,
+        events: Optional[List[str]] = None,
         buffer_flush_time=1,
     ):
         """MLflowReceiver receives log events from clients and deliver them to the MLflow tracking server.
@@ -64,7 +62,7 @@ class MLflowReceiver(AnalyticsReceiver):
                 When provided, it displays as run description field on the MLflow UI.
                 You can use Markdown syntax for the description.
             artifact_location (Optional[str], optional): Relative location of artifacts. Currently only text is supported at the moment.
-            events (_type_, optional): The event the receiver is listening to. By default, it listens to "fed.analytix_log_stats".
+            events (optional, List[str]): A list of event that this receiver will handle.
             buffer_flush_time (int, optional): The time in seconds between deliveries of event data to the MLflow tracking server. The
                 data is buffered and then delivered to the MLflow tracking server in batches, and
                 the buffer_flush_time controls the frequency of the sending. By default, the buffer
@@ -108,11 +106,15 @@ class MLflowReceiver(AnalyticsReceiver):
 
         art_full_path = self.get_artifact_location(self.artifact_location)
         experiment_name = self.kw_args.get(TrackConst.EXPERIMENT_NAME, "FLARE FL Experiment")
+        if not experiment_name:
+            raise ValueError("Experiment name can't be empty.")
         experiment_tags = self._get_tags(TrackConst.EXPERIMENT_TAGS, kwargs=self.kw_args)
 
         sites = fl_ctx.get_engine().get_clients()
-        self._init_buffer(sites)
+
         self.mlflow_setup(art_full_path, experiment_name, experiment_tags, sites)
+
+        self._init_buffer(sites)
 
     def mlflow_setup(self, art_full_path, experiment_name, experiment_tags, sites):
         """Set up an MlflowClient for each client site and create an experiment and run.
@@ -128,7 +130,7 @@ class MLflowReceiver(AnalyticsReceiver):
             if not mlflow_client:
                 mlflow_client = MlflowClient()
                 self.mlflow_clients[site.name] = mlflow_client
-                self.experiment_id = self._create_experiment(
+                self.experiment_id = self._get_or_create_experiment(
                     mlflow_client, experiment_name, art_full_path, experiment_tags
                 )
                 run_group_id = str(int(time.time()))
@@ -182,7 +184,7 @@ class MLflowReceiver(AnalyticsReceiver):
         root_log_dir = os.path.join(run_dir, relative_path)
         return root_log_dir
 
-    def _create_experiment(
+    def _get_or_create_experiment(
         self,
         mlflow_client: MlflowClient,
         experiment_name: str,
@@ -190,26 +192,20 @@ class MLflowReceiver(AnalyticsReceiver):
         experiment_tags: Optional[dict] = None,
     ) -> Optional[str]:
         experiment_id = None
-        if experiment_name:
+        experiment = mlflow_client.get_experiment_by_name(name=experiment_name)
+        if not experiment:
+            self.logger.info(f"Experiment with name '{experiment_name}' does not exist. Creating a new experiment.")
+            import pathlib
+
+            artifact_location_uri = pathlib.Path(artifact_location).as_uri()
+            experiment_id = mlflow_client.create_experiment(
+                name=experiment_name, artifact_location=artifact_location_uri, tags=experiment_tags
+            )
             experiment = mlflow_client.get_experiment_by_name(name=experiment_name)
-            if not experiment:
-                self.logger.info(f"Experiment with name '{experiment_name}' does not exist. Creating a new experiment.")
-                try:
-                    import pathlib
+        else:
+            experiment_id = experiment.experiment_id
 
-                    artifact_location_uri = pathlib.Path(artifact_location).as_uri()
-                    experiment_id = mlflow_client.create_experiment(
-                        name=experiment_name, artifact_location=artifact_location_uri, tags=experiment_tags
-                    )
-                except Exception as e:
-                    raise ExpTrackingException(
-                        f"Could not create an MLflow Experiment with name {experiment_name}. {e}"
-                    )
-                experiment = mlflow_client.get_experiment_by_name(name=experiment_name)
-            else:
-                experiment_id = experiment.experiment_id
-
-            self.logger.info(f"Experiment={experiment}")
+        self.logger.info(f"Experiment={experiment}")
         return experiment_id
 
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
@@ -226,6 +222,9 @@ class MLflowReceiver(AnalyticsReceiver):
             if not mlflow_client:
                 raise RuntimeError(f"mlflow client is None for site {record_origin}.")
             run_id = self.get_run_id(record_origin)
+            if not run_id:
+                raise RuntimeError(f"run_id is missing for site {record_origin}.")
+
             if data.kwargs.get("path", None):
                 mlflow_client.log_text(run_id=run_id, text=data.value, artifact_file=data.kwargs.get("path"))
         elif data.data_type == AnalyticsDataType.MODEL:
@@ -238,7 +237,7 @@ class MLflowReceiver(AnalyticsReceiver):
             self.buffer_data(data, record_origin)
             self.time_since_flush += timeit.default_timer() - self.time_start
             if self.time_since_flush >= self.buff_flush_time:
-                self.flush_buffer(record_origin)
+                self.flush_buffers(record_origin)
 
     def buffer_data(self, data: AnalyticsData, record_origin: str) -> None:
         """Buffer the data to send later.
@@ -279,8 +278,8 @@ class MLflowReceiver(AnalyticsReceiver):
         else:
             return data_type
 
-    def flush_buffer(self, record_origin):
-        """Flush the buffer and send all the data to the MLflow tracking server.
+    def flush_buffers(self, record_origin):
+        """Flush buffers and send all the data to the MLflow tracking server.
 
         Args:
             record_origin (str): Origin of the data, or site name.
@@ -290,27 +289,28 @@ class MLflowReceiver(AnalyticsReceiver):
             raise RuntimeError(f"mlflow client is None for site {record_origin}.")
 
         run_id = self.get_run_id(record_origin)
+        if not run_id:
+            raise RuntimeError(f"run_id is missing for site {record_origin}.")
 
         site_buff = self.buffer[record_origin]
 
-        metrics_arr = self.pop_from_buffer(site_buff[AnalyticsDataType.METRICS])
-        params_arr = self.pop_from_buffer(site_buff[AnalyticsDataType.PARAMETERS])
-        tags_arr = self.pop_from_buffer(site_buff[AnalyticsDataType.TAGS])
+        metrics_arr = self.flush_buffer(site_buff[AnalyticsDataType.METRICS])
+        params_arr = self.flush_buffer(site_buff[AnalyticsDataType.PARAMETERS])
+        tags_arr = self.flush_buffer(site_buff[AnalyticsDataType.TAGS])
 
         mlflow_client.log_batch(run_id=run_id, metrics=metrics_arr, params=params_arr, tags=tags_arr)
 
         self.time_start = 0
         self.time_since_flush = 0
 
-    def pop_from_buffer(self, log_buffer):
-        item_arr = []
-        for _ in range(len(log_buffer)):
-            item_arr.append(log_buffer.pop())
+    def flush_buffer(self, log_buffer: List):
+        item_arr = list(log_buffer)
+        log_buffer.clear()
         return item_arr
 
     def finalize(self, fl_ctx: FLContext):
         for site_name in self.buffer:
-            self.flush_buffer(site_name)
+            self.flush_buffers(site_name)
 
         for site_name in self.run_ids:
             run_id = self.run_ids[site_name]
@@ -318,7 +318,7 @@ class MLflowReceiver(AnalyticsReceiver):
             if run_id:
                 mlflow_client.set_terminated(run_id)
 
-    def get_run_id(self, site_id: str) -> str:
+    def get_run_id(self, site_id: str) -> Optional[str]:
         return self.run_ids.get(site_id, None)
 
     def get_mlflow_client(self, site_id: str) -> MlflowClient:

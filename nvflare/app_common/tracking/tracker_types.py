@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
+
+warnings.warn(
+    f"This module: {__file__} is deprecated. Please use nvflare.apis.analytix", category=FutureWarning, stacklevel=2
+)
+
 from enum import Enum
 
 ANALYTIC_EVENT_TYPE = "analytix_log_stats"
