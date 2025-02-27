@@ -348,12 +348,6 @@ Example of :class:`TFModel<nvflare.app_opt.tf.job_config.model.TFModel>` :func:`
      - :func:`check_kwargs<nvflare.job_config.api.FedJob.check_kwargs>`
 
 
-Parameter Recognition
-========================
-
-For Job API to recognize a particular parameter of an arbitrary object, the parameter must be explicitly stored as a member variable in the object constructor.
-Otherwise the parameter will not get recognized and correctly stored.
-
 Job Pattern Inheritance
 ========================
 
