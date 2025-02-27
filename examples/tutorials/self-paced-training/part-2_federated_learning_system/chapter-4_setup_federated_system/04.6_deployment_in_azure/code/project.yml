@@ -1,0 +1,70 @@
+api_version: 3
+name: example_project
+description: NVIDIA FLARE sample project yaml file
+
+participants:
+  # Change the name of the server (server1) to the Fully Qualified Domain Name
+  # (FQDN) of the server, for example: server1.example.com.
+  # Ensure that the FQDN is correctly mapped in the /etc/hosts file.
+  - name: server1
+    type: server
+    org: nvidia
+    fed_learn_port: 8002
+    admin_port: 8003
+  - name: site-1
+    type: client
+    org: nvidia
+    # Specifying listening_host will enable the creation of one pair of
+    # certificate/private key for this client, allowing the client to function
+    # as a server for 3rd-party integration.
+    # The value must be a hostname that the external trainer can reach via the network.
+    # listening_host: site-1-lh
+  - name: site-2
+    type: client
+    org: nvidia
+  - name: admin@nvidia.com
+    type: admin
+    org: nvidia
+    role: project_admin
+
+# The same methods in all builders are called in their order defined in builders section
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file:
+        - master_template.yml
+        - aws_template.yml
+        - azure_template.yml
+  - path: nvflare.lighter.impl.template.TemplateBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      # config_folder can be set to inform NVIDIA FLARE where to get configuration
+      config_folder: config
+
+      # scheme for communication driver (currently supporting the default, grpc, only).
+      # scheme: grpc
+
+      # app_validator is used to verify if uploaded app has proper structures
+      # if not set, no app_validator is included in fed_server.json
+      # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
+
+      # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
+      # docker_image:
+
+      # download_job_url is set to http://download.server.com/ as default in fed_server.json.  You can override this
+      # to different url.
+      # download_job_url: http://download.server.com/
+
+      overseer_agent:
+        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
+        # if overseer_exists is true, args here are ignored.  Provisioning
+        #   tool will fill role, name and other local parameters automatically.
+        # if overseer_exists is false, args in this section will be used and the sp_end_point
+        # must match the server defined above in the format of SERVER_NAME:FL_PORT:ADMIN_PORT
+        # 
+        overseer_exists: false
+        args:
+          sp_end_point: server1:8002:8003
+
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
