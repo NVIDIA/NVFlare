@@ -15,7 +15,6 @@ import logging
 import time
 from typing import Optional
 
-from nvflare.edge.emulator.sample_task_processor import SampleTaskProcessor
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.emulator.eta_api import EtaApi
 from nvflare.edge.web.models.api_error import ApiError
@@ -27,6 +26,7 @@ log = logging.getLogger(__name__)
 
 
 class DeviceEmulator:
+
     def __init__(self, endpoint: str, device_info: DeviceInfo, user_info: UserInfo,
                  capabilities: Optional[dict], processor: DeviceTaskProcessor):
         self.device_info = device_info
@@ -46,13 +46,11 @@ class DeviceEmulator:
             while True:
                 task = self.eta_api.get_task(job)
                 log.info(f"Received task: {task}")
-                if task.task_name == "end_run":
-                    log.info(f"Job {job.job_id} {job.job_name} ended")
-                    break
 
+                # Catch exception
                 result = self.processor.process_task(task)
                 log.info(f"Task processed. Result: {result}")
-
+                # Check result
                 result_response = self.eta_api.report_result(task, result)
                 log.info(f"Received result response: {result_response}")
                 if result_response.status == "DONE":
@@ -60,7 +58,7 @@ class DeviceEmulator:
                     break
                 elif result_response.status != "OK":
                     log.error(f"Result report for task {task.task_name} is invalid")
-                    break
+                    continue
 
                 log.info(f"Task {task.task_name} result reported successfully")
 

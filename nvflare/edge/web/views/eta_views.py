@@ -15,8 +15,7 @@ from typing import Optional
 
 from flask import Blueprint, request
 
-from nvflare.edge.web.controllers.eta_controller import handle_job_request, handle_task_request, \
-    handle_result_report
+from nvflare.edge.web.handlers.edge_task_handler import EdgeTaskHandler
 from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_request import JobRequest
@@ -25,6 +24,7 @@ from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.user_info import UserInfo
 
 eta_bp = Blueprint("eta", __name__)
+task_handler: EdgeTaskHandler = None
 
 
 def process_header(headers) -> (DeviceInfo, Optional[UserInfo]):
@@ -51,10 +51,8 @@ def process_header(headers) -> (DeviceInfo, Optional[UserInfo]):
 def job_view():
     device_info, user_info = process_header(request.headers)
     data = request.get_json()
-    req = JobRequest(**data)
-    reply = handle_job_request(device_info, user_info, req)
-
-    return reply
+    req = JobRequest(device_info, user_info, **data)
+    return task_handler.handle_job(req)
 
 
 @eta_bp.route("/task", methods=["GET"])
@@ -62,9 +60,9 @@ def task_view():
     device_info, user_info = process_header(request.headers)
     job_id = request.args.get("job_id")
 
-    req = TaskRequest(job_id)
+    req = TaskRequest(device_info, user_info, job_id)
 
-    return handle_task_request(device_info, user_info, req)
+    return task_handler.handle_task(req)
 
 
 @eta_bp.route("/result", methods=["POST"])
@@ -74,7 +72,7 @@ def result_view():
     task_name = request.args.get("task_name")
     data = request.get_json()
 
-    req = ResultReport(task_id, task_name)
+    req = ResultReport(device_info, user_info, task_id, task_name)
     req.update(data)
 
     return handle_result_report(device_info, user_info, req)

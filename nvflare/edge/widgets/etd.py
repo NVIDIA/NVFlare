@@ -19,7 +19,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.edge.constants import EdgeContextKey, EdgeProtoKey
-from nvflare.edge.constants import EventType as EdgeEventType
+from nvflare.edge.constants import EdgeEventType
 from nvflare.edge.constants import Status as EdgeStatus
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
@@ -36,6 +36,7 @@ class EdgeTaskDispatcher(Widget):
         Widget.__init__(self)
         self.request_timeout = request_timeout
         self.edge_jobs = {}  # edge_method => list of job_ids
+        self.job_metas = {}  # job_id => job_meta
         self.lock = threading.Lock()
 
         self.register_event_handler(
@@ -70,10 +71,13 @@ class EdgeTaskDispatcher(Widget):
 
             job_id = job_meta.get(JobMetaKey.JOB_ID)
             jobs.append(job_id)
+            self.job_metas[job_id] = job_meta
 
     def _remove_job(self, job_meta: dict):
         with self.lock:
             job_id = job_meta.get(JobMetaKey.JOB_ID)
+            if job_id in self.job_metas:
+                del self.job_metas[job_id]
             edge_method = job_meta.get(JobMetaKey.EDGE_METHOD)
             if not edge_method:
                 # this is not an edge job
@@ -143,6 +147,7 @@ class EdgeTaskDispatcher(Widget):
         else:
             status = EdgeStatus.NO_JOB
         self._set_edge_reply(status, job_id, fl_ctx)
+        fl_ctx.set_prop(FLContextKey.JOB_META, self.job_metas.get(job_id), private=True, sticky=False)
 
     @staticmethod
     def _set_edge_reply(status, data, fl_ctx: FLContext):

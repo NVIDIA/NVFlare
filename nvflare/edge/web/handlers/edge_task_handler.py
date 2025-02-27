@@ -23,11 +23,7 @@ from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.edge.web.models.user_info import UserInfo
 
 
-class JobHandlerApi(ABC):
-
-    def __init__(self, device_info: DeviceInfo, user_info: UserInfo):
-        self.device_info = device_info
-        self.user_info = user_info
+class EdgeTaskHandler(ABC):
 
     @abstractmethod
     def handle_job(self, job_request: JobRequest) -> JobResponse:

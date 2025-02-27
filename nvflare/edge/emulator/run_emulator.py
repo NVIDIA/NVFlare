@@ -23,10 +23,13 @@ log = logging.getLogger(__name__)
 
 def run_emulator():
 
+    # read from JSON, a list of devices
     device_info = DeviceInfo("1234", "flare_mobile", "1.0")
     user_info = UserInfo("demo_id", "demo_user")
+    # Configure processor
     processor = SampleTaskProcessor(device_info, user_info)
     capabilities = {
+        "methods": ["xgboost", "cnn"],
         "cpu": 16,
         "gpu": 1024
     }
