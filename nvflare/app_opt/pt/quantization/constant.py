@@ -25,6 +25,7 @@ DATA_TYPE = [
 # Supported Quantization Type to reduce the above input data types
 # The quantization types are mainly for reducing the model size,
 # Hence, we support 16-, 8-, and 4-bits quantization.
+# Note that 8- and 4-bits quantization needs GPU support.
 QUANTIZATION_TYPE = [
     "FLOAT16",
     "BLOCKWISE8",
