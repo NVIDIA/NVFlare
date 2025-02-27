@@ -16,49 +16,46 @@ import tempfile
 
 import pytest
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 
 
 class TestWorkspace:
     @pytest.mark.parametrize(
-        "root_dir, expected",
+        "root_vars, expected",
         [
-            ("a", ("a", None, None, None)),
-            ("a:", ("a", None, None, None)),
-            ("a::", ("a", None, None, None)),
-            ("a:::", ("a", None, None, None)),
-            ("a:b", ("a", "b", "b", "b")),
-            ("a:b:c", ("a", "b", "c", "c")),
-            ("a:b:c:", ("a", "b", "c", "c")),
-            ("a:b:c:d", ("a", "b", "c", "d")),
-            ("a:b::d", ("a", "b", "b", "d")),
-            ("a::c:d", ("a", None, "c", "d")),
-            ("a::c:", ("a", None, "c", "c")),
-            ("a:::d", ("a", None, None, "d")),
+            (("r", "l", "a"), ("r", "l", "a")),
+            (("r", "l", None), ("r", "l", "l")),
+            (("r", None, None), ("r", "r", "r")),
+            (("r", None, "a"), ("r", "a", "a")),
+            ((None, "l", "a"), (None, "l", "a")),
+            ((None, "l", None), (None, "l", "l")),
+            ((None, None, None), (None, None, None)),
         ],
     )
-    def test_init(self, root_dir, expected):
+    def test_init(self, root_vars, expected):
         # we have to create real dirs since Workspace checks existence of the specified roots
+        r, l, a = root_vars
+        var_dict = {
+            WorkspaceConstants.ENV_VAR_RESULT_ROOT: r,
+            WorkspaceConstants.ENV_VAR_LOG_ROOT: l,
+            WorkspaceConstants.ENV_VAR_AUDIT_ROOT: a,
+        }
         with tempfile.TemporaryDirectory() as tmp_dir:
-            parts = root_dir.split(":")
-            dirs = []
-            for p in parts:
-                if p:
-                    d = os.path.join(tmp_dir, p)
-                    os.makedirs(d, exist_ok=True)
-                    dirs.append(d)
+            for n, v in var_dict.items():
+                if v:
+                    os.environ[n] = os.path.join(tmp_dir, v)
                 else:
-                    dirs.append("")
+                    os.environ.pop(n, None)
 
-            r = dirs[0]
-            os.makedirs(os.path.join(r, "startup"), exist_ok=True)
-            os.makedirs(os.path.join(r, "local"), exist_ok=True)
+            root_dir = os.path.join(tmp_dir, "config")
+            os.makedirs(root_dir, exist_ok=True)
+            os.makedirs(os.path.join(root_dir, "startup"), exist_ok=True)
+            os.makedirs(os.path.join(root_dir, "local"), exist_ok=True)
 
-            root_dir = ":".join(dirs)
             ws = Workspace(root_dir)
             result = (
-                os.path.relpath(ws.root_dir, tmp_dir),
-                os.path.relpath(ws.data_root, tmp_dir) if ws.data_root else None,
+                os.path.relpath(ws.result_root, tmp_dir) if ws.result_root else None,
                 os.path.relpath(ws.log_root, tmp_dir) if ws.log_root else None,
                 os.path.relpath(ws.audit_root, tmp_dir) if ws.audit_root else None,
             )

@@ -105,6 +105,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def __init__(self, uri_root: str = "jobs", job_store_id: str = "job_store"):
         super().__init__()
         self.uri_root = uri_root
+
+        # if env var is defined, use it to override uri_root!
+        job_store_root = os.environ.get("NVFL_JOB_STORE_ROOT")
+        if job_store_root:
+            self.uri_root = job_store_root
+
         os.makedirs(uri_root, exist_ok=True)
         self.job_store_id = job_store_id
 
