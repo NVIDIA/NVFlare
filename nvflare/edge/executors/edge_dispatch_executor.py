@@ -16,7 +16,7 @@ from typing import Any
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply, ReservedHeaderKey
 from nvflare.edge.aggregators.edge_result_accumulator import EdgeResultAccumulator
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.web.models.result_report import ResultReport
@@ -29,24 +29,24 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
     """This executor dispatches tasks to edge devices and wait for the response from all devices
     """
 
-    def __init__(self, wait_time=300.0, min_devices=0, edge_aggregator_id=None):
+    def __init__(self, wait_time=300.0, min_devices=0, aggregator_id=None):
         EdgeTaskExecutor.__init__(self)
         self.wait_time = wait_time
         self.min_devices = min_devices
-        self.task_sequence = None
+        self.task_sequence = 0
         self.task_name = None
         self.task_id = None
         self.task_data = None
         self.start_time = None
         self.devices = None
         self.num_results = 0
-        self.edge_aggregator_id = edge_aggregator_id
+        self.aggregator_id = aggregator_id
         self.aggregator = None
         self.register_event_handler(EventType.START_RUN, self.setup)
 
     def setup(self, _, fl_ctx: FLContext):
-        if self.edge_aggregator_id:
-            self.aggregator = fl_ctx.get_engine().get_component(self.edge_aggregator_id)
+        if self.aggregator_id:
+            self.aggregator = fl_ctx.get_engine().get_component(self.aggregator_id)
         else:
             self.aggregator = EdgeResultAccumulator()
 
@@ -54,7 +54,7 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         # Reset aggregator
         self.start_time = time.time()
         self.task_name = task_name
-        self.task_id = task_data.get_header("xx")
+        self.task_id = task_data.get_header(ReservedHeaderKey.TASK_ID)
         self.task_data = task_data
         self.task_sequence += 1
         self.devices = {}  # Devices got this task

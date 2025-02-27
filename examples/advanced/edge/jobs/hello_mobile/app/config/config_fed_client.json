@@ -8,12 +8,31 @@
             ],
             "executor": {
                 "id": "Executor",
-                "path": "nvflare.edge.executors.edge_dispatch_executor.EdgeDispatchExecutor",
+                "path": "nvflare.app_common.executors.ham.HierarchicalAggregationManager",
                 "args": {
-                    "wait_time": "30",
-                    "min_devices": 2
+                    "learner_id": "learner",
+                    "aggregator_id": "aggregator",
+                    "aggr_timeout": 60,
+                    "min_responses": 2,
+                    "wait_time_after_min_resps_received": 5
                 }
+             }
+        }
+    ],
+    "components": [
+        {
+            "id": "learner",
+            "path": "nvflare.edge.executors.edge_dispatch_executor.EdgeDispatchExecutor",
+            "args": {
+                "wait_time": "30",
+                "min_devices": 2,
+                "aggregator_id": "aggregator"
             }
+        },
+        {
+            "id": "aggregator",
+            "path": "nvflare.edge.aggregators.edge_result_accumulator.EdgeResultAccumulator",
+            "args": {}
         }
     ]
 }
