@@ -385,7 +385,7 @@ class JobRunner(FLComponent):
         if result_root not in ws_dirs:
             ws_dirs.append(result_root)
 
-        log_root = workspace.get_app_log_root(job_id)
+        log_root = workspace.get_log_root(job_id)
         if log_root not in ws_dirs:
             ws_dirs.append(log_root)
 

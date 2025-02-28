@@ -29,8 +29,7 @@ def _get_run_dir(fl_ctx: FLContext):
     job_id = fl_ctx.get_job_id()
     if job_id is None:
         raise RuntimeError("job_id is missing in fl_ctx.")
-    run_dir = workspace.get_run_dir(job_id)
-    return run_dir
+    return workspace.get_run_dir(job_id)
 
 
 class NPModelPersistor(ModelPersistor):
