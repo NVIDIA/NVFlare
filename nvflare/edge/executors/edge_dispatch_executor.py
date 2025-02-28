@@ -16,13 +16,14 @@ from typing import Any
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReturnCode, Shareable, make_reply, ReservedHeaderKey
+from nvflare.apis.shareable import ReturnCode, Shareable, ReservedHeaderKey
 from nvflare.edge.aggregators.edge_result_accumulator import EdgeResultAccumulator
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
+from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_non_negative_number
 
 
 class EdgeDispatchExecutor(EdgeTaskExecutor):
@@ -31,6 +32,10 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
 
     def __init__(self, wait_time=300.0, min_devices=0, aggregator_id=None):
         EdgeTaskExecutor.__init__(self)
+
+        check_non_negative_number("wait_time", wait_time)
+        check_non_negative_int("min_devices", min_devices)
+
         self.wait_time = wait_time
         self.min_devices = min_devices
         self.task_sequence = 0
@@ -44,11 +49,51 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         self.aggregator = None
         self.register_event_handler(EventType.START_RUN, self.setup)
 
-    def setup(self, _, fl_ctx: FLContext):
+    def setup(self, _event_type, fl_ctx: FLContext):
         if self.aggregator_id:
             self.aggregator = fl_ctx.get_engine().get_component(self.aggregator_id)
         else:
             self.aggregator = EdgeResultAccumulator()
+
+    def convert_task(self, task_data: Shareable) -> dict:
+        """Convert task_data to a plain dict"""
+
+        return {
+            "weights": task_data.get("weights"),
+            "task_id": self.task_id
+        }
+
+    def convert_result(self, result: dict) -> Shareable:
+        """Convert result from device to shareable"""
+        shareable = Shareable(result)
+        shareable.set_header(ReservedHeaderKey.TASK_ID, self.task_id)
+        return shareable
+
+    def handle_task_request(self, request: TaskRequest, fl_ctx: FLContext) -> TaskResponse:
+        """Handle task request from device"""
+
+        device_id = request.get_device_id()
+        job_id = fl_ctx.get_job_id()
+
+        # This device already processed current task
+        last_task_id = self.devices.get(device_id, None)
+        if self.task_id == last_task_id:
+            return TaskResponse("RETRY", job_id, 30,
+                                message=f"Task {self.task_id} is already processed by this device")
+
+        task_done = self.current_task.get("task_done")
+        task_data = self.convert_task(self.current_task)
+        self.devices[device_id] = self.task_id
+        status = "DONE" if task_done else "OK"
+        return TaskResponse(status, job_id, 0, self.task_id, self.task_name, task_data)
+
+    def handle_result_report(self, report: ResultReport, fl_ctx: FLContext) -> ResultResponse:
+        """Handle result report from device"""
+
+        result = self.convert_result(report.result)
+        self.aggregator.accept(result, fl_ctx)
+        self.num_results += 1
+        return ResultResponse("OK", task_id=self.task_id, task_name=self.task_name)
 
     def task_received(self, task_name: str, task_data: Shareable, fl_ctx: FLContext):
         # Reset aggregator
@@ -65,22 +110,15 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
 
     def process_edge_request(self, request: Any, fl_ctx: FLContext) -> Any:
         self.log_info(fl_ctx, f"Received edge request: {request}")
-        device_id = request.get_device_id()
-        job_id = fl_ctx.get_job_id()
+
         if isinstance(request, TaskRequest):
-            # Convert task_data to a format suitable for the device
-            response = TaskResponse("OK", job_id, self.task_id, self.task_name, self.current_task)
-            self.devices[device_id] = request
+            response = self.handle_task_request(request, fl_ctx)
         elif isinstance(request, ResultReport):
-            self.aggregator.accept(Shareable({"weights": request.result}), fl_ctx)
-            self.num_results += 1
-            response = ResultResponse("OK", task_id=self.task_id, task_name=self.task_name)
+            response = self.handle_result_report(request, fl_ctx)
         else:
             raise RuntimeError(f"Received unknown request type: {type(request)}")
 
         return {"status": ReturnCode.OK, "response": response}
 
     def get_task_result(self, fl_ctx: FLContext) -> Shareable:
-        result = make_reply(ReturnCode.OK)
-        result.update(self.aggregator.aggregate(fl_ctx))
-        return result
+        return self.aggregator.aggregate(fl_ctx)

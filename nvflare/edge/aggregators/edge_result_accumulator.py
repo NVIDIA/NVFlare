@@ -26,8 +26,12 @@ class EdgeResultAccumulator(Aggregator):
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         self.log_info(fl_ctx, f"Accepting: {shareable}")
-        self.num_devices += 1
+
         w = shareable.get("weights")
+        if w is None:
+            return True
+
+        self.num_devices += 1
         if self.weights is None:
             self.weights = w
         else:

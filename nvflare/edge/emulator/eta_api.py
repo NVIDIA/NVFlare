@@ -71,6 +71,7 @@ class EtaApi:
         headers = {"Content-Type": "application/json"}
         headers.update(self.common_headers)
         params = {
+            "job_id": task.job_id,
             "task_name": task.task_name,
             "task_id": task.task_id,
         }
@@ -80,4 +81,5 @@ class EtaApi:
         if code == 200:
             return ResultResponse(**response.json())
 
-        raise ApiError(code, "ERROR", f"API Call failed with status code {code}", response.json())
+        details = {"response": response.text}
+        raise ApiError(code, "ERROR", f"API Call failed with status code {code}", details)

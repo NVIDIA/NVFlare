@@ -53,6 +53,8 @@ class LcpTaskHandler(EdgeTaskHandler):
                 job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
                 if job_meta:
                     job_name = job_meta.get("name")
+                else:
+                    job_name = "No Name"
                 response = JobResponse("OK", job_id=job_id, job_name=job_name, job_meta=job_meta)
 
             return response
@@ -60,10 +62,15 @@ class LcpTaskHandler(EdgeTaskHandler):
     def handle_task(self, task_request: TaskRequest) -> TaskResponse:
         reply = self._handle_task_request(task_request)
         status = reply.get(EdgeProtoKey.STATUS)
-        if status != Status.OK:
-            response = TaskResponse("RETRY", retry_wait=30)
+        if status == Status.OK:
+            data = reply.get(EdgeProtoKey.DATA)
+            response = data.get("response")
+        elif status == Status.NO_JOB:
+            self.logger_error(f"Job {task_request.job_id} is done")
+            response = TaskResponse("NO_JOB", retry_wait=30, job_id=task_request.job_id)
         else:
-            response = reply.get(EdgeProtoKey.DATA)
+            self.logger.error(f"Task request for {task_request.job_id} failed with status {status}")
+            response = TaskResponse("RETRY", retry_wait=30)
 
         return response
 
@@ -73,7 +80,8 @@ class LcpTaskHandler(EdgeTaskHandler):
         if status != Status.OK:
             response = ResultResponse("RETRY", retry_wait=30)
         else:
-            response = reply.get(EdgeProtoKey.DATA)
+            data = reply.get(EdgeProtoKey.DATA)
+            response = data.get("response")
 
         return response
 

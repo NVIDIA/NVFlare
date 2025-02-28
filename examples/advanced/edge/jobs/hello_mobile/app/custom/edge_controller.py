@@ -59,11 +59,9 @@ class SimpleEdgeController(Controller):
             fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
-            if self.current_round is None:
-                self.current_round = 1
+            for i in range(self.num_rounds):
 
-            while self.current_round < self.num_rounds:
-
+                self.current_round = i
                 if abort_signal.triggered:
                     return
 
@@ -75,6 +73,7 @@ class SimpleEdgeController(Controller):
                 # Create train_task
                 task_data = Shareable()
                 task_data["weights"] = self.initial_weights
+                task_data["task_done"] = self.current_round >= (self.num_rounds - 1)
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
                 task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self.current_round)
@@ -87,8 +86,8 @@ class SimpleEdgeController(Controller):
 
                 self.broadcast_and_wait(
                     task=train_task,
-                    min_responses=4,
-                    wait_time_after_min_received=10,
+                    min_responses=1,
+                    wait_time_after_min_received=30,
                     fl_ctx=fl_ctx,
                     abort_signal=abort_signal,
                 )
@@ -107,7 +106,8 @@ class SimpleEdgeController(Controller):
                 if abort_signal.triggered:
                     return
 
-            self.log_info(fl_ctx, "Finished Mobile Training.")
+            final_weights = aggr_result.get("weights", None)
+            self.log_info(fl_ctx, f"Finished Mobile Training. Final weights: {final_weights}")
         except Exception as e:
             error_msg = f"Exception in mobile control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)

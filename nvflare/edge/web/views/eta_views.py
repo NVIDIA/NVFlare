@@ -69,11 +69,12 @@ def task_view():
 @eta_bp.route("/result", methods=["POST"])
 def result_view():
     device_info, user_info = process_header(request.headers)
+    job_id = request.args.get("job_id")
     task_id = request.args.get("task_id")
     task_name = request.args.get("task_name")
     data = request.get_json()
 
-    req = ResultReport(device_info, user_info, task_id, task_name)
+    req = ResultReport(device_info, user_info, job_id, task_id, task_name)
     req.update(data)
 
     return task_handler.handle_result(req)

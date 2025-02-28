@@ -8,6 +8,7 @@ class ResultReport(BaseModel):
         self,
         device_info: DeviceInfo,
         user_info: UserInfo,
+        job_id: str,
         task_id: str,
         task_name: str = None,
         result: dict = None,
@@ -16,6 +17,7 @@ class ResultReport(BaseModel):
         super().__init__()
         self.device_info = device_info
         self.user_info = user_info
+        self.job_id = job_id
         self.task_id = task_id
         self.task_name = task_name
         self.result = result

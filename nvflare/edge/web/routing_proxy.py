@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import logging
 import os
 import sys
+import zlib
 from typing import Tuple
 from urllib.parse import urljoin
 
@@ -23,6 +25,7 @@ import requests
 from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.web_server import FilteredJSONProvider
 
+log = logging.getLogger(__name__)
 app = Flask(__name__)
 
 
@@ -37,7 +40,9 @@ class LcpMapper:
     def map(self, device_id: str) -> Tuple[str, str]:
         if not self.lcp_list:
             raise RuntimeError("No LCP is configured")
-        index = hash(device_id) % len(self.lcp_list)
+        # Do not use hash() here. The hash value is different for every run
+        checksum = zlib.crc32(device_id.encode())
+        index = checksum % len(self.lcp_list)
         return self.lcp_list[index]
 
     def load_lcp_map(self, mapping_file: str):
@@ -72,7 +77,9 @@ def routing_proxy(path):
     if not name_url:
         raise ApiError(500, "CONFIG_ERROR", f"No LCP configured for device ID {device_id}")
 
-    target_url = urljoin(name_url[1], path)
+    site_name, url = name_url
+    log.info(f"Routing request from device: {device_id} to site {site_name} at {url}")
+    target_url = urljoin(url, path)
 
     try:
         # Prepare headers (remove 'Host' to avoid conflicts)
@@ -106,6 +113,12 @@ def routing_proxy(path):
 
 
 if __name__ == '__main__':
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler()]
+    )
 
     if len(sys.argv) != 3:
         print(f"Usage: python {os.path.basename(sys.argv[0])} <port> <mapping_file>")

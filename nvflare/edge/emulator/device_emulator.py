@@ -20,6 +20,7 @@ from nvflare.edge.emulator.eta_api import EtaApi
 from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
+from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.edge.web.models.user_info import UserInfo
 
 log = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ class DeviceEmulator:
     def __init__(self, endpoint: str, device_info: DeviceInfo, user_info: UserInfo,
                  capabilities: Optional[dict], processor: DeviceTaskProcessor):
         self.device_info = device_info
+        self.device_id = device_info.device_id
         self.user_info = user_info
         self.capabilities = capabilities
         self.processor = processor
@@ -44,26 +46,30 @@ class DeviceEmulator:
             log.info(f"Received job: {job}")
 
             while True:
-                task = self.eta_api.get_task(job)
-                log.info(f"Received task: {task}")
+                task = self.fetch_task(job)
+                if not task:
+                    log.info(f"Job {job.job_Id} is done")
+                    break
+                log.info(f"Device:{self.device_id} Received task: {task}")
 
                 # Catch exception
                 result = self.processor.process_task(task)
-                log.info(f"Task processed. Result: {result}")
+                log.info(f"Device:{self.device_id} Task processed. Result: {result}")
                 # Check result
                 result_response = self.eta_api.report_result(task, result)
-                log.info(f"Received result response: {result_response}")
-                if result_response.status == "DONE":
+                log.info(f"Device:{self.device_id} Received result response: {result_response}")
+                task_done = task.get("task_done", False)
+                if task_done or result_response.status == "DONE":
                     log.info(f"Job {job.job_id} {job.job_name} is done")
                     break
                 elif result_response.status != "OK":
-                    log.error(f"Result report for task {task.task_name} is invalid")
+                    log.error(f"Device:{self.device_id} Result report for task {task.task_name} is invalid")
                     continue
 
-                log.info(f"Task {task.task_name} result reported successfully")
+                log.info(f"Device:{self.device_id} Task {task.task_name} result reported successfully")
 
             self.processor.shutdown()
-            log.info(f"Job {job.job_name} run ended")
+            log.info(f"Device:{self.device_id} Job {job.job_name} run ended")
 
         except ApiError as error:
             log.error(f"Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}")
@@ -79,5 +85,21 @@ class DeviceEmulator:
                 return job
             if job.status == "RETRY":
                 wait = job.retry_wait if job.retry_wait else 5
-                log.info(f"Retrying getting job in {wait} seconds")
+                log.info(f"Device:{self.device_id} Retrying getting job in {wait} seconds")
+                time.sleep(wait)
+
+    def fetch_task(self, job: JobResponse) -> TaskResponse:
+
+        while True:
+            task = self.eta_api.get_task(job)
+            if task.status == "OK":
+                return task
+            elif task.status == "DONE":
+                task["task_done"] = True
+                return task
+            elif task.status == "NO_JOB":
+                return None
+            elif task.status == "RETRY":
+                wait = task.retry_wait if task.retry_wait else 5
+                log.info(f"Device:{self.device_id} Retrying getting task in {wait} seconds")
                 time.sleep(wait)

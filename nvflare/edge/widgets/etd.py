@@ -32,7 +32,7 @@ class EdgeTaskDispatcher(Widget):
     ETD must be installed on CP before the CP is started.
     """
 
-    def __init__(self, request_timeout: float = 2.0):
+    def __init__(self, request_timeout: float = 10.0):
         Widget.__init__(self)
         self.request_timeout = request_timeout
         self.edge_jobs = {}  # edge_method => list of job_ids

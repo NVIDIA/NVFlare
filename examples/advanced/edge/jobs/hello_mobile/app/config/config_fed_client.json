@@ -24,7 +24,7 @@
             "id": "learner",
             "path": "nvflare.edge.executors.edge_dispatch_executor.EdgeDispatchExecutor",
             "args": {
-                "wait_time": "30",
+                "wait_time": 60,
                 "min_devices": 2,
                 "aggregator_id": "aggregator"
             }

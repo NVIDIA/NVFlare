@@ -41,9 +41,12 @@ class SampleTaskProcessor(DeviceTaskProcessor):
 
         result = None
         if task.task_name == "train":
-            result = {
-                "model": [1.0, 2.0, 3.0, 4.0]
-            }
+            weights = task.task_data["weights"]
+            if weights:
+                w = [x * 2.0 for x in weights]
+            else:
+                w = [0, 0, 0, 0]
+            result = {"weights": w}
         elif task.task_name == "validate":
             result = {
                 "accuracy": [0.01, 0.02, 0.03, 0.04]

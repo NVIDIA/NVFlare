@@ -21,6 +21,9 @@ from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumRef, DatumTy
 
 T = TypeVar("T")
 
+DICT_CONTENT = "dict"
+DATA_CONTENT = "data"
+
 
 class Decomposer(ABC):
     """Abstract base class for decomposers.
@@ -199,11 +202,27 @@ class DataClassDecomposer(Decomposer):
         return self.data_type
 
     def decompose(self, target: T, manager: DatumManager = None) -> Any:
-        return vars(target)
+        data = {}
+
+        if hasattr(target, '__dict__'):
+            data[DATA_CONTENT] = vars(target)
+
+        if isinstance(target, dict):
+            data[DICT_CONTENT] = dict(target)
+
+        return data
 
     def recompose(self, data: dict, manager: DatumManager = None) -> T:
         instance = self.data_type.__new__(self.data_type)
-        instance.__dict__.update(data)
+
+        data_content = data.get(DATA_CONTENT, None)
+        if data_content:
+            instance.__dict__.update(data_content)
+
+        dict_content = data.get(DICT_CONTENT, None)
+        if dict_content:
+            instance.update(dict_content)
+
         return instance
 
 
