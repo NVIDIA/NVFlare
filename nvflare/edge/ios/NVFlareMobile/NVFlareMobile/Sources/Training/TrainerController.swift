@@ -57,9 +57,7 @@ class TrainerController: ObservableObject {
     }
     
     private func runTrainingLoop() async throws {
-        // Job fetching loop
         var currentJob: Job?
-        var sessionId: String?
         
         while currentJob == nil && !Task.isCancelled {
             do {
@@ -68,9 +66,8 @@ class TrainerController: ObservableObject {
                     throw NVFlareError.serverRequestedStop
                 }
                 
-                let (job, sid) = try jobResponse.toJob()
+                let job = try jobResponse.toJob()
                 currentJob = job
-                sessionId = sid
                 
             } catch {
                 print("Failed to fetch job \(error), retrying in 5 seconds...")
@@ -79,14 +76,14 @@ class TrainerController: ObservableObject {
             }
         }
         
-        guard let job = currentJob, let sid = sessionId else {
+        guard let job = currentJob else {
             throw NVFlareError.jobFetchFailed
         }
         
         // Task execution loop
         while job.status == "running" && !Task.isCancelled {
             do {
-                let taskResponse = try await connection.fetchTask(sessionId: sid, jobId: job.id)
+                let taskResponse = try await connection.fetchTask(jobId: job.id)
 
                 if !taskResponse.taskStatus.shouldContinueTraining {
                     print("Training finished - no more tasks")
@@ -119,7 +116,7 @@ class TrainerController: ObservableObject {
                 
                 // Send results back
                 try await connection.sendResult(
-                    sessionId: sid,
+                    jobId: job.id,
                     taskId: task.id,
                     taskName: "train",
                     weightDiff: weightDiff

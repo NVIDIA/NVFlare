@@ -37,7 +37,6 @@
 
 
 
-// *** the ".pte" is in base64 string for now NOT binary
 // *** send the model difference instead of gradient to support multiple local epochs
 
 
@@ -146,7 +145,7 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
     return self;
 }
 
-- (NSDictionary<NSString *, id> *)toNSDictionary:(const std::map<executorch::aten::string_view, executorch::aten::Tensor>&)map {
++ (NSDictionary<NSString *, id> *)toTensorDictionary:(const std::map<executorch::aten::string_view, executorch::aten::Tensor>&)map {
     NSMutableDictionary *tensorDict = [NSMutableDictionary dictionary];
     
     for (const auto& pair : map) {
@@ -183,6 +182,71 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
     return tensorDict;
 }
 
++ (void)printTensorDictionary:(NSDictionary<NSString *, id> *)dict {
+    NSLog(@"Dictionary Contents ===============");
+    for (NSString *key in dict) {
+        NSLog(@"Tensor: %@", key);
+        NSDictionary *tensorInfo = dict[key];
+        
+        NSArray *sizes = tensorInfo[@"sizes"];
+        NSLog(@"  Sizes: %@", sizes);
+        
+        NSArray *strides = tensorInfo[@"strides"];
+        NSLog(@"  Strides: %@", strides);
+        
+        NSArray *data = tensorInfo[@"data"];
+        NSLog(@"  Data[%lu]: [", (unsigned long)data.count);
+        // Print first few and last few elements
+        for (int i = 0; i < data.count; i++) {
+            NSLog(@"    [%d]: %@", i, data[i]);
+        }
+        NSLog(@"  ]");
+    }
+    NSLog(@"End Dictionary Contents ===========");
+}
+
++ (NSDictionary<NSString *, id> *)calculateTensorDifference:(NSDictionary<NSString *, id> *)oldDict
+                                                   newDict:(NSDictionary<NSString *, id> *)newDict {
+    NSMutableDictionary *diffDict = [NSMutableDictionary dictionary];
+    
+    for (NSString *key in oldDict) {
+        NSDictionary *oldTensor = oldDict[key];
+        NSDictionary *newTensor = newDict[key];
+        
+        if (!newTensor) {
+            NSLog(@"Warning: Tensor %@ not found in new parameters", key);
+            continue;
+        }
+        
+        NSArray *oldData = oldTensor[@"data"];
+        NSArray *newData = newTensor[@"data"];
+        
+        if (oldData.count != newData.count) {
+            NSLog(@"Warning: Tensor %@ size mismatch: old=%lu new=%lu",
+                  key, (unsigned long)oldData.count, (unsigned long)newData.count);
+            continue;
+        }
+        
+        NSMutableArray *diffData = [NSMutableArray arrayWithCapacity:oldData.count];
+        for (NSUInteger i = 0; i < oldData.count; i++) {
+            float oldVal = [oldData[i] floatValue];
+            float newVal = [newData[i] floatValue];
+            float diff = newVal - oldVal;
+            [diffData addObject:@(diff)];
+        }
+        
+        NSMutableDictionary *diffTensor = [NSMutableDictionary dictionary];
+        diffTensor[@"sizes"] = oldTensor[@"sizes"];     // Keep original sizes
+        diffTensor[@"strides"] = oldTensor[@"strides"]; // Keep original strides
+        diffTensor[@"data"] = diffData;                 // Store differences
+        
+        diffDict[key] = diffTensor;
+    }
+    
+    return diffDict;
+}
+
+
 - (NSDictionary<NSString *, id> *)train {
     if (!_training_module) {
         NSLog(@"Training module not initialized");
@@ -212,8 +276,11 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
             return @{};
         }
         
+        auto initial_params = param_res.get();
+        NSDictionary<NSString *, id>* old_params = [ETTrainer toTensorDictionary:initial_params];
+    
         NSLog(@"Initial Params Start ==============");
-        printMap(param_res.get());
+        [ETTrainer printTensorDictionary:old_params];
         NSLog(@"Initial Params End ================");
         
         // Configure optimizer
@@ -254,12 +321,24 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
         printMap(_training_module->named_gradients("forward").get());
         NSLog(@"Grad End ================");
         
+        NSLog(@"Old Params Start ==============");
+        [ETTrainer printTensorDictionary:old_params];
+        NSLog(@"Old Params End ================");
+
+
+        NSDictionary<NSString *, id>* final_params = [ETTrainer toTensorDictionary:param_res.get()];
+        
         NSLog(@"New Params Start ==============");
-        printMap(_training_module->named_gradients("forward").get());
+        [ETTrainer printTensorDictionary:final_params];
         NSLog(@"New Params End ================");
         
-        // Use the instance method directly
-        return [self toNSDictionary:_training_module->named_gradients("forward").get()];
+        auto tensor_diff = [ETTrainer calculateTensorDifference:old_params newDict:final_params];
+        
+        NSLog(@"Diff Start ==============");
+        [ETTrainer printTensorDictionary:tensor_diff];
+        NSLog(@"Diff End ================");
+
+        return tensor_diff;
         
     } @catch (NSException *exception) {
         NSLog(@"Training failed: %@", exception);
