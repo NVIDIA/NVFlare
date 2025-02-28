@@ -73,16 +73,16 @@ Your subclass of DXOFilter benefits from the features of DXOFilter:
 
 Filter Behavior in 1-N Communication
 ==========
-Based on the design, when a filter is applied to a object, for memory efficiency without making local deep copies, it can modify the DXO object in place.
-This is fine when the DXO object is expected to be sent to only one recipient, as in the case of 1-1 communication.
-However, in the case of 1-N communication, e.g. server to clients, the DXO object will be expected by multiple recipients.
-Assuming a common filter is being used, if the DXO object is modified in place, then the DXO object sent to the second and other recipients should not be filtered again,
+Based on the design, when a filter is applied to a object, for memory efficiency without making local deep copies, it can modify the object in place.
+This is fine when the object is expected to be sent to only one recipient, as in the case of 1-1 communication, e.g. client to server.
+However, in the case of 1-N communication, e.g. server to clients, the object will be expected by multiple recipients.
+Assuming a common filter is being used, if the object is modified in place, then the object sent to the second and other recipients should not be filtered again,
 otherwise they might be different from the one sent to the first recipient.
 
 Therefore, when designing and implementing filters, such behavior needs to be considered with care:
 
-    - If the DXO object is modified in place, then the filter should be applied only once to the DXO object.
-    - If different filters are expected to be applied to the same DXO object, then the DXO object should not be modified in place. Instead, a deep copy should be created and used by the filter.
+    - If the object is modified in place, then the filter should be applied only once to the object.
+    - If different filters are expected to be applied to the same object, then the object should not be modified in place. Instead, a deep copy should be created and used by the filter.
 
 Creating a DXO Filter
 ---------------------
