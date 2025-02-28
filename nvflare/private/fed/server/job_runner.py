@@ -395,7 +395,10 @@ class JobRunner(FLComponent):
 
         location = job_manager.save_workspace(job_id, ws_dirs, fl_ctx)
         self.log_debug(fl_ctx, f"Workspace {ws_dirs} saved to {location}")
-        shutil.rmtree(run_dir)
+
+        # remove all ws dirs
+        for d in ws_dirs:
+            shutil.rmtree(d)
 
     def run(self, fl_ctx: FLContext):
         """Starts job runner."""

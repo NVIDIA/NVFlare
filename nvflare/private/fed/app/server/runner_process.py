@@ -78,7 +78,7 @@ def main(args):
             args=args,
             kv_list=args.set,
         )
-        configure_logging(workspace, workspace.get_log_root(args.job_id))
+        configure_logging(workspace, args.job_id)
         logger = get_script_logger()
         logger.info("Runner_process started.")
 

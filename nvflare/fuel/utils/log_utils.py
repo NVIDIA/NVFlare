@@ -290,15 +290,15 @@ def get_script_logger():
     )
 
 
-def configure_logging(workspace: Workspace, dir_path: str = "", file_prefix: str = ""):
-    # Read log_config.json from workspace, update with file_prefix, and apply to dir_path
+def configure_logging(workspace: Workspace, job_id: str = None, file_prefix: str = ""):
+    # Read log_config.json from workspace, update with file_prefix, and apply to log_root of th workspace
     log_config_file_path = workspace.get_log_config_file_path()
     assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
 
     with open(log_config_file_path, "r") as f:
         dict_config = json.load(f)
 
-    apply_log_config(dict_config, dir_path, file_prefix)
+    apply_log_config(dict_config, workspace.get_log_root(job_id), file_prefix)
 
 
 def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):

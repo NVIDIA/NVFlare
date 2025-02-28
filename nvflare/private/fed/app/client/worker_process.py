@@ -96,7 +96,7 @@ def main(args):
         )
         register_ext_decomposers(decomposer_module)
 
-        configure_logging(workspace, workspace.get_log_root(args.job_id))
+        configure_logging(workspace, args.job_id)
         logger = get_script_logger()
         logger.info("Worker_process started.")
 

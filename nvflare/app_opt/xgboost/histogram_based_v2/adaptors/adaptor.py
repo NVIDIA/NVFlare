@@ -62,10 +62,7 @@ class _RunnerStarter:
         try:
             if not self.in_process:
                 # enable logging
-                log_dir = self.workspace.get_log_root(self.job_id)
-                log_file_name = os.path.join(log_dir, f"{self.app_name}_log.txt")
-                self.logger.debug(f"XGB Log: {log_file_name}")
-                configure_logging(self.workspace, dir_path=log_dir, file_prefix=self.app_name)
+                configure_logging(self.workspace, job_id=self.job_id, file_prefix=self.app_name)
             self.runner.run(ctx)
             self.stopped = True
         except Exception as e:

@@ -80,7 +80,7 @@ def main(args):
             print(f"Could not remove file '{name}': {ex}.  Please check your system before starting FL.")
             sys.exit(-1)
 
-    configure_logging(workspace, workspace.get_log_root())
+    configure_logging(workspace)
     logger = logging.getLogger()
 
     relay_config_file = workspace.get_file_path_in_startup(args.relay_config)
