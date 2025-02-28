@@ -51,7 +51,7 @@ public class Connection: ObservableObject {
         
         // Prepare request body
         let capabilities: [String: Any] = [
-            "supported_methods": ["executorch"] // TODO:: change to "methods", get rid of session_id
+            "methods": ["executorch"]
         ]
         
         let body = try JSONSerialization.data(withJSONObject: ["capabilities": capabilities])
@@ -113,14 +113,13 @@ public class Connection: ObservableObject {
         }
     }
     
-    func fetchTask(sessionId: String, jobId: String) async throws -> TaskResponse {
+    func fetchTask(jobId: String) async throws -> TaskResponse {
         var urlComponents = URLComponents()
         urlComponents.scheme = scheme
         urlComponents.host = hostname
         urlComponents.port = port
         urlComponents.path = "/\(taskEndpoint)"
         urlComponents.queryItems = [
-            URLQueryItem(name: "session_id", value: sessionId),
             URLQueryItem(name: "job_id", value: jobId)
         ]
         
@@ -163,7 +162,7 @@ public class Connection: ObservableObject {
             case "RETRY":
                 if let retryWait = taskResponse.retryWait {
                     try await Task.sleep(for: .seconds(retryWait))
-                    return try await fetchTask(sessionId: sessionId, jobId: jobId)
+                    return try await fetchTask(jobId: jobId)
                 }
                 throw NVFlareError.taskFetchFailed
             default:
@@ -184,14 +183,14 @@ public class Connection: ObservableObject {
         }
     }
     
-    func sendResult(sessionId: String, taskId: String, taskName: String, weightDiff: [String: Any]) async throws {
+    func sendResult(jobId: String, taskId: String, taskName: String, weightDiff: [String: Any]) async throws {
         var urlComponents = URLComponents()
         urlComponents.scheme = scheme
         urlComponents.host = hostname
         urlComponents.port = port
         urlComponents.path = "/\(resultEndpoint)"
         urlComponents.queryItems = [
-            URLQueryItem(name: "session_id", value: sessionId),
+            URLQueryItem(name: "job_id", value: jobId),
             URLQueryItem(name: "task_id", value: taskId),
             URLQueryItem(name: "task_name", value: taskName)
         ]

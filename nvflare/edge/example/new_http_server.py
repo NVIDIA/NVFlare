@@ -11,13 +11,12 @@ from model import Net, TrainingNet
 
 
 def generate_endless_jobs(server):
-    job_id = 0
+    job_count = 0
+    job_id = f"job_{job_count}"
     while True:
-        session_id = f"session_{job_id}"
         job = {
             "status": "OK",
-            "session_id": session_id,
-            "job_id": f"job_{job_id}",
+            "job_id": job_id,
             "job_name": "training_job",
             "job_data": {
                 "total_epochs": server.local_epochs,
@@ -25,10 +24,10 @@ def generate_endless_jobs(server):
                 "learning_rate": server.learning_rate,
             },
         }
-        print(f"add job into server with {session_id=}")
-        server.jobs[session_id] = job
+        print(f"add job into server with {job_id=}")
+        server.jobs[job_id] = job
         yield job
-        job_id += 1
+        job_count += 1
 
 
 class MockFederatedServer:
@@ -83,14 +82,14 @@ class MockFederatedServer:
         label_tensor = torch.ones(1, dtype=torch.int64)
         return export_model(self.net, input_tensor, label_tensor).buffer
 
-    def process_gradients(self, session_id: str, grad_data: Dict[str, Any]) -> bool:
+    def process_gradients(self, job_id: str, grad_data: Dict[str, Any]) -> bool:
         """Process received gradients from a client."""
         print("Received tensor data:", grad_data)
         print("tensor data type:", type(grad_data))
         grad_dict = self._tensor_from_json(grad_data)
 
         with self.lock:
-            self.total_grad_dict[session_id] = grad_dict
+            self.total_grad_dict[job_id] = grad_dict
             self.received_result += 1
 
             if self.received_result >= self.min_clients:
@@ -100,7 +99,7 @@ class MockFederatedServer:
                 self.total_grad_dict.clear()
                 self.current_round += 1
                 if self.current_round >= self.total_rounds:
-                    self.jobs[session_id]["training_completed"] = True
+                    self.jobs[job_id]["training_completed"] = True
 
 
 server = MockFederatedServer(min_clients=1)
@@ -130,16 +129,15 @@ def get_job():
 def get_task():
     """Endpoint to get task (model weights)."""
     try:
-        session_id = request.args.get("session_id")
         job_id = request.args.get("job_id")
 
-        if not session_id or not job_id:
+        if not job_id:
             return (
-                jsonify({"status": "error", "message": "Missing session_id or job_id"}),
+                jsonify({"status": "error", "message": "Missing job_id"}),
                 400,
             )
 
-        if server.jobs[session_id].get("training_completed"):
+        if server.jobs[job_id].get("training_completed"):
             return (
                 jsonify({"status": "FINISHED", "message": "Training is finished"}),
                 200,
@@ -172,11 +170,11 @@ def get_task():
 def submit_result():
     """Endpoint to receive training results."""
     try:
-        session_id = request.args.get("session_id")
+        job_id = request.args.get("job_id")
         task_id = request.args.get("task_id")
         task_name = request.args.get("task_name")
 
-        if not all([session_id, task_id, task_name]):
+        if not all([job_id, task_id, task_name]):
             return (
                 jsonify({"status": "error", "message": "Missing required parameters"}),
                 400,
@@ -189,7 +187,7 @@ def submit_result():
                 400,
             )
 
-        server.process_gradients(session_id, result_data["result"])
+        server.process_gradients(job_id, result_data["result"])
 
         return (
             jsonify(
@@ -198,7 +196,7 @@ def submit_result():
                     "message": "Results processed successfully",
                     "task_id": task_id,
                     "task_name": task_name,
-                    "session_id": session_id,
+                    "job_id": job_id,
                 }
             ),
             200,

@@ -9,7 +9,6 @@ import Foundation
 
 struct JobResponse: Decodable {
     let status: String
-    let sessionId: String?
     let jobId: String?
     let jobName: String?
     let jobData: JobDataResponse?
@@ -20,7 +19,6 @@ struct JobResponse: Decodable {
     
     enum CodingKeys: String, CodingKey {
         case status
-        case sessionId = "session_id"
         case jobId = "job_id"
         case jobName = "job_name"
         case jobData = "job_data"
@@ -45,14 +43,14 @@ struct JobDataResponse: Decodable {
 }
 
 extension JobResponse {
-    func toJob() throws -> (job: Job, sessionId: String?) {
+    func toJob() throws -> Job {
         guard let jobId = self.jobId,
               let jobData = self.jobData else {
             throw NVFlareError.invalidMetadata
         }
         let meta = JobMeta(from: jobData)
         let job = Job(id: jobId, meta: meta, status: "running")
-        return (job, self.sessionId)
+        return job
     }
 }
 
