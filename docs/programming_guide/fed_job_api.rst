@@ -121,6 +121,7 @@ These functions have the following parameters which are used depending on the ty
 * ``**kwargs``: if the object implements the ``add_to_fed_job`` method, ``kwargs`` are additional args to be passed to this function. See the specific object's section for more details.
 
 .. warning::
+
     Important: in order for the FedJob to use the values of arguments passed into the ``obj``, the arguments must be set as instance variables of the same name (or prefixed with "_") in the constructor.
 
 Below we cover in-depth how different types of objects are handled when using :func:`to<nvflare.job_config.api.FedJob.to>`:
