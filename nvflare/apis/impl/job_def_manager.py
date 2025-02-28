@@ -105,6 +105,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def __init__(self, uri_root: str = "jobs", job_store_id: str = "job_store"):
         super().__init__()
         self.uri_root = uri_root
+
+        # if env var is defined, use it to override uri_root!
+        job_store_root = os.environ.get("NVFL_JOB_STORE_ROOT")
+        if job_store_root:
+            self.uri_root = job_store_root
+
         os.makedirs(uri_root, exist_ok=True)
         self.job_store_id = job_store_id
 
@@ -360,9 +366,9 @@ class SimpleJobDefManager(JobDefManagerSpec):
             store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return meta
 
-    def save_workspace(self, jid: str, data: Union[bytes, str], fl_ctx: FLContext):
+    def save_workspace(self, jid: str, data: Union[bytes, str, List[str]], fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
-        store.update_object(self.job_uri(jid), data, WORKSPACE)
+        return store.update_object(self.job_uri(jid), data, WORKSPACE)
 
     def get_storage_component(self, jid: str, component: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)

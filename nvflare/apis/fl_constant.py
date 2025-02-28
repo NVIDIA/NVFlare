@@ -432,6 +432,10 @@ class WorkspaceConstants:
     JOB_RESOURCE_FILE_NAME_PATTERN = "*__j_resources.json"  # for job process only
     PARENT_RESOURCE_FILE_NAME_PATTERN = "*__p_resources.json"  # for parent process only
 
+    ENV_VAR_RESULT_ROOT = "NVFL_RESULT_ROOT"
+    ENV_VAR_LOG_ROOT = "NVFL_LOG_ROOT"
+    ENV_VAR_AUDIT_ROOT = "NVFL_AUDIT_ROOT"
+
 
 class SiteType:
     SERVER = "server"

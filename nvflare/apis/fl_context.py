@@ -217,6 +217,12 @@ class FLContext(object):
     def get_engine(self, default=None):
         return self._simple_get(ReservedKey.ENGINE, default)
 
+    def get_workspace(self):
+        engine = self.get_engine()
+        if not engine:
+            raise RuntimeError("missing engine from context")
+        return engine.get_workspace()
+
     def get_process_type(self, default=None):
         return self._simple_get(ReservedKey.PROCESS_TYPE, default)
 

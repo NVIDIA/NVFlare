@@ -13,7 +13,7 @@
 # limitations under the License.
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 DATA = "data"
 JOB_ZIP = "job.zip"
@@ -95,13 +95,15 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def update_object(self, uri: str, data, component_name: str):
+    def update_object(self, uri: str, data: Union[bytes, str, List[str]], component_name: str) -> str:
         """Update the object
 
         Args:
             uri: URI of the object
-            data: content data of the component, or the content file location
+            data: content data of the component, or the content file location, or list of file/dir names
             component_name: component name
+
+        Returns: location of the updated object
 
         Raises StorageException when the object does not exit.
 

@@ -52,6 +52,9 @@ class ProvisionContext(dict):
         return self.get(CtxKey.PROJECT)
 
     def load_templates(self, temp_files: Union[str, List[str]]):
+        if not temp_files:
+            return
+
         if isinstance(temp_files, str):
             temp_files = [temp_files]
         elif not isinstance(temp_files, list):

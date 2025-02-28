@@ -146,7 +146,7 @@ def security_init(secure_train: bool, site_org: str, workspace: Workspace, app_v
         sys.exit(1)
 
 
-def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: str):
+def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: str, job_id: str):
     """Initialize security processing for a job process (SJ or CJ).
 
     Args:
@@ -169,7 +169,7 @@ def security_init_for_job(secure_train: bool, workspace: Workspace, site_type: s
 
     # initialize the AuditService, which is used by command processing.
     # The Audit Service can be used in other places as well.
-    audit_file_name = workspace.get_audit_file_path()
+    audit_file_name = workspace.get_audit_file_path(job_id)
     AuditService.initialize(audit_file_name)
 
 

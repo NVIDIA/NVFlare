@@ -126,14 +126,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         self.kv_list = parse_vars(args.set)
 
-    def _get_server_app_folder(self):
-        return WorkspaceConstants.APP_PREFIX + SiteType.SERVER
-
-    def _get_client_app_folder(self, client_name):
-        return WorkspaceConstants.APP_PREFIX + client_name
-
     def _get_run_folder(self, job_id):
-        return os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+        workspace = Workspace(self.args.workspace)
+        return workspace.get_run_dir(job_id)
 
     def get_engine_info(self) -> EngineInfo:
         self.engine_info.app_names = {}
@@ -144,7 +139,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         keys = list(self.run_processes.keys())
         for job_id in keys:
-            run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+            run_folder = self._get_run_folder(job_id)
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
                 with open(app_file, "r") as f:
@@ -161,7 +156,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         return None
 
     def delete_job_id(self, num):
-        job_id_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(num))
+        job_id_folder = self._get_run_folder(str(num))
         if os.path.exists(job_id_folder):
             shutil.rmtree(job_id_folder)
         return ""

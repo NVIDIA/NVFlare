@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import io
+import json
 import os
 import re
 import subprocess
@@ -95,13 +96,14 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
 
         # the root key is protected by password
         root_pri_key = deserialize_ca_key(project.root_key)
+        proj_props = {"api_version": 3}
+        if project.project_props:
+            proj_props.update(json.loads(project.project_props))
 
         prov_project = ProvProject(
             project.short_name,
             project.description,
-            props={
-                "api_version": 3,
-            },
+            props=proj_props,
             root_private_key=root_pri_key,
             serialized_root_cert=project.root_cert,
         )
@@ -109,14 +111,19 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
         # use org of superuser
         org = super_user.get("organization", "nvflare")
         server_name = project.server1
+
+        server_props = {
+            "fed_learn_port": fl_port,
+            "admin_port": admin_port,
+            "default_host": server_name,
+        }
+        if project.server_props:
+            server_props.update(json.loads(project.server_props))
+
         server = prov_project.set_server(
             name=server_name,
             org=org,
-            props={
-                "fed_learn_port": fl_port,
-                "admin_port": admin_port,
-                "default_host": server_name,
-            },
+            props=server_props,
         )
 
         target = server
@@ -141,7 +148,11 @@ def gen_client_blob(key, id):
 def _prepare_client(prov_project: ProvProject, client_id):
     client = Client.query.get(client_id)
     inc_dl(Client, client_id)
-    return prov_project.add_client(name=client.name, org=client.organization.name, props={})
+    if client.props:
+        props = json.loads(client.props)
+    else:
+        props = {}
+    return prov_project.add_client(name=client.name, org=client.organization.name, props=props)
 
 
 def gen_user_blob(key, id):
@@ -151,5 +162,8 @@ def gen_user_blob(key, id):
 def _prepare_user(prov_project: ProvProject, user_id):
     user = User.query.get(user_id)
     inc_dl(User, user_id)
-    admin = prov_project.add_admin(name=user.email, org=user.organization.name, props={PropKey.ROLE: user.role.name})
+    props = {PropKey.ROLE: user.role.name}
+    if user.props:
+        props.update(json.loads(user.props))
+    admin = prov_project.add_admin(name=user.email, org=user.organization.name, props=props)
     return admin

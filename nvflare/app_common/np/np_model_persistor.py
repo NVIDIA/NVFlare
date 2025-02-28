@@ -16,7 +16,6 @@ import os
 
 import numpy as np
 
-from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
@@ -26,14 +25,11 @@ from .constants import NPConstants
 
 
 def _get_run_dir(fl_ctx: FLContext):
-    engine = fl_ctx.get_engine()
-    if engine is None:
-        raise RuntimeError("engine is missing in fl_ctx.")
-    job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+    workspace = fl_ctx.get_workspace()
+    job_id = fl_ctx.get_job_id()
     if job_id is None:
         raise RuntimeError("job_id is missing in fl_ctx.")
-    run_dir = engine.get_workspace().get_run_dir(job_id)
-    return run_dir
+    return workspace.get_run_dir(job_id)
 
 
 class NPModelPersistor(ModelPersistor):
@@ -76,8 +72,9 @@ class NPModelPersistor(ModelPersistor):
         return model_learnable
 
     def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
-        run_dir = _get_run_dir(fl_ctx)
-        model_root_dir = os.path.join(run_dir, self.model_dir)
+        workspace = fl_ctx.get_workspace()
+        job_id = fl_ctx.get_job_id()
+        model_root_dir = os.path.join(workspace.get_result_root(job_id), self.model_dir)
         if not os.path.exists(model_root_dir):
             os.makedirs(model_root_dir)
 

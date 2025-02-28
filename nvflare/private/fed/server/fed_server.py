@@ -36,7 +36,6 @@ from nvflare.apis.fl_constant import (
     SnapshotKey,
     SystemComponents,
     SystemConfigs,
-    WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
@@ -1062,7 +1061,8 @@ class FederatedServer(BaseServer):
                         if snapshot and not snapshot.completed:
                             # Restore the workspace
                             workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                            dst = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
+                            ws = Workspace(self.workspace)
+                            dst = ws.get_run_dir(str(run_number))
                             if os.path.exists(dst):
                                 shutil.rmtree(dst, ignore_errors=True)
 

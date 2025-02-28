@@ -17,12 +17,14 @@ import json
 import logging
 import os
 import shutil
+import tempfile
 import uuid
 from pathlib import Path
 from typing import List, Tuple
 
 from nvflare.apis.storage import DATA, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
+from nvflare.fuel.utils.zip_utils import zip_directory_to_file
 from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
@@ -61,6 +63,8 @@ def _write(path: str, content, mv_file=True):
                 shutil.move(content, tmp_path)
             else:
                 shutil.copyfile(content, tmp_path)
+        elif isinstance(content, list):
+            _write_multi(tmp_path, content)
         else:
             raise RuntimeError(f"content must be bytes or str but got {type(content)}")
     except Exception as e:
@@ -70,6 +74,24 @@ def _write(path: str, content, mv_file=True):
 
     if os.path.exists(tmp_path):
         os.rename(tmp_path, path)
+
+
+def _write_multi(output_zip_file_name: str, content: List[str]):
+    with tempfile.TemporaryDirectory() as td:
+        for c in content:
+            if os.path.isfile(c):
+                basename = os.path.basename(c)
+                shutil.move(c, os.path.join(td, basename))
+            elif os.path.isdir(c):
+                # move/copy everything from the dir
+                file_names = os.listdir(c)
+                for file_name in file_names:
+                    shutil.move(os.path.join(c, file_name), os.path.join(td, file_name))
+            else:
+                raise ValueError(f"items in content list must be file name or dir name but got {type(c)}")
+
+        # zip everything
+        zip_directory_to_file(td, "", output_zip_file_name)
 
 
 def _read(path: str) -> bytes:
@@ -206,6 +228,7 @@ class FilesystemStorage(StorageSpec):
 
         component_path = os.path.join(full_dir_path, component_name)
         _write(component_path, data)
+        return component_path
 
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Updates the meta of the specified object.

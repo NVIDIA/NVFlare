@@ -258,13 +258,15 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def save_workspace(self, jid: str, data: Union[bytes, str], fl_ctx: FLContext):
+    def save_workspace(self, jid: str, data: Union[bytes, str, List[str]], fl_ctx: FLContext) -> str:
         """Save the job workspace to the job storage.
 
         Args:
             jid (str): Job ID
-            data: Job workspace data or name of data file
+            data: Job workspace data; or name of data file; or list of file/dir names
             fl_ctx (FLContext): FLContext information
+
+        Returns: location where the workspace is saved at
 
         """
         pass
