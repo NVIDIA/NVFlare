@@ -92,8 +92,8 @@ class _PyStarter:
         try:
             if not self.in_process:
                 # enable logging
-                run_dir = self.workspace.get_run_dir(self.job_id)
-                configure_logging(self.workspace, dir_path=run_dir, file_prefix="applet")
+                log_dir = self.workspace.get_app_log_root(self.job_id)
+                configure_logging(self.workspace, dir_path=log_dir, file_prefix="applet")
             self.runner.start(app_ctx)
 
             # Note: run_func does not return until it runs to completion!

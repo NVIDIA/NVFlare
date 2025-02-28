@@ -80,7 +80,7 @@ def main(args):
             print(f"Could not remove file '{name}': {ex}.  Please check your system before starting FL.")
             sys.exit(-1)
 
-    configure_logging(workspace, workspace.get_root_dir())
+    configure_logging(workspace, workspace.get_log_root())
     logger = logging.getLogger()
 
     relay_config_file = workspace.get_file_path_in_startup(args.relay_config)
@@ -139,7 +139,7 @@ def main(args):
     }
     enhance_credential_info(credentials)
 
-    logger.info(f"{credentials=}")
+    logger.debug(f"{credentials=}")
 
     conn_security = parent.get(ConnPropKey.CONNECTION_SECURITY)
     secure_conn = True

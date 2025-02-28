@@ -168,10 +168,12 @@ class Workspace:
     def get_startup_kit_dir(self) -> str:
         return os.path.join(self.root_dir, WorkspaceConstants.STARTUP_FOLDER_NAME)
 
-    def get_audit_file_path(self) -> str:
+    def get_audit_file_path(self, job_id=None) -> str:
         file_name = WorkspaceConstants.AUDIT_LOG
         if self.audit_root:
-            return os.path.join(self._get_site_root_dir(self.audit_root), file_name)
+            return os.path.join(self._get_site_root_dir(self.audit_root, job_id), file_name)
+        elif job_id:
+            return os.path.join(self.get_run_dir(job_id), file_name)
         else:
             return os.path.join(self.root_dir, file_name)
 
@@ -184,12 +186,17 @@ class Workspace:
         else:
             return os.path.join(root, self.site_name)
 
-    def get_log_file_path(self) -> str:
-        file_name = WorkspaceConstants.LOG_FILE_NAME
+    def get_log_root(self) -> str:
         if self.log_root:
-            return os.path.join(self._get_site_root_dir(self.log_root), file_name)
+            return self._get_site_root_dir(self.log_root)
         else:
-            return os.path.join(self.root_dir, file_name)
+            return self.root_dir
+
+    def get_app_log_root(self, job_id: str) -> str:
+        if self.log_root:
+            return self._get_site_root_dir(self.log_root, job_id)
+        else:
+            return self.get_run_dir(job_id)
 
     def get_root_dir(self) -> str:
         return self.root_dir
@@ -205,9 +212,6 @@ class Workspace:
             return os.path.join(self._get_site_root_dir(self.log_root, job_id), file_name)
         else:
             return os.path.join(self.get_run_dir(job_id), file_name)
-
-    def get_app_log_file_path(self, job_id: str) -> str:
-        return self._get_any_app_log_file_path(job_id, WorkspaceConstants.LOG_FILE_NAME)
 
     def get_app_error_log_file_path(self, job_id: str) -> str:
         return self._get_any_app_log_file_path(job_id, WorkspaceConstants.ERROR_LOG_FILE_NAME)

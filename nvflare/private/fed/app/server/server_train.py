@@ -84,7 +84,7 @@ def main(args):
             logger.critical("loglevel critical enabled")
         conf.configure()
 
-        configure_logging(workspace, workspace.get_root_dir())
+        configure_logging(workspace, workspace.get_log_root())
 
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)

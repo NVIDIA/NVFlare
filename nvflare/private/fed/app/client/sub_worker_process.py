@@ -307,7 +307,7 @@ class SubWorkerExecutor(Runner):
 
 def main(args):
     workspace = Workspace(args.workspace, args.client_name)
-    configure_logging(workspace, workspace.get_run_dir(args.job_id))
+    configure_logging(workspace, workspace.get_app_log_root(args.job_id))
 
     fobs_initialize(workspace=workspace, job_id=args.job_id)
     register_ext_decomposers(args.decomposer_module)

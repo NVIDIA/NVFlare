@@ -72,7 +72,7 @@ def main(args):
     fobs_initialize(workspace=workspace, job_id=args.job_id)
 
     # initialize security processing and ensure that content in the startup has not been tampered with.
-    security_init_for_job(secure_train, workspace, SiteType.CLIENT)
+    security_init_for_job(secure_train, workspace, SiteType.CLIENT, args.job_id)
 
     thread = None
     stop_event = threading.Event()
@@ -96,7 +96,7 @@ def main(args):
         )
         register_ext_decomposers(decomposer_module)
 
-        configure_logging(workspace, workspace.get_run_dir(args.job_id))
+        configure_logging(workspace, workspace.get_app_log_root(args.job_id))
         logger = get_script_logger()
         logger.info("Worker_process started.")
 

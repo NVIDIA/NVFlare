@@ -59,4 +59,9 @@ class TestWorkspace:
                 os.path.relpath(ws.log_root, tmp_dir) if ws.log_root else None,
                 os.path.relpath(ws.audit_root, tmp_dir) if ws.audit_root else None,
             )
+
+            # clean up env vars after testing
+            for n in var_dict.keys():
+                os.environ.pop(n, None)
+
             assert result == expected
