@@ -60,9 +60,9 @@ class ClientRunInfo(object):
 
 
 # TODO: make this configurable
-#   this is the number of retries for client side child/job process to get clients from server
+#   this is the max amount of time for client side child/job process to get clients from server
 #   we might need to think of removing the whole get clients from server logic from child process
-GET_CLIENTS_RETRY = 300
+GET_CLIENTS_TIMEOUT = 15
 
 
 class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
@@ -316,8 +316,11 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             topic, msg_targets, timeout, fl_ctx, optional=optional, secure=secure
         )
 
-    def get_all_clients_from_server(self, fl_ctx, retry=0):
-        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+    def get_all_clients_from_server(self, fl_ctx):
+        self._try_get_all_clients_from_server(fl_ctx, time.time())
+
+    def _try_get_all_clients_from_server(self, fl_ctx: FLContext, start_time):
+        job_id = fl_ctx.get_job_id()
         get_clients_message = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})
         return_data = self.client.cell.send_request(
             target=FQCN.ROOT_SERVER,
@@ -332,19 +335,24 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         if return_code == CellReturnCode.OK:
             if return_data.payload:
                 data = return_data.payload
-                self.all_clients = data.get(ServerCommandKey.CLIENTS)
-                for _, c in self.all_clients.items():
-                    self.name_to_clients[c.name] = c
+                all_clients = data.get(ServerCommandKey.CLIENTS)
+                if all_clients:
+                    self.all_clients = all_clients
+                    for _, c in self.all_clients.items():
+                        self.name_to_clients[c.name] = c
+                    self.logger.info(f"got clients for job {job_id} from server in {time.time()-start_time} secs")
+                    return
             else:
                 raise RuntimeError("Empty clients data from server")
+
+        # We got here either because the return_code is not OK or the server isn't quite ready
+        # Retry to get clients again.
+        duration = time.time() - start_time
+        if duration < GET_CLIENTS_TIMEOUT:
+            time.sleep(0.5)
+            self._try_get_all_clients_from_server(fl_ctx, start_time)
         else:
-            # retry to handle the server connect has not been established scenario.
-            retry += 1
-            if retry < GET_CLIENTS_RETRY:
-                time.sleep(0.5)
-                self.get_all_clients_from_server(fl_ctx, retry)
-            else:
-                raise RuntimeError("Failed to get the clients from the server.")
+            raise RuntimeError(f"Failed to get the clients from the server in {duration} seconds.")
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)
