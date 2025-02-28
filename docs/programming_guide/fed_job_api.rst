@@ -120,9 +120,8 @@ These functions have the following parameters which are used depending on the ty
 * ``target`` (str): (For :func:`to<nvflare.job_config.api.FedJob.to>`) The target location of the object. Can be “server” or a client name, e.g. “site-1”.
 * ``**kwargs``: if the object implements the ``add_to_fed_job`` method, ``kwargs`` are additional args to be passed to this function. See the specific object's section for more details.
 
-.. note::
-
-    In order for the FedJob to use the values of arguments passed into the ``obj``, the arguments must be set as instance variables of the same name (or prefixed with "_") in the constructor.
+.. warning::
+    Important: in order for the FedJob to use the values of arguments passed into the ``obj``, the arguments must be set as instance variables of the same name (or prefixed with "_") in the constructor.
 
 Below we cover in-depth how different types of objects are handled when using :func:`to<nvflare.job_config.api.FedJob.to>`:
 

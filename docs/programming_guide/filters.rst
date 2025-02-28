@@ -71,12 +71,13 @@ Your subclass of DXOFilter benefits from the features of DXOFilter:
     - Filtering history recording. If a DXO node is processed by your filter, your filter's class name will be appended to the DXO's "filter_history"
     - Auditing. If your filter is applied, a job audit event will be created to record the fact that the filter is applied to data.
 
-DXO Filter Behavior in 1-N Communication
+Filter Behavior in 1-N Communication
 ==========
-Based on the design, when a DXO filter is applied to a DXO object, it modifies the DXO object in place. This is fine when the DXO object is expected to be sent to only one recipient, as in the case of 1-1 communication.
-But in the case of 1-N communication, the DXO object will be expected by multiple recipients.
-Assuming a common filter is being used, given the DXO object is modified in place, then the DXO object sent to the second and other recipients
-should not be filtered again, otherwise they will be different from the one sent to the first recipient.
+Based on the design, when a filter is applied to a object, for memory efficiency without making local deep copies, it can modify the DXO object in place.
+This is fine when the DXO object is expected to be sent to only one recipient, as in the case of 1-1 communication.
+However, in the case of 1-N communication, e.g. server to clients, the DXO object will be expected by multiple recipients.
+Assuming a common filter is being used, if the DXO object is modified in place, then the DXO object sent to the second and other recipients should not be filtered again,
+otherwise they might be different from the one sent to the first recipient.
 
 Therefore, when designing and implementing filters, such behavior needs to be considered with care:
 
