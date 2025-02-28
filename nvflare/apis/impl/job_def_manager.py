@@ -366,9 +366,9 @@ class SimpleJobDefManager(JobDefManagerSpec):
             store.update_meta(self.job_uri(jid), updated_meta, replace=False)
         return meta
 
-    def save_workspace(self, jid: str, data: Union[bytes, str], fl_ctx: FLContext):
+    def save_workspace(self, jid: str, data: Union[bytes, str, List[str]], fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
-        store.update_object(self.job_uri(jid), data, WORKSPACE)
+        return store.update_object(self.job_uri(jid), data, WORKSPACE)
 
     def get_storage_component(self, jid: str, component: str, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)

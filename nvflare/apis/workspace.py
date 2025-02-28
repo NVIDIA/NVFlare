@@ -168,14 +168,16 @@ class Workspace:
     def get_startup_kit_dir(self) -> str:
         return os.path.join(self.root_dir, WorkspaceConstants.STARTUP_FOLDER_NAME)
 
-    def get_audit_file_path(self, job_id=None) -> str:
-        file_name = WorkspaceConstants.AUDIT_LOG
+    def get_audit_root(self, job_id=None) -> str:
         if self.audit_root:
-            return os.path.join(self._get_site_root_dir(self.audit_root, job_id), file_name)
+            return self._get_site_root_dir(self.audit_root, job_id)
         elif job_id:
-            return os.path.join(self.get_run_dir(job_id), file_name)
+            return self.get_run_dir(job_id)
         else:
-            return os.path.join(self.root_dir, file_name)
+            return self.root_dir
+
+    def get_audit_file_path(self, job_id=None) -> str:
+        return os.path.join(self.get_audit_root(job_id), WorkspaceConstants.AUDIT_LOG)
 
     def _get_site_root_dir(self, root, job_id=None):
         if job_id:

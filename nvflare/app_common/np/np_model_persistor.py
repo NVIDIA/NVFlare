@@ -16,7 +16,6 @@ import os
 
 import numpy as np
 
-from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
