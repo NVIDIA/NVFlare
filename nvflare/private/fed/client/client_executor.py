@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import json
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -162,6 +162,17 @@ class JobExecutor(ClientExecutor):
             resource_manager: resource manager
             fl_ctx: FLContext
         """
+
+        # update the job meta
+        participating_clients = job_meta.get("participating_clients")
+        self.logger.info(f"got participating_clients: {participating_clients} for job {job_id}")
+
+        workspace = Workspace(args.workspace, site_name=client.client_name)
+        meta_file = workspace.get_job_meta_path(job_id)
+
+        # rewrite the meta file with the received meta
+        with open(meta_file, "w") as f:
+            json.dump(job_meta, f, indent=4)
 
         job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
 

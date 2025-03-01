@@ -36,7 +36,7 @@ class Client:
         self.name = name
         self.token = token
         self.last_connect_time = time.time()
-        self.props = {}
+        self.props = {ClientPropKey.FQCN: name, ClientPropKey.FQSN: name, ClientPropKey.IS_LEAF: True}
 
     def set_token(self, token):
         self.token = token
@@ -67,3 +67,16 @@ class Client:
 
     def get_is_leaf(self):
         return self.get_prop(ClientPropKey.IS_LEAF)
+
+    def to_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "token": self.token,
+            "props": self.props,
+        }
+
+
+def from_dict(d: dict) -> Client:
+    c = Client(name=d.get("name"), token=d.get("token"))
+    c.props.update(d.get("props", {}))
+    return c

@@ -15,6 +15,7 @@
 import time
 from typing import Dict, List, Optional, Union
 
+from nvflare.apis.client import from_dict
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     FLContextKey,
@@ -25,6 +26,7 @@ from nvflare.apis.fl_constant import (
     SiteType,
 )
 from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.apis.workspace import Workspace
@@ -200,7 +202,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         return self.name_to_clients.get(client_name)
 
     def get_clients(self):
-        return list(self.all_clients.values())
+        return self.all_clients
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
         self.logger.warning(f"will not persist components, not supported by {self.__class__.__name__}")
@@ -263,7 +265,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         if isinstance(target_names, str):
             if target_names == SiteType.ALL:
                 msg_targets = [AuxMsgTarget.server_target()]
-                for _, c in self.all_clients.items():
+                for c in self.all_clients:
                     if c.name != self.client.client_name:
                         msg_targets.append(AuxMsgTarget.client_target(c))
                 return msg_targets
@@ -316,43 +318,23 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             topic, msg_targets, timeout, fl_ctx, optional=optional, secure=secure
         )
 
-    def get_all_clients_from_server(self, fl_ctx):
-        self._try_get_all_clients_from_server(fl_ctx, time.time())
+    def get_job_clients(self, fl_ctx):
+        """Get participating clients of the job.
+        We no longer send message to the Server to ask this info.
+        Instead, job clients are included in the meta of the job when Server started the job!
 
-    def _try_get_all_clients_from_server(self, fl_ctx: FLContext, start_time):
-        job_id = fl_ctx.get_job_id()
-        get_clients_message = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})
-        return_data = self.client.cell.send_request(
-            target=FQCN.ROOT_SERVER,
-            channel=CellChannel.SERVER_PARENT_LISTENER,
-            topic=ServerCommandNames.GET_CLIENTS,
-            request=get_clients_message,
-            timeout=5.0,
-            optional=True,
-        )
-        return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+        Args:
+            fl_ctx: The FLContext object
 
-        if return_code == CellReturnCode.OK:
-            if return_data.payload:
-                data = return_data.payload
-                all_clients = data.get(ServerCommandKey.CLIENTS)
-                if all_clients:
-                    self.all_clients = all_clients
-                    for _, c in self.all_clients.items():
-                        self.name_to_clients[c.name] = c
-                    self.logger.info(f"got clients for job {job_id} from server in {time.time() - start_time} secs")
-                    return
-            else:
-                raise RuntimeError("Empty clients data from server")
+        Returns:
 
-        # We got here either because the return_code is not OK or the server isn't quite ready
-        # Retry to get clients again.
-        duration = time.time() - start_time
-        if duration < GET_CLIENTS_TIMEOUT:
-            time.sleep(0.5)
-            self._try_get_all_clients_from_server(fl_ctx, start_time)
-        else:
-            raise RuntimeError(f"Failed to get the clients from the server in {duration} seconds.")
+        """
+        job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+        job_clients = job_meta.get(JobMetaKey.JOB_CLIENTS)
+        self.all_clients = [from_dict(d) for d in job_clients]
+        for c in self.all_clients:
+            self.name_to_clients[c.name] = c
+        return
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)
