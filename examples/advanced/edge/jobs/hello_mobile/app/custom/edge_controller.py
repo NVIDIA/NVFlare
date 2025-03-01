@@ -128,6 +128,8 @@ class SimpleEdgeController(Controller):
 
             return
 
+        self.log_info(fl_ctx, f"Weights: {result.get('weights', None)}")
+
         accepted = self.aggregator.accept(result, fl_ctx)
         accepted_msg = "ACCEPTED" if accepted else "REJECTED"
         self.log_info(
