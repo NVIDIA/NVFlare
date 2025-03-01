@@ -14,6 +14,7 @@
 import logging
 
 import torch
+
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
@@ -22,28 +23,17 @@ from nvflare.edge.web.models.user_info import UserInfo
 
 log = logging.getLogger(__name__)
 
+import numpy as np
 import torch.nn as nn
 from torch.nn import functional as F
 
-import numpy as np
 default_model_updates = {
-    "net.linear2.weight":
-        {"sizes":[2,10],
-         "strides":[10,1],
-         "data":np.ones(20).tolist()},
-    "net.linear.bias":
-        {"sizes":[10],
-         "strides":[1],
-         "data":np.ones(10).tolist()},
-    "net.linear2.bias":
-        {"sizes":[2],
-         "strides":[1],
-         "data":np.ones(2).tolist()},
-    "net.linear.weight":
-        {"sizes":[10,2],
-         "strides":[2,1],
-         "data":np.ones(20).tolist()}
+    "net.linear2.weight": {"sizes": [2, 10], "strides": [10, 1], "data": np.ones(20).tolist()},
+    "net.linear.bias": {"sizes": [10], "strides": [1], "data": np.ones(10).tolist()},
+    "net.linear2.bias": {"sizes": [2], "strides": [1], "data": np.ones(2).tolist()},
+    "net.linear.weight": {"sizes": [10, 2], "strides": [2, 1], "data": np.ones(20).tolist()},
 }
+
 
 # Net training logic on device
 # Basic Net for XOR
@@ -55,6 +45,7 @@ class Net(nn.Module):
 
     def forward(self, x):
         return self.linear2(F.sigmoid(self.linear(x)))
+
 
 # XOR training data
 X = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
@@ -86,9 +77,9 @@ class XorTaskProcessor(DeviceTaskProcessor):
         global_weights = task.task_data["weights"]
 
         # In this simulation, we skip the load process
-        #for key in global_weights:
+        # for key in global_weights:
         #    global_weights[key] = torch.tensor(global_weights[key])
-        #self.model.load_state_dict(global_weights)
+        # self.model.load_state_dict(global_weights)
 
         # Validate global model
         pred = self.model(X)
@@ -108,19 +99,14 @@ class XorTaskProcessor(DeviceTaskProcessor):
 
             # Ignor the actual training at this time,
             # return the default model updates
-            result = {
-                "weights": default_model_updates,
-                "accuracy": accuracy
-            }
+            result = {"weights": default_model_updates, "accuracy": accuracy}
         elif task.task_name == "validate":
             # Validate the model on the data
             pred = self.model(X)
             # Calculate accuracy
             correct = (pred.argmax(dim=1) == Y).sum().item()
             accuracy = correct / len(Y)
-            result = {
-                "accuracy": accuracy
-            }
+            result = {"accuracy": accuracy}
         else:
             log.error(f"Received unknown task: {task.task_name}")
 

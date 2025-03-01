@@ -11,9 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any
+import base64
+from typing import Any, Dict
 
-from nvflare.apis.controller_spec import Task, ClientTask
+import torch
+from edge_json_accumulator import EdgeJsonAccumulator
+from executorch_export import export_model
+from model import Net, TrainingNet
+from torch import Tensor
+
+from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -23,17 +30,8 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.security.logging import secure_format_exception
 
-from typing import Any, Dict
-import torch
-from torch import Tensor
-import base64
-
-from executorch_export import export_model
-from model import Net, TrainingNet
-from edge_json_accumulator import EdgeJsonAccumulator
 
 class EdgeExecutorchController(Controller):
-
     def __init__(
         self,
         num_rounds: int,
@@ -81,14 +79,12 @@ class EdgeExecutorchController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:
-
             self.log_info(fl_ctx, "Beginning Executorch mobile training phase.")
 
             fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
             for i in range(self.num_rounds):
-
                 self.current_round = i
                 if abort_signal.triggered:
                     return
