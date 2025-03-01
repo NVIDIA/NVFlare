@@ -340,7 +340,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
                     self.all_clients = all_clients
                     for _, c in self.all_clients.items():
                         self.name_to_clients[c.name] = c
-                    self.logger.info(f"got clients for job {job_id} from server in {time.time()-start_time} secs")
+                    self.logger.info(f"got clients for job {job_id} from server in {time.time() - start_time} secs")
                     return
             else:
                 raise RuntimeError("Empty clients data from server")
