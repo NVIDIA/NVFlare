@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from opacus import PrivacyEngine
+import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -32,7 +34,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Running on device {DEVICE}")
 
 
-def main():
+def main(target_epsilon,max_grad_norm):
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     batch_size = 32
@@ -54,17 +56,40 @@ def main():
     seed = int.from_bytes(client_name.encode(), "big")
     torch.manual_seed(seed)
 
+    # Define loss and optimizer
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
+
+    # Optionally add DP engine
+    if target_epsilon:
+        target_delta=1/(len(trainloader)*batch_size) # "The target δ of the (ϵ,δ)-differential privacy guarantee. Generally, it should be set to be less than the inverse of the size of the training dataset" (from https://opacus.ai/tutorials/building_image_classifier).
+        print(f"Adding privacy engine with epsilon={target_epsilon}, delta={target_delta}")
+        privacy_engine = PrivacyEngine()
+        net, optimizer, trainloader = privacy_engine.make_private_with_epsilon(
+            module=net,
+            optimizer=optimizer,
+            data_loader=trainloader,
+            target_epsilon=target_epsilon,
+            target_delta=target_delta, 
+            epochs=epochs*flare.receive().total_rounds,
+            max_grad_norm=max_grad_norm
+        )     
+    
     summary_writer = SummaryWriter()
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()
-        print(f"current_round={input_model.current_round}")
+        print(f"current_round={input_model.current_round}, total_rounds={input_model.total_rounds}")
 
         # (4) loads model from NVFlare
-        net.load_state_dict(input_model.params)
-
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
+        if target_epsilon:
+            # Opacus adds "_module." prefix to state dict. Add it here to match local state dict
+            global_params = {}
+            for k, v in input_model.params.items():
+                global_params[f"_module.{k}"] = v
+        else:
+            global_params = input_model.params
+        net.load_state_dict(global_params)
 
         # (optional) use GPU to speed things up
         net.to(DEVICE)
@@ -96,6 +121,10 @@ def main():
 
                     summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss/100, global_step=global_step)
                     running_loss = 0.0
+
+                    if target_epsilon:
+                        epsilon = privacy_engine.get_epsilon(target_delta)
+                        print(f"Training with privacy (ε = {epsilon:.2f}, δ = {target_delta:.2f})")
 
         print("Finished Training")
 
@@ -132,8 +161,17 @@ def main():
         accuracy = evaluate(input_model.params)
         summary_writer.add_scalar(tag="global_model_accuracy", scalar=accuracy, global_step=input_model.current_round)
         # (7) construct trained FL model
+
+        if target_epsilon:
+            # Remove prefix added by Opacus again to match global state dict
+            local_params = {}
+            for k, v in net.cpu().state_dict().items():
+                local_params[k.replace("_module.","")] = v
+        else:
+            local_params = net.cpu().state_dict()
+        
         output_model = flare.FLModel(
-            params=net.cpu().state_dict(),
+            params=local_params,
             metrics={"accuracy": accuracy},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
@@ -142,4 +180,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--target_epsilon", type=float, default=None)
+    parser.add_argument("--max_grad_norm", type=float, default=1.0)
+    args = parser.parse_args()
+    
+    main(target_epsilon=args.target_epsilon,max_grad_norm=args.max_grad_norm)
