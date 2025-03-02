@@ -121,15 +121,19 @@ def _build_tree(
         child.parent = parent
         parent.children.append(child)
 
+        props = {
+            "listening_host": {
+                "default_host": "localhost",
+                "port": child.port,
+            },
+        }
+        if depth > 0:
+            props["connect_to"] = {"name": parent.name}
+
         relay = _new_participant(
             child.name,
             ParticipantType.RELAY,
-            props={
-                "listening_host": {
-                    "default_host": "localhost",
-                    "port": child.port,
-                },
-            },
+            props=props,
         )
         project.add_participant(relay)
         Stats.num_relays += 1

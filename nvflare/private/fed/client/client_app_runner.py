@@ -14,7 +14,7 @@
 import os
 import time
 
-from nvflare.apis.fl_constant import FLContextKey, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
@@ -61,14 +61,17 @@ class ClientAppRunner(Runner):
 
         federated_client.start_overseer_agent()
         notify_timeout = ConfigService.get_float_var(
-            name="notify_timeout", conf=SystemConfigs.APPLICATION_CONF, default=5.0
+            name=ConfigVarName.NOTIFY_CP_MSG_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=5.0
+        )
+        retry_timeout = ConfigService.get_float_var(
+            name=ConfigVarName.NOTIFY_CP_RETRY_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=15.0
         )
         self.notify_job_status(
             federated_client,
             args.job_id,
             ClientStatus.STARTED,
             timeout=notify_timeout,
-            retry_timeout=15.0,
+            retry_timeout=retry_timeout,
         )
         federated_client.status = ClientStatus.STARTED
 
@@ -79,7 +82,6 @@ class ClientAppRunner(Runner):
             args.job_id,
             ClientStatus.STOPPED,
             timeout=notify_timeout,
-            retry_timeout=5.0,
         )
         federated_client.status = ClientStatus.STOPPED
         federated_client.stop_cell()
@@ -164,6 +166,22 @@ class ClientAppRunner(Runner):
             run_manager.get_job_clients(fl_ctx)
 
     def notify_job_status(self, federated_client, job_id, status, timeout=5.0, retry_timeout=None):
+        """Notify the CP the job status. This is called from CJ.
+
+        Args:
+            federated_client: the fed client object.
+            job_id: job ID
+            status: status of the job.
+            timeout: timeout of the notification message
+            retry_timeout: max amount of time for retry
+
+        Returns: None
+
+        When the CJ is just started (status=2), it tries to notify the CP. Since this is the very first message from
+        CJ to SP, the connection to CP may not have been established. We'll retry until the notification is sent
+        successfully, or the retry_timeout has been reached.
+
+        """
         message = Message(topic=TrainingTopic.NOTIFY_JOB_STATUS, body="")
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         message.set_header(RequestHeader.JOB_STATUS, status)

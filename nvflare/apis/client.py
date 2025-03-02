@@ -16,10 +16,16 @@ import time
 
 
 class ClientPropKey:
-
     FQCN = "fqcn"  # Fully Qualified Cell Name: position in Cellnet
     FQSN = "fqsn"  # Fully Qualified Site Name: position in client hierarchy
     IS_LEAF = "is_leaf"  # Whether the client is a leaf node in client hierarchy
+
+
+class ClientDictKey:
+    NAME = "name"
+    FQCN = "fqcn"
+    FQSN = "fqsn"
+    IS_LEAF = "is_leaf"
 
 
 class Client:
@@ -69,14 +75,50 @@ class Client:
         return self.get_prop(ClientPropKey.IS_LEAF)
 
     def to_dict(self) -> dict:
-        return {
-            "name": self.name,
-            "token": self.token,
-            "props": self.props,
-        }
+        """Convert the Client object to a dict representation.
+        This dict could be used included into a job's metadata.
+
+        Returns: dict that contains essential info of the client.
+
+        Note that the client's token is not included in the result since it is authentication data.
+
+        """
+        r = {ClientDictKey.NAME: self.name}
+
+        fqcn = self.get_fqcn()
+        if fqcn != self.name:
+            r[ClientDictKey.FQCN] = fqcn
+
+        fqsn = self.get_fqsn()
+        if fqsn != self.name:
+            r[ClientDictKey.FQSN] = fqsn
+
+        is_leaf = self.get_is_leaf()
+        if not is_leaf:
+            r[ClientDictKey.IS_LEAF] = False
+
+        return r
 
 
 def from_dict(d: dict) -> Client:
-    c = Client(name=d.get("name"), token=d.get("token"))
-    c.props.update(d.get("props", {}))
+    """Create a Client object from the data in the specified dict.
+
+    Args:
+        d: the dict that contains Client data. This dict should be the result of to_dict() of a Client object.
+
+    Returns: a Client object
+
+    """
+    name = d.get(ClientDictKey.NAME)
+    c = Client(name=name, token="")
+
+    fqcn = d.get(ClientDictKey.FQCN, name)
+    c.set_fqcn(fqcn)
+
+    fqsn = d.get(ClientDictKey.FQSN, name)
+    c.set_fqsn(fqsn)
+
+    is_leaf = d.get(ClientDictKey.IS_LEAF, True)
+    c.set_is_leaf(is_leaf)
+
     return c
