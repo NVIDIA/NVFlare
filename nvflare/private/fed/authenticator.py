@@ -109,10 +109,11 @@ class Authenticator:
             topic=CellChannelTopic.Challenge,
             request=challenge,
             timeout=self.msg_timeout,
+            optional=True,
         )
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
         error = result.get_header(MessageHeaderKey.ERROR, "")
-        self.logger.info(f"challenge result: {return_code} {error}")
+        self.logger.debug(f"challenge result: {return_code} {error}")
         if return_code != ReturnCode.OK:
             if return_code in [ReturnCode.TARGET_UNREACHABLE, ReturnCode.COMM_ERROR]:
                 # trigger retry
@@ -209,7 +210,7 @@ class Authenticator:
             shareable[IdentityChallengeKey.CERT] = id_asserter.cert_data
             shareable[IdentityChallengeKey.SIGNATURE] = cn_signature
             shareable[IdentityChallengeKey.COMMON_NAME] = id_asserter.cn
-            self.logger.info(f"sent identity info for client {self.client_name}")
+            self.logger.debug(f"sent identity info for client {self.client_name}")
 
         headers = {
             CellMessageHeaderKeys.CLIENT_NAME: self.client_name,
@@ -219,7 +220,7 @@ class Authenticator:
         }
         login_message = new_cell_message(headers, shareable)
 
-        self.logger.info("Trying to register with server ...")
+        self.logger.debug("Trying to register with server ...")
         while True:
             try:
                 result = self.cell.send_request(
@@ -228,13 +229,14 @@ class Authenticator:
                     topic=CellChannelTopic.Register,
                     request=login_message,
                     timeout=self.msg_timeout,
+                    optional=True,
                 )
 
                 if not isinstance(result, Message):
                     raise FLCommunicationError(f"expect result to be Message but got {type(result)}")
 
                 return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
-                self.logger.info(f"register RC: {return_code}")
+                self.logger.debug(f"register RC: {return_code}")
                 if return_code == ReturnCode.UNAUTHENTICATED:
                     reason = result.get_header(MessageHeaderKey.ERROR)
                     self.logger.error(f"registration rejected: {reason}")
