@@ -12,30 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.client import from_dict
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import (
-    FLContextKey,
-    ProcessType,
-    ReservedKey,
-    ServerCommandKey,
-    ServerCommandNames,
-    SiteType,
-)
+from nvflare.apis.fl_constant import FLContextKey, ProcessType, ReservedKey, SiteType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 from nvflare.private.stream_runner import ObjectStreamer
@@ -61,12 +51,6 @@ class ClientRunInfo(object):
         self.start_time = None
 
 
-# TODO: make this configurable
-#   this is the max amount of time for client side child/job process to get clients from server
-#   we might need to think of removing the whole get clients from server logic from child process
-GET_CLIENTS_TIMEOUT = 15
-
-
 class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
     """ClientRunManager provides the ClientEngine APIs implementation running in the child process (CJ)."""
 
@@ -88,7 +72,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             workspace: workspace
             client: FL client object
             components: available FL components
-            handlers: available handlers
+            handlers: available handlers.
             conf: ClientJsonConfigurator object
         """
         super().__init__()

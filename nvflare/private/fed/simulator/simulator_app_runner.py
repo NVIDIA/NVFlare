@@ -18,14 +18,13 @@ from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
+from nvflare.private.fed.utils.fed_utils import get_job_meta_from_workspace
 
 
 class SimulatorClientRunManager(ClientRunManager):
     def create_job_processing_context_properties(self, workspace: Workspace, job_id):
-        meta_file = workspace.get_job_meta_path(job_id)
-        with open(meta_file, "r") as f:
-            meta_data = json.load(f)
-        return {FLContextKey.JOB_META: meta_data}
+        job_meta = get_job_meta_from_workspace(workspace, job_id)
+        return {FLContextKey.JOB_META: job_meta}
 
 
 class SimulatorClientAppRunner(ClientAppRunner):

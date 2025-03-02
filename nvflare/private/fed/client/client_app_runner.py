@@ -181,6 +181,7 @@ class ClientAppRunner(Runner):
                 topic=message.topic,
                 request=new_cell_message({}, message),
                 timeout=timeout,
+                optional=True,
             )
             if not retry_timeout:
                 return

@@ -164,9 +164,6 @@ class JobExecutor(ClientExecutor):
         """
 
         # update the job meta
-        participating_clients = job_meta.get("participating_clients")
-        self.logger.info(f"got participating_clients: {participating_clients} for job {job_id}")
-
         workspace = Workspace(args.workspace, site_name=client.client_name)
         meta_file = workspace.get_job_meta_path(job_id)
 
