@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
-
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
