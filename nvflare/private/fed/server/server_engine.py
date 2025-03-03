@@ -506,7 +506,8 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             return self.run_manager.new_context()
         else:
             # this call should never be made before the run_manager is created!
-            raise RuntimeError("no run_manager in Server Engine.")
+            self.logger.warning("no run_manager in Server Engine.")
+            return FLContext()
 
     def add_component(self, component_id: str, component):
         self.server.runner_config.add_component(component_id, component)

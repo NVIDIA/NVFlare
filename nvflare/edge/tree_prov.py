@@ -66,6 +66,7 @@ class _Node:
 
 
 def _build_tree(
+    lcp_only: bool,
     depth: int,
     width: int,
     max_depth: int,
@@ -85,6 +86,7 @@ def _build_tree(
     Stats are collected during the building process.
 
     Args:
+        lcp_only: only generate leaf CPs
         depth: current depth of the tree being built
         width: how many child nodes for each non-leaf node
         max_depth: how deep the relay tree is
@@ -100,9 +102,10 @@ def _build_tree(
         Stats.num_leaf_relays += 1
         for i in range(num_clients):
             name = _make_client_name(parent.name) + str(i + 1)
-            client = _new_participant(
-                name, ParticipantType.CLIENT, props={"parent": parent.client_name, "connect_to": {"name": parent.name}}
-            )
+            props = {"connect_to": {"name": parent.name}}
+            if not lcp_only:
+                props["parent"] = parent.client_name
+            client = _new_participant(name, ParticipantType.CLIENT, props=props)
             project.add_participant(client)
             Stats.num_clients += 1
             Stats.num_leaf_clients += 1
@@ -121,30 +124,37 @@ def _build_tree(
         child.parent = parent
         parent.children.append(child)
 
+        props = {
+            "listening_host": {
+                "default_host": "localhost",
+                "port": child.port,
+            },
+        }
+        if depth > 0:
+            props["connect_to"] = {"name": parent.name}
+
         relay = _new_participant(
             child.name,
             ParticipantType.RELAY,
-            props={
-                "listening_host": {
-                    "default_host": "localhost",
-                    "port": child.port,
-                },
-            },
+            props=props,
         )
         project.add_participant(relay)
         Stats.num_relays += 1
 
         # attach a client to the replay and make it a child of the parent relay's attached client
-        client = _new_participant(child.client_name, ParticipantType.CLIENT, props={"connect_to": {"name": child.name}})
-        if depth >= 1:
-            client.set_prop("parent", parent.client_name)
+        if not lcp_only:
+            client = _new_participant(
+                child.client_name, ParticipantType.CLIENT, props={"connect_to": {"name": child.name}}
+            )
+            if depth > 0:
+                client.set_prop("parent", parent.client_name)
 
-        project.add_participant(client)
-        Stats.num_clients += 1
-        Stats.num_non_leaf_clients += 1
+            project.add_participant(client)
+            Stats.num_clients += 1
+            Stats.num_non_leaf_clients += 1
 
         # depth-first recursion
-        _build_tree(depth + 1, width, max_depth, child, num_clients, project, lcp_map)
+        _build_tree(lcp_only, depth + 1, width, max_depth, child, num_clients, project, lcp_map)
 
 
 def main():
@@ -152,6 +162,9 @@ def main():
 
     # analyze only and do not do provision
     parser.add_argument("--analyze", "-a", action="store_true", help="only analyze but does not generate files")
+
+    # LCP only
+    parser.add_argument("--lcp_only", "-l", action="store_true", help="only generate leaf CPs")
 
     # where the result will be stored
     parser.add_argument("--root_dir", "-r", type=str, help="project root dir", required=True)
@@ -223,7 +236,7 @@ def main():
     root_relay = _Node()
     root_relay.name = "R"
     lcp_map = {}
-    _build_tree(0, args.width, args.depth, root_relay, args.clients, project, lcp_map)
+    _build_tree(args.lcp_only, 0, args.width, args.depth, root_relay, args.clients, project, lcp_map)
 
     total_sites = Stats.num_clients + Stats.num_relays + 1
 

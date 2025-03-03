@@ -535,6 +535,12 @@ class ConfigVarName:
     # these vars are set in Server's startup config (fed_server.json)
     MAX_REG_DURATION = "max_reg_duration"
 
+    # CJ: timeout for status notification message from CJ to CP
+    NOTIFY_CP_MSG_TIMEOUT = "notify_cp_msg_timeout"
+
+    # CJ: timeout for retrying status notification message from CJ to CP
+    NOTIFY_CP_RETRY_TIMEOUT = "notify_cp_retry_timeout"
+
 
 class SystemVarName:
     """

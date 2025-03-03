@@ -120,7 +120,7 @@ def main(args):
 
     cmd_vars = parse_vars(args.set)
     secure_train = cmd_vars.get("secure_train", False)
-    logger.info(f"{cmd_vars=} {secure_train=}")
+    logger.debug(f"{cmd_vars=} {secure_train=}")
 
     stop_event = threading.Event()
     monitor = CellnetMonitor(stop_event, args.workspace)
@@ -138,8 +138,6 @@ def main(args):
         DriverParams.CA_CERT.value: root_cert_path,
     }
     enhance_credential_info(credentials)
-
-    logger.info(f"{credentials=}")
 
     conn_security = parent.get(ConnPropKey.CONNECTION_SECURITY)
     secure_conn = True
