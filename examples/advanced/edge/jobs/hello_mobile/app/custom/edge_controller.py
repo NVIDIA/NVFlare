@@ -27,11 +27,7 @@ from nvflare.security.logging import secure_format_exception
 
 class SimpleEdgeController(Controller):
 
-    def __init__(
-        self,
-        num_rounds: int,
-        initial_weights: Any
-    ):
+    def __init__(self, num_rounds: int, initial_weights: Any):
         super().__init__()
         self.num_rounds = num_rounds
         self.current_round = None
