@@ -41,6 +41,7 @@ class EdgeSurveyController(Controller):
             self.broadcast_and_wait(
                 task=task,
                 min_responses=2,
+                targets="*",
                 wait_time_after_min_received=0,
                 fl_ctx=fl_ctx,
                 abort_signal=abort_signal,
