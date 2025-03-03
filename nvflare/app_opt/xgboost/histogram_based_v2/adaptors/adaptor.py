@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import multiprocessing
-import os
 import sys
 import threading
 import time
@@ -62,10 +61,7 @@ class _RunnerStarter:
         try:
             if not self.in_process:
                 # enable logging
-                run_dir = self.workspace.get_run_dir(self.job_id)
-                log_file_name = os.path.join(run_dir, f"{self.app_name}_log.txt")
-                print(f"XGB Log: {log_file_name}")
-                configure_logging(self.workspace, dir_path=run_dir, file_prefix=self.app_name)
+                configure_logging(self.workspace, job_id=self.job_id, file_prefix=self.app_name)
             self.runner.run(ctx)
             self.stopped = True
         except Exception as e:

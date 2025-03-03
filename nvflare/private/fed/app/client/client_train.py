@@ -52,7 +52,8 @@ def main(args):
     args.log_config = None
     args.job_id = None
 
-    workspace = Workspace(root_dir=args.workspace)
+    site_name = kv_list.get("uid")
+    workspace = Workspace(root_dir=args.workspace, site_name=site_name, config_folder=config_folder)
 
     for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
         try:
@@ -76,7 +77,7 @@ def main(args):
         )
         conf.configure()
 
-        configure_logging(workspace, workspace.get_root_dir())
+        configure_logging(workspace)
 
         deployer = conf.base_deployer
         security_init(
@@ -99,7 +100,6 @@ def main(args):
 
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
-        workspace = Workspace(args.workspace, federated_client.client_name, config_folder)
 
         client_engine = ClientEngine(federated_client, args, rank)
 
