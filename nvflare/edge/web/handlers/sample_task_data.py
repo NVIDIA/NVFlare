@@ -25,8 +25,14 @@ from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.edge.web.models.user_info import UserInfo
 
 jobs = [
-    JobResponse("OK", str(uuid.uuid4()), str(uuid.uuid4()), "demo_job", "ExecuTorch",
-                job_data={"executorch_parameters": [1.2, 3.4, 5.6]}),
+    JobResponse(
+        "OK",
+        str(uuid.uuid4()),
+        str(uuid.uuid4()),
+        "demo_job",
+        "ExecuTorch",
+        job_data={"executorch_parameters": [1.2, 3.4, 5.6]},
+    ),
     JobResponse("OK", str(uuid.uuid4()), str(uuid.uuid4()), "xgb_job", "xgboost"),
     JobResponse("OK", str(uuid.uuid4()), str(uuid.uuid4()), "core_job", "coreML"),
     JobResponse("RETRY", str(uuid.uuid4()), retry_wait=60),
@@ -64,13 +70,7 @@ def handle_task_request(device_info: DeviceInfo, user_info: UserInfo, task_reque
     task_name = state["next_task"]
     task_id = state["task_id"]
 
-    reply = TaskResponse(
-        "OK",
-        session_id,
-        None,
-        task_id,
-        task_name,
-        {})
+    reply = TaskResponse("OK", session_id, None, task_id, task_name, {})
 
     return reply
 
@@ -90,14 +90,9 @@ def handle_result_report(device_info: DeviceInfo, user_info: UserInfo, result_re
         status = "OK"
 
     task_id = state["task_id"]
-    state["next_task"] = demo_tasks[index+1]
+    state["next_task"] = demo_tasks[index + 1]
     state["task_id"] = str(uuid.uuid4())
 
-    reply = ResultResponse(
-        status,
-        None,
-        session_id,
-        task_id,
-        result_report.task_name)
+    reply = ResultResponse(status, None, session_id, task_id, result_report.task_name)
 
     return reply

@@ -39,4 +39,3 @@ class BaseModel(dict):
             return None
 
         return device_info.get("device_id")
-

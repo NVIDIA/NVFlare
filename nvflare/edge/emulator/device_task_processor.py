@@ -64,4 +64,3 @@ class DeviceTaskProcessor(ABC):
             The result as a dict
         """
         pass
-

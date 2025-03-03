@@ -48,9 +48,7 @@ class SampleTaskProcessor(DeviceTaskProcessor):
                 w = [0, 0, 0, 0]
             result = {"weights": w}
         elif task.task_name == "validate":
-            result = {
-                "accuracy": [0.01, 0.02, 0.03, 0.04]
-            }
+            result = {"accuracy": [0.01, 0.02, 0.03, 0.04]}
         else:
             log.error(f"Received unknown task: {task.task_name}")
 

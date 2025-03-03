@@ -96,4 +96,3 @@ class LcpTaskHandler(EdgeTaskHandler):
             reply = fl_ctx.get_prop(EdgeContextKey.REPLY_TO_EDGE)
             assert isinstance(reply, dict)
             return reply
-        

@@ -19,8 +19,8 @@ import zlib
 from typing import Tuple
 from urllib.parse import urljoin
 
-from flask import Flask, request, Response, jsonify
 import requests
+from flask import Flask, Response, jsonify, request
 
 from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.web_server import FilteredJSONProvider
@@ -66,7 +66,7 @@ def handle_api_error(error: ApiError):
 mapper = LcpMapper()
 
 
-@app.route('/<path:path>', methods=['GET', 'POST'])
+@app.route("/<path:path>", methods=["GET", "POST"])
 def routing_proxy(path):
 
     device_id = request.headers.get("X-Flare-Device-ID")
@@ -83,7 +83,7 @@ def routing_proxy(path):
 
     try:
         # Prepare headers (remove 'Host' to avoid conflicts)
-        headers = {key: value for key, value in request.headers if key.lower() != 'host'}
+        headers = {key: value for key, value in request.headers if key.lower() != "host"}
 
         # Get data from the original request
         data = request.get_data()
@@ -96,11 +96,11 @@ def routing_proxy(path):
             headers=headers,
             data=data,
             cookies=request.cookies,
-            allow_redirects=False  # Do not follow redirects
+            allow_redirects=False,  # Do not follow redirects
         )
 
         # Exclude specific headers from the target response
-        excluded_headers = ['server', 'date', 'content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        excluded_headers = ["server", "date", "content-encoding", "content-length", "transfer-encoding", "connection"]
         headers = {name: value for name, value in resp.headers.items() if name.lower() not in excluded_headers}
         headers["Via"] = "edge-proxy"
 
@@ -112,12 +112,12 @@ def routing_proxy(path):
         raise ApiError(500, "PROXY_ERROR", f"Proxy request failed: {str(ex)}", ex)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler()]
+        handlers=[logging.StreamHandler()],
     )
 
     if len(sys.argv) != 3:
@@ -128,4 +128,4 @@ if __name__ == '__main__':
     port = int(sys.argv[1])
 
     app.json = FilteredJSONProvider(app)
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)

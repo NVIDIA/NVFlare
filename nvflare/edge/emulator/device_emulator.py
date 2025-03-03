@@ -28,8 +28,14 @@ log = logging.getLogger(__name__)
 
 class DeviceEmulator:
 
-    def __init__(self, endpoint: str, device_info: DeviceInfo, user_info: UserInfo,
-                 capabilities: Optional[dict], processor: DeviceTaskProcessor):
+    def __init__(
+        self,
+        endpoint: str,
+        device_info: DeviceInfo,
+        user_info: UserInfo,
+        capabilities: Optional[dict],
+        processor: DeviceTaskProcessor,
+    ):
         self.device_info = device_info
         self.device_id = device_info.device_id
         self.user_info = user_info

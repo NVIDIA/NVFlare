@@ -18,8 +18,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.edge.constants import EdgeContextKey, EdgeProtoKey
-from nvflare.edge.constants import EdgeEventType
+from nvflare.edge.constants import EdgeContextKey, EdgeEventType, EdgeProtoKey
 from nvflare.edge.constants import Status as EdgeStatus
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
@@ -73,30 +72,19 @@ class EdgeTaskDispatcher(Widget):
             jobs.append(job_id)
             self.job_metas[job_id] = job_meta
 
-    def _remove_job(self, job_meta: dict):
+    def _remove_job(self, job_id: str):
         with self.lock:
-            job_id = job_meta.get(JobMetaKey.JOB_ID)
             if job_id in self.job_metas:
                 del self.job_metas[job_id]
-            edge_method = job_meta.get(JobMetaKey.EDGE_METHOD)
-            if not edge_method:
-                # this is not an edge job
-                self.logger.info(f"no edge_method in job {job_id}")
-                return
 
-            jobs = self.edge_jobs.get(edge_method)
-            if not jobs:
-                self.logger.info("no edge jobs pending")
-                return
-
-            assert isinstance(jobs, list)
-            job_id = job_meta.get(JobMetaKey.JOB_ID)
-            self.logger.info(f"current jobs for {edge_method}: {jobs}")
-            if job_id in jobs:
-                jobs.remove(job_id)
-                if not jobs:
-                    # no more jobs for this edge method
-                    self.edge_jobs.pop(edge_method)
+            # Delete this job from all methods
+            for edge_method, jobs in list(self.edge_jobs.items()):
+                assert isinstance(jobs, list)
+                if jobs and job_id in jobs:
+                    jobs.remove(job_id)
+                    if not jobs:
+                        # no more jobs for this edge method
+                        self.edge_jobs.pop(edge_method)
 
     def _match_job(self, caps: dict):
         methods = caps.get("methods")
@@ -127,11 +115,11 @@ class EdgeTaskDispatcher(Widget):
 
     def _handle_job_done(self, event_type: str, fl_ctx: FLContext):
         self.logger.info(f"handling event {event_type}")
-        job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-        if not job_meta:
-            self.logger.error(f"missing {FLContextKey.JOB_META} from fl_ctx for event {event_type}")
+        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+        if not job_id:
+            self.logger.error(f"missing {FLContextKey.CURRENT_JOB_ID} from fl_ctx for event {event_type}")
         else:
-            self._remove_job(job_meta)
+            self._remove_job(job_id)
 
     def _handle_edge_job_request(self, event_type: str, fl_ctx: FLContext):
         self.logger.info(f"handling event {event_type}")

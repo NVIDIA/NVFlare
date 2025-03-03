@@ -27,11 +27,7 @@ log = logging.getLogger(__name__)
 def device_run(endpoint_url: str, device_info: DeviceInfo, user_info: UserInfo, processor: DeviceTaskProcessor):
     device_id = device_info.device_id
     try:
-        capabilities = {
-            "methods": ["xgboost", "cnn"],
-            "cpu": 16,
-            "gpu": 1024
-        }
+        capabilities = {"methods": ["xgboost", "cnn"], "cpu": 16, "gpu": 1024}
         emulator = DeviceEmulator(endpoint_url, device_info, user_info, capabilities, processor)
         emulator.run()
 
@@ -60,7 +56,7 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler()]
+        handlers=[logging.StreamHandler()],
     )
 
     n = len(sys.argv)

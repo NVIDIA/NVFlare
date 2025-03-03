@@ -204,7 +204,7 @@ class DataClassDecomposer(Decomposer):
     def decompose(self, target: T, manager: DatumManager = None) -> Any:
         data = {}
 
-        if hasattr(target, '__dict__'):
+        if hasattr(target, "__dict__"):
             data[DATA_CONTENT] = vars(target)
 
         if isinstance(target, dict):

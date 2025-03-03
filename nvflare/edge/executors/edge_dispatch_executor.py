@@ -16,7 +16,7 @@ from typing import Any
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReturnCode, Shareable, ReservedHeaderKey
+from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable
 from nvflare.edge.aggregators.edge_result_accumulator import EdgeResultAccumulator
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.web.models.result_report import ResultReport
@@ -27,8 +27,7 @@ from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_no
 
 
 class EdgeDispatchExecutor(EdgeTaskExecutor):
-    """This executor dispatches tasks to edge devices and wait for the response from all devices
-    """
+    """This executor dispatches tasks to edge devices and wait for the response from all devices"""
 
     def __init__(self, wait_time=300.0, min_devices=0, aggregator_id=None):
         EdgeTaskExecutor.__init__(self)
@@ -58,10 +57,7 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
     def convert_task(self, task_data: Shareable) -> dict:
         """Convert task_data to a plain dict"""
 
-        return {
-            "weights": task_data.get("weights"),
-            "task_id": self.task_id
-        }
+        return {"weights": task_data.get("weights"), "task_id": self.task_id}
 
     def convert_result(self, result: dict) -> Shareable:
         """Convert result from device to shareable"""
@@ -78,8 +74,7 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         # This device already processed current task
         last_task_id = self.devices.get(device_id, None)
         if self.task_id == last_task_id:
-            return TaskResponse("RETRY", job_id, 30,
-                                message=f"Task {self.task_id} is already processed by this device")
+            return TaskResponse("RETRY", job_id, 30, message=f"Task {self.task_id} is already processed by this device")
 
         task_done = self.current_task.get("task_done")
         task_data = self.convert_task(self.current_task)
@@ -89,6 +84,12 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
 
     def handle_result_report(self, report: ResultReport, fl_ctx: FLContext) -> ResultResponse:
         """Handle result report from device"""
+
+        if report.task_id != self.task_id:
+            msg = f"Task {report.task_id} is already done, result ignored"
+            self.log_warning(fl_ctx, msg)
+            # Still returns OK because this late result may be useful in certain cases
+            return ResultResponse("OK", task_id=self.task_id, task_name=self.task_name, message=msg)
 
         result = self.convert_result(report.result)
         self.aggregator.accept(result, fl_ctx)

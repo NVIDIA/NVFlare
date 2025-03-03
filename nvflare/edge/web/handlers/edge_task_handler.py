@@ -39,4 +39,3 @@ class EdgeTaskHandler(ABC):
     @abstractmethod
     def handle_result(self, result_report: ResultReport) -> ResultResponse:
         pass
-

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from typing import Any
+
 from flask import Flask, jsonify
 from flask.json.provider import DefaultJSONProvider
 
