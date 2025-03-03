@@ -71,14 +71,14 @@ def main(args):
         fobs_initialize(workspace=workspace, job_id=args.job_id)
 
         # initialize security processing and ensure that content in the startup has not been tampered with.
-        security_init_for_job(secure_train, workspace, SiteType.SERVER)
+        security_init_for_job(secure_train, workspace, SiteType.SERVER, args.job_id)
 
         conf = FLServerStarterConfiger(
             workspace=workspace,
             args=args,
             kv_list=args.set,
         )
-        configure_logging(workspace, workspace.get_run_dir(args.job_id))
+        configure_logging(workspace, args.job_id)
         logger = get_script_logger()
         logger.info("Runner_process started.")
 
