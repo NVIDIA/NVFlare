@@ -23,7 +23,7 @@ from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.edge.web.models.user_info import UserInfo
 
 
-class EtaApi:
+class FegApi:
 
     def __init__(self, endpoint: str, device_info: DeviceInfo, user_info: UserInfo):
         self.endpoint = endpoint

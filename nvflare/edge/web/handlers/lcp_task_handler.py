@@ -18,6 +18,7 @@ from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.edge.constants import EdgeContextKey, EdgeEventType, EdgeProtoKey, Status
 from nvflare.edge.web.handlers.edge_task_handler import EdgeTaskHandler
+from nvflare.edge.web.models.base_model import ApiStatus
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
@@ -47,7 +48,7 @@ class LcpTaskHandler(EdgeTaskHandler):
             assert isinstance(reply, dict)
             status = reply.get(EdgeProtoKey.STATUS)
             if status != Status.OK:
-                response = JobResponse("RETRY", retry_wait=30)
+                response = JobResponse(ApiStatus.RETRY, retry_wait=30)
             else:
                 job_id = reply.get(EdgeProtoKey.DATA)
                 job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
@@ -55,7 +56,7 @@ class LcpTaskHandler(EdgeTaskHandler):
                     job_name = job_meta.get("name")
                 else:
                     job_name = "No Name"
-                response = JobResponse("OK", job_id=job_id, job_name=job_name, job_meta=job_meta)
+                response = JobResponse(ApiStatus.OK, job_id=job_id, job_name=job_name, job_meta=job_meta)
 
             return response
 
@@ -66,11 +67,14 @@ class LcpTaskHandler(EdgeTaskHandler):
             data = reply.get(EdgeProtoKey.DATA)
             response = data.get("response")
         elif status == Status.NO_JOB:
-            self.logger_error(f"Job {task_request.job_id} is done")
-            response = TaskResponse("NO_JOB", retry_wait=30, job_id=task_request.job_id)
+            self.logger.info(f"Job {task_request.job_id} is done")
+            response = TaskResponse(ApiStatus.NO_JOB, retry_wait=30)
+        elif status == Status.NO_TASK:
+            self.logger.info(f"Job {task_request.job_id} has no task")
+            response = TaskResponse(ApiStatus.NO_TASK, retry_wait=30)
         else:
             self.logger.error(f"Task request for {task_request.job_id} failed with status {status}")
-            response = TaskResponse("RETRY", retry_wait=30)
+            response = TaskResponse(ApiStatus.RETRY, retry_wait=30)
 
         return response
 
@@ -78,7 +82,7 @@ class LcpTaskHandler(EdgeTaskHandler):
         reply = self._handle_task_request(result_report)
         status = reply.get(EdgeProtoKey.STATUS)
         if status != Status.OK:
-            response = ResultResponse("RETRY", retry_wait=30)
+            response = ResultResponse(ApiStatus.RETRY, retry_wait=30)
         else:
             data = reply.get(EdgeProtoKey.DATA)
             response = data.get("response")

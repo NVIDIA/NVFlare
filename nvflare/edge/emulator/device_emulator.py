@@ -16,8 +16,9 @@ import time
 from typing import Optional
 
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
-from nvflare.edge.emulator.eta_api import EtaApi
+from nvflare.edge.emulator.feg_api import FegApi
 from nvflare.edge.web.models.api_error import ApiError
+from nvflare.edge.web.models.base_model import ApiKey
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
@@ -41,7 +42,7 @@ class DeviceEmulator:
         self.user_info = user_info
         self.capabilities = capabilities
         self.processor = processor
-        self.eta_api = EtaApi(endpoint, device_info, user_info)
+        self.feg_api = FegApi(endpoint, device_info, user_info)
 
     def run(self):
 
@@ -62,7 +63,7 @@ class DeviceEmulator:
                 result = self.processor.process_task(task)
                 log.info(f"Device:{self.device_id} Task processed. Result: {result}")
                 # Check result
-                result_response = self.eta_api.report_result(task, result)
+                result_response = self.feg_api.report_result(task, result)
                 log.info(f"Device:{self.device_id} Received result response: {result_response}")
                 task_done = task.get("task_done", False)
                 if task_done or result_response.status == "DONE":
@@ -83,29 +84,37 @@ class DeviceEmulator:
     def fetch_job(self) -> JobResponse:
 
         while True:
-            job = self.eta_api.get_job(self.capabilities)
-            if job.status == "OK":
-                return job
-            elif job.status == "DONE":
-                job["job_done"] = True
-                return job
-            if job.status == "RETRY":
-                wait = job.retry_wait if job.retry_wait else 5
-                log.info(f"Device:{self.device_id} Retrying getting job in {wait} seconds")
-                time.sleep(wait)
+            try:
+                job = self.feg_api.get_job(self.capabilities)
+                if job.status == "OK":
+                    return job
+                elif job.status == "DONE":
+                    job[ApiKey.JOB_DONE] = True
+                    return job
+                if job.status == "RETRY":
+                    wait = job.retry_wait if job.retry_wait else 5
+                    log.info(f"Device:{self.device_id} Retrying getting job in {wait} seconds")
+                    time.sleep(wait)
+            except ApiError as error:
+                log.error(f"Request error. Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}")
+                time.sleep(5)
 
     def fetch_task(self, job: JobResponse) -> TaskResponse:
 
         while True:
-            task = self.eta_api.get_task(job)
-            if task.status == "OK":
-                return task
-            elif task.status == "DONE":
-                task["task_done"] = True
-                return task
-            elif task.status == "NO_JOB":
-                return None
-            elif task.status == "RETRY":
-                wait = task.retry_wait if task.retry_wait else 5
-                log.info(f"Device:{self.device_id} Retrying getting task in {wait} seconds")
-                time.sleep(wait)
+            try:
+                task = self.feg_api.get_task(job)
+                if task.status == "OK":
+                    return task
+                elif task.status == "DONE":
+                    task["task_done"] = True
+                    return task
+                elif task.status == "NO_JOB":
+                    return None
+                elif task.status == "RETRY":
+                    wait = task.retry_wait if task.retry_wait else 5
+                    log.info(f"Device:{self.device_id} Retrying getting task in {wait} seconds")
+                    time.sleep(wait)
+            except ApiError as error:
+                log.error(f"Request error. Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}")
+                time.sleep(5)

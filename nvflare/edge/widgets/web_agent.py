@@ -30,7 +30,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
-from nvflare.edge.web.views.eta_views import task_handler
+from nvflare.edge.web.views.feg_views import task_handler
 from nvflare.edge.web.web_server import run_server
 from nvflare.widgets.widget import Widget
 

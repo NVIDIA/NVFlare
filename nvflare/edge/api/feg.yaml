@@ -1,6 +1,6 @@
 openapi: 3.0.0
 info:
-  title: NVFlare Edge Training API (ETA)
+  title: Flare Edge Gateway API (FEG)
   version: 1.0.1
 
 servers:

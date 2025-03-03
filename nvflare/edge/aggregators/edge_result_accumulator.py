@@ -35,7 +35,11 @@ class EdgeResultAccumulator(Aggregator):
         if self.weights is None:
             self.weights = w
         else:
-            self.weights = np.add(self.weights, w)
+            result = np.add(self.weights, w)
+            if isinstance(result, np.ndarray):
+                self.weights = result.tolist()
+            else:
+                self.weights = result
         return True
 
     def reset(self, fl_ctx: FLContext):

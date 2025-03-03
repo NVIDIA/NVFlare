@@ -59,6 +59,7 @@ class SimpleEdgeController(Controller):
             fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
+            weights = self.initial_weights
             for i in range(self.num_rounds):
 
                 self.current_round = i
@@ -72,7 +73,7 @@ class SimpleEdgeController(Controller):
 
                 # Create train_task
                 task_data = Shareable()
-                task_data["weights"] = self.initial_weights
+                task_data["weights"] = weights
                 task_data["task_done"] = self.current_round >= (self.num_rounds - 1)
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
@@ -98,6 +99,7 @@ class SimpleEdgeController(Controller):
                 self.log_info(fl_ctx, "Start aggregation.")
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 aggr_result = self.aggregator.aggregate(fl_ctx)
+                weights = aggr_result.get("weights")
                 self.log_info(fl_ctx, f"Aggregation result: {aggr_result}")
                 fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
                 self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)

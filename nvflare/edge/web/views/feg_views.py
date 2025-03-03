@@ -24,7 +24,7 @@ from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.user_info import UserInfo
 
-eta_bp = Blueprint("eta", __name__)
+feg_bp = Blueprint("feg", __name__)
 task_handler: EdgeTaskHandler = LcpTaskHandler()
 
 
@@ -48,7 +48,7 @@ def process_header(headers) -> (DeviceInfo, Optional[UserInfo]):
     return device_info, user_info
 
 
-@eta_bp.route("/job", methods=["POST"])
+@feg_bp.route("/job", methods=["POST"])
 def job_view():
     device_info, user_info = process_header(request.headers)
     data = request.get_json()
@@ -56,7 +56,7 @@ def job_view():
     return task_handler.handle_job(req)
 
 
-@eta_bp.route("/task", methods=["GET"])
+@feg_bp.route("/task", methods=["GET"])
 def task_view():
     device_info, user_info = process_header(request.headers)
     job_id = request.args.get("job_id")
@@ -66,7 +66,7 @@ def task_view():
     return task_handler.handle_task(req)
 
 
-@eta_bp.route("/result", methods=["POST"])
+@feg_bp.route("/result", methods=["POST"])
 def result_view():
     device_info, user_info = process_header(request.headers)
     job_id = request.args.get("job_id")

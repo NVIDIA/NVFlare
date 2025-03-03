@@ -17,7 +17,7 @@ from flask import Flask, jsonify
 from flask.json.provider import DefaultJSONProvider
 
 from nvflare.edge.web.models.api_error import ApiError
-from nvflare.edge.web.views.eta_views import eta_bp
+from nvflare.edge.web.views.feg_views import feg_bp
 
 app = Flask(__name__)
 
@@ -45,7 +45,7 @@ def handle_api_error(error: ApiError):
 
 def run_server(host, port):
     app.json = FilteredJSONProvider(app)
-    app.register_blueprint(eta_bp)
+    app.register_blueprint(feg_bp)
     app.run(host=host, port=port, debug=False)
 
 

@@ -56,6 +56,18 @@ class LcpMapper:
             self.add_lcp(name, url)
 
 
+def validate_path(path: str):
+    if path not in {"job", "task", "result"}:
+        raise ApiError(400, "INVALID_REQUEST", f"Invalid path {path}")
+
+
+def validate_content(content: str):
+    if not content:
+        return None
+
+    return content
+
+
 @app.errorhandler(ApiError)
 def handle_api_error(error: ApiError):
     response = jsonify(error.to_dict())
@@ -79,6 +91,7 @@ def routing_proxy(path):
 
     site_name, url = name_url
     log.info(f"Routing request from device: {device_id} to site {site_name} at {url}")
+    validate_path(path)
     target_url = urljoin(url, path)
 
     try:
@@ -105,7 +118,8 @@ def routing_proxy(path):
         headers["Via"] = "edge-proxy"
 
         # Build the Flask response
-        response = Response(resp.content, resp.status_code, headers)
+
+        response = Response(validate_content(resp.content), resp.status_code, headers)
         return response
 
     except requests.exceptions.RequestException as ex:
