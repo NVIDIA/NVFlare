@@ -110,11 +110,11 @@ def from_dict(d: dict) -> Client:
 
     """
     if not isinstance(d, dict):
-        raise ValueError(f"expect d to be a dict but got {type(d)}")
+        raise ValueError(f"expect client dict to be a dict but got {type(d)}")
 
     name = d.get(ClientDictKey.NAME)
     if not name:
-        raise ValueError(f"missing name from client dict")
+        raise ValueError(f"missing '{ClientDictKey.NAME}' from client dict")
 
     c = Client(name=name, token="")
 
