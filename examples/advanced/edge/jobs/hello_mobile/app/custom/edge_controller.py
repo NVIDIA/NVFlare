@@ -13,7 +13,7 @@
 # limitations under the License.
 from typing import Any
 
-from nvflare.apis.controller_spec import Task, ClientTask
+from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
