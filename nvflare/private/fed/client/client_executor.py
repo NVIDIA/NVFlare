@@ -536,7 +536,7 @@ class JobExecutor(ClientExecutor):
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client.client_name, private=True, sticky=False)
         engine.fire_event(EventType.JOB_COMPLETED, fl_ctx)
-        self.logger.info(f"Fired event JOB_COMPLETED {EventType.JOB_COMPLETED}")
+        self.logger.debug(f"Fired event JOB_COMPLETED {EventType.JOB_COMPLETED}")
 
     def get_status(self, job_id):
         process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)

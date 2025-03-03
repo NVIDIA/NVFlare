@@ -109,15 +109,24 @@ def from_dict(d: dict) -> Client:
     Returns: a Client object
 
     """
+    if not isinstance(d, dict):
+        raise ValueError(f"expect d to be a dict but got {type(d)}")
+
     name = d.get(ClientDictKey.NAME)
+    if not name:
+        raise ValueError(f"missing name from client dict")
+
     c = Client(name=name, token="")
 
+    # If FQCN is missing, default to name
     fqcn = d.get(ClientDictKey.FQCN, name)
     c.set_fqcn(fqcn)
 
+    # If FQSN is missing, default to name
     fqsn = d.get(ClientDictKey.FQSN, name)
     c.set_fqsn(fqsn)
 
+    # If IS_LEAF is missing, default to True
     is_leaf = d.get(ClientDictKey.IS_LEAF, True)
     c.set_is_leaf(is_leaf)
 
