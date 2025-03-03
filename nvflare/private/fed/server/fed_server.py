@@ -636,13 +636,13 @@ class FederatedServer(BaseServer):
                     return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error="server is not in secure mode")
 
             client_name = request.get_header(IdentityChallengeKey.COMMON_NAME)
-            self.logger.info(f"received challenge request from {client_name}: me={id(self)}")
+            self.logger.debug(f"received challenge request from {client_name}: me={id(self)}")
             reg = self.name_to_reg.pop(client_name, None)
             if reg:
                 self.logger.warning(f"received duplicate challenge from client {client_name} without register")
             reg = ClientRegSession(client_name)
             self.name_to_reg[client_name] = reg
-            self.logger.info(f"added reg session for {client_name}: {self.name_to_reg[client_name]}")
+            self.logger.debug(f"added reg session for {client_name}: {self.name_to_reg[client_name]}")
             client_nonce = request.get_header(IdentityChallengeKey.NONCE)
             id_asserter = self._get_id_asserter()
             signature = id_asserter.sign_common_name(client_nonce)

@@ -12,28 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 from typing import Dict, List, Optional, Union
 
+from nvflare.apis.client import from_dict
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import (
-    FLContextKey,
-    ProcessType,
-    ReservedKey,
-    ServerCommandKey,
-    ServerCommandNames,
-    SiteType,
-)
+from nvflare.apis.fl_constant import FLContextKey, ProcessType, ReservedKey, SiteType
 from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 from nvflare.private.stream_runner import ObjectStreamer
@@ -59,12 +51,6 @@ class ClientRunInfo(object):
         self.start_time = None
 
 
-# TODO: make this configurable
-#   this is the number of retries for client side child/job process to get clients from server
-#   we might need to think of removing the whole get clients from server logic from child process
-GET_CLIENTS_RETRY = 300
-
-
 class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
     """ClientRunManager provides the ClientEngine APIs implementation running in the child process (CJ)."""
 
@@ -86,7 +72,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             workspace: workspace
             client: FL client object
             components: available FL components
-            handlers: available handlers
+            handlers: available handlers.
             conf: ClientJsonConfigurator object
         """
         super().__init__()
@@ -200,7 +186,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         return self.name_to_clients.get(client_name)
 
     def get_clients(self):
-        return list(self.all_clients.values())
+        return self.all_clients
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
         self.logger.warning(f"will not persist components, not supported by {self.__class__.__name__}")
@@ -263,7 +249,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         if isinstance(target_names, str):
             if target_names == SiteType.ALL:
                 msg_targets = [AuxMsgTarget.server_target()]
-                for _, c in self.all_clients.items():
+                for c in self.all_clients:
                     if c.name != self.client.client_name:
                         msg_targets.append(AuxMsgTarget.client_target(c))
                 return msg_targets
@@ -316,35 +302,23 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             topic, msg_targets, timeout, fl_ctx, optional=optional, secure=secure
         )
 
-    def get_all_clients_from_server(self, fl_ctx, retry=0):
-        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-        get_clients_message = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, {})
-        return_data = self.client.cell.send_request(
-            target=FQCN.ROOT_SERVER,
-            channel=CellChannel.SERVER_PARENT_LISTENER,
-            topic=ServerCommandNames.GET_CLIENTS,
-            request=get_clients_message,
-            timeout=5.0,
-            optional=True,
-        )
-        return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+    def get_job_clients(self, fl_ctx):
+        """Get participating clients of the job.
+        We no longer send message to the Server to ask this info.
+        Instead, job clients are included in the meta of the job when Server started the job!
 
-        if return_code == CellReturnCode.OK:
-            if return_data.payload:
-                data = return_data.payload
-                self.all_clients = data.get(ServerCommandKey.CLIENTS)
-                for _, c in self.all_clients.items():
-                    self.name_to_clients[c.name] = c
-            else:
-                raise RuntimeError("Empty clients data from server")
-        else:
-            # retry to handle the server connect has not been established scenario.
-            retry += 1
-            if retry < GET_CLIENTS_RETRY:
-                time.sleep(0.5)
-                self.get_all_clients_from_server(fl_ctx, retry)
-            else:
-                raise RuntimeError("Failed to get the clients from the server.")
+        Args:
+            fl_ctx: The FLContext object
+
+        Returns:
+
+        """
+        job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+        job_clients = job_meta.get(JobMetaKey.JOB_CLIENTS)
+        self.all_clients = [from_dict(d) for d in job_clients]
+        for c in self.all_clients:
+            self.name_to_clients[c.name] = c
+        return
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)
