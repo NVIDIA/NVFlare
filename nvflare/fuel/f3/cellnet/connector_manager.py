@@ -209,7 +209,7 @@ class ConnectorManager:
                 handle, conn_params = self.communicator.add_connector(url, Mode.PASSIVE, ssl_required, conn_resources)
                 connect_url = url
             else:
-                self.logger.info(f"{os.getpid()}: Try start_listener Listener resources: {reqs}")
+                self.logger.debug(f"{os.getpid()}: Try start_listener Listener resources: {reqs}")
                 handle, connect_url, conn_params = self.communicator.start_listener(scheme, reqs)
                 self.logger.debug(f"{os.getpid()}: ############ dynamic listener at {connect_url}")
                 # Kludge: to wait for listener ready and avoid race

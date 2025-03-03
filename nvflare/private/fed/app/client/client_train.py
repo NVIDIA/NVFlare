@@ -96,7 +96,6 @@ def main(args):
         federated_client.start_overseer_agent()
 
         while not federated_client.sp_established:
-            print("Waiting for SP....")
             time.sleep(1.0)
 
         federated_client.use_gpu = False
@@ -105,7 +104,6 @@ def main(args):
         client_engine = ClientEngine(federated_client, args, rank)
 
         while federated_client.cell is None:
-            print("Waiting client cell to be created ....")
             time.sleep(1.0)
 
         client_engine.initialize_comm(federated_client.cell)

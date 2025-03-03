@@ -88,7 +88,7 @@ class WFCommClient(FLComponent, WFCommSpec):
         self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
 
         if targets is None:
-            targets = engine.all_clients.values()
+            targets = engine.all_clients
 
         target_names = get_target_names(targets)
         _, invalid_names = engine.validate_targets(target_names)
@@ -207,7 +207,7 @@ class WFCommClient(FLComponent, WFCommSpec):
             return Client(SiteType.SERVER, None)
 
         client_obj = None
-        for _, c in engine.all_clients.items():
+        for c in engine.all_clients:
             if client == c.name:
                 client_obj = c
         return client_obj

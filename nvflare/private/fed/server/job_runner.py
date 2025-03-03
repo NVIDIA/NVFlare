@@ -244,6 +244,11 @@ class JobRunner(FLComponent):
         """
         engine = fl_ctx.get_engine()
         job_clients = engine.get_job_clients(client_sites)
+
+        # job_clients is a dict of: token => Client
+        assert isinstance(job_clients, dict)
+        participating_clients = [c.to_dict() for c in job_clients.values()]
+        job.meta[JobMetaKey.JOB_CLIENTS] = participating_clients
         err = engine.start_app_on_server(fl_ctx, job=job, job_clients=job_clients)
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
