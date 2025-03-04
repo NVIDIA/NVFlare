@@ -26,7 +26,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
-from nvflare.edge.constants import EventType as EdgeEventType
+from nvflare.edge.constants import EdgeEventType
 from nvflare.edge.constants import Status as EdgeStatus
 from nvflare.fuel.f3.cellnet.defs import CellChannel
 from nvflare.fuel.f3.cellnet.fqcn import FQCN

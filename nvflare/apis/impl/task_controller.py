@@ -204,7 +204,7 @@ class TaskController(FLComponent, ControllerSpec):
             return Client(SiteType.SERVER, None)
 
         client_obj = None
-        for _, c in engine.all_clients.items():
+        for c in engine.all_clients:
             if client == c.name:
                 client_obj = c
         return client_obj
