@@ -11,26 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.edge.web.models.base_model import BaseModel
+from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.edge.web.models.user_info import UserInfo
 
 
-class Status(CellReturnCode):
-    NO_TASK = "no_task"
-    NO_JOB = "no_job"
+class TaskRequest(BaseModel):
+    def __init__(self, device_info: DeviceInfo, user_info: UserInfo, job_id: str, **kwargs):
+        super().__init__()
+        self.device_info = device_info
+        self.user_info = user_info
+        self.job_id = job_id
 
-
-class EdgeProtoKey:
-    STATUS = "status"
-    DATA = "data"
-
-
-class EdgeContextKey:
-    JOB_ID = "__edge_job_id__"
-    EDGE_CAPABILITIES = "__edge_capabilities__"
-    REQUEST_FROM_EDGE = "__request_from_edge__"
-    REPLY_TO_EDGE = "__reply_to_edge__"
-
-
-class EdgeEventType:
-    EDGE_REQUEST_RECEIVED = "_edge_request_received"
-    EDGE_JOB_REQUEST_RECEIVED = "_edge_job_request_received"
+        if kwargs:
+            self.update(kwargs)

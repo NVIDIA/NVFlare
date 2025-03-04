@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.edge.constants import EventType as EdgeEventType
+from nvflare.edge.constants import EdgeEventType as EdgeEventType
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.security.logging import secure_format_exception
 
