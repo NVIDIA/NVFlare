@@ -112,19 +112,15 @@ class ServerCommandAgent(object):
                 make_reply(ReturnCode.AUTHENTICATION_ERROR, error, None)
 
             engine = fl_ctx.get_engine()
+            if not engine:
+                # not ready yet
+                return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+
             reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
-
-            self.logger.debug("Before gen_new_peer_ctx")
-            shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-            self.logger.debug("After gen_new_peer_ctx")
-            reply.set_peer_context(shared_fl_ctx)
-
-            if reply is not None:
-                return_message = new_cell_message({}, reply)
-                return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
-            else:
-                return_message = new_cell_message({}, None)
-            return return_message
+            if reply:
+                shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+                reply.set_peer_context(shared_fl_ctx)
+            return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, reply)
 
     def shutdown(self):
         self.asked_to_stop = True

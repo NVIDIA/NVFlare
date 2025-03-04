@@ -29,9 +29,20 @@ class ParticipantType:
     RELAY = "relay"
 
 
+DEFINED_PARTICIPANT_TYPES = [
+    ParticipantType.SERVER,
+    ParticipantType.CLIENT,
+    ParticipantType.ADMIN,
+    ParticipantType.OVERSEER,
+    ParticipantType.RELAY,
+]
+
+
 class PropKey:
     API_VERSION = "api_version"
     NAME = "name"
+    TYPE = "type"
+    ORG = "org"
     HOST = "host"
     DESCRIPTION = "description"
     ROLE = "role"
