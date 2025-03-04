@@ -100,8 +100,8 @@ class EdgeExecutorchController(Controller):
                 model = {
                     "weights": encoded_buffer,
                     "format": "base64_encoded",
-                    "input_dim": self.input_tensor.shape(),
-                    "label_dim": self.label_tensor.shape(),
+                    "input_dim": list(self.input_tensor.size()),
+                    "label_dim": list(self.label_tensor.size()),
                 }
                 task_data["weights"] = model
                 task_data["task_done"] = self.current_round >= (self.num_rounds - 1)
