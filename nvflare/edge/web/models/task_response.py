@@ -15,7 +15,6 @@ from nvflare.edge.web.models.base_model import BaseModel
 
 
 class TaskResponse(BaseModel):
-
     def __init__(
         self,
         status: str,

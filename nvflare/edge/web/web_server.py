@@ -29,7 +29,6 @@ def clean_dict(value: Any):
 
 
 class FilteredJSONProvider(DefaultJSONProvider):
-
     sort_keys = False
 
     def dumps(self, obj: Any, **kwargs: Any) -> str:

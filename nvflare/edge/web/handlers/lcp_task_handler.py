@@ -28,7 +28,6 @@ from nvflare.edge.web.models.task_response import TaskResponse
 
 
 class LcpTaskHandler(EdgeTaskHandler):
-
     def __init__(self):
         self.engine = None
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -37,9 +36,7 @@ class LcpTaskHandler(EdgeTaskHandler):
         self.engine = engine
 
     def handle_job(self, job_request: JobRequest) -> JobResponse:
-
         with self.engine.new_context() as fl_ctx:
-
             fl_ctx.set_prop(EdgeContextKey.EDGE_CAPABILITIES, job_request.capabilities, private=True, sticky=False)
 
             self.engine.fire_event(EdgeEventType.EDGE_JOB_REQUEST_RECEIVED, fl_ctx)
@@ -91,7 +88,6 @@ class LcpTaskHandler(EdgeTaskHandler):
 
     def _handle_task_request(self, request: Any) -> dict:
         with self.engine.new_context() as fl_ctx:
-
             fl_ctx.set_prop(EdgeContextKey.JOB_ID, request.job_id, private=True, sticky=False)
             fl_ctx.set_prop(EdgeContextKey.REQUEST_FROM_EDGE, request, private=True, sticky=False)
 

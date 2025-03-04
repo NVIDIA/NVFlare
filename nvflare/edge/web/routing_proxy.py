@@ -30,7 +30,6 @@ app = Flask(__name__)
 
 
 class LcpMapper:
-
     def __init__(self):
         self.lcp_list = []
 
@@ -80,7 +79,6 @@ mapper = LcpMapper()
 
 @app.route("/<path:path>", methods=["GET", "POST"])
 def routing_proxy(path):
-
     device_id = request.headers.get("X-Flare-Device-ID")
     if not device_id:
         raise ApiError(400, "INVALID_REQUEST", "Device ID is missing")
@@ -127,7 +125,6 @@ def routing_proxy(path):
 
 
 if __name__ == "__main__":
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
