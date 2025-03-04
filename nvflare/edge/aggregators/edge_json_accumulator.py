@@ -38,6 +38,7 @@ class EdgeJsonAccumulator(Aggregator):
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         self.log_info(fl_ctx, f"Accepting: {shareable}")
+
         weight_to_add = shareable.get("weights")
         if weight_to_add is None:
             return True

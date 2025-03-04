@@ -15,7 +15,6 @@ from nvflare.edge.web.models.base_model import BaseModel
 
 
 class UserInfo(BaseModel):
-
     def __init__(
         self,
         user_id: str = None,

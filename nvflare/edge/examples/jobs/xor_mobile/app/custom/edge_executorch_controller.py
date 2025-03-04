@@ -11,7 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any
+import base64
+from typing import Any, Dict
+
+import torch
+from executorch_export import export_model
+from model import Net, TrainingNet
+from torch import Tensor
 
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import ReturnCode
@@ -21,55 +27,83 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.edge.aggregators.edge_result_accumulator import EdgeResultAccumulator
+from nvflare.edge.aggregators.edge_json_accumulator import EdgeJsonAccumulator
 from nvflare.security.logging import secure_format_exception
 
 
-class SimpleEdgeController(Controller):
-
-    def __init__(self, num_rounds: int, initial_weights: Any):
+class EdgeExecutorchController(Controller):
+    def __init__(
+        self,
+        num_rounds: int,
+    ):
         super().__init__()
+        self.model = TrainingNet(Net())
+        self.input_tensor = torch.randn(1, 2)
+        self.label_tensor = torch.ones(1, dtype=torch.int64)
         self.num_rounds = num_rounds
         self.current_round = None
-        self.initial_weights = initial_weights
         self.aggregator = None
 
     def start_controller(self, fl_ctx: FLContext) -> None:
-        self.log_info(fl_ctx, "Initializing Simple mobile workflow.")
-        self.aggregator = EdgeResultAccumulator()
+        self.log_info(fl_ctx, "Initializing ExecuTorch mobile workflow.")
+        self.aggregator = EdgeJsonAccumulator(aggr_key="data")
 
         # initialize global model
         fl_ctx.set_prop(AppConstants.START_ROUND, 1, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
-        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.initial_weights, private=True, sticky=True)
-        self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.log_info(fl_ctx, "Stopping Simple mobile workflow.")
+        self.log_info(fl_ctx, "Stopping ExecuTorch mobile workflow.")
+
+    def _tensor_from_json(self, tensor_data: Dict[str, Any], divide_factor: int) -> Dict[str, Tensor]:
+        """Convert JSON tensor data to PyTorch tensors."""
+        grad_dict = {}
+        for key, value in tensor_data.items():
+            tensor = torch.Tensor(value["data"]).reshape(value["sizes"])
+            grad_dict[key] = tensor / divide_factor
+        print("get grad dict:", grad_dict)
+        return grad_dict
+
+    def _update_model(self, aggregated_grads: Dict[str, Tensor]) -> None:
+        """Update model weights using aggregated gradients."""
+        for key, param in self.model.state_dict().items():
+            if key in aggregated_grads:
+                self.model.state_dict()[key] -= aggregated_grads[key]
+
+    def _export_current_model(self) -> bytes:
+        """Export current model in ExecutorTorch format."""
+        model_buffer = export_model(self.model, self.input_tensor, self.label_tensor).buffer
+        base64_encoded = base64.b64encode(model_buffer).decode("utf-8")
+        return base64_encoded
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:
-
-            self.log_info(fl_ctx, "Beginning mobile training phase.")
+            self.log_info(fl_ctx, "Beginning Executorch mobile training phase.")
 
             fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
-            weights = self.initial_weights
             for i in range(self.num_rounds):
-
                 self.current_round = i
                 if abort_signal.triggered:
                     return
 
                 self.log_info(fl_ctx, f"Round {self.current_round} started.")
-                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self.initial_weights, private=True, sticky=True)
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_round, private=True, sticky=True)
                 self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
-                # Create train_task
+                # Create task and send global model to clients
+                encoded_buffer = self._export_current_model()
+
+                # Compose shareable
                 task_data = Shareable()
-                task_data["weights"] = weights
+                model = {
+                    "weights": encoded_buffer,
+                    "format": "base64_encoded",
+                    "input_dim": self.input_tensor.shape(),
+                    "label_dim": self.label_tensor.shape(),
+                }
+                task_data["weights"] = model
                 task_data["task_done"] = self.current_round >= (self.num_rounds - 1)
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
@@ -83,8 +117,8 @@ class SimpleEdgeController(Controller):
 
                 self.broadcast_and_wait(
                     task=train_task,
-                    min_responses=1,
-                    wait_time_after_min_received=30,
+                    min_responses=2,
+                    wait_time_after_min_received=10,
                     fl_ctx=fl_ctx,
                     abort_signal=abort_signal,
                 )
@@ -95,16 +129,26 @@ class SimpleEdgeController(Controller):
                 self.log_info(fl_ctx, "Start aggregation.")
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 aggr_result = self.aggregator.aggregate(fl_ctx)
-                weights = aggr_result.get("weights")
                 self.log_info(fl_ctx, f"Aggregation result: {aggr_result}")
                 fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
                 self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
                 self.log_info(fl_ctx, "End aggregation.")
 
+                # reset aggregator
+                self.aggregator.reset(fl_ctx)
+
+                # Convert aggregated gradients to PyTorch tensors
+                divide_factor = aggr_result["num_devices"]
+                aggregated_grads = self._tensor_from_json(aggr_result["weights"], divide_factor)
+                self.log_info(fl_ctx, f"Aggregated gradients as Tensor: {aggregated_grads}")
+
+                # Update model weights using aggregated gradients
+                self._update_model(aggregated_grads)
+
                 if abort_signal.triggered:
                     return
 
-            final_weights = aggr_result.get("weights", None)
+            final_weights = self.model.state_dict()
             self.log_info(fl_ctx, f"Finished Mobile Training. Final weights: {final_weights}")
         except Exception as e:
             error_msg = f"Exception in mobile control_flow: {secure_format_exception(e)}"

@@ -52,7 +52,6 @@ def run_emulator(endpoint_url: str, num: int):
 
 
 if __name__ == "__main__":
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",

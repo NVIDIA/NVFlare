@@ -36,7 +36,6 @@ class WebAgent(Widget):
         self.register_event_handler(EventType.SYSTEM_END, self.shutdown)
 
     def run_web_server(self, fl_ctx: FLContext):
-
         if not self.port:
             # Load json file with port
             workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
