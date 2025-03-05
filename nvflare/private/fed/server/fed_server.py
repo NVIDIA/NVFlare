@@ -36,7 +36,6 @@ from nvflare.apis.fl_constant import (
     SnapshotKey,
     SystemComponents,
     SystemConfigs,
-    WorkspaceConstants,
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
@@ -636,13 +635,13 @@ class FederatedServer(BaseServer):
                     return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error="server is not in secure mode")
 
             client_name = request.get_header(IdentityChallengeKey.COMMON_NAME)
-            self.logger.info(f"received challenge request from {client_name}: me={id(self)}")
+            self.logger.debug(f"received challenge request from {client_name}: me={id(self)}")
             reg = self.name_to_reg.pop(client_name, None)
             if reg:
                 self.logger.warning(f"received duplicate challenge from client {client_name} without register")
             reg = ClientRegSession(client_name)
             self.name_to_reg[client_name] = reg
-            self.logger.info(f"added reg session for {client_name}: {self.name_to_reg[client_name]}")
+            self.logger.debug(f"added reg session for {client_name}: {self.name_to_reg[client_name]}")
             client_nonce = request.get_header(IdentityChallengeKey.NONCE)
             id_asserter = self._get_id_asserter()
             signature = id_asserter.sign_common_name(client_nonce)
@@ -1062,7 +1061,8 @@ class FederatedServer(BaseServer):
                         if snapshot and not snapshot.completed:
                             # Restore the workspace
                             workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                            dst = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
+                            ws = Workspace(self.workspace)
+                            dst = ws.get_run_dir(str(run_number))
                             if os.path.exists(dst):
                                 shutil.rmtree(dst, ignore_errors=True)
 

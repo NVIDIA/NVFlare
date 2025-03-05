@@ -192,7 +192,7 @@ class FederatedClientBase:
         root_conn_security = self.client_args.get(ConnPropKey.CONNECTION_SECURITY)
 
         relay_conn_props = get_scope_property(self.client_name, ConnPropKey.RELAY_CONN_PROPS, {})
-        self.logger.info(f"got {ConnPropKey.RELAY_CONN_PROPS}: {relay_conn_props}")
+        self.logger.debug(f"got {ConnPropKey.RELAY_CONN_PROPS}: {relay_conn_props}")
 
         relay_fqcn = relay_conn_props.get(ConnPropKey.FQCN)
         if relay_fqcn:
@@ -237,7 +237,7 @@ class FederatedClientBase:
             # this is the default conn sec
             credentials[DriverParams.CONNECTION_SECURITY.value] = root_conn_security
 
-        self.logger.info(f"{me=}: {my_fqcn=} {root_url=} {parent_url=}")
+        self.logger.debug(f"{me=}: {my_fqcn=} {root_url=} {parent_url=}")
         self.cell = Cell(
             fqcn=my_fqcn,
             root_url=root_url,
