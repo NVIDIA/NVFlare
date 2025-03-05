@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -69,6 +70,8 @@ def main():
     kmf.fit(time, event)
     # Plot and save the Kaplan-Meier survival curve
     kmf.plot_survival_function(label="No binning - Daily")
+
+    os.makedirs(os.path.dirname(output_curve_path), exist_ok=True)
 
     plt.ylim(0, 1)
     plt.ylabel("prob")

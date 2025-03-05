@@ -16,7 +16,7 @@ In this part, we dive into NVIDIA FLARE's federated learning/computing system, i
 
 ### [Part 3: Security and Privacy](./part-3_security_and_privacy/part-3_introduction.ipynb)
 
-Once we understand the basics of federated learning applications and federated computing systems, we will dive into other aspects of federated learning applications: privacy and security. We will discuss privacy and security concerns, different Privacy Enhancing Techniques (PETs), as well as enterprise security support.
+Once we understand the basics of federated learning applications and federated computing systems, we will dive into other aspects of federated learning applications: privacy and security. We will discuss privacy and security concerns, different Privacy-Enhancing Technologies (PETs), as well as enterprise security support.
 
 ### [Part 4: Advanced Topics in Federated Learning](./part-4_advanced_federated_learning/part-4_introduction.ipynb)
 
