@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import argparse
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -72,7 +72,7 @@ def main():
     kmf.plot_survival_function(label="No binning - Daily")
 
     os.makedirs(os.path.dirname(output_curve_path), exist_ok=True)
-    
+
     plt.ylim(0, 1)
     plt.ylabel("prob")
     plt.xlabel("time")
