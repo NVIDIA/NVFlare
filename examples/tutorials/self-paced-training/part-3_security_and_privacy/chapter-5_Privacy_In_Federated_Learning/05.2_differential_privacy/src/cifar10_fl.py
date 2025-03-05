@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from opacus import PrivacyEngine
 import argparse
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 from net import Net
+from opacus import PrivacyEngine
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -34,7 +35,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Running on device {DEVICE}")
 
 
-def main(target_epsilon,max_grad_norm):
+def main(target_epsilon, max_grad_norm):
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     batch_size = 32
@@ -62,7 +63,7 @@ def main(target_epsilon,max_grad_norm):
 
     # Optionally add DP engine
     if target_epsilon:
-        target_delta=1e-5 #1/(len(trainloader)*batch_size) # "The target δ of the (ϵ,δ)-differential privacy guarantee. Generally, it should be set to be less than the inverse of the size of the training dataset" (from https://opacus.ai/tutorials/building_image_classifier).
+        target_delta = 1e-5  # 1/(len(trainloader)*batch_size) # "The target δ of the (ϵ,δ)-differential privacy guarantee. Generally, it should be set to be less than the inverse of the size of the training dataset" (from https://opacus.ai/tutorials/building_image_classifier).
         print(f"Adding privacy engine with epsilon={target_epsilon}, delta={target_delta}")
         privacy_engine = PrivacyEngine()
         net, optimizer, trainloader = privacy_engine.make_private_with_epsilon(
@@ -70,11 +71,11 @@ def main(target_epsilon,max_grad_norm):
             optimizer=optimizer,
             data_loader=trainloader,
             target_epsilon=target_epsilon,
-            target_delta=target_delta, 
-            epochs=epochs*flare.receive().total_rounds,
-            max_grad_norm=max_grad_norm
-        )     
-    
+            target_delta=target_delta,
+            epochs=epochs * flare.receive().total_rounds,
+            max_grad_norm=max_grad_norm,
+        )
+
     summary_writer = SummaryWriter()
     while flare.is_running():
         # (3) receives FLModel from NVFlare
@@ -116,10 +117,12 @@ def main(target_epsilon,max_grad_norm):
                 # print statistics
                 running_loss += loss.item()
                 if i % 100 == 99:  # print every 100 mini-batches
-                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss/100:.3f}")
+                    print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 100:.3f}")
                     global_step = input_model.current_round * steps + epoch * len(trainloader) + i
 
-                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss/100, global_step=global_step)
+                    summary_writer.add_scalar(
+                        tag="loss_for_each_batch", scalar=running_loss / 100, global_step=global_step
+                    )
                     running_loss = 0.0
 
                     if target_epsilon:
@@ -166,10 +169,10 @@ def main(target_epsilon,max_grad_norm):
             # Remove prefix added by Opacus again to match global state dict
             local_params = {}
             for k, v in net.cpu().state_dict().items():
-                local_params[k.replace("_module.","")] = v
+                local_params[k.replace("_module.", "")] = v
         else:
             local_params = net.cpu().state_dict()
-        
+
         output_model = flare.FLModel(
             params=local_params,
             metrics={"accuracy": accuracy},
@@ -184,5 +187,5 @@ if __name__ == "__main__":
     parser.add_argument("--target_epsilon", type=float, default=None)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
     args = parser.parse_args()
-    
-    main(target_epsilon=args.target_epsilon,max_grad_norm=args.max_grad_norm)
+
+    main(target_epsilon=args.target_epsilon, max_grad_norm=args.max_grad_norm)
