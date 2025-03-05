@@ -113,7 +113,9 @@ class ServerCommandAgent(object):
 
             engine = fl_ctx.get_engine()
             if not engine:
-                # not ready yet
+                # I (SJ) cannot process this request because my engine is not set yet.
+                # This happens only when a CJ became ready quickly and send runner_sync request to the SJ.
+                # I'll simply tell it that my service is not available, and it will retry.
                 return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
             reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)

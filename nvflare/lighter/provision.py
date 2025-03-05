@@ -22,7 +22,7 @@ import sys
 from typing import Optional
 
 from nvflare.fuel.utils.class_utils import instantiate_class
-from nvflare.lighter.constants import ParticipantType, PropKey
+from nvflare.lighter.constants import PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Project
