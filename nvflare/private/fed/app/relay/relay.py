@@ -80,7 +80,7 @@ def main(args):
             print(f"Could not remove file '{name}': {ex}.  Please check your system before starting FL.")
             sys.exit(-1)
 
-    configure_logging(workspace, workspace.get_root_dir())
+    configure_logging(workspace)
     logger = logging.getLogger()
 
     relay_config_file = workspace.get_file_path_in_startup(args.relay_config)
@@ -120,7 +120,7 @@ def main(args):
 
     cmd_vars = parse_vars(args.set)
     secure_train = cmd_vars.get("secure_train", False)
-    logger.info(f"{cmd_vars=} {secure_train=}")
+    logger.debug(f"{cmd_vars=} {secure_train=}")
 
     stop_event = threading.Event()
     monitor = CellnetMonitor(stop_event, args.workspace)
@@ -138,8 +138,6 @@ def main(args):
         DriverParams.CA_CERT.value: root_cert_path,
     }
     enhance_credential_info(credentials)
-
-    logger.info(f"{credentials=}")
 
     conn_security = parent.get(ConnPropKey.CONNECTION_SECURITY)
     secure_conn = True

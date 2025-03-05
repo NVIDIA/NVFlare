@@ -31,6 +31,6 @@ class EdgeContextKey:
     REPLY_TO_EDGE = "__reply_to_edge__"
 
 
-class EventType:
+class EdgeEventType:
     EDGE_REQUEST_RECEIVED = "_edge_request_received"
     EDGE_JOB_REQUEST_RECEIVED = "_edge_job_request_received"

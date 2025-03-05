@@ -17,7 +17,6 @@ import logging
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from .blob import gen_client, gen_overseer, gen_server, gen_user
 from .cert import Entity, make_root_cert
 from .models import Capacity, Client, Organization, Project, Role, User, db
 
@@ -64,12 +63,12 @@ class Store(object):
         return user.approval_state >= 100 if user else False
 
     @classmethod
-    def seed_user(cls, email, pwd):
+    def seed_user(cls, email, pwd, org):
         seed_user = {
             "name": "super_name",
             "email": email,
             "password": pwd,
-            "organization": "",
+            "organization": org,
             "role": "project_admin",
             "approval_state": 200,
         }
@@ -113,17 +112,30 @@ class Store(object):
         if project.frozen:
             return {"status": "Project is frozen"}
         req.pop("id", None)
+
         short_name = req.pop("short_name", "")
         if short_name:
             if len(short_name) > 16:
                 short_name = short_name[:16]
             project.short_name = short_name
+
+        proj_props = req.pop("project_props", None)
+        if proj_props:
+            project.project_props = json.dumps(proj_props)
+
+        server_props = req.pop("server_props", None)
+        if server_props:
+            project.server_props = json.dumps(server_props)
+
         for k, v in req.items():
             setattr(project, k, v)
+
         db.session.add(project)
         db.session.commit()
+
         if project.frozen:
             cls.build_project(project)
+
         project_dict = _dict_or_empty(project)
         project_dict = cls._add_registered_info(project_dict)
         return add_ok({"project": project_dict})
@@ -133,16 +145,6 @@ class Store(object):
         project_dict = _dict_or_empty(Project.query.first())
         project_dict = cls._add_registered_info(project_dict)
         return add_ok({"project": project_dict})
-
-    @classmethod
-    def get_overseer_blob(cls, key):
-        fileobj, filename = gen_overseer(key)
-        return fileobj, filename
-
-    @classmethod
-    def get_server_blob(cls, key, first_server=True):
-        fileobj, filename = gen_server(key, first_server)
-        return fileobj, filename
 
     @classmethod
     def get_orgs(cls):
@@ -168,11 +170,18 @@ class Store(object):
         capacity = req.get("capacity")
         description = req.get("description", "")
         org = get_or_create(db.session, Organization, name=organization)
+        cap = None
         if capacity is not None:
             cap = get_or_create(db.session, Capacity, capacity=json.dumps(capacity))
         client = Client(name=name, description=description, creator_id=creator_id)
         client.organization_id = org.id
-        client.capacity_id = cap.id
+        if cap:
+            client.capacity_id = cap.id
+        props = req.get("props")
+        if props:
+            client.props = json.dumps(props)
+        else:
+            client.props = ""
         try:
             db.session.add(client)
             db.session.commit()
@@ -207,17 +216,25 @@ class Store(object):
     @classmethod
     def patch_client_by_project_admin(cls, id, req):
         client = Client.query.get(id)
+
         organization = req.pop("organization", None)
         if organization is not None:
             org = get_or_create(db.session, Organization, name=organization)
             client.organization_id = org.id
+
         capacity = req.pop("capacity", None)
         if capacity is not None:
             capacity = json.dumps(capacity)
             cap = get_or_create(db.session, Capacity, capacity=capacity)
             client.capacity_id = cap.id
+
+        props = req.pop("props", None)
+        if props:
+            client.props = json.dumps(props)
+
         for k, v in req.items():
             setattr(client, k, v)
+
         try:
             db.session.add(client)
             db.session.commit()
@@ -230,17 +247,25 @@ class Store(object):
     def patch_client_by_creator(cls, id, req):
         client = Client.query.get(id)
         _ = req.pop("approval_state", None)
+
         organization = req.pop("organization", None)
         if organization is not None:
             org = get_or_create(db.session, Organization, name=organization)
             client.organization_id = org.id
+
         capacity = req.pop("capacity", None)
         if capacity is not None:
             capacity = json.dumps(capacity)
             cap = get_or_create(db.session, Capacity, capacity=capacity)
             client.capacity_id = cap.id
+
+        props = req.pop("props", None)
+        if props:
+            client.props = json.dumps(props)
+
         for k, v in req.items():
             setattr(client, k, v)
+
         try:
             db.session.add(client)
             db.session.commit()
@@ -255,12 +280,6 @@ class Store(object):
         db.session.delete(client)
         db.session.commit()
         return add_ok({})
-
-    @classmethod
-    def get_client_blob(cls, key, id):
-        fileobj, filename = gen_client(key, id)
-        inc_dl(Client, id)
-        return fileobj, filename
 
     @classmethod
     def create_user(cls, req):
@@ -374,9 +393,3 @@ class Store(object):
         db.session.commit()
 
         return add_ok({})
-
-    @classmethod
-    def get_user_blob(cls, key, id):
-        fileobj, filename = gen_user(key, id)
-        inc_dl(User, id)
-        return fileobj, filename

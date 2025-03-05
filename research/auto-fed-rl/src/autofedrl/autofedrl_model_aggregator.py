@@ -43,7 +43,7 @@ class AutoFedRLWeightedAggregator(InTimeAccumulateWeightedAggregator):
             # TODO: Here, we assume contributor_name is "site-*".
             # this will be wrong if contributor_name is not in this pattern.
             aggregation_weights_dict = {
-                f"site-{i+1}": received_aggregation_weights[i] for i in range(len(received_aggregation_weights))
+                f"site-{i + 1}": received_aggregation_weights[i] for i in range(len(received_aggregation_weights))
             }
             for key in self.expected_data_kind.keys():
                 self.dxo_aggregators[key].aggregation_weights = aggregation_weights_dict

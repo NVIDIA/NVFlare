@@ -242,6 +242,7 @@ class JsonFormatter(BaseFormatter):
 class LoggerNameFilter(logging.Filter):
     def __init__(self, logger_names=["nvflare"], exclude_logger_names=[]):
         """Filter log records based on logger names.
+        Additionally allows all log records with levelno > logging.INFO through.
 
         Args:
             logger_names (List[str]): list of logger names to allow through filter
@@ -253,8 +254,12 @@ class LoggerNameFilter(logging.Filter):
         self.exclude_logger_names = exclude_logger_names
 
     def filter(self, record):
-        name = record.fullName if hasattr(record, "fullName") else record.name
-        return not self.matches_name(name, self.exclude_logger_names) and self.matches_name(name, self.logger_names)
+        name = getattr(record, "fullName", record.name)
+
+        is_logger_included = self.matches_name(name, self.logger_names)
+        is_logger_excluded = self.matches_name(name, self.exclude_logger_names)
+
+        return (record.levelno > logging.INFO) or (not is_logger_excluded and is_logger_included)
 
     def matches_name(self, name, logger_names) -> bool:
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
@@ -285,15 +290,15 @@ def get_script_logger():
     )
 
 
-def configure_logging(workspace: Workspace, dir_path: str = "", file_prefix: str = ""):
-    # Read log_config.json from workspace, update with file_prefix, and apply to dir_path
+def configure_logging(workspace: Workspace, job_id: str = None, file_prefix: str = ""):
+    # Read log_config.json from workspace, update with file_prefix, and apply to log_root of th workspace
     log_config_file_path = workspace.get_log_config_file_path()
     assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
 
     with open(log_config_file_path, "r") as f:
         dict_config = json.load(f)
 
-    apply_log_config(dict_config, dir_path, file_prefix)
+    apply_log_config(dict_config, workspace.get_log_root(job_id), file_prefix)
 
 
 def apply_log_config(dict_config, dir_path: str = "", file_prefix: str = ""):

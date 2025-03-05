@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import json
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -162,6 +162,14 @@ class JobExecutor(ClientExecutor):
             resource_manager: resource manager
             fl_ctx: FLContext
         """
+
+        # update the job meta
+        workspace = Workspace(args.workspace, site_name=client.client_name)
+        meta_file = workspace.get_job_meta_path(job_id)
+
+        # rewrite the meta file with the received meta
+        with open(meta_file, "w") as f:
+            json.dump(job_meta, f, indent=4)
 
         job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
 
@@ -528,7 +536,7 @@ class JobExecutor(ClientExecutor):
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.CLIENT_NAME, client.client_name, private=True, sticky=False)
         engine.fire_event(EventType.JOB_COMPLETED, fl_ctx)
-        self.logger.info(f"Fired event JOB_COMPLETED {EventType.JOB_COMPLETED}")
+        self.logger.debug(f"Fired event JOB_COMPLETED {EventType.JOB_COMPLETED}")
 
     def get_status(self, job_id):
         process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)

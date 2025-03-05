@@ -22,9 +22,9 @@ import uuid
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
-from nvflare.edge.constants import EdgeContextKey, EdgeProtoKey
-from nvflare.edge.constants import EventType as EdgeEventType
-from nvflare.edge.constants import Status
+from nvflare.edge.constants import EdgeContextKey
+from nvflare.edge.constants import EdgeEventType as EdgeEventType
+from nvflare.edge.constants import EdgeProtoKey, Status
 from nvflare.widgets.widget import Widget
 
 
