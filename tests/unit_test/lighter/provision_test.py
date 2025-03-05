@@ -34,5 +34,5 @@ class TestProvision:
             ],
         }
 
-        with pytest.raises(ValueError, match=".* already has a server defined"):
+        with pytest.raises(ValueError, match=".* server already exists"):
             prepare_project(project_dict=project_config)
