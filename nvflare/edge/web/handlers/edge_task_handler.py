@@ -23,7 +23,6 @@ from nvflare.edge.web.models.task_response import TaskResponse
 
 
 class EdgeTaskHandler(ABC):
-
     @abstractmethod
     def set_engine(self, engine: ClientEngineSpec):
         pass

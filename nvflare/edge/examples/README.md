@@ -33,9 +33,12 @@ This file needs to be copied to the `local` folder of each leaf clients, C11, C1
 ```
 
 To start the system, just run the following command in the prepared workspace,
-    cd /tmp/edge_example/prod_00
-    ./start_all.sh
-    
+
+```commandline
+cd /tmp/edge_example/prod_00
+./start_all.sh
+```    
+
 ## Starting Web Proxy
 
 To route devices to different LCP, routing_proxy is used. It's a simple proxy that routes the request to

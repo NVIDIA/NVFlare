@@ -24,7 +24,6 @@ from nvflare.edge.web.models.user_info import UserInfo
 
 
 class FegApi:
-
     def __init__(self, endpoint: str, device_info: DeviceInfo, user_info: UserInfo):
         self.endpoint = endpoint
         self.device_info = device_info

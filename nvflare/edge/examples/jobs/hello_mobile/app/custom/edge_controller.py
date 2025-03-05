@@ -26,7 +26,6 @@ from nvflare.security.logging import secure_format_exception
 
 
 class SimpleEdgeController(Controller):
-
     def __init__(self, num_rounds: int, initial_weights: Any):
         super().__init__()
         self.num_rounds = num_rounds
@@ -49,7 +48,6 @@ class SimpleEdgeController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:
-
             self.log_info(fl_ctx, "Beginning mobile training phase.")
 
             fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self.num_rounds, private=True, sticky=False)
@@ -57,7 +55,6 @@ class SimpleEdgeController(Controller):
 
             weights = self.initial_weights
             for i in range(self.num_rounds):
-
                 self.current_round = i
                 if abort_signal.triggered:
                     return

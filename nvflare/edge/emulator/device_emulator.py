@@ -28,7 +28,6 @@ log = logging.getLogger(__name__)
 
 
 class DeviceEmulator:
-
     def __init__(
         self,
         endpoint: str,
@@ -45,9 +44,7 @@ class DeviceEmulator:
         self.feg_api = FegApi(endpoint, device_info, user_info)
 
     def run(self):
-
         try:
-
             job = self.fetch_job()
             self.processor.setup(job)
             log.info(f"Received job: {job}")
@@ -82,7 +79,6 @@ class DeviceEmulator:
             log.error(f"Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}")
 
     def fetch_job(self) -> JobResponse:
-
         while True:
             try:
                 job = self.feg_api.get_job(self.capabilities)
@@ -100,7 +96,6 @@ class DeviceEmulator:
                 time.sleep(5)
 
     def fetch_task(self, job: JobResponse) -> TaskResponse:
-
         while True:
             try:
                 task = self.feg_api.get_task(job)
