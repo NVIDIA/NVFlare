@@ -30,21 +30,6 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.edge.aggregators.edge_json_accumulator import EdgeJsonAccumulator
 from nvflare.edge.constants import MsgKey
 from nvflare.security.logging import secure_format_exception
-from nvflare.edge.model_protocol import (
-    ModelExchangeFormat as MEF,
-    ModelBufferType,
-    ModelNativeFormat,
-    ModelEncoding
-)
-
-
-# Define the XOR dataset
-X = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
-y = torch.tensor([0, 1, 1, 0], dtype=torch.float32)
-# Import tensorboard
-from torch.utils.tensorboard import SummaryWriter
-
-tb_writer = SummaryWriter()
 
 
 class EdgeExecutorchController(Controller):
@@ -79,7 +64,7 @@ class EdgeExecutorchController(Controller):
         for key, value in tensor_data.items():
             tensor = torch.Tensor(value["data"]).reshape(value["sizes"])
             grad_dict[key] = tensor / divide_factor
-        print("get grad dict:", grad_dict)
+        #print("get grad dict:", grad_dict)
         return grad_dict
 
     def _update_model(self, aggregated_grads: Dict[str, Tensor]) -> None:
@@ -123,12 +108,7 @@ class EdgeExecutorchController(Controller):
 
                 # Compose shareable
                 task_data = Shareable()
-                task_data[MsgKey.PAYLOAD] = {
-                    MEF.MODEL_BUFFER: encoded_buffer,
-                    MEF.MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
-                    MEF.MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.BINARY,
-                    MEF.MODEL_BUFFER_ENCODING: ModelEncoding.BASE64
-                }
+                task_data[MsgKey.PAYLOAD] = encoded_buffer
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
                 task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self.current_round)
@@ -169,26 +149,16 @@ class EdgeExecutorchController(Controller):
                 # Convert aggregated gradients to PyTorch tensors
                 divide_factor = aggr_result["num_devices"]
                 aggregated_grads = self._tensor_from_json(aggr_result[MsgKey.RESULT], divide_factor)
-                self.log_info(fl_ctx, f"Aggregated gradients as Tensor: {aggregated_grads}")
+                #self.log_info(fl_ctx, f"Aggregated gradients as Tensor: {aggregated_grads}")
 
                 # Update model weights using aggregated gradients
                 self._update_model(aggregated_grads)
-
-                # Evaluate the model
-                with torch.no_grad():
-                    test_output = self.model.net(X).detach().argmax(dim=1)
-                    # compute the accuracy
-                    accuracy = (test_output == y).sum().item() / y.size(0)
-                    tb_writer.add_scalar("acc", accuracy, i)
 
                 if abort_signal.triggered:
                     return
 
             final_weights = self.model.state_dict()
             self.log_info(fl_ctx, "Finished Mobile Training.")
-            # save the final model
-            torch.save(self.model.state_dict(), "xor_model.pth")
-
         except Exception as e:
             error_msg = f"Exception in mobile control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
