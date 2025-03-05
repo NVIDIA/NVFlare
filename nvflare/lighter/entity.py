@@ -244,7 +244,7 @@ class Participant(Entity):
             if err:
                 raise ValueError(reason)
         else:
-            err, reason = name_check(type, 'simple_name')
+            err, reason = name_check(type, "simple_name")
             if err:
                 raise ValueError(reason)
             print(f"Warning: participant type '{type}' of {name} is not a defined type {DEFINED_PARTICIPANT_TYPES}")
@@ -261,7 +261,7 @@ class Participant(Entity):
             if not role:
                 raise ValueError(f"missing role for admin '{name}'")
 
-            err, reason = name_check(role, 'simple_name')
+            err, reason = name_check(role, "simple_name")
             if err:
                 raise ValueError(f"bad role value '{role}' for admin '{name}': {reason}")
 
