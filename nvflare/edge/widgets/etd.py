@@ -174,5 +174,5 @@ class EdgeTaskDispatcher(Widget):
         assert isinstance(reply, CellMessage)
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         reply_data = reply.payload
-        self.logger.info(f"got edge result from CJ {job_id}: {rc=}")
+        self.logger.debug(f"got edge result from CJ: {rc=} {reply_data=}")
         self._set_edge_reply(rc, reply_data, fl_ctx)

@@ -79,7 +79,6 @@ class EdgeExecutorchController(Controller):
         for key, value in tensor_data.items():
             tensor = torch.Tensor(value["data"]).reshape(value["sizes"])
             grad_dict[key] = tensor / divide_factor
-        print("get grad dict:", grad_dict)
         return grad_dict
 
     def _update_model(self, aggregated_grads: Dict[str, Tensor]) -> None:
@@ -90,7 +89,6 @@ class EdgeExecutorchController(Controller):
 
     def _export_current_model(self) -> bytes:
         """Export current model in ExecutorTorch format."""
-        print("model is", self.model.state_dict())
         input_tensor = torch.randn(self.input_shape)
         label_tensor = torch.ones(self.output_shape, dtype=torch.int64)
         model_buffer = export_model(self.model, input_tensor, label_tensor).buffer
