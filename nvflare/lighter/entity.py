@@ -15,7 +15,7 @@ from typing import Any, List, Optional, Union
 
 from nvflare.apis.utils.format_check import name_check
 
-from .constants import DEFINED_PARTICIPANT_TYPES, ConnSecurity, ParticipantType, PropKey
+from .constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, ConnSecurity, ParticipantType, PropKey
 
 
 class ListeningHost:
@@ -113,8 +113,11 @@ def _check_connect_to(scope: str, prop_key: str, value):
 
 
 def _check_conn_security(scope: str, prop_key: str, value):
+    if not isinstance(value, str):
+        raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be a str but got {type(value)}")
+
     valid_conn_secs = [ConnSecurity.CLEAR, ConnSecurity.MTLS, ConnSecurity.TLS]
-    if value not in valid_conn_secs:
+    if value.lower() not in valid_conn_secs:
         raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be one of {valid_conn_secs}")
 
 
@@ -240,6 +243,8 @@ class Participant(Entity):
             err, reason = name_check(name, type)
             if err:
                 raise ValueError(reason)
+        else:
+            print(f"Warning: participant type '{type}' of {name} is not a defined type {DEFINED_PARTICIPANT_TYPES}")
 
         err, reason = name_check(org, "org")
         if err:
@@ -299,15 +304,15 @@ def participant_from_dict(participant_def: dict, project=None) -> Participant:
     if not name:
         raise ValueError("missing participant name")
 
-    type = participant_def.pop(PropKey.TYPE, None)
-    if not type:
+    t = participant_def.pop(PropKey.TYPE, None)
+    if not t:
         raise ValueError("missing participant type")
 
     org = participant_def.pop(PropKey.ORG, None)
-    if org:
+    if not org:
         raise ValueError("missing participant org")
 
-    return Participant(type=type, name=name, org=org, props=participant_def, project=project)
+    return Participant(type=t, name=name, org=org, props=participant_def, project=project)
 
 
 class Project(Entity):
@@ -393,6 +398,12 @@ class Project(Entity):
             if self.overseer:
                 raise ValueError(f"cannot add participant {participant.name} as overseer - overseer already exists")
             self.overseer = participant
+        elif participant.type == ParticipantType.ADMIN:
+            role = participant.get_prop(PropKey.ROLE)
+            if not role:
+                raise ValueError(f"missing role in user '{participant.name}'")
+            if role not in DEFINED_ROLES:
+                print(f"Warning: '{role}' of {participant.name} is not a defined role {DEFINED_ROLES}")
 
         participants = self.participants_by_types.get(participant.type)
         if not participants:
@@ -415,11 +426,7 @@ class Project(Entity):
         return self.get_all_participants(ParticipantType.RELAY)
 
     def add_admin(self, name: str, org: str, props: dict):
-        admin = Participant(ParticipantType.ADMIN, name, org, props)
-        role = admin.get_prop(PropKey.ROLE)
-        if not role:
-            raise ValueError(f"missing role in admin '{name}'")
-        return self.add_participant(admin)
+        return self.add_participant(Participant(ParticipantType.ADMIN, name, org, props))
 
     def get_admins(self):
         return self.get_all_participants(ParticipantType.ADMIN)

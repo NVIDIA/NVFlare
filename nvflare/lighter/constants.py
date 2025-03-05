@@ -102,6 +102,9 @@ class AdminRole:
     MEMBER = "member"
 
 
+DEFINED_ROLES = [AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER]
+
+
 class OverseerRole:
     SERVER = "server"
     CLIENT = "client"
