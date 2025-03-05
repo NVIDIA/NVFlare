@@ -131,13 +131,6 @@ def prepare_builders(project_dict):
     return builders
 
 
-def _must_get(participant_def: dict, key: str):
-    v = participant_def.get(key)
-    if not v:
-        raise ValueError(f"missing property '{key}' from participant definition")
-    return v
-
-
 def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
     api_version = project_dict.get(PropKey.API_VERSION)
     if api_version not in [3]:
