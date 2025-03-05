@@ -11,13 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import time
+from threading import Lock
 from typing import Any
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable
 from nvflare.edge.aggregators.edge_result_accumulator import EdgeResultAccumulator
+from nvflare.edge.constants import MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
@@ -47,6 +50,7 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         self.aggregator_id = aggregator_id
         self.aggregator = None
         self.register_event_handler(EventType.START_RUN, self.setup)
+        self.lock = Lock()
 
     def setup(self, _event_type, fl_ctx: FLContext):
         if self.aggregator_id:
@@ -56,9 +60,8 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
 
     def convert_task(self, task_data: Shareable) -> dict:
         """Convert task_data to a plain dict"""
-        # TODO: do we want to do this?
 
-        return {"task_data": task_data["model"], "task_id": self.task_id}
+        return {MsgKey.PAYLOAD: task_data[MsgKey.PAYLOAD], "task_id": self.task_id}
 
     def convert_result(self, result: dict) -> Shareable:
         """Convert result from device to shareable"""
@@ -93,8 +96,9 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
             return ResultResponse("OK", task_id=self.task_id, task_name=self.task_name, message=msg)
 
         result = self.convert_result(report.result)
-        self.aggregator.accept(result, fl_ctx)
-        self.num_results += 1
+        with self.lock:
+            self.aggregator.accept(result, fl_ctx)
+            self.num_results += 1
         return ResultResponse("OK", task_id=self.task_id, task_name=self.task_name)
 
     def task_received(self, task_name: str, task_data: Shareable, fl_ctx: FLContext):
@@ -105,10 +109,12 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         self.task_data = task_data
         self.task_sequence += 1
         self.devices = {}  # Devices got this task
-        self.num_results = 0  # Number of devices reported results
+        with self.lock:
+            self.num_results = 0  # Number of devices reported results
 
     def is_task_done(self, fl_ctx: FLContext) -> bool:
-        return time.time() - self.start_time > self.wait_time or 0 < self.min_devices < self.num_results
+        with self.lock:
+            return time.time() - self.start_time > self.wait_time or 0 < self.min_devices <= self.num_results
 
     def process_edge_request(self, request: Any, fl_ctx: FLContext) -> Any:
         self.log_info(fl_ctx, f"Received edge request: {request}")
