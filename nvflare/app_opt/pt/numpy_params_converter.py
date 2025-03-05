@@ -48,7 +48,13 @@ class PTToNumpyParamsConverter(ParamsConverter):
         exclude_vars = {}
         for k, v in params.items():
             if isinstance(v, torch.Tensor):
-                return_tensors[k] = v.cpu().numpy()
+                # Try to convert to numpy and catch exception if it fails
+                try:
+                    return_tensors[k] = v.cpu().numpy()
+                except Exception as e:
+                    error_msg = f"Exception while converting torch tensor to numpy: {e} \n"
+                    additional_info = "Most possibly caused by unsupported data type for numpy transmission, please use pytorch exchange format or convert params to a supported data type (fp32, fp16, etc.)"
+                    raise ValueError(f"{error_msg} {additional_info}")
                 tensor_shapes[k] = v.shape
             else:
                 exclude_vars[k] = v
