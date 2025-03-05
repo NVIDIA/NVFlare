@@ -244,11 +244,29 @@ class Participant(Entity):
             if err:
                 raise ValueError(reason)
         else:
+            err, reason = name_check(type, 'simple_name')
+            if err:
+                raise ValueError(reason)
             print(f"Warning: participant type '{type}' of {name} is not a defined type {DEFINED_PARTICIPANT_TYPES}")
 
         err, reason = name_check(org, "org")
         if err:
             raise ValueError(reason)
+
+        if type == ParticipantType.ADMIN:
+            if not props:
+                raise ValueError(f"missing role for admin '{name}'")
+
+            role = props.get(PropKey.ROLE)
+            if not role:
+                raise ValueError(f"missing role for admin '{name}'")
+
+            err, reason = name_check(role, 'simple_name')
+            if err:
+                raise ValueError(f"bad role value '{role}' for admin '{name}': {reason}")
+
+            if role not in DEFINED_ROLES:
+                print(f"Warning: '{role}' of admin '{name}' is not a defined role {DEFINED_ROLES}")
 
         self.type = type
         self.org = org
@@ -322,6 +340,7 @@ def _must_get(d: dict, key: str):
     v = d.pop(key, None)
     if not v:
         raise ValueError(f"missing participant {key}")
+    return v
 
 
 def participant_from_dict(participant_def: dict) -> Participant:
@@ -445,12 +464,6 @@ class Project(Entity):
             if self.overseer:
                 raise ValueError(f"cannot add participant {participant.name} as overseer - overseer already exists")
             self.overseer = participant
-        elif participant.type == ParticipantType.ADMIN:
-            role = participant.get_prop(PropKey.ROLE)
-            if not role:
-                raise ValueError(f"missing role in user '{participant.name}'")
-            if role not in DEFINED_ROLES:
-                print(f"Warning: '{role}' of {participant.name} is not a defined role {DEFINED_ROLES}")
 
         participants = self._participants_by_types.get(participant.type)
         if not participants:
