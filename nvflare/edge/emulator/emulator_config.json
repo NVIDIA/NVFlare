@@ -1,0 +1,14 @@
+{
+  "endpoint": "http://localhost:4321",
+  "num_devices": 16,
+  "processor": {
+    "path": "sample_task_processor.SampleTaskProcessor",
+    "args": {
+      "data_file": "data/data.csv",
+      "parameters": {
+        "a": 123,
+        "b": 456
+      }
+    }
+  }
+}

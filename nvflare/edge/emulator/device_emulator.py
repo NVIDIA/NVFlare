@@ -18,7 +18,7 @@ from typing import Optional
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.emulator.feg_api import FegApi
 from nvflare.edge.web.models.api_error import ApiError
-from nvflare.edge.web.models.base_model import ApiKey
+from nvflare.edge.web.models.base_model import ApiKey, ApiStatus
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
@@ -46,7 +46,7 @@ class DeviceEmulator:
     def run(self):
         try:
             job = self.fetch_job()
-            self.processor.setup(job)
+            self.processor.setup(self.device_info, self.user_info, job)
             log.info(f"Received job: {job}")
 
             while True:
@@ -66,8 +66,13 @@ class DeviceEmulator:
                 if task_done or result_response.status == "DONE":
                     log.info(f"Job {job.job_id} {job.job_name} is done")
                     break
-                elif result_response.status != "OK":
-                    log.error(f"Device:{self.device_id} Result report for task {task.task_name} is invalid")
+                elif result_response.status == ApiStatus.RETRY:
+                    continue
+                elif result_response.status != ApiStatus.OK:
+                    log.error(
+                        f"Device:{self.device_id} Result report for task {task.task_name}"
+                        f" is invalid. Status: {result_response.status}"
+                    )
                     continue
 
                 log.info(f"Device:{self.device_id} Task {task.task_name} result reported successfully")
@@ -95,7 +100,7 @@ class DeviceEmulator:
                 log.error(f"Request error. Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}")
                 time.sleep(5)
 
-    def fetch_task(self, job: JobResponse) -> TaskResponse:
+    def fetch_task(self, job: JobResponse) -> Optional[TaskResponse]:
         while True:
             try:
                 task = self.feg_api.get_task(job)

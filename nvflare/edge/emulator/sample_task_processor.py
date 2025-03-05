@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+from typing import Optional
 
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.device_info import DeviceInfo
@@ -23,12 +24,13 @@ log = logging.getLogger(__name__)
 
 
 class SampleTaskProcessor(DeviceTaskProcessor):
-    def __init__(self, device_info: DeviceInfo, user_info: UserInfo):
-        super().__init__(device_info, user_info)
+    def __init__(self, data_file: str, parameters: Optional[dict]):
+        self.data_file = data_file
+        self.parameters = parameters
         self.job_id = None
         self.job_name = None
 
-    def setup(self, job: JobResponse) -> None:
+    def setup(self, device_info: DeviceInfo, user_info: UserInfo, job: JobResponse) -> None:
         self.job_id = job.job_id
         self.job_name = job.job_name
         # job.job_data contains data needed to set up the training
