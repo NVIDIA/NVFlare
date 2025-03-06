@@ -30,6 +30,14 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.edge.aggregators.edge_json_accumulator import EdgeJsonAccumulator
 from nvflare.security.logging import secure_format_exception
 
+# Define the XOR dataset
+X = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
+y = torch.tensor([0, 1, 1, 0], dtype=torch.float32)
+# Import tensorboard
+from torch.utils.tensorboard import SummaryWriter
+
+tb_writer = SummaryWriter()
+
 
 class EdgeExecutorchController(Controller):
     def __init__(
@@ -145,11 +153,21 @@ class EdgeExecutorchController(Controller):
                 # Update model weights using aggregated gradients
                 self._update_model(aggregated_grads)
 
+                # Evaluate the model
+                with torch.no_grad():
+                    test_output = self.model.net(X).detach().argmax(dim=1)
+                    # compute the accuracy
+                    accuracy = (test_output == y).sum().item() / y.size(0)
+                    tb_writer.add_scalar("acc", accuracy, i)
+
                 if abort_signal.triggered:
                     return
 
             final_weights = self.model.state_dict()
             self.log_info(fl_ctx, f"Finished Mobile Training. Final weights: {final_weights}")
+            # save the final model
+            torch.save(self.model.state_dict(), "xor_model.pth")
+
         except Exception as e:
             error_msg = f"Exception in mobile control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
