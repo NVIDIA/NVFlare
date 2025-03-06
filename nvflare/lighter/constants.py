@@ -61,6 +61,9 @@ class PropKey:
     CUSTOM_CA_CERT = "custom_ca_cert"
     SCHEME = "scheme"
     RUN_IN_DOCKER = "run_in_docker"
+    CAPACITY = "capacity"
+    NUM_GPUS = "num_of_gpus"
+    GPU_MEM = "mem_per_gpu_in_GiB"
 
     # the following are internal properties added by builders during provision
     PARENT = "parent"

@@ -298,10 +298,23 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
 
+        num_gpus = 0
+        gpu_mem = 0
+        capacity = client.get_prop(PropKey.CAPACITY)
+        if capacity:
+            num_gpus = capacity.get(PropKey.NUM_GPUS, 0)
+            gpu_mem = capacity.get(PropKey.GPU_MEM, 0)
+
+        replacement_dict = {
+            "num_gpus": num_gpus,
+            "gpu_mem": gpu_mem,
+        }
+
         ctx.build_from_template(
             dest_dir,
             TemplateSectionKey.LOCAL_CLIENT_RESOURCES,
             ProvFileName.RESOURCES_JSON_DEFAULT,
+            replacement=replacement_dict,
             content_modify_cb=self._modify_error_sender,
             client=client,
         )
