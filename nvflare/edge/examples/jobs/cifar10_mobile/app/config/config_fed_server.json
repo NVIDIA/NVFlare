@@ -7,8 +7,8 @@
             "path": "edge_executorch_controller.EdgeExecutorchController",
             "args": {
                 "num_rounds": "{num_rounds}",
-                "input_shape": [1, 2],
-                "output_shape": [1]
+                "input_shape": [32, 3, 32, 32],
+                "output_shape": [32]
             }
         }
     ]

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import time
 from typing import Any
 
@@ -18,6 +19,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable
 from nvflare.edge.aggregators.edge_result_accumulator import EdgeResultAccumulator
+from nvflare.edge.constants import MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
@@ -57,7 +59,7 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
     def convert_task(self, task_data: Shareable) -> dict:
         """Convert task_data to a plain dict"""
 
-        return {"weights": task_data.get("weights"), "task_id": self.task_id}
+        return {MsgKey.PAYLOAD: task_data[MsgKey.PAYLOAD], "task_id": self.task_id}
 
     def convert_result(self, result: dict) -> Shareable:
         """Convert result from device to shareable"""
@@ -107,7 +109,7 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         self.num_results = 0  # Number of devices reported results
 
     def is_task_done(self, fl_ctx: FLContext) -> bool:
-        return time.time() - self.start_time > self.wait_time or 0 < self.min_devices < self.num_results
+        return time.time() - self.start_time > self.wait_time or 0 < self.min_devices <= self.num_results
 
     def process_edge_request(self, request: Any, fl_ctx: FLContext) -> Any:
         self.log_info(fl_ctx, f"Received edge request: {request}")
