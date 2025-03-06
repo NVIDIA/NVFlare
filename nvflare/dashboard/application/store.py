@@ -252,7 +252,6 @@ class Store(object):
 
         capacity = req.pop("capacity", None)
         if capacity:
-            print(f"from creator: {capacity=}")
             client.capacity = json.dumps(capacity)
 
         props = req.pop("props", None)
