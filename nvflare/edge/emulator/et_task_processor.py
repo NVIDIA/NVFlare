@@ -21,10 +21,6 @@ import subprocess
 
 from nvflare.edge.constants import MsgKey
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
-from nvflare.edge.web.models.device_info import DeviceInfo
-from nvflare.edge.web.models.job_response import JobResponse
-from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.models.user_info import UserInfo
 from nvflare.edge.model_protocol import (
     ModelBufferType,
     ModelEncoding,
@@ -32,6 +28,10 @@ from nvflare.edge.model_protocol import (
     ModelNativeFormat,
     verify_payload,
 )
+from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.edge.web.models.job_response import JobResponse
+from nvflare.edge.web.models.task_response import TaskResponse
+from nvflare.edge.web.models.user_info import UserInfo
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +42,9 @@ def save_to_pte(model_string: str, filename: str):
         f.write(binary_data)
 
 
-def run_training_with_timeout(train_program: str, model_path: str, result_path: str, data_path: str, timeout_seconds: int = 300) -> int:
+def run_training_with_timeout(
+    train_program: str, model_path: str, result_path: str, data_path: str = "", timeout_seconds: int = 300
+) -> int:
     try:
         command = [train_program, "--model_path", model_path, "--output_path", result_path, "--data_path", data_path]
         process = subprocess.Popen(
@@ -90,7 +92,9 @@ def read_training_result(result_path: str = "training_result.json"):
 
 
 class ETTaskProcessor(DeviceTaskProcessor):
-    def __init__(self, device_info: DeviceInfo, user_info: UserInfo, et_binary_path: str, et_model_path: str, data_path: str):
+    def __init__(
+        self, device_info: DeviceInfo, user_info: UserInfo, et_binary_path: str, et_model_path: str, data_path: str
+    ):
         super().__init__(device_info, user_info)
         self.job_id = None
         self.job_name = None
@@ -121,13 +125,13 @@ class ETTaskProcessor(DeviceTaskProcessor):
 
     def process_task(self, task: TaskResponse) -> dict:
         """Process received task and return results.
-        
+
         Args:
             task: The task response containing model and instructions
-            
+
         Returns:
             dict: Results from training
-            
+
         Raises:
             ValueError: If task data is invalid or protocol validation fails
             RuntimeError: If training operations fail
@@ -140,10 +144,10 @@ class ETTaskProcessor(DeviceTaskProcessor):
 
         # Validate inputs first - fail fast if invalid
         payload = verify_payload(
-            task.task_data,
+            task.task_data[MsgKey.PAYLOAD],
             expected_type=ModelBufferType.EXECUTORCH,
             expected_format=ModelNativeFormat.BINARY,
-            expected_encoding=ModelEncoding.BASE64
+            expected_encoding=ModelEncoding.BASE64,
         )
 
         # Save model to disk for training
@@ -156,11 +160,7 @@ class ETTaskProcessor(DeviceTaskProcessor):
         # Run training with timeout
         try:
             result = run_training_with_timeout(
-                self.train_binary,
-                self.model_path,
-                self.result_path,
-                self.data_path,
-                timeout_seconds=600
+                self.train_binary, self.model_path, self.result_path, self.data_path, timeout_seconds=600
             )
             log.info("Training completed successfully")
         except subprocess.TimeoutExpired as e:

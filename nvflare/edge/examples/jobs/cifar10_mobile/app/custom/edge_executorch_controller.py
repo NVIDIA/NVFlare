@@ -29,6 +29,9 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.edge.aggregators.edge_json_accumulator import EdgeJsonAccumulator
 from nvflare.edge.constants import MsgKey
+from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding
+from nvflare.edge.model_protocol import ModelExchangeFormat as MEF
+from nvflare.edge.model_protocol import ModelNativeFormat
 from nvflare.security.logging import secure_format_exception
 
 
@@ -106,7 +109,12 @@ class EdgeExecutorchController(Controller):
 
                 # Compose shareable
                 task_data = Shareable()
-                task_data[MsgKey.PAYLOAD] = encoded_buffer
+                task_data[MsgKey.PAYLOAD] = {
+                    MEF.MODEL_BUFFER: encoded_buffer,
+                    MEF.MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
+                    MEF.MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.BINARY,
+                    MEF.MODEL_BUFFER_ENCODING: ModelEncoding.BASE64,
+                }
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
                 task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self.current_round)
@@ -147,7 +155,6 @@ class EdgeExecutorchController(Controller):
                 # Convert aggregated gradients to PyTorch tensors
                 divide_factor = aggr_result["num_devices"]
                 aggregated_grads = self._tensor_from_json(aggr_result[MsgKey.RESULT], divide_factor)
-                #self.log_info(fl_ctx, f"Aggregated gradients as Tensor: {aggregated_grads}")
 
                 # Update model weights using aggregated gradients
                 self._update_model(aggregated_grads)
@@ -157,6 +164,9 @@ class EdgeExecutorchController(Controller):
 
             final_weights = self.model.state_dict()
             self.log_info(fl_ctx, "Finished Mobile Training.")
+            # save the final model
+            torch.save(self.model.state_dict(), "cifar10_model.pth")
+
         except Exception as e:
             error_msg = f"Exception in mobile control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)

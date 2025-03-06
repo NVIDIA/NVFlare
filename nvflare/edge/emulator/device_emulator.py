@@ -52,7 +52,7 @@ class DeviceEmulator:
             while True:
                 task = self.fetch_task(job)
                 if not task:
-                    log.info(f"Job is done")
+                    log.info("Job is done")
                     break
                 log.info(f"Device:{self.device_id} Received task.")
 

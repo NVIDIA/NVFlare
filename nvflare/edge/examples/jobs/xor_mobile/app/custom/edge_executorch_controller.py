@@ -29,14 +29,10 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.edge.aggregators.edge_json_accumulator import EdgeJsonAccumulator
 from nvflare.edge.constants import MsgKey
+from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding
+from nvflare.edge.model_protocol import ModelExchangeFormat as MEF
+from nvflare.edge.model_protocol import ModelNativeFormat
 from nvflare.security.logging import secure_format_exception
-from nvflare.edge.model_protocol import (
-    ModelExchangeFormat as MEF,
-    ModelBufferType,
-    ModelNativeFormat,
-    ModelEncoding
-)
-
 
 # Define the XOR dataset
 X = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
@@ -125,7 +121,7 @@ class EdgeExecutorchController(Controller):
                     MEF.MODEL_BUFFER: encoded_buffer,
                     MEF.MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
                     MEF.MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.BINARY,
-                    MEF.MODEL_BUFFER_ENCODING: ModelEncoding.BASE64
+                    MEF.MODEL_BUFFER_ENCODING: ModelEncoding.BASE64,
                 }
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
