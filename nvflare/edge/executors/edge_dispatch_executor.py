@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import time
-from threading import Lock
 from typing import Any
 
 from nvflare.apis.event_type import EventType
@@ -50,7 +49,6 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         self.aggregator_id = aggregator_id
         self.aggregator = None
         self.register_event_handler(EventType.START_RUN, self.setup)
-        self.lock = Lock()
 
     def setup(self, _event_type, fl_ctx: FLContext):
         if self.aggregator_id:
@@ -96,9 +94,8 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
             return ResultResponse("OK", task_id=self.task_id, task_name=self.task_name, message=msg)
 
         result = self.convert_result(report.result)
-        with self.lock:
-            self.aggregator.accept(result, fl_ctx)
-            self.num_results += 1
+        self.aggregator.accept(result, fl_ctx)
+        self.num_results += 1
         return ResultResponse("OK", task_id=self.task_id, task_name=self.task_name)
 
     def task_received(self, task_name: str, task_data: Shareable, fl_ctx: FLContext):
@@ -109,12 +106,10 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         self.task_data = task_data
         self.task_sequence += 1
         self.devices = {}  # Devices got this task
-        with self.lock:
-            self.num_results = 0  # Number of devices reported results
+        self.num_results = 0  # Number of devices reported results
 
     def is_task_done(self, fl_ctx: FLContext) -> bool:
-        with self.lock:
-            return time.time() - self.start_time > self.wait_time or 0 < self.min_devices <= self.num_results
+        return time.time() - self.start_time > self.wait_time or 0 < self.min_devices <= self.num_results
 
     def process_edge_request(self, request: Any, fl_ctx: FLContext) -> Any:
         self.log_info(fl_ctx, f"Received edge request: {request}")
