@@ -352,6 +352,9 @@ def participant_from_dict(participant_def: dict) -> Participant:
     Returns: a Participant object
 
     """
+    if not isinstance(participant_def, dict):
+        raise ValueError(f"participant_def must be dict but got {type(participant_def)}")
+
     name = _must_get(participant_def, PropKey.NAME)
     t = _must_get(participant_def, PropKey.TYPE)
     org = _must_get(participant_def, PropKey.ORG)
