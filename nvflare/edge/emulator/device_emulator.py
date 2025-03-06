@@ -52,13 +52,13 @@ class DeviceEmulator:
             while True:
                 task = self.fetch_task(job)
                 if not task:
-                    log.info(f"Job {job.job_Id} is done")
+                    log.info("Job is done")
                     break
-                log.info(f"Device:{self.device_id} Received task: {task}")
+                log.info(f"Device:{self.device_id} Received task.")
 
                 # Catch exception
                 result = self.processor.process_task(task)
-                log.info(f"Device:{self.device_id} Task processed. Result: {result}")
+                log.info(f"Device:{self.device_id} Task processed.")
                 # Check result
                 result_response = self.feg_api.report_result(task, result)
                 log.info(f"Device:{self.device_id} Received result response: {result_response}")
@@ -110,6 +110,8 @@ class DeviceEmulator:
                     wait = task.retry_wait if task.retry_wait else 5
                     log.info(f"Device:{self.device_id} Retrying getting task in {wait} seconds")
                     time.sleep(wait)
+                else:
+                    raise ApiError(500, f"wrong status: {task.status}")
             except ApiError as error:
                 log.error(f"Request error. Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}")
                 time.sleep(5)

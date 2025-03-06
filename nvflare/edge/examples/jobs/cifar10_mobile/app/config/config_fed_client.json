@@ -14,7 +14,7 @@
                     "aggregator_id": "aggregator",
                     "aggr_timeout": 180,
                     "min_responses": 1,
-                    "wait_time_after_min_resps_received": 5
+                    "wait_time_after_min_resps_received": 10
                 }
              }
         }

@@ -1,0 +1,4 @@
+{
+  "class_path": "et_task_processor.ETTaskProcessor",
+  "class_args": {"et_binary_path": "train_xor", "et_model_path": "xor.pte", "data_path": ""}
+}

@@ -34,3 +34,8 @@ class EdgeContextKey:
 class EdgeEventType:
     EDGE_REQUEST_RECEIVED = "_edge_request_received"
     EDGE_JOB_REQUEST_RECEIVED = "_edge_job_request_received"
+
+
+class MsgKey:
+    PAYLOAD = "payload"
+    RESULT = "result"

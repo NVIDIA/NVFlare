@@ -34,14 +34,6 @@ from nvflare.edge.model_protocol import ModelExchangeFormat as MEF
 from nvflare.edge.model_protocol import ModelNativeFormat
 from nvflare.security.logging import secure_format_exception
 
-# Define the XOR dataset
-X = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
-y = torch.tensor([0, 1, 1, 0], dtype=torch.float32)
-# Import tensorboard
-from torch.utils.tensorboard import SummaryWriter
-
-tb_writer = SummaryWriter()
-
 
 class EdgeExecutorchController(Controller):
     def __init__(
@@ -163,17 +155,9 @@ class EdgeExecutorchController(Controller):
                 # Convert aggregated gradients to PyTorch tensors
                 divide_factor = aggr_result["num_devices"]
                 aggregated_grads = self._tensor_from_json(aggr_result[MsgKey.RESULT], divide_factor)
-                self.log_info(fl_ctx, f"Aggregated gradients as Tensor: {aggregated_grads}")
 
                 # Update model weights using aggregated gradients
                 self._update_model(aggregated_grads)
-
-                # Evaluate the model
-                with torch.no_grad():
-                    test_output = self.model.net(X).detach().argmax(dim=1)
-                    # compute the accuracy
-                    accuracy = (test_output == y).sum().item() / y.size(0)
-                    tb_writer.add_scalar("acc", accuracy, i)
 
                 if abort_signal.triggered:
                     return
@@ -181,7 +165,7 @@ class EdgeExecutorchController(Controller):
             final_weights = self.model.state_dict()
             self.log_info(fl_ctx, "Finished Mobile Training.")
             # save the final model
-            torch.save(self.model.state_dict(), "xor_model.pth")
+            torch.save(self.model.state_dict(), "cifar10_model.pth")
 
         except Exception as e:
             error_msg = f"Exception in mobile control_flow: {secure_format_exception(e)}"
