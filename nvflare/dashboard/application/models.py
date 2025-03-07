@@ -38,16 +38,6 @@ class Role(CommonMixin, db.Model):
     pass
 
 
-class Capacity(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    capacity = db.Column(db.String(1024), default="")
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    def asdict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
-
-
 def _fix_props(obj, table_dict: dict, column: str):
     value = getattr(obj, column)
     if value:
@@ -89,14 +79,13 @@ class Project(db.Model):
 
 
 class Client(CommonMixin, db.Model):
-    capacity_id = db.Column(db.Integer, db.ForeignKey("capacity.id"), nullable=False)
     name = db.Column(db.String(512), unique=True)
     organization_id = db.Column(db.Integer, db.ForeignKey("organization.id"), nullable=False)
-    capacity = db.relationship("Capacity", backref="clients")
     organization = db.relationship("Organization", backref="clients")
     creator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     approval_state = db.Column(db.Integer, default=0)
     download_count = db.Column(db.Integer, default=0)
+    capacity = db.Column(db.String(2048), default="")  # JSON string
     props = db.Column(db.String(2048), default="")  # additional properties - JSON string
 
     def asdict(self):
@@ -104,10 +93,10 @@ class Client(CommonMixin, db.Model):
         table_dict.update(
             {
                 "organization": self.organization.name,
-                "capacity": json.loads(self.capacity.capacity),
             }
         )
         _fix_props(self, table_dict, "props")
+        _fix_props(self, table_dict, "capacity")
         return table_dict
 
 

@@ -298,10 +298,23 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(dest_dir, TemplateSectionKey.LOG_CONFIG, ProvFileName.LOG_CONFIG_DEFAULT)
 
+        num_gpus = 0
+        gpu_mem = 0
+        capacity = client.get_prop(PropKey.CAPACITY)
+        if capacity:
+            num_gpus = capacity.get(PropKey.NUM_GPUS, 0)
+            gpu_mem = capacity.get(PropKey.GPU_MEM, 0)
+
+        replacement_dict = {
+            "num_gpus": num_gpus,
+            "gpu_mem": gpu_mem,
+        }
+
         ctx.build_from_template(
             dest_dir,
             TemplateSectionKey.LOCAL_CLIENT_RESOURCES,
             ProvFileName.RESOURCES_JSON_DEFAULT,
+            replacement=replacement_dict,
             content_modify_cb=self._modify_error_sender,
             client=client,
         )
@@ -860,14 +873,17 @@ class StaticFileBuilder(Builder):
                     temp_section=TemplateSectionKey.COMM_CONFIG,
                     file_name=ProvFileName.COMM_CONFIG,
                     replacement=replacement_dict,
-                    content_modify_cb=self._remove_undefined_port,
+                    content_modify_cb=_remove_undefined_port,
                 )
 
         # create start_all.sh
         self._create_start_all(project, ctx)
 
     @staticmethod
-    def _create_start_all(project: Project, ctx: ProvisionContext):
+    def _append(content: str, participant: Participant) -> str:
+        return content + f"./{participant.name}/startup/start.sh\n"
+
+    def _create_start_all(self, project: Project, ctx: ProvisionContext):
         """Create the start_all.sh script to be used for starting all sites (server, relays and clients).
         This is a convenience script and not part of any site's startup kit.
 
@@ -880,8 +896,8 @@ class StaticFileBuilder(Builder):
         """
         content = "#!/usr/bin/env bash\n"
 
-        server = ctx.get_project().get_server()
-        content += f"./{server.name}/startup/start.sh\n"
+        server = project.get_server()
+        content = self._append(content, server)
 
         # include all relays
         relays = project.get_relays()
@@ -889,40 +905,41 @@ class StaticFileBuilder(Builder):
             # sort relays based on their FQCNs
             relays.sort(key=lambda x: len(x.get_prop(PropKey.FQCN)))
             for r in relays:
-                content += f"./{r.name}/startup/start.sh\n"
+                content = self._append(content, r)
 
         # include all clients
         for c in project.get_clients():
-            content += f"./{c.name}/startup/start.sh\n"
+            content = self._append(content, c)
 
         utils.write(os.path.join(ctx.get_wip_dir(), "start_all.sh"), content, "t", exe=True)
 
-    def _remove_undefined_port(self, section: str) -> str:
-        """This is the callback for checking and removing undefined port number for comm_config.
-        Since the templating system does not allow conditional args, each arg must have a value when
-        generating the section from the template. We used port 0 to represent undefined port number.
-        We must remove undefined port number from comm_config; otherwise Flare wouldn't work in run time.
 
-        Args:
-            section: the section data to be checked
+def _remove_undefined_port(section: str) -> str:
+    """This is the callback for checking and removing undefined port number for comm_config.
+    Since the templating system does not allow conditional args, each arg must have a value when
+    generating the section from the template. We used port 0 to represent undefined port number.
+    We must remove undefined port number from comm_config; otherwise Flare wouldn't work in run time.
 
-        Returns: modified section data
+    Args:
+        section: the section data to be checked
 
-        """
-        # section is JSON string - convert to dict for easy check and modification
-        section_dict = json.loads(section)
-        resources = section_dict.get("internal", {}).get("resources")
-        if resources:
-            port = resources.get(PropKey.PORT)
-            if port is None or port == 0:
-                # this is undefined port - remove it
-                resources.pop(PropKey.PORT, None)
+    Returns: modified section data
 
-            # convert dict back to JSON string
-            return json.dumps(section_dict, indent=2)
-        else:
-            # no change
-            return section
+    """
+    # section is JSON string - convert to dict for easy check and modification
+    section_dict = json.loads(section)
+    resources = section_dict.get("internal", {}).get("resources")
+    if resources:
+        port = resources.get(PropKey.PORT)
+        if port is None or port == 0:
+            # this is undefined port - remove it
+            resources.pop(PropKey.PORT, None)
+
+        # convert dict back to JSON string
+        return json.dumps(section_dict, indent=2)
+    else:
+        # no change
+        return section
 
 
 def check_parent(c: Participant, path: list):

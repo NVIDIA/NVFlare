@@ -96,7 +96,7 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
 
         # the root key is protected by password
         root_pri_key = deserialize_ca_key(project.root_key)
-        proj_props = {"api_version": 3}
+        proj_props = {PropKey.API_VERSION: 3}
         if project.project_props:
             proj_props.update(json.loads(project.project_props))
 
@@ -113,9 +113,9 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
         server_name = project.server1
 
         server_props = {
-            "fed_learn_port": fl_port,
-            "admin_port": admin_port,
-            "default_host": server_name,
+            PropKey.FED_LEARN_PORT: fl_port,
+            PropKey.ADMIN_PORT: admin_port,
+            PropKey.DEFAULT_HOST: server_name,
         }
         if project.server_props:
             server_props.update(json.loads(project.server_props))
@@ -152,6 +152,10 @@ def _prepare_client(prov_project: ProvProject, client_id):
         props = json.loads(client.props)
     else:
         props = {}
+
+    if client.capacity:
+        props[PropKey.CAPACITY] = json.loads(client.capacity)
+
     return prov_project.add_client(name=client.name, org=client.organization.name, props=props)
 
 

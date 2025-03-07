@@ -29,13 +29,13 @@ class TestProject:
     def test_single_server(self):
         p1 = Participant(name="server1", org="org", type="server")
         p2 = Participant(name="server2", org="org", type="server")
-        with pytest.raises(ValueError, match=r".* already has a server defined"):
+        with pytest.raises(ValueError, match=r".* server already exists"):
             _ = Project("name", "description", [p1, p2])
 
     def test_single_overseer(self):
         p1 = Participant(name="name1", org="org", type="overseer")
         p2 = Participant(name="name2", org="org", type="overseer")
-        with pytest.raises(ValueError, match=r".* already has an overseer defined"):
+        with pytest.raises(ValueError, match=r".* overseer already exists"):
             _ = Project("name", "description", [p1, p2])
 
     def test_get_clients(self):
@@ -55,14 +55,13 @@ class TestProject:
         assert all(c[i].name == p[i].name and c[i].org == p[i].org for i in range(len(p)))
 
     def test_admin_role_required(self):
-        p = create_participants(type="admin", number=3, org="org", name="admin@nvidia.com")
         with pytest.raises(ValueError, match=r"missing role *."):
-            _ = Project("name", "description", p)
+            create_participants(type="admin", number=3, org="org", name="admin@nvidia.com")
 
     def test_bad_admin_role(self):
-        with pytest.raises(ValueError, match=r"bad value for role *."):
+        with pytest.raises(ValueError, match=r"bad role value *."):
             _ = create_participants(
-                type="admin", number=3, org="org", name="admin@nvidia.com", props={"role": "invalid"}
+                type="admin", number=3, org="org", name="admin@nvidia.com", props={"role": "invalid~~"}
             )
 
     @pytest.mark.parametrize(

@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Optional
+from typing import Any, List, Optional, Union
 
 from nvflare.apis.utils.format_check import name_check
 
-from .constants import AdminRole, ConnSecurity, ParticipantType, PropKey
+from .constants import DEFINED_PARTICIPANT_TYPES, DEFINED_ROLES, ConnSecurity, ParticipantType, PropKey
 
 
 class ListeningHost:
@@ -64,9 +64,11 @@ def _check_host_names(scope: str, prop_key: str, value):
 
 
 def _check_admin_role(scope: str, prop_key: str, value):
-    valid_roles = [AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER]
-    if value not in valid_roles:
-        raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be one of {valid_roles}")
+    if not isinstance(value, str):
+        raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be str but got {type(value)}")
+
+    if not value:
+        raise ValueError(f"empty value for {prop_key} '{value}' in {scope}")
 
 
 def parse_connect_to(value, scope=None, prop_key=None) -> ConnectTo:
@@ -111,8 +113,11 @@ def _check_connect_to(scope: str, prop_key: str, value):
 
 
 def _check_conn_security(scope: str, prop_key: str, value):
+    if not isinstance(value, str):
+        raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be a str but got {type(value)}")
+
     valid_conn_secs = [ConnSecurity.CLEAR, ConnSecurity.MTLS, ConnSecurity.TLS]
-    if value not in valid_conn_secs:
+    if value.lower() not in valid_conn_secs:
         raise ValueError(f"bad value for {prop_key} '{value}' in {scope}: must be one of {valid_conn_secs}")
 
 
@@ -234,13 +239,34 @@ class Participant(Entity):
         """
         Entity.__init__(self, f"{type}::{name}", name, props, parent=project)
 
-        err, reason = name_check(name, type)
-        if err:
-            raise ValueError(reason)
+        if type in DEFINED_PARTICIPANT_TYPES:
+            err, reason = name_check(name, type)
+            if err:
+                raise ValueError(reason)
+        else:
+            err, reason = name_check(type, "simple_name")
+            if err:
+                raise ValueError(reason)
+            print(f"Warning: participant type '{type}' of {name} is not a defined type {DEFINED_PARTICIPANT_TYPES}")
 
         err, reason = name_check(org, "org")
         if err:
             raise ValueError(reason)
+
+        if type == ParticipantType.ADMIN:
+            if not props:
+                raise ValueError(f"missing role for admin '{name}'")
+
+            role = props.get(PropKey.ROLE)
+            if not role:
+                raise ValueError(f"missing role for admin '{name}'")
+
+            err, reason = name_check(role, "simple_name")
+            if err:
+                raise ValueError(f"bad role value '{role}' for admin '{name}': {reason}")
+
+            if role not in DEFINED_ROLES:
+                print(f"Warning: '{role}' of admin '{name}' is not a defined role {DEFINED_ROLES}")
 
         self.type = type
         self.org = org
@@ -261,6 +287,11 @@ class Participant(Entity):
             return self.name
 
     def get_listening_host(self) -> Optional[ListeningHost]:
+        """Get listening host property of the participant
+
+        Returns: a ListeningHost object, or None if the property is not defined.
+
+        """
         h = self.get_prop(PropKey.LISTENING_HOST)
         if not h:
             return None
@@ -284,6 +315,11 @@ class Participant(Entity):
         return lh
 
     def get_connect_to(self) -> Optional[ConnectTo]:
+        """Get the connect_to property of the participant
+
+        Returns: a ConnectTo object
+
+        """
         h = self.get_prop(PropKey.CONNECT_TO)
         if not h:
             return None
@@ -291,20 +327,38 @@ class Participant(Entity):
             return parse_connect_to(h)
 
 
-def participant_from_dict(participant_def: dict, project=None) -> Participant:
-    name = participant_def.pop("name", None)
-    if not name:
-        raise ValueError("missing participant name")
+def _must_get(d: dict, key: str):
+    """Must get property of the specified key from the dict
 
-    type = participant_def.pop("type", None)
-    if not type:
-        raise ValueError("missing participant type")
+    Args:
+        d: the dict that contains participant properties
+        key: key of the property to get
 
-    org = participant_def.pop("org", None)
-    if org:
-        raise ValueError("missing participant org")
+    Returns: the value of the property. If the property does not exist, ValueError exception is raised.
 
-    return Participant(type=type, name=name, org=org, props=participant_def, project=project)
+    """
+    v = d.pop(key, None)
+    if not v:
+        raise ValueError(f"missing participant {key}")
+    return v
+
+
+def participant_from_dict(participant_def: dict) -> Participant:
+    """Create a Participant from a dict that contains participant property definitions.
+
+    Args:
+        participant_def: the dict that contains participant definition
+
+    Returns: a Participant object
+
+    """
+    if not isinstance(participant_def, dict):
+        raise ValueError(f"participant_def must be dict but got {type(participant_def)}")
+
+    name = _must_get(participant_def, PropKey.NAME)
+    t = _must_get(participant_def, PropKey.TYPE)
+    org = _must_get(participant_def, PropKey.ORG)
+    return Participant(type=t, name=name, org=org, props=participant_def)
 
 
 class Project(Entity):
@@ -343,10 +397,8 @@ class Project(Entity):
         self.root_private_key = root_private_key
         self.server = None
         self.overseer = None
-        self.clients = []
-        self.admins = []
-        self.relays = []
-        self.all_names = {}
+        self._participants_by_types = {}  # participant type => list of participants
+        self._all_names = {}  # name => participant
 
         if participants:
             if not isinstance(participants, list):
@@ -355,31 +407,22 @@ class Project(Entity):
             for p in participants:
                 if not isinstance(p, Participant):
                     raise ValueError(f"bad item in participants: must be Participant but got {type(p)}")
+                self.add_participant(p)
 
-                if p.type == ParticipantType.SERVER:
-                    self.set_server(p.name, p.org, p.props)
-                elif p.type == ParticipantType.ADMIN:
-                    self.add_admin(p.name, p.org, p.props)
-                elif p.type == ParticipantType.CLIENT:
-                    self.add_client(p.name, p.org, p.props)
-                elif p.type == ParticipantType.OVERSEER:
-                    self.set_overseer(p.name, p.org, p.props)
-                else:
-                    raise ValueError(f"invalid value for ParticipantType: {p.type}")
+    def set_server(self, name: str, org: str, props: dict) -> Participant:
+        """Set the server of the project.
 
-    def _check_unique_name(self, name: str):
-        if name in self.all_names:
-            raise ValueError(f"the project {self.name} already has a participant with the name '{name}'")
+        Args:
+            name: name of the server.
+            org: org of the server
+            props: additional server properties.
 
-    def set_server(self, name: str, org: str, props: dict):
-        if self.server:
-            raise ValueError(f"project {self.name} already has a server defined")
-        self._check_unique_name(name)
-        self.server = Participant(ParticipantType.SERVER, name, org, props, self)
-        self.all_names[name] = True
-        return self.server
+        Returns: a Participant object for the server
 
-    def get_server(self):
+        """
+        return self.add_participant(Participant(ParticipantType.SERVER, name, org, props))
+
+    def get_server(self) -> Optional[Participant]:
         """Get the server definition. Only one server is supported!
 
         Returns: server participant
@@ -387,14 +430,10 @@ class Project(Entity):
         """
         return self.server
 
-    def set_overseer(self, name: str, org: str, props: dict):
-        if self.overseer:
-            raise ValueError(f"project {self.name} already has an overseer defined")
-        self._check_unique_name(name)
-        self.overseer = Participant(ParticipantType.OVERSEER, name, org, props, self)
-        self.all_names[name] = True
+    def set_overseer(self, name: str, org: str, props: dict) -> Participant:
+        return self.add_participant(Participant(ParticipantType.OVERSEER, name, org, props))
 
-    def get_overseer(self):
+    def get_overseer(self) -> Optional[Participant]:
         """Get the overseer definition. Only one overseer is supported!
 
         Returns: overseer participant
@@ -402,67 +441,131 @@ class Project(Entity):
         """
         return self.overseer
 
-    def add_participant(self, participant: Participant):
-        self._check_unique_name(participant.name)
+    def add_participant(self, participant: Participant) -> Participant:
+        """Add a participant to the project.
+        Before adding the participant, this method checks the following conditions:
+        - All participants in the project must have unique names
+        - Only one server is allowed in the project
+        - Only one overseer is allowed in the project
+        - Role must be specified for admin type of participant
+
+        Args:
+            participant: the participant to be added.
+
+        Returns: the participant object added.
+
+        """
+        if participant.name in self._all_names:
+            raise ValueError(f"the project {self.name} already has a participant with the name '{participant.name}'")
+
         participant.parent = self
-        if participant.type == ParticipantType.CLIENT:
-            self.clients.append(participant)
-        elif participant.type == ParticipantType.RELAY:
-            self.relays.append(participant)
-        elif participant.type == ParticipantType.SERVER:
+        if participant.type == ParticipantType.SERVER:
             if self.server:
                 raise ValueError(f"cannot add participant {participant.name} as server - server already exists")
             self.server = participant
-        elif participant.type == ParticipantType.ADMIN:
-            self.admins.append(participant)
         elif participant.type == ParticipantType.OVERSEER:
             if self.overseer:
                 raise ValueError(f"cannot add participant {participant.name} as overseer - overseer already exists")
             self.overseer = participant
-        else:
-            raise ValueError(f"invalid participant type: {participant.type}")
-        self.all_names[participant.name] = True
 
-    def add_client(self, name: str, org: str, props: dict):
-        self._check_unique_name(name)
-        client = Participant(ParticipantType.CLIENT, name, org, props, self)
-        self.clients.append(client)
-        self.all_names[name] = True
-        return client
+        participants = self._participants_by_types.get(participant.type)
+        if not participants:
+            participants = []
+            self._participants_by_types[participant.type] = participants
+        participants.append(participant)
+        self._all_names[participant.name] = participant
+        return participant
 
-    def get_clients(self):
-        return self.clients
+    def add_client(self, name: str, org: str, props: dict) -> Participant:
+        """Add a client to the project
 
-    def add_relay(self, name: str, org: str, props: dict):
-        self._check_unique_name(name)
-        self.relays.append(Participant(ParticipantType.RELAY, name, org, props, self))
-        self.all_names[name] = True
+        Args:
+            name: name of the client
+            org: org of the client
+            props: additional properties of the client
 
-    def get_relays(self):
-        return self.relays
+        Returns: the Participant object of the client
 
-    def add_admin(self, name: str, org: str, props: dict):
-        self._check_unique_name(name)
-        admin = Participant(ParticipantType.ADMIN, name, org, props, self)
-        role = admin.get_prop(PropKey.ROLE)
-        if not role:
-            raise ValueError(f"missing role in admin '{name}'")
-        self.admins.append(admin)
-        self.all_names[name] = True
-        return admin
+        """
+        return self.add_participant(Participant(ParticipantType.CLIENT, name, org, props))
 
-    def get_admins(self):
-        return self.admins
+    def get_clients(self) -> List[Participant]:
+        """Get all clients of the project
 
-    def get_all_participants(self):
+        Returns: a list of clients
+
+        """
+        return self.get_all_participants(ParticipantType.CLIENT)
+
+    def add_relay(self, name: str, org: str, props: dict) -> Participant:
+        """Add a relay to the project
+
+        Args:
+            name: name of the relay
+            org: org of the relay
+            props: additional properties of the relay
+
+        Returns: the relay Participant object
+
+        """
+        return self.add_participant(Participant(ParticipantType.RELAY, name, org, props))
+
+    def get_relays(self) -> List[Participant]:
+        """Get all relays of the project
+
+        Returns: the list of relays of the project
+
+        """
+        return self.get_all_participants(ParticipantType.RELAY)
+
+    def add_admin(self, name: str, org: str, props: dict) -> Participant:
+        """Add an admin user to the project
+
+        Args:
+            name: name of the admin user.
+            org: org of the admin user.
+            props: properties of the user definition
+
+        Returns: a Participant object of the admin user
+
+        """
+        return self.add_participant(Participant(ParticipantType.ADMIN, name, org, props))
+
+    def get_admins(self) -> List[Participant]:
+        """Get the list of admin users
+
+        Returns: list of admin users
+
+        """
+        return self.get_all_participants(ParticipantType.ADMIN)
+
+    def get_all_participants(self, types: Union[None, str, List[str]] = None):
+        """Get all participants of the project of specified types.
+
+        Args:
+            types: types of the participants to be returned.
+
+        Returns: all participants of the project of specified types.
+            If 'types' is not specified (None), it returns all participants of the project;
+            If 'types' is a str, it is treated as a single type and participants of this type is returned;
+            If 'types' is a list of types, participants of these types are returned;
+
+        """
+        if not types:
+            # get all types
+            return list(self._all_names.values())
+
+        if isinstance(types, str):
+            types = [types]
+        elif not isinstance(types, list):
+            raise ValueError(f"types must be a str or List[str] but got {type(types)}")
+
         result = []
-        if self.server:
-            result.append(self.server)
-
-        if self.overseer:
-            result.append(self.overseer)
-
-        result.extend(self.clients)
-        result.extend(self.relays)
-        result.extend(self.admins)
+        processed_types = []  # in case 'types' contains duplicates
+        for t in types:
+            if t not in processed_types:
+                ps = self._participants_by_types.get(t)
+                if ps:
+                    result.extend(ps)
+                processed_types.append(t)
         return result
