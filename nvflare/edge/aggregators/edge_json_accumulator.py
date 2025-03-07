@@ -11,11 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import numpy as np
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.edge.constants import MsgKey
 
 
 class EdgeJsonAccumulator(Aggregator):
@@ -37,9 +39,7 @@ class EdgeJsonAccumulator(Aggregator):
         return weight_base
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
-        self.log_info(fl_ctx, f"Accepting: {shareable}")
-
-        weight_to_add = shareable.get("weights")
+        weight_to_add = shareable.get(MsgKey.RESULT)
         if weight_to_add is None:
             return True
 
@@ -49,6 +49,7 @@ class EdgeJsonAccumulator(Aggregator):
         if num_devices_to_add is None:
             num_devices_to_add = 1
         self.num_devices += num_devices_to_add
+        self.log_info(fl_ctx, f"Accepting result with {num_devices_to_add}")
 
         # add new weights to the existing weights
         if self.weights is None:
@@ -63,4 +64,4 @@ class EdgeJsonAccumulator(Aggregator):
         self.num_devices = 0
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        return Shareable({"weights": self.weights, "num_devices": self.num_devices})
+        return Shareable({MsgKey.RESULT: self.weights, "num_devices": self.num_devices})

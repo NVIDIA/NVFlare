@@ -11,31 +11,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 
 
-class Status(CellReturnCode):
-    NO_TASK = "no_task"
-    NO_JOB = "no_job"
+import torch
 
+# (1) import nvflare client API
+import nvflare.client as flare
 
-class EdgeProtoKey:
-    STATUS = "status"
-    DATA = "data"
+# (2) initializes NVFlare client API
+flare.init()
 
+while flare.is_running():
+    # (3) receives FLModel from NVFlare
+    input_model = flare.receive()
+    print(f"current_round={input_model.current_round}")
 
-class EdgeContextKey:
-    JOB_ID = "__edge_job_id__"
-    EDGE_CAPABILITIES = "__edge_capabilities__"
-    REQUEST_FROM_EDGE = "__request_from_edge__"
-    REPLY_TO_EDGE = "__reply_to_edge__"
-
-
-class EdgeEventType:
-    EDGE_REQUEST_RECEIVED = "_edge_request_received"
-    EDGE_JOB_REQUEST_RECEIVED = "_edge_job_request_received"
-
-
-class MsgKey:
-    PAYLOAD = "payload"
-    RESULT = "result"
+    # (4) construct trained FL model
+    output_model = flare.FLModel(
+        params={"a": torch.Tensor([1]), "b": torch.Tensor([2])},
+    )
+    # (5) send model back to NVFlare
+    flare.send(output_model)

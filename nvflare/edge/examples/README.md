@@ -6,7 +6,7 @@ Please follow these steps to run the Edge device emulator,
 
 Use tree_prov.py to generate a hierarchical NVFlare system with 2 levels and 2 clients at each level,
 
-     python nvflare/edge/tree_prov.py -p /tmp/edge_example -d 1 -w 2
+     python nvflare/edge/tree_prov.py --root_dir /tmp -p edge_example -d 1 -w 2
 
 This will create a deployment with 2 clients, 4 leaf-clients, 2 relays, 1 server.
 

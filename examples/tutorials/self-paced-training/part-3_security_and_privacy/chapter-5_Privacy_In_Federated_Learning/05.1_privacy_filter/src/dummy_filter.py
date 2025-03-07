@@ -11,31 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 
 
-class Status(CellReturnCode):
-    NO_TASK = "no_task"
-    NO_JOB = "no_job"
+from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.dxo_filter import DXOFilter
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 
 
-class EdgeProtoKey:
-    STATUS = "status"
-    DATA = "data"
+class DummyFilter(DXOFilter):
+    def __init__(self):
+        data_kinds = [DataKind.WEIGHTS, DataKind.WEIGHT_DIFF]
+        super().__init__(supported_data_kinds=data_kinds, data_kinds_to_filter=data_kinds)
 
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext):
+        self.log_info(fl_ctx, f"Filtering DXO: data={dxo.data}, meta={dxo.meta}")
 
-class EdgeContextKey:
-    JOB_ID = "__edge_job_id__"
-    EDGE_CAPABILITIES = "__edge_capabilities__"
-    REQUEST_FROM_EDGE = "__request_from_edge__"
-    REPLY_TO_EDGE = "__reply_to_edge__"
-
-
-class EdgeEventType:
-    EDGE_REQUEST_RECEIVED = "_edge_request_received"
-    EDGE_JOB_REQUEST_RECEIVED = "_edge_job_request_received"
-
-
-class MsgKey:
-    PAYLOAD = "payload"
-    RESULT = "result"
+        return dxo
