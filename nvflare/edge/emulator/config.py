@@ -15,10 +15,13 @@ import builtins
 import importlib
 import json
 import os
+import re
 import sys
-from typing import Type
+from typing import Any, Type
 
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
+
+VAR_PATTERN = re.compile(r"\{(.*?)}")
 
 
 def load_class(class_path) -> Type:
@@ -41,11 +44,20 @@ class ConfigParser:
         self.endpoint = None
         self.num_devices = 16
         self.capabilities = {}
+        self.device_id_prefix = None
+        self.processor_class = None
+        self.processor_args = None
 
         self.parse(config_file)
 
-    def get_processor(self):
-        return self.processor
+    def get_processor(self, variables: dict = None) -> DeviceTaskProcessor:
+
+        if self.processor_args:
+            args = self._variable_substitution(self.processor_args, variables)
+        else:
+            args = {}
+
+        return self.processor_class(**args)
 
     def get_endpoint(self):
         return self.endpoint
@@ -55,6 +67,9 @@ class ConfigParser:
 
     def get_capabilities(self):
         return self.capabilities
+
+    def get_device_id_prefix(self):
+        return self.device_id_prefix
 
     def parse(self, config_file: str):
         with open(config_file, "r") as f:
@@ -75,12 +90,10 @@ class ConfigParser:
         if path is None:
             raise ValueError("path for processor is not defined in config file")
 
-        processor_args = processor_config.get("args", {})
-        process_class = load_class(path)
-        if not issubclass(process_class, DeviceTaskProcessor):
+        self.processor_args = processor_config.get("args", {})
+        self.processor_class = load_class(path)
+        if not issubclass(self.processor_class, DeviceTaskProcessor):
             raise TypeError(f"Processor {path} is not a subclass of DeviceTaskProcessor")
-
-        self.processor = process_class(**processor_args)
 
         self.endpoint = config.get("endpoint", None)
 
@@ -89,3 +102,26 @@ class ConfigParser:
             self.num_devices = n
 
         self.capabilities = config.get("capabilities", {})
+        self.device_id_prefix = config.get("device_id_prefix", None)
+
+    def _variable_substitution(self, args: Any, variables: dict) -> Any:
+        if isinstance(args, dict):
+            return {k: self._variable_substitution(v, variables) for k, v in args.items()}
+        elif isinstance(args, list):
+            return [self._variable_substitution(v, variables) for v in args]
+        elif isinstance(args, str):
+            result = args
+            offset = 0
+            for i, match in enumerate(VAR_PATTERN.finditer(result)):
+                start, end = match.span()
+                start += offset
+                end += offset
+                var = match.group(1)
+                if var in variables:
+                    var_value = variables.get(var)
+                    result = result[:start] + var_value + result[end:]
+                    offset += len(var_value) - (end - start)
+
+            return result
+        else:
+            return args

@@ -48,9 +48,14 @@ def run_emulator(config_file: str):
     with ThreadPoolExecutor(max_workers=num) as thread_pool:
         futures = []
         for i in range(num):
-            device_info = DeviceInfo(f"device-{i}", "flare_mobile", "1.0")
+            prefix = parser.get_device_id_prefix()
+            if not prefix:
+                prefix = "device-"
+            device_id = f"{prefix}{i}"
+            device_info = DeviceInfo(f"{device_id}", "flare_mobile", "1.0")
             user_info = UserInfo("demo_id", "demo_user")
-            processor = parser.get_processor()
+            variables = {"device_id": device_id, "user_id": user_info.user_id}
+            processor = parser.get_processor(variables)
             f = thread_pool.submit(
                 device_run, endpoint_url, device_info, user_info, parser.get_capabilities(), processor
             )
