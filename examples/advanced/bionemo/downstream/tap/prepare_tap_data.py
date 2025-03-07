@@ -30,7 +30,7 @@ alpha = 1.0
 
 
 def clean_chains(df):
-    a = df["Antibody"]
+    a = df["sequences"]
     b = []
     for chains in a:
         # split chains
@@ -41,16 +41,16 @@ def clean_chains(df):
         assert "\\n" not in chains
         assert "'" not in chains
         b.append(chains)
-    df["Antibody"] = b
+    df["sequences"] = b
 
     return df
 
 
 def break_chains(df):
-    out_df = {"Antibody": []}
+    out_df = {"sequences": []}
     for idx, row in df.iterrows():
         # split chains
-        chains = row["Antibody"]
+        chains = row["sequences"]
         chains = chains.replace("['", "").replace("']", "").split("'\\n '")
         assert "'" not in chains
         assert "[" not in chains
@@ -59,9 +59,9 @@ def break_chains(df):
         assert "'" not in chains
 
         for chain in chains:
-            out_df["Antibody"].append(chain)
+            out_df["sequences"].append(chain)
             for k in row.keys():
-                if k == "Antibody":
+                if k == "sequences":
                     continue
                 if k not in out_df:
                     out_df[k] = [row[k]]
@@ -80,6 +80,10 @@ def main():
     for label_name in label_list:
         data = Develop(name="TAP", label_name=label_name)
         split = data.get_split()
+
+        # rename columns to fit BioNeMo convention of "sequences" and "labels"
+        for s in ["train", "valid", "test"]:
+            split[s] = split[s].rename(columns={"Antibody": "sequences"})
 
         train_split = pd.concat([split["train"], split["valid"]])
         if train_df is None:

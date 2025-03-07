@@ -239,9 +239,9 @@ class HierarchicalAggregationManager(Executor):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if received == 0:
-            # nothing received!
-            self.log_info(fl_ctx, "nothing received - timeout")
-            return make_reply(ReturnCode.TIMEOUT)
+            # nothing received! This maybe ok
+            self.log_warning(fl_ctx, "nothing received - timeout")
+            # return make_reply(ReturnCode.TIMEOUT)
 
         try:
             self.log_info(fl_ctx, "return aggregation result")

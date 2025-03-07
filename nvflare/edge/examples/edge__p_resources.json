@@ -1,0 +1,15 @@
+{
+  "format_version": 2,
+  "components": [
+    {
+      "id": "web_agent",
+      "path": "nvflare.edge.widgets.web_agent.WebAgent",
+      "args": {}
+    },
+    {
+      "id": "etd",
+      "path": "nvflare.edge.widgets.etd.EdgeTaskDispatcher",
+      "args": {}
+    }
+  ]
+}

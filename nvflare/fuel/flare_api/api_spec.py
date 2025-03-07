@@ -198,6 +198,29 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
+    def list_job_components(self, job_id: str) -> List[str]:
+        """Get the list of additional job components for the specified job.
+
+        Args:
+            job_id (str): ID of the job
+
+        Returns: a list of the additional job components
+
+        """
+        pass
+
+    def download_job_components(self, job_id: str) -> str:
+        """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
+
+        Args:
+            job_id (str): ID of the job
+
+        Returns: folder path to the location of the downloaded additional job components
+
+        """
+        pass
+
+    @abstractmethod
     def abort_job(self, job_id: str):
         """Abort the specified job
 

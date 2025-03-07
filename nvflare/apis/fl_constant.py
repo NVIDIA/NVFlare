@@ -432,6 +432,10 @@ class WorkspaceConstants:
     JOB_RESOURCE_FILE_NAME_PATTERN = "*__j_resources.json"  # for job process only
     PARENT_RESOURCE_FILE_NAME_PATTERN = "*__p_resources.json"  # for parent process only
 
+    ENV_VAR_RESULT_ROOT = "NVFL_RESULT_ROOT"
+    ENV_VAR_LOG_ROOT = "NVFL_LOG_ROOT"
+    ENV_VAR_AUDIT_ROOT = "NVFL_AUDIT_ROOT"
+
 
 class SiteType:
     SERVER = "server"
@@ -534,6 +538,12 @@ class ConfigVarName:
 
     # these vars are set in Server's startup config (fed_server.json)
     MAX_REG_DURATION = "max_reg_duration"
+
+    # CJ: timeout for status notification message from CJ to CP
+    NOTIFY_CP_MSG_TIMEOUT = "notify_cp_msg_timeout"
+
+    # CJ: timeout for retrying status notification message from CJ to CP
+    NOTIFY_CP_RETRY_TIMEOUT = "notify_cp_retry_timeout"
 
 
 class SystemVarName:

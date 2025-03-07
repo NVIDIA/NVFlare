@@ -18,7 +18,6 @@ class WorkDir:
     WORKSPACE = "workspace"
     WIP = "wip_dir"
     STATE = "state_dir"
-    RESOURCES = "resources_dir"
     CURRENT_PROD_DIR = "current_prod_dir"
 
 
@@ -30,9 +29,20 @@ class ParticipantType:
     RELAY = "relay"
 
 
+DEFINED_PARTICIPANT_TYPES = [
+    ParticipantType.SERVER,
+    ParticipantType.CLIENT,
+    ParticipantType.ADMIN,
+    ParticipantType.OVERSEER,
+    ParticipantType.RELAY,
+]
+
+
 class PropKey:
     API_VERSION = "api_version"
     NAME = "name"
+    TYPE = "type"
+    ORG = "org"
     HOST = "host"
     DESCRIPTION = "description"
     ROLE = "role"
@@ -51,6 +61,9 @@ class PropKey:
     CUSTOM_CA_CERT = "custom_ca_cert"
     SCHEME = "scheme"
     RUN_IN_DOCKER = "run_in_docker"
+    CAPACITY = "capacity"
+    NUM_GPUS = "num_of_gpus"
+    GPU_MEM = "mem_per_gpu_in_GiB"
 
     # the following are internal properties added by builders during provision
     PARENT = "parent"
@@ -63,10 +76,10 @@ class PropKey:
 class CtxKey(WorkDir, PropKey):
     PROJECT = "__project__"
     TEMPLATE = "__template__"
+    TEMP_FILES_LOADED = "__temp_files_loaded__"
     PROVISION_MODE = "__provision_model__"
     LOGGER = "__logger__"
     LAST_PROD_STAGE = "last_prod_stage"
-    TEMPLATE_FILES = "template_files"
     SERVER_NAME = "server_name"
     ROOT_CERT = "root_cert"
     ROOT_PRI_KEY = "root_pri_key"
@@ -90,6 +103,9 @@ class AdminRole:
     ORG_ADMIN = "org_admin"
     LEAD = "lead"
     MEMBER = "member"
+
+
+DEFINED_ROLES = [AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER]
 
 
 class OverseerRole:
@@ -135,6 +151,11 @@ class TemplateSectionKey:
     HELM_CHART_DEPLOYMENT_SERVER = "helm_chart_deployment_server"
     RELAY_RESOURCES_JSON = "relay_resources_json"
     FED_RELAY = "fed_relay"
+    CLOUD_SCRIPT_HEADER = "cloud_script_header"
+    AZURE_START_SVR_HEADER_SH = "azure_start_svr_header_sh"
+    AZURE_START_COMMON_SH = "azure_start_common_sh"
+    AZURE_START_CLN_HEADER_SH = "azure_start_cln_header_sh"
+    AWS_START_SH = "aws_start_sh"
 
 
 class ProvFileName:
@@ -174,6 +195,8 @@ class ProvFileName:
     CUSTOM_CA_CERT_FILE_NAME = "customRootCA.pem"
     RELAY_RESOURCES_JSON = "relay__resources.json"
     FED_RELAY_JSON = "fed_relay.json"
+    AZURE_START_SH = "azure_start.sh"
+    AWS_START_SH = "aws_start.sh"
 
 
 class CertFileBasename:

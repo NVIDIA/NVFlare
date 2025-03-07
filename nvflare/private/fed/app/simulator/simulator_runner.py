@@ -27,6 +27,7 @@ from multiprocessing import Manager, Process
 from multiprocessing.connection import Client
 from urllib.parse import urlparse
 
+from nvflare.apis.client import Client as FLClient
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     ConfigVarName,
@@ -285,6 +286,11 @@ class SimulatorRunner(FLComponent):
             self.args.sp_scheme = parsed_url.scheme
 
             self.logger.info("Deploy the Apps.")
+
+            # add participating job clients to meta
+            job_clients = [FLClient(name, "") for name in self.client_names]
+            meta[JobMetaKey.JOB_CLIENTS] = [c.to_dict() for c in job_clients]
+
             self._deploy_apps(job_name, data_bytes, meta, log_config_file_path)
 
             server_workspace = os.path.join(self.args.workspace, SiteType.SERVER)

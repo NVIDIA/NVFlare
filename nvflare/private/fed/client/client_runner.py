@@ -26,7 +26,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
-from nvflare.edge.constants import EventType as EdgeEventType
+from nvflare.edge.constants import EdgeEventType
 from nvflare.edge.constants import Status as EdgeStatus
 from nvflare.fuel.f3.cellnet.defs import CellChannel
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -185,7 +185,7 @@ class ClientRunner(TBI):
                     self.logger.debug("no result for edge request")
                     return make_cell_reply(EdgeStatus.NO_TASK)
                 else:
-                    self.logger.info(f"sending back edge result: {reply}")
+                    self.logger.info("sending back edge result")
                     return make_cell_reply(EdgeStatus.OK, body=reply)
             except Exception as ex:
                 self.log_error(fl_ctx, f"exception from receive_edge_request: {secure_format_exception(ex)}")
