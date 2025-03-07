@@ -25,10 +25,11 @@ from nvflare.edge.web.models.user_info import UserInfo
 log = logging.getLogger(__name__)
 
 
-def device_run(endpoint_url: str, device_info: DeviceInfo, user_info: UserInfo, processor: DeviceTaskProcessor):
+def device_run(
+    endpoint_url: str, device_info: DeviceInfo, user_info: UserInfo, capabilities: dict, processor: DeviceTaskProcessor
+):
     device_id = device_info.device_id
     try:
-        capabilities = {"methods": ["xor", "cifar10"], "cpu": 16, "gpu": 1024}
         emulator = DeviceEmulator(endpoint_url, device_info, user_info, capabilities, processor)
         emulator.run()
 
@@ -50,7 +51,9 @@ def run_emulator(config_file: str):
             device_info = DeviceInfo(f"device-{i}", "flare_mobile", "1.0")
             user_info = UserInfo("demo_id", "demo_user")
             processor = parser.get_processor()
-            f = thread_pool.submit(device_run, endpoint_url, device_info, user_info, processor)
+            f = thread_pool.submit(
+                device_run, endpoint_url, device_info, user_info, parser.get_capabilities(), processor
+            )
             futures.append(f)
 
         wait(futures)

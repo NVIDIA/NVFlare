@@ -14,6 +14,7 @@
 import logging
 from typing import Optional
 
+from nvflare.edge.constants import MsgKey
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
@@ -43,12 +44,12 @@ class SampleTaskProcessor(DeviceTaskProcessor):
 
         result = None
         if task.task_name == "train":
-            weights = task.task_data["weights"]
+            weights = task.task_data[MsgKey.PAYLOAD]
             if weights:
                 w = [x * 2.0 for x in weights]
             else:
                 w = [0, 0, 0, 0]
-            result = {"weights": w}
+            result = {MsgKey.RESULT: w}
         elif task.task_name == "validate":
             result = {"accuracy": [0.01, 0.02, 0.03, 0.04]}
         else:

@@ -10,5 +10,8 @@
         "b": 456
       }
     }
+  },
+  "capabilities": {
+    "methods": ["cnn"]
   }
 }

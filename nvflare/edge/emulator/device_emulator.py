@@ -15,10 +15,10 @@ import logging
 import time
 from typing import Optional
 
+from nvflare.edge.constants import EdgeApiKey, EdgeApiStatus
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.emulator.feg_api import FegApi
 from nvflare.edge.web.models.api_error import ApiError
-from nvflare.edge.web.models.base_model import ApiKey, ApiStatus
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
@@ -66,9 +66,9 @@ class DeviceEmulator:
                 if task_done or result_response.status == "DONE":
                     log.info(f"Job {job.job_id} {job.job_name} is done")
                     break
-                elif result_response.status == ApiStatus.RETRY:
+                elif result_response.status == EdgeApiStatus.RETRY:
                     continue
-                elif result_response.status != ApiStatus.OK:
+                elif result_response.status != EdgeApiStatus.OK:
                     log.error(
                         f"Device:{self.device_id} Result report for task {task.task_name}"
                         f" is invalid. Status: {result_response.status}"
@@ -90,7 +90,7 @@ class DeviceEmulator:
                 if job.status == "OK":
                     return job
                 elif job.status == "DONE":
-                    job[ApiKey.JOB_DONE] = True
+                    job[EdgeApiKey.JOB_DONE] = True
                     return job
                 if job.status == "RETRY":
                     wait = job.retry_wait if job.retry_wait else 5
@@ -109,7 +109,7 @@ class DeviceEmulator:
                 elif task.status == "DONE":
                     task["task_done"] = True
                     return task
-                elif task.status == "NO_JOB":
+                elif task.status == "NO_TASK":
                     return None
                 elif task.status == "RETRY":
                     wait = task.retry_wait if task.retry_wait else 5

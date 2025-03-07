@@ -16,11 +16,12 @@ import importlib
 import json
 import os
 import sys
+from typing import Type
 
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 
 
-def load_class(class_path):
+def load_class(class_path) -> Type:
 
     try:
         if "." in class_path:
@@ -39,6 +40,7 @@ class ConfigParser:
         self.processor = None
         self.endpoint = None
         self.num_devices = 16
+        self.capabilities = {}
 
         self.parse(config_file)
 
@@ -50,6 +52,9 @@ class ConfigParser:
 
     def get_num_devices(self):
         return self.num_devices
+
+    def get_capabilities(self):
+        return self.capabilities
 
     def parse(self, config_file: str):
         with open(config_file, "r") as f:
@@ -82,3 +87,5 @@ class ConfigParser:
         n = config.get("num_devices", None)
         if n:
             self.num_devices = n
+
+        self.capabilities = config.get("capabilities", {})
