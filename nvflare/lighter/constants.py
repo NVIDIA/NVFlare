@@ -29,9 +29,20 @@ class ParticipantType:
     RELAY = "relay"
 
 
+DEFINED_PARTICIPANT_TYPES = [
+    ParticipantType.SERVER,
+    ParticipantType.CLIENT,
+    ParticipantType.ADMIN,
+    ParticipantType.OVERSEER,
+    ParticipantType.RELAY,
+]
+
+
 class PropKey:
     API_VERSION = "api_version"
     NAME = "name"
+    TYPE = "type"
+    ORG = "org"
     HOST = "host"
     DESCRIPTION = "description"
     ROLE = "role"
@@ -50,6 +61,9 @@ class PropKey:
     CUSTOM_CA_CERT = "custom_ca_cert"
     SCHEME = "scheme"
     RUN_IN_DOCKER = "run_in_docker"
+    CAPACITY = "capacity"
+    NUM_GPUS = "num_of_gpus"
+    GPU_MEM = "mem_per_gpu_in_GiB"
 
     # the following are internal properties added by builders during provision
     PARENT = "parent"
@@ -89,6 +103,9 @@ class AdminRole:
     ORG_ADMIN = "org_admin"
     LEAD = "lead"
     MEMBER = "member"
+
+
+DEFINED_ROLES = [AdminRole.PROJECT_ADMIN, AdminRole.ORG_ADMIN, AdminRole.LEAD, AdminRole.MEMBER]
 
 
 class OverseerRole:

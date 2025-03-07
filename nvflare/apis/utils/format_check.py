@@ -26,6 +26,7 @@ type_pattern_mapping = {
     "admin": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
     "email": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
     "org": r"^[A-Za-z0-9_]+$",
+    "simple_name": r"^[A-Za-z0-9_]+$",
 }
 
 
