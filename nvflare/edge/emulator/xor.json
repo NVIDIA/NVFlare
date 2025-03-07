@@ -1,4 +1,4 @@
 {
-  "class_path": "et_task_processor.ETTaskProcessor",
-  "class_args": {"et_binary_path": "train_xor", "et_model_path": "xor.pte", "data_path": ""}
+  "class_path": "xor_et_task_processor.XORETTaskProcessor",
+  "class_args": {"data_path": "xor_data.csv", "batch_size": 1, "shuffle": false, "num_workers": 0}
 }
