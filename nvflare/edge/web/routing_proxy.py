@@ -34,11 +34,12 @@ app = Flask(__name__)
 
 class UniformHash:
     """A hash algorithm with uniform distribution. It achieves this with following steps,
-        1. Get a hash value using SHA256
-        2. Map the hash value to a virtual hash table with a large prime number
-        3. Map the virtual bucket to real bucket by using an allocation table
+    1. Get a hash value using SHA256
+    2. Map the hash value to a virtual hash table with a large prime number
+    3. Map the virtual bucket to real bucket by using an allocation table
 
     """
+
     def __init__(self, num_buckets: int):
         self.num_buckets = num_buckets
         self.num = PRIME // num_buckets
@@ -50,7 +51,7 @@ class UniformHash:
     def hash(self, key: str) -> int:
         # The hash() function changes value every run so SHA256 is used
         sha_bytes = hashlib.sha256(key.encode()).digest()
-        sha = int.from_bytes(sha_bytes[:8], 'big')
+        sha = int.from_bytes(sha_bytes[:8], "big")
         virtual_hash = sha % PRIME
 
         start = 0
