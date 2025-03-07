@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import hashlib
 import json
 import logging
 import os
 import sys
-import zlib
 from typing import Tuple
 from urllib.parse import urljoin
 
@@ -25,8 +25,44 @@ from flask import Flask, Response, jsonify, request
 from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.web_server import FilteredJSONProvider
 
+# This is just a random large prime number used as number of buckets
+PRIME = 100003
+
 log = logging.getLogger(__name__)
 app = Flask(__name__)
+
+
+class UniformHash:
+    """A hash algorithm with uniform distribution. It achieves this with following steps,
+        1. Get a hash value using SHA256
+        2. Map the hash value to a virtual hash table with a large prime number
+        3. Map the virtual bucket to real bucket by using an allocation table
+
+    """
+    def __init__(self, num_buckets: int):
+        self.num_buckets = num_buckets
+        self.num = PRIME // num_buckets
+        self.remainder = PRIME % num_buckets
+
+    def get_num_buckets(self) -> int:
+        return self.num_buckets
+
+    def hash(self, key: str) -> int:
+        # The hash() function changes value every run so SHA256 is used
+        sha_bytes = hashlib.sha256(key.encode()).digest()
+        sha = int.from_bytes(sha_bytes[:8], 'big')
+        virtual_hash = sha % PRIME
+
+        start = 0
+        for i in range(self.num_buckets):
+            # Allocation is virtual hash assigned to each bucket, first few buckets get one more if r is not 0
+            allocation = (self.num + 1) if i < self.remainder else self.num
+            end = start + allocation
+            if start <= virtual_hash < end:
+                return i
+            start = end
+
+        raise RuntimeError("Logic error")
 
 
 class LcpMapper:
@@ -39,9 +75,9 @@ class LcpMapper:
     def map(self, device_id: str) -> Tuple[str, str]:
         if not self.lcp_list:
             raise RuntimeError("No LCP is configured")
-        # Do not use hash() here. The hash value is different for every run
-        checksum = zlib.crc32(device_id.encode())
-        index = checksum % len(self.lcp_list)
+
+        uniform_hash = UniformHash(len(self.lcp_list))
+        index = uniform_hash.hash(device_id)
         return self.lcp_list[index]
 
     def load_lcp_map(self, mapping_file: str):
@@ -59,8 +95,10 @@ def validate_path(path: str):
     if path not in {"job", "task", "result"}:
         raise ApiError(400, "INVALID_REQUEST", f"Invalid path {path}")
 
+    return path
 
-def validate_content(content: str):
+
+def validate_content(content: bytes):
     if not content:
         return None
 
@@ -136,7 +174,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     mapper.load_lcp_map(sys.argv[2])
-    port = int(sys.argv[1])
+    proxy_port = int(sys.argv[1])
 
     app.json = FilteredJSONProvider(app)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=proxy_port, debug=False)
