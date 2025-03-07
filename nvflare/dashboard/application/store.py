@@ -18,7 +18,7 @@ import logging
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .cert import Entity, make_root_cert
-from .models import Capacity, Client, Organization, Project, Role, User, db
+from .models import Client, Organization, Project, Role, User, db
 
 log = logging.getLogger(__name__)
 
@@ -167,16 +167,15 @@ class Store(object):
         creator_id = User.query.filter_by(email=creator).first().id
         name = req.get("name")
         organization = req.get("organization", "")
-        capacity = req.get("capacity")
         description = req.get("description", "")
         org = get_or_create(db.session, Organization, name=organization)
-        cap = None
-        if capacity is not None:
-            cap = get_or_create(db.session, Capacity, capacity=json.dumps(capacity))
         client = Client(name=name, description=description, creator_id=creator_id)
         client.organization_id = org.id
-        if cap:
-            client.capacity_id = cap.id
+
+        capacity = req.get("capacity")
+        if capacity:
+            client.capacity = json.dumps(capacity)
+
         props = req.get("props")
         if props:
             client.props = json.dumps(props)
@@ -223,10 +222,8 @@ class Store(object):
             client.organization_id = org.id
 
         capacity = req.pop("capacity", None)
-        if capacity is not None:
-            capacity = json.dumps(capacity)
-            cap = get_or_create(db.session, Capacity, capacity=capacity)
-            client.capacity_id = cap.id
+        if capacity:
+            client.capacity = json.dumps(capacity)
 
         props = req.pop("props", None)
         if props:
@@ -254,10 +251,8 @@ class Store(object):
             client.organization_id = org.id
 
         capacity = req.pop("capacity", None)
-        if capacity is not None:
-            capacity = json.dumps(capacity)
-            cap = get_or_create(db.session, Capacity, capacity=capacity)
-            client.capacity_id = cap.id
+        if capacity:
+            client.capacity = json.dumps(capacity)
 
         props = req.pop("props", None)
         if props:

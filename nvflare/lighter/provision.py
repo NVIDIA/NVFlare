@@ -22,7 +22,8 @@ import sys
 from typing import Optional
 
 from nvflare.fuel.utils.class_utils import instantiate_class
-from nvflare.lighter.constants import ParticipantType, PropKey
+from nvflare.lighter.constants import PropKey
+from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Project
 from nvflare.lighter.utils import load_yaml
@@ -130,13 +131,6 @@ def prepare_builders(project_dict):
     return builders
 
 
-def _must_get(participant_def: dict, key: str):
-    v = participant_def.get(key)
-    if not v:
-        raise ValueError(f"missing property '{key}' from participant definition")
-    return v
-
-
 def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
     api_version = project_dict.get(PropKey.API_VERSION)
     if api_version not in [3]:
@@ -157,21 +151,7 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
         add_extra_clients(add_client_file_path, participant_defs)
 
     for p in participant_defs:
-        participant_type = _must_get(p, "type")
-        name = _must_get(p, "name")
-        org = _must_get(p, "org")
-        if participant_type == ParticipantType.SERVER:
-            project.set_server(name, org, props=p)
-        elif participant_type == ParticipantType.CLIENT:
-            project.add_client(name, org, p)
-        elif participant_type == ParticipantType.RELAY:
-            project.add_relay(name, org, p)
-        elif participant_type == ParticipantType.ADMIN:
-            project.add_admin(name, org, p)
-        elif participant_type == ParticipantType.OVERSEER:
-            project.set_overseer(name, org, p)
-        else:
-            raise ValueError(f"invalid participant_type '{participant_type}'")
+        project.add_participant(participant_from_dict(p))
     return project
 
 
