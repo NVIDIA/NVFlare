@@ -2,66 +2,69 @@
 //  TaskResponse.swift
 //  NVFlareMobile
 //
-//  Created by Yuan-Ting Hsieh on 2/26/25.
 //
 
 import Foundation
 
 struct TaskResponse: Decodable {
     let status: String
-    let taskId: String?
-    let taskName: String?
-    let taskData: [String: String]?
-    let retryWait: Int?
     let message: String?
-    let details: [String: String]?
+    let jobId: String?
+    let task_id: String?
+    let task_name: String?
+    let retryWait: Int?
+    let task_data: TaskData?
+    
+    struct TaskData: Decodable {
+        let payload: [String: String]
+        let task_id: String
+    }
     
     enum CodingKeys: String, CodingKey {
         case status
-        case taskId = "task_id"
-        case taskName = "task_name"
-        case taskData = "task_data"
-        case retryWait = "retry_wait"
         case message
-        case details
+        case jobId = "job_id"
+        case task_id = "task_id"
+        case task_name = "task_name"
+        case retryWait = "retry_wait"
+        case task_data = "task_data"
     }
-}
-
-extension TaskResponse {
+    
     enum TaskStatus: String {
         case ok = "OK"
-        case finished = "FINISHED"
-        case retry = "RETRY"
+        case error = "ERROR"
+        case retry = "retry"
         case unknown
         
-        init(rawValue: String) {
-            switch rawValue {
-            case "OK": self = .ok
-            case "FINISHED": self = .finished // TODO:: change to DONE
-            case "RETRY": self = .retry
-            default: self = .unknown
+        var isSuccess: Bool {
+            switch self {
+            case .ok: return true
+            case .error, .retry, .unknown: return false
             }
         }
         
         var shouldContinueTraining: Bool {
-            switch self {
-            case .ok: return true
-            case .finished: return false
-            case .retry: return true
-            case .unknown: return false
-            }
+            return self == .ok || self == .error
         }
+
     }
     
     var taskStatus: TaskStatus {
-        return TaskStatus(rawValue: self.status)
+        return TaskStatus(rawValue: self.status) ?? .unknown
     }
-
+    
     func toTrainingTask(jobId: String) throws -> TrainingTask {
-        guard let taskId = self.taskId,
-              let taskData = self.taskData else {
-            throw NVFlareError.taskFetchFailed
+        guard taskStatus.shouldContinueTraining else {
+            throw NVFlareError.taskFetchFailed(message ?? "Task status indicates training should not continue")
         }
-        return TrainingTask(id: taskId, jobId: jobId, modelData: taskData)
+        
+        guard let task_id = self.task_id,
+              let task_data = self.task_data else {
+            throw NVFlareError.taskFetchFailed("Missing required task data")
+        }
+        
+        return TrainingTask(id: task_id,
+                          jobId: jobId,
+                          modelData: task_data.payload)
     }
 }

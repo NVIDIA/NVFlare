@@ -5,7 +5,7 @@
 //
 
 #import "ETTrainer.h"
-
+#import <UIKit/UIKit.h>
 #import <executorch/extension/module/module.h>
 #import <executorch/extension/tensor/tensor.h>
 #import <executorch/extension/data_loader/file_data_loader.h>
@@ -14,36 +14,12 @@
 #include <map>
 #include <string>
 #include <vector>
-
-
-// Comments:
-//
-// (1) how to serialize/deserialize for server side weights??
-// (2) how to serialize/deserialize for client side weights??
-// (3) how to get/load weights from a ".pte" file?? or need to exchange the whole ".pte" file??
-// (4) then how to HTTP request to get/send weights to the WebAPI (iOS question)
-// (5) short-term goal: do a demo in GTC
-// (6) figure out the long-term goal (investigate LiteRT, Onnx runtime):
-//     - one piece of code for all platforms: Android, iOS, browser, edge/wearables?
-//     - support training/inference
-//     - support deep learning and XGBoost
-//     - is active not abandoned
-
-
-// (1) How to load weights into client/device => use PTE
-// (2) Does loading weights in the server will take effect when exporting => yes
-// (3) from client to server use JSON
-
-
-
-
-// *** send the model difference instead of gradient to support multiple local epochs
-
-
+#include <sstream>
+#include "ETDataset.hpp"
+#include "Constants.h"
 
 
 using namespace ::executorch::extension;
-
 
 
 // Helper functions for printing tensors
@@ -64,7 +40,7 @@ void printElements(const torch::executor::Tensor& tensor,
         // Print the element
         NSString* indexStr = @"";
         for (int i = 0; i < indices.size(); ++i) {
-            indexStr = [indexStr stringByAppendingFormat:@"%d%@", indices[i], 
+            indexStr = [indexStr stringByAppendingFormat:@"%d%@", indices[i],
                        (i < indices.size() - 1) ? @", " : @""];
         }
         NSLog(@"arr[%@] = %f", indexStr, value);
@@ -100,6 +76,7 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
 @implementation ETTrainer {
     std::unique_ptr<training::TrainingModule> _training_module;
     NSDictionary<NSString *, id> *_meta;
+    std::unique_ptr<ETDataset> _dataset;
 }
 
 - (instancetype)initWithModelBase64:(NSString *)modelBase64
@@ -108,8 +85,31 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
     if (self) {
         _meta = meta;
         
+        // Initialize dataset based on meta configuration
+        NSString *datasetType = _meta[kMetaKeyDatasetType];
+        
+        if ([datasetType isEqualToString:kDatasetTypeCIFAR10]) {
+            NSDataAsset *dataAsset = [[NSDataAsset alloc] initWithName:@"data_batch_1"];
+            if (!dataAsset) {
+                NSLog(@"Failed to load CIFAR-10 data from assets");
+                return nil;
+            }
+            NSData *binaryData = dataAsset.data;
+            const char *bytes = (const char *)[binaryData bytes];
+            NSUInteger length = [binaryData length];
+            std::istringstream dataStream(std::string(bytes, length));
+            _dataset = std::make_unique<CIFAR10Dataset>(dataStream);
+            
+        } else if ([datasetType isEqualToString:kDatasetTypeXOR]) {
+            _dataset = std::make_unique<XORDataset>();
+            
+        } else {
+            NSLog(@"Unknown dataset type: %@", datasetType);
+            return nil;
+        }
+        
         // Decode base64 string to temporary file
-        NSData *modelData = [[NSData alloc] initWithBase64EncodedString:modelBase64 
+        NSData *modelData = [[NSData alloc] initWithBase64EncodedString:modelBase64
                                                               options:0];
         if (!modelData) {
             NSLog(@"Failed to decode base64 model data");
@@ -252,22 +252,10 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
         NSLog(@"Training module not initialized");
         return @{};
     }
-    
+
     @try {
-        // Create full data set of input and labels (XOR example)
-        std::vector<std::pair<TensorPtr,TensorPtr>> data_set;
-        data_set.push_back( // XOR(1, 1) = 0
-          {make_tensor_ptr<float>({1, 2}, {1, 1}),
-           make_tensor_ptr<int64_t>({1}, {0})});
-        data_set.push_back( // XOR(0, 0) = 0
-          {make_tensor_ptr<float>({1, 2}, {0, 0}),
-           make_tensor_ptr<int64_t>({1}, {0})});
-        data_set.push_back( // XOR(1, 0) = 1
-          {make_tensor_ptr<float>({1, 2}, {1, 0}),
-           make_tensor_ptr<int64_t>({1}, {1})});
-        data_set.push_back( // XOR(0, 1) = 1
-          {make_tensor_ptr<float>({1, 2}, {0, 1}),
-           make_tensor_ptr<int64_t>({1}, {1})});
+        int batchSize = [_meta[kMetaKeyBatchSize] intValue];
+        auto data_set = _dataset->getBatch(batchSize);
         
         // Get initial parameters
         auto param_res = _training_module->named_parameters("forward");
@@ -279,17 +267,17 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
         auto initial_params = param_res.get();
         NSDictionary<NSString *, id>* old_params = [ETTrainer toTensorDictionary:initial_params];
     
-        NSLog(@"Initial Params Start ==============");
-        [ETTrainer printTensorDictionary:old_params];
-        NSLog(@"Initial Params End ================");
+//        NSLog(@"Initial Params Start ==============");
+//        [ETTrainer printTensorDictionary:old_params];
+//        NSLog(@"Initial Params End ================");
         
         // Configure optimizer
-        float learningRate = [_meta[@"learning_rate"] floatValue];
+        float learningRate = [_meta[kMetaKeyLearningRate] floatValue];
         training::optimizer::SGDOptions options{learningRate};
         training::optimizer::SGD optimizer(param_res.get(), options);
         
         // Train the model
-        NSInteger totalEpochs = [_meta[@"total_epochs"] integerValue];
+        NSInteger totalEpochs = [_meta[kMetaKeyTotalEpochs] integerValue];
         for (int i = 0; i < totalEpochs; i++) {
             size_t index = i % data_set.size();
             auto& data = data_set[index];
@@ -317,26 +305,26 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
             optimizer.step(_training_module->named_gradients("forward").get());
         }
         
-        NSLog(@"Grad Start ==============");
-        printMap(_training_module->named_gradients("forward").get());
-        NSLog(@"Grad End ================");
-        
-        NSLog(@"Old Params Start ==============");
-        [ETTrainer printTensorDictionary:old_params];
-        NSLog(@"Old Params End ================");
+//        NSLog(@"Grad Start ==============");
+//        printMap(_training_module->named_gradients("forward").get());
+//        NSLog(@"Grad End ================");
+//
+//        NSLog(@"Old Params Start ==============");
+//        [ETTrainer printTensorDictionary:old_params];
+//        NSLog(@"Old Params End ================");
 
 
         NSDictionary<NSString *, id>* final_params = [ETTrainer toTensorDictionary:param_res.get()];
         
-        NSLog(@"New Params Start ==============");
-        [ETTrainer printTensorDictionary:final_params];
-        NSLog(@"New Params End ================");
+//        NSLog(@"New Params Start ==============");
+//        [ETTrainer printTensorDictionary:final_params];
+//        NSLog(@"New Params End ================");
         
         auto tensor_diff = [ETTrainer calculateTensorDifference:old_params newDict:final_params];
         
-        NSLog(@"Diff Start ==============");
-        [ETTrainer printTensorDictionary:tensor_diff];
-        NSLog(@"Diff End ================");
+//        NSLog(@"Diff Start ==============");
+//        [ETTrainer printTensorDictionary:tensor_diff];
+//        NSLog(@"Diff End ================");
 
         return tensor_diff;
         

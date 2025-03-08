@@ -90,14 +90,15 @@ class TrainerController: ObservableObject {
                     return
                 }
 
+                print("task response:    \(taskResponse)")
                 let task = try taskResponse.toTrainingTask(jobId: job.id)
                 
                 let trainer = try createTrainer(withModelData: task.modelData, meta: job.meta)
                 
                 // Check device state before heavy computation
-                guard deviceStateMonitor.isReadyForTraining else {
-                    throw NVFlareError.trainingFailed("Device not ready")
-                }
+//                guard deviceStateMonitor.isReadyForTraining else {
+//                    throw NVFlareError.trainingFailed("Device not ready")
+//                }
                 
                 // Train and get weight differences
                 let weightDiff = try await Task.detached(priority: .background) {
@@ -135,7 +136,8 @@ class TrainerController: ObservableObject {
     private func createTrainer(withModelData modelData: [String: String], meta: JobMeta) throws -> Trainer {
         switch trainerType {
         case .executorch:
-            guard let modelString = modelData["model"] else {
+            print("model data is\(modelData)");
+            guard let modelString = modelData["model_buffer"] else {
                 // Handle missing or invalid model data
                 throw NVFlareError.invalidModelData
             }

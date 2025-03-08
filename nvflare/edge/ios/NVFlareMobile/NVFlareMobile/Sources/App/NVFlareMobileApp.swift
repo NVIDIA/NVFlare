@@ -2,7 +2,6 @@
 //  NVFlareMobileApp.swift
 //  NVFlareMobile
 //
-//  Created by Yuan-Ting Hsieh on 2/24/25.
 //
 
 import SwiftUI

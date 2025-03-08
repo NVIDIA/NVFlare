@@ -2,7 +2,6 @@
 //  TrainingTask.swift
 //  NVFlareMobile
 //
-//  Created by Yuan-Ting Hsieh on 2/27/25.
 //
 
 import Foundation
