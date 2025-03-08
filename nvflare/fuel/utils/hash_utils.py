@@ -43,8 +43,10 @@ class UniformHash:
         sha = int.from_bytes(sha_bytes[:8], "big")
         virtual_hash = sha % PRIME
 
-        index = virtual_hash // self.virtual_hashes_per_bucket
-        if index >= self.num_buckets:
+        n = virtual_hash / self.virtual_hashes_per_bucket
+        if n < self.num_buckets:
+            index = int(n)
+        else:
             index = virtual_hash % self.num_buckets
 
         return index
