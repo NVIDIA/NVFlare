@@ -17,7 +17,7 @@ from nvflare.fuel.utils.validation_utils import check_number_range, check_str
 
 # A large prime number as virtual hash table size
 PRIME = 100003
-MAX_NUM_BUCKETS = 64*1024
+MAX_NUM_BUCKETS = 64 * 1024
 
 
 class UniformHash:
