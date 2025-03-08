@@ -15,18 +15,6 @@ from typing import Optional
 from urllib.parse import parse_qs, urlencode
 
 
-class ApiStatus:
-    OK = "OK"
-    RETRY = "RETRY"
-    DONE = "DONE"
-    NO_JOB = "NO_JOB"
-    NO_TASK = "NO_TASK"
-
-
-class ApiKey:
-    JOB_DONE = "_job_done"
-
-
 class BaseModel(dict):
     """Dictionary based model"""
 
