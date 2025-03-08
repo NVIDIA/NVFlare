@@ -17,11 +17,12 @@ public class Connection: ObservableObject {
     // Minimal device info to reduce privacy concerns
     private var deviceInfo: [String: String] {
         return [
+            "device_id": deviceId,
             "platform": "ios",  // Just platform identifier
-            "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"  // App version
+            "app_version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"  // App version
         ]
     }
-    
+
     private let jobEndpoint = "job"
     private let taskEndpoint = "task"
     private let resultEndpoint = "result"
@@ -44,6 +45,12 @@ public class Connection: ObservableObject {
         return URL(string: serverURL)?.appendingPathComponent(endpoint)
     }
     
+    public func infoToQueryString(info: [String: String]) -> String {
+        return info.map { key, value in
+            "\(key)=\(value)"
+        }.joined(separator: "&")
+    }
+    
     func fetchJob() async throws -> JobResponse {
         guard let url = URL(string: "\(scheme)://\(hostname):\(port)/\(jobEndpoint)") else {
             throw NVFlareError.jobFetchFailed
@@ -51,7 +58,7 @@ public class Connection: ObservableObject {
         
         // Prepare request body
         let capabilities: [String: Any] = [
-            "methods": ["executorch"]
+            "methods": ["xor", "cifar10"]
         ]
         
         let body = try JSONSerialization.data(withJSONObject: ["capabilities": capabilities])
@@ -61,15 +68,13 @@ public class Connection: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(deviceId, forHTTPHeaderField: "X-Flare-Device-ID")
-        
+
         // Convert deviceInfo to JSON string
-        if let deviceInfoData = try? JSONSerialization.data(withJSONObject: deviceInfo),
-           let deviceInfoString = String(data: deviceInfoData, encoding: .utf8) {
-            request.setValue(deviceInfoString, forHTTPHeaderField: "X-Flare-Device-Info")
-        }
-        
+        let deviceInfoString = infoToQueryString(info: deviceInfo)
+        request.setValue(deviceInfoString, forHTTPHeaderField: "X-Flare-Device-Info")
+
         // For now, sending empty user info
-        request.setValue("{}", forHTTPHeaderField: "X-Flare-User-Info")
+        request.setValue("", forHTTPHeaderField: "X-Flare-User-Info")
         request.httpBody = body
         
         print("Sending request: \(request.httpMethod!) \(request.url!)")
@@ -124,7 +129,7 @@ public class Connection: ObservableObject {
         ]
         
         guard let url = urlComponents.url else {
-            throw NVFlareError.taskFetchFailed
+            throw NVFlareError.taskFetchFailed("Could not construct URL")
         }
         
         var request = URLRequest(url: url)
@@ -146,8 +151,10 @@ public class Connection: ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw NVFlareError.taskFetchFailed
+            throw NVFlareError.taskFetchFailed("wrong response type")
         }
+        
+        print(httpResponse)
         
         // Decode response first to get potential error messages
         let taskResponse = try JSONDecoder().decode(TaskResponse.self, from: data)
@@ -164,9 +171,15 @@ public class Connection: ObservableObject {
                     try await Task.sleep(for: .seconds(retryWait))
                     return try await fetchTask(jobId: jobId)
                 }
-                throw NVFlareError.taskFetchFailed
+                throw NVFlareError.taskFetchFailed("Retry RETRY Failed")
+            case "NO_TASK":
+                if let retryWait = taskResponse.retryWait {
+                    try await Task.sleep(for: .seconds(retryWait))
+                    return try await fetchTask(jobId: jobId)
+                }
+                throw NVFlareError.taskFetchFailed("Retry NO_TASK Failed")
             default:
-                throw NVFlareError.taskFetchFailed
+                throw NVFlareError.taskFetchFailed("Wrong Status: \(taskResponse.status)")
             }
             
         case 400:
@@ -179,7 +192,7 @@ public class Connection: ObservableObject {
             throw NVFlareError.serverError(taskResponse.message ?? "Server error")
             
         default:
-            throw NVFlareError.taskFetchFailed
+            throw NVFlareError.taskFetchFailed("Wrong Status Code: \(httpResponse.statusCode)")
         }
     }
     
