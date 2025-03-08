@@ -13,8 +13,11 @@
 # limitations under the License.
 import hashlib
 
+from nvflare.fuel.utils.validation_utils import check_number_range, check_str
+
 # A large prime number as virtual hash table size
 PRIME = 100003
+MAX_NUM_BUCKETS = 64*1024
 
 
 class UniformHash:
@@ -26,6 +29,7 @@ class UniformHash:
     """
 
     def __init__(self, num_buckets: int):
+        check_number_range("num_buckets", num_buckets, 1, MAX_NUM_BUCKETS)
         self.num_buckets = num_buckets
         self.virtual_hashes_per_bucket = PRIME // num_buckets
 
@@ -33,6 +37,7 @@ class UniformHash:
         return self.num_buckets
 
     def hash(self, key: str) -> int:
+        check_str("key", key)
         # The hash() function changes value every run so SHA256 is used
         sha_bytes = hashlib.sha256(key.encode()).digest()
         sha = int.from_bytes(sha_bytes[:8], "big")
