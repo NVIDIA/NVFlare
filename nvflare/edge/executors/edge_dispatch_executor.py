@@ -17,15 +17,15 @@ from typing import Any
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable
-from nvflare.edge.aggregators.edge_result_accumulator import EdgeResultAccumulator
-from nvflare.edge.constants import MsgKey
+from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
+from nvflare.edge.constants import EdgeApiStatus, MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_non_negative_number
+from nvflare.security.logging import secure_format_exception
 
 
 class EdgeDispatchExecutor(EdgeTaskExecutor):
@@ -51,15 +51,17 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         self.register_event_handler(EventType.START_RUN, self.setup)
 
     def setup(self, _event_type, fl_ctx: FLContext):
-        if self.aggregator_id:
-            self.aggregator = fl_ctx.get_engine().get_component(self.aggregator_id)
-        else:
-            self.aggregator = EdgeResultAccumulator()
+        if not self.aggregator_id:
+            raise ValueError("aggregator_id is not set")
+
+        self.aggregator = fl_ctx.get_engine().get_component(self.aggregator_id)
+        if not self.aggregator:
+            raise RuntimeError(f"Can't find aggregator: {self.aggregator_id}")
 
     def convert_task(self, task_data: Shareable) -> dict:
         """Convert task_data to a plain dict"""
 
-        return {MsgKey.PAYLOAD: task_data[MsgKey.PAYLOAD], "task_id": self.task_id}
+        return {MsgKey.PAYLOAD: task_data[MsgKey.PAYLOAD], MsgKey.TASK_ID: self.task_id}
 
     def convert_result(self, result: dict) -> Shareable:
         """Convert result from device to shareable"""
@@ -93,10 +95,15 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
             # Still returns OK because this late result may be useful in certain cases
             return ResultResponse("OK", task_id=self.task_id, task_name=self.task_name, message=msg)
 
-        result = self.convert_result(report.result)
-        self.aggregator.accept(result, fl_ctx)
-        self.num_results += 1
-        return ResultResponse("OK", task_id=self.task_id, task_name=self.task_name)
+        try:
+            result = self.convert_result(report.result)
+            self.aggregator.accept(result, fl_ctx)
+            self.num_results += 1
+            return ResultResponse(EdgeApiStatus.OK, task_id=self.task_id, task_name=self.task_name)
+        except Exception as ex:
+            msg = f"exception when 'accept' from aggregator {type(self.aggregator)}: {secure_format_exception(ex)}"
+            self.log_error(fl_ctx, msg)
+            return ResultResponse(EdgeApiStatus.ERROR, task_id=self.task_id, task_name=self.task_name, message=msg)
 
     def task_received(self, task_name: str, task_data: Shareable, fl_ctx: FLContext):
         # Reset aggregator
@@ -124,4 +131,9 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         return {"status": ReturnCode.OK, "response": response}
 
     def get_task_result(self, fl_ctx: FLContext) -> Shareable:
-        return self.aggregator.aggregate(fl_ctx)
+        try:
+            self.log_info(fl_ctx, "return aggregation result")
+            return self.aggregator.aggregate(fl_ctx)
+        except Exception as ex:
+            self.log_error(fl_ctx, f"Error from {type(self.aggregator)}: {secure_format_exception(ex)}")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)

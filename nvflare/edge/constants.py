@@ -39,3 +39,19 @@ class EdgeEventType:
 class MsgKey:
     PAYLOAD = "payload"
     RESULT = "result"
+    NUM_DEVICES = "num_devices"
+    TASK_ID = "task_id"
+    TASK_DONE = "task_done"
+
+
+class EdgeApiStatus:
+    OK = "OK"
+    RETRY = "RETRY"
+    DONE = "DONE"
+    ERROR = "ERROR"
+    NO_JOB = "NO_JOB"
+    NO_TASK = "NO_TASK"
+
+
+class EdgeApiKey:
+    JOB_DONE = "_job_done"
