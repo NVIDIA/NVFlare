@@ -46,6 +46,7 @@ class ModelBufferType:
 
     # Model formats
     EXECUTORCH = "executorch"
+    PYTORCH = "pytorch"
 
 
 class ModelNativeFormat:
@@ -70,7 +71,7 @@ class ModelEncoding:
     HEX = "hex"
     UTF8 = "utf8"
     ASCII = "ascii"
-    NONE = None
+    NONE = "none"
 
 
 class ModelExchangeFormat:
