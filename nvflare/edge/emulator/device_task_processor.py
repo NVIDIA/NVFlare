@@ -24,16 +24,14 @@ class DeviceTaskProcessor(ABC):
     The spec for a task processor that handles tasks on edge devices
     """
 
-    def __init__(self, device_info: DeviceInfo, user_info: UserInfo):
-        self.device_info = device_info
-        self.user_info = user_info
-
     @abstractmethod
-    def setup(self, job: JobResponse) -> None:
+    def setup(self, device_info: DeviceInfo, user_info: UserInfo, job: JobResponse) -> None:
         """
         Setup for a new job
 
         Args
+            device_info: Device information from request header
+            user_info: User information from request header
             job: Job information returned by server
         """
         pass

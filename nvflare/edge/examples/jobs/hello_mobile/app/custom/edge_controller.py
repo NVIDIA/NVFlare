@@ -22,6 +22,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.edge.aggregators.edge_result_accumulator import EdgeResultAccumulator
+from nvflare.edge.constants import MsgKey
 from nvflare.security.logging import secure_format_exception
 
 
@@ -66,8 +67,8 @@ class SimpleEdgeController(Controller):
 
                 # Create train_task
                 task_data = Shareable()
-                task_data["weights"] = weights
-                task_data["task_done"] = self.current_round >= (self.num_rounds - 1)
+                task_data[MsgKey.PAYLOAD] = weights
+                task_data[MsgKey.TASK_DONE] = self.current_round >= (self.num_rounds - 1)
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
                 task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self.current_round)
@@ -92,7 +93,7 @@ class SimpleEdgeController(Controller):
                 self.log_info(fl_ctx, "Start aggregation.")
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 aggr_result = self.aggregator.aggregate(fl_ctx)
-                weights = aggr_result.get("weights")
+                weights = aggr_result.get(MsgKey.RESULT)
                 self.log_info(fl_ctx, f"Aggregation result: {aggr_result}")
                 fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
                 self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
@@ -101,7 +102,7 @@ class SimpleEdgeController(Controller):
                 if abort_signal.triggered:
                     return
 
-            final_weights = aggr_result.get("weights", None)
+            final_weights = aggr_result.get(MsgKey.RESULT, None)
             self.log_info(fl_ctx, f"Finished Mobile Training. Final weights: {final_weights}")
         except Exception as e:
             error_msg = f"Exception in mobile control_flow: {secure_format_exception(e)}"
