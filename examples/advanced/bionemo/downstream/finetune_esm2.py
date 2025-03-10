@@ -261,6 +261,7 @@ def train_model(
 
     # add NVFlare metric streamer to capture continues tensorboard output on the server.
     from bionemo_tb_streamer import BioNeMoTBStreamer
+
     trainer.callbacks.append(BioNeMoTBStreamer(start_step=input_model.current_round * num_steps))
 
     # use a unique result directory for each round

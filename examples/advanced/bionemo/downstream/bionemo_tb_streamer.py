@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from pytorch_lightning.callbacks import Callback
+
 from nvflare.client.tracking import SummaryWriter
 
 
@@ -34,9 +35,4 @@ class BioNeMoTBStreamer(Callback):
 
     def _stream_metrics(self, metrics):
         for k, v in metrics.items():
-            self.summary_writer.add_scalar(
-                tag=k,
-                scalar=v.item(),
-                global_step=self.current_step
-            )
-
+            self.summary_writer.add_scalar(tag=k, scalar=v.item(), global_step=self.current_step)
