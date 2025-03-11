@@ -58,7 +58,7 @@ extension JobResponse {
     func toJob() throws -> Job {
         guard let jobId = self.jobId,
               let jobMeta = self.jobMeta else {
-            throw NVFlareError.invalidMetadata
+            throw NVFlareError.invalidMetadata("Can't parse job metadata")
         }
         
         // Convert AnyDecodable dictionary to [String: Any]

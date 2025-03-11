@@ -59,11 +59,13 @@ struct TaskResponse: Decodable {
         }
         
         guard let task_id = self.task_id,
+              let task_name = self.task_name,
               let task_data = self.task_data else {
             throw NVFlareError.taskFetchFailed("Missing required task data")
         }
         
         return TrainingTask(id: task_id,
+                          name: task_name,
                           jobId: jobId,
                           modelData: task_data.payload)
     }

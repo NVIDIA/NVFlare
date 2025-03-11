@@ -15,3 +15,4 @@ NSString * const kMetaKeyDatasetType = @"dataset_type";
 NSString * const kMetaKeyBatchSize = @"batch_size";
 NSString * const kMetaKeyLearningRate = @"learning_rate";
 NSString * const kMetaKeyTotalEpochs = @"total_epochs";
+NSString * const kMetaKeyDatasetShuffle = @"dataset_shuffle";

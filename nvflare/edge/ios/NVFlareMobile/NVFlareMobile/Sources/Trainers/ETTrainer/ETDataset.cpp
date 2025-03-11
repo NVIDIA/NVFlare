@@ -1,68 +1,114 @@
 #include "ETDataset.hpp"
 #include <executorch/extension/tensor/tensor.h>
 #include <sstream>
+#include <numeric>
+#include <algorithm>
+#include <random>
 
 using namespace executorch::extension;
-
-// Constants
-const int IMAGE_SIZE = 32 * 32 * 3;  // 3072 bytes per image
-const int NUM_IMAGES = 10000;        // Each batch has 10,000 images
 
 // Helper function to load CIFAR-10 batch and normalize pixel values to [0,1]
 static std::vector<CIFARImage> load_cifar10_batch(std::istream& dataStream) {
     std::vector<CIFARImage> dataset;
     
-    for (int i = 0; i < NUM_IMAGES; i++) {
+    // Calculate number of images from file size
+    dataStream.seekg(0, std::ios::end);
+    std::streamsize fileSize = dataStream.tellg();
+    dataStream.seekg(0, std::ios::beg);
+    
+    if (fileSize <= 0) {
+        return dataset;
+    }
+    
+    // Calculate number of complete images in the file
+    size_t numImages = fileSize / cifar10::kBytesPerImage;
+    
+    if (numImages == 0) {
+        return dataset;
+    }
+    
+    dataset.reserve(numImages);
+    
+    for (size_t i = 0; i < numImages; i++) {
         CIFARImage image;
-        image.data.resize(IMAGE_SIZE);
-        uint8_t raw_data[IMAGE_SIZE];
+        image.data.resize(cifar10::kImageSize);
+        uint8_t raw_data[cifar10::kImageSize];
+        uint8_t label;
 
         // Read label and data from stream
-        dataStream.read(reinterpret_cast<char*>(&image.label), 1);
-        dataStream.read(reinterpret_cast<char*>(raw_data), IMAGE_SIZE);
+        dataStream.read(reinterpret_cast<char*>(&label), cifar10::kLabelSize);
+        dataStream.read(reinterpret_cast<char*>(raw_data), cifar10::kImageSize);
+        
+        if (dataStream.fail()) {
+            break;
+        }
 
         // Process data: normalize to [0,1]
-        for (int j = 0; j < IMAGE_SIZE; j++) {
+        for (int j = 0; j < cifar10::kImageSize; j++) {
             image.data[j] = static_cast<float>(raw_data[j]) / 255.0f;
         }
-        image.label = static_cast<int64_t>(image.label);
+        image.label = static_cast<int64_t>(label);
 
-        dataset.push_back(image);
+        dataset.push_back(std::move(image));
     }
     
     return dataset;
 }
 
 // CIFAR10Dataset implementation
-CIFAR10Dataset::CIFAR10Dataset(std::istream& dataStream) {
+CIFAR10Dataset::CIFAR10Dataset(std::istream& dataStream, bool shuffle) 
+    : shouldShuffle(shuffle) {
     images = load_cifar10_batch(dataStream);
+    indices.resize(images.size());
+    std::iota(indices.begin(), indices.end(), 0);
+    reset();
 }
 
-CIFAR10Dataset::BatchType CIFAR10Dataset::getBatch(size_t batchSize) {
-    BatchType batch;
-    const int image_size = 3 * 32 * 32;  // channels * height * width
+void CIFAR10Dataset::reset() {
+    currentIndex = 0;
+    if (shouldShuffle) {
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(indices.begin(), indices.end(), g);
+    }
+}
+
+void CIFAR10Dataset::setShuffle(bool shuffle) {
+    shouldShuffle = shuffle;
+    reset();
+}
+
+std::optional<CIFAR10Dataset::BatchType> CIFAR10Dataset::getBatch(size_t batchSize) {
+    if (currentIndex >= images.size()) {
+        return std::nullopt;
+    }
+
+    size_t endIdx = std::min(currentIndex + batchSize, images.size());
+    size_t actualBatchSize = endIdx - currentIndex;
     
-    // Prepare batch containers
     std::vector<float> image_batch;
-    image_batch.reserve(batchSize * image_size);
     std::vector<int64_t> label_batch;
-    label_batch.reserve(batchSize);
+    image_batch.reserve(actualBatchSize * cifar10::kImageSize);
+    label_batch.reserve(actualBatchSize);
     
-    // Fill batch with images and labels
-    for (size_t i = 0; i < batchSize && i < images.size(); i++) {
-        const auto& image = images[i];
+    for (size_t i = currentIndex; i < endIdx; i++) {
+        const auto& image = images[indices[i]];
         image_batch.insert(image_batch.end(),
                          image.data.begin(),
                          image.data.end());
         label_batch.push_back(image.label);
     }
     
-    batch.push_back({
-        make_tensor_ptr<float>({static_cast<int>(batchSize), 3, 32, 32}, image_batch),
-        make_tensor_ptr<int64_t>({static_cast<int>(batchSize)}, label_batch)
-    });
-    
-    return batch;
+    currentIndex = endIdx;
+    return std::make_pair(
+        make_tensor_ptr<float>({static_cast<int>(actualBatchSize), 
+                              cifar10::kChannels,
+                              cifar10::kImageWidth, 
+                              cifar10::kImageHeight}, 
+                             std::move(image_batch)),
+        make_tensor_ptr<int64_t>({static_cast<int>(actualBatchSize)}, 
+                               std::move(label_batch))
+    );
 }
 
 size_t CIFAR10Dataset::size() const {
@@ -70,33 +116,65 @@ size_t CIFAR10Dataset::size() const {
 }
 
 size_t CIFAR10Dataset::inputDim() const {
-    return 3 * 32 * 32;  // channels * height * width
+    return cifar10::kImageSize;
 }
 
 size_t CIFAR10Dataset::labelDim() const {
-    return 1;  // Single class label
+    return cifar10::kLabelSize;
 }
 
 // XORDataset implementation
-XORDataset::XORDataset() : xor_table{
-    {{1.0f, 1.0f}, 0},
-    {{0.0f, 0.0f}, 0},
-    {{1.0f, 0.0f}, 1},
-    {{0.0f, 1.0f}, 1}
-} {}
+XORDataset::XORDataset(bool shuffle) 
+    : xor_table{{{1.0f, 1.0f}, 0},
+                {{0.0f, 0.0f}, 0},
+                {{1.0f, 0.0f}, 1},
+                {{0.0f, 1.0f}, 1}},
+      shouldShuffle(shuffle) {
+    indices.resize(xor_table.size());
+    std::iota(indices.begin(), indices.end(), 0);
+    reset();
+}
 
-XORDataset::BatchType XORDataset::getBatch(size_t batchSize) {
-    BatchType batch;
+void XORDataset::reset() {
+    currentIndex = 0;
+    if (shouldShuffle) {
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(indices.begin(), indices.end(), g);
+    }
+}
+
+void XORDataset::setShuffle(bool shuffle) {
+    shouldShuffle = shuffle;
+    reset();
+}
+
+std::optional<XORDataset::BatchType> XORDataset::getBatch(size_t batchSize) {
+    if (currentIndex >= xor_table.size()) {
+        return std::nullopt;
+    }
+
+    size_t endIdx = std::min(currentIndex + batchSize, xor_table.size());
+    size_t actualBatchSize = endIdx - currentIndex;
     
-    for (size_t i = 0; i < batchSize && i < xor_table.size(); i++) {
-        const auto& [inputs, label] = xor_table[i];
-        batch.push_back({
-            make_tensor_ptr<float>({1, 2}, inputs),
-            make_tensor_ptr<int64_t>({1}, {label})
-        });
+    std::vector<float> input_batch;
+    std::vector<int64_t> label_batch;
+    input_batch.reserve(actualBatchSize * 2); // 2 features per sample
+    label_batch.reserve(actualBatchSize);
+    
+    for (size_t i = currentIndex; i < endIdx; i++) {
+        const auto& [inputs, label] = xor_table[indices[i]];
+        input_batch.insert(input_batch.end(), inputs.begin(), inputs.end());
+        label_batch.push_back(label);
     }
     
-    return batch;
+    currentIndex = endIdx;
+    return std::make_pair(
+        make_tensor_ptr<float>({static_cast<int>(actualBatchSize), 2}, 
+                             std::move(input_batch)),
+        make_tensor_ptr<int64_t>({static_cast<int>(actualBatchSize)}, 
+                               std::move(label_batch))
+    );
 }
 
 size_t XORDataset::size() const {
@@ -104,9 +182,9 @@ size_t XORDataset::size() const {
 }
 
 size_t XORDataset::inputDim() const {
-    return 2;  // Two input features for XOR
+    return 2;
 }
 
 size_t XORDataset::labelDim() const {
-    return 1;  // Binary output
+    return 1;
 }

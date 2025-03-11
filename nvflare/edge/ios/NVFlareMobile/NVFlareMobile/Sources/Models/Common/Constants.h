@@ -16,3 +16,4 @@ extern NSString * const kMetaKeyDatasetType;
 extern NSString * const kMetaKeyBatchSize;
 extern NSString * const kMetaKeyLearningRate;
 extern NSString * const kMetaKeyTotalEpochs;
+extern NSString * const kMetaKeyDatasetShuffle;

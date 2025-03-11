@@ -17,66 +17,69 @@
 #include <sstream>
 #include "ETDataset.hpp"
 #include "Constants.h"
-
+#import "ETDebugUtils.h"
 
 using namespace ::executorch::extension;
-
-
-// Helper functions for printing tensors
-void printElements(const torch::executor::Tensor& tensor,
-                  torch::executor::ArrayRef<int> sizes,
-                  torch::executor::ArrayRef<int> strides,
-                  const float* data_ptr,
-                  std::vector<int>& indices,
-                  int dim) {
-    if (dim == sizes.size()) {
-        // Base case: we have a full index, calculate the linear index
-        int64_t linear_index = 0;
-        for (int i = 0; i < sizes.size(); ++i) {
-            linear_index += indices[i] * strides[i];
-        }
-        // Access the element in the raw data
-        float value = data_ptr[linear_index];
-        // Print the element
-        NSString* indexStr = @"";
-        for (int i = 0; i < indices.size(); ++i) {
-            indexStr = [indexStr stringByAppendingFormat:@"%d%@", indices[i],
-                       (i < indices.size() - 1) ? @", " : @""];
-        }
-        NSLog(@"arr[%@] = %f", indexStr, value);
-        return;
-    }
-    
-    // Recursive case: loop through the current dimension
-    for (int64_t i = 0; i < sizes[dim]; ++i) {
-        indices.push_back(i);
-        printElements(tensor, sizes, strides, data_ptr, indices, dim + 1);
-        indices.pop_back();
-    }
-}
-
-void printTensorElements(const torch::executor::Tensor& tensor) {
-    auto strides = tensor.strides();
-    auto data_ptr = tensor.const_data_ptr<float>();
-    auto sizes = tensor.sizes();
-    
-    std::vector<int> indices;
-    printElements(tensor, sizes, strides, data_ptr, indices, 0);
-}
-
-void printMap(const std::map<executorch::aten::string_view, executorch::aten::Tensor>& map) {
-    for (const auto& pair : map) {
-        NSLog(@"Key: %s", pair.first.data());
-        printTensorElements(pair.second);
-    }
-}
-
-
 
 @implementation ETTrainer {
     std::unique_ptr<training::TrainingModule> _training_module;
     NSDictionary<NSString *, id> *_meta;
     std::unique_ptr<ETDataset> _dataset;
+}
+
+- (std::unique_ptr<ETDataset>)loadDataset:(NSString *)datasetType {
+    bool shouldShuffle = [_meta[kMetaKeyDatasetShuffle] boolValue];
+    
+    if ([datasetType isEqualToString:kDatasetTypeCIFAR10]) {
+        NSDataAsset *dataAsset = [[NSDataAsset alloc] initWithName:@"data_batch_1"];
+        if (!dataAsset) {
+            return nullptr;
+        }
+        NSData *binaryData = dataAsset.data;
+        const char *bytes = (const char *)[binaryData bytes];
+        NSUInteger length = [binaryData length];
+        std::istringstream dataStream(std::string(bytes, length));
+        return std::make_unique<CIFAR10Dataset>(dataStream, shouldShuffle);
+        
+    } else if ([datasetType isEqualToString:kDatasetTypeXOR]) {
+        return std::make_unique<XORDataset>(shouldShuffle);
+    }
+    
+    return nullptr;
+}
+
+- (std::unique_ptr<training::TrainingModule>)loadModel:(NSString *)modelBase64 {
+    // Decode base64 string to temporary file
+    NSData *modelData = [[NSData alloc] initWithBase64EncodedString:modelBase64 options:0];
+    if (!modelData) {
+        return nullptr;
+    }
+    
+    // Write to temporary file
+    NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"temp_model.pte"];
+    if (![modelData writeToFile:tempPath atomically:YES]) {
+        return nullptr;
+    }
+    
+    std::unique_ptr<training::TrainingModule> module;
+    @try {
+        // Load model using FileDataLoader
+        auto model_result = FileDataLoader::from(tempPath.UTF8String);
+        if (!model_result.ok()) {
+            return nullptr;
+        }
+        
+        auto loader = std::make_unique<FileDataLoader>(std::move(model_result.get()));
+        module = std::make_unique<training::TrainingModule>(std::move(loader));
+        
+    } @catch (NSException *exception) {
+        module = nullptr;
+    }
+    
+    // Clean up temporary file
+    [[NSFileManager defaultManager] removeItemAtPath:tempPath error:nil];
+    
+    return module;
 }
 
 - (instancetype)initWithModelBase64:(NSString *)modelBase64
@@ -85,60 +88,16 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
     if (self) {
         _meta = meta;
         
-        // Initialize dataset based on meta configuration
+        // Load dataset
         NSString *datasetType = _meta[kMetaKeyDatasetType];
-        
-        if ([datasetType isEqualToString:kDatasetTypeCIFAR10]) {
-            NSDataAsset *dataAsset = [[NSDataAsset alloc] initWithName:@"data_batch_1"];
-            if (!dataAsset) {
-                NSLog(@"Failed to load CIFAR-10 data from assets");
-                return nil;
-            }
-            NSData *binaryData = dataAsset.data;
-            const char *bytes = (const char *)[binaryData bytes];
-            NSUInteger length = [binaryData length];
-            std::istringstream dataStream(std::string(bytes, length));
-            _dataset = std::make_unique<CIFAR10Dataset>(dataStream);
-            
-        } else if ([datasetType isEqualToString:kDatasetTypeXOR]) {
-            _dataset = std::make_unique<XORDataset>();
-            
-        } else {
-            NSLog(@"Unknown dataset type: %@", datasetType);
+        _dataset = [self loadDataset:datasetType];
+        if (!_dataset) {
             return nil;
         }
         
-        // Decode base64 string to temporary file
-        NSData *modelData = [[NSData alloc] initWithBase64EncodedString:modelBase64
-                                                              options:0];
-        if (!modelData) {
-            NSLog(@"Failed to decode base64 model data");
-            return nil;
-        }
-        
-        // Write to temporary file
-        NSString *tempPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"temp_model.pte"];
-        if (![modelData writeToFile:tempPath atomically:YES]) {
-            NSLog(@"Failed to write model data to temporary file");
-            return nil;
-        }
-        
-        @try {
-            // Load model using FileDataLoader
-            auto model_result = FileDataLoader::from(tempPath.UTF8String);
-            if (!model_result.ok()) {
-                NSLog(@"Failed to load model file");
-                return nil;
-            }
-            
-            auto loader = std::make_unique<FileDataLoader>(std::move(model_result.get()));
-            _training_module = std::make_unique<training::TrainingModule>(std::move(loader));
-            
-            // Clean up temporary file
-            [[NSFileManager defaultManager] removeItemAtPath:tempPath error:nil];
-            
-        } @catch (NSException *exception) {
-            NSLog(@"Failed to initialize training module: %@", exception);
+        // Load model
+        _training_module = [self loadModel:modelBase64];
+        if (!_training_module) {
             return nil;
         }
     }
@@ -180,29 +139,6 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
     }
 
     return tensorDict;
-}
-
-+ (void)printTensorDictionary:(NSDictionary<NSString *, id> *)dict {
-    NSLog(@"Dictionary Contents ===============");
-    for (NSString *key in dict) {
-        NSLog(@"Tensor: %@", key);
-        NSDictionary *tensorInfo = dict[key];
-        
-        NSArray *sizes = tensorInfo[@"sizes"];
-        NSLog(@"  Sizes: %@", sizes);
-        
-        NSArray *strides = tensorInfo[@"strides"];
-        NSLog(@"  Strides: %@", strides);
-        
-        NSArray *data = tensorInfo[@"data"];
-        NSLog(@"  Data[%lu]: [", (unsigned long)data.count);
-        // Print first few and last few elements
-        for (int i = 0; i < data.count; i++) {
-            NSLog(@"    [%d]: %@", i, data[i]);
-        }
-        NSLog(@"  ]");
-    }
-    NSLog(@"End Dictionary Contents ===========");
 }
 
 + (NSDictionary<NSString *, id> *)calculateTensorDifference:(NSDictionary<NSString *, id> *)oldDict
@@ -255,7 +191,6 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
 
     @try {
         int batchSize = [_meta[kMetaKeyBatchSize] intValue];
-        auto data_set = _dataset->getBatch(batchSize);
         
         // Get initial parameters
         auto param_res = _training_module->named_parameters("forward");
@@ -266,11 +201,11 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
         
         auto initial_params = param_res.get();
         NSDictionary<NSString *, id>* old_params = [ETTrainer toTensorDictionary:initial_params];
-    
-//        NSLog(@"Initial Params Start ==============");
-//        [ETTrainer printTensorDictionary:old_params];
-//        NSLog(@"Initial Params End ================");
         
+        #ifdef DEBUG
+        printTensorDictionary(old_params, @"Initial Params");
+        #endif
+
         // Configure optimizer
         float learningRate = [_meta[kMetaKeyLearningRate] floatValue];
         training::optimizer::SGDOptions options{learningRate};
@@ -278,54 +213,56 @@ void printMap(const std::map<executorch::aten::string_view, executorch::aten::Te
         
         // Train the model
         NSInteger totalEpochs = [_meta[kMetaKeyTotalEpochs] integerValue];
-        for (int i = 0; i < totalEpochs; i++) {
-            size_t index = i % data_set.size();
-            auto& data = data_set[index];
+        int totalSteps = 0;
+        size_t datasetSize = _dataset->size();
+        size_t numBatchesPerEpoch = (datasetSize + batchSize - 1) / batchSize;  // Ceiling division
+        
+        for (int epoch = 0; epoch < totalEpochs; epoch++) {
+            _dataset->reset(); // Reset dataset at the start of each epoch
             
-            const auto& results = _training_module->execute_forward_backward(
-                "forward",
-                {*data.first, *data.second}
-            );
-            
-            if (results.error() != executorch::runtime::Error::Ok) {
-                NSLog(@"Failed to execute forward_backward");
-                return @{};
+            for (size_t batchIdx = 0; batchIdx < numBatchesPerEpoch; batchIdx++) {
+                auto batchOpt = _dataset->getBatch(batchSize);
+                if (!batchOpt) break;  // End of dataset
+                
+                const auto& [input, label] = *batchOpt;
+                const auto& results = _training_module->execute_forward_backward(
+                    "forward",
+                    {*input, *label}
+                );
+                
+                if (results.error() != executorch::runtime::Error::Ok) {
+                    NSLog(@"Failed to execute forward_backward");
+                    return @{};
+                }
+                
+                size_t samplesProcessed = batchIdx * batchSize + input->sizes()[0];
+                if (totalSteps % 500 == 0 || (epoch == totalEpochs - 1 && batchIdx == numBatchesPerEpoch - 1)) {
+                    NSLog(@"Epoch %d/%lld, Progress %.1f%%, Step %d, Loss %f, Prediction %lld, Label %lld",
+                        epoch + 1, (long long)totalEpochs,
+                        (float)samplesProcessed * 100 / datasetSize,
+                        totalSteps,
+                        results.get()[0].toTensor().const_data_ptr<float>()[0],
+                        results.get()[1].toTensor().const_data_ptr<int64_t>()[0],
+                        label->const_data_ptr<int64_t>()[0]);
+                }
+                
+                optimizer.step(_training_module->named_gradients("forward").get());
+                totalSteps++;
             }
-            
-            if (i % 500 == 0 || i == totalEpochs - 1) {
-                NSLog(@"Step %d, Loss %f, Input [%.0f, %.0f], Prediction %lld, Label %lld",
-                    i,
-                    results.get()[0].toTensor().const_data_ptr<float>()[0],
-                    data.first->const_data_ptr<float>()[0],
-                    data.first->const_data_ptr<float>()[1],
-                    results.get()[1].toTensor().const_data_ptr<int64_t>()[0],
-                    data.second->const_data_ptr<int64_t>()[0]);
-            }
-            
-            optimizer.step(_training_module->named_gradients("forward").get());
         }
         
-//        NSLog(@"Grad Start ==============");
-//        printMap(_training_module->named_gradients("forward").get());
-//        NSLog(@"Grad End ================");
-//
-//        NSLog(@"Old Params Start ==============");
-//        [ETTrainer printTensorDictionary:old_params];
-//        NSLog(@"Old Params End ================");
-
-
         NSDictionary<NSString *, id>* final_params = [ETTrainer toTensorDictionary:param_res.get()];
         
-//        NSLog(@"New Params Start ==============");
-//        [ETTrainer printTensorDictionary:final_params];
-//        NSLog(@"New Params End ================");
+        #ifdef DEBUG
+        printTensorDictionary(final_params, @"Final Params");
+        #endif
         
         auto tensor_diff = [ETTrainer calculateTensorDifference:old_params newDict:final_params];
         
-//        NSLog(@"Diff Start ==============");
-//        [ETTrainer printTensorDictionary:tensor_diff];
-//        NSLog(@"Diff End ================");
-
+        #ifdef DEBUG
+        printTensorDictionary(tensor_diff, @"Tensor Diff");
+        #endif
+        
         return tensor_diff;
         
     } @catch (NSException *exception) {

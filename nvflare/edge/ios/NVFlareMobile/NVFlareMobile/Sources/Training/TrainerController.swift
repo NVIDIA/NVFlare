@@ -6,31 +6,66 @@
 
 import Foundation
 
-
 enum TrainingStatus {
     case idle
     case training
     case stopping
 }
 
-enum TrainerType {
-    case executorch
-    case coreML
+enum TrainerType: String, CaseIterable {
+    case executorch = "ExecutorTorch"
+    // Add more trainer types as needed
 }
 
+enum MethodType: String, CaseIterable {
+    case cifar10 = "cifar10"
+    case xor = "xor"
+    
+    var displayName: String {
+        switch self {
+        case .cifar10: return "CIFAR-10"
+        case .xor: return "XOR"
+        }
+    }
+    
+    // The dataset type required for this method
+    var requiredDataset: String {
+        return self.rawValue // For now, they match 1:1
+    }
+}
 
 @MainActor
 class TrainerController: ObservableObject {
     @Published var status: TrainingStatus = .idle
     @Published var trainerType: TrainerType = .executorch
+    @Published var supportedMethods: Set<MethodType> = [.cifar10, .xor]  // Track supported methods
+    
     private var currentTask: Task<Void, Error>?
     
     private let connection: Connection
     private let deviceStateMonitor: DeviceStateMonitor
     
+    var capabilities: [String: Any] {
+        return [
+            "methods": supportedMethods.map { $0.rawValue }
+        ]
+    }
+    
     init(connection: Connection) {
         self.connection = connection
         self.deviceStateMonitor = DeviceStateMonitor()
+        // Set initial capabilities
+        connection.setCapabilities(capabilities)
+    }
+    
+    func toggleMethod(_ method: MethodType) {
+        if supportedMethods.contains(method) {
+            supportedMethods.remove(method)
+        } else {
+            supportedMethods.insert(method)
+        }
+        // Update capabilities when supported methods change
+        connection.setCapabilities(capabilities)
     }
     
     func startTraining() async throws {
@@ -67,7 +102,16 @@ class TrainerController: ObservableObject {
                 }
                 
                 let job = try jobResponse.toJob()
-                currentJob = job
+                
+                // Verify that we support this job's method
+                let methodString = job.meta.method ?? ""  // Use empty string as fallback
+                if let method = MethodType(rawValue: methodString),
+                   supportedMethods.contains(method) {
+                    currentJob = job
+                } else {
+                    print("Skipping job with unsupported or missing method: \(methodString)")
+                    continue  // Skip this job and try to fetch another one
+                }
                 
             } catch {
                 print("Failed to fetch job \(error), retrying in 5 seconds...")
@@ -119,7 +163,7 @@ class TrainerController: ObservableObject {
                 try await connection.sendResult(
                     jobId: job.id,
                     taskId: task.id,
-                    taskName: "train",
+                    taskName: task.name,
                     weightDiff: weightDiff
                 )
                 
@@ -134,16 +178,26 @@ class TrainerController: ObservableObject {
     }
     
     private func createTrainer(withModelData modelData: [String: String], meta: JobMeta) throws -> Trainer {
+        // Get the method from the job metadata
+        let methodString = meta.method ?? ""  // Use empty string as fallback
+        guard let method = MethodType(rawValue: methodString) else {
+            throw NVFlareError.invalidMetadata("Missing or invalid method in job metadata")
+        }
+        
+        // Verify that we support this method
+        guard supportedMethods.contains(method) else {
+            throw NVFlareError.invalidMetadata("Method \(methodString) is not supported by this client")
+        }
+
         switch trainerType {
         case .executorch:
-            print("model data is\(modelData)");
+            print("model data is\(modelData)")
             guard let modelString = modelData["model_buffer"] else {
-                // Handle missing or invalid model data
-                throw NVFlareError.invalidModelData
+                throw NVFlareError.invalidModelData("Missing model_buffer in model data")
             }
             return ETTrainerWrapper(modelBase64: modelString, meta: meta)
-        case .coreML:
-            fatalError("CoreML trainer not implemented yet")
+        default:
+            fatalError("trainer not implemented yet")
         }
     }
 

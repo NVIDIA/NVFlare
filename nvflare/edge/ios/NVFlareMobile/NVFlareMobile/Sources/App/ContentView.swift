@@ -28,9 +28,33 @@ struct ContentView: View {
                 .keyboardType(.numberPad)
             
             Picker("Trainer Type", selection: $trainerController.trainerType) {
-                Text("ExecutorTorch").tag(TrainerType.executorch)
+                ForEach(TrainerType.allCases, id: \.self) { type in
+                    Text(type.rawValue).tag(type)
+                }
             }
             .pickerStyle(SegmentedPickerStyle())
+            
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Supported Methods")
+                    .font(.headline)
+                    .padding(.bottom, 4)
+                
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(MethodType.allCases, id: \.self) { method in
+                            Toggle(method.displayName, isOn: Binding(
+                                get: { trainerController.supportedMethods.contains(method) },
+                                set: { _ in trainerController.toggleMethod(method) }
+                            ))
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                .frame(maxHeight: 200)  // Limit height and make scrollable
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(10)
             
             Button(trainerController.status == .training ? "Stop Training" : "Start Training") {
                 if trainerController.status == .training {
@@ -49,7 +73,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .disabled(trainerController.status == .stopping)
+            .disabled(trainerController.status == .stopping || trainerController.supportedMethods.isEmpty)
             
             if trainerController.status == .training {
                 ProgressView()

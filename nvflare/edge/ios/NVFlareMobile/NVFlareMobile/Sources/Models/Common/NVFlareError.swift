@@ -15,8 +15,8 @@ enum NVFlareError: Error {
     case serverError(String)
     
     // Training related
-    case invalidMetadata
-    case invalidModelData
+    case invalidMetadata(String)
+    case invalidModelData(String)
     case trainingFailed(String)
     case serverRequestedStop
 }

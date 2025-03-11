@@ -27,7 +27,8 @@ public class Connection: ObservableObject {
     private let taskEndpoint = "task"
     private let resultEndpoint = "result"
     private let scheme = "http"
-    
+    private var capabilities: [String: Any] = ["methods": []]
+
     public var isValid: Bool {
         return !hostname.isEmpty && port > 0 && port <= 65535
     }
@@ -39,6 +40,10 @@ public class Connection: ObservableObject {
     public init(hostname: String = "", port: Int = 0) {
         self.hostname = hostname
         self.port = port
+    }
+    
+    func setCapabilities(_ capabilities: [String: Any]) {
+        self.capabilities = capabilities
     }
     
     private func getURL(for endpoint: String) -> URL? {
@@ -57,11 +62,11 @@ public class Connection: ObservableObject {
         }
         
         // Prepare request body
-        let capabilities: [String: Any] = [
-            "methods": ["xor", "cifar10"]
+        let requestBody: [String: Any] = [
+            "capabilities": self.capabilities  // Use capabilities directly
         ]
         
-        let body = try JSONSerialization.data(withJSONObject: ["capabilities": capabilities])
+        let body = try JSONSerialization.data(withJSONObject: requestBody)
         
         // Create request
         var request = URLRequest(url: url)
