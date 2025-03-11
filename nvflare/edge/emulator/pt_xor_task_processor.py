@@ -17,6 +17,7 @@ import os
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.edge.constants import MsgKey
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.model_protocol import (
@@ -55,7 +56,7 @@ class PTXorTaskProcessor(DeviceTaskProcessor):
     def shutdown(self) -> None:
         pass
 
-    def _pytorch_training(self, global_model):
+    def _pytorch_training(self, global_model, global_round):
         # Define the XOR dataset
         xor_data = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
         xor_target = torch.tensor([[0], [1], [1], [0]], dtype=torch.float32)
@@ -63,12 +64,13 @@ class PTXorTaskProcessor(DeviceTaskProcessor):
         # Network loading
         net = XorNet()
         net.load_state_dict(global_model)
-        criterion = torch.nn.MSELoss()
-        optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+        criterion = torch.nn.BCELoss()
+        optimizer = torch.optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
         net.to(DEVICE)
 
         # Training loop for XOR
-        for epoch in range(100):
+        local_epoch = 1000
+        for epoch in range(local_epoch):
             inputs = xor_data.to(DEVICE)
             labels = xor_target.to(DEVICE)
             # zero the parameter gradients
@@ -79,7 +81,7 @@ class PTXorTaskProcessor(DeviceTaskProcessor):
             loss.backward()
             optimizer.step()
             # record loss
-            self.tb_writer.add_scalar("loss", loss.item(), epoch)
+            self.tb_writer.add_scalar("loss", loss.item(), global_round*local_epoch + epoch)
 
         # Calculate the model param diff
         diff_dict = {}
@@ -114,10 +116,10 @@ class PTXorTaskProcessor(DeviceTaskProcessor):
             expected_format=ModelNativeFormat.STRING,
             expected_encoding=ModelEncoding.NONE,
         )
-
+        global_round = payload[ModelExchangeFormat.MODEL_VERSION]
         global_model = payload[ModelExchangeFormat.MODEL_BUFFER]
         # Convert list to numpy to tensor and run training
         global_model = {k: torch.tensor(v) for k, v in global_model.items()}
-        diff_dict = self._pytorch_training(global_model)
+        diff_dict = self._pytorch_training(global_model, global_round)
 
         return {"result": diff_dict}

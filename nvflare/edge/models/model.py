@@ -77,16 +77,16 @@ class Cifar10Net(nn.Module):
 class XorNet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.linear1 = nn.Linear(2, 10)
-        self.linear2 = nn.Linear(10, 2)
-        self.sigmoid = nn.Sigmoid()
-        self.out = nn.Linear(2, 1)
+        self.linear1 = nn.Linear(2, 4)
+        self.sigmoid_1 = nn.Sigmoid()
+        self.linear2 = nn.Linear(4, 1)
+        self.sigmoid_2 = nn.Sigmoid()
 
     def forward(self, x):
         x = self.linear1(x)
+        x = self.sigmoid_1(x)
         x = self.linear2(x)
-        x = self.sigmoid(x)
-        x = self.out(x)
+        x = self.sigmoid_2(x)
         return x
 
 

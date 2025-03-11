@@ -114,6 +114,7 @@ class ModelExchangeFormat:
     MODEL_BUFFER_TYPE = "model_buffer_type"
     MODEL_BUFFER_NATIVE_FORMAT = "model_buffer_native_format"
     MODEL_BUFFER_ENCODING = "model_buffer_encoding"
+    MODEL_VERSION = "model_version"
 
 
 def verify_payload(

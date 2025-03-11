@@ -19,6 +19,7 @@ from torch.utils.data import Subset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.edge.constants import MsgKey
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.model_protocol import (
@@ -59,7 +60,7 @@ class PTTaskProcessor(DeviceTaskProcessor):
     def shutdown(self) -> None:
         pass
 
-    def _pytorch_training(self, global_model):
+    def _pytorch_training(self, global_model, global_round):
         # Data loading code
         transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
         batch_size = 4
@@ -133,10 +134,10 @@ class PTTaskProcessor(DeviceTaskProcessor):
             expected_format=ModelNativeFormat.STRING,
             expected_encoding=ModelEncoding.NONE,
         )
-
+        global_round = payload[ModelExchangeFormat.MODEL_VERSION]
         global_model = payload[ModelExchangeFormat.MODEL_BUFFER]
         # Convert list to numpy to tensor and run training
         global_model = {k: torch.tensor(v) for k, v in global_model.items()}
-        diff_dict = self._pytorch_training(global_model)
+        diff_dict = self._pytorch_training(global_model, global_round)
 
         return {"result": diff_dict}

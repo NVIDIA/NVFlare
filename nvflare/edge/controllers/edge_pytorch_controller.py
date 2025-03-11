@@ -88,14 +88,20 @@ class EdgePytorchController(Controller):
         if self.task_name == "xor":
             # XOR task
             test_data = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
-            test_labels = torch.tensor([0, 1, 1, 0], dtype=torch.float32)
+            test_labels = torch.tensor([[0], [1], [1], [0]], dtype=torch.float32)
             test_data, test_labels = test_data.to(DEVICE), test_labels.to(DEVICE)
             self.model.to(DEVICE)
             with torch.no_grad():
-                outputs = self.model(test_data)
-                predicted = torch.round(outputs)
-                correct = (predicted == test_labels).sum().item()
+                pred = self.model(test_data)
+                # calculate mean square error
+                mse = torch.nn.functional.mse_loss(pred, test_labels)
+                # calculate accuracy
+                pred_binary = torch.round(pred)
+                correct = (pred_binary == test_labels).sum().item()
                 total = test_labels.size(0)
+                acc = 100 * correct / total
+            return {"MSE": mse.item(), "ACC": acc}
+
         elif self.task_name == "cifar10":
             CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
             from torchvision import datasets, transforms
@@ -119,7 +125,8 @@ class EdgePytorchController(Controller):
                     _, predicted = torch.max(outputs.data, 1)
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
-        return 100 * correct // total
+                acc = 100 * correct // total
+            return {"ACC": acc}
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:
@@ -153,10 +160,10 @@ class EdgePytorchController(Controller):
                     MEF.MODEL_BUFFER_TYPE: ModelBufferType.PYTORCH,
                     MEF.MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.STRING,
                     MEF.MODEL_BUFFER_ENCODING: ModelEncoding.NONE,
+                    MEF.MODEL_VERSION: self.current_round
                 }
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
-                task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self.current_round)
 
                 train_task = Task(
                     name="train",
@@ -198,8 +205,9 @@ class EdgePytorchController(Controller):
                 self._update_model(aggregated_grads)
 
                 # Evaluate the model
-                accuracy = self._eval_model()
-                tb_writer.add_scalar("accuracy", accuracy, i)
+                metric = self._eval_model()
+                for key, value in metric.items():
+                    tb_writer.add_scalar(key, value, i)
 
                 if abort_signal.triggered:
                     return
