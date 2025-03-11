@@ -13,19 +13,17 @@
 # limitations under the License.
 
 import torch
-
+from model import Net
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
-from model import Net
 
 CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
+
 def main():
     # Data loading code
-    transform = transforms.Compose(
-        [transforms.ToTensor(),
-         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     batch_size = 4
     train_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True, transform=transform)
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=2)
@@ -33,7 +31,7 @@ def main():
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=2)
 
     # Training configurations
-    workspace_root = '/tmp/nvflare/workspaces/cifar10_cen'
+    workspace_root = "/tmp/nvflare/workspaces/cifar10_cen"
     net = Net().to(DEVICE)
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
@@ -60,14 +58,13 @@ def main():
             running_loss += loss.item()
             # record loss every 250 mini-batches (1000 samples)
             if i % 250 == 249:
-                tb_writer.add_scalar('loss', running_loss / 250, epoch * len(train_loader) + i)
-                print(f'[{epoch}, {i}] loss: {running_loss / 250}')
+                tb_writer.add_scalar("loss", running_loss / 250, epoch * len(train_loader) + i)
+                print(f"[{epoch}, {i}] loss: {running_loss / 250}")
                 running_loss = 0.0
 
-
     # Save the final model
-    model_name = 'cifar_net.pth'
-    torch.save(net.state_dict(), f'{workspace_root}/{model_name}')
+    model_name = "cifar_net.pth"
+    torch.save(net.state_dict(), f"{workspace_root}/{model_name}")
 
     # Test the testing accuracy
     correct = 0
@@ -82,8 +79,8 @@ def main():
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
     accuracy = 100 * correct // total
-    tb_writer.add_scalar('accuracy', accuracy, 19)
-    print(f'Accuracy of the network on the 10000 test images: {accuracy} %')
+    tb_writer.add_scalar("accuracy", accuracy, 19)
+    print(f"Accuracy of the network on the 10000 test images: {accuracy} %")
 
 
 if __name__ == "__main__":

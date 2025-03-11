@@ -119,7 +119,7 @@ class EdgeDispatchExecutor(EdgeTaskExecutor):
         return time.time() - self.start_time > self.wait_time or 0 < self.min_devices <= self.num_results
 
     def process_edge_request(self, request: Any, fl_ctx: FLContext) -> Any:
-        self.log_info(fl_ctx, f"Received edge request: {request}")
+        self.log_info(fl_ctx, f"Received edge request: {request['device_info']}")
 
         if isinstance(request, TaskRequest):
             response = self.handle_task_request(request, fl_ctx)

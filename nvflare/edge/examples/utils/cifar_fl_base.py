@@ -13,11 +13,10 @@
 # limitations under the License.
 
 import torch
-
+from model import Net
 from torch.utils.data import Subset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
-from model import Net
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -25,11 +24,10 @@ import nvflare.client as flare
 CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
+
 def main():
     # Data loading code
-    transform = transforms.Compose(
-        [transforms.ToTensor(),
-         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     batch_size = 4
     train_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True, transform=transform)
     test_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=False, download=True, transform=transform)
@@ -63,9 +61,9 @@ def main():
     client_id = flare.get_site_name()
     # Indices according to client_id number
     # find the number in client_id string
-    client_id = int(client_id.split('-')[-1])-1
+    client_id = int(client_id.split("-")[-1]) - 1
     increment = 3125
-    indices = list(range(client_id*increment, (client_id+1)*increment))
+    indices = list(range(client_id * increment, (client_id + 1) * increment))
     train_subset = Subset(train_set, indices)
     train_loader = torch.utils.data.DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=2)
@@ -80,7 +78,7 @@ def main():
 
         # Evaluate global model
         global_acc = evaluate(input_model.params)
-        tb_writer.add_scalar('accuracy', global_acc, cur_round)
+        tb_writer.add_scalar("accuracy", global_acc, cur_round)
 
         # (5.1) loads model from NVFlare
         net.load_state_dict(input_model.params)
@@ -108,12 +106,12 @@ def main():
                 running_loss += loss.item()
                 # record loss every 250 mini-batches (1000 samples)
                 if i % 250 == 249:
-                    tb_writer.add_scalar('loss', running_loss / 250, local_base_step + i)
+                    tb_writer.add_scalar("loss", running_loss / 250, local_base_step + i)
                     running_loss = 0.0
 
         print(f"({client_id}) Finished Training")
         # Save the final model
-        model_name = 'cifar_net.pth'
+        model_name = "cifar_net.pth"
         torch.save(input_model.params, model_name)
 
         # (5.4) construct trained FL model

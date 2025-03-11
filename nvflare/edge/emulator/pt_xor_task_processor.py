@@ -15,9 +15,7 @@ import logging
 import os
 
 import torch
-from torch.utils.data import Subset
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import datasets, transforms
 
 from nvflare.edge.constants import MsgKey
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
@@ -28,7 +26,7 @@ from nvflare.edge.model_protocol import (
     ModelNativeFormat,
     verify_payload,
 )
-from nvflare.edge.models.model import Cifar10Net
+from nvflare.edge.models.model import XorNet
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
@@ -38,10 +36,8 @@ log = logging.getLogger(__name__)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
-class PTTaskProcessor(DeviceTaskProcessor):
-    def __init__(self, data_root: str, subset_size: int):
-        self.data_root = data_root
-        self.subset_size = subset_size
+class PTXorTaskProcessor(DeviceTaskProcessor):
+    def __init__(self):
         self.device_info = None
         self.user_info = None
         self.job_id = None
@@ -60,45 +56,30 @@ class PTTaskProcessor(DeviceTaskProcessor):
         pass
 
     def _pytorch_training(self, global_model):
-        # Data loading code
-        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-        batch_size = 4
-        train_set = datasets.CIFAR10(root=self.data_root, train=True, download=True, transform=transform)
-        # Find the device ID numer
-        device_id = int(self.device_info.device_id.split("-")[-1])
-        indices = list(range(device_id * self.subset_size, (device_id + 1) * self.subset_size))
-        train_subset = Subset(train_set, indices)
-        train_loader = torch.utils.data.DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
+        # Define the XOR dataset
+        xor_data = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
+        xor_target = torch.tensor([[0], [1], [1], [0]], dtype=torch.float32)
 
         # Network loading
-        net = Cifar10Net()
+        net = XorNet()
         net.load_state_dict(global_model)
-        criterion = torch.nn.CrossEntropyLoss()
+        criterion = torch.nn.MSELoss()
         optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
         net.to(DEVICE)
 
-        # Training loop
-        for epoch in range(4):
-            running_loss = 0.0
-            for i, data in enumerate(train_loader, 0):
-                # get the inputs; data is a list of [inputs, labels]
-                inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
-
-                # zero the parameter gradients
-                optimizer.zero_grad()
-
-                # forward + backward + optimize
-                outputs = net(inputs)
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-
-                # print statistics
-                running_loss += loss.item()
-                # record loss every 250 mini-batches (1000 samples)
-                if i % 250 == 249:
-                    self.tb_writer.add_scalar("loss", running_loss / 250, epoch * len(train_loader) + i)
-                    running_loss = 0.0
+        # Training loop for XOR
+        for epoch in range(100):
+            inputs = xor_data.to(DEVICE)
+            labels = xor_target.to(DEVICE)
+            # zero the parameter gradients
+            optimizer.zero_grad()
+            # forward + backward + optimize
+            outputs = net(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            # record loss
+            self.tb_writer.add_scalar("loss", loss.item(), epoch)
 
         # Calculate the model param diff
         diff_dict = {}

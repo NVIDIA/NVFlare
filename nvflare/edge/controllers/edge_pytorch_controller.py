@@ -14,8 +14,10 @@
 from typing import Any, Dict
 
 import torch
-from model import Net
 from torch import Tensor
+
+# Import tensorboard
+from torch.utils.tensorboard import SummaryWriter
 
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import ReturnCode
@@ -25,32 +27,41 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.edge.aggregators.edge_json_accumulator import EdgeJsonAccumulator
+from nvflare.edge.aggregators.edge_dict_accumulator import EdgeDictAccumulator
 from nvflare.edge.constants import MsgKey
 from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding
 from nvflare.edge.model_protocol import ModelExchangeFormat as MEF
 from nvflare.edge.model_protocol import ModelNativeFormat
+from nvflare.edge.models.model import Cifar10Net, XorNet
 from nvflare.security.logging import secure_format_exception
 
-# Import tensorboard
-from torch.utils.tensorboard import SummaryWriter
-
 tb_writer = SummaryWriter()
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class EdgePytorchController(Controller):
     def __init__(
         self,
         num_rounds: int,
+        task_name: str,
     ):
         super().__init__()
-        self.model = Net()
+        self.task_name = task_name
+        if task_name == "cifar10":
+            self.model = Cifar10Net()
+        elif task_name == "xor":
+            self.model = XorNet()
+        else:
+            # not supported error
+            raise ValueError(f"Task {task_name} is not supported,supported [`cifar10`, `xor`]")
+        self.model.to(DEVICE)
         self.num_rounds = num_rounds
         self.current_round = None
         self.aggregator = None
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.log_info(fl_ctx, "Initializing PyTorch mobile workflow.")
-        self.aggregator = EdgeJsonAccumulator(aggr_key="data")
+        self.aggregator = EdgeDictAccumulator()
 
         # initialize global model
         fl_ctx.set_prop(AppConstants.START_ROUND, 1, private=True, sticky=True)
@@ -71,31 +82,43 @@ class EdgePytorchController(Controller):
         """Update model weights using aggregated gradients."""
         for key, param in self.model.state_dict().items():
             if key in aggregated_grads:
-                self.model.state_dict()[key] += aggregated_grads[key]
+                self.model.state_dict()[key] += aggregated_grads[key].to(DEVICE)
 
     def _eval_model(self) -> float:
-        DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
-        from torchvision import datasets, transforms
-        transform = transforms.Compose(
-            [transforms.ToTensor(),
-             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-        test_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=False, download=True, transform=transform)
-        test_loader = torch.utils.data.DataLoader(test_set, batch_size=4, shuffle=False, num_workers=2)
+        if self.task_name == "xor":
+            # XOR task
+            test_data = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
+            test_labels = torch.tensor([0, 1, 1, 0], dtype=torch.float32)
+            test_data, test_labels = test_data.to(DEVICE), test_labels.to(DEVICE)
+            self.model.to(DEVICE)
+            with torch.no_grad():
+                outputs = self.model(test_data)
+                predicted = torch.round(outputs)
+                correct = (predicted == test_labels).sum().item()
+                total = test_labels.size(0)
+        elif self.task_name == "cifar10":
+            CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
+            from torchvision import datasets, transforms
 
-        self.model.to(DEVICE)
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for data in test_loader:
-                # (optional) use GPU to speed things up
-                inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
-                # calculate outputs by running images through the network
-                outputs = self.model(inputs)
-                # the class with the highest energy is what we choose as prediction
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
+            transform = transforms.Compose(
+                [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
+            )
+            test_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=False, download=True, transform=transform)
+            test_loader = torch.utils.data.DataLoader(test_set, batch_size=4, shuffle=False, num_workers=2)
+
+            self.model.to(DEVICE)
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for data in test_loader:
+                    # (optional) use GPU to speed things up
+                    inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
+                    # calculate outputs by running images through the network
+                    outputs = self.model(inputs)
+                    # the class with the highest energy is what we choose as prediction
+                    _, predicted = torch.max(outputs.data, 1)
+                    total += labels.size(0)
+                    correct += (predicted == labels).sum().item()
         return 100 * correct // total
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
@@ -122,7 +145,7 @@ class EdgePytorchController(Controller):
                 # Create task and send global model to clients
                 global_weights = self.model.state_dict()
                 # convert tensor to numpy
-                global_weights = {k: v.numpy().tolist() for k, v in global_weights.items()}
+                global_weights = {k: v.cpu().numpy().tolist() for k, v in global_weights.items()}
                 # Compose shareable
                 task_data = Shareable()
                 task_data[MsgKey.PAYLOAD] = {
@@ -155,7 +178,6 @@ class EdgePytorchController(Controller):
                 self.log_info(fl_ctx, "Start aggregation.")
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 aggr_result = self.aggregator.aggregate(fl_ctx)
-                self.log_info(fl_ctx, f"Aggregation result: {aggr_result}")
                 fl_ctx.set_prop(
                     AppConstants.AGGREGATION_RESULT,
                     aggr_result,

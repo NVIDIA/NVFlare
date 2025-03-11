@@ -14,10 +14,26 @@
 
 import torch
 import torch.nn as nn
+from executorch.exir import to_edge
+from torch.export import export
+from torch.export.experimental import _export_forward_backward
 from torch.nn import functional as F
 
 
-class ConvNet(nn.Module):
+def export_model(net, input_tensor_example, label_tensor_example):
+    # Captures the forward graph. The graph will look similar to the model definition now.
+    # Will move to export_for_training soon which is the api planned to be supported in the long term.
+    ep = export(net, (input_tensor_example, label_tensor_example), strict=True)
+    # Captures the backward graph. The exported_program now contains the joint forward and backward graph.
+    ep = _export_forward_backward(ep)
+    # Lower the graph to edge dialect.
+    ep = to_edge(ep)
+    # Lower the graph to executorch.
+    ep = ep.to_executorch()
+    return ep
+
+
+class Cifar10ConvNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=6, kernel_size=5, stride=2)
@@ -37,7 +53,7 @@ class ConvNet(nn.Module):
         return x
 
 
-class Net(nn.Module):
+class Cifar10Net(nn.Module):
     def __init__(self):
         super().__init__()
         self.pool = nn.MaxPool2d(2, 2)
@@ -55,6 +71,22 @@ class Net(nn.Module):
         x = F.relu(self.fc3(x))
         x = F.relu(self.fc4(x))
         x = self.fc5(x)
+        return x
+
+
+class XorNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(2, 10)
+        self.linear2 = nn.Linear(10, 2)
+        self.sigmoid = nn.Sigmoid()
+        self.out = nn.Linear(2, 1)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.linear2(x)
+        x = self.sigmoid(x)
+        x = self.out(x)
         return x
 
 

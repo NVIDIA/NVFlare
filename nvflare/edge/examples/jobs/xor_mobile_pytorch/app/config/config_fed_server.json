@@ -7,7 +7,7 @@
             "path": "nvflare.edge.controllers.edge_pytorch_controller.EdgePytorchController",
             "args": {
                 "num_rounds": "{num_rounds}",
-                "task_name": "cifar10"
+                "task_name": "xor"
             }
         }
     ]
