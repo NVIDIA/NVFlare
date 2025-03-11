@@ -4,3 +4,4 @@ matplotlib
 jupyterlab
 tdigest
 wget
+kagglehub
