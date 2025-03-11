@@ -19,7 +19,6 @@ from torch.utils.data import Subset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 
-from nvflare.app_common.app_constant import AppConstants
 from nvflare.edge.constants import MsgKey
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.model_protocol import (

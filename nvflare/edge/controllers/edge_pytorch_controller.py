@@ -160,7 +160,7 @@ class EdgePytorchController(Controller):
                     MEF.MODEL_BUFFER_TYPE: ModelBufferType.PYTORCH,
                     MEF.MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.STRING,
                     MEF.MODEL_BUFFER_ENCODING: ModelEncoding.NONE,
-                    MEF.MODEL_VERSION: self.current_round
+                    MEF.MODEL_VERSION: self.current_round,
                 }
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)

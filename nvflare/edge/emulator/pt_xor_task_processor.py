@@ -17,7 +17,6 @@ import os
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from nvflare.app_common.app_constant import AppConstants
 from nvflare.edge.constants import MsgKey
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.model_protocol import (
@@ -81,7 +80,7 @@ class PTXorTaskProcessor(DeviceTaskProcessor):
             loss.backward()
             optimizer.step()
             # record loss
-            self.tb_writer.add_scalar("loss", loss.item(), global_round*local_epoch + epoch)
+            self.tb_writer.add_scalar("loss", loss.item(), global_round * local_epoch + epoch)
 
         # Calculate the model param diff
         diff_dict = {}
