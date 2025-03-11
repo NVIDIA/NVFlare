@@ -14,6 +14,15 @@ NVFlareMobile is a mobile implementation of NVIDIA FLARE (Federated Learning App
 - ExecutorTorch Framework
 - SwiftUI for UI components
 
+### Start development
+Clone the repo, install Xcode on your platform, then open the [ios/NVFlareMobile](../ios/NVFlareMobile/) project inside Xcode.
+
+You need to build the Executorch framework on your computer as well. Please refer to [Executorch Apple Runtime](https://pytorch.org/executorch/stable/apple-runtime.html).
+
+Include those frameworks in the app and click the build and run button.
+
+The app will be installed and started on your selected destination (iPhone or iPhone simulator).
+
 ## Project Structure
 
 ### Sources
