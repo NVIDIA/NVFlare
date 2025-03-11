@@ -15,7 +15,6 @@ import json
 import logging
 import os
 import sys
-import zlib
 from typing import Tuple
 from urllib.parse import urljoin
 
@@ -24,6 +23,7 @@ from flask import Flask, Response, jsonify, request
 
 from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.web_server import FilteredJSONProvider
+from nvflare.fuel.utils.hash_utils import UniformHash
 
 log = logging.getLogger(__name__)
 app = Flask(__name__)
@@ -39,9 +39,9 @@ class LcpMapper:
     def map(self, device_id: str) -> Tuple[str, str]:
         if not self.lcp_list:
             raise RuntimeError("No LCP is configured")
-        # Do not use hash() here. The hash value is different for every run
-        checksum = zlib.crc32(device_id.encode())
-        index = checksum % len(self.lcp_list)
+
+        uniform_hash = UniformHash(len(self.lcp_list))
+        index = uniform_hash.hash(device_id)
         return self.lcp_list[index]
 
     def load_lcp_map(self, mapping_file: str):
@@ -59,8 +59,10 @@ def validate_path(path: str):
     if path not in {"job", "task", "result"}:
         raise ApiError(400, "INVALID_REQUEST", f"Invalid path {path}")
 
+    return path
 
-def validate_content(content: str):
+
+def validate_content(content: bytes):
     if not content:
         return None
 
@@ -136,7 +138,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     mapper.load_lcp_map(sys.argv[2])
-    port = int(sys.argv[1])
+    proxy_port = int(sys.argv[1])
 
     app.json = FilteredJSONProvider(app)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=proxy_port, debug=False)
