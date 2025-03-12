@@ -3,15 +3,16 @@
   "num_devices": 5,
   "device_id_prefix": "emulator-",
   "processor": {
-    "path": "xor_et_task_processor.XORETTaskProcessor",
+    "path": "et_cpp_task_processor.ETCppTaskProcessor",
     "args": {
-      "data_path": "xor_data.csv",
-      "training_config": {
-        "batch_size": 1, "shuffle": false, "num_workers": 0
-      }
+      "et_binary_path": "train_xor",
+      "et_model_path": "xor.pte",
+      "data_path": ""
     }
+
   },
   "capabilities": {
     "methods": ["xor"]
   }
 }
+

@@ -3,15 +3,15 @@
   "num_devices": 5,
   "device_id_prefix": "emulator-",
   "processor": {
-    "path": "xor_et_task_processor.XORETTaskProcessor",
+    "path": "cifar10_et_task_processor.CIFAR10ETTaskProcessor",
     "args": {
-      "data_path": "xor_data.csv",
+      "data_path": "/tmp/cifar10",
       "training_config": {
-        "batch_size": 1, "shuffle": false, "num_workers": 0
+        "batch_size": 32, "shuffle": false, "num_workers": 0
       }
     }
   },
   "capabilities": {
-    "methods": ["xor"]
+    "methods": ["cifar10"]
   }
 }

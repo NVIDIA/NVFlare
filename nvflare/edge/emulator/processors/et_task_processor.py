@@ -13,11 +13,15 @@
 # limitations under the License.
 
 import base64
-import json
 import logging
-import os
-import shutil
-import subprocess
+from abc import ABC, abstractmethod
+from typing import Dict
+
+from executorch.extension.training import (
+    _load_for_executorch_for_training_from_buffer,
+    get_sgd_optimizer,
+)
+from torch.utils.data import DataLoader, Dataset
 
 from nvflare.edge.constants import MsgKey
 from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
@@ -36,92 +40,162 @@ from nvflare.edge.web.models.user_info import UserInfo
 log = logging.getLogger(__name__)
 
 
-def save_to_pte(model_string: str, filename: str):
-    binary_data = base64.b64decode(model_string)
-    with open(filename, "wb") as f:
-        f.write(binary_data)
+def tensor_dict_to_json(d):
+    j = {}
+    for k, v in d.items():
+        entry = {}
+        # TODO: this needs to be compatible with the "Controller" side logic
+        entry["data"] = v.cpu().numpy().tolist()
+        entry["sizes"] = list(v.size())
+        j[k] = entry
+    return j
 
 
-def run_training_with_timeout(
-    train_program: str, model_path: str, result_path: str, data_path: str = "", timeout_seconds: int = 300
-) -> int:
-    try:
-        command = [train_program, "--model_path", model_path, "--output_path", result_path, "--data_path", data_path]
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        # Wait for process to complete with timeout
-        stdout, stderr = process.communicate(timeout=timeout_seconds)
-
-        if process.returncode != 0:
-            print(f"Error output: {stderr}")
-            raise subprocess.CalledProcessError(process.returncode, command, stdout, stderr)
-
-        print(f"Output: {stdout}")
-        return process.returncode
-
-    except subprocess.TimeoutExpired:
-        process.kill()
-        print("Training timed out")
-        raise
-    except Exception as e:
-        print(f"Error during training: {e}")
-        raise
+def clone_params(et_params):
+    params = {}
+    for k, v in et_params.items():
+        params[k] = v.clone()
+    return params
 
 
-def read_training_result(result_path: str = "training_result.json"):
-    try:
-        with open(result_path, "r") as f:
-            results = json.load(f)
-
-        return results
-
-    except FileNotFoundError:
-        print(f"Could not find file: {result_path}")
-        raise
-    except json.JSONDecodeError:
-        print(f"Error parsing JSON file: {result_path}")
-        raise
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-        raise
+def calc_params_diff(initial_p, last_p):
+    diff_p = {}
+    for k, v in initial_p.items():
+        diff_p[k] = last_p[k] - v
+    return diff_p
 
 
-class ETTaskProcessor(DeviceTaskProcessor):
+class ETTaskProcessor(DeviceTaskProcessor, ABC):
+    """Base ExecutorTorch task processor."""
+
     def __init__(
-        self, device_info: DeviceInfo, user_info: UserInfo, et_binary_path: str, et_model_path: str, data_path: str
+        self,
+        data_path: str,
+        training_config: Dict = None,
     ):
-        super().__init__(device_info, user_info)
+        """Initialize the task processor.
+
+        Args:
+            device_info: Information about the device
+            user_info: Information about the user
+            data_path: Path to the dataset
+            training_config: Configuration for training including:
+                - batch_size (int): Size of each training batch (default: 32)
+                - shuffle (bool): Whether to shuffle the dataset (default: True)
+                - num_workers (int): Number of worker processes for data loading (default: 0)
+                - learning_rate (float): Learning rate for optimization (default: 0.1)
+                - momentum (float): Momentum factor (default: 0.0)
+                - weight_decay (float): Weight decay factor (default: 0.0)
+                - dampening (float): Dampening for momentum (default: 0.0)
+                - nesterov (bool): Enables Nesterov momentum (default: False)
+        """
         self.job_id = None
         self.job_name = None
-        self.device_info = device_info
-        self.et_binary_path = et_binary_path
-        self.et_model_path = et_model_path
+        self.user_info = None
+        self.device_info = None
         self.data_path = data_path
 
-        device_io_dir = f"{device_info.device_id}_output"
-        os.makedirs(device_io_dir, exist_ok=True)
-        self.model_path = os.path.abspath(os.path.join(device_io_dir, self.et_model_path))
-        self.result_path = os.path.abspath(os.path.join(device_io_dir, "training_result.json"))
-        self.train_binary = os.path.abspath(os.path.join(device_io_dir, self.et_binary_path))
-        self._setup_train_program()
+        # Set default training configuration
+        self.training_config = {
+            "batch_size": 32,
+            "shuffle": True,
+            "num_workers": 0,
+            "learning_rate": 0.1,
+            "momentum": 0.0,
+            "weight_decay": 0.0,
+            "dampening": 0.0,
+            "nesterov": False,
+        }
+        # Update with user-provided config
+        if training_config:
+            self.training_config.update(training_config)
 
-    def _setup_train_program(self):
-        if not os.path.exists(self.train_binary):
-            shutil.copy2(self.et_binary_path, self.train_binary)
-            # Make it executable
-            os.chmod(self.train_binary, 0o755)
+        # Dataset and DataLoader setup
+        self.dataset = self.get_dataset(data_path)
+        self.dataloader = DataLoader(
+            self.dataset,
+            batch_size=self.training_config["batch_size"],
+            shuffle=self.training_config["shuffle"],
+            num_workers=self.training_config["num_workers"],
+        )
 
-    def setup(self, job: JobResponse) -> None:
+    @abstractmethod
+    def get_dataset(self, data_path: str) -> Dataset:
+        """Get dataset for training.
+
+        Args:
+            data_path: Path to dataset
+
+        Returns:
+            Dataset: PyTorch dataset for training
+        """
+        pass
+
+    def setup(self, device_info: DeviceInfo, user_info: UserInfo, job: JobResponse) -> None:
+        """Set up the task processor for a new job.
+
+        Args:
+            job: Job response containing job information and configuration
+        """
         self.job_id = job.job_id
         self.job_name = job.job_name
+        log.info(f"Setting up job {self.job_name} (ID: {self.job_id})")
+        self.device_info = device_info
+        self.user_info = user_info
+
+        # Additional setup could be added here, such as:
+        # - Loading job-specific configurations
+        # - Setting up logging/monitoring
+        # - Initializing job-specific resources
 
     def shutdown(self) -> None:
-        pass
+        """Clean up resources when shutting down."""
+        log.info(f"Shutting down job {self.job_name} (ID: {self.job_id})")
+        # Add cleanup code here if needed
+
+    def run_training(self, et_model, total_epochs: int = 1) -> Dict:
+        """Run training loop.
+
+        Args:
+            et_model: ExecutorTorch model
+            total_epochs: Number of epochs to train
+
+        Returns:
+            dict: Training results with parameter differences
+        """
+        log.info(f"Starting training for {total_epochs} epochs")
+        initial_params = None
+        total_batches = len(self.dataloader)
+
+        for epoch in range(total_epochs):
+            log.info(f"Epoch {epoch + 1}/{total_epochs}")
+
+            for batch_idx, batch in enumerate(self.dataloader):
+                loss, pred = et_model.forward_backward("forward", batch)
+
+                if initial_params is None:
+                    initial_params = clone_params(et_model.named_parameters())
+
+                optimizer = get_sgd_optimizer(
+                    et_model.named_parameters(),
+                    self.training_config["learning_rate"],
+                    self.training_config["momentum"],
+                    self.training_config["weight_decay"],
+                    self.training_config["dampening"],
+                    self.training_config["nesterov"],
+                )
+
+                optimizer.step(et_model.named_gradients())
+
+                # Log progress periodically
+                if batch_idx % max(1, total_batches // 10) == 0:
+                    log.info(f"Epoch {epoch + 1}/{total_epochs} - Batch {batch_idx + 1}/{total_batches} - Loss: {loss}")
+
+        log.info("Training completed")
+        last_params = clone_params(et_model.named_parameters())
+        param_diff = calc_params_diff(initial_params, last_params)
+        result = tensor_dict_to_json(param_diff)
+        return result
 
     def process_task(self, task: TaskResponse) -> dict:
         """Process received task and return results.
@@ -150,33 +224,17 @@ class ETTaskProcessor(DeviceTaskProcessor):
             expected_encoding=ModelEncoding.BASE64,
         )
 
-        # Save model to disk for training
         try:
-            save_to_pte(payload[ModelExchangeFormat.MODEL_BUFFER], self.model_path)
+            model_bytes = base64.b64decode(payload[ModelExchangeFormat.MODEL_BUFFER])
+            et_model = _load_for_executorch_for_training_from_buffer(model_bytes)
         except Exception as e:
-            log.error(f"Failed to save model: {e}")
-            raise RuntimeError("Failed to save model to disk") from e
+            log.error(f"Failed to load model: {e}")
+            raise RuntimeError("Failed to load model") from e
 
-        # Run training with timeout
         try:
-            result = run_training_with_timeout(
-                self.train_binary, self.model_path, self.result_path, self.data_path, timeout_seconds=600
-            )
+            diff_dict = self.run_training(et_model)
             log.info("Training completed successfully")
-        except subprocess.TimeoutExpired as e:
-            log.error("Training exceeded timeout limit")
-            raise RuntimeError("Training took too long and was terminated") from e
-        except subprocess.CalledProcessError as e:
-            log.error(f"Training process failed with return code {e.returncode}")
-            raise RuntimeError("Training process failed") from e
+            return {"result": diff_dict}
         except Exception as e:
             log.error(f"Training failed with unexpected error: {e}")
             raise RuntimeError("Training failed unexpectedly") from e
-
-        # Read and return results
-        try:
-            diff_dict = read_training_result(self.result_path)
-            return {"result": diff_dict}
-        except Exception as e:
-            log.error(f"Failed to read training results: {e}")
-            raise RuntimeError("Failed to read training results") from e
