@@ -1,82 +1,45 @@
 # NVFLARE Code Pre-Installer
 
-In production environments, NVFLARE applications often need pre-installed code and shared Python packages. This tool simplifies the pre-installation process by handling both application code and shared resources.
+A tool to pre-install NVFLARE application code and libraries.
 
 ## Overview
 
-The code pre-installer:
-1. Installs site-specific job code to a designated directory
-2. Installs shared Python packages to a common location
-3. Sets up Python path for shared packages
-4. Handles package dependencies via requirements.txt
+The code pre-installer handles:
+- Installation of application code
+- Installation of shared libraries
+- Site-specific customizations
+- Python package dependencies
 
-## Job Structure
+## Directory Structure
 
-Required structure in zip file:
+Expected application code zip structure:
 ```
-job_structure.zip
-├── job_config/                # Job configuration directory
-│   ├── meta.json             # Contains job name and metadata
-│   ├── app/                  # Default app (optional)
-│   │   └── custom/          # Default custom code
-│   ├── app_server/          # Server-specific code
-│   │   └── custom/         
-│   └── app_site-1/          # Site-specific code
-│       └── custom/         
-├── requirements.txt          # Python package dependencies
-└── job_share/               # Shared resources
-    └── pt/                  # Example: shared Python package
+app_code.zip
+├── app_code/
+│   ├── meta.json           # Application metadata
+│   ├── apps/              # Default application code
+│   │   └── custom/        # Default custom code
+│   └── app_site-1/        # Site-specific code (optional)
+│       └── custom/        # Site custom code
+├── app_share/             # Shared resources
+│   └── shared.py
+└── requirements.txt       # Python dependencies (optional)
 ```
-the job_config can directly copied from the job config from FedJob.export_job("/path/to/job_config")
-
-"/path/to/job_config/job_name"
 
 ## Usage
 
-### Command Line
 ```bash
-nvflare pre-install \
-    --job-structure /path/to/job_structure.zip \
-    --site-name site-1 \
-    [--install-prefix /opt/nvflare/jobs] \
-    [--share-location /opt/nvflare/share]
+python -m nvflare.tool.code_pre_installer.install \
+    --app-code /path/to/app_code.zip \
+    --install-prefix /opt/nvflare/apps \
+    --site-name site-1
 ```
 
-### Arguments
+## Installation Paths
 
-- `--job-structure`: (Required) Path to job structure zip file
-- `--site-name`: (Required) Target site name (e.g., site-1, server)
-- `--install-prefix`: Installation directory for job code (default: /opt/nvflare/jobs)
-- `--share-location`: Installation directory for shared resources (default: /opt/nvflare/share)
+- Application code: `<install-prefix>/<app-name>/`
+- Shared resources: `/local/custom/`
 
-## Examples
-
-1. Install server code:
-```bash
-nvflare pre-install \
-    --job-structure federated_training.zip \
-    --site-name server
-```
-
-2. Install with custom paths:
-```bash
-nvflare pre-install \
-    --job-structure federated_training.zip \
-    --site-name site-1 \
-    --install-prefix /custom/jobs \
-    --share-location /custom/share
-```
-
-## Directory Structure After Installation
-
-```
-<install-prefix>/
-└── <job-name>/              # From meta.json
-    └── [custom code files]  # From app_<site-name>/custom/
-
-<share-location>/
-└── [shared resources]       # From job_share/
-```
 
 ## Error Handling
 
@@ -154,14 +117,3 @@ import os
 install_prefix = os.getenv("NVFLARE_INSTALL_PREFIX", "")
 task_script_path = f"{install_prefix}src/client.py"
 ```
-
-### Job requires liberaries in python path.  
-
-Some training code may rely on custom Python packages. These packages should be:
-1. Listed in requirements.txt for pip installation
-2. Or placed in job_share/ folder if they're custom packages
-The installer will:
-- Install requirements.txt packages using pip
-- Add job_share location to Python path for custom packages
-- Make shared packages available to all jobs
-
