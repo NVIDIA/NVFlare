@@ -168,6 +168,7 @@ def parse_args(prog_name: str):
 def run_pre_install_cmd(args):
     try:
         from nvflare.tool.code_pre_installer.install import install_app_code
+
         install_app_code(
             Path(args.app_code),
             Path(args.install_prefix),
