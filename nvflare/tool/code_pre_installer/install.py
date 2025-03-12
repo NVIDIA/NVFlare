@@ -52,6 +52,10 @@ def install_app_code(app_code: Path, install_prefix: Path, site_name: str):
     """Install NVFLARE application code for a specific site."""
     CUSTOM_DIR = Path("/local/custom")
 
+    # Verify input zip file exists
+    if not app_code.exists():
+        raise FileNotFoundError(f"Application code zip not found: {app_code}")
+
     # Create temp directory
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -67,14 +71,14 @@ def install_app_code(app_code: Path, install_prefix: Path, site_name: str):
             install_requirements(requirements_file)
 
         # Validate structure
-        app_code = temp_path / "app_code"
+        app_code_dir = temp_path / "app_code"
         app_share = temp_path / "app_share"
 
-        if not (app_code.exists() and app_share.exists()):
+        if not (app_code_dir.exists() and app_share.exists()):
             raise ValueError("Invalid application code: Missing app_code or app_share directory")
 
         # Read meta.json
-        meta_file = app_code / "meta.json"
+        meta_file = app_code_dir / "meta.json"
         if not meta_file.exists():
             raise ValueError("meta.json not found in app_code")
 
@@ -91,8 +95,8 @@ def install_app_code(app_code: Path, install_prefix: Path, site_name: str):
         CUSTOM_DIR.mkdir(parents=True, exist_ok=True)
 
         # Install site-specific custom code
-        default_site_dir = app_code / "apps"
-        site_dir = app_code / f"app_{site_name}"
+        default_site_dir = app_code_dir / "apps"
+        site_dir = app_code_dir / f"app_{site_name}"
         if not site_dir.exists():
             site_dir = default_site_dir
 
@@ -121,13 +125,9 @@ def install_app_code(app_code: Path, install_prefix: Path, site_name: str):
         print(f"- Application files installed to: {app_dir}")
         print(f"- Shared files installed to: {CUSTOM_DIR}")
 
-        # Delete the zip file after successful installation
-        try:
-            if app_code.exists():
-                app_code.unlink()
-            print(f"- Cleaned up application code zip: {app_code}")
-        except Exception as e:
-            print(f"Warning: Could not delete zip file {app_code}: {str(e)}")
+        # Delete the original zip file after successful installation
+        app_code.unlink()
+        print(f"- Cleaned up application code zip: {app_code}")
 
 
 def main():
