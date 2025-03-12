@@ -18,49 +18,19 @@
 import argparse
 import json
 import shutil
-import site
 import tempfile
 from pathlib import Path
 from zipfile import ZipFile
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Install NVFLARE job structure")
-    parser.add_argument("--job-structure", required=True, help="Path to job structure zip file")
+    parser = argparse.ArgumentParser(description="pre-Install application code and libs")
+    parser.add_argument("--app-code", required=True, help="Path to application code zip file")
     parser.add_argument(
-        "--install-prefix", default="/opt/nvflare/jobs", help="Installation prefix (default: /opt/nvflare/jobs)"
-    )
-    parser.add_argument(
-        "--share-location", default="/opt/nvflare/share", help="Shared resources location (default: /opt/nvflare/share)"
+        "--install-prefix", default="/opt/nvflare/apps", help="Installation prefix (default: /opt/nvflare/apps)"
     )
     parser.add_argument("--site-name", required=True, help="Target site name (e.g., site-1, server)")
     return parser.parse_args()
-
-
-def check_python_path(share_location: Path) -> bool:
-    """Check if share_location is already in Python path."""
-    site_packages = site.getsitepackages()[0]
-    pth_file = Path(site_packages) / "nvflare_shared.pth"
-
-    if pth_file.exists():
-        current_path = pth_file.read_text().strip()
-        if Path(current_path) == share_location:
-            return True
-    return False
-
-
-def setup_python_path(share_location: Path):
-    """Setup Python path to include shared packages if not already set."""
-    if check_python_path(share_location):
-        print(f"Python path already includes {share_location}")
-        return
-
-    site_packages = site.getsitepackages()[0]
-    pth_file = Path(site_packages) / "nvflare_shared.pth"
-
-    print(f"Adding {share_location} to Python path...")
-    with open(pth_file, "w") as f:
-        f.write(str(share_location))
 
 
 def install_requirements(requirements_file: Path):
@@ -78,19 +48,17 @@ def install_requirements(requirements_file: Path):
         raise ValueError(f"Failed to install requirements: {e}")
 
 
-def install_job_structure(job_structure: Path, install_prefix: Path, share_location: Path, site_name: str):
-    """Install NVFLARE job structure for a specific site."""
-
-    # Check Python path once at the start
-    needs_python_setup = not check_python_path(share_location)
+def install_app_code(app_code: Path, install_prefix: Path, site_name: str):
+    """Install NVFLARE application code for a specific site."""
+    CUSTOM_DIR = Path("/local/custom")
 
     # Create temp directory
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
         # Extract zip
-        print("Extracting job structure...")
-        with ZipFile(job_structure) as zf:
+        print("Extracting application code...")
+        with ZipFile(app_code) as zf:
             zf.extractall(temp_path)
 
         # Install requirements if present
@@ -99,32 +67,32 @@ def install_job_structure(job_structure: Path, install_prefix: Path, share_locat
             install_requirements(requirements_file)
 
         # Validate structure
-        job_config = temp_path / "job_config"
-        job_share = temp_path / "job_share"
+        app_code = temp_path / "app_code"
+        app_share = temp_path / "app_share"
 
-        if not (job_config.exists() and job_share.exists()):
-            raise ValueError("Invalid job structure: Missing job_config or job_share directory")
+        if not (app_code.exists() and app_share.exists()):
+            raise ValueError("Invalid application code: Missing app_code or app_share directory")
 
         # Read meta.json
-        meta_file = job_config / "meta.json"
+        meta_file = app_code / "meta.json"
         if not meta_file.exists():
-            raise ValueError("meta.json not found in job_config")
+            raise ValueError("meta.json not found in app_code")
 
         with open(meta_file) as f:
             meta = json.load(f)
-            job_name = meta.get("name")
+            app_name = meta.get("name")
 
-        if not job_name:
-            raise ValueError("Job name not found in meta.json")
+        if not app_name:
+            raise ValueError("Application name not found in meta.json")
 
         # Create installation directories
-        job_dir = install_prefix / job_name
-        job_dir.mkdir(parents=True, exist_ok=True)
-        share_location.mkdir(parents=True, exist_ok=True)
+        app_dir = install_prefix / app_name
+        app_dir.mkdir(parents=True, exist_ok=True)
+        CUSTOM_DIR.mkdir(parents=True, exist_ok=True)
 
         # Install site-specific custom code
-        default_site_dir = job_config / "apps"
-        site_dir = job_config / f"app_{site_name}"
+        default_site_dir = app_code / "apps"
+        site_dir = app_code / f"app_{site_name}"
         if not site_dir.exists():
             site_dir = default_site_dir
 
@@ -136,34 +104,28 @@ def install_job_structure(job_structure: Path, install_prefix: Path, share_locat
             print(f"Installing custom code for site {site_name}...")
             for item in custom_dir.iterdir():
                 if item.is_file():
-                    shutil.copy2(item, job_dir)
+                    shutil.copy2(item, app_dir)
                 else:
-                    shutil.copytree(item, job_dir / item.name, dirs_exist_ok=True)
+                    shutil.copytree(item, app_dir / item.name, dirs_exist_ok=True)
 
         # Install shared resources
-        if job_share.exists() and any(job_share.iterdir()):
+        if app_share.exists() and any(app_share.iterdir()):
             print("Installing shared resources...")
-            for item in job_share.iterdir():
+            for item in app_share.iterdir():
                 if item.is_file():
-                    shutil.copy2(item, share_location)
+                    shutil.copy2(item, CUSTOM_DIR)
                 else:
-                    shutil.copytree(item, share_location / item.name, dirs_exist_ok=True)
-
-            # Setup Python path only if needed
-            if needs_python_setup:
-                setup_python_path(share_location)
+                    shutil.copytree(item, CUSTOM_DIR / item.name, dirs_exist_ok=True)
 
         print("\nInstallation completed successfully:")
-        print(f"- Job files installed to: {job_dir}")
-        print(f"- Shared files installed to: {share_location}")
+        print(f"- Application files installed to: {app_dir}")
+        print(f"- Shared files installed to: {CUSTOM_DIR}")
 
 
 def main():
     args = parse_args()
     try:
-        install_job_structure(
-            Path(args.job_structure), Path(args.install_prefix), Path(args.share_location), args.site_name
-        )
+        install_app_code(Path(args.app_code), Path(args.install_prefix), args.site_name)
     except Exception as e:
         print(f"Error: {str(e)}")
         exit(1)

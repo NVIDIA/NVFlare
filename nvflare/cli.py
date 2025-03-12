@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 import traceback
+from pathlib import Path
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
@@ -129,11 +130,11 @@ def handle_config_cmd(args):
 def def_pre_install_parser(sub_cmd):
     cmd = CMD_PRE_INSTALL
     pre_install_parser = sub_cmd.add_parser(cmd)
-    try:
-        from nvflare.tool.code_pre_installer.pre_install_command import define_args_parser
-        define_args_parser(pre_install_parser)
-    except ImportError:
-        pre_install_parser.add_argument("--help", action="help", help="pre-install command not available")
+    pre_install_parser.add_argument("--app-code", required=True, help="Path to application code zip file")
+    pre_install_parser.add_argument(
+        "--install-prefix", default="/opt/nvflare/apps", help="Installation prefix (default: /opt/nvflare/apps)"
+    )
+    pre_install_parser.add_argument("--site-name", required=True, help="Target site name (e.g., site-1, server)")
     return {cmd: pre_install_parser}
 
 
@@ -166,10 +167,15 @@ def parse_args(prog_name: str):
 
 def run_pre_install_cmd(args):
     try:
-        from nvflare.tool.code_pre_installer.pre_install_command import run
-        run(args)
-    except ImportError as e:
-        raise CLIException("pre-install command not available: {}".format(str(e)))
+        from nvflare.tool.code_pre_installer.install import install_app_code
+        install_app_code(
+            Path(args.app_code),
+            Path(args.install_prefix),
+            args.site_name,
+        )
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        sys.exit(1)
 
 
 handlers = {
