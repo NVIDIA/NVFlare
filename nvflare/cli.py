@@ -44,6 +44,7 @@ CMD_DASHBOARD = "dashboard"
 CMD_AUTHZ_PREVIEW = "authz_preview"
 CMD_JOB = "job"
 CMD_CONFIG = "config"
+CMD_PRE_INSTALL = "pre-install"
 
 
 def def_provision_parser(sub_cmd):
@@ -125,6 +126,17 @@ def handle_config_cmd(args):
     print_hidden_config(config_file_path, nvflare_config)
 
 
+def def_pre_install_parser(sub_cmd):
+    cmd = CMD_PRE_INSTALL
+    pre_install_parser = sub_cmd.add_parser(cmd)
+    try:
+        from nvflare.tool.code_pre_installer.pre_install_command import define_args_parser
+        define_args_parser(pre_install_parser)
+    except ImportError:
+        pre_install_parser.add_argument("--help", action="help", help="pre-install command not available")
+    return {cmd: pre_install_parser}
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
     _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
@@ -138,6 +150,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_authz_preview_parser(sub_cmd))
     sub_cmd_parsers.update(def_job_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
+    sub_cmd_parsers.update(def_pre_install_parser(sub_cmd))
 
     args, argv = _parser.parse_known_args(None, None)
     cmd = args.__dict__.get("sub_command")
@@ -151,6 +164,14 @@ def parse_args(prog_name: str):
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
 
+def run_pre_install_cmd(args):
+    try:
+        from nvflare.tool.code_pre_installer.pre_install_command import run
+        run(args)
+    except ImportError as e:
+        raise CLIException("pre-install command not available: {}".format(str(e)))
+
+
 handlers = {
     CMD_POC: handle_poc_cmd,
     CMD_PROVISION: handle_provision,
@@ -160,6 +181,7 @@ handlers = {
     CMD_AUTHZ_PREVIEW: handle_authz_preview,
     CMD_JOB: handle_job_cli_cmd,
     CMD_CONFIG: handle_config_cmd,
+    CMD_PRE_INSTALL: run_pre_install_cmd,
 }
 
 
