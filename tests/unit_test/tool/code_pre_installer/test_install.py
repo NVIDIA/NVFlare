@@ -80,6 +80,21 @@ def test_install_app_code(tmp_path, mock_custom_dir):
     assert (install_prefix / "test_app").exists()
     assert (install_prefix / "test_app" / "test.py").exists()
     assert (mock_custom_dir / "shared.py").exists()
+    # Verify zip file is deleted after installation
+    assert not zip_path.exists(), "Zip file should be deleted after successful installation"
+
+
+def test_cleanup_nonexistent_zip(tmp_path, mock_custom_dir):
+    """Test cleanup handling when zip file is already deleted."""
+    zip_path = create_test_code(tmp_path)
+    install_prefix = tmp_path / "install"
+
+    # Delete zip file before installation
+    zip_path.unlink()
+
+    # Should handle missing zip file gracefully
+    with pytest.raises(FileNotFoundError):
+        install_app_code(zip_path, install_prefix, "site-1")
 
 
 def test_invalid_structure(tmp_path):
@@ -91,6 +106,8 @@ def test_invalid_structure(tmp_path):
 
     with pytest.raises(ValueError, match="Invalid application code"):
         install_app_code(invalid_zip, tmp_path, "site-1")
+    # Verify zip file still exists after failed installation
+    assert invalid_zip.exists(), "Zip file should not be deleted after failed installation"
 
 
 def test_missing_meta(tmp_path):
