@@ -24,9 +24,8 @@ from nvflare.edge.web.models.user_info import UserInfo
 log = logging.getLogger(__name__)
 
 
-class SampleTaskProcessor(DeviceTaskProcessor):
-    def __init__(self, data_file: str, parameters: Optional[dict]):
-        self.data_file = data_file
+class HelloTaskProcessor(DeviceTaskProcessor):
+    def __init__(self, parameters: Optional[dict]):
         self.parameters = parameters
         self.job_id = None
         self.job_name = None
@@ -34,7 +33,6 @@ class SampleTaskProcessor(DeviceTaskProcessor):
     def setup(self, device_info: DeviceInfo, user_info: UserInfo, job: JobResponse) -> None:
         self.job_id = job.job_id
         self.job_name = job.job_name
-        # job.job_data contains data needed to set up the training
 
     def shutdown(self) -> None:
         pass

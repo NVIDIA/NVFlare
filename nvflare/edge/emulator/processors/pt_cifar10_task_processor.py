@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
-class PTTaskProcessor(DeviceTaskProcessor):
+class PTCifar10TaskProcessor(DeviceTaskProcessor):
     def __init__(self, data_root: str, subset_size: int):
         self.data_root = data_root
         self.subset_size = subset_size

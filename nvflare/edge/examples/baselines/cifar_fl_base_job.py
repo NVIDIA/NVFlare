@@ -13,14 +13,13 @@
 # limitations under the License.
 
 
-from model import Net
-
 from nvflare import FedJob
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+from nvflare.edge.models.model import Cifar10Net
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
@@ -31,7 +30,7 @@ if __name__ == "__main__":
     job = FedJob(name="cifar10_fl_base")
 
     shareable_generator_id = job.to_server(FullModelShareableGenerator(), id="shareable_generator")
-    persistor_id = job.to_server(PTFileModelPersistor(model=Net()), id="persistor")
+    persistor_id = job.to_server(PTFileModelPersistor(model=Cifar10Net()), id="persistor")
     aggregator_id = job.to_server(InTimeAccumulateWeightedAggregator(expected_data_kind="WEIGHTS"), id="aggregator")
     controller = ScatterAndGather(
         min_clients=n_clients,

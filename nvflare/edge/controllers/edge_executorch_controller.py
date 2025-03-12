@@ -15,9 +15,8 @@ import base64
 from typing import Any, Dict, List
 
 import torch
-from executorch_export import export_model
-from model import Net, TrainingNet
 from torch import Tensor
+from torch.utils.tensorboard import SummaryWriter
 
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.fl_constant import ReturnCode
@@ -32,26 +31,31 @@ from nvflare.edge.constants import MsgKey
 from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding
 from nvflare.edge.model_protocol import ModelExchangeFormat as MEF
 from nvflare.edge.model_protocol import ModelNativeFormat
+from nvflare.edge.models.model import Cifar10Net, TrainingNet, XorNet, export_model
 from nvflare.security.logging import secure_format_exception
 
-# Define the XOR dataset
-X = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
-y = torch.tensor([0, 1, 1, 0], dtype=torch.float32)
-# Import tensorboard
-from torch.utils.tensorboard import SummaryWriter
-
 tb_writer = SummaryWriter()
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class EdgeExecutorchController(Controller):
     def __init__(
         self,
         num_rounds: int,
+        task_name: str,
         input_shape: List,
         output_shape: List,
     ):
         super().__init__()
-        self.model = TrainingNet(Net())
+        self.task_name = task_name
+        if task_name == "cifar10":
+            self.model = TrainingNet(Cifar10Net())
+        elif task_name == "xor":
+            self.model = TrainingNet(XorNet())
+        else:
+            # not supported error
+            raise ValueError(f"Task {task_name} is not supported,supported [`cifar10`, `xor`]")
+        self.model.to(DEVICE)
         self.num_rounds = num_rounds
         self.current_round = None
         self.aggregator = None
@@ -81,7 +85,51 @@ class EdgeExecutorchController(Controller):
         """Update model weights using aggregated gradients."""
         for key, param in self.model.state_dict().items():
             if key in aggregated_grads:
-                self.model.state_dict()[key] -= aggregated_grads[key]
+                self.model.state_dict()[key] += aggregated_grads[key].to(DEVICE)
+
+    def _eval_model(self) -> float:
+        if self.task_name == "xor":
+            # XOR task
+            test_data = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
+            test_labels = torch.tensor([[0], [1], [1], [0]], dtype=torch.float32)
+            test_data, test_labels = test_data.to(DEVICE), test_labels.to(DEVICE)
+            self.model.to(DEVICE)
+            with torch.no_grad():
+                pred = self.model(test_data)
+                # calculate mean square error
+                mse = torch.nn.functional.mse_loss(pred, test_labels)
+                # calculate accuracy
+                pred_binary = torch.round(pred)
+                correct = (pred_binary == test_labels).sum().item()
+                total = test_labels.size(0)
+                acc = 100 * correct / total
+            return {"MSE": mse.item(), "ACC": acc}
+
+        elif self.task_name == "cifar10":
+            CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
+            from torchvision import datasets, transforms
+
+            transform = transforms.Compose(
+                [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
+            )
+            test_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=False, download=True, transform=transform)
+            test_loader = torch.utils.data.DataLoader(test_set, batch_size=4, shuffle=False, num_workers=2)
+
+            self.model.to(DEVICE)
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for data in test_loader:
+                    # (optional) use GPU to speed things up
+                    inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
+                    # calculate outputs by running images through the network
+                    outputs = self.model(inputs)
+                    # the class with the highest energy is what we choose as prediction
+                    _, predicted = torch.max(outputs.data, 1)
+                    total += labels.size(0)
+                    correct += (predicted == labels).sum().item()
+                acc = 100 * correct // total
+            return {"ACC": acc}
 
     def _export_current_model(self) -> bytes:
         """Export current model in ExecutorTorch format."""
@@ -122,6 +170,7 @@ class EdgeExecutorchController(Controller):
                     MEF.MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
                     MEF.MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.BINARY,
                     MEF.MODEL_BUFFER_ENCODING: ModelEncoding.BASE64,
+                    MEF.MODEL_VERSION: self.current_round,
                 }
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
@@ -147,7 +196,6 @@ class EdgeExecutorchController(Controller):
                 self.log_info(fl_ctx, "Start aggregation.")
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 aggr_result = self.aggregator.aggregate(fl_ctx)
-                self.log_info(fl_ctx, f"Aggregation result: {aggr_result}")
                 fl_ctx.set_prop(
                     AppConstants.AGGREGATION_RESULT,
                     aggr_result,
@@ -163,25 +211,21 @@ class EdgeExecutorchController(Controller):
                 # Convert aggregated gradients to PyTorch tensors
                 divide_factor = aggr_result["num_devices"]
                 aggregated_grads = self._tensor_from_json(aggr_result[MsgKey.RESULT], divide_factor)
-                self.log_info(fl_ctx, f"Aggregated gradients as Tensor: {aggregated_grads}")
 
                 # Update model weights using aggregated gradients
                 self._update_model(aggregated_grads)
 
                 # Evaluate the model
-                with torch.no_grad():
-                    test_output = self.model.net(X).detach().argmax(dim=1)
-                    # compute the accuracy
-                    accuracy = (test_output == y).sum().item() / y.size(0)
-                    tb_writer.add_scalar("acc", accuracy, i)
+                metric = self._eval_model()
+                for key, value in metric.items():
+                    tb_writer.add_scalar(key, value, i)
 
                 if abort_signal.triggered:
                     return
 
-            final_weights = self.model.state_dict()
             self.log_info(fl_ctx, "Finished Mobile Training.")
             # save the final model
-            torch.save(self.model.state_dict(), "xor_model.pth")
+            torch.save(self.model.state_dict(), "global_model.pth")
 
         except Exception as e:
             error_msg = f"Exception in mobile control_flow: {secure_format_exception(e)}"

@@ -1,4 +1,0 @@
-{
-  "class_path": "pt_task_processor.PTTaskProcessor",
-  "class_args": {"data_root": "/tmp/nvflare/dataset/cifar10", "":  }
-}

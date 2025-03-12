@@ -3,7 +3,7 @@
   "num_devices": 16,
   "device_id_prefix": "emulator-",
   "processor": {
-    "path": "sample_task_processor.SampleTaskProcessor",
+    "path": "processors.hello_task_processor.HelloTaskProcessor",
     "args": {
       "data_file": "{device_id}/data/data-{user_id}.csv",
       "parameters": {

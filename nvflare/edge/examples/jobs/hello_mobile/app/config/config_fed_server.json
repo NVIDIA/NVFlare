@@ -3,8 +3,8 @@
     "num_rounds": 2,
     "workflows": [
         {
-            "id": "edge_controller",
-            "path": "edge_controller.SimpleEdgeController",
+            "id": "edge_hello_controller",
+            "path": "nvflare.edge.controllers.edge_hello_controller.SimpleEdgeController",
             "args": {
                 "num_rounds": "{num_rounds}",
                 "initial_weights": [

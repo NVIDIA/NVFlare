@@ -1,6 +1,5 @@
 {
     "format_version": 2,
-    "num_rounds": 3,
     "executors": [
         {
             "tasks": [

@@ -13,9 +13,10 @@
 # limitations under the License.
 
 import torch
-from model import Net
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
+
+from nvflare.edge.models.model import Cifar10Net
 
 CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -32,10 +33,29 @@ def main():
 
     # Training configurations
     workspace_root = "/tmp/nvflare/workspaces/cifar10_cen"
-    net = Net().to(DEVICE)
+    net = Cifar10Net().to(DEVICE)
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     tb_writer = SummaryWriter(workspace_root)
+
+    def evaluate(input_weights):
+        net = Cifar10Net()
+        net.load_state_dict(input_weights)
+        net.to(DEVICE)
+
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for data in test_loader:
+                # (optional) use GPU to speed things up
+                inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
+                # calculate outputs by running images through the network
+                outputs = net(inputs)
+                # the class with the highest energy is what we choose as prediction
+                _, predicted = torch.max(outputs.data, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+        return 100 * correct // total
 
     # Training loop
     for epoch in range(20):
@@ -62,25 +82,13 @@ def main():
                 print(f"[{epoch}, {i}] loss: {running_loss / 250}")
                 running_loss = 0.0
 
+        # Evaluate global model
+        acc = evaluate(net.cpu().state_dict())
+        tb_writer.add_scalar("accuracy", acc, epoch)
+
     # Save the final model
     model_name = "cifar_net.pth"
     torch.save(net.state_dict(), f"{workspace_root}/{model_name}")
-
-    # Test the testing accuracy
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for data in test_loader:
-            inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
-            # calculate outputs by running images through the network
-            outputs = net(inputs)
-            # the class with the highest energy is what we choose as prediction
-            _, predicted = torch.max(outputs, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-    accuracy = 100 * correct // total
-    tb_writer.add_scalar("accuracy", accuracy, 19)
-    print(f"Accuracy of the network on the 10000 test images: {accuracy} %")
 
 
 if __name__ == "__main__":

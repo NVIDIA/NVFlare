@@ -13,13 +13,13 @@
 # limitations under the License.
 
 import torch
-from model import Net
 from torch.utils.data import Subset
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 
 # (1) import nvflare client API
 import nvflare.client as flare
+from nvflare.edge.models.model import Cifar10Net
 
 CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -32,13 +32,13 @@ def main():
     train_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True, transform=transform)
     test_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=False, download=True, transform=transform)
 
-    net = Net()
+    net = Cifar10Net()
     tb_writer = SummaryWriter()
 
     # wraps evaluation logic into a method to re-use for
     #       evaluation on both trained and received model
     def evaluate(input_weights):
-        net = Net()
+        net = Cifar10Net()
         net.load_state_dict(input_weights)
         net.to(DEVICE)
 

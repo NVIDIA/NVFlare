@@ -1,12 +1,13 @@
 {
     "format_version": 2,
-    "num_rounds": 2,
+    "num_rounds": 10,
     "workflows": [
         {
             "id": "edge_executorch_controller",
-            "path": "edge_executorch_controller.EdgeExecutorchController",
+            "path": "nvflare.edge.controllers.edge_executorch_controller.EdgeExecutorchController",
             "args": {
                 "num_rounds": "{num_rounds}",
+                "task_name": "xor",
                 "input_shape": [1, 2],
                 "output_shape": [1]
             }

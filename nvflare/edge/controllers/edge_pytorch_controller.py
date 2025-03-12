@@ -15,8 +15,6 @@ from typing import Any, Dict
 
 import torch
 from torch import Tensor
-
-# Import tensorboard
 from torch.utils.tensorboard import SummaryWriter
 
 from nvflare.apis.controller_spec import ClientTask, Task
@@ -164,6 +162,7 @@ class EdgePytorchController(Controller):
                 }
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
+                task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self.current_round)
 
                 train_task = Task(
                     name="train",
@@ -214,7 +213,7 @@ class EdgePytorchController(Controller):
 
             self.log_info(fl_ctx, "Finished Mobile Training.")
             # save the final model
-            torch.save(self.model.state_dict(), "cifar10_model.pth")
+            torch.save(self.model.state_dict(), "global_model.pth")
 
         except Exception as e:
             error_msg = f"Exception in mobile control_flow: {secure_format_exception(e)}"

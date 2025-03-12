@@ -3,13 +3,11 @@
   "num_devices": 16,
   "device_id_prefix": "emulator-",
   "processor": {
-    "path": "pt_task_processor.PTTaskProcessor",
+    "path": "processors.pt_xor_task_processor.PTXorTaskProcessor",
     "args": {
-      "data_root": "/tmp/nvflare/dataset/cifar10",
-      "subset_size": 3125
     }
   },
   "capabilities": {
-    "methods": ["cifar10"]
+    "methods": ["xor"]
   }
 }
