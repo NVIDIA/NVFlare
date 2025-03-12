@@ -66,5 +66,15 @@ To start the emulator, give it an endpoint URL and number of devices like this,
    
 The emulator keeps polling the LCP for job assignment. It only runs one job then quits.
 
-
-
+## End-to-end Cifar10 Example
+Let's run an end-to-end example with Cifar10 dataset with baseline comparisons.
+### Baselines
+1. Run the centralized baseline
+```commandline
+cd baselines
+python cifar_train_central.py
+```
+2. Run the federated baseline under regular single-layer setting
+```commandline
+python cifar_fl_base_job.py
+```

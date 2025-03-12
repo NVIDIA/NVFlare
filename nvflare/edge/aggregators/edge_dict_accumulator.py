@@ -33,7 +33,7 @@ class EdgeDictAccumulator(Aggregator):
                 sub_to_add = weight_to_add.get(key)
                 self._aggregate(sub_object, sub_to_add)
             weight_base[key] = np.add(weight_base[key], weight_to_add[key])
-
+            weight_base[key] = weight_base[key].tolist()
         return weight_base
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:

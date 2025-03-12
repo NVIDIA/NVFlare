@@ -59,7 +59,7 @@ def main():
 
     # Training loop
     for epoch in range(20):
-        print("Epoch: ", epoch)
+        print(f"Epoch: {epoch}")
         running_loss = 0.0
         for i, data in enumerate(train_loader, 0):
             # get the inputs; data is a list of [inputs, labels]
@@ -83,8 +83,9 @@ def main():
                 running_loss = 0.0
 
         # Evaluate global model
-        acc = evaluate(net.cpu().state_dict())
+        acc = evaluate(net.state_dict())
         tb_writer.add_scalar("accuracy", acc, epoch)
+        print(f"Epoch {epoch} accuracy: {acc}")
 
     # Save the final model
     model_name = "cifar_net.pth"
