@@ -20,7 +20,7 @@ Logging Configuration and Features
 Default Logging Configuration
 =============================
 
-The default logging configuration json file (**log_config.json.default**, ``default``) is divided into 3 main sections: formatters, handlers, and loggers.
+The default logging configuration json file (**log_config.json.default**, ``LogMode.FULL``) is divided into 3 main sections: formatters, handlers, and loggers.
 This file can be found at :github_nvflare_link:`log_config.json <nvflare/fuel/utils/log_config.json>`.
 See the `configuration dictionary schema <(https://docs.python.org/3/library/logging.config.html#configuration-dictionary-schema)>`_ for more details.
 
@@ -286,10 +286,27 @@ When creating loggers for FLARE, we provide several convenience functions to hel
 Modifying Logging Configurations
 ********************************
 
+.. _log_config_argument:
+Log Config Argument
+===================
+We provide a log config argument (``-l`` or ``log_config`` in simulator mode, and ``config`` in the dynamic logging admin commands for POC and production mode).
+This argument can be any of the following:
+
+- log configuration json file (``/path/to/my_log_config.json``, ``my_log_config.json``)
+- predefined console :class:`LogMode<nvflare.fuel.utils.log_utils.LogMode>` (``concise``, ``full``, ``verbose``)
+
+    - ``concise`` (default for simulator mode): FLFilter for FL training logs with simplified log attributes
+    - ``full`` (default in workspaces in poc and production mode): full info level logs
+    - ``verbose``: debug level logs with detailed log attributes
+
+- log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
+- For admin commands only: read the current log configuration file log_config.json from the workspace (``reload``)
+
+
 Simulator log configuration
 ===========================
 
-Users can specify a log configuration in the simulator command with the ``-l`` simulator argument:
+Users can specify a log configuration in the simulator command with the ``-l`` simulator :ref:`Log Config Argument <log_config_argument>`:
 
 .. code-block:: shell
 
@@ -300,14 +317,6 @@ Or using the ``log_config`` argument of the Job API simulator run:
 .. code-block:: python
 
     job.simulator_run("/tmp/nvflare/hello-numpy-sag", log_config="log_config.json")
-
-
-The log config argument be one of the following:
-
-- path to a log configuration json file (``/path/to/my_log_config.json``)
-- preconfigured log mode (``default``, ``concise``, ``verbose``)
-- log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
-
 
 POC log configurations
 ======================
@@ -359,12 +368,12 @@ Note these command effects will last until reconfiguration or as long as the cor
 However these commands do not overwrite the log configuration file in the workspace- the log configuration file can be reloaded using "reload".
 
 - **target**: ``server``, ``client <clients>...``, or ``all``
-- **config**: log configuration
+- **config**: the log config argument can be any of the following (For more details, refer to :ref:`Log Config Argument <log_config_argument>` above):
 
     - path to a json log configuration file (``/path/to/my_log_config.json``)
-    - predefined log mode (``default``, ``concise``, ``verbose``)
-    - log level name/number (``debug``, ``INFO``, ``30``)
-    - read the current log configuration file from the workspace (``reload``)
+    - predefined log mode (``concise``, ``full``, ``verbose``)
+    - log level name or number (``debug``, ``info``, ``warning``, ``error``, ``critical``, ``30``)
+    - read the current log configuration file log_config.json from the workspace (``reload``)
 
 To configure the target site logging (does not affect currently running jobs):
 
