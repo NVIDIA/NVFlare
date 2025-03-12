@@ -121,6 +121,14 @@ def install_app_code(app_code: Path, install_prefix: Path, site_name: str):
         print(f"- Application files installed to: {app_dir}")
         print(f"- Shared files installed to: {CUSTOM_DIR}")
 
+        # Delete the zip file after successful installation
+        try:
+            if app_code.exists():
+                app_code.unlink()
+            print(f"- Cleaned up application code zip: {app_code}")
+        except Exception as e:
+            print(f"Warning: Could not delete zip file {app_code}: {str(e)}")
+
 
 def main():
     args = parse_args()
