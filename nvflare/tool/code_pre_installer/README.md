@@ -1,50 +1,41 @@
 # NVFLARE Code Pre-Installer
 
-In somecase, especally in production, we need to pre-install all the application code and shared python packages. Once the packages and codes are installed. The submit job will simply submit job configurations. 
-
-To simplify the process, we have a tool to pre-install the code and shared resources.
-
+In production environments, NVFLARE applications often need pre-installed code and shared Python packages. This tool simplifies the pre-installation process by handling both application code and shared resources.
 
 ## Overview
 
-The code pre-installer helps deploy:
-1. Site-specific job code to a designated job directory
-2. Shared resources (like common Python packages) to a shared location
+The code pre-installer:
+1. Installs site-specific job code to a designated directory
+2. Installs shared Python packages to a common location
+3. Sets up Python path for shared packages
+4. Handles package dependencies via requirements.txt
 
 ## Job Structure
 
-Expected job structure in zip file:
+Required structure in zip file:
 ```
 job_structure.zip
-├── job_config/
-├── requirements.txt        # Python package dependencies
-└── job_share/             # Shared resources
-    └── pt/               # Example: shared Python package
+├── job_config/                # Job configuration directory
+│   ├── meta.json             # Contains job name and metadata
+│   ├── app/                  # Default app (optional)
+│   │   └── custom/          # Default custom code
+│   ├── app_server/          # Server-specific code
+│   │   └── custom/         
+│   └── app_site-1/          # Site-specific code
+│       └── custom/         
+├── requirements.txt          # Python package dependencies
+└── job_share/               # Shared resources
+    └── pt/                  # Example: shared Python package
 ```
 the job_config can directly copied from the job config from FedJob.export_job("/path/to/job_config")
 
 "/path/to/job_config/job_name"
 
-the job_share/ will be any python packages will be on the python path. 
+## Usage
 
-
-## Installation
-
-### Command Line Usage
-There are two ways to run the installer:
-
-1. Using the shell script:
+### Command Line
 ```bash
-./install.sh \
-    --job-structure /path/to/job_structure.zip \
-    --site-name site-1 \
-    [--install-prefix /opt/nvflare/jobs] \
-    [--share-location /opt/nvflare/share]
-```
-
-2. Using Python module directly:
-```bash
-python -m nvflare.tool.code_pre_installer.install \
+nvflare pre-install \
     --job-structure /path/to/job_structure.zip \
     --site-name site-1 \
     [--install-prefix /opt/nvflare/jobs] \
@@ -53,51 +44,27 @@ python -m nvflare.tool.code_pre_installer.install \
 
 ### Arguments
 
-- `--job-structure`: (Required) Path to the job structure zip file
+- `--job-structure`: (Required) Path to job structure zip file
 - `--site-name`: (Required) Target site name (e.g., site-1, server)
 - `--install-prefix`: Installation directory for job code (default: /opt/nvflare/jobs)
 - `--share-location`: Installation directory for shared resources (default: /opt/nvflare/share)
 
-### Installation Process
-
-1. Package Installation:
-   - If requirements.txt exists, installs required Python packages
-   - Uses pip to install dependencies
-   - Must have network access or local package repository
-
-2. Job Code Installation:
-   - Extracts site-specific code from `app_<site-name>/custom/`
-   - Falls back to `apps/custom/` if site-specific directory not found
-   - Installs to `<install-prefix>/<job-name>/`
-
-3. Shared Resource Installation:
-   - Copies all contents from `job_share/` to `<share-location>/`
-   - Maintains directory structure
-   - Enables Python package imports from shared location
-
 ## Examples
 
-1. Using shell script to install server code:
+1. Install server code:
 ```bash
-./install.sh \
+nvflare pre-install \
     --job-structure federated_training.zip \
     --site-name server
 ```
 
-2. Using shell script with custom paths:
+2. Install with custom paths:
 ```bash
-./install.sh \
+nvflare pre-install \
     --job-structure federated_training.zip \
     --site-name site-1 \
     --install-prefix /custom/jobs \
     --share-location /custom/share
-```
-
-3. Using Python module directly:
-```bash
-python -m nvflare.tool.code_pre_installer.install \
-    --job-structure federated_training.zip \
-    --site-name server
 ```
 
 ## Directory Structure After Installation
@@ -129,27 +96,41 @@ The installer will fail if:
 - Network access needed if requirements.txt present
 - Can use private PyPI server by configuring pip
 
+## Using Pre-installed Code
 
-## Submit Job with pre-installed code and shared resources:
+### In Job Configuration (JSON)
+```json
+{
+    "task_script": "${NVFLARE_INSTALL_PREFIX}/src/client.py",
+    "other_config": "..."
+}
+```
 
-### Job using Client APIs
+### In Development
+#### JSON Config
+```bash
+export NVFLARE_INSTALL_PREFIX=""  # Empty for development
+```
 
-When using the Client API, you need to specify the path to your training script. This path needs to be adjusted based on whether you're using pre-installed code or running in development.
-
-#### Development Environment
+#### Python Code
 ```python
-# During development, use relative path
 task_script_path = "src/client.py"
 ```
 
-#### Production Environment
+### In Production
+#### JSON Config
+```bash
+export NVFLARE_INSTALL_PREFIX="/opt/nvflare/jobs/fedavg"  # Set for production
+```
+
+#### Python Code
 ```python
 # With pre-installed code (default location)
 task_script_path = "/opt/nvflare/jobs/fedavg/src/client.py"
 ```
 
 #### Using Environment Variables
-To make your code work in both environments, you can use an environment variable:
+The environment variable works for both JSON configs and Python code:
 
 ```bash
 # For production
@@ -159,7 +140,14 @@ export NVFLARE_INSTALL_PREFIX="/opt/nvflare/jobs/fedavg/"
 export NVFLARE_INSTALL_PREFIX=""
 ```
 
-Then in your code:
+#### In JSON Config
+```json
+{
+    "task_script": "${NVFLARE_INSTALL_PREFIX}src/client.py"
+}
+```
+
+#### In Python Code
 ```python
 import os
 
