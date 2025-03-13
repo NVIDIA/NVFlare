@@ -17,10 +17,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Dict
 
-from executorch.extension.training import (
-    _load_for_executorch_for_training_from_buffer,
-    get_sgd_optimizer,
-)
+from executorch.extension.training import _load_for_executorch_for_training_from_buffer, get_sgd_optimizer
 from torch.utils.data import DataLoader, Dataset
 
 from nvflare.edge.constants import MsgKey
