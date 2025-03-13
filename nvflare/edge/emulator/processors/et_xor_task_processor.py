@@ -16,8 +16,9 @@ from typing import Tuple
 
 import pandas as pd
 import torch
-from .et_task_processor import ETTaskProcessor
 from torch.utils.data import Dataset
+
+from .et_task_processor import ETTaskProcessor
 
 
 class XORDataset(Dataset):

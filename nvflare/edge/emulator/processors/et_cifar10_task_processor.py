@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .et_task_processor import ETTaskProcessor
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
+
+from .et_task_processor import ETTaskProcessor
 
 
 class ETCIFAR10TaskProcessor(ETTaskProcessor):
