@@ -3,7 +3,7 @@
   "num_devices": 5,
   "device_id_prefix": "emulator-",
   "processor": {
-    "path": "cifar10_et_task_processor.CIFAR10ETTaskProcessor",
+    "path": "processors.et_cifar10_task_processor.ETCIFAR10TaskProcessor",
     "args": {
       "data_path": "/tmp/cifar10",
       "training_config": {

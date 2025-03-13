@@ -3,7 +3,7 @@
   "num_devices": 5,
   "device_id_prefix": "emulator-",
   "processor": {
-    "path": "et_cpp_task_processor.ETCppTaskProcessor",
+    "path": "processors.et_cpp_task_processor.ETCppTaskProcessor",
     "args": {
       "et_binary_path": "train_xor",
       "et_model_path": "xor.pte",

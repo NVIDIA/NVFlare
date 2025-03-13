@@ -3,7 +3,7 @@
   "num_devices": 5,
   "device_id_prefix": "emulator-",
   "processor": {
-    "path": "xor_et_task_processor.XORETTaskProcessor",
+    "path": "processors.et_xor_task_processor.ETXORTaskProcessor",
     "args": {
       "data_path": "xor_data.csv",
       "training_config": {

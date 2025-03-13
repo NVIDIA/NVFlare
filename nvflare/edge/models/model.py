@@ -53,40 +53,17 @@ class Cifar10ConvNet(nn.Module):
         return x
 
 
-class Cifar10Net(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(3 * 16 * 16, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, 120)
-        self.fc4 = nn.Linear(120, 84)
-        self.fc5 = nn.Linear(84, 10)
-
-    def forward(self, x):
-        x = self.pool(x)
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        x = F.relu(self.fc4(x))
-        x = self.fc5(x)
-        return x
-
-
 class XorNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.linear1 = nn.Linear(2, 4)
         self.sigmoid_1 = nn.Sigmoid()
-        self.linear2 = nn.Linear(4, 1)
-        self.sigmoid_2 = nn.Sigmoid()
+        self.linear2 = nn.Linear(4, 2)
 
     def forward(self, x):
         x = self.linear1(x)
         x = self.sigmoid_1(x)
         x = self.linear2(x)
-        x = self.sigmoid_2(x)
         return x
 
 

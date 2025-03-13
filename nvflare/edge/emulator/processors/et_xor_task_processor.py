@@ -16,7 +16,7 @@ from typing import Tuple
 
 import pandas as pd
 import torch
-from et_task_processor import ETTaskProcessor
+from .et_task_processor import ETTaskProcessor
 from torch.utils.data import Dataset
 
 
@@ -64,7 +64,7 @@ class XORDataset(Dataset):
         return self.X[idx], self.Y[idx]
 
 
-class XORETTaskProcessor(ETTaskProcessor):
+class ETXORTaskProcessor(ETTaskProcessor):
     """Task processor for XOR dataset."""
 
     def get_dataset(self, data_path: str) -> Dataset:

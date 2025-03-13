@@ -117,6 +117,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             batch_size=self.training_config["batch_size"],
             shuffle=self.training_config["shuffle"],
             num_workers=self.training_config["num_workers"],
+            drop_last=True,
         )
 
     @abstractmethod
@@ -171,7 +172,8 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             log.info(f"Epoch {epoch + 1}/{total_epochs}")
 
             for batch_idx, batch in enumerate(self.dataloader):
-                loss, pred = et_model.forward_backward("forward", batch)
+                x, y = batch
+                loss, pred = et_model.forward_backward("forward", (x, y))
 
                 if initial_params is None:
                     initial_params = clone_params(et_model.named_parameters())

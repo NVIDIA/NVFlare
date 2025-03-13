@@ -4,12 +4,12 @@
 ## Setup the NVFlare System
 
 ```commandline
-bash setup_nvflare.sh
+./setup_nvflare.sh
 ```
 
 For details, please refer to [setup NVFlare system for Edge](./setup_system.md)
 
-This will create a deployment with 2 clients, 4 leaf-clients, 2 relays, and 1 server.
+This will create a deployment with 4 leaf nodes, 4 aggregators, and 1 server.
 
 ## Start the NVFlare System
 
@@ -32,9 +32,11 @@ Install the app from App store and open it.
 
 You will see the following screen:
 
-![App Screenshot](./screenshot.png)
+<img src="./screenshot.png" alt="App Screenshot" width="400" height="800">
 
-You need to configure the server URL and PORT to be the IP address shown in lcp_map.json (using the first one is recommended).
+You need to configure the server PORT to be the PORT shown in lcp_map.json (for example: 9003).
+
+And you can find out the IP address of your machine and fill it there.
 
 Then click "Start Training". (This will be enhanced in the future by adding resource monitoring to auto start/stop training)
 
@@ -89,7 +91,8 @@ The emulator can be used to test all the features of the edge system.
 To start the emulator with an emulator config:
 
 ```
-python ../emulator/run_emulator.py [emulator config file]
+cd ../../../nvflare/edge/emulator/
+python run_emulator.py [emulator config file]
 ```
 
 The emulator polls the NVFlare system for job assignments. It runs one job and then quits.
