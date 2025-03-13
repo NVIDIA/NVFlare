@@ -1,23 +1,23 @@
-# Edge Emulator
+# DeviceSimulator for FL Pipeline Prototyping
 
-Edge emulator can be used to simulate multiple devices.
+The DeviceSimulator can be used to simulate multiple devices locally to test a cross-device FL pipeline.
 
 ## Usage
 
-The emulator can be started like this,
+The DeviceSimulator can be started like this,
 
-     python run_emulator.py config_json_file
+     python run_device_simulator.py config_json_file
 
 ## Configuration File
 
-The `config_json_file` is a json file that defines the configuration of the emulator, with
+The `config_json_file` is a json file that defines the configuration of the DeviceSimulator, with
 following format:
 
 ```
 {
   "endpoint": "http://localhost:4321",
   "num_devices": 16,
-  "device_id_prefix": "emulator-",
+  "device_id_prefix": "sim-device-",
   "processor": {
     "path": "sample_task_processor.SampleTaskProcessor",
     "args": {

@@ -19,18 +19,18 @@ from nvflare.app_common.shareablegenerators.full_model_shareable_generator impor
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
-from nvflare.edge.models.model import Cifar10Net
+from nvflare.edge.models.model import Cifar10ConvNet
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
     n_clients = 16
-    num_rounds = 20
+    num_rounds = 10
     train_script = "cifar_fl_base.py"
 
     job = FedJob(name="cifar10_fl_base")
 
     shareable_generator_id = job.to_server(FullModelShareableGenerator(), id="shareable_generator")
-    persistor_id = job.to_server(PTFileModelPersistor(model=Cifar10Net()), id="persistor")
+    persistor_id = job.to_server(PTFileModelPersistor(model=Cifar10ConvNet()), id="persistor")
     aggregator_id = job.to_server(InTimeAccumulateWeightedAggregator(expected_data_kind="WEIGHTS"), id="aggregator")
     controller = ScatterAndGather(
         min_clients=n_clients,

@@ -19,7 +19,7 @@ from torchvision import datasets, transforms
 
 # (1) import nvflare client API
 import nvflare.client as flare
-from nvflare.edge.models.model import Cifar10Net
+from nvflare.edge.models.model import Cifar10ConvNet
 
 CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -32,13 +32,13 @@ def main():
     train_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True, transform=transform)
     test_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=False, download=True, transform=transform)
 
-    net = Cifar10Net()
+    net = Cifar10ConvNet()
     tb_writer = SummaryWriter()
 
     # wraps evaluation logic into a method to re-use for
     #       evaluation on both trained and received model
     def evaluate(input_weights):
-        net = Cifar10Net()
+        net = Cifar10ConvNet()
         net.load_state_dict(input_weights)
         net.to(DEVICE)
 
@@ -51,7 +51,7 @@ def main():
                 # calculate outputs by running images through the network
                 outputs = net(inputs)
                 # the class with the highest energy is what we choose as prediction
-                _, predicted = torch.max(outputs.data, 1)
+                _, predicted = torch.max(outputs, 1)
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
         return 100 * correct // total

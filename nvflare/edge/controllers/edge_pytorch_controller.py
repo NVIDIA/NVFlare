@@ -30,7 +30,7 @@ from nvflare.edge.constants import MsgKey
 from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding
 from nvflare.edge.model_protocol import ModelExchangeFormat as MEF
 from nvflare.edge.model_protocol import ModelNativeFormat
-from nvflare.edge.models.model import Cifar10Net, XorNet
+from nvflare.edge.models.model import Cifar10ConvNet, XorNet
 from nvflare.security.logging import secure_format_exception
 
 tb_writer = SummaryWriter()
@@ -46,7 +46,7 @@ class EdgePytorchController(Controller):
         super().__init__()
         self.task_name = task_name
         if task_name == "cifar10":
-            self.model = Cifar10Net()
+            self.model = Cifar10ConvNet()
         elif task_name == "xor":
             self.model = XorNet()
         else:
@@ -86,19 +86,17 @@ class EdgePytorchController(Controller):
         if self.task_name == "xor":
             # XOR task
             test_data = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
-            test_labels = torch.tensor([[0], [1], [1], [0]], dtype=torch.float32)
+            test_labels = torch.tensor([0, 1, 1, 0], dtype=torch.long)
             test_data, test_labels = test_data.to(DEVICE), test_labels.to(DEVICE)
             self.model.to(DEVICE)
             with torch.no_grad():
-                pred = self.model(test_data)
-                # calculate mean square error
-                mse = torch.nn.functional.mse_loss(pred, test_labels)
+                outputs = self.model(test_data)
                 # calculate accuracy
-                pred_binary = torch.round(pred)
-                correct = (pred_binary == test_labels).sum().item()
+                _, predicted = torch.max(outputs.data, 1)
+                correct = (predicted == test_labels).sum().item()
                 total = test_labels.size(0)
                 acc = 100 * correct / total
-            return {"MSE": mse.item(), "ACC": acc}
+            return {"accuracy": acc}
 
         elif self.task_name == "cifar10":
             CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
@@ -124,7 +122,7 @@ class EdgePytorchController(Controller):
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
                 acc = 100 * correct // total
-            return {"ACC": acc}
+            return {"accuracy": acc}
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:

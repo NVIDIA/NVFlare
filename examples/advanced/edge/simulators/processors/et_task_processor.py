@@ -21,7 +21,7 @@ from executorch.extension.training import _load_for_executorch_for_training_from
 from torch.utils.data import DataLoader, Dataset
 
 from nvflare.edge.constants import MsgKey
-from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
+from nvflare.edge.device_simulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.model_protocol import (
     ModelBufferType,
     ModelEncoding,
