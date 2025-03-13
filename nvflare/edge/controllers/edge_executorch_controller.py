@@ -101,7 +101,7 @@ class EdgeExecutorchController(Controller):
                 correct = (pred_binary == test_labels).sum().item()
                 total = test_labels.size(0)
                 acc = 100 * correct / total
-            return {"CrossEntropyLoss": loss.item(), "ACC": acc}
+            return {"CrossEntropyLoss": loss.item(), "accuracy": acc}
 
         elif self.task_name == "cifar10":
             CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
@@ -126,7 +126,7 @@ class EdgeExecutorchController(Controller):
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
                 acc = 100 * correct // total
-            return {"ACC": acc}
+            return {"accuracy": acc}
 
     def _export_current_model(self) -> bytes:
         """Export current model in ExecutorTorch format."""
