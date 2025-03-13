@@ -15,7 +15,7 @@ import logging
 from typing import Optional
 
 from nvflare.edge.constants import MsgKey
-from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
+from nvflare.edge.device_simulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse

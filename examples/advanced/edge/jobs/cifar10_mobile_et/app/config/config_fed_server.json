@@ -1,6 +1,6 @@
 {
     "format_version": 2,
-    "num_rounds": 20,
+    "num_rounds": 10,
     "workflows": [
         {
             "id": "edge_executorch_controller",

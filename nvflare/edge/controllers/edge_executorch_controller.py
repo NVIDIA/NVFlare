@@ -55,7 +55,6 @@ class EdgeExecutorchController(Controller):
         else:
             # not supported error
             raise ValueError(f"Task {task_name} is not supported,supported [`cifar10`, `xor`]")
-        self.model.to(DEVICE)
         self.num_rounds = num_rounds
         self.current_round = None
         self.aggregator = None
@@ -85,7 +84,7 @@ class EdgeExecutorchController(Controller):
         """Update model weights using aggregated gradients."""
         for key, param in self.model.state_dict().items():
             if key in aggregated_grads:
-                self.model.state_dict()[key] += aggregated_grads[key].to(DEVICE)
+                self.model.state_dict()[key] += aggregated_grads[key]
 
     def _eval_model(self) -> float:
         if self.task_name == "xor":
@@ -101,7 +100,9 @@ class EdgeExecutorchController(Controller):
                 correct = (pred_binary == test_labels).sum().item()
                 total = test_labels.size(0)
                 acc = 100 * correct / total
-            return {"CrossEntropyLoss": loss.item(), "ACC": acc}
+            # move model back to CPU
+            self.model.to("cpu")
+            return {"CrossEntropyLoss": loss.item(), "accuracy": acc}
 
         elif self.task_name == "cifar10":
             CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
@@ -126,7 +127,9 @@ class EdgeExecutorchController(Controller):
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
                 acc = 100 * correct // total
-            return {"ACC": acc}
+            # move model back to CPU
+            self.model.to("cpu")
+            return {"accuracy": acc}
 
     def _export_current_model(self) -> bytes:
         """Export current model in ExecutorTorch format."""

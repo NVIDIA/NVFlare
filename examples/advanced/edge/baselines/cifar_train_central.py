@@ -16,7 +16,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 
-from nvflare.edge.models.model import Cifar10Net
+from nvflare.edge.models.model import Cifar10ConvNet
 
 CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -33,13 +33,13 @@ def main():
 
     # Training configurations
     workspace_root = "/tmp/nvflare/workspaces/cifar10_cen"
-    net = Cifar10Net().to(DEVICE)
+    net = Cifar10ConvNet().to(DEVICE)
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     tb_writer = SummaryWriter(workspace_root)
 
     def evaluate(input_weights):
-        net = Cifar10Net()
+        net = Cifar10ConvNet()
         net.load_state_dict(input_weights)
         net.to(DEVICE)
 
@@ -52,13 +52,13 @@ def main():
                 # calculate outputs by running images through the network
                 outputs = net(inputs)
                 # the class with the highest energy is what we choose as prediction
-                _, predicted = torch.max(outputs.data, 1)
+                _, predicted = torch.max(outputs, 1)
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
         return 100 * correct // total
 
     # Training loop
-    for epoch in range(20):
+    for epoch in range(10):
         print(f"Epoch: {epoch}")
         running_loss = 0.0
         for i, data in enumerate(train_loader, 0):

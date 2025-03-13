@@ -1,9 +1,9 @@
 {
   "endpoint": "http://localhost:8000",
   "num_devices": 16,
-  "device_id_prefix": "emulator-",
+  "device_id_prefix": "sim-device-",
   "processor": {
-    "path": "processors.pt_cifar10_processor.PTTaskProcessor",
+    "path": "processors.pt_cifar10_task_processor.PTCifar10TaskProcessor",
     "args": {
       "data_root": "/tmp/nvflare/dataset/cifar10",
       "subset_size": 3125

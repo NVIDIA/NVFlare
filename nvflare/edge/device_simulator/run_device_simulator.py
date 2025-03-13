@@ -16,9 +16,9 @@ import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor, wait
 
-from nvflare.edge.emulator.config import ConfigParser
-from nvflare.edge.emulator.device_emulator import DeviceEmulator
-from nvflare.edge.emulator.device_task_processor import DeviceTaskProcessor
+from nvflare.edge.device_simulator.config import ConfigParser
+from nvflare.edge.device_simulator.device_simulator import DeviceSimulator
+from nvflare.edge.device_simulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.user_info import UserInfo
 
@@ -30,16 +30,16 @@ def device_run(
 ):
     device_id = device_info.device_id
     try:
-        emulator = DeviceEmulator(endpoint_url, device_info, user_info, capabilities, processor)
-        emulator.run()
+        device_simulator = DeviceSimulator(endpoint_url, device_info, user_info, capabilities, processor)
+        device_simulator.run()
 
-        log.info(f"Emulator run for device {device_id} ended")
+        log.info(f"DeviceSimulator run for device {device_id} ended")
     except Exception as ex:
         traceback.print_exc()
         log.error(f"Device {device_id} failed to run: {ex}")
 
 
-def run_emulator(config_file: str):
+def run_device_simulator(config_file: str):
     parser = ConfigParser(config_file)
     num = parser.get_num_devices()
     endpoint_url = parser.get_endpoint()
@@ -63,7 +63,7 @@ def run_emulator(config_file: str):
 
         wait(futures)
 
-    log.info("Emulator run ended")
+    log.info("DeviceSimulator run ended")
 
 
 def main():
@@ -75,7 +75,7 @@ def main():
     )
 
     # Set up argument parser
-    parser = argparse.ArgumentParser(description="Run NVFlare edge device emulator")
+    parser = argparse.ArgumentParser(description="Run NVFlare edge DeviceSimulator")
 
     parser.add_argument(
         "config_file",
@@ -86,8 +86,8 @@ def main():
     # Parse arguments
     args = parser.parse_args()
 
-    # Run emulator
-    run_emulator(args.config_file)
+    # Run DeviceSimulator
+    run_device_simulator(args.config_file)
 
 
 if __name__ == "__main__":
