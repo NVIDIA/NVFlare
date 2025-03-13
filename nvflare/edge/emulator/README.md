@@ -6,7 +6,7 @@ Edge emulator can be used to simulate multiple devices.
 
 The emulator can be started like this,
 
-     python nvflare/edge/web/run_emulator.py config_json_file
+     python run_emulator.py config_json_file
 
 ## Configuration File
 

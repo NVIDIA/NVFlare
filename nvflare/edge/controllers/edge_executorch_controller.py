@@ -31,7 +31,7 @@ from nvflare.edge.constants import MsgKey
 from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding
 from nvflare.edge.model_protocol import ModelExchangeFormat as MEF
 from nvflare.edge.model_protocol import ModelNativeFormat
-from nvflare.edge.models.model import Cifar10Net, TrainingNet, XorNet, export_model
+from nvflare.edge.models.model import Cifar10ConvNet, TrainingNet, XorNet, export_model
 from nvflare.security.logging import secure_format_exception
 
 tb_writer = SummaryWriter()
@@ -49,7 +49,7 @@ class EdgeExecutorchController(Controller):
         super().__init__()
         self.task_name = task_name
         if task_name == "cifar10":
-            self.model = TrainingNet(Cifar10Net())
+            self.model = TrainingNet(Cifar10ConvNet())
         elif task_name == "xor":
             self.model = TrainingNet(XorNet())
         else:
@@ -91,19 +91,17 @@ class EdgeExecutorchController(Controller):
         if self.task_name == "xor":
             # XOR task
             test_data = torch.tensor([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=torch.float32)
-            test_labels = torch.tensor([[0], [1], [1], [0]], dtype=torch.float32)
+            test_labels = torch.tensor([0, 1, 1, 0], dtype=torch.int64)
             test_data, test_labels = test_data.to(DEVICE), test_labels.to(DEVICE)
             self.model.to(DEVICE)
             with torch.no_grad():
-                pred = self.model(test_data)
-                # calculate mean square error
-                mse = torch.nn.functional.mse_loss(pred, test_labels)
+                loss, pred = self.model(test_data, test_labels)
                 # calculate accuracy
                 pred_binary = torch.round(pred)
                 correct = (pred_binary == test_labels).sum().item()
                 total = test_labels.size(0)
                 acc = 100 * correct / total
-            return {"MSE": mse.item(), "ACC": acc}
+            return {"CrossEntropyLoss": loss.item(), "ACC": acc}
 
         elif self.task_name == "cifar10":
             CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
@@ -123,9 +121,8 @@ class EdgeExecutorchController(Controller):
                     # (optional) use GPU to speed things up
                     inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
                     # calculate outputs by running images through the network
-                    outputs = self.model(inputs)
+                    loss, predicted = self.model(inputs, labels)
                     # the class with the highest energy is what we choose as prediction
-                    _, predicted = torch.max(outputs.data, 1)
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
                 acc = 100 * correct // total

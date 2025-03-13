@@ -1,4 +1,17 @@
 {
-  "class_path": "processors.et_task_processor.ETTaskProcessor",
-  "class_args": {"et_binary_path": "train_xor", "et_model_path": "xor.pte", "data_path": ""}
+  "endpoint": "http://localhost:9003",
+  "num_devices": 5,
+  "device_id_prefix": "emulator-",
+  "processor": {
+    "path": "processors.et_xor_task_processor.ETXORTaskProcessor",
+    "args": {
+      "data_path": "xor_data.csv",
+      "training_config": {
+        "batch_size": 1, "shuffle": false, "num_workers": 0
+      }
+    }
+  },
+  "capabilities": {
+    "methods": ["xor"]
+  }
 }
