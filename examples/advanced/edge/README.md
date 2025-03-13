@@ -42,7 +42,7 @@ Then click "Start Training". (This will be enhanced in the future by adding reso
 
 ## Prepare and Submit a Job
 
-We have prepared two jobs for you: [xor_mobile](./jobs/xor_mobile/) and [cifar10_mobile](./jobs/cifar10_mobile/).
+We have prepared two jobs for you: [xor_mobile_et](./jobs/xor_mobile_et/) and [cifar10_mobile_et](./jobs/cifar10_mobile_et/).
 You can easily write your own components to replace any of the pre-configured ones. 
 
 First, copy the jobs to the admin console transfer folder:
@@ -60,7 +60,7 @@ Start the admin console to interact with the NVFlare system:
 Submit a job:
 
 ```
-submit_job cifar10_mobile
+submit_job cifar10_mobile_et
 ```
 
 You will then see the device start receiving the model from the server and complete local training.
@@ -96,5 +96,5 @@ python run_emulator.py [emulator config file]
 ```
 
 The emulator polls the NVFlare system for job assignments. It runs one job and then quits.
-Please refer to [emulator docs](../emulator/README.md) for more details.
+Please refer to [emulator docs](../../../nvflare/edge/emulator/README.md) for more details.
 
