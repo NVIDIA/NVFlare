@@ -1,0 +1,17 @@
+{
+  "endpoint": "http://localhost:9003",
+  "num_devices": 5,
+  "device_id_prefix": "sim-device-",
+  "processor": {
+    "path": "processors.et_cifar10_task_processor.ETCIFAR10TaskProcessor",
+    "args": {
+      "data_path": "/tmp/cifar10",
+      "training_config": {
+        "batch_size": 32, "shuffle": false, "num_workers": 0
+      }
+    }
+  },
+  "capabilities": {
+    "methods": ["cifar10"]
+  }
+}

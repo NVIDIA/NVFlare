@@ -1,0 +1,14 @@
+{
+    "format_version": 2,
+    "num_rounds": 10,
+    "workflows": [
+        {
+            "id": "edge_pytorch_controller",
+            "path": "nvflare.edge.controllers.edge_pytorch_controller.EdgePytorchController",
+            "args": {
+                "num_rounds": "{num_rounds}",
+                "task_name": "cifar10"
+            }
+        }
+    ]
+}

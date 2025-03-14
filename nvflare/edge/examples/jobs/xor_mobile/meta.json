@@ -1,9 +1,0 @@
-{
-    "name": "xor_mobile",
-    "resource_spec": {},
-    "deploy_map": {
-        "app": ["@ALL"]
-    },
-    "min_clients": 2,
-    "edge_method": "xor"
-}

@@ -16,6 +16,7 @@ import numpy as np
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.edge.constants import MsgKey
 
 
 class EdgeResultAccumulator(Aggregator):
@@ -27,7 +28,7 @@ class EdgeResultAccumulator(Aggregator):
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         self.log_info(fl_ctx, f"Accepting: {shareable}")
 
-        w = shareable.get("weights")
+        w = shareable.get(MsgKey.PAYLOAD)
         if w is None:
             return True
 
@@ -47,4 +48,4 @@ class EdgeResultAccumulator(Aggregator):
         self.num_devices = 0
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        return Shareable({"weights": self.weights, "num_devices": self.num_devices})
+        return Shareable({MsgKey.RESULT: self.weights, MsgKey.NUM_DEVICES: self.num_devices})

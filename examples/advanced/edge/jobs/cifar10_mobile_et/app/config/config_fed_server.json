@@ -1,0 +1,16 @@
+{
+    "format_version": 2,
+    "num_rounds": 10,
+    "workflows": [
+        {
+            "id": "edge_executorch_controller",
+            "path": "nvflare.edge.controllers.edge_executorch_controller.EdgeExecutorchController",
+            "args": {
+                "num_rounds": "{num_rounds}",
+                "task_name": "cifar10",
+                "input_shape": [32, 3, 32, 32],
+                "output_shape": [32]
+            }
+        }
+    ]
+}

@@ -161,7 +161,7 @@ class EdgeTaskDispatcher(Widget):
 
         # send edge request data to CJ
         edge_req_data = fl_ctx.get_prop(EdgeContextKey.REQUEST_FROM_EDGE)
-        self.logger.info(f"Sending OPTIONAL edge request to CJ {job_id}: {edge_req_data}")
+        self.logger.info(f"Sending OPTIONAL edge request to CJ {job_id}")
         engine = fl_ctx.get_engine()
         reply = engine.send_to_job(
             job_id=job_id,
