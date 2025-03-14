@@ -36,6 +36,19 @@ def process_aggr_result_from_child(
     accept_f,
     **kwargs,
 ) -> (bool, Shareable):
+    """Process aggregation report sent from a child client.
+
+    Args:
+        processor: the component that received the report from the child.
+        request: the report request
+        current_task_seq: sequence number of the current task
+        fl_ctx: FLContext object
+        accept_f: the function to be called to accept the aggregation report
+        **kwargs: args to be passed to accept_f
+
+    Returns: a tuple of (whether the report is accepted, reply to be sent back to the reporter).
+
+    """
     peer_ctx = fl_ctx.get_peer_context()
     assert isinstance(peer_ctx, FLContext)
     child_name = peer_ctx.get_identity_name()

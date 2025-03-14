@@ -402,7 +402,16 @@ class HierarchicalAggregationManager(Executor):
             return accepted
 
     def accept_contribution(self, task_id: str, contribution: Shareable, fl_ctx: FLContext) -> bool:
-        """This is to be called by subclass to accept a specified contribution to aggregation."""
+        """This is to be called by subclass to accept a specified contribution to aggregation
+
+        Args:
+            task_id: ID of the task
+            contribution: the contribution to be accepted.
+            fl_ctx: FLContext object
+
+        Returns: whether the contribution is accepted
+
+        """
         task_info = self._pending_task
         if not task_info:
             self.log_warning(fl_ctx, f"contribution dropped for task_id {task_id}: no current task")
@@ -460,4 +469,14 @@ class HierarchicalAggregationManager(Executor):
         pass
 
     def task_ended(self, task: TaskInfo, fl_ctx: FLContext):
+        """This method is called when the current task is ended.
+        Subclass can implement this method to finish task processing.
+
+        Args:
+            task: info of the task that is ended
+            fl_ctx: FLContext object
+
+        Returns: None
+
+        """
         pass
