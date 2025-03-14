@@ -15,16 +15,121 @@ The code pre-installer handles:
 Expected application code zip structure:
 ```
 app_code.zip
-├── app_code/
-│   ├── meta.json           # Application metadata
-│   ├── apps/              # Default application code
-│   │   └── custom/        # Default custom code
-│   └── app_site-1/        # Site-specific code (optional)
-│       └── custom/        # Site custom code
-├── app_share/             # Shared resources
+folder/
+├── app_code/<app_name>/
+│               ├── meta.json       # Application metadata
+│               ├── app-<site>/     # Site custom code
+|                  |
+│                  └── custom/      # Site custom code
+├── app_share/                      # Shared resources
 │   └── shared.py
 └── requirements.txt       # Python dependencies (optional)
 ```
+
+Here is an example, if we like to create a folder for pre-instalation. We can do the following
+
+create a folder for pre-installation:
+```bash
+mkdir -p /tmp/nvflare/pre-install/app-code
+mkdir -p /tmp/nvflare/pre-install/app-share
+```
+now, I an job configuration like the following:
+``` 
+
+For example, if the app name is `fedavg`, and we have the job configuration likes the following:
+
+```
+/tmp/nvflare/jobs/workdir/fedavg
+├── app_server
+│   ├── config
+│   │   └── config_fed_server.json
+│   └── custom
+│       └── src
+│           ├── fedavg.py
+│           └── network.py
+├── app_site-1
+│   ├── config
+│   │   └── config_fed_client.json
+│   └── custom
+│       ├── network.py
+│       └── src
+│           └── client.py
+├── app_site-2
+│   ├── config
+│   │   └── config_fed_client.json
+│   └── custom
+│       ├── network.py
+│       └── src
+│           └── client.py
+├── app_site-3
+│   ├── config
+│   │   └── config_fed_client.json
+│   └── custom
+│       ├── network.py
+│       └── src
+│           └── client.py
+├── app_site-4
+│   ├── config
+│   │   └── config_fed_client.json
+│   └── custom
+│       ├── network.py
+│       └── src
+│           └── client.py
+├── app_site-5
+│   ├── config
+│   │   └── config_fed_client.json
+│   └── custom
+│       ├── network.py
+│       └── src
+│           └── client.py
+└── meta.json
+```
+Then we can simply copy the `fedavg` folder to the pre-install folder:
+
+```bash
+cp -r /tmp/nvflare/jobs/workdir/fedavg /tmp/nvflare/pre-install/app-code/.
+```
+if we have the shared code, and shared the code module is a python module folder with nested folders and files "/tmp/nvflare/jobs/workdir/pt".  we can copy the module to the pre-install folder:
+
+
+to the pre-install folder:
+```bash
+cp /tmp/nvflare/jobs/workdir/pt /tmp/nvflare/pre-install/app-share/.
+```
+
+You should have something like the following:
+
+```
+ tree /tmp/nvflare/pre-install/ -L 3
+/tmp/nvflare/pre-install/
+├── app-code
+│   └── fedavg
+│       ├── app_server
+│       ├── app_site-1
+│       ├── app_site-2
+│       ├── app_site-3
+│       ├── app_site-4
+│       ├── app_site-5
+│       └── meta.json
+└── app-share
+    └── pt
+        ├── learner_with_mlflow.py
+        ├── learner_with_tb.py
+        ├── learner_with_wandb.py
+        ├── pt_constants.py
+        ├── simple_network.py
+        └── test_custom.py
+
+```
+you can then zip the pre-install folder and use it as the app-code.zip for the code pre-installer.
+
+```bash
+cd /tmp/nvflare/pre-install/
+
+zip -r ../app-code.zip * 
+```
+you should have the app-code.zip file in the ```/tmp/nvflare/``` folder.
+
 
 ## Usage
 
