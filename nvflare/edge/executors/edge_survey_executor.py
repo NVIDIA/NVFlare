@@ -43,12 +43,12 @@ class EdgeSurveyExecutor(EdgeTaskExecutor):
     def process_edge_request(self, request: Any, current_task: TaskInfo, fl_ctx: FLContext) -> Any:
         current_task = self.task
         if not current_task:
-            return {"status": "tryAgain", "comment": f"no task"}
+            return {"status": "tryAgain", "comment": "no task"}
 
         if time.time() - self.task_start_time > self.task_duration:
             self.log_info(fl_ctx, f"task done after {self.task_duration} seconds")
             self.set_task_done(current_task.id, fl_ctx)
-            return {"status": "tryAgain", "comment": f"task done"}
+            return {"status": "tryAgain", "comment": "task done"}
 
         assert isinstance(request, dict)
         self.log_info(fl_ctx, f"received edge request: {request}")

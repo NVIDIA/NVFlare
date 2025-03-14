@@ -14,7 +14,6 @@
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
-from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.edge.constants import EdgeTaskHeaderKey
 from nvflare.security.logging import secure_format_exception
 
