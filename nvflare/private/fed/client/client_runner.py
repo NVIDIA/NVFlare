@@ -23,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
@@ -161,6 +162,48 @@ class ClientRunner(TBI):
         self.get_task_timeout = self.get_positive_float_var(ConfigVarName.GET_TASK_TIMEOUT, None)
         self.submit_task_result_timeout = self.get_positive_float_var(ConfigVarName.SUBMIT_TASK_RESULT_TIMEOUT, None)
         self._register_aux_message_handlers(engine)
+        self.register_event_handler(EventType.TASK_ASSIGNMENT_SENT, self._handle_task_sent_event)
+        self.register_event_handler(EventType.TASK_RESULT_RECEIVED, self._handle_task_result_received_event)
+
+    def _handle_task_sent_event(self, event_type: str, fl_ctx: FLContext):
+        self.log_debug(fl_ctx, f"received TASK_ASSIGNMENT_SENT {event_type}")
+        task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA)
+        assert isinstance(task_data, Shareable)
+        task_name = task_data.get_header(ReservedHeaderKey.TASK_NAME)
+        executor = None
+        if not task_name:
+            self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_NAME} from the task data")
+        else:
+            # find executor
+            executor = self.find_executor(task_name)
+
+        event = EventType.POST_TASK_ASSIGNMENT_SENT
+        if executor:
+            # fire the event to the executor
+            self.log_info(fl_ctx, f"firing {event} to executor {type(executor)}")
+            fire_event_to_components(event, [executor], fl_ctx)
+        else:
+            self.fire_event(event, fl_ctx)
+
+    def _handle_task_result_received_event(self, event_type: str, fl_ctx: FLContext):
+        self.log_info(fl_ctx, f"received TASK_RESULT_RECEIVED {event_type}")
+        result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
+        assert isinstance(result, Shareable)
+        task_name = result.get_header(ReservedHeaderKey.TASK_NAME)
+        executor = None
+        if not task_name:
+            self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_NAME} from the task result")
+        else:
+            # find executor
+            executor = self.find_executor(task_name)
+
+        event = EventType.POST_TASK_RESULT_RECEIVED
+        if executor:
+            # fire the event to the executor
+            self.log_info(fl_ctx, f"firing {event} to executor {type(executor)}")
+            fire_event_to_components(event, [executor], fl_ctx)
+        else:
+            self.fire_event(event, fl_ctx)
 
     def set_cell(self, cell):
         cell.register_request_cb(
