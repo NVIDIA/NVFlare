@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import random
 import threading
 import time
@@ -225,7 +224,7 @@ class HierarchicalAggregationManager(Executor):
             self._msg_handler_registered[task_name] = True
 
         self._pending_task = TaskInfo(shareable)
-        self.task_received(TaskInfo(shareable), fl_ctx)  # give the CB a separate copy of TaskInfo
+        self.task_started(self._pending_task, fl_ctx)  # give the CB a separate copy of TaskInfo
         self.log_info(fl_ctx, f"got current_round: {self._pending_task.round}")
 
         # Set header to indicate that we are ready to manage child clients
@@ -238,6 +237,7 @@ class HierarchicalAggregationManager(Executor):
         result = self._wait_for_children(fl_ctx, abort_signal)
 
         # reset state
+        self.task_ended(self._pending_task, fl_ctx)
         self._task_start_time = None
         self._pending_task = None
         self._pending_clients = {}
@@ -438,16 +438,12 @@ class HierarchicalAggregationManager(Executor):
     def get_current_task(self) -> Optional[TaskInfo]:
         """Get the info of current task
 
-        Returns: a copy of TaskInfo of current task or None if no current task
+        Returns: TaskInfo of current task or None if no current task
 
         """
-        task_info = self._pending_task
-        if task_info:
-            return copy.copy(task_info)
-        else:
-            return None
+        return self._pending_task
 
-    def task_received(self, task: TaskInfo, fl_ctx: FLContext):
+    def task_started(self, task: TaskInfo, fl_ctx: FLContext):
         """This method is called when a task assignment is received from the controller.
         Subclass can implement this method to prepare for task processing.
 
@@ -458,4 +454,7 @@ class HierarchicalAggregationManager(Executor):
         Returns: None
 
         """
+        pass
+
+    def task_ended(self, task: TaskInfo, fl_ctx: FLContext):
         pass

@@ -16,7 +16,6 @@ from typing import Any
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
 from nvflare.app_common.executors.ham import HierarchicalAggregationManager, TaskInfo
 from nvflare.edge.constants import EdgeEventType as EdgeEventType
 from nvflare.fuel.f3.message import Message as CellMessage
@@ -52,20 +51,6 @@ class EdgeTaskExecutor(HierarchicalAggregationManager):
             fl_ctx: FLContext object
 
         Returns: reply to the edge device
-
-        """
-        pass
-
-    def task_received(self, task_name: str, task_data: Shareable, fl_ctx: FLContext):
-        """This method is called when a task assignment is received from the controller.
-        Subclass can implement this method to prepare for task processing.
-
-        Args:
-            task_name: name of the task
-            task_data: task data
-            fl_ctx: FLContext object
-
-        Returns: None
 
         """
         pass

@@ -25,7 +25,7 @@ class TimeoutAssessor(Assessor):
         self._aggregator = None
         self._start_time = None
 
-    def initialize(self, aggregator: Aggregator):
+    def initialize(self, aggregator: Aggregator, fl_ctx: FLContext):
         self._aggregator = aggregator
 
     def start(self, fl_ctx: FLContext):

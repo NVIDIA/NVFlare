@@ -30,7 +30,7 @@ class Assessor(FLComponent, ABC):
         FLComponent.__init__(self)
 
     @abstractmethod
-    def initialize(self, aggregator: Aggregator):
+    def initialize(self, aggregator: Aggregator, fl_ctx: FLContext):
         pass
 
     @abstractmethod

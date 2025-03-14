@@ -164,7 +164,7 @@ class ScatterAndGatherForEdge(Controller):
             )
             return
 
-        self.assessor.initialize(self.aggregator)
+        self.assessor.initialize(self.aggregator, fl_ctx)
 
         if self.persistor_id:
             self.persistor = engine.get_component(self.persistor_id)
