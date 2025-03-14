@@ -86,10 +86,11 @@ class EdgeTaskDispatcher(Widget):
                         # no more jobs for this edge method
                         self.edge_jobs.pop(edge_method)
 
-    def _match_job(self, caps: list):
+    def _match_job(self, caps: dict):
+        methods = caps.get("methods")
         with self.lock:
             for edge_method, jobs in self.edge_jobs.items():
-                if edge_method in caps:
+                if edge_method in methods:
                     # pick one randomly
                     i = randrange(len(jobs))
                     return jobs[i]
