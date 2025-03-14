@@ -38,52 +38,42 @@ now, I an job configuration like the following:
 
 For example, if the app name is `fedavg`, and we have the job configuration likes the following:
 
-```
-/tmp/nvflare/jobs/workdir/fedavg
-├── app_server
-│   ├── config
-│   │   └── config_fed_server.json
-│   └── custom
-│       └── src
-│           ├── fedavg.py
-│           └── network.py
-├── app_site-1
-│   ├── config
-│   │   └── config_fed_client.json
-│   └── custom
-│       ├── network.py
-│       └── src
-│           └── client.py
-├── app_site-2
-│   ├── config
-│   │   └── config_fed_client.json
-│   └── custom
-│       ├── network.py
-│       └── src
-│           └── client.py
-├── app_site-3
-│   ├── config
-│   │   └── config_fed_client.json
-│   └── custom
-│       ├── network.py
-│       └── src
-│           └── client.py
-├── app_site-4
-│   ├── config
-│   │   └── config_fed_client.json
-│   └── custom
-│       ├── network.py
-│       └── src
-│           └── client.py
-├── app_site-5
-│   ├── config
-│   │   └── config_fed_client.json
-│   └── custom
-│       ├── network.py
-│       └── src
-│           └── client.py
-└── meta.json
-```
+
+Tree structure of the job configuration:
+
+/tmp/nvflare/pre-install/
+├── app-code
+│   └── fedavg
+│       ├── app_server
+│       │   ├── config
+│       │   └── custom
+│       ├── app_site-1
+│       │   ├── config
+│       │   └── custom
+│       ├── app_site-2
+│       │   ├── config
+│       │   └── custom
+│       ├── app_site-3
+│       │   ├── config
+│       │   └── custom
+│       ├── app_site-4
+│       │   ├── config
+│       │   └── custom
+│       ├── app_site-5
+│       │   ├── config
+│       │   └── custom
+│       └── meta.json
+└── app-share
+    └── pt
+        ├── learner_with_mlflow.py
+        ├── learner_with_tb.py
+        ├── learner_with_wandb.py
+        ├── pt_constants.py
+        ├── simple_network.py
+        └── test_custom.py
+
+
+
 Then we can simply copy the `fedavg` folder to the pre-install folder:
 
 ```bash
@@ -103,14 +93,14 @@ You should have something like the following:
  tree /tmp/nvflare/pre-install/ -L 3
 /tmp/nvflare/pre-install/
 ├── app-code
-│   └── fedavg
-│       ├── app_server
-│       ├── app_site-1
-│       ├── app_site-2
-│       ├── app_site-3
-│       ├── app_site-4
-│       ├── app_site-5
-│       └── meta.json
+│   └── fedavg
+│       ├── app_server
+│       ├── app_site-1
+│       ├── app_site-2
+│       ├── app_site-3
+│       ├── app_site-4
+│       ├── app_site-5
+│       └── meta.json
 └── app-share
     └── pt
         ├── learner_with_mlflow.py
