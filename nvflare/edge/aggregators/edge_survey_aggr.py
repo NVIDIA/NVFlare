@@ -32,5 +32,5 @@ class EdgeSurveyAggregator(Aggregator):
         self.num_devices = 0
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        self.log_info(fl_ctx, f"aggregating final result: {self.num_devices}")
+        self.log_info(fl_ctx, f"aggregating result: {self.num_devices}")
         return Shareable({"num_devices": self.num_devices})

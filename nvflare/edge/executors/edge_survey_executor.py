@@ -15,8 +15,8 @@ import time
 from typing import Any
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
-from nvflare.edge.executors.ete import EdgeTaskExecutor
+from nvflare.apis.shareable import Shareable
+from nvflare.edge.executors.ete import EdgeTaskExecutor, TaskInfo
 
 
 class EdgeSurveyExecutor(EdgeTaskExecutor):
@@ -24,26 +24,37 @@ class EdgeSurveyExecutor(EdgeTaskExecutor):
     HierarchicalAggregationManager.
     """
 
-    def __init__(self, timeout=10.0):
-        EdgeTaskExecutor.__init__(self)
-        self.timeout = timeout
-        self.num_devices = 0
-        self.start_time = None
+    def __init__(self, aggregator_id: str, aggr_report_timeout: float, task_duration: float):
+        EdgeTaskExecutor.__init__(self, aggregator_id, aggr_report_timeout)
+        self.task_duration = task_duration
+        self.task = None
+        self.task_start_time = None
 
-    def task_received(self, task_name: str, task_data: Shareable, fl_ctx: FLContext):
-        self.num_devices = 0
-        self.start_time = time.time()
+    def task_started(self, task: TaskInfo, fl_ctx: FLContext):
+        self.log_info(fl_ctx, f"got task_started: {task.id} (seq {task.seq})")
+        self.task_start_time = time.time()
+        self.task = task
 
-    def is_task_done(self, fl_ctx: FLContext) -> bool:
-        return time.time() - self.start_time > self.timeout
+    def task_ended(self, task: TaskInfo, fl_ctx: FLContext):
+        self.log_info(fl_ctx, f"got task_ended: {task.id} (seq {task.seq})")
+        self.task = None
+        self.task_start_time = None
 
-    def process_edge_request(self, request: Any, fl_ctx: FLContext) -> Any:
+    def process_edge_request(self, request: Any, current_task: TaskInfo, fl_ctx: FLContext) -> Any:
+        current_task = self.task
+        if not current_task:
+            return {"status": "tryAgain", "comment": f"no task"}
+
+        if time.time() - self.task_start_time > self.task_duration:
+            self.log_info(fl_ctx, f"task done after {self.task_duration} seconds")
+            self.set_task_done(current_task.id, fl_ctx)
+            return {"status": "tryAgain", "comment": f"task done"}
+
         assert isinstance(request, dict)
         self.log_info(fl_ctx, f"received edge request: {request}")
-        self.num_devices += 1
+        self.accept_contribution(
+            task_id=current_task.id,
+            contribution=Shareable({"num_devices": 1}),
+            fl_ctx=fl_ctx,
+        )
         return {"status": "tryAgain", "comment": f"received {request}"}
-
-    def get_task_result(self, fl_ctx: FLContext) -> Shareable:
-        result = make_reply(ReturnCode.OK)
-        result["num_devices"] = self.num_devices
-        return result

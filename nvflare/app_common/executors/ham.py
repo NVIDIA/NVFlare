@@ -238,6 +238,7 @@ class HierarchicalAggregationManager(Executor):
 
         # reset state
         self.task_ended(self._pending_task, fl_ctx)
+        self._task_done = False
         self._task_start_time = None
         self._pending_task = None
         self._pending_clients = {}
@@ -302,10 +303,11 @@ class HierarchicalAggregationManager(Executor):
                 break
 
             # have I received all possible responses from my children?
-            received, _ = self._pending_clients_status()
-            if received >= self._num_children:
-                self.log_info(fl_ctx, f"task {task_info.seq} is done: all {received} child clients are done!")
-                break
+            if self._num_children > 0:
+                received, _ = self._pending_clients_status()
+                if received >= self._num_children:
+                    self.log_info(fl_ctx, f"task {task_info.seq} is done: all {received} child clients are done!")
+                    break
 
             # has the task_done been set?
             if self._task_done:
@@ -315,7 +317,7 @@ class HierarchicalAggregationManager(Executor):
             time.sleep(aggr_interval + random.random())
 
         received, total = self._pending_clients_status()
-        self.log_info(fl_ctx, f"process done after {time.time() - self._task_start_time} secs: {received=} {total=}")
+        self.log_info(fl_ctx, f"task done after {time.time() - self._task_start_time} secs: {received=} {total=}")
 
         if self._process_error:
             self.log_error(fl_ctx, "there is process error")
@@ -334,6 +336,7 @@ class HierarchicalAggregationManager(Executor):
                 has_aggr_data = False
                 report = Shareable()
 
+            self.log_info(fl_ctx, f"making aggr report to parent for task {task_info.seq}: {has_aggr_data=}")
             report.set_header(EdgeTaskHeaderKey.TASK_SEQ, task_info.seq)
             report.set_header(EdgeTaskHeaderKey.HAS_AGGR_DATA, has_aggr_data)
             report.set_return_code(ReturnCode.OK)

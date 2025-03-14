@@ -31,6 +31,9 @@ class TimeoutAssessor(Assessor):
     def start(self, fl_ctx: FLContext):
         self._start_time = time.time()
 
+    def reset(self, fl_ctx: FLContext):
+        self._start_time = None
+
     def assess(self, fl_ctx: FLContext) -> AssessResult:
         if time.time() - self._start_time > self.timeout:
             return AssessResult.TASK_DONE

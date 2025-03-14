@@ -24,6 +24,7 @@ from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
@@ -40,6 +41,20 @@ from nvflare.fuel.utils.validation_utils import (
 )
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
+
+
+class _DummyShareableGenerator(ShareableGenerator):
+    def shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> Learnable:
+        result = Learnable()
+        for k, v in shareable.items():
+            result[k] = v
+        return result
+
+    def learnable_to_shareable(self, model: Learnable, fl_ctx: FLContext) -> Shareable:
+        result = Shareable()
+        for k, v in model.items():
+            result[k] = v
+        return result
 
 
 class ScatterAndGatherForEdge(Controller):
@@ -147,14 +162,17 @@ class ScatterAndGatherForEdge(Controller):
             )
             return
 
-        self.shareable_gen = engine.get_component(self.shareable_generator_id)
-        if not isinstance(self.shareable_gen, ShareableGenerator):
-            self.system_panic(
-                f"Shareable generator {self.shareable_generator_id} must be a ShareableGenerator type object, "
-                f"but got {type(self.shareable_gen)}",
-                fl_ctx,
-            )
-            return
+        if self.shareable_generator_id:
+            self.shareable_gen = engine.get_component(self.shareable_generator_id)
+            if not isinstance(self.shareable_gen, ShareableGenerator):
+                self.system_panic(
+                    f"Shareable generator {self.shareable_generator_id} must be a ShareableGenerator type object, "
+                    f"but got {type(self.shareable_gen)}",
+                    fl_ctx,
+                )
+                return
+        else:
+            self.shareable_gen = _DummyShareableGenerator()
 
         self.assessor = engine.get_component(self.assessor_id)
         if not isinstance(self.assessor, Assessor):
@@ -235,16 +253,16 @@ class ScatterAndGatherForEdge(Controller):
                 self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
                 # Create train_task
-                data_shareable: Shareable = self.shareable_gen.learnable_to_shareable(self._global_weights, fl_ctx)
-                data_shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
-                data_shareable.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
-                data_shareable.set_header(EdgeTaskHeaderKey.TASK_SEQ, self._current_task_seq)
-                data_shareable.set_header(EdgeTaskHeaderKey.AGGR_INTERVAL, self._aggr_interval)
-                data_shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
+                task_data = self.shareable_gen.learnable_to_shareable(self._global_weights, fl_ctx)
+                task_data.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+                task_data.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
+                task_data.set_header(EdgeTaskHeaderKey.TASK_SEQ, self._current_task_seq)
+                task_data.set_header(EdgeTaskHeaderKey.AGGR_INTERVAL, self._aggr_interval)
+                task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
                 train_task = Task(
                     name=self.task_name,
-                    data=data_shareable,
+                    data=task_data,
                     timeout=self._train_timeout,
                     before_task_sent_cb=self._prepare_train_task_data,
                     result_received_cb=self._process_train_result,
@@ -261,18 +279,20 @@ class ScatterAndGatherForEdge(Controller):
                 # wait for the task to finish
                 self.assessor.start(fl_ctx)
                 assess_result = AssessResult.TASK_DONE
+                seq = self._current_task_seq
                 while True:
                     if self._check_abort_signal(fl_ctx, abort_signal):
+                        self.log_info(fl_ctx, f"Task is done ({seq=}): ABORTED")
                         break
 
                     if self._num_children_done >= self._num_children:
                         # all children are done with their current task
-                        self.log_info(fl_ctx, "all children are done with their current task")
+                        self.log_info(fl_ctx, f"Task is done ({seq=}): all children are done with their task")
                         break
 
                     assess_result = self.assessor.assess(fl_ctx)
                     if assess_result != AssessResult.CONTINUE:
-                        self.log_info(fl_ctx, f"assessor is done: {assess_result=}")
+                        self.log_info(fl_ctx, f"Task is done ({seq=}): {assess_result=}")
                         break
 
                     time.sleep(self._assess_interval)
@@ -280,12 +300,11 @@ class ScatterAndGatherForEdge(Controller):
                 self._current_task_seq = 0
                 self._num_children_done = 0
                 self.cancel_task(train_task, fl_ctx=fl_ctx)
-                self.log_info(fl_ctx, f"Task seq {self._current_task_seq} is done: {assess_result=}")
 
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     break
 
-                self.log_info(fl_ctx, "Start aggregation.")
+                self.log_info(fl_ctx, f"Start aggregation for task seq {seq}")
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 with self._aggr_lock:
                     try:
@@ -299,7 +318,7 @@ class ScatterAndGatherForEdge(Controller):
 
                 fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
                 self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
-                self.log_info(fl_ctx, "End aggregation.")
+                self.log_info(fl_ctx, f"End aggregation for task seq {seq}.")
 
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return

@@ -86,11 +86,10 @@ class EdgeTaskDispatcher(Widget):
                         # no more jobs for this edge method
                         self.edge_jobs.pop(edge_method)
 
-    def _match_job(self, caps: dict):
-        methods = caps.get("methods")
+    def _match_job(self, caps: list):
         with self.lock:
             for edge_method, jobs in self.edge_jobs.items():
-                if edge_method in methods:
+                if edge_method in caps:
                     # pick one randomly
                     i = randrange(len(jobs))
                     return jobs[i]
@@ -161,7 +160,7 @@ class EdgeTaskDispatcher(Widget):
 
         # send edge request data to CJ
         edge_req_data = fl_ctx.get_prop(EdgeContextKey.REQUEST_FROM_EDGE)
-        self.logger.info(f"Sending edge request to CJ {job_id}: {edge_req_data}")
+        self.logger.info(f"Sending OPTIONAL edge request to CJ {job_id}: {edge_req_data}")
         engine = fl_ctx.get_engine()
         reply = engine.send_to_job(
             job_id=job_id,
@@ -169,6 +168,7 @@ class EdgeTaskDispatcher(Widget):
             topic="request",
             msg=new_cell_message({}, edge_req_data),
             timeout=self.request_timeout,
+            optional=True,
         )
 
         assert isinstance(reply, CellMessage)
