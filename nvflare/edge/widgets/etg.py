@@ -55,9 +55,7 @@ class EdgeTaskGenerator(Widget):
         }
 
     def _generate_tasks(self):
-        caps = {
-            "methods": ["xgb", "llm"]
-        }
+        caps = {"methods": ["xgb", "llm"]}
         while True:
             if self.abort_signal.triggered:
                 self.logger.info("received abort signal - exiting")
