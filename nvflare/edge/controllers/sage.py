@@ -33,12 +33,7 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.edge.assessor import Assessor, AssessResult
 from nvflare.edge.constants import EdgeTaskHeaderKey
 from nvflare.edge.utils import message_topic_for_task, process_aggr_result_from_child
-from nvflare.fuel.utils.validation_utils import (
-    check_non_negative_int,
-    check_positive_int,
-    check_positive_number,
-    check_str,
-)
+from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
