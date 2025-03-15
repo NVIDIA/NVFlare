@@ -40,7 +40,9 @@ class FlowerClient(NumPyClient):
             self.set_step(0)
 
     def set_step(self, step: int):
-        self.flwr_context.state = RecordSet(metrics_records={"step": MetricsRecord({"step": step})})
+        record = RecordSet()
+        record["step"] = MetricsRecord({"step": step})
+        self.flwr_context.state = record
 
     def get_step(self):
         return int(self.flwr_context.state.metrics_records["step"]["step"])
@@ -81,13 +83,12 @@ app = ClientApp(
 )
 
 
-@app.enter()
-def enter(ctxt: Context) -> None:
+@app.lifespan()
+def lifespan(ctxt: Context) -> None:
     flare.init()
     print("ClientApp entering. Flare initialized.")
 
+    yield
 
-@app.exit()
-def exit(ctxt: Context) -> None:
     flare.shutdown()
     print("ClientApp exiting. Flare shutdown.")

@@ -586,7 +586,7 @@ class SimulatorRunner(FLComponent):
     def dump_stats(self, workspace: Workspace):
         stats_dict = StatsPoolManager.to_dict()
         json_object = json.dumps(stats_dict, indent=4)
-        os.makedirs(os.path.join(workspace.get_root_dir(), POOL_STATS_DIR))
+        os.makedirs(os.path.join(workspace.get_root_dir(), POOL_STATS_DIR), exist_ok=True)
         file = os.path.join(workspace.get_root_dir(), POOL_STATS_DIR, SIMULATOR_POOL_STATS)
         with open(file, "w") as outfile:
             outfile.write(json_object)
