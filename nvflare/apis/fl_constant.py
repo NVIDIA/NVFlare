@@ -194,6 +194,7 @@ class FLContextKey(object):
     JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
     EVENT_PROCESSED = "__event_processed__"
     CELL_MESSAGE = "__cell_message__"
+    CLIENT_HIERARCHY = "__client_hierarchy__"
 
 
 class ProcessType:

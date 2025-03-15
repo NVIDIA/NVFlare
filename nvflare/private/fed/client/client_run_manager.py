@@ -24,6 +24,7 @@ from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEn
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.core_cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.utils.job_utils import build_client_hierarchy
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.event import fire_event
@@ -98,12 +99,17 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             self.handlers = []
 
         # get job meta!
-        job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
-        job_ctx_props.update({FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB})
-
         client_config = client.client_args
         fqsn = client_config.get("fqsn", client.client_name)
         is_leaf = client_config.get("is_leaf", True)
+
+        job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
+        job_ctx_props.update(
+            {
+                FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB,
+                FLContextKey.CLIENT_CONFIG: client_config,
+            }
+        )
 
         self.fl_ctx_mgr = FLContextManager(
             engine=self,
@@ -302,7 +308,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             topic, msg_targets, timeout, fl_ctx, optional=optional, secure=secure
         )
 
-    def get_job_clients(self, fl_ctx):
+    def get_job_clients(self, fl_ctx: FLContext):
         """Get participating clients of the job.
         We no longer send message to the Server to ask this info.
         Instead, job clients are included in the meta of the job when Server started the job!
@@ -318,7 +324,9 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         self.all_clients = [from_dict(d) for d in job_clients]
         for c in self.all_clients:
             self.name_to_clients[c.name] = c
-        return
+
+        forest = build_client_hierarchy(self.all_clients)
+        fl_ctx.set_prop(FLContextKey.CLIENT_HIERARCHY, forest, private=True, sticky=True)
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)

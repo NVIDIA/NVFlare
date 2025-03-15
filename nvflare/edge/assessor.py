@@ -11,29 +11,37 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from abc import ABC, abstractmethod
+from enum import Enum
+
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 
 
-class EdgeSurveyAggregator(Aggregator):
-    def __init__(self):
-        Aggregator.__init__(self)
-        self.num_devices = 0
+class AssessResult(Enum):
+    CONTINUE = "continue"
+    TASK_DONE = "task_done"
+    WORKFLOW_DONE = "workflow_done"
 
-    def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
-        self.log_info(fl_ctx, f"accepting: {shareable}")
-        num_devices = shareable.get("num_devices")
-        if num_devices:
-            self.num_devices += num_devices
-        return True
+
+class Assessor(FLComponent, ABC):
+    def __init__(self):
+        FLComponent.__init__(self)
+
+    @abstractmethod
+    def initialize(self, aggregator: Aggregator, fl_ctx: FLContext):
+        pass
+
+    @abstractmethod
+    def assess(self, fl_ctx: FLContext) -> AssessResult:
+        pass
+
+    def start(self, fl_ctx: FLContext):
+        pass
 
     def reset(self, fl_ctx: FLContext):
-        self.num_devices = 0
+        pass
 
-    def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        self.log_info(fl_ctx, f"aggregating result: {self.num_devices}")
-        return Shareable({"num_devices": self.num_devices})
-
-    def get_count(self) -> int:
-        return self.num_devices
+    def finalize(self, fl_ctx: FLContext):
+        pass

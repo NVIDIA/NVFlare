@@ -720,7 +720,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             self.logger.debug("didn't receive clients info - retry in 1 second")
             time.sleep(1.0)
 
-    def _get_participating_clients(self):
+    def get_participating_clients(self):
         # called from server's job cell
         return self.client_manager.clients
 
@@ -832,7 +832,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
             job_info = fl_ctx.get_prop(FLContextKey.JOB_INFO)
             if not job_info:
-                job_clients = self._get_participating_clients()
+                job_clients = self.get_participating_clients()
                 fl_ctx.set_prop(FLContextKey.JOB_INFO, (job_id, job_clients))
             else:
                 (job_id, job_clients) = job_info

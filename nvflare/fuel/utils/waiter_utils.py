@@ -13,10 +13,11 @@
 # limitations under the License.
 import threading
 import time
+from typing import Optional
 
 from nvflare.apis.signal import Signal
 
-_SMALL_WAIT = 0.01
+_SMALL_WAIT = 0.1
 
 
 class WaiterRC:
@@ -27,11 +28,13 @@ class WaiterRC:
     ERROR = 4
 
 
-def conditional_wait(waiter: threading.Event, timeout: float, abort_signal: Signal, condition_cb=None, **cb_kwargs):
+def conditional_wait(
+    waiter: Optional[threading.Event], timeout: float, abort_signal: Signal, condition_cb=None, **cb_kwargs
+):
     """Wait for an event until timeout, aborted, or some condition is met.
 
     Args:
-        waiter: the event to wait
+        waiter: the event to wait. If not specified, then use sleep.
         timeout: the max time to wait
         abort_signal: signal to abort the wait
         condition_cb: condition to check during waiting
@@ -49,9 +52,12 @@ def conditional_wait(waiter: threading.Event, timeout: float, abort_signal: Sign
     wait_time = min(_SMALL_WAIT, timeout)
     start = time.time()
     while True:
-        if waiter.wait(wait_time):
-            # the event just happened!
-            return WaiterRC.IS_SET
+        if waiter:
+            if waiter.wait(wait_time):
+                # the event just happened!
+                return WaiterRC.IS_SET
+        else:
+            time.sleep(wait_time)
 
         if time.time() - start >= timeout:
             return WaiterRC.TIMEOUT

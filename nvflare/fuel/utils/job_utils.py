@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,22 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.common.fqn import FQN
+from typing import List
+
+from nvflare.apis.client import Client
+from nvflare.fuel.utils.tree_utils import build_forest
 
 
-class FQCN(FQN):
-    pass
+def build_client_hierarchy(clients: List[Client]):
+    return build_forest(
+        objs=clients,
+        get_fqn_f=_get_client_fqsn,
+        get_name_f=_get_client_name,
+    )
 
 
-class FqcnInfo:
-    def __init__(self, fqcn: str):
-        self.fqcn = fqcn
-        self.path = FQCN.split(fqcn)
-        self.gen = len(self.path)
-        self.is_root = self.gen == 1
-        self.root = self.path[0]
-        self.is_on_server = self.root == FQCN.ROOT_SERVER
+def _get_client_fqsn(c: Client):
+    return c.get_fqsn()
 
 
-def same_family(info1: FqcnInfo, info2: FqcnInfo):
-    return info1.root == info2.root
+def _get_client_name(c: Client):
+    return c.name
