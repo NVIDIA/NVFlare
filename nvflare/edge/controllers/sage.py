@@ -347,7 +347,7 @@ class ScatterAndGatherForEdge(Controller):
                         self.log_info(fl_ctx, "End persist model on server.")
 
                 self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
-                self.log_info(fl_ctx, f"Round {self._current_round} finished in {time.time()-round_start} seconds")
+                self.log_info(fl_ctx, f"Round {self._current_round} finished in {time.time() - round_start} seconds")
                 gc.collect()
 
                 if assess_result == AssessResult.WORKFLOW_DONE:
