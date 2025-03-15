@@ -15,22 +15,37 @@
 # limitations under the License.
 
 
-import argparse
-import json
 import shutil
 import tempfile
 from pathlib import Path
 from zipfile import ZipFile
 
+from nvflare.tool.code_pre_installer.constants import (
+    CUSTOM_DIR_NAME,
+    DEFAULT_APPLICATION_INSTALL_DIR,
+    DEFAULT_GENERIC_APP_NAME,
+    PYTHON_PATH_SHARED_DIR,
+)
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="pre-Install application code and libs")
-    parser.add_argument("--app-code", required=True, help="Path to application code zip file")
+
+def define_pre_install_parser(cmd_name, sub_cmd):
+    parser = sub_cmd.add_parser(cmd_name)
+    parser.add_argument("-a", "--application", required=True, help="Path to application code zip file")
     parser.add_argument(
-        "--install-prefix", default="/opt/nvflare/apps", help="Installation prefix (default: /opt/nvflare/apps)"
+        "-p",
+        "--install-prefix",
+        default=DEFAULT_APPLICATION_INSTALL_DIR,
+        help="Installation prefix (default: /opt/nvflare/apps)",
     )
-    parser.add_argument("--site-name", required=True, help="Target site name (e.g., site-1, server)")
-    return parser.parse_args()
+    parser.add_argument("-s", "--site-name", required=True, help="Target site name (e.g., site-1, server)")
+    parser.add_argument(
+        "-ts",
+        "--target_shared_dir",
+        default=PYTHON_PATH_SHARED_DIR,
+        help=f"Target share path (default: {PYTHON_PATH_SHARED_DIR})",
+    )
+    parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    return parser
 
 
 def install_requirements(requirements_file: Path):
@@ -48,13 +63,13 @@ def install_requirements(requirements_file: Path):
         raise ValueError(f"Failed to install requirements: {e}")
 
 
-def install_app_code(app_code: Path, install_prefix: Path, site_name: str):
+def install_app_code(application: Path, install_prefix: Path, site_name: str, target_shared_dir: Path):
     """Install NVFLARE application code for a specific site."""
-    CUSTOM_DIR = Path("/local/custom")
+    CUSTOM_DIR = Path(target_shared_dir)
 
     # Verify input zip file exists
-    if not app_code.exists():
-        raise FileNotFoundError(f"Application code zip not found: {app_code}")
+    if not application.exists():
+        raise FileNotFoundError(f"Application code zip not found: {application}")
 
     # Create temp directory
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -62,7 +77,7 @@ def install_app_code(app_code: Path, install_prefix: Path, site_name: str):
 
         # Extract zip
         print("Extracting application code...")
-        with ZipFile(app_code) as zf:
+        with ZipFile(application) as zf:
             zf.extractall(temp_path)
 
         # Install requirements if present
@@ -71,73 +86,62 @@ def install_app_code(app_code: Path, install_prefix: Path, site_name: str):
             install_requirements(requirements_file)
 
         # Validate structure
-        app_code_dir = temp_path / "app_code"
-        app_share = temp_path / "app_share"
+        application_dir = temp_path / "application"
+        application_share = temp_path / "application-share"
 
-        if not (app_code_dir.exists() and app_share.exists()):
-            raise ValueError("Invalid application code: Missing app_code or app_share directory")
+        if not (application_dir.exists() and application_share.exists()):
+            raise ValueError("Invalid application code: Missing application or application-share directory")
 
-        # Read meta.json
-        meta_file = app_code_dir / "meta.json"
-        if not meta_file.exists():
-            raise ValueError("meta.json not found in app_code")
+        # Find all application directories under application/
+        app_dirs = [d for d in application_dir.iterdir() if d.is_dir()]
+        if not app_dirs:
+            raise ValueError("No application directory found under application/")
 
-        with open(meta_file) as f:
-            meta = json.load(f)
-            app_name = meta.get("name")
+        # Process each application directory
+        for app_dir in app_dirs:
+            app_name = app_dir.name
 
-        if not app_name:
-            raise ValueError("Application name not found in meta.json")
+            # Read meta.json
+            meta_file = app_dir / "meta.json"
+            if not meta_file.exists():
+                raise ValueError(f"meta.json not found in {app_name} directory")
 
-        # Create installation directories
-        app_dir = install_prefix / app_name
-        app_dir.mkdir(parents=True, exist_ok=True)
-        CUSTOM_DIR.mkdir(parents=True, exist_ok=True)
+            # Create installation directories
+            install_dir = install_prefix / app_name
+            install_dir.mkdir(parents=True, exist_ok=True)
+            CUSTOM_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Install site-specific custom code
-        default_site_dir = app_code_dir / "apps"
-        site_dir = app_code_dir / f"app_{site_name}"
-        if not site_dir.exists():
-            site_dir = default_site_dir
+            # Install site-specific custom code
+            default_site_dir = app_dir / DEFAULT_GENERIC_APP_NAME
+            site_dir = app_dir / f"app_{site_name}"
+            if not site_dir.exists():
+                site_dir = default_site_dir
 
-        if not site_dir.exists():
-            raise ValueError(f"Site directory not found for {site_name}")
+            if not site_dir.exists():
+                raise ValueError(f"Site directory not found for {site_name}")
 
-        custom_dir = site_dir / "custom"
-        if custom_dir.exists():
-            print(f"Installing custom code for site {site_name}...")
-            for item in custom_dir.iterdir():
-                if item.is_file():
-                    shutil.copy2(item, app_dir)
-                else:
-                    shutil.copytree(item, app_dir / item.name, dirs_exist_ok=True)
+            custom_dir = site_dir / CUSTOM_DIR_NAME
+            if custom_dir.exists():
+                print(f"Installing custom code for site {site_name}...")
+                for item in custom_dir.iterdir():
+                    if item.is_file():
+                        shutil.copy2(item, install_dir)
+                    else:
+                        shutil.copytree(item, install_dir / item.name, dirs_exist_ok=True)
 
-        # Install shared resources
-        if app_share.exists() and any(app_share.iterdir()):
-            print("Installing shared resources...")
-            for item in app_share.iterdir():
-                if item.is_file():
-                    shutil.copy2(item, CUSTOM_DIR)
-                else:
-                    shutil.copytree(item, CUSTOM_DIR / item.name, dirs_exist_ok=True)
+            # Install shared resources
+            if application_share.exists() and any(application_share.iterdir()):
+                print("Installing shared resources...")
+                for item in application_share.iterdir():
+                    if item.is_file():
+                        shutil.copy2(item, CUSTOM_DIR)
+                    else:
+                        shutil.copytree(item, CUSTOM_DIR / item.name, dirs_exist_ok=True)
 
-        print("\nInstallation completed successfully:")
-        print(f"- Application files installed to: {app_dir}")
-        print(f"- Shared files installed to: {CUSTOM_DIR}")
+            print("\nInstallation completed successfully:")
+            print(f"- Application files installed to: {install_dir}")
+            print(f"- Shared files installed to: {CUSTOM_DIR}")
 
-        # Delete the original zip file after successful installation
-        app_code.unlink()
-        print(f"- Cleaned up application code zip: {app_code}")
-
-
-def main():
-    args = parse_args()
-    try:
-        install_app_code(Path(args.app_code), Path(args.install_prefix), args.site_name)
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        exit(1)
-
-
-if __name__ == "__main__":
-    main()
+            # Delete the original zip file after successful installation
+            application.unlink()
+            print(f"- Cleaned up application code zip: {application}")

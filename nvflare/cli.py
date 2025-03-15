@@ -129,13 +129,15 @@ def handle_config_cmd(args):
 
 def def_pre_install_parser(sub_cmd):
     cmd = CMD_PRE_INSTALL
-    pre_install_parser = sub_cmd.add_parser(cmd)
-    pre_install_parser.add_argument("--app-code", required=True, help="Path to application code zip file")
-    pre_install_parser.add_argument(
-        "--install-prefix", default="/opt/nvflare/apps", help="Installation prefix (default: /opt/nvflare/apps)"
-    )
-    pre_install_parser.add_argument("--site-name", required=True, help="Target site name (e.g., site-1, server)")
-    return {cmd: pre_install_parser}
+    try:
+        # using try catch to avoid hard dependency on nvflare.tool.code_pre_installer
+        from nvflare.tool.code_pre_installer.install import define_pre_install_parser
+
+        pre_install_parser = define_pre_install_parser(cmd, sub_cmd)
+        return {cmd: pre_install_parser}
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        sys.exit(1)
 
 
 def parse_args(prog_name: str):
@@ -166,17 +168,9 @@ def parse_args(prog_name: str):
 
 
 def run_pre_install_cmd(args):
-    try:
-        from nvflare.tool.code_pre_installer.install import install_app_code
+    from nvflare.tool.code_pre_installer.install import install_app_code
 
-        install_app_code(
-            Path(args.app_code),
-            Path(args.install_prefix),
-            args.site_name,
-        )
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        sys.exit(1)
+    install_app_code(Path(args.application), Path(args.install_prefix), args.site_name, args.target_shared_dir)
 
 
 handlers = {
@@ -196,7 +190,6 @@ def run(prog_name):
     cwd = os.getcwd()
     sys.path.append(cwd)
     prog_parser, prog_args, sub_cmd_parsers = parse_args(prog_name)
-
     sub_cmd = None
     try:
         sub_cmd = prog_args.sub_command
