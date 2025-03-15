@@ -39,6 +39,7 @@ from nvflare.fuel.utils.validation_utils import (
     check_positive_number,
     check_str,
 )
+from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -69,7 +70,6 @@ class ScatterAndGatherForEdge(Controller):
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         assessor_id: str = "assessor",
         task_name=AppConstants.TASK_TRAIN,
-        train_timeout: int = 0,
         allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
         persist_every_n_rounds: int = 1,
@@ -105,7 +105,6 @@ class ScatterAndGatherForEdge(Controller):
         super().__init__(task_check_period=task_check_period)
 
         # Check arguments
-        check_non_negative_int("train_timeout", train_timeout)
         check_positive_int("persist_every_n_rounds", persist_every_n_rounds)
         check_str("aggregator_id", aggregator_id)
         check_str("persistor_id", persistor_id)
@@ -128,7 +127,6 @@ class ScatterAndGatherForEdge(Controller):
 
         # config data
         self._num_rounds = num_rounds
-        self._train_timeout = train_timeout
         self._persist_every_n_rounds = persist_every_n_rounds
         self.allow_empty_global_weights = allow_empty_global_weights
         self._aggr_interval = aggregation_interval
@@ -263,7 +261,6 @@ class ScatterAndGatherForEdge(Controller):
                 train_task = Task(
                     name=self.task_name,
                     data=task_data,
-                    timeout=self._train_timeout,
                     before_task_sent_cb=self._prepare_train_task_data,
                     result_received_cb=self._process_train_result,
                 )
@@ -281,10 +278,6 @@ class ScatterAndGatherForEdge(Controller):
                 assess_result = AssessResult.TASK_DONE
                 seq = self._current_task_seq
                 while True:
-                    if self._check_abort_signal(fl_ctx, abort_signal):
-                        self.log_info(fl_ctx, f"Task is done ({seq=}): ABORTED")
-                        break
-
                     if self._num_children_done >= self._num_children:
                         # all children are done with their current task
                         self.log_info(fl_ctx, f"Task is done ({seq=}): all children are done with their task")
@@ -295,7 +288,14 @@ class ScatterAndGatherForEdge(Controller):
                         self.log_info(fl_ctx, f"Task is done ({seq=}): {assess_result=}")
                         break
 
-                    time.sleep(self._assess_interval)
+                    wrc = conditional_wait(
+                        waiter=None,
+                        timeout=self._assess_interval,
+                        abort_signal=abort_signal,
+                    )
+                    if wrc == WaiterRC.ABORTED:
+                        self.log_info(fl_ctx, f"Task is done ({seq=}): ABORTED")
+                        break
 
                 self._current_task_seq = 0
                 self._num_children_done = 0
@@ -320,16 +320,10 @@ class ScatterAndGatherForEdge(Controller):
                 self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
                 self.log_info(fl_ctx, f"End aggregation for task seq {seq}.")
 
-                if self._check_abort_signal(fl_ctx, abort_signal):
-                    return
-
                 self.fire_event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE, fl_ctx)
                 self._global_weights = self.shareable_gen.shareable_to_learnable(aggr_result, fl_ctx)
                 fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
                 self.fire_event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, fl_ctx)
-
-                if self._check_abort_signal(fl_ctx, abort_signal):
-                    return
 
                 if self.persistor:
                     if (
@@ -346,7 +340,7 @@ class ScatterAndGatherForEdge(Controller):
                 self.log_info(fl_ctx, f"Round {self._current_round} finished.")
                 gc.collect()
 
-                if assess_result == AssessResult.JOB_DONE:
+                if assess_result == AssessResult.WORKFLOW_DONE:
                     break
 
             self._phase = AppConstants.PHASE_FINISHED

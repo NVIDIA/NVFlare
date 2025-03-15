@@ -64,9 +64,13 @@ def process_aggr_result_from_child(
         rc = ReturnCode.OK
 
     if task_seq != current_task_seq:
-        processor.log_error(
-            fl_ctx, f"dropped aggr result from {child_name}: expect task seq {current_task_seq} but got {task_seq}"
-        )
+        if current_task_seq == 0:
+            # this means no current task
+            processor.log_warning(fl_ctx, f"dropped aggr result from {child_name}: got {task_seq} but no current task")
+        else:
+            processor.log_warning(
+                fl_ctx, f"dropped aggr result from {child_name}: expect task seq {current_task_seq} but got {task_seq}"
+            )
         return False, make_reply(rc, current_task_seq)
 
     has_aggr_data = request.get_header(EdgeTaskHeaderKey.HAS_AGGR_DATA)

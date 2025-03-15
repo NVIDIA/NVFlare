@@ -22,7 +22,7 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 class AssessResult(Enum):
     CONTINUE = "continue"
     TASK_DONE = "task_done"
-    JOB_DONE = "job_done"
+    WORKFLOW_DONE = "workflow_done"
 
 
 class Assessor(FLComponent, ABC):

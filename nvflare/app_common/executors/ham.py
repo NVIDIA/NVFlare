@@ -28,6 +28,7 @@ from nvflare.edge.constants import EdgeTaskHeaderKey
 from nvflare.edge.utils import message_topic_for_task, process_aggr_result_from_child
 from nvflare.fuel.utils.tree_utils import Forest, Node
 from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
+from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
 from nvflare.security.logging import secure_format_exception
 
 
@@ -253,9 +254,6 @@ class HierarchicalAggregationManager(Executor):
 
         aggr_interval = task_info.aggr_interval
         while True:
-            if abort_signal.triggered:
-                return make_reply(ReturnCode.TASK_ABORTED)
-
             if self._process_error:
                 # we bail out when any processing error encountered
                 self.log_info(fl_ctx, f"task seq {task_info.seq} is done: processing error occurred")
@@ -311,10 +309,16 @@ class HierarchicalAggregationManager(Executor):
 
             # has the task_done been set?
             if self._task_done:
-                self.log_info(fl_ctx, f"task {task_info.seq} is done: task was set to be done")
+                self.log_info(fl_ctx, f"task {task_info.seq} is done: task was set to done")
                 break
 
-            time.sleep(aggr_interval + random.random())
+            wrc = conditional_wait(
+                waiter=None,
+                timeout=aggr_interval + random.uniform(0.0, 0.5),
+                abort_signal=abort_signal,
+            )
+            if wrc == WaiterRC.ABORTED:
+                return make_reply(ReturnCode.TASK_ABORTED)
 
         received, total = self._pending_clients_status()
         self.log_info(fl_ctx, f"task done after {time.time() - self._task_start_time} secs: {received=} {total=}")
