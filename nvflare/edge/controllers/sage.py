@@ -32,7 +32,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.edge.assessor import Assessor, AssessResult
 from nvflare.edge.constants import EdgeTaskHeaderKey
-from nvflare.edge.utils import message_topic_for_task, process_aggr_result_from_child
+from nvflare.edge.utils import message_topic_for_task_end, message_topic_for_task_report, process_aggr_result_from_child
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
 from nvflare.security.logging import secure_format_exception
@@ -216,7 +216,7 @@ class ScatterAndGatherForEdge(Controller):
             self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
         # register aux message handler for receiving aggr results from children
-        engine.register_aux_message_handler(message_topic_for_task(self.task_name), self._process_aggr_result)
+        engine.register_aux_message_handler(message_topic_for_task_report(self.task_name), self._process_aggr_result)
 
         # get children clients
         client_hierarchy = fl_ctx.get_prop(FLContextKey.CLIENT_HIERARCHY)
@@ -225,6 +225,7 @@ class ScatterAndGatherForEdge(Controller):
         self.log_info(fl_ctx, f"my child clients: {self._children}")
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
+        end_task_topic = message_topic_for_task_end(self.task_name)
         try:
             self.log_info(fl_ctx, "Beginning ScatterAndGatherForEdge training phase.")
             self._phase = AppConstants.PHASE_TRAIN
@@ -234,6 +235,7 @@ class ScatterAndGatherForEdge(Controller):
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
             for r in range(self._num_rounds):
+                round_start = time.time()
                 self._current_round = r
 
                 if self._check_abort_signal(fl_ctx, abort_signal):
@@ -275,12 +277,25 @@ class ScatterAndGatherForEdge(Controller):
                 while True:
                     if self._num_children_done >= self._num_children:
                         # all children are done with their current task
-                        self.log_info(fl_ctx, f"Task is done ({seq=}): all children are done with their task")
+                        self.log_info(fl_ctx, f"Task seq {seq} is done: all children are done with their task")
                         break
 
                     assess_result = self.assessor.assess(fl_ctx)
                     if assess_result != AssessResult.CONTINUE:
-                        self.log_info(fl_ctx, f"Task is done ({seq=}): {assess_result=}")
+                        self.log_info(fl_ctx, f"Task seq {seq} is done: {assess_result=}")
+
+                        # notify children to end task
+                        req = Shareable()
+                        req.set_header(EdgeTaskHeaderKey.TASK_SEQ, seq)
+                        engine = fl_ctx.get_engine()
+                        engine.send_aux_request(
+                            targets=self._children,
+                            topic=end_task_topic,
+                            request=req,
+                            timeout=0,  # fire and forget
+                            fl_ctx=fl_ctx,
+                            optional=True,
+                        )
                         break
 
                     wrc = conditional_wait(
@@ -289,7 +304,7 @@ class ScatterAndGatherForEdge(Controller):
                         abort_signal=abort_signal,
                     )
                     if wrc == WaiterRC.ABORTED:
-                        self.log_info(fl_ctx, f"Task is done ({seq=}): ABORTED")
+                        self.log_info(fl_ctx, f"Task seq {seq} is done: ABORTED")
                         break
 
                 self._current_task_seq = 0
@@ -332,7 +347,7 @@ class ScatterAndGatherForEdge(Controller):
                         self.log_info(fl_ctx, "End persist model on server.")
 
                 self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
-                self.log_info(fl_ctx, f"Round {self._current_round} finished.")
+                self.log_info(fl_ctx, f"Round {self._current_round} finished in {time.time()-round_start} seconds")
                 gc.collect()
 
                 if assess_result == AssessResult.WORKFLOW_DONE:

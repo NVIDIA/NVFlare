@@ -18,16 +18,18 @@ from nvflare.fuel.utils.tree_utils import build_forest
 
 
 def build_client_hierarchy(clients: List[Client]):
+    """Build client hierarchy from a list of clients based on their FQSNs.
+
+    Args:
+        clients: clients of the hierarchy
+
+    Returns: a Forest object that represents the client hierarchy.
+
+    Note that the client hierarchy is a Forest (not a tree) since it could have multiple root clients.
+
+    """
     return build_forest(
         objs=clients,
-        get_fqn_f=_get_client_fqsn,
-        get_name_f=_get_client_name,
+        get_fqn_f=lambda c: c.get_fqsn(),
+        get_name_f=lambda c: c.name,
     )
-
-
-def _get_client_fqsn(c: Client):
-    return c.get_fqsn()
-
-
-def _get_client_name(c: Client):
-    return c.name

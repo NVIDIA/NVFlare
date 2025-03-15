@@ -20,8 +20,12 @@ from nvflare.security.logging import secure_format_exception
 TOPIC_PREFIX = "SAGE"
 
 
-def message_topic_for_task(task_name: str) -> str:
-    return f"{TOPIC_PREFIX}_{task_name}"
+def message_topic_for_task_report(task_name: str) -> str:
+    return f"{TOPIC_PREFIX}__{task_name}_report"
+
+
+def message_topic_for_task_end(task_name: str) -> str:
+    return f"{TOPIC_PREFIX}__{task_name}_end"
 
 
 def make_aggr_reply(rc: str, seq: int) -> Shareable:
@@ -66,7 +70,9 @@ def process_aggr_result_from_child(
     if task_seq != current_task_seq:
         if current_task_seq == 0:
             # this means no current task
-            processor.log_warning(fl_ctx, f"dropped aggr result from {child_name}: got {task_seq} but no current task")
+            processor.log_warning(
+                fl_ctx, f"dropped aggr result from {child_name}: got task seq {task_seq} but no current task"
+            )
         else:
             processor.log_warning(
                 fl_ctx, f"dropped aggr result from {child_name}: expect task seq {current_task_seq} but got {task_seq}"

@@ -25,7 +25,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.edge.constants import EdgeTaskHeaderKey
-from nvflare.edge.utils import message_topic_for_task, process_aggr_result_from_child
+from nvflare.edge.utils import message_topic_for_task_end, message_topic_for_task_report, process_aggr_result_from_child
 from nvflare.fuel.utils.tree_utils import Forest, Node
 from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
@@ -67,6 +67,7 @@ class HierarchicalAggregationManager(Executor):
         self._process_error = None
         self._task_start_time = None
         self._num_aggrs = 0
+        self._children = None
         self._num_children = 0
         self._num_children_done = 0
         self._parent_name = None
@@ -105,9 +106,9 @@ class HierarchicalAggregationManager(Executor):
             self.system_panic(f"cannot get my node from client hierarchy: expect Noe but got {type(my_node)}", fl_ctx)
             return
 
-        my_child_client_names = [n.obj.name for n in my_node.children]
-        self._num_children = len(my_child_client_names)
-        self.log_info(fl_ctx, f"got {self._num_children} child clients: {my_child_client_names}")
+        self._children = [n.obj.name for n in my_node.children]
+        self._num_children = len(self._children)
+        self.log_info(fl_ctx, f"got {self._num_children} child clients: {self._children}")
 
         parent_node = my_node.parent
         if not parent_node:
@@ -221,7 +222,8 @@ class HierarchicalAggregationManager(Executor):
         # register msg handler for aggr reports from children
         if not self._msg_handler_registered.get(task_name):
             engine = fl_ctx.get_engine()
-            engine.register_aux_message_handler(message_topic_for_task(task_name), self._process_aggr_result)
+            engine.register_aux_message_handler(message_topic_for_task_report(task_name), self._process_aggr_result)
+            engine.register_aux_message_handler(message_topic_for_task_end(task_name), self._process_task_end)
             self._msg_handler_registered[task_name] = True
 
         self._pending_task = TaskInfo(shareable)
@@ -235,7 +237,7 @@ class HierarchicalAggregationManager(Executor):
         shareable.set_header(ReservedKey.TASK_IS_READY, True)
         self._task_start_time = time.time()
 
-        result = self._wait_for_children(fl_ctx, abort_signal)
+        result = self._do_task(fl_ctx, abort_signal)
 
         # reset state
         self.task_ended(self._pending_task, fl_ctx)
@@ -247,13 +249,18 @@ class HierarchicalAggregationManager(Executor):
         self._process_error = False
         return result
 
-    def _wait_for_children(self, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def _do_task(self, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         task_info = self._pending_task
         assert isinstance(task_info, TaskInfo)
         self.log_info(fl_ctx, f"Starting task seq {task_info.seq} and waiting for results from children ...")
 
         aggr_interval = task_info.aggr_interval
         while True:
+            # has the task_done been set?
+            if self._task_done:
+                self.log_info(fl_ctx, f"task {task_info.seq} is done: task was set to done")
+                break
+
             if self._process_error:
                 # we bail out when any processing error encountered
                 self.log_info(fl_ctx, f"task seq {task_info.seq} is done: processing error occurred")
@@ -265,7 +272,7 @@ class HierarchicalAggregationManager(Executor):
             engine = fl_ctx.get_engine()
             replies = engine.send_aux_request(
                 targets=self._parent_name,
-                topic=message_topic_for_task(task_info.name),
+                topic=message_topic_for_task_report(task_info.name),
                 request=report,
                 timeout=self.aggr_report_timeout,
                 fl_ctx=fl_ctx,
@@ -273,6 +280,7 @@ class HierarchicalAggregationManager(Executor):
 
             assert isinstance(replies, dict)
             if len(replies) != 1:
+                # this should never happen since the engine should always return a reply
                 self.log_error(fl_ctx, f"no reply from parent {self._parent_name}")
                 self._process_error = True
                 break
@@ -307,18 +315,16 @@ class HierarchicalAggregationManager(Executor):
                     self.log_info(fl_ctx, f"task {task_info.seq} is done: all {received} child clients are done!")
                     break
 
-            # has the task_done been set?
-            if self._task_done:
-                self.log_info(fl_ctx, f"task {task_info.seq} is done: task was set to done")
-                break
-
             wrc = conditional_wait(
                 waiter=None,
                 timeout=aggr_interval + random.uniform(0.0, 0.5),
                 abort_signal=abort_signal,
+                condition_cb=self._check_task_done,
             )
             if wrc == WaiterRC.ABORTED:
                 return make_reply(ReturnCode.TASK_ABORTED)
+            elif wrc == WaiterRC.IS_SET:
+                break
 
         received, total = self._pending_clients_status()
         self.log_info(fl_ctx, f"task done after {time.time() - self._task_start_time} secs: {received=} {total=}")
@@ -329,6 +335,11 @@ class HierarchicalAggregationManager(Executor):
 
         # still anything to be aggregated?
         return self._make_aggr_report(task_info, fl_ctx)
+
+    def _check_task_done(self):
+        if self._task_done:
+            # force the conditional wait to stop
+            return WaiterRC.IS_SET
 
     def _make_aggr_report(self, task_info: TaskInfo, fl_ctx: FLContext):
         task_data = task_info.task
@@ -363,6 +374,41 @@ class HierarchicalAggregationManager(Executor):
             self._process_error = True
             result = None
         return result
+
+    def _process_task_end(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        # process notification from parent that task is ended
+        task_seq = request.get_header(EdgeTaskHeaderKey.TASK_SEQ)
+
+        if self._num_children > 0:
+            # fire-and-forget notification to all my children
+            req = Shareable()
+            req.set_header(EdgeTaskHeaderKey.TASK_SEQ, task_seq)
+            engine = fl_ctx.get_engine()
+            engine.send_aux_request(
+                targets=self._children,
+                topic=topic,
+                request=req,
+                timeout=0,  # fire and forget
+                fl_ctx=fl_ctx,
+                optional=True,
+            )
+
+        task_info = self._pending_task
+        if task_info:
+            if task_info.seq <= task_seq:
+                # my current task is before the ended task - end my task
+                self.log_info(
+                    fl_ctx, f"ended current task seq {task_info.seq}: got end_task from parent for task {task_seq}"
+                )
+                self._task_done = True
+            else:
+                self.log_info(
+                    fl_ctx, f"ignored end_task from parent for task {task_seq} since it's < my task seq {task_info.seq}"
+                )
+        else:
+            self.log_info(fl_ctx, f"ignored end_task from parent for task {task_seq} since I have no current task")
+
+        return make_reply(ReturnCode.OK)
 
     def _process_aggr_result(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.log_info(fl_ctx, f"processing aggregation result report: {topic}")
@@ -440,15 +486,17 @@ class HierarchicalAggregationManager(Executor):
         """
         task_info = self._pending_task
         if not task_info:
-            self.log_error(fl_ctx, f"task_id {task_id} does not match current task None.")
+            self.log_info(fl_ctx, f"ignored set_task_done for task_id {task_id}: no current task.")
             return False
 
         if task_id != task_info.id:
-            self.log_error(fl_ctx, f"task_id {task_id} does not match current task {task_info.id}")
+            self.log_info(
+                fl_ctx, f"ignored set_task_done for task_id {task_id}: it does not match current task {task_info.id}"
+            )
             return False
 
         self._task_done = True
-        self.log_info(fl_ctx, f"task {task_id} is marked DONE!")
+        self.log_info(fl_ctx, f"accepted set_task_done for task_id {task_id}")
         return True
 
     def get_current_task(self) -> Optional[TaskInfo]:

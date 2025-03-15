@@ -57,19 +57,50 @@ def build_path(obj: Any, get_name_f, get_parent_f, **kwargs):
 
 
 class Node:
+    """Definition of Nodes that are elements of trees.
+    The "self.obj" is the object associated with the node;
+    The "self.parent" is the parent Node;
+    The "self.children" is a list of child Nodes.
+    """
+
     def __init__(self, obj: Any, parent):
+        """Constructor of Node
+
+        Args:
+            obj: the object to be associated with the node
+            parent: parent node of the node
+        """
         self.obj = obj
         self.parent = parent  # a Node
         self.children = []  # child nodes
 
 
 class Forest:
+    """A forest contains one or more trees.
+    Each entry in "self.roots" is the unique name of the root object.
+    The "self.nodes" a dict of: name => Node. You can get the Node from an object name.
+    """
+
     def __init__(self):
-        self.roots = []  # 1 or more roots
+        """Constructor of Forest"""
+        self.roots = []  # one or more names of the root nodes
         self.nodes = {}  # name => Node
 
 
 def build_forest(objs: List[Any], get_name_f, get_fqn_f, **kwargs) -> Forest:
+    """Builds a Forest from a list of objects.
+    Each object must have a unique "name" and unique "fqn".
+    This function builds trees based on the FQNs of the objects.
+
+    Args:
+        objs: objects for which to build the forest
+        get_name_f: the function to get object name
+        get_fqn_f: the function to get object fqn
+        **kwargs: kwargs to be passed to get_name_f and get_fqn_f
+
+    Returns: a Forest object
+
+    """
     forest = Forest()
     f2n = {}  # fqn => name
     n2f = {}  # name => fqn
@@ -122,7 +153,17 @@ def _dump_one(node: Node, get_name_f, **kwargs):
     return {name: children}
 
 
-def dump_forest(forest: Forest, get_name_f, **kwargs):
+def forest_to_dict(forest: Forest, get_name_f, **kwargs) -> dict:
+    """Output the forest into a dict that shows the structure of the forest.
+
+    Args:
+        forest: the forest to output
+        get_name_f: function to get object name
+        **kwargs: kwargs passed to get_name_f
+
+    Returns: a dict that shows the structure of the forest
+
+    """
     trees = []
     for r in forest.roots:
         node = forest.nodes[r]

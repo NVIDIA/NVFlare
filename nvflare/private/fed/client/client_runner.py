@@ -228,7 +228,7 @@ class ClientRunner(TBI):
                     self.logger.debug("no result for edge request")
                     return make_cell_reply(EdgeStatus.NO_TASK)
                 else:
-                    self.logger.info("sending back edge result")
+                    self.logger.debug("sending back edge result")
                     return make_cell_reply(EdgeStatus.OK, body=reply)
             except Exception as ex:
                 self.log_error(fl_ctx, f"exception from receive_edge_request: {secure_format_exception(ex)}")
@@ -567,7 +567,7 @@ class ClientRunner(TBI):
     def _send_task_result(self, result: Shareable, task_id: str, fl_ctx: FLContext):
         try_count = 1
         while True:
-            self.log_info(fl_ctx, f"try #{try_count}: sending task result to server")
+            self.log_debug(fl_ctx, f"try #{try_count}: sending task result to server")
 
             if self.run_abort_signal.triggered:
                 self.log_info(fl_ctx, "job aborted: stopped trying to send result")
@@ -620,7 +620,7 @@ class ClientRunner(TBI):
             fl_ctx:
         Returns:
         """
-        self.log_info(fl_ctx, f"checking task with {self.parent_target} ...")
+        self.log_debug(fl_ctx, f"checking task with {self.parent_target} ...")
         task_check_req = Shareable()
         task_check_req.set_header(ReservedKey.TASK_ID, task_id)
         resp = self.engine.send_aux_request(
@@ -762,7 +762,7 @@ class ClientRunner(TBI):
         self.log_debug(fl_ctx, f"received task_check on task {task_id}")
         with self.task_lock:
             if task_id not in self.running_tasks:
-                self.log_info(fl_ctx, f"task {task_id} is not found")
+                self.log_debug(fl_ctx, f"task {task_id} is not found")
                 return make_reply(ReturnCode.TASK_UNKNOWN)
             else:
                 return make_reply(ReturnCode.OK)
