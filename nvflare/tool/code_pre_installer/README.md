@@ -1,6 +1,6 @@
 # NVFLARE Code Pre-Installer
 
-A tool to pre-install NVFLARE application code and libraries.
+This tool helps install NVFLARE application code and libraries before running federated learning jobs.
 
 ## Overview
 
@@ -13,57 +13,58 @@ The code pre-installer handles:
 ## Directory Structure
 
 Expected application code zip structure:
+
 ```
-app_code.zip
-folder/
-├── app_code/<app_name>/
+application.zip
+├── application/<app_name>/
 │               ├── meta.json       # Application metadata
-│               ├── app-<site>/     # Site custom code
-|                  |
+│               ├── app_<site>/     # Site custom code
 │                  └── custom/      # Site custom code
-├── app_share/                      # Shared resources
+├── application-share/              # Shared resources
 │   └── shared.py
 └── requirements.txt       # Python dependencies (optional)
 ```
-
-Here is an example, if we like to create a folder for pre-instalation. We can do the following
-
-create a folder for pre-installation:
-```bash
-mkdir -p /tmp/nvflare/pre-install/app-code
-mkdir -p /tmp/nvflare/pre-install/app-share
+or
 ```
-now, I an job configuration like the following:
+application.zip
+├── application/<app_name>/
+│               ├── meta.json       # Application metadata
+│               ├── app/            # Site custom code
+│                  └── custom/      # Site custom code
 ``` 
+Here is an example of creating a folder structure for pre-installation:
+```bash
+mkdir -p /tmp/nvflare/pre-install/application
+mkdir -p /tmp/nvflare/pre-install/application-share
+```
 
-For example, if the app name is `fedavg`, and we have the job configuration likes the following:
-
+For example, if the app name is `fedavg`, the directory structure would look like this:
 
 Tree structure of the job configuration:
 
 /tmp/nvflare/pre-install/
-├── app-code
-│   └── fedavg
-│       ├── app_server
-│       │   ├── config
-│       │   └── custom
-│       ├── app_site-1
-│       │   ├── config
-│       │   └── custom
-│       ├── app_site-2
-│       │   ├── config
-│       │   └── custom
-│       ├── app_site-3
-│       │   ├── config
-│       │   └── custom
-│       ├── app_site-4
-│       │   ├── config
-│       │   └── custom
-│       ├── app_site-5
-│       │   ├── config
-│       │   └── custom
-│       └── meta.json
-└── app-share
+├── application
+│   └── fedavg
+│       ├── app_server
+│       │   ├── config
+│       │   └── custom
+│       ├── app_site-1
+│       │   ├── config
+│       │   └── custom
+│       ├── app_site-2
+│       │   ├── config
+│       │   └── custom
+│       ├── app_site-3
+│       │   ├── config
+│       │   └── custom
+│       ├── app_site-4
+│       │   ├── config
+│       │   └── custom
+│       ├── app_site-5
+│       │   ├── config
+│       │   └── custom
+│       └── meta.json
+└── application-share
     └── pt
         ├── learner_with_mlflow.py
         ├── learner_with_tb.py
@@ -77,14 +78,12 @@ Tree structure of the job configuration:
 Then we can simply copy the `fedavg` folder to the pre-install folder:
 
 ```bash
-cp -r /tmp/nvflare/jobs/workdir/fedavg /tmp/nvflare/pre-install/app-code/.
+cp -r /tmp/nvflare/jobs/workdir/fedavg /tmp/nvflare/pre-install/application/.
 ```
-if we have the shared code, and shared the code module is a python module folder with nested folders and files "/tmp/nvflare/jobs/workdir/pt".  we can copy the module to the pre-install folder:
 
-
-to the pre-install folder:
+If you have shared code (such as Python modules with nested folders and files) in "/tmp/nvflare/jobs/workdir/pt", copy it to the application-share directory:
 ```bash
-cp /tmp/nvflare/jobs/workdir/pt /tmp/nvflare/pre-install/app-share/.
+cp -r /tmp/nvflare/jobs/workdir/pt /tmp/nvflare/pre-install/application-share/.
 ```
 
 You should have something like the following:
@@ -92,7 +91,7 @@ You should have something like the following:
 ```
  tree /tmp/nvflare/pre-install/ -L 3
 /tmp/nvflare/pre-install/
-├── app-code
+├── application
 │   └── fedavg
 │       ├── app_server
 │       ├── app_site-1
@@ -101,7 +100,7 @@ You should have something like the following:
 │       ├── app_site-4
 │       ├── app_site-5
 │       └── meta.json
-└── app-share
+└── application-share
     └── pt
         ├── learner_with_mlflow.py
         ├── learner_with_tb.py
@@ -110,31 +109,69 @@ You should have something like the following:
         ├── simple_network.py
         └── test_custom.py
 
-```
-you can then zip the pre-install folder and use it as the app-code.zip for the code pre-installer.
-
+Finally, create the app-code.zip file from the pre-install folder:
 ```bash
 cd /tmp/nvflare/pre-install/
-
-zip -r ../app-code.zip * 
+zip -r ../application.zip *
 ```
-you should have the app-code.zip file in the ```/tmp/nvflare/``` folder.
 
+The application.zip file will be created in the `/tmp/nvflare/` directory.
 
 ## Usage
 
+### Command Line Interface
+
 ```bash
-python -m nvflare.tool.code_pre_installer.install \
-    --app-code /path/to/app_code.zip \
-    --install-prefix /opt/nvflare/apps \
-    --site-name site-1
+nvflare pre-install -a /path/to/application.zip -p /opt/nvflare/apps -s site-1 [-ts /local/custom] [-debug]
 ```
+
+Arguments:
+- `-a, --application`: Path to application code zip file (required)
+- `-p, --install-prefix`: Installation prefix (default: /opt/nvflare/apps)
+- `-s, --site-name`: Target site name e.g., site-1, server (required)
+- `-ts, --target_shared_dir`: Target shared directory path (default: /local/custom)
+- `-debug, --debug`: Enable debug mode
+
+### Example
+
+```bash
+# Install application code for site-1
+nvflare pre-install -a /path/to/myapp.zip -s site-1
+
+# Install with custom paths
+nvflare pre-install -a /path/to/myapp.zip -p /custom/install/path -s site-1 -ts /custom/shared/path
+
+# Install with debug output
+nvflare pre-install -a /path/to/myapp.zip -s site-1 -debug
+```
+
+## Application Code Structure
+
+The application zip file should have the following structure:
+
+```
+application/
+├── app_name/
+│   ├── meta.json
+│   ├── app_site-1/
+│   │   └── custom/
+│   │       └── site_specific_code.py
+│   └── app_site-2/
+│       └── custom/
+│           └── site_specific_code.py
+└── application-share/
+    └── shared_code.py
+```
+
+- `app_name/`: Application directory containing site-specific code
+- `meta.json`: Application metadata file
+- `app_site-*/custom/`: Site-specific custom code directories
+- `application-share/`: Shared code directory
 
 ## Installation Paths
 
 - Application code: `<install-prefix>/<app-name>/`
 - Shared resources: `/local/custom/`
-
 
 ## Error Handling
 
@@ -153,6 +190,10 @@ The installer will fail if:
 - All file permissions are preserved during installation
 - Network access needed if requirements.txt present
 - Can use private PyPI server by configuring pip
+- The tool will extract site-specific code to the installation prefix
+- Shared code will be installed to the target shared directory
+- The application zip file will be cleaned up after installation
+- Installation paths must be writable by the current user
 
 ## Using Pre-installed Code
 
