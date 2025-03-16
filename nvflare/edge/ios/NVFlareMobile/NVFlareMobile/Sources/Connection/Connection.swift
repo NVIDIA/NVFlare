@@ -159,8 +159,6 @@ public class Connection: ObservableObject {
             throw NVFlareError.taskFetchFailed("wrong response type")
         }
         
-        print(httpResponse)
-        
         // Decode response first to get potential error messages
         let taskResponse = try JSONDecoder().decode(TaskResponse.self, from: data)
         

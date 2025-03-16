@@ -18,3 +18,5 @@ for client in "${leaf_clients[@]}"; do
     cp edge__p_resources.json $WORKSPACE_DIR/$PROJECT_NAME/prod_00/$client/local/
 done
 
+# copy job over
+cp -r ./jobs/* /tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer

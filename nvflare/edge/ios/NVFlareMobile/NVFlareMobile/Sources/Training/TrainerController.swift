@@ -124,6 +124,8 @@ class TrainerController: ObservableObject {
             throw NVFlareError.jobFetchFailed
         }
         
+        print("job:    \(job)")
+
         // Task execution loop
         while job.status == "running" && !Task.isCancelled {
             do {
@@ -134,15 +136,14 @@ class TrainerController: ObservableObject {
                     return
                 }
 
-                print("task response:    \(taskResponse)")
                 let task = try taskResponse.toTrainingTask(jobId: job.id)
                 
                 let trainer = try createTrainer(withModelData: task.modelData, meta: job.meta)
                 
                 // Check device state before heavy computation
-//                guard deviceStateMonitor.isReadyForTraining else {
-//                    throw NVFlareError.trainingFailed("Device not ready")
-//                }
+                guard deviceStateMonitor.isReadyForTraining else {
+                    throw NVFlareError.trainingFailed("Device not ready")
+                }
                 
                 // Train and get weight differences
                 let weightDiff = try await Task.detached(priority: .background) {
@@ -191,7 +192,6 @@ class TrainerController: ObservableObject {
 
         switch trainerType {
         case .executorch:
-            print("model data is\(modelData)")
             guard let modelString = modelData["model_buffer"] else {
                 throw NVFlareError.invalidModelData("Missing model_buffer in model data")
             }

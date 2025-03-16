@@ -22,13 +22,14 @@ struct JobMeta {
             "dataset_type": dataSetType
         ]
     }
-    
-    init(from data: [String: Any]) {
+
+    // TODO:: parse from the right server response
+    init(from data: [String: Any], method: String) {
         self.totalEpochs = data["total_epochs"] as? Int ?? 1
-        self.batchSize = data["batch_size"] as? Int ?? 1
+        self.batchSize = (method == "xor") ? 1 : 32  // Set batch size based on method
         self.learningRate = data["learning_rate"] as? Float ?? 0.1
-        self.method = data["method"] as? String ?? "xor"
-        self.dataSetType = data["dataset_type"] as? String ?? self.method  // Default to method if not specified
+        self.method = method
+        self.dataSetType = data["dataset_type"] as? String ?? method  // Default to method if not specified
     }
 }
 
