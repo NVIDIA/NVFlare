@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Subset
 from torchvision import datasets, transforms
 
 from .et_task_processor import ETTaskProcessor
@@ -21,4 +21,13 @@ from .et_task_processor import ETTaskProcessor
 class ETCIFAR10TaskProcessor(ETTaskProcessor):
     def get_dataset(self, data_path: str) -> Dataset:
         transform = transforms.Compose([transforms.ToTensor()])
-        return datasets.CIFAR10(root=data_path, train=True, download=True, transform=transform)
+        full_dataset = datasets.CIFAR10(root=data_path, train=True, download=True, transform=transform)
+        total_images = len(full_dataset)
+
+        # TODO:: better split mechanism
+        images_per_split = total_images // 5
+        indices = list(range(images_per_split))  # Choose the first 10,000 images
+
+        subset = Subset(full_dataset, indices)
+
+        return subset
