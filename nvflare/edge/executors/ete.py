@@ -31,13 +31,14 @@ class EdgeTaskExecutor(HierarchicalAggregationManager):
         self,
         aggregator_id: str,
         aggr_report_timeout: float,
+        learner_id="",
     ):
         """Constructor of EdgeTaskExecutor"""
         HierarchicalAggregationManager.__init__(
             self,
             aggregator_id=aggregator_id,
             aggr_report_timeout=aggr_report_timeout,
-            learner_id="",
+            learner_id=learner_id,
         )
         self.register_event_handler(EdgeEventType.EDGE_REQUEST_RECEIVED, self._handle_edge_request)
 
