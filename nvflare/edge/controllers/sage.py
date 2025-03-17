@@ -36,7 +36,7 @@ from nvflare.edge.constants import EdgeTaskHeaderKey
 from nvflare.edge.utils import message_topic_for_task_end, message_topic_for_task_report, process_aggr_result_from_child
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
-from nvflare.security.logging import secure_format_exception
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -189,7 +189,15 @@ class ScatterAndGatherForEdge(Controller):
             )
             return
 
-        self.assessor.initialize(self.aggregator, fl_ctx)
+        try:
+            self.assessor.initialize(self.aggregator, fl_ctx)
+        except Exception as ex:
+            secure_log_traceback(self.logger)
+            self.system_panic(
+                f"Assessor {type(self.assessor)} failed to initialize: {secure_format_exception(ex)}",
+                fl_ctx,
+            )
+            return
 
         if self.persistor_id:
             self.persistor = engine.get_component(self.persistor_id)
@@ -253,9 +261,6 @@ class ScatterAndGatherForEdge(Controller):
 
                 self.log_info(fl_ctx, f"Round {self._current_round} started.")
                 self._current_task_seq = self.get_next_task_seq()
-                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
-                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
-                self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
                 # Create train_task
                 task_data = self.shareable_gen.learnable_to_shareable(self._global_weights, fl_ctx)
@@ -264,6 +269,11 @@ class ScatterAndGatherForEdge(Controller):
                 task_data.set_header(EdgeTaskHeaderKey.TASK_SEQ, self._current_task_seq)
                 task_data.set_header(EdgeTaskHeaderKey.AGGR_INTERVAL, self._aggr_interval)
                 task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
+
+                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
+                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
+                fl_ctx.set_prop(FLContextKey.TASK_DATA, task_data, private=True, sticky=False)
+                self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
                 task = Task(
                     name=self.task_name,
@@ -282,7 +292,15 @@ class ScatterAndGatherForEdge(Controller):
 
                 # monitor the task until it's done
                 seq = self._current_task_seq
-                task_done_reason = self._monitor_task(task, fl_ctx, abort_signal)
+                try:
+                    task_done_reason = self._monitor_task(task, fl_ctx, abort_signal)
+                except Exception as ex:
+                    self.system_panic(
+                        f"Task execution encountered exception: {secure_format_exception(ex)}",
+                        fl_ctx,
+                    )
+                    secure_log_traceback(self.logger)
+                    return
 
                 self._current_task_seq = 0
                 if not task.completion_status:
@@ -299,7 +317,7 @@ class ScatterAndGatherForEdge(Controller):
                         self.aggregator.reset(fl_ctx)
                         self.assessor.reset(fl_ctx)
                     except Exception as ex:
-                        self.log_error(fl_ctx, f"aggregation error: {secure_format_exception(ex)}")
+                        secure_log_traceback(self.logger)
                         self.system_panic(f"aggregation error: {secure_format_exception(ex)}", fl_ctx)
                         return
 
@@ -336,6 +354,7 @@ class ScatterAndGatherForEdge(Controller):
             # give some time for clients to end gracefully when sync task seq
             time.sleep(self._aggr_interval + 1.0)
         except Exception as e:
+            secure_log_traceback(self.logger)
             error_msg = f"Exception in ScatterAndGather control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)
@@ -380,7 +399,11 @@ class ScatterAndGatherForEdge(Controller):
                 return TaskDoneReason.ABORTED
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.assessor.finalize(fl_ctx)
+        try:
+            self.assessor.finalize(fl_ctx)
+        except Exception as e:
+            secure_log_traceback(self.logger)
+            self.log_warning(fl_ctx, f"error finalizing assessor: {secure_format_exception(e)}")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         super().handle_event(event_type, fl_ctx)
@@ -449,6 +472,7 @@ class ScatterAndGatherForEdge(Controller):
             try:
                 accepted = self.aggregator.accept(result, fl_ctx)
             except Exception as ex:
+                secure_log_traceback(self.logger)
                 self.log_error(fl_ctx, f"exception accepting result: {secure_format_exception(ex)}")
                 accepted = False
 

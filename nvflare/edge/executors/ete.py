@@ -33,7 +33,17 @@ class EdgeTaskExecutor(HierarchicalAggregationManager):
         aggr_report_timeout: float,
         learner_id="",
     ):
-        """Constructor of EdgeTaskExecutor"""
+        """Constructor of EdgeTaskExecutor. This is the base class for building executors to managing federated
+        learning on edge devices.
+
+        Note: This executor is based on HAM (HierarchicalAggregationManager). All interactions with parent clients
+        are already handled by HAM.
+
+        Args:
+            aggregator_id: ID of the aggregator
+            aggr_report_timeout: timeout for aggregation report messages sent to parent
+            learner_id: ID of the learner component. Optional.
+        """
         HierarchicalAggregationManager.__init__(
             self,
             aggregator_id=aggregator_id,
