@@ -23,8 +23,11 @@ from nvflare.security.logging import secure_format_exception
 
 
 class EdgeTaskExecutor(HierarchicalAggregationManager):
-    """This is the base class for executors to handling requests from edge devices.
+    """This is the base class for building executors to manage federated learning on edge devices.
     Subclasses must implement the required abstract methods defined here.
+
+    Note: This class is based on HAM (HierarchicalAggregationManager).
+    All interactions with parent clients are already handled by HAM.
     """
 
     def __init__(
@@ -33,11 +36,7 @@ class EdgeTaskExecutor(HierarchicalAggregationManager):
         aggr_report_timeout: float,
         learner_id="",
     ):
-        """Constructor of EdgeTaskExecutor. This is the base class for building executors to managing federated
-        learning on edge devices.
-
-        Note: This executor is based on HAM (HierarchicalAggregationManager). All interactions with parent clients
-        are already handled by HAM.
+        """Constructor of EdgeTaskExecutor.
 
         Args:
             aggregator_id: ID of the aggregator
