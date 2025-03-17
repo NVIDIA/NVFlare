@@ -19,7 +19,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.aggregator import Aggregator
 
 
-class AssessResult(Enum):
+class Assessment(Enum):
     CONTINUE = "continue"
     TASK_DONE = "task_done"
     WORKFLOW_DONE = "workflow_done"
@@ -34,7 +34,7 @@ class Assessor(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def assess(self, fl_ctx: FLContext) -> AssessResult:
+    def assess(self, fl_ctx: FLContext) -> Assessment:
         pass
 
     def start(self, fl_ctx: FLContext):

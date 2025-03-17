@@ -15,7 +15,7 @@ import time
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.edge.assessor import Assessor, AssessResult
+from nvflare.edge.assessor import Assessment, Assessor
 
 
 class CountAssessor(Assessor):
@@ -38,15 +38,15 @@ class CountAssessor(Assessor):
     def reset(self, fl_ctx: FLContext):
         self._start_time = None
 
-    def assess(self, fl_ctx: FLContext) -> AssessResult:
+    def assess(self, fl_ctx: FLContext) -> Assessment:
         if time.time() - self._start_time > self.timeout:
-            return AssessResult.TASK_DONE
+            return Assessment.TASK_DONE
 
         # have we got enough count
         count = self._aggregator.get_count()
         if count < self.min_count:
-            return AssessResult.CONTINUE
+            return Assessment.CONTINUE
         elif count >= self.max_count:
-            return AssessResult.WORKFLOW_DONE
+            return Assessment.WORKFLOW_DONE
         else:
-            return AssessResult.TASK_DONE
+            return Assessment.TASK_DONE

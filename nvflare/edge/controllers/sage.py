@@ -15,6 +15,7 @@
 import gc
 import threading
 import time
+from enum import Enum
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
@@ -30,7 +31,7 @@ from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnab
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.edge.assessor import Assessor, AssessResult
+from nvflare.edge.assessor import Assessment, Assessor
 from nvflare.edge.constants import EdgeTaskHeaderKey
 from nvflare.edge.utils import message_topic_for_task_end, message_topic_for_task_report, process_aggr_result_from_child
 from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
@@ -53,6 +54,13 @@ class _DummyShareableGenerator(ShareableGenerator):
         return result
 
 
+class TaskDoneReason(Enum):
+    ALL_CHILDREN_DONE = "all_children_done"
+    ABORTED = "aborted"
+    ASSESSED_TASK_DONE = "assessed_task_done"
+    ASSESSED_WORKFLOW_DONE = "assessed_workflow_done"
+
+
 class ScatterAndGatherForEdge(Controller):
 
     next_task_seq = 0
@@ -73,25 +81,33 @@ class ScatterAndGatherForEdge(Controller):
     ):
         """ScatterAndGatherForEdge Workflow.
 
-        The ScatterAndGather workflow defines FederatedAveraging on all clients.
+        The ScatterAndGatherForEdge workflow is a Fed Average algorithm for hierarchically organized edge devices.
+
         The model persistor (persistor_id) is used to load the initial global model which is sent to all clients.
-        Each client sends it's updated weights after local training which is aggregated (aggregator_id). The
-        shareable generator is used to convert the aggregated weights to shareable and shareable back to weight.
         The model_persistor also saves the model after training.
+
+        Each client sends it's updated weights after local training which is aggregated (aggregator_id).
+
+        The shareable generator is used to convert the aggregated weights to shareable and shareable back to weight.
+
+        During the execution of a task, the assessor (specified by assessor_id) is invoked periodically to assess
+        the quality of training results to determine whether the task should be continued.
 
         Args:
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
-            aggregator_id (str, optional): ID of the aggregator component. Defaults to "aggregator".
+            aggregator_id (str): ID of the aggregator component. Defaults to "aggregator".
             persistor_id (str, optional): ID of the persistor component. Defaults to "".
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
-            task_name (str, optional): Name of the train task. Defaults to "train".
-            train_timeout (int, optional): Time to wait for clients to do local training.
+            assessor_id (str): ID of the assessor component.
+            task_name (str): Name of the train task. Defaults to "train".
             allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
                 empty global weights at first round, such that clients start training from scratch without any
                 global info. Defaults to False.
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
             persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
                 If n is 0 then no persist.
+            assess_interval: how often to invoke the assessor during task execution
+            aggregation_interval: how often to perform aggregation at each client.
 
         Raises:
             TypeError: when any of input arguments does not have correct type
@@ -128,14 +144,13 @@ class ScatterAndGatherForEdge(Controller):
         self._assess_interval = assess_interval
 
         # workflow phases: init, train, validate
-        self._phase = AppConstants.PHASE_INIT
         self._global_weights = make_model_learnable({}, {})
         self._current_round = None
         self._current_task_seq = 0
         self._num_children = 0
         self._children = None
-        self._num_children_done = 0
         self._aggr_lock = threading.Lock()
+        self._end_task_topic = message_topic_for_task_end(self.task_name)
 
     @classmethod
     def get_next_task_seq(cls):
@@ -144,7 +159,6 @@ class ScatterAndGatherForEdge(Controller):
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         self.log_info(fl_ctx, "Initializing ScatterAndGatherForEdge workflow.")
-        self._phase = AppConstants.PHASE_INIT
 
         engine = fl_ctx.get_engine()
         self.aggregator = engine.get_component(self.aggregator_id)
@@ -225,12 +239,8 @@ class ScatterAndGatherForEdge(Controller):
         self.log_info(fl_ctx, f"my child clients: {self._children}")
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
-        end_task_topic = message_topic_for_task_end(self.task_name)
         try:
-            self.log_info(fl_ctx, "Beginning ScatterAndGatherForEdge training phase.")
-            self._phase = AppConstants.PHASE_TRAIN
-
-            fl_ctx.set_prop(AppConstants.PHASE, self._phase, private=True, sticky=False)
+            self.log_info(fl_ctx, "Starting ScatterAndGatherForEdge")
             fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
@@ -255,7 +265,7 @@ class ScatterAndGatherForEdge(Controller):
                 task_data.set_header(EdgeTaskHeaderKey.AGGR_INTERVAL, self._aggr_interval)
                 task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
-                train_task = Task(
+                task = Task(
                     name=self.task_name,
                     data=task_data,
                     before_task_sent_cb=self._prepare_train_task_data,
@@ -263,55 +273,22 @@ class ScatterAndGatherForEdge(Controller):
                 )
 
                 self.broadcast(
-                    task=train_task,
+                    task=task,
                     fl_ctx=fl_ctx,
                     targets=self._children,
                     min_responses=self._num_children,
                     wait_time_after_min_received=0,
                 )
 
-                # wait for the task to finish
-                self.assessor.start(fl_ctx)
-                assess_result = AssessResult.TASK_DONE
+                # monitor the task until it's done
                 seq = self._current_task_seq
-                while True:
-                    if self._num_children_done >= self._num_children:
-                        # all children are done with their current task
-                        self.log_info(fl_ctx, f"Task seq {seq} is done: all children are done with their task")
-                        break
-
-                    assess_result = self.assessor.assess(fl_ctx)
-                    if assess_result != AssessResult.CONTINUE:
-                        self.log_info(fl_ctx, f"Task seq {seq} is done: {assess_result=}")
-
-                        # notify children to end task
-                        req = Shareable()
-                        req.set_header(EdgeTaskHeaderKey.TASK_SEQ, seq)
-                        engine = fl_ctx.get_engine()
-                        engine.send_aux_request(
-                            targets=self._children,
-                            topic=end_task_topic,
-                            request=req,
-                            timeout=0,  # fire and forget
-                            fl_ctx=fl_ctx,
-                            optional=True,
-                        )
-                        break
-
-                    wrc = conditional_wait(
-                        waiter=None,
-                        timeout=self._assess_interval,
-                        abort_signal=abort_signal,
-                    )
-                    if wrc == WaiterRC.ABORTED:
-                        self.log_info(fl_ctx, f"Task seq {seq} is done: ABORTED")
-                        break
+                task_done_reason = self._monitor_task(task, fl_ctx, abort_signal)
 
                 self._current_task_seq = 0
-                self._num_children_done = 0
-                self.cancel_task(train_task, fl_ctx=fl_ctx)
+                if not task.completion_status:
+                    self.cancel_task(task, fl_ctx=fl_ctx)
 
-                if self._check_abort_signal(fl_ctx, abort_signal):
+                if task_done_reason == TaskDoneReason.ABORTED:
                     break
 
                 self.log_info(fl_ctx, f"Start aggregation for task seq {seq}")
@@ -350,12 +327,11 @@ class ScatterAndGatherForEdge(Controller):
                 self.log_info(fl_ctx, f"Round {self._current_round} finished in {time.time() - round_start} seconds")
                 gc.collect()
 
-                if assess_result == AssessResult.WORKFLOW_DONE:
+                if task_done_reason == TaskDoneReason.ASSESSED_WORKFLOW_DONE:
                     break
 
-            self._phase = AppConstants.PHASE_FINISHED
             self._current_task_seq = 0
-            self.log_info(fl_ctx, "Finished ScatterAndGatherForEdge Training.")
+            self.log_info(fl_ctx, "Finished ScatterAndGatherForEdge")
 
             # give some time for clients to end gracefully when sync task seq
             time.sleep(self._aggr_interval + 1.0)
@@ -364,8 +340,46 @@ class ScatterAndGatherForEdge(Controller):
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)
 
+    def _monitor_task(self, task: Task, fl_ctx: FLContext, abort_signal: Signal) -> TaskDoneReason:
+        self.assessor.start(fl_ctx)
+        seq = self._current_task_seq
+        while True:
+            if task.completion_status:
+                # all children are done with their current task
+                self.log_info(fl_ctx, f"Task seq {seq} is completed: {task.completion_status=}")
+                return TaskDoneReason.ALL_CHILDREN_DONE
+
+            assessment = self.assessor.assess(fl_ctx)
+            if assessment != Assessment.CONTINUE:
+                self.log_info(fl_ctx, f"Task seq {seq} is done: {assessment=}")
+
+                # notify children to end task
+                req = Shareable()
+                req.set_header(EdgeTaskHeaderKey.TASK_SEQ, seq)
+                engine = fl_ctx.get_engine()
+                engine.send_aux_request(
+                    targets=self._children,
+                    topic=self._end_task_topic,
+                    request=req,
+                    timeout=0,  # fire and forget
+                    fl_ctx=fl_ctx,
+                    optional=True,
+                )
+                if assessment == Assessment.WORKFLOW_DONE:
+                    return TaskDoneReason.ASSESSED_WORKFLOW_DONE
+                else:
+                    return TaskDoneReason.ASSESSED_TASK_DONE
+
+            wrc = conditional_wait(
+                waiter=None,
+                timeout=self._assess_interval,
+                abort_signal=abort_signal,
+            )
+            if wrc == WaiterRC.ABORTED:
+                self.log_info(fl_ctx, f"Task seq {seq} is done: ABORTED")
+                return TaskDoneReason.ABORTED
+
     def stop_controller(self, fl_ctx: FLContext):
-        self._phase = AppConstants.PHASE_FINISHED
         self.assessor.finalize(fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -378,7 +392,7 @@ class ScatterAndGatherForEdge(Controller):
 
                 collector.add_info(
                     group_name=self._name,
-                    info={"phase": self._phase, "current_round": self._current_round, "num_rounds": self._num_rounds},
+                    info={"current_round": self._current_round, "num_rounds": self._num_rounds},
                 )
 
     def _prepare_train_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
@@ -386,7 +400,6 @@ class ScatterAndGatherForEdge(Controller):
         self.fire_event(AppEventType.BEFORE_TRAIN_TASK, fl_ctx)
 
     def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
-        self._num_children_done += 1
         result = client_task.result
         client_task.result = None
         client_name = client_task.client.name
@@ -426,7 +439,6 @@ class ScatterAndGatherForEdge(Controller):
 
     def _check_abort_signal(self, fl_ctx, abort_signal: Signal):
         if abort_signal.triggered:
-            self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, f"Abort signal received. Exiting at round {self._current_round}.")
             return True
         return False
