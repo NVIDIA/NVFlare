@@ -38,7 +38,6 @@ def load_class(class_path) -> Type:
 
 
 class ConfigParser:
-
     def __init__(self, config_file: str):
         self.processor = None
         self.endpoint = None
