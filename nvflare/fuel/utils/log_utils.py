@@ -230,7 +230,7 @@ class JsonFormatter(BaseFormatter):
 
         return fmt_dict
 
-    def formatMessage(self, record) -> dict:
+    def formatMessageDict(self, record) -> dict:
         message_dict = {}
         for fmt_key, fmt_val in self.fmt_dict.items():
             message_dict[fmt_key] = record.__dict__.get(fmt_val, "")
@@ -240,7 +240,7 @@ class JsonFormatter(BaseFormatter):
         super().format(record)
 
         self.record.asctime = self.formatTime(self.record, self.datefmt)
-        formatted_message_dict = self.formatMessage(self.record)
+        formatted_message_dict = self.formatMessageDict(self.record)
         message_dict = {k: v for k, v in formatted_message_dict.items()}
 
         return json.dumps(message_dict, default=str)
