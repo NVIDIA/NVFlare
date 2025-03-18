@@ -63,8 +63,11 @@ class DeviceSimulator:
                 result_response = self.feg_api.report_result(task, result)
                 log.info(f"Device:{self.device_id} Received result response: {result_response}")
                 task_done = task.get("task_done", False)
-                if task_done or result_response.status == "DONE":
+                if task_done or result_response.status == EdgeApiStatus.DONE:
                     log.info(f"Job {job.job_id} {job.job_name} is done")
+                    break
+                elif result_response.status == EdgeApiStatus.NO_JOB:
+                    log.info(f"Job {job.job_id} {job.job_name} is gone")
                     break
                 elif result_response.status == EdgeApiStatus.RETRY:
                     continue
@@ -89,7 +92,7 @@ class DeviceSimulator:
                 job = self.feg_api.get_job(self.capabilities)
                 if job.status == "OK":
                     return job
-                elif job.status == "DONE":
+                elif job.status in {"DONE", "NO_JOB"}:
                     job[EdgeApiKey.JOB_DONE] = True
                     return job
                 if job.status == "RETRY":
@@ -97,7 +100,7 @@ class DeviceSimulator:
                     log.info(f"Device:{self.device_id} Retrying getting job in {wait} seconds")
                     time.sleep(wait)
             except ApiError as error:
-                log.error(f"Request error. Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}")
+                log.error(f"Job request error. Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}")
                 time.sleep(5)
 
     def fetch_task(self, job: JobResponse) -> Optional[TaskResponse]:
@@ -118,5 +121,7 @@ class DeviceSimulator:
                 else:
                     raise ApiError(500, f"wrong status: {task.status}")
             except ApiError as error:
-                log.error(f"Request error. Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}")
+                log.error(
+                    f"Task request error. Status: {error.status}\nMessage: {str(error)}\nDetails: {error.details}"
+                )
                 time.sleep(5)
