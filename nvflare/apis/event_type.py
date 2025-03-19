@@ -94,3 +94,6 @@ class EventType(object):
 
     TASK_RESULT_RECEIVED = "_task_result_received"
     TASK_ASSIGNMENT_SENT = "_task_assignment_sent"
+
+    POST_TASK_ASSIGNMENT_SENT = "_post_task_assignment_sent"
+    POST_TASK_RESULT_RECEIVED = "_post_task_result_received"

@@ -49,4 +49,5 @@ def run_server(host, port):
 
 
 if __name__ == "__main__":
-    run_server(8101)
+    # This is for testing web server startup only. Web server will not work standalone
+    run_server("localhost", 8101)
