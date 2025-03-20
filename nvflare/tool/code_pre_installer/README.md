@@ -41,7 +41,7 @@ mkdir -p /tmp/nvflare/pre-install/application-share
 For example, if the app name is `fedavg`, the directory structure would look like this:
 
 Tree structure of the job configuration:
-
+```
 /tmp/nvflare/pre-install/
 ├── application
 │   └── fedavg
@@ -73,7 +73,7 @@ Tree structure of the job configuration:
         ├── simple_network.py
         └── test_custom.py
 
-
+```
 
 Then we can simply copy the `fedavg` folder to the pre-install folder:
 
@@ -108,6 +108,7 @@ You should have something like the following:
         ├── pt_constants.py
         ├── simple_network.py
         └── test_custom.py
+```
 
 Finally, create the app-code.zip file from the pre-install folder:
 ```bash
@@ -196,25 +197,7 @@ The installer will fail if:
 - Installation paths must be writable by the current user
 
 ## Using Pre-installed Code
-
-### In Job Configuration (JSON)
-```json
-{
-    "task_script": "{NVFLARE_INSTALL_PREFIX}/src/client.py",
-    "other_config": "..."
-}
-```
-
-### In Development
-#### JSON Config
-```bash
-export NVFLARE_INSTALL_PREFIX=""  # Empty for development
-```
-
-#### Python Code
-```python
-task_script_path = "src/client.py"
-```
+ 
 
 ### In Production
 
@@ -223,17 +206,17 @@ The environment variable works for both JSON configs and Python code:
 
 ```bash
 # For production
-export NVFLARE_INSTALL_PREFIX="/opt/nvflare/jobs/fedavg/"
+export APP_INSTALL_PREFIX="/opt/nvflare/jobs/fedavg/"
 
 # For development
-export NVFLARE_INSTALL_PREFIX=""
+export APP_INSTALL_PREFIX=""
 ```
 
 
 #### In JSON Config
 ```json
 {
-    "task_script": "${NVFLARE_INSTALL_PREFIX}src/client.py"
+    "task_script": "{APP_INSTALL_PREFIX}src/client.py"
 }
 ```
 
@@ -241,6 +224,6 @@ export NVFLARE_INSTALL_PREFIX=""
 ```python
 import os
 
-install_prefix = os.getenv("NVFLARE_INSTALL_PREFIX", "")
+install_prefix = os.getenv("APP_INSTALL_PREFIX", "")
 task_script_path = f"{install_prefix}src/client.py"
 ```
