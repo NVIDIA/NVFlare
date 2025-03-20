@@ -302,11 +302,11 @@ def test_install_app_code_invalid_structure(tmp_path, mock_custom_dir):
     # Create invalid structure (missing application directory)
     temp_path = tmp_path / "temp"
     temp_path.mkdir()
-    
+
     # Only create application-share
     shared_dir = temp_path / "application-share"
     shared_dir.mkdir()
-    
+
     zip_path = tmp_path / "test.zip"
     with ZipFile(zip_path, "w") as zf:
         for path in temp_path.rglob("*"):
@@ -320,15 +320,15 @@ def test_install_app_code_missing_site(tmp_path, mock_custom_dir):
     """Test installation with missing site directory."""
     # Create app without the requested site
     meta_content = {"name": "test_app", "deploy_map": {"app_site-2": ["site-2"]}}  # Different site
-    
+
     temp_path = tmp_path / "temp"
     temp_path.mkdir()
     create_test_app_structure(temp_path, meta_content)
-    
+
     # Create shared directory
     shared_dir = temp_path / "application-share"
     shared_dir.mkdir()
-    
+
     zip_path = tmp_path / "test.zip"
     with ZipFile(zip_path, "w") as zf:
         for path in temp_path.rglob("*"):
@@ -377,7 +377,7 @@ def test_find_app_dirs_site_specific(tmp_path):
         "deploy_map": {"app_server": ["server"], "app_site1": ["site-1"], "app_site2": ["site-2"]},
     }
     create_test_app_structure(tmp_path, meta_content)
-    
+
     app_dirs = _find_app_dirs(tmp_path / "application", "site-1")
     assert len(app_dirs) == 1
     assert "job1" in app_dirs
@@ -388,7 +388,7 @@ def test_find_app_dirs_all_sites(tmp_path):
     """Test finding app directories with @ALL deployment map."""
     meta_content = {"name": "job1", "deploy_map": {"custom_app": ["@ALL"]}}
     create_test_app_structure(tmp_path, meta_content)
-    
+
     app_dirs = _find_app_dirs(tmp_path / "application", "any-site")
     assert len(app_dirs) == 1
     assert "job1" in app_dirs
