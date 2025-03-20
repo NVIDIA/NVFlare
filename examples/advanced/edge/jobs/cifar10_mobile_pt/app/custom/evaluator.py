@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
-import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
@@ -32,10 +31,11 @@ class GlobalEvaluator(Widget):
     def __init__(self, data_root: str):
         super().__init__()
         self.model = Cifar10ConvNet()
-        self.tb_writer = None
         self.data_root = data_root
+        self.batch_size = 4
         self.criterion = nn.CrossEntropyLoss()
         self.test_loader = None
+        self.tb_writer = None
 
         self.register_event_handler(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, self.evaluate)
         self.register_event_handler(AppEventType.TRAINING_STARTED, self.initiate_tb)
@@ -46,7 +46,6 @@ class GlobalEvaluator(Widget):
                 transforms.ToTensor(),
             ]
         )
-
         test_set = torchvision.datasets.CIFAR10(root=self.data_root, train=False, download=True, transform=transform)
         self.test_loader = torch.utils.data.DataLoader(
             test_set, batch_size=self.batch_size, shuffle=False, num_workers=2
@@ -55,30 +54,21 @@ class GlobalEvaluator(Widget):
     def _eval_model(self) -> dict:
         if self.test_loader is None:
             self._create_data_loader()
-
         self.model.to(DEVICE)
         self.model.eval()
 
-        total_loss = 0.0
         correct = 0
         total = 0
-
         with torch.no_grad():
             for images, labels in self.test_loader:
                 images, labels = images.to(DEVICE), labels.to(DEVICE)
-
                 outputs = self.model(images)
-                loss = self.criterion(outputs, labels)
-
-                total_loss += loss.item()
+                # calculate accuracy
                 _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
                 correct += (predicted == labels).sum().item()
-
+                total += labels.size(0)
         accuracy = 100 * correct / total
-        avg_loss = total_loss / len(self.test_loader)
-
-        return {"accuracy": accuracy, "loss": avg_loss}
+        return {"accuracy": accuracy}
 
     def initiate_tb(self, _event_type: str, fl_ctx: FLContext):
         # Initiate tensorboard at server
@@ -88,13 +78,11 @@ class GlobalEvaluator(Widget):
     def evaluate(self, _event_type: str, fl_ctx: FLContext):
         global_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-
         # Load the model weights
         global_weights = global_model[ModelLearnableKey.WEIGHTS]
         # Convert numpy weights to torch weights
         global_weights = {k: torch.from_numpy(v) for k, v in global_weights.items()}
         self.model.load_state_dict(global_weights)
-
         # Evaluate the model
         metrics = self._eval_model()
         for key, value in metrics.items():

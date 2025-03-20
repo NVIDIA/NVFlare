@@ -30,6 +30,7 @@ class GlobalEvaluator(Widget):
         super().__init__()
         self.model = XorNet()
         self.tb_writer = None
+
         self.register_event_handler(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, self.evaluate)
         self.register_event_handler(AppEventType.TRAINING_STARTED, self.initiate_tb)
 
@@ -39,14 +40,16 @@ class GlobalEvaluator(Widget):
         test_labels = torch.tensor([0, 1, 1, 0], dtype=torch.long)
         test_data, test_labels = test_data.to(DEVICE), test_labels.to(DEVICE)
         self.model.to(DEVICE)
+        self.model.eval()
+
         with torch.no_grad():
             outputs = self.model(test_data)
             # calculate accuracy
             _, predicted = torch.max(outputs.data, 1)
             correct = (predicted == test_labels).sum().item()
             total = test_labels.size(0)
-            acc = 100 * correct / total
-        return {"accuracy": acc}
+        accuracy = 100 * correct / total
+        return {"accuracy": accuracy}
 
     def initiate_tb(self, _event_type: str, fl_ctx: FLContext):
         # Initiate tensorboard at server
@@ -62,6 +65,6 @@ class GlobalEvaluator(Widget):
         global_weights = {k: torch.from_numpy(v) for k, v in global_weights.items()}
         self.model.load_state_dict(global_weights)
         # Evaluate the model
-        metric = self._eval_model()
-        for key, value in metric.items():
+        metrics = self._eval_model()
+        for key, value in metrics.items():
             self.tb_writer.add_scalar(key, value, current_round)

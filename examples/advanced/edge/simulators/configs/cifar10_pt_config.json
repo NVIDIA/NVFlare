@@ -1,6 +1,6 @@
 {
   "endpoint": "http://localhost:8000",
-  "num_devices": 16,
+  "num_devices": 1,
   "device_id_prefix": "sim-device-",
   "processor": {
     "path": "processors.pt_cifar10_task_processor.PTCifar10TaskProcessor",
