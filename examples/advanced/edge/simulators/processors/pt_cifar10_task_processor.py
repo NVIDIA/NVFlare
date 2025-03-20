@@ -13,6 +13,7 @@
 # limitations under the License.
 import logging
 import os
+import filelock
 
 import torch
 from torch.utils.data import Subset
@@ -63,7 +64,12 @@ class PTCifar10TaskProcessor(DeviceTaskProcessor):
         # Data loading code
         transform = transforms.Compose([transforms.ToTensor()])
         batch_size = 4
-        train_set = datasets.CIFAR10(root=self.data_root, train=True, download=True, transform=transform)
+
+        # Add file lock to prevent multiple simultaneous downloads
+        lock_file = os.path.join(self.data_root, "cifar10.lock")
+        with filelock.FileLock(lock_file):
+            train_set = datasets.CIFAR10(root=self.data_root, train=True, download=True, transform=transform)
+        
         # Find the device ID numer
         device_id = int(self.device_info.device_id.split("-")[-1])
         indices = list(range(device_id * self.subset_size, (device_id + 1) * self.subset_size))
