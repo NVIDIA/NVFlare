@@ -200,7 +200,7 @@ The installer will fail if:
 ### In Job Configuration (JSON)
 ```json
 {
-    "task_script": "${NVFLARE_INSTALL_PREFIX}/src/client.py",
+    "task_script": "{NVFLARE_INSTALL_PREFIX}/src/client.py",
     "other_config": "..."
 }
 ```
@@ -217,16 +217,6 @@ task_script_path = "src/client.py"
 ```
 
 ### In Production
-#### JSON Config
-```bash
-export NVFLARE_INSTALL_PREFIX="/opt/nvflare/jobs/fedavg"  # Set for production
-```
-
-#### Python Code
-```python
-# With pre-installed code (default location)
-task_script_path = "/opt/nvflare/jobs/fedavg/src/client.py"
-```
 
 #### Using Environment Variables
 The environment variable works for both JSON configs and Python code:
@@ -238,6 +228,7 @@ export NVFLARE_INSTALL_PREFIX="/opt/nvflare/jobs/fedavg/"
 # For development
 export NVFLARE_INSTALL_PREFIX=""
 ```
+
 
 #### In JSON Config
 ```json
