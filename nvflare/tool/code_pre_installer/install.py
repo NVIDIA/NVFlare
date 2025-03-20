@@ -97,7 +97,6 @@ def _find_app_dirs(application_dir: Path, site_name: str) -> Dict[str, Path]:
         if not deploy_map:
             continue  # Skip if no deploy map
 
-    
         for app_name, sites in deploy_map.items():
             # Case 1: Site-specific format (app_site-1 -> [site-1, ...])
             if site_name in sites:
