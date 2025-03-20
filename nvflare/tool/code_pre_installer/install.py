@@ -97,15 +97,15 @@ def _find_app_dirs(application_dir: Path, site_name: str) -> Dict[str, Path]:
         if not deploy_map:
             continue  # Skip if no deploy map
 
-        # Case 1: Site-specific format (app_site-1 -> [site-1, ...])
+    
         for app_name, sites in deploy_map.items():
+            # Case 1: Site-specific format (app_site-1 -> [site-1, ...])
             if site_name in sites:
                 site_app_dir = job_dir / app_name
                 if site_app_dir.exists():
                     matched_apps[job_dir.name] = site_app_dir
 
-        # Case 2: Default format (any_app_name -> [@ALL])
-        for app_name, sites in deploy_map.items():
+            # Case 2: Default format (any_app_name -> [@ALL])
             if "@ALL" in sites:
                 default_app_dir = job_dir / app_name
                 if default_app_dir.exists():
@@ -141,7 +141,7 @@ def install_app_code(app_code_zip: Path, install_prefix: Path, site_name: str, t
         application_dir = temp_path / "application"
         shared_dir = temp_path / "application-share"
         if not application_dir.exists() or not any(application_dir.iterdir()):
-            raise ValueError("Invalid application code: Missing application or application-share directory")
+            raise ValueError("Invalid application code: Missing application directory")
 
         # Find all appropriate app directories based on site name
         app_dirs = _find_app_dirs(application_dir, site_name)
