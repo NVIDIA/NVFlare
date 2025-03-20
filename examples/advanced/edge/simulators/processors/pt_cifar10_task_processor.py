@@ -61,7 +61,7 @@ class PTCifar10TaskProcessor(DeviceTaskProcessor):
 
     def _pytorch_training(self, global_model, global_round):
         # Data loading code
-        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        transform = transforms.Compose([transforms.ToTensor()])
         batch_size = 4
         train_set = datasets.CIFAR10(root=self.data_root, train=True, download=True, transform=transform)
         # Find the device ID numer
@@ -135,8 +135,12 @@ class PTCifar10TaskProcessor(DeviceTaskProcessor):
         )
         global_round = payload[ModelExchangeFormat.MODEL_VERSION]
         global_model = payload[ModelExchangeFormat.MODEL_BUFFER]
+
         # Convert list to numpy to tensor and run training
         global_model = {k: torch.tensor(v) for k, v in global_model.items()}
         diff_dict = self._pytorch_training(global_model, global_round)
 
-        return {"result": diff_dict}
+        # Compose simple returning message
+        return_msg = {MsgKey.WEIGHTS: diff_dict, MsgKey.MODE: "diff"}
+
+        return return_msg

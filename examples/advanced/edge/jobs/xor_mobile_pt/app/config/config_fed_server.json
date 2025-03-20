@@ -51,6 +51,5 @@
             "path": "evaluator.GlobalEvaluator",
             "args": {}
         }
-
     ]
 }
