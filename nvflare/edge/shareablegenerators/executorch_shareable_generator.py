@@ -73,7 +73,8 @@ class ExecutorchShareableGenerator(ShareableGenerator):
         if event == EventType.START_RUN:
             base_model = self._load_model(self.base_model_path, fl_ctx)
             executorch_model = self._load_model(self.executorch_model_path, fl_ctx)
-            self.model = executorch_model(base_model)
+            base_model_inst = base_model()
+            self.model = executorch_model(base_model_inst)
             # Verify self.model is a torch model
             if not isinstance(self.model, torch.nn.Module):
                 self.system_panic(reason="Model is not a torch model", fl_ctx=fl_ctx)
@@ -92,6 +93,9 @@ class ExecutorchShareableGenerator(ShareableGenerator):
         task_data = Shareable()
         # Update model weights using global model weights
         model_weights = model_learnable[ModelLearnableKey.WEIGHTS]
+        # Add 'net' to model_weight keys and convert numpy to tensor
+        # so that it can be loaded by model.load_state_dict
+        model_weights = {"net." + k: torch.from_numpy(v) for k, v in model_weights.items()}
         self.model.load_state_dict(model_weights)
         # Convert to buffer
         model_buffer = self._export_current_model()
