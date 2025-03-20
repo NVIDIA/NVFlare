@@ -17,9 +17,9 @@
     "components": [
         {
             "id": "aggregator",
-            "path": "nvflare.edge.aggregators.edge_dict_accumulator.EdgeDictAccumulator",
+            "path": "nvflare.edge.aggregators.edge_json_accumulator.EdgeJsonAccumulator",
             "args": {
-                "mode": "diff"
+                "aggr_key": "data"
             }
         }
     ]

@@ -123,33 +123,19 @@ class ExecutorchShareableGenerator(ShareableGenerator):
             raise TypeError("shareable must be Shareable, but got {}.".format(type(shareable)))
 
         base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-        result = shareable.get(MsgKey.RESULT)
-        weight_to_add = result.get(MsgKey.WEIGHTS)
-        mode = result.get(MsgKey.MODE)
+        weight_to_add = shareable.get(MsgKey.RESULT)
         divide_factor = shareable.get(MsgKey.NUM_DEVICES)
 
-        # weights_to_add in executorch json format, convert to numpy array
-        # and divide by number of devices
-        for k, v in weight_to_add.items():
-            weight_to_add[k] = np.array(v["data"]).reshape(v["sizes"]) / divide_factor
-
+        # apply updates - only diff mode from device
+        if not base_model:
+            self.system_panic(reason="No global base model found for processing WEIGHT_DIFF!", fl_ctx=fl_ctx)
+            return base_model
+        weights = base_model[ModelLearnableKey.WEIGHTS]
         # apply updates
-        if mode == "diff":
-            if not base_model:
-                self.system_panic(reason="No global base model found for processing WEIGHT_DIFF!", fl_ctx=fl_ctx)
-                return base_model
-            weights = base_model[ModelLearnableKey.WEIGHTS]
-            # apply updates
-            for k, v in weight_to_add.items():
-                weights[k] = weights[k] + v
-        elif mode == "weight":
-            if not base_model:
-                base_model = ModelLearnable()
-            weights = base_model[ModelLearnableKey.WEIGHTS]
-            # apply updates
-            for k, v in weight_to_add.items():
-                weights[k] = v
-        else:
-            raise ValueError(f"data_kind should be either diff or weight, but got {mode}")
+        for k, v in weight_to_add.items():
+            # weights_to_add in executorch json format, convert to numpy array
+            # and divide by number of devices
+            weight_to_add = np.array(v["data"]).reshape(v["sizes"]) / divide_factor
+            weights[k] = weights[k] + weight_to_add
 
         return base_model
