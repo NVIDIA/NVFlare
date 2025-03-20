@@ -33,7 +33,6 @@ class GlobalEvaluator(Widget):
         self.model = Cifar10ConvNet()
         self.data_root = data_root
         self.batch_size = 4
-        self.criterion = nn.CrossEntropyLoss()
         self.test_loader = None
         self.tb_writer = None
 

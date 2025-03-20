@@ -41,7 +41,7 @@
             "id": "assessor",
             "path": "nvflare.edge.assessors.count.CountAssessor",
             "args": {
-                "min_count": 1,
+                "min_count": 16,
                 "max_count": 100,
                 "timeout": 3600.0
             }
