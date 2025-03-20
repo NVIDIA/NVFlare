@@ -36,6 +36,8 @@
             "id": "shareable_generator",
             "path": "nvflare.edge.shareablegenerators.executorch_shareable_generator.ExecutorchShareableGenerator",
             "args": {
+                "base_model_path": "nvflare.edge.models.model.Cifar10ConvNet",
+                "executorch_model_path": "nvflare.edge.models.model.TrainingNet",
                 "input_shape": [32, 3, 32, 32],
                 "output_shape": [32]
             }
