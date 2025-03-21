@@ -18,7 +18,7 @@ from typing import List, Optional
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsDataType, LogWriterName, TrackConst
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import EventScope, FLContextKey, ProcessType, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo, send_analytic_dxo
@@ -188,8 +188,10 @@ class AnalyticsReceiver(Widget, ABC):
 
     def _is_supported(self, fl_ctx: FLContext) -> bool:
         if not self.client_side_supported:
-            identity = fl_ctx.get_identity_name()
-            return "server" in identity
+            process_type = fl_ctx.get_process_type()
+            if process_type in (ProcessType.SERVER_PARENT, ProcessType.SERVER_JOB):
+                return True
+            return False
         return True
 
     def _get_record_origin(self, fl_ctx: FLContext, data: Shareable) -> Optional[str]:
