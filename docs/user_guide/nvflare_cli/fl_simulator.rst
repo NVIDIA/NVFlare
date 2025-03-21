@@ -23,7 +23,7 @@ Command Usage
 .. code-block:: shell
 
     $ nvflare simulator -h
-    usage: nvflare simulator [-h] [-w WORKSPACE] [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] [-m MAX_CLIENTS] [--end_run_for_all] job_folder
+    usage: nvflare simulator [-h] [-w WORKSPACE] [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] [-l LOG_CONFIG] [-m MAX_CLIENTS] [--end_run_for_all] job_folder
 
     positional arguments:
         job_folder
@@ -31,16 +31,18 @@ Command Usage
     options:
         -h, --help            show this help message and exit
         -w WORKSPACE, --workspace WORKSPACE
-                            WORKSPACE folder
+                                WORKSPACE folder
         -n N_CLIENTS, --n_clients N_CLIENTS
-                            number of clients
+                                number of clients
         -c CLIENTS, --clients CLIENTS
-                            client names list
+                                client names list
         -t THREADS, --threads THREADS
-                            number of parallel running clients
+                                number of parallel running clients
         -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
+        -l LOG_CONFIG, --log_config LOG_CONFIG
+                                log config mode ('concise', 'full', 'verbose'), filepath, or level
         -m MAX_CLIENTS, --max_clients MAX_CLIENTS
-                            max number of clients
+                                max number of clients
         --end_run_for_all     flag to indicate if running END_RUN event for all clients
 
     
@@ -51,11 +53,11 @@ Command examples
 Run a single NVFlare app
 ========================
 
-This command will run the same ``hello-numpy-sag`` app on the server and 8 clients using 1 process. The client names will be site-1, site-2, ... , site-8:
+This command will run the same ``hello-numpy-sag`` app on the server and 8 clients using 1 process with the full log output mode. The client names will be site-1, site-2, ... , site-8.:
 
 .. code-block:: python
 
-    nvflare simulator NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -n 8 -t 1
+    nvflare simulator NVFlare/examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -n 8 -t 1 -l full
 
 .. raw:: html
 
@@ -798,6 +800,7 @@ application run.
         simulator_parser.add_argument("-c", "--clients", type=str, help="client names list")
         simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
         simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
+        simulator_parser.add_argument("-l", "--log_config", type=str, default="full", help="log config mode ('concise', 'full', 'verbose'), filepath, or level")
         simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
 
 
@@ -809,6 +812,7 @@ application run.
             n_clients=simulator_args.n_clients,
             threads=simulator_args.threads,
             gpu=simulator_args.gpu,
+            log_config=simulator_args.log_config,
             max_clients=simulator_args.max_clients,
         )
         run_status = simulator.run()
