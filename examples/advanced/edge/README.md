@@ -63,13 +63,13 @@ You can easily write your own components to replace any of the pre-configured on
 First, copy the jobs to the admin console transfer folder:
 
 ```commandline
-cp -r ./jobs/* ./edge_example/prod_00/admin@nvidia.com/transfer
+cp -r ./jobs/* /tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer
 ```
 
 Start the admin console to interact with the NVFlare system:
 
 ```commandline
-./edge_example/prod_00/admin@nvidia.com/startup/fl_admin.sh
+/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/startup/fl_admin.sh
 ```
 
 Submit a job:

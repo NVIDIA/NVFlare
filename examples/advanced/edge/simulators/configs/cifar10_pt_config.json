@@ -5,7 +5,7 @@
   "processor": {
     "path": "processors.pt_cifar10_task_processor.PTCifar10TaskProcessor",
     "args": {
-      "data_root": "/tmp/nvflare/dataset/cifar10",
+      "data_root": "/tmp/nvflare/datasets/cifar10",
       "subset_size": 3125
     }
   },

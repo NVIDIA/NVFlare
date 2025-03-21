@@ -176,7 +176,7 @@ class HierarchicalAggregationManager(Executor):
         has_aggr_data = result.get_header(EdgeTaskHeaderKey.HAS_AGGR_DATA, False)
         if has_aggr_data:
             accepted = self._accept_result(result, fl_ctx, task_info.round)
-            self.log_info(fl_ctx, f"processed aggr result from task submission: {accepted=}")
+            self.log_debug(fl_ctx, f"processed aggr result from task submission: {accepted=}")
 
     def _pending_clients_status(self):
         with self._status_lock:
@@ -351,7 +351,7 @@ class HierarchicalAggregationManager(Executor):
                 has_aggr_data = False
                 report = Shareable()
 
-            self.log_info(fl_ctx, f"making aggr report to parent for task {task_info.seq}: {has_aggr_data=}")
+            self.log_debug(fl_ctx, f"making aggr report to parent for task {task_info.seq}: {has_aggr_data=}")
             report.set_header(EdgeTaskHeaderKey.TASK_SEQ, task_info.seq)
             report.set_header(EdgeTaskHeaderKey.HAS_AGGR_DATA, has_aggr_data)
             report.set_return_code(ReturnCode.OK)
@@ -411,7 +411,7 @@ class HierarchicalAggregationManager(Executor):
         return make_reply(ReturnCode.OK)
 
     def _process_aggr_result(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        self.log_info(fl_ctx, f"processing aggregation result report: {topic}")
+        self.log_debug(fl_ctx, f"processing aggregation result report: {topic}")
 
         task_info = self._pending_task
         if task_info:
@@ -434,7 +434,7 @@ class HierarchicalAggregationManager(Executor):
         peer_ctx = fl_ctx.get_peer_context()
         assert isinstance(peer_ctx, FLContext)
         client_name = peer_ctx.get_identity_name()
-        self.log_info(fl_ctx, f"processed aggr result report from {client_name} at round {current_round}: {accepted=}")
+        self.log_debug(fl_ctx, f"processed aggr result report from {client_name} at round {current_round}: {accepted=}")
         return reply
 
     def _accept_result(self, result: Shareable, fl_ctx: FLContext, current_round) -> bool:

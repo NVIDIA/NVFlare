@@ -49,7 +49,7 @@ class EdgeJsonAccumulator(Aggregator):
         if num_devices_to_add is None:
             num_devices_to_add = 1
         self.num_devices += num_devices_to_add
-        self.log_info(fl_ctx, f"Accepting result with {num_devices_to_add}")
+        self.log_info(fl_ctx, f"Accepting result with {num_devices_to_add} devices")
 
         # add new weights to the existing weights
         if self.weights is None:
@@ -65,3 +65,6 @@ class EdgeJsonAccumulator(Aggregator):
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
         return Shareable({MsgKey.RESULT: self.weights, MsgKey.NUM_DEVICES: self.num_devices})
+
+    def get_count(self) -> int:
+        return self.num_devices

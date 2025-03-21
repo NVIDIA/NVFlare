@@ -117,8 +117,12 @@ class PTXorTaskProcessor(DeviceTaskProcessor):
         )
         global_round = payload[ModelExchangeFormat.MODEL_VERSION]
         global_model = payload[ModelExchangeFormat.MODEL_BUFFER]
+
         # Convert list to numpy to tensor and run training
         global_model = {k: torch.tensor(v) for k, v in global_model.items()}
         diff_dict = self._pytorch_training(global_model, global_round)
 
-        return {"result": diff_dict}
+        # Compose simple returning message
+        return_msg = {MsgKey.WEIGHTS: diff_dict, MsgKey.MODE: "diff"}
+
+        return return_msg
