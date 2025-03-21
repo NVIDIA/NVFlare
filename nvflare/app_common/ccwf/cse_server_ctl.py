@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import os
+import time
+from typing import Any, Set, Tuple
 
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.dxo import from_shareable
@@ -27,11 +29,61 @@ from nvflare.app_common.ccwf.server_ctl import ServerSideController
 from nvflare.app_common.ccwf.val_result_manager import EvalResultManager
 from nvflare.fuel.utils.validation_utils import (
     DefaultValuePolicy,
+    check_non_negative_int,
     check_positive_number,
     check_str,
     validate_candidate,
     validate_candidates,
 )
+
+
+def _can_be_included(evals, target, max_num_actions) -> bool:
+    evaluator_actions = 0
+    evaluatee_actions = 0
+    evaluator_t, evaluatee_t = target
+    for p in evals:
+        evaluator_p, evaluatee_p = p
+        if evaluator_t == evaluator_p:
+            # the evaluator is already in the eval - we allow only once for the same evaluator
+            return False
+
+        if evaluator_t == evaluatee_p:
+            evaluator_actions += 1
+
+        if evaluatee_t == evaluator_p:
+            evaluatee_actions += 1
+
+        if evaluatee_t == evaluatee_p and evaluator_p != evaluatee_p:
+            evaluatee_actions += 1
+
+    return evaluatee_actions <= max_num_actions and evaluator_actions <= max_num_actions
+
+
+def _determine_parallel_evals(evals: Set[Tuple[Any, Any]], max_actions=0):
+    """Determine evaluations that can be done in parallel from the total set of evals.
+
+    Args:
+        evals: the total set of evaluations
+        max_actions: max number of actions a client is allowed to do
+
+    Returns: a list of evals that can be performed in parallel
+
+    """
+    result = []
+    for p in evals:
+        if _can_be_included(result, p, max_actions):
+            result.append(p)
+
+    for p in result:
+        evals.remove(p)
+
+    return result
+
+
+class _TaskPropKey:
+    MODEL_NAME = "model_name"
+    MODEL_TYPE = "model_type"
+    MODEL_READY = "model_ready"
 
 
 class CrossSiteEvalServerController(ServerSideController):
@@ -51,6 +103,7 @@ class CrossSiteEvalServerController(ServerSideController):
         global_model_client=None,
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         eval_result_dir=AppConstants.CROSS_VAL_DIR,
+        max_parallel_actions=1,
     ):
         if not evaluatees:
             evaluatees = []
@@ -69,7 +122,7 @@ class CrossSiteEvalServerController(ServerSideController):
             starting_client="",
             starting_client_policy=DefaultValuePolicy.EMPTY,
             max_status_report_interval=max_status_report_interval,
-            result_clients="",
+            result_clients=None,
             result_clients_policy=DefaultValuePolicy.EMPTY,
             progress_timeout=progress_timeout,
             private_p2p=private_p2p,
@@ -77,12 +130,15 @@ class CrossSiteEvalServerController(ServerSideController):
 
         check_str("eval_result_dir", eval_result_dir)
         check_positive_number("eval_task_timeout", eval_task_timeout)
+        check_non_negative_int("max_parallel_actions", max_parallel_actions)
 
         if not global_model_client:
             global_model_client = ""
         self.global_model_client = global_model_client
+        self.prep_model_task_name = make_task_name(task_name_prefix, Constant.BASENAME_PREP_MODEL)
         self.eval_task_name = make_task_name(task_name_prefix, Constant.BASENAME_EVAL)
         self.eval_task_timeout = eval_task_timeout
+        self.max_parallel_actions = max_parallel_actions
         self.eval_local = False
         self.eval_global = False
         self.evaluators = evaluators
@@ -152,36 +208,147 @@ class CrossSiteEvalServerController(ServerSideController):
                     self.log_info(fl_ctx, f"got global model name {m} from {client_name}")
         return True
 
-    def _ask_to_evaluate(
-        self, current_round: int, model_name: str, model_type: str, model_owner: str, fl_ctx: FLContext
-    ):
-        self.log_info(
-            fl_ctx,
-            f"R{current_round}: asking {self.evaluators} to evaluate {model_type} model '{model_name}' "
-            f"on client '{model_owner}'",
-        )
+    def _ask_to_eval(self, evals: list, model_type: str, model_name: str, abort_signal: Signal, fl_ctx: FLContext):
+        self.current_round += 1
+        self.log_info(fl_ctx, f"R{self.current_round}: {evals} to evaluate {model_type} model '{model_name}'")
 
         # Create validation task and broadcast to all participating clients.
-        task_data = Shareable()
-        task_data[AppConstants.CURRENT_ROUND] = current_round
-        task_data[Constant.MODEL_OWNER] = model_owner  # client that holds the model
-        task_data[Constant.MODEL_NAME] = model_name
-        task_data[Constant.MODEL_TYPE] = model_type
+        tasks = []
+        for (evaluator, evaluatee) in evals:
+            task_data = Shareable()
+            task_data[AppConstants.CURRENT_ROUND] = self.current_round
+            task_data[Constant.MODEL_OWNER] = evaluatee  # client that holds the model
+            task_data[Constant.MODEL_NAME] = model_name
+            task_data[Constant.MODEL_TYPE] = model_type
+
+            task = Task(
+                name=self.eval_task_name,
+                data=task_data,
+                result_received_cb=self._process_eval_result,
+                timeout=self.eval_task_timeout,
+            )
+
+            self.broadcast(
+                task=task,
+                fl_ctx=fl_ctx,
+                targets=[evaluator],
+                min_responses=1,
+                wait_time_after_min_received=0,
+            )
+            tasks.append(task)
+
+        # wait until all tasks are done
+        while self.get_num_standing_tasks() > 0:
+            if abort_signal.triggered:
+                # cancel all tasks
+                for t in tasks:
+                    self.cancel_task(t, fl_ctx=fl_ctx)
+
+                self.log_info(fl_ctx, f"abort signal received - cancelled {len(tasks)} pending tasks")
+                return
+            time.sleep(0.5)
+
+    def _evaluate_global_models(self, abort_signal: Signal, fl_ctx: FLContext):
+        if not self.eval_global:
+            return
+
+        if len(self.global_names) == 0:
+            self.log_warning(fl_ctx, "no global models to evaluate!")
+            return
+
+        for model_name, owner in self.global_names.items():
+            self._evaluate_one_global_model(model_name, owner, abort_signal, fl_ctx)
+
+    def _ask_to_prepare_model(self, model_type, model_name, owners, abort_signal: Signal, fl_ctx: FLContext) -> bool:
+        task_data = Shareable(
+            {
+                Constant.MODEL_NAME: model_name,
+                Constant.MODEL_TYPE: model_type,
+            }
+        )
 
         task = Task(
-            name=self.eval_task_name,
+            name=self.prep_model_task_name,
             data=task_data,
-            result_received_cb=self._process_eval_result,
+            result_received_cb=self._process_prep_model_result,
             timeout=self.eval_task_timeout,
         )
+        task.set_prop(_TaskPropKey.MODEL_NAME, model_name)
+        task.set_prop(_TaskPropKey.MODEL_TYPE, model_type)
 
-        self.broadcast(
+        model_ready = {k: False for k in owners}
+        task.set_prop(_TaskPropKey.MODEL_READY, model_ready)
+
+        self.log_info(fl_ctx, f"asking {owners} to prepare model: {model_type=} {model_name=}")
+        self.broadcast_and_wait(
             task=task,
             fl_ctx=fl_ctx,
-            targets=self.evaluators,
-            min_responses=len(self.evaluators),
+            targets=owners,
+            min_responses=1,
             wait_time_after_min_received=0,
+            abort_signal=abort_signal,
         )
+
+        # check whether models are ready on all sites
+        for client_name, ready in model_ready.items():
+            if not ready:
+                self.log_error(fl_ctx, f"client {client_name} failed to prepare model: {model_type=} {model_name=}")
+                return False
+        self.log_info(fl_ctx, f"All of {owners} successfully prepared model: {model_type=} {model_name=}")
+        return True
+
+    def _evaluate_one_global_model(self, model_name, model_owner, abort_signal: Signal, fl_ctx: FLContext):
+        # ask model owners to prepare for eval
+        model_ready = self._ask_to_prepare_model(ModelType.GLOBAL, model_name, [model_owner], abort_signal, fl_ctx)
+        if not model_ready:
+            self.log_error(fl_ctx, f"skipped global model evaluation because {model_owner} failed to prep")
+            return
+
+        evals = set()
+        for evaluator in self.evaluators:
+            evals.add((evaluator, model_owner))
+
+        self._do_eval_actions(evals, ModelType.GLOBAL, model_name, abort_signal, fl_ctx)
+
+    def _do_eval_actions(self, evals: set, model_type, model_name, abort_signal: Signal, fl_ctx: FLContext):
+        original_evals = evals.copy()
+        self.log_info(fl_ctx, f"Start to evaluate {model_type} {model_name}: {evals}")
+        while len(evals) > 0:
+            task_actions = _determine_parallel_evals(evals, max_actions=self.max_parallel_actions)
+            self._ask_to_eval(task_actions, model_type, model_name, abort_signal, fl_ctx)
+            if abort_signal.triggered:
+                self.log_info(fl_ctx, f"Abort evaluating {model_type} {model_name} - signal received")
+                return
+        self.log_info(fl_ctx, f"Finished evaluating {model_type} {model_name}: {original_evals}")
+
+    def _evaluate_local_models(self, abort_signal: Signal, fl_ctx: FLContext):
+        train_clients = fl_ctx.get_prop(Constant.PROP_KEY_TRAIN_CLIENTS)
+        evaluatees = []
+        for c in self.evaluatees:
+            if train_clients and c not in train_clients:
+                # this client does not have local models
+                self.log_info(fl_ctx, f"ignore client {c} since it does not have local models")
+            else:
+                evaluatees.append(c)
+
+        if not evaluatees:
+            self.log_info(fl_ctx, "skipped local evaluation because no client has local models")
+            return
+
+        # ask model owners to prepare for eval
+        model_name = ModelName.BEST_MODEL
+
+        model_ready = self._ask_to_prepare_model(ModelType.LOCAL, model_name, evaluatees, abort_signal, fl_ctx)
+        if not model_ready:
+            self.log_error(fl_ctx, f"skipped local model evaluation because some clients failed to prep")
+            return
+
+        evals = set()
+        for evaluator in self.evaluators:
+            for evaluatee in evaluatees:
+                evals.add((evaluator, evaluatee))
+
+        self._do_eval_actions(evals, ModelType.LOCAL, model_name, abort_signal, fl_ctx)
 
     def sub_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         if not self.global_names and not self.evaluatees:
@@ -189,36 +356,10 @@ class CrossSiteEvalServerController(ServerSideController):
             return
 
         # ask everyone to evaluate global model
-        if self.eval_global:
-            if len(self.global_names) == 0:
-                self.log_warning(fl_ctx, "no global models to evaluate!")
-
-        for m, owner in self.global_names.items():
-            self._ask_to_evaluate(
-                current_round=self.current_round,
-                model_name=m,
-                model_type=ModelType.GLOBAL,
-                model_owner=owner,
-                fl_ctx=fl_ctx,
-            )
-            self.current_round += 1
+        self._evaluate_global_models(abort_signal, fl_ctx)
 
         # ask everyone to eval everyone else's local model
-        train_clients = fl_ctx.get_prop(Constant.PROP_KEY_TRAIN_CLIENTS)
-        for c in self.evaluatees:
-            if train_clients and c not in train_clients:
-                # this client does not have local models
-                self.log_info(fl_ctx, f"ignore client {c} since it does not have local models")
-                continue
-
-            self._ask_to_evaluate(
-                current_round=self.current_round,
-                model_name=ModelName.BEST_MODEL,
-                model_type=ModelType.LOCAL,
-                model_owner=c,
-                fl_ctx=fl_ctx,
-            )
-            self.current_round += 1
+        self._evaluate_local_models(abort_signal, fl_ctx)
 
     def is_sub_flow_done(self, fl_ctx: FLContext) -> bool:
         return self.get_num_standing_tasks() == 0
@@ -228,6 +369,24 @@ class CrossSiteEvalServerController(ServerSideController):
         result = client_task.result
         client_name = client_task.client.name
         self._accept_eval_result(client_name=client_name, result=result, fl_ctx=fl_ctx)
+
+    def _process_prep_model_result(self, client_task: ClientTask, fl_ctx: FLContext):
+        task = client_task.task
+        result = client_task.result
+        assert isinstance(result, Shareable)
+        rc = result.get_return_code()
+
+        model_ready = task.get_prop(_TaskPropKey.MODEL_READY)
+        assert isinstance(model_ready, dict)
+        model_type = task.get_prop(_TaskPropKey.MODEL_TYPE)
+        model_name = task.get_prop(_TaskPropKey.MODEL_NAME)
+
+        client_name = client_task.client.name
+        if rc == ReturnCode.OK:
+            model_ready[client_name] = True
+            self.log_info(fl_ctx, f"client {client_name} successfully prepared {model_type=} {model_name=}")
+        else:
+            self.log_error(fl_ctx, f"client {client_name} failed to prepare {model_type=} {model_name=}: {rc=}")
 
     def _accept_eval_result(self, client_name: str, result: Shareable, fl_ctx: FLContext):
         model_owner = result.get_header(Constant.MODEL_OWNER, "")
