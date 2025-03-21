@@ -53,8 +53,36 @@
         },
         {
             "id": "evaluator",
-            "path": "evaluator.GlobalEvaluator",
-            "args": {}
+            "path": "nvflare.edge.widgets.evaluator.GlobalEvaluator",
+            "args": {
+                "model_path": "nvflare.edge.models.model.XorNet",
+                "custom_dataset": {
+                    "data": [
+                        [
+                            0,
+                            0
+                        ],
+                        [
+                            0,
+                            1
+                        ],
+                        [
+                            1,
+                            0
+                        ],
+                        [
+                            1,
+                            1
+                        ]
+                    ],
+                    "label": [
+                        0,
+                        1,
+                        1,
+                        0
+                    ]
+                }
+            }
         }
     ]
 }

@@ -48,9 +48,13 @@
         },
         {
             "id": "evaluator",
-            "path": "evaluator.GlobalEvaluator",
+            "path": "nvflare.edge.widgets.evaluator.GlobalEvaluator",
             "args": {
-                "data_root": "/tmp/nvflare/datasets/cifar10"
+                "model_path": "nvflare.edge.models.model.Cifar10ConvNet",
+                "torchvision_dataset": {
+                    "name": "CIFAR10",
+                    "path": "/tmp/nvflare/datasets/cifar10"
+                }
             }
         }
     ]
