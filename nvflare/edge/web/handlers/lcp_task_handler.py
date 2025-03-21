@@ -50,9 +50,13 @@ class LcpTaskHandler(EdgeTaskHandler):
                 job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
                 if job_meta:
                     job_name = job_meta.get("name")
+                    method = job_meta.get("edge_method")
                 else:
                     job_name = "No Name"
-                response = JobResponse(EdgeApiStatus.OK, job_id=job_id, job_name=job_name, job_meta=job_meta)
+                # TODO:: job_data is not set
+                response = JobResponse(
+                    EdgeApiStatus.OK, job_id=job_id, job_name=job_name, job_meta=job_meta, method=method
+                )
 
             return response
 

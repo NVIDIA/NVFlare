@@ -21,7 +21,7 @@ struct JobResponse: Decodable {
         case jobId = "job_id"
         case jobName = "job_name"
         case jobMeta = "job_meta"
-        case method
+        case method = "method"
         case retryWait = "retry_wait"
         case message
         case details
@@ -65,10 +65,14 @@ extension JobResponse {
         let metaDict = Dictionary(uniqueKeysWithValues:
             jobMeta.map { (key, value) in (key, value.value) }
         )
-        
-        // Create JobMeta with defaults if values missing
-        let meta = JobMeta(from: metaDict)
-        
+
+        // Extract the method from the response and use it to initialize JobMeta
+        let method = self.method ?? "xor"
+
+        // Create JobMeta with defaults if values are missing
+        let meta = JobMeta(from: metaDict, method: method)
+
+        // Return Job object
         return Job(id: jobId, meta: meta, status: "running")
     }
 }

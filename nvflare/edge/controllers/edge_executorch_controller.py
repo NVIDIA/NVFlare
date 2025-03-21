@@ -31,7 +31,7 @@ from nvflare.edge.constants import MsgKey
 from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding
 from nvflare.edge.model_protocol import ModelExchangeFormat as MEF
 from nvflare.edge.model_protocol import ModelNativeFormat
-from nvflare.edge.models.model import Cifar10ConvNet, TrainingNet, XorNet, export_model
+from nvflare.edge.models.model import export_model
 from nvflare.security.logging import secure_format_exception
 
 tb_writer = SummaryWriter()
@@ -43,18 +43,13 @@ class EdgeExecutorchController(Controller):
         self,
         num_rounds: int,
         task_name: str,
+        model,
         input_shape: List,
         output_shape: List,
     ):
         super().__init__()
         self.task_name = task_name
-        if task_name == "cifar10":
-            self.model = TrainingNet(Cifar10ConvNet())
-        elif task_name == "xor":
-            self.model = TrainingNet(XorNet())
-        else:
-            # not supported error
-            raise ValueError(f"Task {task_name} is not supported,supported [`cifar10`, `xor`]")
+        self.model = model
         self.num_rounds = num_rounds
         self.current_round = None
         self.aggregator = None
@@ -108,9 +103,7 @@ class EdgeExecutorchController(Controller):
             CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
             from torchvision import datasets, transforms
 
-            transform = transforms.Compose(
-                [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-            )
+            transform = transforms.Compose([transforms.ToTensor()])
             test_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=False, download=True, transform=transform)
             test_loader = torch.utils.data.DataLoader(test_set, batch_size=4, shuffle=False, num_workers=2)
 
@@ -170,7 +163,7 @@ class EdgeExecutorchController(Controller):
                     MEF.MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
                     MEF.MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.BINARY,
                     MEF.MODEL_BUFFER_ENCODING: ModelEncoding.BASE64,
-                    MEF.MODEL_VERSION: self.current_round,
+                    MEF.MODEL_VERSION: str(self.current_round),
                 }
                 task_data.set_header(AppConstants.CURRENT_ROUND, self.current_round)
                 task_data.set_header(AppConstants.NUM_ROUNDS, self.num_rounds)
