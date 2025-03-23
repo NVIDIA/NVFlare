@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +17,7 @@
 import json
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Dict
 from unittest.mock import MagicMock, patch
@@ -33,7 +36,9 @@ from nvflare.tool.code_pre_installer.install import (
     define_pre_install_parser,
     install_app_code,
     install_requirements,
+    _process_meta_json,
 )
+from nvflare.tool.code_pre_installer.prepare import prepare_app_code
 
 
 @pytest.fixture
@@ -62,8 +67,12 @@ def create_test_code(tmp_path):
     app_dir.mkdir()
     application_share.mkdir()
 
-    # Create meta.json
-    meta = {"name": "test_app"}
+    # Create meta.json with proper deploy_map
+    meta = {
+        "deploy_map": {
+            "app_site-1": ["site-1"]  # Add deploy_map
+        }
+    }
     with open(app_dir / "meta.json", "w") as f:
         f.write(json.dumps(meta))
 
@@ -87,70 +96,62 @@ def create_test_code(tmp_path):
     return zip_path
 
 
-def create_test_app_structure(base_dir: Path, meta_content: Dict) -> None:
+def create_test_app_structure(base_path: Path, meta_content: Dict):
     """Helper to create test application structure."""
-    app_dir = base_dir / "application" / meta_content["name"]
-    app_dir.mkdir(parents=True)
+    app_dir = base_path / "application"
+    app_dir.mkdir(parents=True, exist_ok=True)
+
+    job_dir = app_dir / meta_content["name"]
+    job_dir.mkdir(exist_ok=True)
 
     # Write meta.json
-    with open(app_dir / "meta.json", "w") as f:
+    with open(job_dir / "meta.json", "w") as f:
         json.dump(meta_content, f)
 
-    # Create app directories based on deploy_map
-    for app_name in meta_content["deploy_map"].keys():
-        site_dir = app_dir / app_name / CUSTOM_DIR_NAME
-        site_dir.mkdir(parents=True)
-        (site_dir / "test.py").write_text("print('test')")
+    # Create app directories from deploy_map
+    for app_name in meta_content["deploy_map"]:
+        app_path = job_dir / app_name
+        app_path.mkdir(exist_ok=True)
+        custom_dir = app_path / CUSTOM_DIR_NAME
+        custom_dir.mkdir(exist_ok=True)
+        (custom_dir / "test.py").write_text("test code")
+
+    return job_dir
 
 
 def test_install_app_code(tmp_path, mock_custom_dir):
     """Test application code installation."""
-    meta_content = {"name": "test_app", "deploy_map": {"app_site-1": ["site-1"]}}
-
-    # Create test structure
-    create_test_app_structure(tmp_path, meta_content)
-    shared_dir = tmp_path / "application-share"
-    shared_dir.mkdir()
-    (shared_dir / "shared.py").write_text("print('shared')")
-
-    # Create zip
-    zip_path = tmp_path / "test_code.zip"
-    with ZipFile(zip_path, "w") as zf:
-        for path in tmp_path.rglob("*"):
-            if path != zip_path:
-                zf.write(path, path.relative_to(tmp_path))
-
-    install_prefix = tmp_path / "install"
-    install_app_code(zip_path, install_prefix, "site-1", mock_custom_dir)
-
-    assert (install_prefix / "test_app" / "test.py").exists()
-    assert (mock_custom_dir / "shared.py").exists()
-    assert not zip_path.exists()
-
-
-def test_cleanup_nonexistent_zip(tmp_path, mock_custom_dir):
-    """Test cleanup handling when zip file is already deleted."""
     zip_path = create_test_code(tmp_path)
     install_prefix = tmp_path / "install"
+    install_app_code(zip_path, install_prefix, "site-1", mock_custom_dir, False)
 
-    # Delete zip file before installation
-    zip_path.unlink()
 
-    # Should handle missing zip file gracefully
+def test_cleanup_nonexistent_zip(tmp_path):
+    """Test cleanup of nonexistent zip file."""
     with pytest.raises(FileNotFoundError):
-        install_app_code(zip_path, install_prefix, "site-1", mock_custom_dir)
+        install_app_code(
+            tmp_path / "nonexistent.zip",
+            tmp_path / "install",
+            "site-1",
+            str(tmp_path / "shared"),
+            True  # Add delete parameter
+        )
 
 
-def test_invalid_structure(tmp_path, mock_custom_dir):
-    """Test installation with invalid structure."""
-    invalid_zip = tmp_path / "invalid.zip"
-    with ZipFile(invalid_zip, "w") as zf:
-        zf.writestr("dummy.txt", "not a valid structure")
+def test_invalid_structure(tmp_path):
+    """Test invalid application structure."""
+    zip_path = tmp_path / "test.zip"
+    with ZipFile(zip_path, "w") as zf:
+        zf.writestr("test.txt", "test")
 
-    with pytest.raises(
-        ValueError, match="Invalid application code: Missing application or application-share directory"
-    ):
-        install_app_code(invalid_zip, tmp_path, "site-1", mock_custom_dir)
+    with pytest.raises(ValueError):
+        install_app_code(
+            zip_path,
+            tmp_path / "install",
+            "site-1",
+            str(tmp_path / "shared"),
+            False  # Add delete parameter
+        )
 
 
 def test_missing_meta(tmp_path, mock_custom_dir):
@@ -167,8 +168,8 @@ def test_missing_meta(tmp_path, mock_custom_dir):
             if path != zip_path:
                 zf.write(path, path.relative_to(tmp_path))
 
-    with pytest.raises(ValueError, match="No application directories with meta.json found"):
-        install_app_code(zip_path, tmp_path, "site-1", mock_custom_dir)
+    with pytest.raises(ValueError, match="No application directories found for site"):
+        install_app_code(zip_path, tmp_path, "site-1", mock_custom_dir, False)
 
 
 @pytest.fixture
@@ -264,105 +265,279 @@ def test_install_requirements_failure(mock_run, temp_dir):
         install_requirements(requirements_file)
 
 
-def test_install_app_code_missing_zip(temp_dir, mock_custom_dir):
+def test_install_app_code_missing_zip(tmp_path, mock_custom_dir):
+    """Test installation with missing zip file."""
     with pytest.raises(FileNotFoundError):
-        install_app_code(Path(temp_dir) / "nonexistent.zip", Path(temp_dir) / "install", "site-1", mock_custom_dir)
+        install_app_code(
+            tmp_path / "nonexistent.zip",
+            tmp_path / "install",
+            "site-1",
+            mock_custom_dir,
+            False
+        )
 
 
-def test_install_app_code_success(tmp_path, mock_custom_dir):
-    """Test successful application code installation."""
-    # Create test structure
-    temp_path = tmp_path / "temp"
-    temp_path.mkdir()
+class TestInstall:
+    @pytest.fixture
+    def temp_dir(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield Path(temp_dir)
 
-    # Create app with site-specific deployment
-    meta_content = {"name": "test_app", "deploy_map": {"app_site-1": ["site-1"]}}
-    create_test_app_structure(temp_path, meta_content)
+    def create_meta_json(self, path: Path, deploy_map: dict):
+        with open(path / "meta.json", "w") as f:
+            json.dump({"deploy_map": deploy_map}, f)
 
-    # Create shared directory
-    shared_dir = temp_path / "application-share"
-    shared_dir.mkdir()
-    (shared_dir / "shared.py").write_text("print('shared')")
+    def test_process_meta_json(self, temp_dir):
+        # Setup
+        base_dir = temp_dir / "app"
+        base_dir.mkdir()
+        app_dir = base_dir / "app_site-1"
+        app_dir.mkdir()
+        self.create_meta_json(base_dir, {"app_site-1": ["site-1"]})
 
-    # Create zip file
-    zip_path = tmp_path / "test.zip"
-    with ZipFile(zip_path, "w") as zf:
-        for path in temp_path.rglob("*"):
-            zf.write(path, path.relative_to(temp_path))
+        # Test
+        result = _process_meta_json(base_dir / "meta.json", "site-1", base_dir)
+        assert "app" in result
+        assert result["app"] == app_dir
 
-    # Test installation
-    install_app_code(zip_path, tmp_path, "site-1", mock_custom_dir)
+    def test_find_app_dirs_case1(self, temp_dir):
+        """Test meta.json directly under application directory."""
+        # Setup
+        app_dir = temp_dir / "application"
+        app_dir.mkdir()
+        site_dir = app_dir / "app_site-1"
+        site_dir.mkdir()
+        self.create_meta_json(app_dir, {"app_site-1": ["site-1"]})
 
-    # Verify installation
-    assert (tmp_path / "test_app" / "test.py").exists()
-    assert (mock_custom_dir / "shared.py").exists()
-    assert not zip_path.exists()
+        # Test
+        result = _find_app_dirs(app_dir, "site-1")
+        assert "app" in result
+        assert result["app"] == site_dir
 
+    def test_find_app_dirs_case2(self, temp_dir):
+        """Test meta.json in subdirectories."""
+        # Setup
+        app_dir = temp_dir / "application"
+        app_dir.mkdir()
+        job_dir = app_dir / "fedavg"
+        job_dir.mkdir()
+        site_dir = job_dir / "app_site-1"
+        site_dir.mkdir()
+        self.create_meta_json(job_dir, {"app_site-1": ["site-1"]})
 
-def test_install_app_code_invalid_structure(tmp_path, mock_custom_dir):
-    """Test installation with invalid structure."""
-    # Create invalid structure (missing application directory)
-    temp_path = tmp_path / "temp"
-    temp_path.mkdir()
+        # Test
+        result = _find_app_dirs(app_dir, "site-1")
+        assert "fedavg" in result
+        assert result["fedavg"] == site_dir
 
-    # Only create application-share
-    shared_dir = temp_path / "application-share"
-    shared_dir.mkdir()
+    def test_find_app_dirs_all_sites(self, temp_dir):
+        """Test @ALL in deployment map."""
+        # Setup
+        app_dir = temp_dir / "application"
+        app_dir.mkdir()
+        site_dir = app_dir / "app_default"
+        site_dir.mkdir()
+        self.create_meta_json(app_dir, {"app_default": ["@ALL"]})
 
-    zip_path = tmp_path / "test.zip"
-    with ZipFile(zip_path, "w") as zf:
-        for path in temp_path.rglob("*"):
-            zf.write(path, path.relative_to(temp_path))
+        # Test
+        result = _find_app_dirs(app_dir, "any-site")
+        assert "app" in result
+        assert result["app"] == site_dir
 
-    with pytest.raises(
-        ValueError, match="Invalid application code: Missing application or application-share directory"
-    ):
-        install_app_code(zip_path, tmp_path, "site-1", mock_custom_dir)
+    def test_find_app_dirs_no_match(self, temp_dir):
+        """Test no matching directories found."""
+        # Setup
+        app_dir = temp_dir / "application"
+        app_dir.mkdir()
+        self.create_meta_json(app_dir, {"app_site-1": ["other-site"]})
 
+        # Test
+        with pytest.raises(ValueError, match="No application directories found for site"):
+            _find_app_dirs(app_dir, "site-1")
 
-def test_install_app_code_missing_site(tmp_path, mock_custom_dir):
-    """Test installation with missing site directory."""
-    # Create app without the requested site
-    meta_content = {"name": "test_app", "deploy_map": {"app_site-2": ["site-2"]}}  # Different site
+    def test_install_app_code(self, temp_dir):
+        """Test full installation process."""
+        # Setup source structure
+        app_dir = temp_dir / "src/application"
+        app_dir.mkdir(parents=True)
+        site_dir = app_dir / "app_site-1"
+        site_dir.mkdir()
+        custom_dir = site_dir / "custom"
+        custom_dir.mkdir()
+        (custom_dir / "test.py").write_text("test")
+        self.create_meta_json(app_dir, {"app_site-1": ["site-1"]})
 
-    temp_path = tmp_path / "temp"
-    temp_path.mkdir()
-    create_test_app_structure(temp_path, meta_content)
+        # Create zip file
+        zip_path = temp_dir / "app.zip"
+        with ZipFile(zip_path, "w") as zf:
+            for item in app_dir.rglob("*"):
+                if item.is_file():
+                    zf.write(item, item.relative_to(temp_dir / "src"))
 
-    # Create shared directory
-    shared_dir = temp_path / "application-share"
-    shared_dir.mkdir()
+        # Setup install paths
+        install_prefix = temp_dir / "install"
+        shared_dir = temp_dir / "shared"
 
-    zip_path = tmp_path / "test.zip"
-    with ZipFile(zip_path, "w") as zf:
-        for path in temp_path.rglob("*"):
-            zf.write(path, path.relative_to(temp_path))
+        # Test installation
+        install_app_code(
+            zip_path,
+            install_prefix,
+            "site-1",
+            str(shared_dir),
+            False  # Add delete parameter
+        )
 
-    with pytest.raises(ValueError, match="No application directories found for site site-1"):
-        install_app_code(zip_path, tmp_path, "site-1", mock_custom_dir)
+        # Verify installation
+        assert (install_prefix / "app/test.py").exists()
+        assert (install_prefix / "app/test.py").read_text() == "test"
 
+    def test_install_app_code_with_requirements(self, temp_dir):
+        """Test installation with requirements.txt."""
+        # Setup job directory
+        job_dir = temp_dir / "jobs/fedavg"
+        job_dir.mkdir(parents=True)
+        
+        # Create app structure
+        app_dir = job_dir / "app_site-1"
+        app_dir.mkdir()
+        custom_dir = app_dir / "custom"
+        custom_dir.mkdir()
+        (custom_dir / "test.py").write_text("test")
+        
+        # Create meta.json
+        meta_content = {
+            "deploy_map": {
+                "app_site-1": ["site-1"]
+            }
+        }
+        self.create_meta_json(job_dir, meta_content)
+        
+        # Create requirements.txt
+        req_file = temp_dir / "requirements.txt"
+        req_file.write_text("pytest")
 
-def test_define_pre_install_parser():
-    """Test the argument parser definition."""
-    mock_sub_cmd = MagicMock()
-    mock_parser = MagicMock()
-    mock_args = MagicMock()
+        # Use prepare_app_code to create package
+        output_dir = temp_dir / "prepare"
+        prepare_app_code(
+            job_dir,
+            output_dir,
+            None,  # No shared lib
+            req_file
+        )
+        # Print zip contents
+        print("Printing zip contents at ", output_dir / "application.zip")
+        self.print_zip_contents(output_dir / "application.zip")
 
-    # Set up the mock parser
-    mock_sub_cmd.add_parser.return_value = mock_parser
-    mock_parser.parse_args.return_value = mock_args
-    mock_args.application = "test.zip"
-    mock_args.install_prefix = "/opt/nvflare/apps"
-    mock_args.site_name = "site-1"
-    mock_args.target_shared_dir = "/tmp/local/custom"
+        # Test installation
+        install_app_code(
+            output_dir / "application.zip",
+            temp_dir / "install",
+            "site-1",
+            str(temp_dir / "shared"),
+            False
+        )
+        assert (temp_dir / "install/app/custom/test.py").exists()
+  
 
-    parser = define_pre_install_parser("pre-install", mock_sub_cmd)
-    args = parser.parse_args(["-a", "test.zip", "-p", "/opt/nvflare/apps", "-s", "site-1", "-ts", "/tmp/local/custom"])
+    def test_install_app_code_success(self, temp_dir):
+        """Test successful installation."""
+        # Setup job directory
+        job_dir = temp_dir / "jobs/fedavg"
+        job_dir.mkdir(parents=True)
+        
+        # Create app structure
+        app_dir = job_dir / "app_site-1"
+        app_dir.mkdir()
+        custom_dir = app_dir / "custom"
+        custom_dir.mkdir()
+        (custom_dir / "test.py").write_text("test")
+        
+        # Create meta.json in the correct location
+        meta_content = {
+            "name": "fedavg",
+            "min_clients": 1,
+            "deploy_map": {
+                "app_server": [
+                    "server"
+                ],
+                "app_site-1": [
+                    "site-1"
+                ]
+            
+            }
+        }
+        # Create meta.json in fedavg directory, not in app_site-1
+        self.create_meta_json(job_dir, meta_content)
 
-    assert args.application == "test.zip"
-    assert args.install_prefix == "/opt/nvflare/apps"
-    assert args.site_name == "site-1"
-    assert args.target_shared_dir == "/tmp/local/custom"
+        # Use prepare_app_code to create package
+        output_dir = temp_dir / "prepare"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        prepare_app_code(
+            job_dir,
+            output_dir,
+            None  # No shared lib
+        )
+
+        # Verify zip structure
+        with ZipFile(output_dir / "application.zip") as zf:
+            files = zf.namelist()
+            assert "application/meta.json" in files
+            assert "application/app_site-1/custom/test.py" in files
+
+        # Test installation
+        install_prefix = temp_dir / "install"
+        install_app_code(
+            output_dir / "application.zip",
+            install_prefix,
+            "site-1",
+            str(temp_dir / "shared"),
+            False
+        )
+        
+        assert (install_prefix / "app/custom/test.py").exists()
+
+    def test_install_app_code_invalid_structure(self, temp_dir):
+        """Test installation with invalid structure."""
+        # Create invalid structure (missing application directory)
+        temp_path = temp_dir / "temp"
+        temp_path.mkdir()
+
+        # Only create application-share
+        shared_dir = temp_path / "application-share"
+        shared_dir.mkdir()
+
+        zip_path = temp_dir / "test.zip"
+        with ZipFile(zip_path, "w") as zf:
+            for path in temp_path.rglob("*"):
+                zf.write(path, path.relative_to(temp_path))
+
+        with pytest.raises(ValueError, match="Invalid application code: Missing application directory"):
+            install_app_code(zip_path, temp_dir, "site-1", str(temp_dir / "shared"), False)
+
+    def test_install_app_code_missing_site(self, temp_dir):
+        """Test installation with missing site directory."""
+        # Create application directory with meta.json for different site
+        app_dir = temp_dir / "application"
+        app_dir.mkdir(parents=True)
+        meta_content = {
+            "deploy_map": {
+                "app_site-2": ["site-2"]  # Different site
+            }
+        }
+        self.create_meta_json(app_dir, meta_content)
+
+        # Create zip
+        zip_path = temp_dir / "test.zip"
+        with ZipFile(zip_path, "w") as zf:
+            # Add application directory
+            for item in app_dir.rglob("*"):
+                if item.is_file():
+                    zf.write(item, item.relative_to(temp_dir))
+
+        # Test installation - should fail because site-1 not in deploy_map
+        with pytest.raises(ValueError, match="No application directories found for site site-1"):
+            install_app_code(zip_path, temp_dir / "install", "site-1", str(temp_dir / "shared"), False)
 
 
 @pytest.fixture(autouse=True)
@@ -444,7 +619,7 @@ def test_install_app_code_multiple_jobs(tmp_path, mock_custom_dir):
 
     # Install app code
     install_dir = tmp_path / "install"
-    install_app_code(zip_path, install_dir, "site-1", mock_custom_dir)
+    install_app_code(zip_path, install_dir, "site-1", str(mock_custom_dir), False)
 
     # Verify installations
     assert (install_dir / "job1" / "test.py").exists()

@@ -10,6 +10,10 @@ The code pre-installer handles:
 - Site-specific customizations
 - Python package dependencies
 
+The tool provides two main commands:
+- `prepare`: Package application code for installation
+- `install`: Install packaged code to target sites
+
 ## Directory Structure
 
 Expected application code zip structure:
@@ -122,28 +126,46 @@ The application.zip file will be created in the `/tmp/nvflare/` directory.
 
 ### Command Line Interface
 
+#### Prepare Application Code
 ```bash
-nvflare pre-install -a /path/to/application.zip -p /opt/nvflare/apps -s site-1 [-ts /local/custom] [-debug]
-```
+nvflare pre-install prepare [-h] -j JOB [-o OUTPUT] [-s SHARED] [-r REQUIREMENTS] [-debug]
 
 Arguments:
-- `-a, --application`: Path to application code zip file (required)
-- `-p, --install-prefix`: Installation prefix (default: /opt/nvflare/apps)
-- `-s, --site-name`: Target site name e.g., site-1, server (required)
-- `-ts, --target_shared_dir`: Target shared directory path (default: /local/custom)
-- `-debug, --debug`: Enable debug mode
+  -j, --job            Job folder path (e.g., jobs/fedavg)
+  -o, --output        Output directory for application.zip (default: /tmp/application/prepare)
+  -s, --shared        Optional shared library folder
+  -r, --requirements  Optional requirements.txt file
+  -debug              Enable debug output
+```
+
+#### Install Application Code
+```bash
+nvflare pre-install install [-h] -a APPLICATION [-p INSTALL_PREFIX] -s SITE_NAME
+                          [-ts TARGET_SHARED_DIR] [-debug] [-d]
+
+Arguments:
+  -a, --application    Path to application code zip file
+  -p, --install-prefix Installation prefix (default: /opt/nvflare/apps)
+  -s, --site-name      Target site name (e.g., site-1, server)
+  -ts, --target_shared_dir Target share path (default: /local/custom)
+  -debug               Enable debug output
+  -d, --delete        Delete the zip file after installation
+```
 
 ### Example
 
 ```bash
-# Install application code for site-1
-nvflare pre-install -a /path/to/myapp.zip -s site-1
+# 1. Package application code
+nvflare pre-install prepare -j jobs/fedavg -o /tmp/prepare
 
-# Install with custom paths
-nvflare pre-install -a /path/to/myapp.zip -p /custom/install/path -s site-1 -ts /custom/shared/path
+# Package with requirements.txt
+nvflare pre-install prepare -j jobs/fedavg -o /tmp/prepare -r requirements.txt
 
-# Install with debug output
-nvflare pre-install -a /path/to/myapp.zip -s site-1 -debug
+# 2. Install on server
+nvflare pre-install install -a /tmp/prepare/application.zip -s server
+
+# 3. Install on clients
+nvflare pre-install install -a /tmp/prepare/application.zip -s site-1
 ```
 
 ## Application Code Structure

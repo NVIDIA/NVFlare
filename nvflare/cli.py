@@ -16,7 +16,6 @@ import argparse
 import os
 import sys
 import traceback
-from pathlib import Path
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
@@ -131,9 +130,10 @@ def def_pre_install_parser(sub_cmd):
     cmd = CMD_PRE_INSTALL
     try:
         # using try catch to avoid hard dependency on nvflare.tool.code_pre_installer
-        from nvflare.tool.code_pre_installer.install import define_pre_install_parser
+        from nvflare.tool.code_pre_installer.pre_install_cmd import def_pre_install_parser
 
-        pre_install_parser = define_pre_install_parser(cmd, sub_cmd)
+
+        pre_install_parser = def_pre_install_parser(cmd, sub_cmd)
         return {cmd: pre_install_parser}
     except Exception as e:
         print(f"Error: {str(e)}")
@@ -167,10 +167,9 @@ def parse_args(prog_name: str):
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
 
-def run_pre_install_cmd(args):
-    from nvflare.tool.code_pre_installer.install import install_app_code
-
-    install_app_code(Path(args.application), Path(args.install_prefix), args.site_name, args.target_shared_dir)
+def handle_pre_install_cmd(args):
+    from nvflare.tool.code_pre_installer.pre_install_cmd import handle_pre_install_cmd as handle_cmd
+    handle_cmd(args)
 
 
 handlers = {
@@ -182,7 +181,7 @@ handlers = {
     CMD_AUTHZ_PREVIEW: handle_authz_preview,
     CMD_JOB: handle_job_cli_cmd,
     CMD_CONFIG: handle_config_cmd,
-    CMD_PRE_INSTALL: run_pre_install_cmd,
+    CMD_PRE_INSTALL: handle_pre_install_cmd,
 }
 
 

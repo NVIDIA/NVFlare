@@ -21,31 +21,49 @@ import tempfile
 from pathlib import Path
 from typing import Dict
 from zipfile import ZipFile
+import subprocess
 
 from nvflare.tool.code_pre_installer.constants import (
     CUSTOM_DIR_NAME,
     DEFAULT_APPLICATION_INSTALL_DIR,
     PYTHON_PATH_SHARED_DIR,
 )
+from nvflare.utils.zip_utils import print_tree
 
 
-def define_pre_install_parser(cmd_name, sub_cmd):
+def define_pre_install_parser(cmd_name: str, sub_cmd):
+    """Define parser for install command."""
     parser = sub_cmd.add_parser(cmd_name)
-    parser.add_argument("-a", "--application", required=True, help="Path to application code zip file")
     parser.add_argument(
-        "-p",
-        "--install-prefix",
+        "-a", "--application",
+        required=True,
+        help="Path to application code zip file"
+    )
+    parser.add_argument(
+        "-p", "--install-prefix",
         default=DEFAULT_APPLICATION_INSTALL_DIR,
-        help="Installation prefix (default: /opt/nvflare/apps)",
+        help=f"Installation prefix (default: {DEFAULT_APPLICATION_INSTALL_DIR})"
     )
-    parser.add_argument("-s", "--site-name", required=True, help="Target site name (e.g., site-1, server)")
     parser.add_argument(
-        "-ts",
-        "--target_shared_dir",
-        default=PYTHON_PATH_SHARED_DIR,
-        help=f"Target share path (default: {PYTHON_PATH_SHARED_DIR})",
+        "-s", "--site-name",
+        required=True,
+        help="Target site name (e.g., site-1, server)"
     )
-    parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    parser.add_argument(
+        "-ts", "--target_shared_dir",
+        default=PYTHON_PATH_SHARED_DIR,
+        help=f"Target share path (default: {PYTHON_PATH_SHARED_DIR})"
+    )
+    parser.add_argument(
+        "-debug", "--debug",
+        action="store_true",
+        help="debug is on"
+    )
+    parser.add_argument(
+        "-d", "--delete",
+        action="store_true",
+        help="delete the zip file after installation"
+    )
     return parser
 
 
@@ -56,12 +74,45 @@ def install_requirements(requirements_file: Path):
         return
 
     print(f"Installing packages from {requirements_file}...")
-    import subprocess
 
     try:
         subprocess.run(["pip", "install", "-r", str(requirements_file)], check=True)
     except subprocess.CalledProcessError as e:
         raise ValueError(f"Failed to install requirements: {e}")
+
+
+def _process_meta_json(meta_file: Path, site_name: str, base_dir: Path, job_name: str = "app") -> Dict[str, Path]:
+    """Process meta.json file to find matching app directories.
+
+    Args:
+        meta_file: Path to meta.json file
+        site_name: Target site name
+        base_dir: Base directory containing app directories
+        job_name: Name to use for the job (default: "app")
+
+    Returns:
+        Dictionary mapping job names to their app directory paths
+    """
+    matched_apps = {}
+    
+    try:
+        with open(meta_file) as f:
+            meta = json.load(f)
+        
+        deploy_map = meta.get("deploy_map", {})
+        print(f"deploy_map: {deploy_map}")
+        if deploy_map:
+            for app_name, sites in deploy_map.items():
+                print(f"app_name: {app_name}, sites: {sites}")
+                if site_name in sites or "@ALL" in sites:
+                    site_app_dir = base_dir / app_name
+                    print(f"site_app_dir: {site_app_dir}")
+                    if site_app_dir.exists():
+                        matched_apps[job_name] = site_app_dir
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Warning: Error reading {meta_file}: {str(e)}")
+        
+    return matched_apps
 
 
 def _find_app_dirs(application_dir: Path, site_name: str) -> Dict[str, Path]:
@@ -77,46 +128,32 @@ def _find_app_dirs(application_dir: Path, site_name: str) -> Dict[str, Path]:
     Raises:
         ValueError: If no matching app directories found for site
     """
-    # Find all app directories that have meta.json
-    job_dirs = [d for d in application_dir.iterdir() if d.is_dir() and (d / "meta.json").exists()]
-    if not job_dirs:
-        raise ValueError("No application directories with meta.json found")
-
-    # Dictionary to store job_name -> app_dir mappings
     matched_apps = {}
+    print(f"Searching for app directories in {application_dir}...")
+    
+    print_tree(application_dir)
 
-    # Search through all app directories for matching deployments
-    for job_dir in job_dirs:
-        try:
-            with open(job_dir / "meta.json") as f:
-                meta = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            continue  # Skip invalid meta.json
+    # Case 1: meta.json directly under application_dir
+    meta_file = application_dir / "meta.json"
+    if meta_file.exists():
+        print(f"meta_file: {meta_file}")
+        matched_apps.update(_process_meta_json(meta_file, site_name, application_dir))
+    
+    print(f"matched_apps: {matched_apps}")
 
-        deploy_map = meta.get("deploy_map", {})
-        if not deploy_map:
-            continue  # Skip if no deploy map
-
-        for app_name, sites in deploy_map.items():
-            # Case 1: Site-specific format (app_site-1 -> [site-1, ...])
-            if site_name in sites:
-                site_app_dir = job_dir / app_name
-                if site_app_dir.exists():
-                    matched_apps[job_dir.name] = site_app_dir
-
-            # Case 2: Default format (any_app_name -> [@ALL])
-            if "@ALL" in sites:
-                default_app_dir = job_dir / app_name
-                if default_app_dir.exists():
-                    matched_apps[job_dir.name] = default_app_dir
+    # Case 2: meta.json in subdirectories
+    for job_dir in [d for d in application_dir.iterdir() if d.is_dir()]:
+        meta_file = job_dir / "meta.json"
+        if meta_file.exists():
+            matched_apps.update(_process_meta_json(meta_file, site_name, job_dir, job_dir.name))
 
     if not matched_apps:
         raise ValueError(f"No application directories found for site {site_name}")
 
     return matched_apps
+ 
 
-
-def install_app_code(app_code_zip: Path, install_prefix: Path, site_name: str, target_shared_dir: str) -> None:
+def install_app_code(app_code_zip: Path, install_prefix: Path, site_name: str, target_shared_dir: str, delete: bool) -> None:
     """Install application code from zip file.
 
     Args:
@@ -135,6 +172,8 @@ def install_app_code(app_code_zip: Path, install_prefix: Path, site_name: str, t
         # Extract zip
         with ZipFile(app_code_zip) as zf:
             zf.extractall(temp_path)
+           
+        print_tree(temp_path)
 
         # Verify structure
         application_dir = temp_path / "application"
@@ -179,4 +218,23 @@ def install_app_code(app_code_zip: Path, install_prefix: Path, site_name: str, t
             install_requirements(requirements)
 
     # Cleanup
-    app_code_zip.unlink()
+    print(f"Deleting {app_code_zip} after installation: {delete}")
+    if delete:
+        app_code_zip.unlink()
+
+
+def install(args):
+    """Run install command."""
+    try:
+        install_app_code(
+            Path(args.application),
+            Path(args.install_prefix),
+            args.site_name,
+            args.target_shared_dir,
+            args.delete
+        )
+    except Exception as e:
+        if args.debug:
+            import traceback
+            traceback.print_exc()
+        raise RuntimeError(f"Failed to install application: {str(e)}")
