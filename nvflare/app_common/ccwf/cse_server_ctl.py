@@ -23,7 +23,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.common import Constant, ModelType, make_task_name
-from nvflare.app_common.ccwf.eval_gen import EvalGenerator
+from nvflare.app_common.ccwf.eval_gen import parallel_eval_generator
 from nvflare.app_common.ccwf.server_ctl import ServerSideController
 from nvflare.app_common.ccwf.val_result_manager import EvalResultManager
 from nvflare.fuel.utils.validation_utils import (
@@ -260,22 +260,16 @@ class CrossSiteEvalServerController(ServerSideController):
             self.log_error(fl_ctx, f"skipped global model evaluation because {model_owner} failed to prep")
             return
 
-        evals = set()
-        for evaluator in self.evaluators:
-            evals.add((evaluator, model_owner))
+        self._do_eval_actions(self.evaluators, [model_owner], ModelType.GLOBAL, model_name, abort_signal, fl_ctx)
 
-        eval_gen = EvalGenerator(self.evaluators, [model_owner], self.max_parallel_actions)
-        self._do_eval_actions(eval_gen, ModelType.GLOBAL, model_name, abort_signal, fl_ctx)
-
-    def _do_eval_actions(self, gen: EvalGenerator, model_type, model_name, abort_signal: Signal, fl_ctx: FLContext):
-        self.log_info(fl_ctx, f"Start to evaluate {model_type} {model_name}: {gen.evaluators} => {gen.evaluatees}")
-        while not gen.is_empty():
-            evals = gen.get_parallel_evals()
+    def _do_eval_actions(self, evaluators, evaluatees, model_type, model_name, abort_signal: Signal, fl_ctx: FLContext):
+        self.log_info(fl_ctx, f"Start to evaluate {model_type} {model_name}: {evaluators} => {evaluatees}")
+        for evals in parallel_eval_generator(evaluators, evaluatees, self.max_parallel_actions):
             self._ask_to_eval(evals, model_type, model_name, abort_signal, fl_ctx)
             if abort_signal.triggered:
                 self.log_info(fl_ctx, f"Abort evaluating {model_type} {model_name} - signal received")
                 return
-        self.log_info(fl_ctx, f"Finished evaluating {model_type} {model_name}: {gen.evaluators} => {gen.evaluatees}")
+        self.log_info(fl_ctx, f"Finished evaluating {model_type} {model_name}: {evaluators} => {evaluatees}")
 
     def _evaluate_local_models(self, abort_signal: Signal, fl_ctx: FLContext):
         train_clients = fl_ctx.get_prop(Constant.PROP_KEY_TRAIN_CLIENTS)
@@ -299,8 +293,7 @@ class CrossSiteEvalServerController(ServerSideController):
             self.log_error(fl_ctx, "skipped local model evaluation because some clients failed to prep")
             return
 
-        eval_gen = EvalGenerator(self.evaluators, evaluatees, self.max_parallel_actions)
-        self._do_eval_actions(eval_gen, ModelType.LOCAL, model_name, abort_signal, fl_ctx)
+        self._do_eval_actions(self.evaluators, evaluatees, ModelType.LOCAL, model_name, abort_signal, fl_ctx)
 
     def sub_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         if not self.global_names and not self.evaluatees:
