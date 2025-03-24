@@ -14,7 +14,6 @@
 
 import os
 import time
-from typing import Any, Set, Tuple
 
 from nvflare.apis.controller_spec import ClientTask, Task
 from nvflare.apis.dxo import from_shareable
@@ -25,6 +24,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.common import Constant, ModelType, make_task_name
+from nvflare.app_common.ccwf.eval_gen import EvalGenerator
 from nvflare.app_common.ccwf.server_ctl import ServerSideController
 from nvflare.app_common.ccwf.val_result_manager import EvalResultManager
 from nvflare.fuel.utils.validation_utils import (
@@ -35,49 +35,6 @@ from nvflare.fuel.utils.validation_utils import (
     validate_candidate,
     validate_candidates,
 )
-
-
-def _can_be_included(evals, target, max_num_actions) -> bool:
-    evaluator_actions = 0
-    evaluatee_actions = 0
-    evaluator_t, evaluatee_t = target
-    for p in evals:
-        evaluator_p, evaluatee_p = p
-        if evaluator_t == evaluator_p:
-            # the evaluator is already in the eval - we allow only once for the same evaluator
-            return False
-
-        if evaluator_t == evaluatee_p:
-            evaluator_actions += 1
-
-        if evaluatee_t == evaluator_p:
-            evaluatee_actions += 1
-
-        if evaluatee_t == evaluatee_p and evaluator_p != evaluatee_p:
-            evaluatee_actions += 1
-
-    return evaluatee_actions <= max_num_actions and evaluator_actions <= max_num_actions
-
-
-def _determine_parallel_evals(evals: Set[Tuple[Any, Any]], max_actions=0):
-    """Determine evaluations that can be done in parallel from the total set of evals.
-
-    Args:
-        evals: the total set of evaluations
-        max_actions: max number of actions a client is allowed to do
-
-    Returns: a list of evals that can be performed in parallel
-
-    """
-    result = []
-    for p in evals:
-        if _can_be_included(result, p, max_actions):
-            result.append(p)
-
-    for p in result:
-        evals.remove(p)
-
-    return result
 
 
 class _TaskPropKey:
@@ -308,18 +265,18 @@ class CrossSiteEvalServerController(ServerSideController):
         for evaluator in self.evaluators:
             evals.add((evaluator, model_owner))
 
-        self._do_eval_actions(evals, ModelType.GLOBAL, model_name, abort_signal, fl_ctx)
+        eval_gen = EvalGenerator(self.evaluators, [model_owner], self.max_parallel_actions)
+        self._do_eval_actions(eval_gen, ModelType.GLOBAL, model_name, abort_signal, fl_ctx)
 
-    def _do_eval_actions(self, evals: set, model_type, model_name, abort_signal: Signal, fl_ctx: FLContext):
-        original_evals = evals.copy()
-        self.log_info(fl_ctx, f"Start to evaluate {model_type} {model_name}: {evals}")
-        while len(evals) > 0:
-            task_actions = _determine_parallel_evals(evals, max_actions=self.max_parallel_actions)
-            self._ask_to_eval(task_actions, model_type, model_name, abort_signal, fl_ctx)
+    def _do_eval_actions(self, gen: EvalGenerator, model_type, model_name, abort_signal: Signal, fl_ctx: FLContext):
+        self.log_info(fl_ctx, f"Start to evaluate {model_type} {model_name}: {gen.evaluators} => {gen.evaluatees}")
+        while not gen.is_empty():
+            evals = gen.get_parallel_evals()
+            self._ask_to_eval(evals, model_type, model_name, abort_signal, fl_ctx)
             if abort_signal.triggered:
                 self.log_info(fl_ctx, f"Abort evaluating {model_type} {model_name} - signal received")
                 return
-        self.log_info(fl_ctx, f"Finished evaluating {model_type} {model_name}: {original_evals}")
+        self.log_info(fl_ctx, f"Finished evaluating {model_type} {model_name}: {gen.evaluators} => {gen.evaluatees}")
 
     def _evaluate_local_models(self, abort_signal: Signal, fl_ctx: FLContext):
         train_clients = fl_ctx.get_prop(Constant.PROP_KEY_TRAIN_CLIENTS)
@@ -343,12 +300,8 @@ class CrossSiteEvalServerController(ServerSideController):
             self.log_error(fl_ctx, f"skipped local model evaluation because some clients failed to prep")
             return
 
-        evals = set()
-        for evaluator in self.evaluators:
-            for evaluatee in evaluatees:
-                evals.add((evaluator, evaluatee))
-
-        self._do_eval_actions(evals, ModelType.LOCAL, model_name, abort_signal, fl_ctx)
+        eval_gen = EvalGenerator(self.evaluators, evaluatees, self.max_parallel_actions)
+        self._do_eval_actions(eval_gen, ModelType.LOCAL, model_name, abort_signal, fl_ctx)
 
     def sub_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         if not self.global_names and not self.evaluatees:
