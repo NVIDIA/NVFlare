@@ -205,7 +205,14 @@ class Cell(StreamCell):
         return results
 
     def _fire_and_forget(
-        self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, secure=False, optional=False
+        self,
+        channel: str,
+        topic: str,
+        targets: Union[str, List[str]],
+        message: Message,
+        secure=False,
+        optional=False,
+        return_future=False,
     ) -> Dict[str, str]:
         """
         Send a message over a channel to specified destination cell(s), and do not wait for replies.
@@ -217,6 +224,7 @@ class Cell(StreamCell):
             message: message to be sent
             secure: End-end encryption if True
             optional: whether the message is optional
+            return_future: whether to return a future object in the result
 
         Returns: None
 
@@ -227,10 +235,13 @@ class Cell(StreamCell):
 
         result = {}
         for target in targets:
-            self.send_blob(
+            future = self.send_blob(
                 channel=channel, topic=topic, target=target, message=message, secure=secure, optional=optional
             )
-            result[target] = ""
+            if return_future:
+                result[target] = future
+            else:
+                result[target] = ""
         return result
 
     def _get_result(self, req_id):

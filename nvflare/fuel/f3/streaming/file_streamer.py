@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 
 class FileStream(Stream):
-    def __init__(self, file_name: str, headers: Optional[dict]):
+    def __init__(self, file_name: str, headers: Optional[dict] = None):
         self.file = open(file_name, "rb")
         size = self.file.seek(0, os.SEEK_END)
         self.file.seek(0, os.SEEK_SET)
@@ -43,8 +43,9 @@ class FileStream(Stream):
 
 
 class FileHandler:
-    def __init__(self, file_cb: Callable):
+    def __init__(self, file_cb: Callable, byte_streamer: ByteStreamer):
         self.file_cb = file_cb
+        self.byte_streamer = byte_streamer
         self.size = 0
         self.file_name = None
 
@@ -63,23 +64,27 @@ class FileHandler:
 
     def _write_to_file(self, file_name: str, future: StreamFuture, stream: Stream):
 
-        file = open(file_name, "wb")
+        try:
+            file = open(file_name, "wb")
 
-        chunk_size = ByteStreamer.get_chunk_size()
-        file_size = 0
-        while True:
-            buf = stream.read(chunk_size)
-            if not buf:
-                break
+            chunk_size = self.byte_streamer.get_chunk_size()
+            file_size = 0
+            while True:
+                buf = stream.read(chunk_size)
+                if not buf:
+                    break
 
-            file_size += len(buf)
-            file.write(buf)
+                file_size += len(buf)
+                file.write(buf)
 
-        file.close()
-        if self.size and (self.size != file_size):
-            log.warning(f"Size doesn't match: {self.size} <> {file_size}")
+            file.close()
+            if self.size and (self.size != file_size):
+                log.warning(f"Size doesn't match: {self.size} <> {file_size}")
 
-        future.set_result(file_name)
+            future.set_result(file_name)
+        except Exception as ex:
+            log.error(f"Error writing to file {file_name}: {ex}")
+            future.set_exception(ex)
 
 
 class FileStreamer:
@@ -90,20 +95,20 @@ class FileStreamer:
     def send(
         self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False
     ) -> StreamFuture:
-        file_name = Path(message.payload).name
-        file_stream = FileStream(message.payload, message.headers)
+        file_path = message.payload
+        file_name = Path(file_path).name
+        file_stream = FileStream(file_path)
 
-        message.add_headers(
-            {
-                StreamHeaderKey.SIZE: file_stream.get_size(),
-                StreamHeaderKey.FILE_NAME: file_name,
-            }
-        )
+        headers = {
+            StreamHeaderKey.SIZE: file_stream.get_size(),
+            StreamHeaderKey.FILE_NAME: file_name,
+        }
 
-        return self.byte_streamer.send(
-            channel, topic, target, message.headers, file_stream, STREAM_TYPE_FILE, secure, optional
-        )
+        if message.headers:
+            headers.update(message.headers)
+
+        return self.byte_streamer.send(channel, topic, target, headers, file_stream, STREAM_TYPE_FILE, secure, optional)
 
     def register_file_callback(self, channel, topic, file_cb: Callable, *args, **kwargs):
-        handler = FileHandler(file_cb)
+        handler = FileHandler(file_cb, self.byte_streamer)
         self.byte_receiver.register_callback(channel, topic, handler.handle_file_cb, *args, **kwargs)
