@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import os
 import time
 
@@ -171,7 +170,7 @@ class CrossSiteEvalServerController(ServerSideController):
 
         # Create validation task and broadcast to all participating clients.
         tasks = []
-        for (evaluator, evaluatee) in evals:
+        for evaluator, evaluatee in evals:
             task_data = Shareable()
             task_data[AppConstants.CURRENT_ROUND] = self.current_round
             task_data[Constant.MODEL_OWNER] = evaluatee  # client that holds the model
