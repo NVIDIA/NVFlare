@@ -107,3 +107,8 @@ We use CLI to submit the job
 ```bash
 nvflare job submit -j jobs/fedavg_config
 ```
+
+once you finish, you can do 
+
+nvflare poc stop
+nvflare poc clean
