@@ -109,7 +109,7 @@ class DeviceSimulator:
                 elif task.status == "DONE":
                     task["task_done"] = True
                     return task
-                elif task.status == "NO_TASK" or "RETRY":
+                elif task.status in {"NO_TASK", "RETRY"}:
                     wait = task.retry_wait if task.retry_wait else 5
                     log.info(f"Device:{self.device_id} Retrying getting task in {wait} seconds")
                     time.sleep(wait)
