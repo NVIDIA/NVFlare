@@ -103,7 +103,9 @@ class PTCifar10TaskProcessor(DeviceTaskProcessor):
                 running_loss += loss.item()
                 # record loss every 250 mini-batches (1000 samples)
                 if i % 250 == 249:
-                    self.tb_writer.add_scalar("loss", running_loss / 250, (global_round * 4 + epoch) * len(train_loader) + i)
+                    self.tb_writer.add_scalar(
+                        "loss", running_loss / 250, (global_round * 4 + epoch) * len(train_loader) + i
+                    )
                     running_loss = 0.0
 
         # Calculate the model param diff
