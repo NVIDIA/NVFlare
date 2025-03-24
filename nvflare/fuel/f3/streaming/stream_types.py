@@ -264,7 +264,7 @@ class StreamFuture:
     def _invoke_callbacks(self):
         for callback, args, kwargs in self.done_callbacks:
             try:
-                callback(self, args, kwargs)
+                callback(*args, **kwargs)
             except Exception as ex:
                 log.error(f"Exception calling callback for {callback}: {ex}")
 
