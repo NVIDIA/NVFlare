@@ -122,6 +122,8 @@ zip -r ../application.zip *
 
 The application.zip file will be created in the `/tmp/nvflare/` directory.
 
+This can also be done with ```nvflare pre-install prepare``` command  
+
 ## Usage
 
 ### Command Line Interface
@@ -218,34 +220,67 @@ The installer will fail if:
 - The application zip file will be cleaned up after installation
 - Installation paths must be writable by the current user
 
-## Using Pre-installed Code
- 
+## Using Pre-installed Code when submit job
 
-### In Production
+Here is the configuration change, in development, if there is "custom" directory,
+i.e. the python training code is not **pre-installed**, the config_fed_client.json
 
-#### Using Environment Variables
-The environment variable works for both JSON configs and Python code:
-
-```bash
-# For production
-export APP_INSTALL_PREFIX="/opt/nvflare/jobs/fedavg/"
-
-# For development
-export APP_INSTALL_PREFIX=""
-```
-
-
-#### In JSON Config
 ```json
 {
-    "task_script": "{APP_INSTALL_PREFIX}src/client.py"
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "*"
+            ],
+            "executor": {
+                "path": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor",
+                "args": {
+                    "task_script_path": "src/client.py",
+                    "task_script_args": "--learning_rate 0.01 --batch_size 12",
+                    "params_exchange_format": "numpy"
+                }
+            }
+        }
+    ],
+    "components": [],
+    "task_data_filters": [],
+    "task_result_filters": []
 }
+
+```
+Now the **pre-installed** training code, the config_fed_client.json will need to be changed
+
+```json
+
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "*"
+            ],
+            "executor": {
+                "path": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor",
+                "args": {
+                    "task_script_path": "/tmp/opt/nvflare/site-1/fedavg/src/client.py",
+                    "task_script_args": "--learning_rate 0.01 --batch_size 12",
+                    "params_exchange_format": "numpy"
+                }
+            }
+        }
+    ],
+    "components": [],
+    "task_data_filters": [],
+    "task_result_filters": []
+}
+
+```
+Notice that 
+```json
+"task_script_path": "/tmp/opt/nvflare/site-1/fedavg/src/client.py",
 ```
 
-#### In Python Code
-```python
-import os
+**"src/client.py"** --> **"/tmp/opt/nvflare/site-1/fedavg/src/client.py"**
 
-install_prefix = os.getenv("APP_INSTALL_PREFIX", "")
-task_script_path = f"{install_prefix}src/client.py"
-```
+**<install-prefix>/fedavg/** is the prefix 
