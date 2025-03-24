@@ -242,7 +242,7 @@ class CrossSiteEvalClientController(ClientSideController):
 
     def _prepare_local_model(self, model_name, fl_ctx: FLContext, abort_signal: Signal):
         if not self.submit_model_executor:
-            self.log_error(fl_ctx, f"got request to prepare local model but I don't have local models")
+            self.log_error(fl_ctx, "got request to prepare local model but I don't have local models")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         task_data = Shareable()

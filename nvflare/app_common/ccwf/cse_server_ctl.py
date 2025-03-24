@@ -296,7 +296,7 @@ class CrossSiteEvalServerController(ServerSideController):
 
         model_ready = self._ask_to_prepare_model(ModelType.LOCAL, model_name, evaluatees, abort_signal, fl_ctx)
         if not model_ready:
-            self.log_error(fl_ctx, f"skipped local model evaluation because some clients failed to prep")
+            self.log_error(fl_ctx, "skipped local model evaluation because some clients failed to prep")
             return
 
         eval_gen = EvalGenerator(self.evaluators, evaluatees, self.max_parallel_actions)
