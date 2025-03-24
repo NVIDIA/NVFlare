@@ -132,7 +132,6 @@ def def_pre_install_parser(sub_cmd):
         # using try catch to avoid hard dependency on nvflare.tool.code_pre_installer
         from nvflare.tool.code_pre_installer.pre_install_cmd import def_pre_install_parser
 
-
         pre_install_parser = def_pre_install_parser(cmd, sub_cmd)
         return {cmd: pre_install_parser}
     except Exception as e:
@@ -169,6 +168,7 @@ def parse_args(prog_name: str):
 
 def handle_pre_install_cmd(args):
     from nvflare.tool.code_pre_installer.pre_install_cmd import handle_pre_install_cmd as handle_cmd
+
     handle_cmd(args)
 
 

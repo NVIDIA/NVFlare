@@ -14,22 +14,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.tool.code_pre_installer.prepare import define_prepare_parser, prepare as prepare_run
-from nvflare.tool.code_pre_installer.install import define_pre_install_parser, install as install_run
+from nvflare.tool.code_pre_installer.install import define_pre_install_parser
+from nvflare.tool.code_pre_installer.install import install as install_run
+from nvflare.tool.code_pre_installer.prepare import define_prepare_parser
+from nvflare.tool.code_pre_installer.prepare import prepare as prepare_run
 
 
 def def_pre_install_parser(cmd, sub_cmd):
     parser = sub_cmd.add_parser(cmd)
-    
+
     # Add subcommands
     pre_install_parser = parser.add_subparsers(title=cmd, dest="pre_install_sub_cmd", help="pre-install subcommand")
-    
+
     # Add prepare subcommand
     define_prepare_parser("prepare", pre_install_parser)
-    
-    # Add install subcommand  
+
+    # Add install subcommand
     define_pre_install_parser("install", pre_install_parser)
-    
+
     return {cmd: parser}
 
 
@@ -40,4 +42,4 @@ def handle_pre_install_cmd(args):
     elif args.pre_install_sub_cmd == "install":
         install_run(args)
     else:
-        raise RuntimeError("Unknown pre-install subcommand") 
+        raise RuntimeError("Unknown pre-install subcommand")

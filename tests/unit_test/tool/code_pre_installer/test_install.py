@@ -33,12 +33,13 @@ from nvflare.tool.code_pre_installer.constants import (
 )
 from nvflare.tool.code_pre_installer.install import (
     _find_app_dirs,
+    _process_meta_json,
     define_pre_install_parser,
     install_app_code,
     install_requirements,
-    _process_meta_json,
 )
 from nvflare.tool.code_pre_installer.prepare import prepare_app_code
+from nvflare.utils.zip_utils import print_zip_tree
 
 
 @pytest.fixture
@@ -68,11 +69,7 @@ def create_test_code(tmp_path):
     application_share.mkdir()
 
     # Create meta.json with proper deploy_map
-    meta = {
-        "deploy_map": {
-            "app_site-1": ["site-1"]  # Add deploy_map
-        }
-    }
+    meta = {"deploy_map": {"app_site-1": ["site-1"]}}  # Add deploy_map
     with open(app_dir / "meta.json", "w") as f:
         f.write(json.dumps(meta))
 
@@ -134,7 +131,7 @@ def test_cleanup_nonexistent_zip(tmp_path):
             tmp_path / "install",
             "site-1",
             str(tmp_path / "shared"),
-            True  # Add delete parameter
+            True,  # Add delete parameter
         )
 
 
@@ -146,11 +143,7 @@ def test_invalid_structure(tmp_path):
 
     with pytest.raises(ValueError):
         install_app_code(
-            zip_path,
-            tmp_path / "install",
-            "site-1",
-            str(tmp_path / "shared"),
-            False  # Add delete parameter
+            zip_path, tmp_path / "install", "site-1", str(tmp_path / "shared"), False  # Add delete parameter
         )
 
 
@@ -268,13 +261,7 @@ def test_install_requirements_failure(mock_run, temp_dir):
 def test_install_app_code_missing_zip(tmp_path, mock_custom_dir):
     """Test installation with missing zip file."""
     with pytest.raises(FileNotFoundError):
-        install_app_code(
-            tmp_path / "nonexistent.zip",
-            tmp_path / "install",
-            "site-1",
-            mock_custom_dir,
-            False
-        )
+        install_app_code(tmp_path / "nonexistent.zip", tmp_path / "install", "site-1", mock_custom_dir, False)
 
 
 class TestInstall:
@@ -283,9 +270,17 @@ class TestInstall:
         with tempfile.TemporaryDirectory() as temp_dir:
             yield Path(temp_dir)
 
-    def create_meta_json(self, path: Path, deploy_map: dict):
+    def create_meta_json(self, path: Path, meta_json: dict = None):
         with open(path / "meta.json", "w") as f:
-            json.dump({"deploy_map": deploy_map}, f)
+            # Create meta.json in the correct location
+            meta_content = {
+                "name": "fedavg",
+                "min_clients": 1,
+                "deploy_map": {"app_server": ["server"], "app_site-1": ["site-1"]},
+            }
+            if not meta_json:
+                meta_json = meta_content
+            json.dump(meta_json, f)
 
     def test_process_meta_json(self, temp_dir):
         # Setup
@@ -293,7 +288,7 @@ class TestInstall:
         base_dir.mkdir()
         app_dir = base_dir / "app_site-1"
         app_dir.mkdir()
-        self.create_meta_json(base_dir, {"app_site-1": ["site-1"]})
+        self.create_meta_json(base_dir)
 
         # Test
         result = _process_meta_json(base_dir / "meta.json", "site-1", base_dir)
@@ -304,52 +299,84 @@ class TestInstall:
         """Test meta.json directly under application directory."""
         # Setup
         app_dir = temp_dir / "application"
-        app_dir.mkdir()
-        site_dir = app_dir / "app_site-1"
-        site_dir.mkdir()
-        self.create_meta_json(app_dir, {"app_site-1": ["site-1"]})
+        app_dir.mkdir(exist_ok=True)
+        job_dir = app_dir / "fedavg"
+        job_dir.mkdir(exist_ok=True)
+        app_site_dir = job_dir / "app_site-1"
+        app_site_dir.mkdir(exist_ok=True)
+        self.create_meta_json(job_dir)
 
         # Test
         result = _find_app_dirs(app_dir, "site-1")
-        assert "app" in result
-        assert result["app"] == site_dir
+        assert "fedavg" in result
+        assert result["fedavg"] == app_site_dir
 
     def test_find_app_dirs_case2(self, temp_dir):
         """Test meta.json in subdirectories."""
         # Setup
         app_dir = temp_dir / "application"
-        app_dir.mkdir()
+        app_dir.mkdir(exist_ok=True)
         job_dir = app_dir / "fedavg"
-        job_dir.mkdir()
+        job_dir.mkdir(exist_ok=True)
         site_dir = job_dir / "app_site-1"
-        site_dir.mkdir()
-        self.create_meta_json(job_dir, {"app_site-1": ["site-1"]})
+        site_dir.mkdir(exist_ok=True)
+        self.create_meta_json(job_dir)
 
         # Test
         result = _find_app_dirs(app_dir, "site-1")
         assert "fedavg" in result
         assert result["fedavg"] == site_dir
 
+    def test_find_app_dirs_case3(self, temp_dir):
+        """Test meta.json in subdirectories."""
+        # Setup
+        app_dir = temp_dir / "application"
+        app_dir.mkdir(exist_ok=True)
+        job_dir1 = app_dir / "fedavg"
+        job_dir1.mkdir(exist_ok=True)
+        site_dir1 = job_dir1 / "app_site-1"
+        site_dir1.mkdir(exist_ok=True)
+        self.create_meta_json(job_dir1)
+
+        job_dir2 = app_dir / "fedavg2"
+        job_dir2.mkdir(exist_ok=True)
+        site_dir2 = job_dir2 / "app_site-1"
+        site_dir2.mkdir(exist_ok=True)
+        self.create_meta_json(job_dir2)
+
+        # Test
+        result = _find_app_dirs(app_dir, "site-1")
+        assert "fedavg" in result
+        assert result["fedavg"] == site_dir1
+
+        result = _find_app_dirs(app_dir, "site-1")
+        assert "fedavg2" in result
+        assert result["fedavg2"] == site_dir2
+
     def test_find_app_dirs_all_sites(self, temp_dir):
         """Test @ALL in deployment map."""
         # Setup
         app_dir = temp_dir / "application"
         app_dir.mkdir()
-        site_dir = app_dir / "app_default"
+        job_dir = app_dir / "fedavg"
+        job_dir.mkdir()
+        site_dir = job_dir / "app"
         site_dir.mkdir()
-        self.create_meta_json(app_dir, {"app_default": ["@ALL"]})
+        # Create meta.json in the correct location
+        meta_content = {"name": "fedavg", "min_clients": 1, "deploy_map": {"app": ["@ALL"]}}
+        self.create_meta_json(job_dir, meta_content)
 
         # Test
         result = _find_app_dirs(app_dir, "any-site")
-        assert "app" in result
-        assert result["app"] == site_dir
+        assert "fedavg" in result
+        assert result["fedavg"] == site_dir
 
     def test_find_app_dirs_no_match(self, temp_dir):
         """Test no matching directories found."""
         # Setup
         app_dir = temp_dir / "application"
         app_dir.mkdir()
-        self.create_meta_json(app_dir, {"app_site-1": ["other-site"]})
+        self.create_meta_json(app_dir)
 
         # Test
         with pytest.raises(ValueError, match="No application directories found for site"):
@@ -360,142 +387,96 @@ class TestInstall:
         # Setup source structure
         app_dir = temp_dir / "src/application"
         app_dir.mkdir(parents=True)
-        site_dir = app_dir / "app_site-1"
+        job_dir = app_dir / "fedavg"
+        job_dir.mkdir()
+        site_dir = job_dir / "app_site-1"
         site_dir.mkdir()
         custom_dir = site_dir / "custom"
         custom_dir.mkdir()
         (custom_dir / "test.py").write_text("test")
-        self.create_meta_json(app_dir, {"app_site-1": ["site-1"]})
+        self.create_meta_json(job_dir)
 
         # Create zip file
-        zip_path = temp_dir / "app.zip"
-        with ZipFile(zip_path, "w") as zf:
-            for item in app_dir.rglob("*"):
-                if item.is_file():
-                    zf.write(item, item.relative_to(temp_dir / "src"))
-
+        zip_path = temp_dir / "application.zip"
+        prepare_app_code(job_dir, temp_dir)
+        print_zip_tree(zip_path)
         # Setup install paths
         install_prefix = temp_dir / "install"
         shared_dir = temp_dir / "shared"
 
         # Test installation
-        install_app_code(
-            zip_path,
-            install_prefix,
-            "site-1",
-            str(shared_dir),
-            False  # Add delete parameter
-        )
+        install_app_code(zip_path, install_prefix, "site-1", str(shared_dir), False)  # Add delete parameter
 
         # Verify installation
-        assert (install_prefix / "app/test.py").exists()
-        assert (install_prefix / "app/test.py").read_text() == "test"
+        assert (install_prefix / "fedavg/test.py").exists()
+        assert (install_prefix / "fedavg/test.py").read_text() == "test"
 
     def test_install_app_code_with_requirements(self, temp_dir):
         """Test installation with requirements.txt."""
         # Setup job directory
-        job_dir = temp_dir / "jobs/fedavg"
-        job_dir.mkdir(parents=True)
-        
+        jobs_dir = temp_dir / "jobs"
+        jobs_dir.mkdir(parents=True)
+        job_dir = jobs_dir / "fedavg"
+        job_dir.mkdir()
         # Create app structure
         app_dir = job_dir / "app_site-1"
         app_dir.mkdir()
         custom_dir = app_dir / "custom"
         custom_dir.mkdir()
         (custom_dir / "test.py").write_text("test")
-        
-        # Create meta.json
-        meta_content = {
-            "deploy_map": {
-                "app_site-1": ["site-1"]
-            }
-        }
-        self.create_meta_json(job_dir, meta_content)
-        
+
+        self.create_meta_json(job_dir)
+
         # Create requirements.txt
-        req_file = temp_dir / "requirements.txt"
+        req_file = jobs_dir / "requirements.txt"
         req_file.write_text("pytest")
 
         # Use prepare_app_code to create package
         output_dir = temp_dir / "prepare"
-        prepare_app_code(
-            job_dir,
-            output_dir,
-            None,  # No shared lib
-            req_file
-        )
+        prepare_app_code(job_dir, output_dir, None, req_file)  # No shared lib
         # Print zip contents
         print("Printing zip contents at ", output_dir / "application.zip")
-        self.print_zip_contents(output_dir / "application.zip")
+        print_zip_tree(output_dir / "application.zip")
 
         # Test installation
         install_app_code(
-            output_dir / "application.zip",
-            temp_dir / "install",
-            "site-1",
-            str(temp_dir / "shared"),
-            False
+            output_dir / "application.zip", temp_dir / "install", "site-1", str(temp_dir / "shared"), False
         )
-        assert (temp_dir / "install/app/custom/test.py").exists()
-  
+        assert (temp_dir / "install/fedavg/test.py").exists()
 
     def test_install_app_code_success(self, temp_dir):
         """Test successful installation."""
         # Setup job directory
-        job_dir = temp_dir / "jobs/fedavg"
-        job_dir.mkdir(parents=True)
-        
+        jobs_dir = temp_dir / "jobs"
+        jobs_dir.mkdir(parents=True)
+        job_dir = jobs_dir / "fedavg"
+        job_dir.mkdir()
         # Create app structure
         app_dir = job_dir / "app_site-1"
         app_dir.mkdir()
         custom_dir = app_dir / "custom"
         custom_dir.mkdir()
         (custom_dir / "test.py").write_text("test")
-        
-        # Create meta.json in the correct location
-        meta_content = {
-            "name": "fedavg",
-            "min_clients": 1,
-            "deploy_map": {
-                "app_server": [
-                    "server"
-                ],
-                "app_site-1": [
-                    "site-1"
-                ]
-            
-            }
-        }
-        # Create meta.json in fedavg directory, not in app_site-1
-        self.create_meta_json(job_dir, meta_content)
+
+        self.create_meta_json(job_dir)
 
         # Use prepare_app_code to create package
         output_dir = temp_dir / "prepare"
         output_dir.mkdir(parents=True, exist_ok=True)
-        
-        prepare_app_code(
-            job_dir,
-            output_dir,
-            None  # No shared lib
-        )
+
+        prepare_app_code(job_dir, output_dir, None)  # No shared lib
 
         # Verify zip structure
         with ZipFile(output_dir / "application.zip") as zf:
             files = zf.namelist()
-            assert "application/meta.json" in files
-            assert "application/app_site-1/custom/test.py" in files
+            assert "application/fedavg/meta.json" in files
+            assert "application/fedavg/app_site-1/custom/test.py" in files
 
         # Test installation
         install_prefix = temp_dir / "install"
-        install_app_code(
-            output_dir / "application.zip",
-            install_prefix,
-            "site-1",
-            str(temp_dir / "shared"),
-            False
-        )
-        
-        assert (install_prefix / "app/custom/test.py").exists()
+        install_app_code(output_dir / "application.zip", install_prefix, "site-1", str(temp_dir / "shared"), False)
+
+        assert (install_prefix / "fedavg/test.py").exists()
 
     def test_install_app_code_invalid_structure(self, temp_dir):
         """Test installation with invalid structure."""
@@ -520,11 +501,7 @@ class TestInstall:
         # Create application directory with meta.json for different site
         app_dir = temp_dir / "application"
         app_dir.mkdir(parents=True)
-        meta_content = {
-            "deploy_map": {
-                "app_site-2": ["site-2"]  # Different site
-            }
-        }
+        meta_content = {"deploy_map": {"app_site-2": ["site-2"]}}  # Different site
         self.create_meta_json(app_dir, meta_content)
 
         # Create zip
