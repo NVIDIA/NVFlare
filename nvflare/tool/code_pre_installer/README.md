@@ -20,8 +20,8 @@ Expected application code zip structure:
 
 ```
 application.zip
-├── application/<app_name>/
-│               ├── meta.json       # Application metadata
+├── application/<job_name>/
+│               ├── meta.json       # Job metadata
 │               ├── app_<site>/     # Site custom code
 │                  └── custom/      # Site custom code
 ├── application-share/              # Shared resources
@@ -31,7 +31,7 @@ application.zip
 or
 ```
 application.zip
-├── application/<app_name>/
+├── application/<job_name>/
 │               ├── meta.json       # Application metadata
 │               ├── app/            # Site custom code
 │                  └── custom/      # Site custom code
@@ -176,7 +176,7 @@ The application zip file should have the following structure:
 
 ```
 application/
-├── app_name/
+├── job_name/
 │   ├── meta.json
 │   ├── app_site-1/
 │   │   └── custom/
@@ -188,7 +188,7 @@ application/
     └── shared_code.py
 ```
 
-- `app_name/`: Application directory containing site-specific code
+- `job_name/`: Application directory containing site-specific code
 - `meta.json`: Application metadata file
 - `app_site-*/custom/`: Site-specific custom code directories
 - `application-share/`: Shared code directory

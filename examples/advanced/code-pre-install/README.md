@@ -24,6 +24,7 @@ The pre-installer tool provides two commands:
 ### 1. Prepare Application Package
 
 First, we'll package the fedavg example job:
+[FedAvg](./jobs/fedavg)
 
 # Create application package from fedavg job
 
@@ -62,10 +63,11 @@ export PYTHONPATH=/tmp/opt/nvflare/site-2/fedavg/:$PYTHONPATH
 
 Now, we have pre-installed the application code on different locations, we can test the pre-installed code using NVFLARE's simulator:
 
-First, we need to delete the custom code directories from fedavg job folder. We did this already and you can find the fedavg_config now has no custom code directories.
+First, we need to delete the custom code directories from the fedavg job folder.
 
-Next, we need to update the job configuration to use the pre-installed code prefix. 
-We only need to update the client job configuration to use the pre-installed code prefix.
+Next, we need to update the job configuration to use the pre-installed code prefix. This step involves updating the client job configuration to point to the pre-installed code prefix.
+
+These changes have already been applied in [fedavg_config](./jobs/fedavg_config).
 
 For site-1: 
 the code install prefix: "/tmp/opt/nvflare/site-1/fedavg/"
@@ -89,9 +91,6 @@ Test the pre-installed code using NVFLARE's simulator:
 nvflare simulator jobs/fedavg_config -w /tmp/workspace -n 2
 ```
 
-Try this out, this works. 
-
-
 ### 3. Test in POC Mode
 
 
@@ -110,5 +109,8 @@ nvflare job submit -j jobs/fedavg_config
 
 once you finish, you can do 
 
+```bash
+
 nvflare poc stop
 nvflare poc clean
+```
