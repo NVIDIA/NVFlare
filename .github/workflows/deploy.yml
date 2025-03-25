@@ -6,6 +6,7 @@ on:
     branches:
       - "main"
       - "2.5"
+      - "2.6"
     paths:
       - 'web/**'
   workflow_dispatch:
