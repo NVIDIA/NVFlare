@@ -4,13 +4,30 @@
     "workflows": [
         {
             "id": "edge_hello_controller",
-            "path": "nvflare.edge.controllers.edge_hello_controller.SimpleEdgeController",
+            "path": "nvflare.edge.controllers.sage.ScatterAndGatherForEdge",
             "args": {
                 "num_rounds": "{num_rounds}",
-                "initial_weights": [
-                    1.0, 2.0, 3.0, 4.0
-                ]
+                "aggregator_id": "aggregator",
+                "assessor_id": "assessor",
+                "shareable_generator_id": ""
             }
         }
+    ],
+    "components": [
+        {
+            "id": "aggregator",
+            "path": "nvflare.edge.aggregators.edge_result_accumulator.EdgeResultAccumulator",
+            "args": {}
+        },
+        {
+            "id": "assessor",
+            "path": "nvflare.edge.assessors.count.CountAssessor",
+            "args": {
+                "min_count": 10,
+                "max_count": 100,
+                "timeout": 30.0
+            }
+        }
+
     ]
 }

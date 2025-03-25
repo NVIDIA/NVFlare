@@ -432,7 +432,15 @@ class JobExecutor(ClientExecutor):
 
         self.logger.info("Client worker process is terminated.")
 
-    def send_to_job(self, job_id, channel: str, topic: str, msg: CellMessage, timeout: float) -> CellMessage:
+    def send_to_job(
+        self,
+        job_id,
+        channel: str,
+        topic: str,
+        msg: CellMessage,
+        timeout: float,
+        optional=False,
+    ) -> CellMessage:
         """Send a message to CJ
 
         Args:
@@ -441,6 +449,7 @@ class JobExecutor(ClientExecutor):
             topic: message topic
             msg: the message to be sent
             timeout: how long to wait for reply
+            optional: whether the message is optional
 
         Returns: reply from CJ
 
@@ -451,8 +460,8 @@ class JobExecutor(ClientExecutor):
             channel=channel,
             topic=topic,
             request=msg,
-            optional=False,
             timeout=timeout,
+            optional=optional,
         )
 
     def _terminate_job(self, job_handle, job_id):

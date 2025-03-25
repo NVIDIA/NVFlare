@@ -194,6 +194,7 @@ class FLContextKey(object):
     JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
     EVENT_PROCESSED = "__event_processed__"
     CELL_MESSAGE = "__cell_message__"
+    CLIENT_HIERARCHY = "__client_hierarchy__"
 
 
 class ProcessType:
@@ -230,7 +231,6 @@ class AdminCommandNames(object):
     DELETE_WORKSPACE = "delete_workspace"
     CHECK_RESOURCES = "check_resources"
     DEPLOY_APP = "deploy_app"
-    START_APP = "start_app"
     CHECK_STATUS = "check_status"
     ADMIN_CHECK_STATUS = "admin_check_status"
     ABORT = "abort"
