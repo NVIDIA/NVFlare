@@ -28,22 +28,6 @@ from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineI
 from nvflare.private.fed.utils.fed_utils import get_scope_info
 
 
-class StartAppProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
-        return [TrainingTopic.START]
-
-    def process(self, req: Message, app_ctx) -> Message:
-        engine = app_ctx
-        if not isinstance(engine, ClientEngineInternalSpec):
-            raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
-
-        job_id = req.get_header(RequestHeader.JOB_ID)
-        result = engine.start_app(job_id)
-        if not result:
-            result = "OK"
-        return ok_reply(topic=f"reply_{req.topic}", body=result)
-
-
 class AbortAppProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.ABORT]

@@ -27,13 +27,11 @@ from .training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor
     RestartClientProcessor,
     ScopeInfoProcessor,
     ShutdownClientProcessor,
-    StartAppProcessor,
 )
 
 
 class ClientRequestProcessors:
     request_processors = [
-        StartAppProcessor(),
         ClientStatusProcessor(),
         ScopeInfoProcessor(),
         AbortAppProcessor(),
