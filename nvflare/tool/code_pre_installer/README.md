@@ -188,14 +188,14 @@ application/
     └── shared_code.py
 ```
 
-- `job_name/`: Application directory containing site-specific code
-- `meta.json`: Application metadata file
+- `job_name/`: job directory containing site-specific code
+- `meta.json`: job metadata file
 - `app_site-*/custom/`: Site-specific custom code directories
 - `application-share/`: Shared code directory
 
 ## Installation Paths
 
-- Application code: `<install-prefix>/<app-name>/`
+- Application code: `<install-prefix>/<job-name>/`
 - Shared resources: `/local/custom/`
 
 ## Error Handling
