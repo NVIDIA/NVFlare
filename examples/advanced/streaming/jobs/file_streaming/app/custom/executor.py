@@ -26,7 +26,7 @@ class DummyExecutor(Executor):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.ABORT_TASK:
-            self.log_info(fl_ctx, "Trainer is aborted")
+            self.log_info(fl_ctx, "Task is aborted")
             self.aborted = True
 
     def execute(

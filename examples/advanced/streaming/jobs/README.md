@@ -74,6 +74,8 @@ the existing file will be overwritten.
 
 The `file_name` must point to an existing file to be sent.
 
+The workflow doesn't require an executor but NVFlare job must have an executor so a dummy one is used.
+
 ## Running the Job
 
 ### Simulator 
