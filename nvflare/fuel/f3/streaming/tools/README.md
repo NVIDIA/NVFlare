@@ -19,12 +19,13 @@ Starting sender on the same or different machine:
 
      python sender.py grpc://192.168.1.2:1234 -s 100000000
 
-## Send a file
+## Sending a file
 
-Starting file receiver first:
+The old file_sender.py/file_receiver.py files are removed because they use 
+deprecated API.
 
-     python file_receeiver.py grpc://0:1234 /tmp
+Please use this NVFlare example job to test file streaming. This example tests full stack APIs of NVFlare
+and it's a more realistic test
 
-Send the file using file sender:
+     NVFlare/examples/advanced/streaming/jobs/file_streaming
 
-     python file_sender.py grpc://192.168.1.2:1234 /home/user/big_file

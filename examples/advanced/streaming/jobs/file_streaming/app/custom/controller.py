@@ -23,15 +23,18 @@ from nvflare.apis.signal import Signal
 class FileTransferController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
-        self.log_info(fl_ctx, f"Entering control loop of {self.__class__.__name__}")
-        engine = fl_ctx.get_engine()
+        try:
+            self.log_info(fl_ctx, f"Entering control loop of {self.__class__.__name__}")
+            engine = fl_ctx.get_engine()
 
-        # Wait till receiver is done. Otherwise, the job ends.
-        receiver = engine.get_component("receiver")
-        while not receiver.is_done():
-            time.sleep(0.2)
+            # Wait till receiver is done. Otherwise, the job ends.
+            receiver = engine.get_component("receiver")
+            while not receiver.is_done():
+                time.sleep(0.2)
 
-        self.log_info(fl_ctx, "Control flow ends")
+            self.log_info(fl_ctx, "Control flow ends")
+        except Exception as ex:
+            self.log_error(fl_ctx, f"Control flow error: {ex}")
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_info(fl_ctx, "Start controller")

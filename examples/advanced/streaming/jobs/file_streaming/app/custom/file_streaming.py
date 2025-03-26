@@ -23,6 +23,7 @@ from nvflare.app_common.streamers.file_streamer import FileStreamer
 CHANNEL = "_test_channel"
 TOPIC = "_test_topic"
 TIMESTAMP = "_timestamp"
+FILE_NAME = "_filename"
 
 
 class FileSender(FLComponent):
@@ -43,10 +44,14 @@ class FileSender(FLComponent):
 
     def _sending_file(self, fl_ctx):
         try:
-            self.log_info(fl_ctx, "Sending file {self.file_name")
+            self.log_info(fl_ctx, f"Sending file {self.file_name}")
+            context = {
+                TIMESTAMP: time.time(),
+                FILE_NAME: os.path.basename(self.file_name),
+            }
             rc, result = FileStreamer.stream_file(
                 targets=["server"],
-                stream_ctx={TIMESTAMP: time.time()},
+                stream_ctx=context,
                 channel=CHANNEL,
                 topic=TOPIC,
                 file_name=self.file_name,
@@ -88,13 +93,19 @@ class FileReceiver(FLComponent):
         self.log_info(fl_ctx, "File streaming is done")
         self.done = True
 
-        file_name = FileStreamer.get_file_location(stream_ctx)
+        file_location = FileStreamer.get_file_location(stream_ctx)
         file_size = FileStreamer.get_file_size(stream_ctx)
-        size = os.path.getsize(file_name)
-
+        size = os.path.getsize(file_location)
         if size != file_size:
-            self.log_error(fl_ctx, f"File {file_name} sizes mismatch {size} <> {file_size} bytes")
+            self.log_error(fl_ctx, f"File {file_location} sizes mismatch {size} <> {file_size} bytes")
             return
+        basename = stream_ctx.get(FILE_NAME, "No Name")
+        file_name = os.path.join(self.output_folder, basename)
+        if os.path.exists(file_name):
+            self.log_info(fl_ctx, f"Existing file {file_name} is removed")
+            os.remove(file_name)
+
+        os.rename(file_location, file_name)
 
         start_time = stream_ctx.get(TIMESTAMP)
         duration = time.time() - start_time
