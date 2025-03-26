@@ -193,9 +193,11 @@ LoggerNameFilter
 ----------------
 :class:`LoggerNameFilter<nvflare.fuel.utils.log_utils.LoggerNameFilter>` filters loggers based on a list of logger_names.
 Filters utilize the logger hierarchy, so any descendants of the specified names will also be allowed through the filter.
+By default, LoggerNameFilter is configured with allow_all_error_logs to allow all logs with level greater than INFO though even if they are not from a logger in logger_names.
 
 - **logger_names**: list of logger names to allow through filter
 - **exclude_logger_names**: list of logger names to disallow through filter (takes precedence over allowing from logger_names)
+- **allow_all_error_logs**: allow all log records with levelno > logging.INFO through filter, even if they are not from a logger in logger_names. Defaults to True.
 
 We leverage this in our FLFilter, which filters loggers related to fl training or custom code.
 
