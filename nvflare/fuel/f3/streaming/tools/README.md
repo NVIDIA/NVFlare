@@ -24,8 +24,8 @@ Starting sender on the same or different machine:
 The old file_sender.py/file_receiver.py files are removed because they use 
 deprecated API.
 
-Please use this NVFlare example job to test file streaming. This example tests full stack APIs of NVFlare
+Please use this NVFlare example job to test file streaming. This example tests full stack APIs of NVFlare,
 and it's a more realistic test
 
-     NVFlare/examples/advanced/streaming/jobs/file_streaming
+     NVFlare/tests/tools/file_streaming
 
