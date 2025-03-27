@@ -19,7 +19,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 
 
-class DummyExecutor(Executor):
+class MockExecutor(Executor):
     def __init__(self):
         super().__init__()
         self.aborted = False

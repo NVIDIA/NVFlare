@@ -13,7 +13,7 @@ There are 2 sets of tools:
 
 Starting receiver side first:
 
-     python receeiver.py grpc://0:1234
+     python receiver.py grpc://0:1234
 
 Starting sender on the same or different machine:
 

@@ -1,6 +1,12 @@
 # Streaming API Example Jobs
 
-The `file_streaming` job can be used to benchmark/test file transferring performance of NVFlare ObjectStreamer API.
+The `file_streaming` job demonstrates how to use FileStreamer to send large files without memory limitation.
+
+It can also be used to benchmark/test file transferring performance of NVFlare FileStreamer API.
+
+This example is similar to `simpe_file_streaming_job.py`, except this is just a regular NVFlare job 
+without using Flare API. Please refer to the [README](../README.md) for more information on the FileStreamer API.
+
 
 ## Configuration Files
 
@@ -74,7 +80,7 @@ the existing file will be overwritten.
 
 The `file_name` must point to an existing file to be sent.
 
-The workflow doesn't require an executor but NVFlare job must have an executor so a dummy one is used.
+The workflow doesn't require an executor but NVFlare job must have an executor configured so a mock one is used.
 
 ## Running the Job
 

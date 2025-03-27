@@ -6,7 +6,7 @@
         "train"
       ],
       "executor": {
-        "path": "executor.DummyExecutor",
+        "path": "executor.MockExecutor",
         "args": {}
       }
     }
