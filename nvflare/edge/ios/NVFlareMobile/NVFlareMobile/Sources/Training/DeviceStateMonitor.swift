@@ -68,7 +68,7 @@ class DeviceStateMonitor: ObservableObject {
         
         let isIdle = !ProcessInfo.processInfo.isLowPowerModeEnabled
         
-        let batteryLevel = UIDevice.current.batteryLevel >= 0.5 // 50% or more
+        let batteryLevel = UIDevice.current.batteryLevel >= 0.3 // 50% or more
         
         isReadyForTraining = isCharging && isNotHot && isIdle && 
                             batteryLevel && isWiFiConnected

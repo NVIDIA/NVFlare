@@ -1,5 +1,5 @@
 {
-  "endpoint": "http://localhost:9003",
+  "endpoint": "http://localhost:5000",
   "num_devices": 5,
   "device_id_prefix": "sim-device-",
   "processor": {

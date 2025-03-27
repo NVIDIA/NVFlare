@@ -107,14 +107,13 @@ class DeviceSimulator:
         while True:
             try:
                 task = self.feg_api.get_task(job)
+                log.info(f"get task with status {task.status=}")
                 if task.status == "OK":
                     return task
                 elif task.status == "DONE":
                     task["task_done"] = True
                     return task
-                elif task.status == "NO_TASK":
-                    return None
-                elif task.status == "RETRY":
+                elif task.status == "RETRY" or task.status == "NO_TASK":
                     wait = task.retry_wait if task.retry_wait else 5
                     log.info(f"Device:{self.device_id} Retrying getting task in {wait} seconds")
                     time.sleep(wait)

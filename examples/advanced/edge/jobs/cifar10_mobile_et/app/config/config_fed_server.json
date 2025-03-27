@@ -1,6 +1,6 @@
 {
     "format_version": 2,
-    "num_rounds": 10,
+    "num_rounds": 5,
     "workflows": [
         {
             "id": "edge_executorch_controller",
@@ -8,6 +8,10 @@
             "args": {
                 "num_rounds": "{num_rounds}",
                 "task_name": "cifar10",
+                "model": {
+                    "path": "model.TrainingNet",
+                    "args": {}
+                },
                 "input_shape": [32, 3, 32, 32],
                 "output_shape": [32]
             }

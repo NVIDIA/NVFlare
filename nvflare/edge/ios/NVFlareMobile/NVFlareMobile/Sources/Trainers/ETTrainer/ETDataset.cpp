@@ -22,11 +22,17 @@ static std::vector<CIFARImage> load_cifar10_batch(std::istream& dataStream) {
     
     // Calculate number of complete images in the file
     size_t numImages = fileSize / cifar10::kBytesPerImage;
+    if (fileSize % cifar10::kBytesPerImage != 0) {
+        // Log a warning if the file size is not a multiple of the expected size
+        fprintf(stderr, "Warning: File size is not a multiple of %d bytes, which could lead to incomplete images!", cifar10::kBytesPerImage);
+    }
     
     if (numImages == 0) {
         return dataset;
     }
     
+    fprintf(stderr, "Getting %ld images", numImages);
+
     dataset.reserve(numImages);
     
     for (size_t i = 0; i < numImages; i++) {
