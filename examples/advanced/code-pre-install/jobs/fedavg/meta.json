@@ -1,0 +1,16 @@
+{
+    "name": "fedavg",
+    "resource_spec": {},
+    "min_clients": 2,
+    "deploy_map": {
+        "app_server": [
+            "server"
+        ],
+        "app_site-1": [
+            "site-1"
+        ],
+        "app_site-2": [
+            "site-2"
+        ]
+    }
+}
