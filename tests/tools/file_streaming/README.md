@@ -1,12 +1,9 @@
 # Streaming API Example Jobs
 
-The `file_streaming` job demonstrates how to use FileStreamer to send large files without memory limitation.
+The `file_streaming` is a NVFlare job that demonstrates how to use FileStreamer to send large 
+files without memory limitation.
 
 It can also be used to benchmark/test file transferring performance of NVFlare FileStreamer API.
-
-This example is similar to `simpe_file_streaming_job.py`, except this is just a regular NVFlare job 
-without using Flare API. Please refer to the [README](../README.md) for more information on the FileStreamer API.
-
 
 ## Configuration Files
 
@@ -89,7 +86,7 @@ The workflow doesn't require an executor but NVFlare job must have an executor c
 To test locally on one machine, the job can run in simulator like this,
 
 ```commandline
-nvflare simulator -n 1 -t 1 -l full examples/advanced/streaming/jobs/file_streaming
+nvflare simulator -n 1 -t 1 -l full tests/tools/file_streaming
 ```
 
 Please add `-l full` to the simulator command. Otherwise, the relevant logs are not printed.
