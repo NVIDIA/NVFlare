@@ -1,0 +1,21 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "*"
+            ],
+            "executor": {
+                "path": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor",
+                "args": {
+                    "task_script_path": "src/client.py",
+                    "task_script_args": "--learning_rate 0.01 --batch_size 12",
+                    "params_exchange_format": "numpy"
+                }
+            }
+        }
+    ],
+    "components": [],
+    "task_data_filters": [],
+    "task_result_filters": []
+}

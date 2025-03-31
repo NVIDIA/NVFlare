@@ -84,7 +84,7 @@ def process_aggr_result_from_child(
     if has_aggr_data is None:
         processor.log_info(fl_ctx, f"request does not have header {EdgeTaskHeaderKey.HAS_AGGR_DATA}")
 
-    processor.log_info(fl_ctx, f"result has aggr data: {has_aggr_data=}")
+    processor.log_debug(fl_ctx, f"result has aggr data: {has_aggr_data=}")
     if not has_aggr_data:
         return False, make_reply(rc, current_task_seq)
 
