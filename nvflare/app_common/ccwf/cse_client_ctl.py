@@ -11,12 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import threading
+import time
 
 from nvflare.apis.controller_spec import Task
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import Shareable, make_copy, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
@@ -24,7 +24,7 @@ from nvflare.app_common.app_constant import AppConstants, ValidateType
 from nvflare.app_common.ccwf.client_ctl import ClientSideController
 from nvflare.app_common.ccwf.common import Constant, ModelType, make_task_name
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_positive_number
-from nvflare.security.logging import secure_format_traceback
+from nvflare.security.logging import secure_format_exception
 
 
 class CrossSiteEvalClientController(ClientSideController):
@@ -48,6 +48,7 @@ class CrossSiteEvalClientController(ClientSideController):
             persistor_id=persistor_id,
         )
         self.eval_task_name = make_task_name(task_name_prefix, Constant.BASENAME_EVAL)
+        self.prep_model_task_name = make_task_name(task_name_prefix, Constant.BASENAME_PREP_MODEL)
         self.ask_for_model_task_name = make_task_name(task_name_prefix, Constant.BASENAME_ASK_FOR_MODEL)
         self.submit_model_task_name = submit_model_task_name  # this is for the learner executor
         self.validation_task_name = validation_task_name
@@ -57,8 +58,7 @@ class CrossSiteEvalClientController(ClientSideController):
         self.validate_executor = None
         self.inventory = None
         self.get_model_timeout = get_model_timeout
-        self.local_model = None
-        self.model_lock = threading.Lock()
+        self.prepared_models = {}  # model key => model shareable
 
     def start_run(self, fl_ctx: FLContext):
         super().start_run(fl_ctx)
@@ -78,7 +78,11 @@ class CrossSiteEvalClientController(ClientSideController):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.eval_task_name:
             # server assigned task
-            return self.do_eval(shareable, fl_ctx, abort_signal)
+            return self._do_eval(shareable, fl_ctx, abort_signal)
+
+        elif task_name == self.prep_model_task_name:
+            # server assigned task
+            return self._prepare_model(shareable, fl_ctx, abort_signal)
 
         elif task_name == self.ask_for_model_task_name:
             # client-assigned task
@@ -116,7 +120,20 @@ class CrossSiteEvalClientController(ClientSideController):
     def start_workflow(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         pass
 
-    def do_eval(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    @staticmethod
+    def _model_key(model_type: str, model_name: str):
+        return f"{model_type}::{model_name}"
+
+    def _get_prepared_model(self, model_type: str, model_name: str):
+        return self.prepared_models.get(self._model_key(model_type, model_name))
+
+    def _set_prepared_model(self, model_type: str, model_name: str, model):
+        self.prepared_models[self._model_key(model_type, model_name)] = model
+
+    def _clear_prepared_models(self):
+        self.prepared_models = {}
+
+    def _do_eval(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         model_type = shareable.get(Constant.MODEL_TYPE)
         model_owner = shareable.get(Constant.MODEL_OWNER)
         model_name = shareable.get(Constant.MODEL_NAME)
@@ -131,117 +148,162 @@ class CrossSiteEvalClientController(ClientSideController):
             self.log_error(fl_ctx, "got eval request but I don't have a validator")
             return make_reply(Constant.RC_UNABLE_TO_EVAL)
 
-        self.update_status(action="eval:get_model", last_round=current_round)
+        self.update_status(action=f"eval:get_model:{model_type}:{model_name}@{model_owner}", last_round=current_round)
 
-        self.log_info(fl_ctx, f"asking client {model_owner} for model {model_type} {model_name}")
+        my_name = fl_ctx.get_identity_name()
+        if my_name == model_owner:
+            self.log_info(fl_ctx, f"use prepared model {model_type} {model_name} for validation")
+            model_to_validate = self._get_prepared_model(model_type, model_name)
+            if not model_to_validate:
+                self.log_error(fl_ctx, f"no prepared model {model_type} {model_name} to validate for myself!")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        task = Task(
-            name=self.ask_for_model_task_name,
-            data=req,
-            timeout=int(self.get_model_timeout),
-            secure=self.is_task_secure(fl_ctx),
-        )
+            assert isinstance(model_to_validate, Shareable)
+            model_to_validate = make_copy(model_to_validate)
+        else:
+            self.log_info(fl_ctx, f"asking client {model_owner} for model {model_type} {model_name}")
 
-        resp = self.broadcast_and_wait(
-            task=task,
-            targets=[model_owner],
-            min_responses=1,
-            fl_ctx=fl_ctx,
-        )
+            task = Task(
+                name=self.ask_for_model_task_name,
+                data=req,
+                timeout=int(self.get_model_timeout),
+                secure=self.is_task_secure(fl_ctx),
+            )
 
-        assert isinstance(resp, dict)
-        reply = resp.get(model_owner)
-        if not reply:
-            self.log_error(fl_ctx, f"failed to ask client {model_owner} for model")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            resp = self.broadcast_and_wait(
+                task=task,
+                targets=[model_owner],
+                min_responses=1,
+                fl_ctx=fl_ctx,
+            )
 
-        if not isinstance(reply, Shareable):
-            self.log_error(fl_ctx, f"client {model_owner} failed to respond to get-model request")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            assert isinstance(resp, dict)
+            reply = resp.get(model_owner)
+            if not reply:
+                self.log_error(fl_ctx, f"failed to ask client {model_owner} for model")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        rc = reply.get_return_code()
-        if rc != ReturnCode.OK:
-            self.log_error(fl_ctx, f"client {model_owner} failed to respond to share final result request: {rc}")
-            return make_reply(rc)
+            if not isinstance(reply, Shareable):
+                self.log_error(
+                    fl_ctx,
+                    f"bad reply from {model_owner} for get-model request: expect Shareable but got {type(reply)}",
+                )
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        if abort_signal.triggered:
-            return make_reply(ReturnCode.TASK_ABORTED)
+            rc = reply.get_return_code()
+            if rc != ReturnCode.OK:
+                self.log_error(fl_ctx, f"client {model_owner} failed to respond to get-model request: {rc=}")
+                return make_reply(rc)
 
-        model_to_validate = reply
+            if abort_signal.triggered:
+                self.log_error(fl_ctx, "aborted get-model request - signal received")
+                return make_reply(ReturnCode.TASK_ABORTED)
+
+            model_to_validate = reply
+            self.log_info(fl_ctx, f"got {model_type} {model_name} from client {model_owner}")
+
         model_to_validate.set_header(AppConstants.VALIDATE_TYPE, ValidateType.MODEL_VALIDATE)
         model_to_validate.set_header(FLContextKey.TASK_NAME, self.validation_task_name)
         if model_type == ModelType.LOCAL:
             model_to_validate.set_header(AppConstants.MODEL_OWNER, model_owner)
 
-        self.update_status(action="eval:validate", last_round=current_round)
+        self.update_status(action=f"eval:validate:{model_type}:{model_name}@{model_owner}", last_round=current_round)
+
+        self.log_info(fl_ctx, f"invoking {type(self.validate_executor)} to do {self.validation_task_name}")
+        start = time.time()
         result = self.validate_executor.execute(
             task_name=self.validation_task_name, shareable=model_to_validate, abort_signal=abort_signal, fl_ctx=fl_ctx
         )
-        self.update_status(action="eval:finished", last_round=current_round)
+        self.log_info(
+            fl_ctx,
+            f"{type(self.validate_executor)} finished {self.validation_task_name} in {time.time() - start} seconds",
+        )
+
         assert isinstance(result, Shareable)
         result.set_header(Constant.MODEL_TYPE, model_type)
         result.set_header(Constant.MODEL_NAME, model_name)
         result.set_header(Constant.MODEL_OWNER, model_owner)
         result.set_header(AppConstants.CURRENT_ROUND, current_round)
+        self.update_status(action=f"eval:finished:{model_type}:{model_name}@{model_owner}", last_round=current_round)
         return result
 
-    def _process_get_model_request(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        with self.model_lock:
-            return self._do_process_get_model_request(request, fl_ctx)
+    def _prepare_global_model(self, model_name, fl_ctx: FLContext):
+        # get it from model inventory
+        if not self.inventory:
+            self.log_error(fl_ctx, "got request to prepare global model but I don't have global models")
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-    def _do_process_get_model_request(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        assert isinstance(self.persistor, ModelPersistor)
+        model_learnable = self.persistor.get(model_name, fl_ctx)
+        dxo = model_learnable_to_dxo(model_learnable)
+        model = dxo.to_shareable()
+        self._set_prepared_model(ModelType.GLOBAL, model_name, model)
+        return make_reply(ReturnCode.OK)
+
+    def _prepare_local_model(self, model_name, fl_ctx: FLContext, abort_signal: Signal):
+        if not self.submit_model_executor:
+            self.log_error(fl_ctx, "got request to prepare local model but I don't have local models")
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
+
+        task_data = Shareable()
+        task_data.set_header(AppConstants.SUBMIT_MODEL_NAME, model_name)
+        task_data.set_header(FLContextKey.TASK_NAME, self.submit_model_task_name)
+
+        try:
+            start = time.time()
+            self.log_info(fl_ctx, f"invoking {type(self.submit_model_executor)} to do {self.submit_model_task_name}")
+            result = self.submit_model_executor.execute(
+                task_name=self.submit_model_task_name, shareable=task_data, fl_ctx=fl_ctx, abort_signal=abort_signal
+            )
+            time_used = time.time() - start
+            self.log_info(
+                fl_ctx,
+                f"{type(self.submit_model_executor)} finished {self.submit_model_task_name} in {time_used} seconds",
+            )
+
+        except Exception as ex:
+            self.log_exception(
+                fl_ctx, f"failed to get local model from submit_model_executor: {secure_format_exception(ex)}"
+            )
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        assert isinstance(result, Shareable)
+        rc = result.get_return_code(ReturnCode.OK)
+        if rc != ReturnCode.OK:
+            self.log_error(fl_ctx, f"failed to get local model from submit_model_executor: {rc}")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        self.log_info(fl_ctx, f"got local model from {type(self.submit_model_executor)}")
+        self._set_prepared_model(ModelType.LOCAL, model_name, result)
+        return make_reply(ReturnCode.OK)
+
+    def _prepare_model(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        model_type = shareable.get(Constant.MODEL_TYPE)
+        model_name = shareable.get(Constant.MODEL_NAME)
+        self.update_status(action=f"eval:prep_model:{model_type}:{model_name}")
+        self._clear_prepared_models()
+        if model_type == ModelType.GLOBAL:
+            return self._prepare_global_model(model_name, fl_ctx)
+        else:
+            return self._prepare_local_model(model_name, fl_ctx, abort_signal)
+
+    def _process_get_model_request(self, request: Shareable, fl_ctx: FLContext) -> Shareable:
         peer_ctx = fl_ctx.get_peer_context()
         assert isinstance(peer_ctx, FLContext)
         client_name = peer_ctx.get_identity_name()
         model_type = request.get(Constant.MODEL_TYPE)
         model_name = request.get(Constant.MODEL_NAME)
-        if model_type == ModelType.GLOBAL:
-            # get it from model inventory
-            if not self.inventory:
-                self.log_error(
-                    fl_ctx, f"got request for global model from client {client_name} but I don't have global models"
-                )
-                return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-            assert isinstance(self.persistor, ModelPersistor)
-            model_learnable = self.persistor.get(model_name, fl_ctx)
-            dxo = model_learnable_to_dxo(model_learnable)
-            self.log_info(fl_ctx, f"sent global model {model_name} to client {client_name}")
-            return dxo.to_shareable()
-
-        # local model
-        if not self.submit_model_executor:
+        self.log_info(fl_ctx, f"got request for {model_type} {model_name} from client {client_name}")
+        model = self._get_prepared_model(model_type, model_name)
+        if not model:
             self.log_error(
-                fl_ctx, f"got request for local model from client {client_name} but I don't have local models"
+                fl_ctx, f"got request for {model_type} {model_name} from client {client_name} but I don't have it"
             )
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
-
-        if not self.local_model:
-            task_data = Shareable()
-            task_data.set_header(AppConstants.SUBMIT_MODEL_NAME, model_name)
-            task_data.set_header(FLContextKey.TASK_NAME, self.submit_model_task_name)
-
-            abort_signal = Signal()
-            try:
-                result = self.submit_model_executor.execute(
-                    task_name=self.submit_model_task_name, shareable=task_data, fl_ctx=fl_ctx, abort_signal=abort_signal
-                )
-            except:
-                self.log_error(
-                    fl_ctx, f"failed to get local model from submit_model_executor: {secure_format_traceback()}"
-                )
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-            assert isinstance(result, Shareable)
-            rc = result.get_return_code(ReturnCode.OK)
-            if rc != ReturnCode.OK:
-                self.log_error(fl_ctx, f"failed to get local model from submit_model_executor: {rc}")
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-            self.local_model = result
-
-        self.log_info(fl_ctx, f"sent local model {model_name} to client {client_name}")
-        return self.local_model
+        else:
+            self.log_info(fl_ctx, f"sent requested {model_type} {model_name} to client {client_name}")
+            return make_copy(model)
 
     def do_learn_task(self, name: str, task_data: Shareable, fl_ctx: FLContext, abort_signal: Signal):
         pass
