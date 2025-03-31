@@ -21,13 +21,13 @@ from torchvision import datasets, transforms
 import nvflare.client as flare
 from nvflare.edge.models.model import Cifar10ConvNet
 
-CIFAR10_ROOT = "/tmp/nvflare/dataset/cifar10"
+CIFAR10_ROOT = "/tmp/nvflare/datasets/cifar10"
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 def main():
     # Data loading code
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    transform = transforms.Compose([transforms.ToTensor()])
     batch_size = 4
     train_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True, transform=transform)
     test_set = datasets.CIFAR10(root=CIFAR10_ROOT, train=False, download=True, transform=transform)
