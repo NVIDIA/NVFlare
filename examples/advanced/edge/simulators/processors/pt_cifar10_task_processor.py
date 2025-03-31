@@ -14,6 +14,7 @@
 import logging
 import os
 
+import filelock
 import torch
 from torch.utils.data import Subset
 from torch.utils.tensorboard import SummaryWriter
@@ -61,9 +62,14 @@ class PTCifar10TaskProcessor(DeviceTaskProcessor):
 
     def _pytorch_training(self, global_model, global_round):
         # Data loading code
-        transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        transform = transforms.Compose([transforms.ToTensor()])
         batch_size = 4
-        train_set = datasets.CIFAR10(root=self.data_root, train=True, download=True, transform=transform)
+
+        # Add file lock to prevent multiple simultaneous downloads
+        lock_file = os.path.join(self.data_root, "cifar10.lock")
+        with filelock.FileLock(lock_file):
+            train_set = datasets.CIFAR10(root=self.data_root, train=True, download=True, transform=transform)
+
         # Find the device ID numer
         device_id = int(self.device_info.device_id.split("-")[-1])
         indices = list(range(device_id * self.subset_size, (device_id + 1) * self.subset_size))
@@ -97,7 +103,9 @@ class PTCifar10TaskProcessor(DeviceTaskProcessor):
                 running_loss += loss.item()
                 # record loss every 250 mini-batches (1000 samples)
                 if i % 250 == 249:
-                    self.tb_writer.add_scalar("loss", running_loss / 250, epoch * len(train_loader) + i)
+                    self.tb_writer.add_scalar(
+                        "loss", running_loss / 250, (global_round * 4 + epoch) * len(train_loader) + i
+                    )
                     running_loss = 0.0
 
         # Calculate the model param diff
@@ -135,8 +143,12 @@ class PTCifar10TaskProcessor(DeviceTaskProcessor):
         )
         global_round = payload[ModelExchangeFormat.MODEL_VERSION]
         global_model = payload[ModelExchangeFormat.MODEL_BUFFER]
+
         # Convert list to numpy to tensor and run training
         global_model = {k: torch.tensor(v) for k, v in global_model.items()}
         diff_dict = self._pytorch_training(global_model, global_round)
 
-        return {"result": diff_dict}
+        # Compose simple returning message
+        return_msg = {MsgKey.WEIGHTS: diff_dict, MsgKey.MODE: "diff"}
+
+        return return_msg

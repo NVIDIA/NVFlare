@@ -21,9 +21,10 @@ from nvflare.edge.constants import MsgKey
 
 
 class EdgeDictAccumulator(Aggregator):
-    def __init__(self):
+    def __init__(self, mode: str):
         Aggregator.__init__(self)
         self.weights = None
+        self.mode = mode
         self.num_devices = 0
 
     def _aggregate(self, weight_base, weight_to_add):
@@ -37,8 +38,12 @@ class EdgeDictAccumulator(Aggregator):
         return weight_base
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
-        weight_to_add = shareable.get(MsgKey.RESULT)
+        result = shareable.get(MsgKey.RESULT)
+        weight_to_add = result.get(MsgKey.WEIGHTS)
+        mode = result.get(MsgKey.MODE)
         if weight_to_add is None:
+            return True
+        if mode != self.mode:
             return True
 
         # bottom level does not have num_devices
@@ -62,4 +67,12 @@ class EdgeDictAccumulator(Aggregator):
         self.num_devices = 0
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
-        return Shareable({MsgKey.RESULT: self.weights, MsgKey.NUM_DEVICES: self.num_devices})
+        return Shareable(
+            {
+                MsgKey.RESULT: {MsgKey.WEIGHTS: self.weights, MsgKey.MODE: self.mode},
+                MsgKey.NUM_DEVICES: self.num_devices,
+            }
+        )
+
+    def get_count(self) -> int:
+        return self.num_devices
