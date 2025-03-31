@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
 from typing import Callable
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
@@ -19,9 +18,7 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.blob_streamer import BlobStreamer
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import STREAM_TYPE_BYTE, ByteStreamer
-from nvflare.fuel.f3.streaming.file_streamer import FileStreamer
-from nvflare.fuel.f3.streaming.object_streamer import ObjectStreamer
-from nvflare.fuel.f3.streaming.stream_types import ObjectIterator, ObjectStreamFuture, Stream, StreamError, StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
 
 
 class StreamCell:
@@ -30,8 +27,6 @@ class StreamCell:
         self.byte_streamer = ByteStreamer(cell)
         self.byte_receiver = ByteReceiver(cell)
         self.blob_streamer = BlobStreamer(self.byte_streamer, self.byte_receiver)
-        self.file_streamer = FileStreamer(self.byte_streamer, self.byte_receiver)
-        self.object_streamer = ObjectStreamer(self.blob_streamer)
 
     def get_chunk_size(self):
         """Gets the default chunk size used by StreamCell.
@@ -144,100 +139,3 @@ class StreamCell:
             blob_cb: The callback to handle the stream
         """
         self.blob_streamer.register_blob_callback(channel, topic, blob_cb, *args, **kwargs)
-
-    def send_file(
-        self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False
-    ) -> StreamFuture:
-        """Sends a file to target using stream API.
-
-        Args:
-            channel: channel for the message
-            topic: topic for the message
-            target: destination cell FQCN
-            message: the headers and the full path of the file to be sent as payload
-            secure: Send the message with end-end encryption if True
-            optional: Optional message, error maybe suppressed
-
-        Returns:
-            StreamFuture that can be used to check status/progress and get the total bytes sent
-
-        """
-        if not isinstance(message.payload, str):
-            raise StreamError(f"Message payload is not a file name: {type(message.payload)}")
-
-        file_name = message.payload
-        if not os.path.isfile(file_name) or not os.access(file_name, os.R_OK):
-            raise StreamError(f"File {file_name} doesn't exist or isn't readable")
-
-        return self.file_streamer.send(channel, topic, target, message, secure, optional)
-
-    def register_file_cb(self, channel: str, topic: str, file_cb, *args, **kwargs):
-        """Registers callbacks for file receiving.
-
-        The callbacks must have the following signatures:
-
-        .. code-block: python
-
-            file_cb(future: StreamFuture, file_name: str, *args, **kwargs) -> str
-                The future represents the file receiving task and the result is the final file path
-                It returns the full path where the file will be written to
-
-        Args:
-            channel: the channel of the request
-            topic: topic of the request
-            file_cb: This CB is called when file transfer starts
-        """
-        self.file_streamer.register_file_callback(channel, topic, file_cb, *args, **kwargs)
-
-    def send_objects(
-        self, channel: str, topic: str, target: str, message: Message, secure=False, optional=False
-    ) -> ObjectStreamFuture:
-        """Sends a list of objects to the destination.
-
-        Each object is sent as BLOB, so it must fit in memory
-
-        Args:
-            channel: channel for the message
-            topic: topic of the message
-            target: destination cell IDs
-            message: Headers and the payload which is an iterator that provides next object
-            secure: Send the message with end-end encryption if True
-            optional: Optional message, error maybe suppressed
-
-        Returns:
-            ObjectStreamFuture that can be used to check status/progress, or register callbacks
-        """
-        if not isinstance(message.payload, ObjectIterator):
-            raise StreamError(f"Message payload is not an object iterator: {type(message.payload)}")
-
-        return self.object_streamer.stream_objects(
-            channel, topic, target, message.headers, message.payload, secure, optional
-        )
-
-    def register_objects_cb(
-        self, channel: str, topic: str, object_stream_cb: Callable, object_cb: Callable, *args, **kwargs
-    ):
-        """Registers callback for receiving the object.
-
-        The callback signature is:
-
-        .. code-block: python
-
-            objects_stream_cb(future: ObjectStreamFuture, resume: bool, *args, **kwargs) -> int
-                future: It represents the streaming of all objects. An object CB can be registered with the future
-                to receive each object.
-                resume: True if this is a restarted stream
-                This CB returns the index to restart if this is a restarted stream
-
-            object_cb(obj_sid: str, index: int, message: Message, *args, ** kwargs)
-                obj_sid: Object Stream ID
-                index: The index of the object
-                message: The header and payload is the object
-
-        Args:
-            channel: the channel of the request
-            topic: topic of the request
-            object_stream_cb: The callback when an object stream is started
-            object_cb: The callback is invoked when each object is received
-        """
-        self.object_streamer.register_object_callbacks(channel, topic, object_stream_cb, object_cb, args, kwargs)

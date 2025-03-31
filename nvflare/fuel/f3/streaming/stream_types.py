@@ -14,11 +14,9 @@
 import logging
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
 from typing import Any, Callable, Optional
 
 from nvflare.fuel.f3.connection import BytesAlike
-from nvflare.fuel.f3.streaming.stream_utils import gen_stream_id
 
 log = logging.getLogger(__name__)
 
@@ -85,29 +83,6 @@ class Stream(ABC):
             StreamError: If the stream is not seekable
         """
         self.pos = offset
-
-
-class ObjectIterator(Iterator, ABC):
-    """An object iterator that returns next object
-    The __next__() method must be defined to return next object.
-    """
-
-    def __init__(self, headers: Optional[dict] = None):
-        self.sid = gen_stream_id()
-        self.headers = headers
-        self.index = 0
-
-    def get_headers(self) -> Optional[dict]:
-        return self.headers
-
-    def stream_id(self) -> int:
-        return self.sid
-
-    def get_index(self) -> int:
-        return self.index
-
-    def set_index(self, index: int):
-        self.index = index
 
 
 class StreamTaskSpec(ABC):
@@ -179,12 +154,12 @@ class StreamFuture:
     def running(self):
         """Return True if the future is currently executing."""
         with self.lock:
-            return not self.waiter.isSet()
+            return not self.waiter.is_set()
 
     def done(self):
         """Return True of the future was cancelled or finished executing."""
         with self.lock:
-            return self.error or self.waiter.isSet()
+            return self.error or self.waiter.is_set()
 
     def add_done_callback(self, done_cb: Callable, *args, **kwargs):
         """Attaches a callable that will be called when the future finishes.
@@ -264,23 +239,6 @@ class StreamFuture:
     def _invoke_callbacks(self):
         for callback, args, kwargs in self.done_callbacks:
             try:
-                callback(self, args, kwargs)
+                callback(*args, **kwargs)
             except Exception as ex:
                 log.error(f"Exception calling callback for {callback}: {ex}")
-
-
-class ObjectStreamFuture(StreamFuture):
-    def __init__(self, stream_id: int, headers: Optional[dict] = None):
-        super().__init__(stream_id, headers)
-        self.index = 0
-
-    def get_index(self) -> int:
-        """Current object index, which is only available for ObjectStream"""
-        return self.index
-
-    def set_index(self, index: int):
-        """Set current object index"""
-        self.index = index
-
-    def get_progress(self):
-        return self.index
