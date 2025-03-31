@@ -208,6 +208,7 @@ class FedJob:
         obj: Any,
         target: str,
         id=None,
+        preserve_path: bool = True,
         **kwargs,
     ) -> Any:
         """Assign an object to the target. For end users.
@@ -216,6 +217,10 @@ class FedJob:
             obj: the object to be assigned
             target: the target that the object is assigned to
             id: the id of the object
+            preserve_path: if True, maintains the original directory structure when copying files
+                          (e.g., 'src/custom_enum.py' -> 'custom/src/custom_enum.py').
+                          if False, copies only the file without its path
+                          (e.g., 'src/custom_enum.py' -> 'custom/custom_enum.py').
             **kwargs: additional args to be passed to the object's add_to_fed_job method.
 
         If the obj provides the add_to_fed_job method, it will be called with the kwargs.
@@ -257,7 +262,10 @@ class FedJob:
             if os.path.isdir(obj):
                 app.add_external_dir(obj)
             else:
-                app.add_external_script(obj)
+                if preserve_path:
+                    app.add_external_script(obj)
+                else:
+                    app.add_file_source(obj)
             return None
 
         get_target_type_method = getattr(obj, "get_job_target_type", None)
