@@ -20,7 +20,7 @@ from typing import Dict, List, Union
 
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell, TargetMessage
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessageType, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessagePropKey, MessageType, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, make_reply
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
@@ -212,7 +212,6 @@ class Cell(StreamCell):
         message: Message,
         secure=False,
         optional=False,
-        return_future=False,
     ) -> Dict[str, str]:
         """
         Send a message over a channel to specified destination cell(s), and do not wait for replies.
@@ -224,7 +223,6 @@ class Cell(StreamCell):
             message: message to be sent
             secure: End-end encryption if True
             optional: whether the message is optional
-            return_future: whether to return a future object in the result
 
         Returns: None
 
@@ -234,14 +232,15 @@ class Cell(StreamCell):
             targets = [targets]
 
         result = {}
+        futures = {}
         for target in targets:
             future = self.send_blob(
                 channel=channel, topic=topic, target=target, message=message, secure=secure, optional=optional
             )
-            if return_future:
-                result[target] = future
-            else:
-                result[target] = ""
+            futures[target] = future
+            result[target] = ""
+        message.set_prop(MessagePropKey.FUTURES, futures)
+
         return result
 
     def _get_result(self, req_id):
