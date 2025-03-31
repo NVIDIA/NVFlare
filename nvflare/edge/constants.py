@@ -45,6 +45,8 @@ class EdgeTaskHeaderKey:
 class MsgKey:
     PAYLOAD = "payload"
     RESULT = "result"
+    MODE = "mode"
+    WEIGHTS = "weights"
     NUM_DEVICES = "num_devices"
     TASK_ID = "task_id"
     TASK_DONE = "task_done"

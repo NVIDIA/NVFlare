@@ -19,9 +19,8 @@ import uuid
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, RunProcessKey, ServerCommandKey
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, ServerCommandKey
 from nvflare.apis.job_def import Job, JobMetaKey, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.shareable import Shareable
@@ -98,13 +97,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     usage=f"{AdminCommandNames.CONFIGURE_JOB_LOG} job_id server|client <client-name>... config",
                     handler_func=self.configure_job_log,
                     authz_func=self.authorize_configure_job_log,
-                ),
-                CommandSpec(
-                    name=AdminCommandNames.START_APP,
-                    description="start the FL app",
-                    usage=f"{AdminCommandNames.START_APP} job_id server|client|all",
-                    handler_func=self.start_app,
-                    authz_func=self.authorize_job,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.LIST_JOBS,
@@ -256,71 +248,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             conn.append_error("syntax error: please provide job_id, target_type, and config")
             return PreAuthzReturnCode.ERROR
         return self.authorize_job(conn, args[:-1])
-
-    def _start_app_on_clients(self, conn: Connection, job_id: str) -> bool:
-        engine = conn.app_ctx
-        client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
-        run_process = engine.run_processes.get(job_id, {})
-        if not run_process:
-            conn.append_error(f"Job {job_id} is not running.")
-            return False
-
-        participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS, {})
-        wrong_clients = []
-        for client in client_names:
-            client_valid = False
-            for _, p in participants.items():
-                if client == p.name:
-                    client_valid = True
-                    break
-            if not client_valid:
-                wrong_clients.append(client)
-
-        if wrong_clients:
-            display_clients = ",".join(wrong_clients)
-            conn.append_error(f"{display_clients} are not in the job running list.")
-            return False
-
-        err = engine.check_app_start_readiness(job_id)
-        if err:
-            conn.append_error(err)
-            return False
-
-        message = new_message(conn, topic=TrainingTopic.START, body="", require_authz=False)
-        message.set_header(RequestHeader.JOB_ID, job_id)
-        replies = self.send_request_to_clients(conn, message)
-        self.process_replies_to_table(conn, replies)
-        return True
-
-    def start_app(self, conn: Connection, args: List[str]):
-        engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-
-        job_id = conn.get_prop(self.JOB_ID)
-        if len(args) < 3:
-            conn.append_error("Please provide the target name (client / all) for start_app command.")
-            return
-
-        target_type = args[2]
-        if target_type == self.TARGET_TYPE_SERVER:
-            # if not self._start_app_on_server(conn, job_id):
-            #     return
-            conn.append_error("start_app command only supports client app start.")
-            return
-        elif target_type == self.TARGET_TYPE_CLIENT:
-            if not self._start_app_on_clients(conn, job_id):
-                return
-        else:
-            # # all
-            # success = self._start_app_on_server(conn, job_id)
-            #
-            # if success:
-            client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
-            if client_names:
-                if not self._start_app_on_clients(conn, job_id):
-                    return
-        conn.append_success("")
 
     def delete_job_id(self, conn: Connection, args: List[str]):
         job_id = args[1]

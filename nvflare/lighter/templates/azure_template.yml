@@ -374,7 +374,9 @@ azure_start_dsb_sh: |
   echo "One initial user will be created when starting dashboard."
   echo "Please enter the email address for this user."
   read email
-  credential="${email}:$RANDOM"
+  echo "Please enter the organization name of this person."
+  read org_name
+  credential="${email}:$RANDOM:${org_name}"
 
   az login --use-device-code -o none
   report_status "$?" "login"
