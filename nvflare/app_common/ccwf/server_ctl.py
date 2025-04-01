@@ -69,7 +69,7 @@ class ServerSideController(Controller):
         starting_client: str = "",
         starting_client_policy: str = DefaultValuePolicy.ANY,
         participating_clients=None,
-        result_clients: List[str] = [],
+        result_clients: List[str] = None,
         result_clients_policy: str = DefaultValuePolicy.ALL,
         max_status_report_interval: float = Constant.PER_CLIENT_STATUS_REPORT_TIMEOUT,
         progress_timeout: float = Constant.WORKFLOW_PROGRESS_TIMEOUT,
@@ -141,7 +141,7 @@ class ServerSideController(Controller):
         self.starting_client = starting_client
         self.starting_client_policy = starting_client_policy
         self.participating_clients = participating_clients
-        self.result_clients = result_clients
+        self.result_clients = result_clients if result_clients else []
         self.result_clients_policy = result_clients_policy
 
         # make private_p2p bool
