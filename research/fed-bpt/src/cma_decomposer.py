@@ -34,6 +34,20 @@ from nvflare.fuel.utils.fobs.datum import DatumManager
 
 
 class GaussFullSamplerDecomposer(Decomposer):
+    """A decomposer for serializing and deserializing GaussFullSampler objects.
+
+    This decomposer handles the conversion of GaussFullSampler instances to and from a serializable format.
+    It removes non-serializable function attributes and restores them during recomposition.
+
+    Attributes:
+        None
+
+    Methods:
+        supported_type(): Returns the type this decomposer supports
+        decompose(): Converts a GaussFullSampler to a serializable format
+        recompose(): Reconstructs a GaussFullSampler from serialized data
+    """
+
     def supported_type(self) -> Type[GaussFullSampler]:
         return GaussFullSampler
 
@@ -58,6 +72,20 @@ class GaussFullSamplerDecomposer(Decomposer):
 
 
 class CMAOptionsDecomposer(Decomposer):
+    """A decomposer for serializing and deserializing CMAOptions objects.
+
+    This decomposer handles the conversion of CMAOptions instances to and from a serializable format.
+    It removes non-serializable attributes and restores them during recomposition.
+
+    Attributes:
+        None
+
+    Methods:
+        supported_type(): Returns the type this decomposer supports
+        decompose(): Converts a CMAOptions to a serializable format
+        recompose(): Reconstructs a CMAOptions from serialized data
+    """
+
     def supported_type(self) -> Type[GaussFullSampler]:
         return CMAOptions
 
@@ -81,6 +109,20 @@ class CMAOptionsDecomposer(Decomposer):
 
 
 class CMADataLoggerDecomposer(Decomposer):
+    """A decomposer for serializing and deserializing CMADataLogger objects.
+
+    This decomposer handles the conversion of CMADataLogger instances to and from a serializable format.
+    It removes circular references and restores the object structure during recomposition.
+
+    Attributes:
+        None
+
+    Methods:
+        supported_type(): Returns the type this decomposer supports
+        decompose(): Converts a CMADataLogger to a serializable format
+        recompose(): Reconstructs a CMADataLogger from serialized data
+    """
+
     def supported_type(self) -> Type[CMADataLogger]:
         return CMADataLogger
 
