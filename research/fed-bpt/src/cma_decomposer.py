@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,6 +34,20 @@ from nvflare.fuel.utils.fobs.datum import DatumManager
 
 
 class GaussFullSamplerDecomposer(Decomposer):
+    """A decomposer for serializing and deserializing GaussFullSampler objects.
+
+    This decomposer handles the conversion of GaussFullSampler instances to and from a serializable format.
+    It removes non-serializable function attributes and restores them during recomposition.
+
+    Attributes:
+        None
+
+    Methods:
+        supported_type(): Returns the type this decomposer supports
+        decompose(): Converts a GaussFullSampler to a serializable format
+        recompose(): Reconstructs a GaussFullSampler from serialized data
+    """
+
     def supported_type(self) -> Type[GaussFullSampler]:
         return GaussFullSampler
 
@@ -57,7 +71,58 @@ class GaussFullSamplerDecomposer(Decomposer):
         return instance
 
 
+class CMAOptionsDecomposer(Decomposer):
+    """A decomposer for serializing and deserializing CMAOptions objects.
+
+    This decomposer handles the conversion of CMAOptions instances to and from a serializable format.
+    It removes non-serializable attributes and restores them during recomposition.
+
+    Attributes:
+        None
+
+    Methods:
+        supported_type(): Returns the type this decomposer supports
+        decompose(): Converts a CMAOptions to a serializable format
+        recompose(): Reconstructs a CMAOptions from serialized data
+    """
+
+    def supported_type(self) -> Type[GaussFullSampler]:
+        return CMAOptions
+
+    def decompose(self, target: CMAOptions, manager: DatumManager = None) -> Any:
+        data = {}
+        data.update(target)
+
+        fields_to_remove = ["CMA_eigenmethod", "CMA_mirrors", "randn", "BoundaryHandler", "is_feasible"]
+
+        for field in fields_to_remove:
+            if field in data:
+                del data[field]
+
+        return data
+
+    def recompose(self, data: dict, manager: DatumManager = None) -> GaussFullSampler:
+        instance = CMAOptions()
+        instance["CMA_eigenmethod"] = np.linalg.eigh
+        instance.update(data)
+        return instance
+
+
 class CMADataLoggerDecomposer(Decomposer):
+    """A decomposer for serializing and deserializing CMADataLogger objects.
+
+    This decomposer handles the conversion of CMADataLogger instances to and from a serializable format.
+    It removes circular references and restores the object structure during recomposition.
+
+    Attributes:
+        None
+
+    Methods:
+        supported_type(): Returns the type this decomposer supports
+        decompose(): Converts a CMADataLogger to a serializable format
+        recompose(): Reconstructs a CMADataLogger from serialized data
+    """
+
     def supported_type(self) -> Type[CMADataLogger]:
         return CMADataLogger
 
@@ -81,10 +146,10 @@ def register_decomposers():
     fobs.register(NumpyArrayDecomposer)
     fobs.register(Float64ScalarDecomposer)
     fobs.register(GaussFullSamplerDecomposer)
+    fobs.register(CMAOptionsDecomposer)
     fobs.register(CMADataLoggerDecomposer)
     fobs.register_data_classes(
         cma.CMAEvolutionStrategy,
-        CMAOptions,
         GenoPheno,
         SolutionDict,
         BoundNone,
@@ -103,14 +168,16 @@ def register_decomposers():
     )
 
 
-register_decomposers()
+if __name__ == "__main__":
 
-es = cma.CMAEvolutionStrategy(4 * [5], 10, dict(ftarget=1e-9, seed=5))
+    register_decomposers()
 
-buffer = fobs.dumps(es)
-print(f"Encoded size: {len(buffer)}")
+    es = cma.CMAEvolutionStrategy(4 * [5], 10, dict(ftarget=1e-9, seed=5))
 
-new_es = fobs.loads(buffer)
-new_es.logger.register(new_es)
+    buffer = fobs.dumps(es)
+    print(f"Encoded size: {len(buffer)}")
 
-print(new_es)
+    new_es = fobs.loads(buffer)
+    new_es.logger.register(new_es)
+
+    print(new_es)
