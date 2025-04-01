@@ -89,7 +89,7 @@ class SubprocessLauncher(Launcher):
         script: str,
         launch_once: Optional[bool] = True,
         clean_up_script: Optional[str] = None,
-        shutdown_timeout: Optional[float] = None,
+        shutdown_timeout: Optional[float] = 0.0,
     ):
         """Initializes the SubprocessLauncher.
 
@@ -98,7 +98,6 @@ class SubprocessLauncher(Launcher):
             launch_once (bool): Whether the external process will be launched only once at the beginning or on each task.
             clean_up_script (Optional[str]): Optional clean up script to be run after the main script execution.
             shutdown_timeout (float): If provided, will wait for this number of seconds before shutdown.
-                None means never times out.
         """
         super().__init__()
 
