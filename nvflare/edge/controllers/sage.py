@@ -442,7 +442,7 @@ class ScatterAndGatherForEdge(Controller):
         has_aggr_data = result.get_header(EdgeTaskHeaderKey.HAS_AGGR_DATA, False)
         if has_aggr_data:
             accepted = self._accept_result(result, fl_ctx)
-            self.log_info(fl_ctx, f"processed aggr data from task submission: {accepted=}")
+            self.log_debug(fl_ctx, f"processed aggr data from task submission: {accepted=}")
 
     def process_result_of_unknown_task(
         self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext
@@ -457,7 +457,7 @@ class ScatterAndGatherForEdge(Controller):
             current_task_seq=self._current_task_seq,
             fl_ctx=fl_ctx,
         )
-        self.log_info(fl_ctx, f"processed aggr data from result report: {accepted=}")
+        self.log_debug(fl_ctx, f"processed aggr data from result report: {accepted=}")
         return reply
 
     def _check_abort_signal(self, fl_ctx, abort_signal: Signal):
