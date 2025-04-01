@@ -57,6 +57,7 @@ class MessagePropKey:
 
     ENDPOINT = CELLNET_PREFIX + "endpoint"
     COMMON_NAME = CELLNET_PREFIX + "common_name"
+    FUTURES = CELLNET_PREFIX + "futures"
 
 
 class Encoding:

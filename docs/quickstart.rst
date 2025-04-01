@@ -246,26 +246,28 @@ Basic usage for the :ref:`FL Simulator <fl_simulator>` is available with ``nvfla
 
 .. code-block:: shell
 
-  $ nvflare simulator -h
-  usage: nvflare simulator [-h] [-w WORKSPACE] [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] [-m MAX_CLIENTS] [--end_run_for_all] job_folder
+    $ nvflare simulator -h
+    usage: nvflare simulator [-h] [-w WORKSPACE] [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] [-l LOG_CONFIG] [-m MAX_CLIENTS] [--end_run_for_all] job_folder
 
-  positional arguments:
-    job_folder
+    positional arguments:
+        job_folder
 
-  options:
-    -h, --help            show this help message and exit
-    -w WORKSPACE, --workspace WORKSPACE
-                          WORKSPACE folder
-    -n N_CLIENTS, --n_clients N_CLIENTS
-                          number of clients
-    -c CLIENTS, --clients CLIENTS
-                          client names list
-    -t THREADS, --threads THREADS
-                          number of parallel running clients
-    -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
-    -m MAX_CLIENTS, --max_clients MAX_CLIENTS
-                          max number of clients
-    --end_run_for_all     flag to indicate if running END_RUN event for all clients
+    options:
+        -h, --help            show this help message and exit
+        -w WORKSPACE, --workspace WORKSPACE
+                                WORKSPACE folder
+        -n N_CLIENTS, --n_clients N_CLIENTS
+                                number of clients
+        -c CLIENTS, --clients CLIENTS
+                                client names list
+        -t THREADS, --threads THREADS
+                                number of parallel running clients
+        -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
+        -l LOG_CONFIG, --log_config LOG_CONFIG
+                                log config mode ('concise', 'full', 'verbose'), filepath, or level
+        -m MAX_CLIENTS, --max_clients MAX_CLIENTS
+                                max number of clients
+        --end_run_for_all     flag to indicate if running END_RUN event for all clients
 
 
 Before we get into the Simulator, we'll walk through a few additional setup steps in the next section required
