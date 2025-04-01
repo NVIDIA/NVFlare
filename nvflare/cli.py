@@ -191,6 +191,7 @@ def run(prog_name):
                 print(traceback.format_exc())
         else:
             print_help(prog_parser, sub_cmd, sub_cmd_parsers)
+        sys.exit(1)
 
 
 def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
