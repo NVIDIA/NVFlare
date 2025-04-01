@@ -29,6 +29,7 @@ class FlowerController(TieController):
         database: str = "",
         superlink_ready_timeout: float = 10.0,
         superlink_grace_period: float = 2.0,
+        superlink_min_query_interval=10.0,
         monitor_interval: float = 0.5,
         configure_task_name=TieConstant.CONFIG_TASK_NAME,
         configure_task_timeout=TieConstant.CONFIG_TASK_TIMEOUT,
@@ -45,6 +46,7 @@ class FlowerController(TieController):
             num_rounds: number of rounds. Not used in this version.
             database: database name
             superlink_ready_timeout: how long to wait for the superlink to become ready before starting server app
+            superlink_min_query_interval: minimal interval for querying superlink for status
             monitor_interval: how often to check flower run status
             configure_task_name: name of the config task
             configure_task_timeout: max time allowed for config task to complete
@@ -69,11 +71,13 @@ class FlowerController(TieController):
         check_positive_number("superlink_ready_timeout", superlink_ready_timeout)
         check_positive_number("superlink_grace_period", superlink_grace_period)
         check_positive_number("monitor_interval", monitor_interval)
+        check_positive_number("superlink_min_query_interval", superlink_min_query_interval)
 
         self.num_rounds = num_rounds
         self.database = database
         self.superlink_ready_timeout = superlink_ready_timeout
         self.superlink_grace_period = superlink_grace_period
+        self.superlink_min_query_interval = superlink_min_query_interval
         self.int_client_grpc_options = int_client_grpc_options
         self.monitor_interval = monitor_interval
 
@@ -88,6 +92,7 @@ class FlowerController(TieController):
             database=self.database,
             superlink_ready_timeout=self.superlink_ready_timeout,
             superlink_grace_period=self.superlink_grace_period,
+            superlink_min_query_interval=self.superlink_min_query_interval,
         )
 
     def get_client_config_params(self, fl_ctx: FLContext) -> dict:
