@@ -63,13 +63,13 @@ You can easily write your own components to replace any of the pre-configured on
 First, copy the jobs to the admin console transfer folder:
 
 ```commandline
-cp -r ./jobs/* ./edge_example/prod_00/admin@nvidia.com/transfer
+cp -r ./jobs/* /tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer
 ```
 
 Start the admin console to interact with the NVFlare system:
 
 ```commandline
-./edge_example/prod_00/admin@nvidia.com/startup/fl_admin.sh
+/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/startup/fl_admin.sh
 ```
 
 Submit a job:
@@ -102,13 +102,6 @@ cd baselines
 python cifar_fl_base_job.py
 cd ..
 ```
-Let's visualize the results:
-```commandline
-tensorboard --logdir=/tmp/nvflare/workspaces
-```
-With the centralized training of 10 epochs, and the federated training of 10 rounds (1 local epoch per round), you should see the following results:
-<img src="./figs/cifar10.png" alt="Cifar10 Results" width="800" >
-The two learning will converge to similar accuracy, note that in this case each client holds partial data that is 1/16 of the whole training set sequentially split.
 
 ### Simulated Cross-Device Federated Learning
 Assuming the previous steps are completed, we can now run the end-to-end example with the same already prepared NVFlare system.
@@ -162,3 +155,8 @@ After the configured rounds have finished, the training is complete, now let's c
 ```commandline
 tensorboard --logdir=/tmp/nvflare/workspaces
 ```
+With the centralized training of 10 epochs, and the federated training of 10 rounds (4 local epoch per round), you should see the following results:
+<img src="./figs/cifar10_acc.png" alt="Cifar10 Results" width="800" >
+
+Red curve is the centralized training, blue is the baseline federated training with regular single-layer setting, and green is the simulated cross-device federated training.
+The three learning will converge to similar accuracy, note that in this case each client holds partial data that is 1/16 of the whole training set sequentially split.

@@ -13,16 +13,24 @@
 # limitations under the License.
 import logging
 
+from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.streaming.stream_utils import wrap_view
 
 BUF_SIZE = 64 * 1024 * 1024 + 1
 TEST_CHANNEL = "stream"
 TEST_TOPIC = "test"
 TX_CELL = "sender"
-RX_CELL = "receiver"
+RX_CELL = "server"  # Passive cell's fqcn must be "server"
+TIMESTAMP = "timestamp"
 
 
-def make_buffer(size: int) -> bytearray:
+def make_buffer(size: int) -> BytesAlike:
+    """
+    Make a buffer of size bytes with fixed data pattern for easy debugging.
+
+    :param size:
+    :return:
+    """
 
     buf = wrap_view(bytearray(size))
     buf_len = 0
