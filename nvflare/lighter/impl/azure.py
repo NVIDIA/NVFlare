@@ -36,7 +36,6 @@ class AzureBuilder(Builder):
                 TemplateSectionKey.AZURE_START_SVR_HEADER_SH,
                 TemplateSectionKey.AZURE_START_COMMON_SH,
             ],
-
             # use the server org for project.
             replacement={
                 "admin_port": admin_port,
