@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.lighter.constants import ProvFileName, TemplateSectionKey, CtxKey
+from nvflare.lighter.constants import CtxKey, ProvFileName, TemplateSectionKey
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
@@ -45,6 +45,9 @@ class AzureBuilder(Builder):
                 "org_name": "",
                 "type": "server",
                 "cln_uid": "",
+                "docker_network": "--network host",
+                "server_name": server.name,
+                "ORG": server.org,
             },
             exe=True,
         )
@@ -59,5 +62,15 @@ class AzureBuilder(Builder):
                     TemplateSectionKey.AZURE_START_CLN_HEADER_SH,
                     TemplateSectionKey.AZURE_START_COMMON_SH,
                 ],
+                replacement={
+                    "client_name": participant.name,
+                    "config_folder": "config",
+                    "docker_image": "nvflare/nvflare",
+                    "org_name": participant.org,
+                    "type": "client",
+                    "cln_uid": f"uid={participant.name}",
+                    "docker_network": "",
+                    "ORG": participant.org,
+                },
                 exe=True,
             )
