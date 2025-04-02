@@ -41,7 +41,7 @@ class AzureBuilder(Builder):
                 "fed_learn_port": fl_port,
                 "config_folder": "config",
                 "ha_mode": "false",
-                "docker_image": project.app_location.split(" ")[-1] if project.app_location else "nvflare/nvflare",
+                "docker_image": "nvflare/nvflare",
                 "org_name": "",
                 "type": "server",
                 "cln_uid": "",
