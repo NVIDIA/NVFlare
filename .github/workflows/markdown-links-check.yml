@@ -29,5 +29,5 @@ jobs:
         max-depth: -1
         use-verbose-mode: 'yes'
         config-file: '.github/workflows/mlc_config.json'
-        check-modified-files-only: 'yes'
+        check-modified-files-only: 'no'
         base-branch: 'main'
