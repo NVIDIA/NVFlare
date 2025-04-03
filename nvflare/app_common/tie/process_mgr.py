@@ -240,7 +240,7 @@ def run_command(cmd_desc: CommandDescriptor) -> str:
     command_seq = shlex.split(cmd_desc.cmd)
     p = subprocess.Popen(
         command_seq,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE,
         cwd=cmd_desc.cwd,
         env=env,
         stdout=subprocess.PIPE,
@@ -249,10 +249,11 @@ def run_command(cmd_desc: CommandDescriptor) -> str:
     output = []
     while True:
         line = p.stdout.readline()
-        if not line:
+        # prevent blocking
+        stderr_line = p.stderr.readline()
+        if not line and not stderr_line:
             break
 
-        assert isinstance(line, bytes)
         line = line.decode("utf-8")
         output.append(line)
     return "".join(output)

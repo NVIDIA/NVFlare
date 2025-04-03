@@ -30,6 +30,7 @@ class Constant:
     BASENAME_REPORT_LEARN_RESULT = "report_learn_result"
     BASENAME_REPORT_FINAL_RESULT = "report_final_result"
     BASENAME_ASK_FOR_MODEL = "ask_for_model"
+    BASENAME_PREP_MODEL = "prep_model"
 
     TASK_NAME_PREFIX = "cwf.task_prefix"
     PRIVATE_P2P = "cwf.private_p2p"
