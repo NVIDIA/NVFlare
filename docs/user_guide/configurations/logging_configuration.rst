@@ -46,7 +46,7 @@ See the `configuration dictionary schema <(https://docs.python.org/3/library/log
         "filters": {
             "FLFilter": {
                 "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
-                "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+                "logger_names": ["custom", "src", "nvflare.app_common", "nvflare.app_opt"]
             }
         },
         "handlers": {
@@ -205,7 +205,7 @@ We leverage this in our FLFilter, which filters loggers related to fl training o
 
     "FLFilter": {
         "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
-        "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
+        "logger_names": ["custom", "src", "nvflare.app_common", "nvflare.app_opt"]
     }
 
 Handlers
@@ -276,10 +276,15 @@ We define the root logger with INFO level and add the desired handlers.
 Given the hierarchical structure of loggers, specific loggers can be configured using their dot separated names.
 Furthermore, any intermediate logger parents are already created and are configureable.
 
-When creating loggers for FLARE, we provide several convenience functions to help adhere to the package logger hierarchy:
+When creating loggers for custom code, we provide a user custom logger function:
+
+:func:`custom_logger<nvflare.fuel.utils.log_utils.custom_logger>`: From a logger, return a new logger with "custom" prepended to the logger name.
+This enables logs from the custom logger to pass through the default FLFilter so the logs will be displayed in "concise" mode.
+
+When creating loggers for FLARE code, we provide several developer functions to help adhere to the package logger hierarchy:
 
 - :func:`get_obj_logger<nvflare.fuel.utils.log_utils.get_obj_logger>` for classes
-- :func:`get_script_logger<nvflare.fuel.utils.log_utils.get_script_logger>` for scripts (if not in a package, default to custom.<script_file_name>)
+- :func:`get_script_logger<nvflare.fuel.utils.log_utils.get_script_logger>` for scripts
 - :func:`get_module_logger<nvflare.fuel.utils.log_utils.get_module_logger>` for modules
 
 
