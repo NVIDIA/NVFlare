@@ -164,6 +164,9 @@ class ClientRunner(TBI):
         engine.register_aux_message_handler(topic=ReservedTopic.END_RUN, message_handle_func=self._handle_end_run)
         engine.register_aux_message_handler(topic=ReservedTopic.DO_TASK, message_handle_func=self._handle_do_task)
 
+    def set_cell(self, cell):
+        pass
+
     @staticmethod
     def _reply_and_audit(reply: Shareable, ref, msg, fl_ctx: FLContext) -> Shareable:
         audit_event_id = add_job_audit_event(fl_ctx=fl_ctx, ref=ref, msg=msg)
