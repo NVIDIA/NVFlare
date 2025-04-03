@@ -1,5 +1,5 @@
 # Financial Application with Federated XGBoost Methods
-This example illustrates the use of [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on a financial application. 
+This example illustrates the use of [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.5/index.html) on a financial application. 
 These examples show how to use [XGBoost](https://github.com/dmlc/xgboost) in various ways to train a model in a federated manner to perform fraud detection with a 
 [finance dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud).
 
@@ -13,9 +13,9 @@ In these examples, we illustrate the use of NVFlare to carry out the following f
   - tree-based collaboration with bagging federation
 
 For more details, please refer to the README files for 
-[vertical](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_xgboost/README.md), 
-[histogram-based](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/histogram-based/README.md),
-and [tree-based](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/tree-based/README.md) 
+[vertical](https://github.com/NVIDIA/NVFlare/blob/2.5/examples/advanced/vertical_xgboost/README.md), 
+[histogram-based](https://github.com/NVIDIA/NVFlare/tree/2.5/examples/advanced/xgboost/histogram-based/README.md),
+and [tree-based](https://github.com/NVIDIA/NVFlare/tree/2.5/examples/advanced/xgboost/tree-based/README.md) 
 methods.
 
 ## Data Preparation

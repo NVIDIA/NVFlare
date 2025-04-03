@@ -3,11 +3,11 @@ This example illustrates the use of [NVIDIA FLARE](https://nvflare.readthedocs.i
 The examples are based on a [finance dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) to perform fraud detection.
 
 ## Secure Federated Training of XGBoost
-Several mechanisms have been proposed for training an XGBoost model in a federated learning setting, e.g. [vertical](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_xgboost/README.md), [histogram-based horizontal](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/histogram-based/README.md), and [tree-based horizontal](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/tree-based/README.md). 
+Several mechanisms have been proposed for training an XGBoost model in a federated learning setting, e.g. [vertical](https://github.com/NVIDIA/NVFlare/blob/2.5/examples/advanced/vertical_xgboost/README.md), [histogram-based horizontal](https://github.com/NVIDIA/NVFlare/tree/2.5/examples/advanced/xgboost/histogram-based/README.md), and [tree-based horizontal](https://github.com/NVIDIA/NVFlare/tree/2.5/examples/advanced/xgboost/tree-based/README.md). 
 
 In this example, we further extend the existing horizontal and vertical federated learning approaches to support secure federated learning using homomorphic encryption. Depending on the characteristics of the data to be encrypted, we can choose between [CKKS](https://github.com/OpenMined/TenSEAL) and [Paillier](https://github.com/intel/pailliercryptolib_python).
 
-In the following, we illustrate both *horizontal* and *vertical* federated XGBoost, *without* and *with* homomorphic encryption. Please refer to our [documentation](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html) for more details on the pipeline design and the encryption logic.
+In the following, we illustrate both *horizontal* and *vertical* federated XGBoost, *without* and *with* homomorphic encryption. Please refer to our [documentation](https://nvflare.readthedocs.io/en/2.5/user_guide/federated_xgboost/secure_xgboost_user_guide.html) for more details on the pipeline design and the encryption logic.
 
 ## Installation
 To be able to run all the examples, please install the requirements first.
@@ -16,10 +16,10 @@ pip install -r requirements.txt
 ```
 ## Encryption Plugins
 The secure XGBoost requires encryption plugins to work. The plugins are distributed with NVFlare package. If you build NVFlare from source, you need
-to build the plugins following the instructions in this [README](https://github.com/NVIDIA/NVFlare/blob/main/integration/xgboost/encryption_plugins/README.md)
+to build the plugins following the instructions in this [README](https://github.com/NVIDIA/NVFlare/blob/2.5/integration/xgboost/encryption_plugins/README.md)
 
 The build process will generate 2 .so files: libcuda_paillier.so and libnvflare.so. Configure the path accordingly following the instructions in 
-[XGBoost User Guide](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html)
+[XGBoost User Guide](https://nvflare.readthedocs.io/en/2.5/user_guide/federated_xgboost/secure_xgboost_user_guide.html)
 
 ## Data Preparation
 ### Download and Store Data
@@ -49,7 +49,7 @@ This will generate data splits for 3 clients under all experimental settings.
 > Intersection (PSI). However, in practice, each site initially has its own separate dataset. To
 > combine these datasets accurately, you need to use PSI to match records with the same ID across
 > different sites. For more information on how to perform PSI, please refer to the
-> [vertical xgboost example](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/vertical_xgboost).
+> [vertical xgboost example](https://github.com/NVIDIA/NVFlare/tree/2.5/examples/advanced/vertical_xgboost).
 
 
 > **_NOTE:_** The generated data files will be stored in the folder `/tmp/nvflare/xgb_dataset/`,
@@ -59,7 +59,7 @@ This will generate data splits for 3 clients under all experimental settings.
 First, we run the baseline centralized training and standalone federated XGBoost training for comparison.
 In this case, we utilized the `mock` plugin to simulate the homomorphic encryption process. 
 For more details regarding federated XGBoost and the interface-plugin design,
-please refer to our [documentation](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html).
+please refer to our [documentation](https://nvflare.readthedocs.io/en/2.5/user_guide/federated_xgboost/secure_xgboost_user_guide.html).
 
 To run all experiments, we provide a script for all settings.
 ```
@@ -156,4 +156,4 @@ experiments conducted with NVFlare produce results that are identical
 to those obtained from standalone scripts.
 
 For more information on the secure xgboost user guide please refer to
-https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html
+https://nvflare.readthedocs.io/en/2.5/user_guide/federated_xgboost/secure_xgboost_user_guide.html
