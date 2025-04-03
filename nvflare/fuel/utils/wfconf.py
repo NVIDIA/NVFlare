@@ -126,7 +126,15 @@ class _EnvUpdater(JsonObjectProcessor):
                 # this is a single var without params
                 element = self.vars.get(var_name, None)
         else:
-            element = element.format(**self.vars)
+            # Treat the element as a string that may contain var replacements expressed within {}:
+            # For example: "{ROOT_DIR}"
+            # Such vars will be replaced with values defined in self.vars.
+            try:
+                element = element.format(**self.vars)
+            except:
+                # If the substitution fails, return the original value
+                element = original_value
+
         if element != original_value:
             self.num_updated += 1
         return element
