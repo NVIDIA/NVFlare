@@ -22,7 +22,7 @@ The model is trained to segment 3 nested subregions of primary brain tumors (gli
 To run this example, please make sure you have downloaded BraTS 2018 data, which can be obtained from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/cbica/brats2018.html) [2-6]. Please download the data to [./dataset_brats18/dataset](./dataset_brats18/dataset). It should result in a sub-folder `./dataset_brats18/dataset/training`.
 In this example, we split BraTS18 dataset into [4 subsets](./dataset_brats18/datalist) for 4 clients. Each client requires at least a 12 GB GPU to run. 
 
-Note that for showing the FL training with fair comparison, we use an identical validation set across all clients and experiments without withholding a standalone testing set. In reality, each site will usually have its own validation set, and a testing set is usually withheld from the training process.
+Note that for achieving FL and centralized training curves with a validation score that can be directly compared, we use an identical validation set across all clients and experiments without withholding a standalone testing set. In this case all scores will be computed against the same dataset, and when combining all clients' data we will have the same dataset as the centralized training. In reality though, each site will usually have its own validation set (in which case the validation curves are not directly comparable), and a testing set is usually withheld from the training process.
 
 ### Differential Privacy (DP)
 [Differential Privacy (DP)](https://arxiv.org/abs/1910.00962) [7] is method for ensuring that Federated Learning (FL) preserves privacy by obfuscating the model updates sent from clients to the central server.
