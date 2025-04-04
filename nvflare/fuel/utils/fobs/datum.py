@@ -91,8 +91,8 @@ class DatumManager:
         if not isinstance(threshold, int):
             raise TypeError(f"threshold must be int but got {type(threshold)}")
 
-        if threshold <= 0:
-            raise ValueError(f"threshold must > 0 but got {threshold}")
+        if threshold < 1024:
+            raise ValueError(f"threshold must > 1024 but got {threshold}")
 
         self.threshold = threshold
         self.datums: Dict[str, Datum] = {}

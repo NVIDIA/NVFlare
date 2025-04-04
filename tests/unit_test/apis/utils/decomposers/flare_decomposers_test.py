@@ -72,7 +72,7 @@ class TestFlareDecomposers:
             "zb": b"123456789012345678901234567890123456789012345678",
             "zc": "中文字母测试两岸猿声啼不住轻舟已过万重山:;.'[]{}`~<>!@#$%^&*()-_+=",
         }
-        ds = fobs.dumps(d, max_value_size=10)
+        ds = fobs.dumps(d, max_value_size=1024)
         dd = fobs.loads(ds)
         assert d == dd
 
