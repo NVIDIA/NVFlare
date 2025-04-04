@@ -2,7 +2,7 @@
 
 This is a five-part course on Federated Learning with NVIDIA FLARE covers various aspects of federated learning, including how to develop and run federated learning applications, set up and deploy federated learning systems, and understand the privacy and security aspects of federated learning. 
 
-The initial 12-chapter course give you a comprehensive views of the FLARE, from running federated learning application, algorithms, system architecture, experimental treacking, system monitoring to industrial applications. 
+The initial 12-chapter course gives you a comprehensive view of the FLARE, from running federated learning applications, algorithms, system architecture, experimental tracking, system monitoring to industrial applications. 
 
  While each notebook can run independently, and you can skip certain chapters or sections, it is recommended to follow them one-by-one in order.
 
