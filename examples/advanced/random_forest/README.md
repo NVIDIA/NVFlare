@@ -6,7 +6,7 @@ Please make sure you set up virtual environment and Jupyterlab follows [example 
 
 ### Libraries
 This example show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data applications.
-It illustrates the [Random Forest](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) functionality using [XGBoost] (https://github.com/dmlc/xgboost) library,
+It illustrates the [Random Forest](https://xgboost.readthedocs.io/en/latest/tutorials/rf.html) functionality using [XGBoost] (https://github.com/dmlc/xgboost) library,
 which is an optimized distributed gradient boosting library covering random forest.
 Follow along in this [notebook](./random_forest.ipynb) for an interactive experience.
 

@@ -44,7 +44,6 @@ View all the available job templates with the following command:
 | [sag_pt_executor](./sag_pt_executor)            | server           | Executor             | scatter & gather workflow and cross-site evaluation with PyTorch |
 | [sag_pt_he](./sag_pt_he)                        | server           | client_api           | scatter & gather workflow using pytorch and homomorphic encryption |
 | [sag_pt_mlflow](./sag_pt_mlflow)                | server           | client_api           | scatter & gather workflow using pytorch with MLflow tracking |
-| [sag_pt_model_learner](./sag_pt_model_learner)  | server           | ModelLearner          | scatter & gather workflow and cross-site evaluation with PyTorch |
 | [sag_tf](./sag_tf)                              | server           | client_api           | scatter & gather workflow using TensorFlow           |
 | [sklearn_kmeans](./sklearn_kmeans)              | server           | client_api           | scikit-learn KMeans model                            |
 | [sklearn_linear](./sklearn_linear)              | server           | client_api           | scikit-learn linear model                            |
