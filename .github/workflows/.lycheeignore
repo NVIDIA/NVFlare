@@ -11,8 +11,8 @@ https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/
 # Ignore http://download.server.com/ from docs/user_guide/security/site_policy_management.rst
 http://download.server.com/
 
-# Ignore file:///{WORKSPACE}/{JOB_ID}/mlruns from docs/programming_guide/experiment_tracking/experiment_tracking_apis.rst
-file:///{WORKSPACE}/{JOB_ID}/mlruns
+# Ignore links with "file:///" to catch any other example links
+file:\/\/\/.*
 
 # Ignore https://drive.google.com/file/d/1hmlyG7g1SU8vhQ5wdTFhkqFO9Ty8BiYG/view?usp=sharing from docs/publications_and_talks.rst
 https://drive.google.com/file/d/1hmlyG7g1SU8vhQ5wdTFhkqFO9Ty8BiYG/view?usp=sharing
