@@ -29,7 +29,7 @@ def request_cb(message: Message):
     start_time = message.get_header(TIMESTAMP)
     log.info(f"Receiver received buffer with size: {size} Time: {time.time() - start_time} seconds")
     event.set()
-    return Message({TIMESTAMP: time.time()}, None)
+    return Message({TIMESTAMP: time.time()}, f"Received {size} bytes")
 
 
 def create_receiver_cell(url: str):
