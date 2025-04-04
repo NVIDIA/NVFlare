@@ -1,4 +1,0 @@
-{
-  "class_path": "et_task_processor.ETTaskProcessor",
-  "class_args": {"et_binary_path": "train_cifar10", "et_model_path": "cifar10.pte", "data_path": "/Users/yuantingh/Downloads/cifar-10-batches-bin/data_batch_1.bin"}
-}
