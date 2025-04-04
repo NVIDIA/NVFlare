@@ -514,6 +514,6 @@ azure_start_dsb_sh: |
     echo "URL is http://${IP_ADDRESS}:443"
   fi
   echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
-  echo "Project admin credential (username:password) is ${credential} ."
+  echo "Project admin credential (username:password:organization) is ${credential} ."
   echo "To stop the dashboard, run az group delete -n ${RESOURCE_GROUP}"
   echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
