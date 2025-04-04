@@ -1,8 +1,8 @@
 diff --git a/nvflare/client/__init__.py b/nvflare/client/__init__.py
-index 8d668962..7bcb2978 100644
+index 50411ce3..7bcb2978 100644
 --- a/nvflare/client/__init__.py
 +++ b/nvflare/client/__init__.py
-@@ -15,22 +15,4 @@
+@@ -15,23 +15,4 @@
  
  # https://github.com/microsoft/pylance-release/issues/856
  
@@ -21,6 +21,7 @@ index 8d668962..7bcb2978 100644
 -from .api import log as log
 -from .api import receive as receive
 -from .api import send as send
+-from .api import shutdown as shutdown
 -from .api import system_info as system_info
 -from .decorator import evaluate as evaluate
 -from .decorator import train as train
