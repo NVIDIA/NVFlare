@@ -30,6 +30,14 @@ jobs:
       id: lychee
       uses: lycheeverse/lychee-action@v2
       with:
-        args: --accept=200,403,429 --base . --verbose --no-progress './**/*.md' './**/*.html' './**/*.rst'
+        workingDirectory: .github/workflows
+        args: >-
+          --accept=200,403,429
+          --verbose
+          --no-progress
+          '${{ github.workspace }}/**/*.md'
+          '${{ github.workspace }}/**/*.html'
+          '${{ github.workspace }}/**/*.rst'
         fail: true
+        jobSummary: true
 
