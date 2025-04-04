@@ -46,7 +46,7 @@ See the `configuration dictionary schema <(https://docs.python.org/3/library/log
         "filters": {
             "FLFilter": {
                 "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
-                "logger_names": ["custom", "src", "nvflare.app_common", "nvflare.app_opt"]
+                "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
             }
         },
         "handlers": {
@@ -205,7 +205,7 @@ We leverage this in our FLFilter, which filters loggers related to fl training o
 
     "FLFilter": {
         "()": "nvflare.fuel.utils.log_utils.LoggerNameFilter",
-        "logger_names": ["custom", "src", "nvflare.app_common", "nvflare.app_opt"]
+        "logger_names": ["custom", "nvflare.app_common", "nvflare.app_opt"]
     }
 
 Handlers
