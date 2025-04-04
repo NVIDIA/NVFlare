@@ -34,17 +34,11 @@ NVFlare 2.5.0 or above,
 
     pip install nvflare~=2.5.0
 
-XGBoost 2.2 or above, which can be installed from the binary build using this command,
+Federated Secure XGBoost, which can be installed from the binary build using this command,
 
 .. code-block:: bash
 
     pip install https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/xgboost-2.2.0.dev0%2B4601688195708f7c31fcceeb0e0ac735e7311e61-py3-none-manylinux_2_28_x86_64.whl
-
-or in case you need to get the most current build of XGBoost,
-
-.. code-block:: bash
-
-    pip install https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/`curl -s https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/meta.json | grep -o 'xgboost-2\.2.*whl'|sed -e 's/+/%2B/'`
 
 ``TenSEAL`` package is needed for horizontal secure training,
 
@@ -243,7 +237,7 @@ On the server side, the following controller must be configured in workflows,
 ``nvflare.app_opt.xgboost.histogram_based_v2.fed_controller.XGBFedController``
 
 Even though the XGBoost training is performed on clients, the parameters are configured on the server so all clients share the same configuration. 
-XGBoost parameters are defined here, https://xgboost.readthedocs.io/en/stable/python/python_intro.html#setting-parameters
+XGBoost parameters are defined here, https://xgboost.readthedocs.io/en/latest/python/python_intro.html#setting-parameters
 
 - **num_rounds**: Number of training rounds.
 - **data_split_mode**: Same as XGBoost data_split_mode parameter, 0 for row-split, 1 for column-split.
