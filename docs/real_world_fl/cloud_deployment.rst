@@ -304,3 +304,10 @@ To run ``system_info.ipynb`` on Azure ML Notebook, users have to upload their st
 
 .. image:: notebook_for_cloud.png
     :height: 400px
+
+
+
+FLARE On GOOGLE Cloud
+---------------------------
+This is Google's FL Reference Architecture for NVIDIA FLARE
+https://github.com/GoogleCloudPlatform/accelerated-platforms/tree/main/platforms/gke/base/use-cases/federated-learning/examples/nvflare-tff

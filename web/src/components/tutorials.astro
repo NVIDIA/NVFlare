@@ -435,6 +435,28 @@ const tutorials = [
       "Federated secure training with XGBoost using homomorphic encryption.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost_secure`,
   },
+   {
+      title: "Federated Embedding Model Training",
+      tags: ["adv.", "algorithm", "rag", "embedding"],
+      description:
+        "Embedding tuning tasks, illustrates how to adapt a local training script with SentenceTransformers trainer to NVFlare.",
+      link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/rag/README.md`,
+    },
+    {
+      title: "Object Streaming",
+      tags: ["adv.", "streaming"],
+      description:
+        "Demonstrate how to use object streamers to send large objects in a memory-efficient manner.",
+      link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/streaming/README.md`,
+    },
+    {
+      title: "System Monitoring",
+      tags: ["adv.", "monitoring"],
+      description:
+        "An initial solution for tracking system metrics of your federated learning jobs; describes how to set up NVFLARE metrics publishing to StatsD Exporter, combined with Prometheus and visualized with Grafana.",
+      link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/monitoring/README.md`,
+    },
+
 ]
 
 const level = ["beg.", "int.", "adv."];
