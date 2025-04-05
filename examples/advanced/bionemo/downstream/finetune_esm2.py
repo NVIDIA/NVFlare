@@ -258,8 +258,13 @@ def train_model(
     print(
         f"\n[Current Round={input_model.current_round}, Site = {flare.get_site_name()}, Global model = {input_model} ({len(input_model.params)} params)]\n"
     )
-    # use a unique result directory for each round
 
+    # add NVFlare metric streamer to capture continues tensorboard output on the server.
+    from bionemo_tb_streamer import BioNeMoTBStreamer
+
+    trainer.callbacks.append(BioNeMoTBStreamer(start_step=input_model.current_round * num_steps))
+
+    # use a unique result directory for each round
     # Remove previous checkpoints to preserve disk space
     keep_last_ckpt_only = True  # TODO: make configurable
     if keep_last_ckpt_only:
