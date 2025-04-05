@@ -24,6 +24,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.streamers.container_retriever import ContainerRetriever
 from nvflare.app_common.streamers.file_retriever import FileRetriever
+from nvflare.fuel.utils.log_utils import custom_logger
 
 
 class StreamingExecutor(Executor):
@@ -33,6 +34,7 @@ class StreamingExecutor(Executor):
         self.retriever_id = retriever_id
         self.retriever = None
         self.task_timeout = task_timeout
+        self.logger = custom_logger(self.logger)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         # perform initialization and checks
