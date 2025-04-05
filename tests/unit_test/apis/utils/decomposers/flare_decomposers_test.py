@@ -72,7 +72,7 @@ class TestFlareDecomposers:
             "zb": b"123456789012345678901234567890123456789012345678",
             "zc": "中文字母测试两岸猿声啼不住轻舟已过万重山:;.'[]{}`~<>!@#$%^&*()-_+=",
         }
-        ds = fobs.dumps(d, max_value_size=10)
+        ds = fobs.dumps(d, max_value_size=1024)
         dd = fobs.loads(ds)
         assert d == dd
 
@@ -91,7 +91,7 @@ class TestFlareDecomposers:
 
         with tempfile.TemporaryDirectory() as td:
             file_path = os.path.join(td, str(uuid.uuid4()))
-            fobs.dumpf(d, file_path, max_value_size=15)
+            fobs.dumpf(d, file_path, max_value_size=1024)
             df = fobs.loadf(file_path)
             assert df == d
 
@@ -136,7 +136,7 @@ class TestFlareDecomposers:
         d2 = DXO(data_kind=DataKind.WEIGHTS, data={"x": 3, "y": os.urandom(100)})
 
         d = DXO(data_kind=DataKind.COLLECTION, data={"x": d1, "y": d2})
-        ds = fobs.dumps(d, max_value_size=20)
+        ds = fobs.dumps(d, max_value_size=1024)
         dd = fobs.loads(ds)
         dd1 = dd.data["x"]
         dd2 = dd.data["y"]
@@ -150,7 +150,7 @@ class TestFlareDecomposers:
             data={"x": 1, "y": os.urandom(200), "z": "中文字母测试两岸猿声啼不住轻舟已过万重山"},
         )
         s1 = dxo.to_shareable()
-        ds = fobs.dumps(s1, max_value_size=15)
+        ds = fobs.dumps(s1, max_value_size=1024)
         s2 = fobs.loads(ds)
         dxo2 = from_shareable(s2)
         self._dxo_equal(dxo, dxo2)
@@ -228,5 +228,5 @@ class TestFlareDecomposers:
 
     @staticmethod
     def _run_fobs(data: Any) -> Any:
-        buf = fobs.dumps(data, max_value_size=15)
+        buf = fobs.dumps(data, max_value_size=1024)
         return fobs.loads(buf)
