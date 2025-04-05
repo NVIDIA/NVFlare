@@ -21,6 +21,7 @@ from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.streamers.container_retriever import ContainerRetriever
+from nvflare.fuel.utils.log_utils import custom_logger
 
 
 class SimpleStreamingController(Controller):
@@ -29,6 +30,7 @@ class SimpleStreamingController(Controller):
         self.dict_retriever_id = dict_retriever_id
         self.dict_retriever = None
         self.task_timeout = task_timeout
+        self.logger = custom_logger(self.logger)
 
     def start_controller(self, fl_ctx: FLContext):
         model = self._get_test_model()
