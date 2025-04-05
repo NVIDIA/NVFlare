@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Any, Dict, Union
 
 TEN_MEGA = 10 * 1024 * 1024
+MIN_THRESHOLD = 1024
 
 
 class DatumType(Enum):
@@ -91,8 +92,8 @@ class DatumManager:
         if not isinstance(threshold, int):
             raise TypeError(f"threshold must be int but got {type(threshold)}")
 
-        if threshold <= 0:
-            raise ValueError(f"threshold must > 0 but got {threshold}")
+        if threshold < MIN_THRESHOLD:
+            raise ValueError(f"threshold must be at least {MIN_THRESHOLD} but got {threshold}")
 
         self.threshold = threshold
         self.datums: Dict[str, Datum] = {}
