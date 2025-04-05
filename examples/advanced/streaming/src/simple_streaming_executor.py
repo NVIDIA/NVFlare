@@ -19,6 +19,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.streamers.container_retriever import ContainerRetriever
+from nvflare.fuel.utils.log_utils import custom_logger
 
 
 class SimpleStreamingExecutor(Executor):
@@ -26,6 +27,7 @@ class SimpleStreamingExecutor(Executor):
         Executor.__init__(self)
         self.dict_retriever_id = dict_retriever_id
         self.dict_retriever = None
+        self.logger = custom_logger(self.logger)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:

@@ -24,6 +24,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.streamers.container_retriever import ContainerRetriever
 from nvflare.app_common.streamers.file_retriever import FileRetriever
+from nvflare.fuel.utils.log_utils import custom_logger
 
 
 class StreamingController(Controller):
@@ -33,6 +34,7 @@ class StreamingController(Controller):
         self.retriever_id = retriever_id
         self.retriever = None
         self.task_timeout = task_timeout
+        self.logger = custom_logger(self.logger)
 
     def start_controller(self, fl_ctx: FLContext):
         self.file_name, self.model = self._get_test_model()
