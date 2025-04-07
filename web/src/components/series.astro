@@ -4,11 +4,11 @@ import ClickTracker from './clickTracker.astro';
 const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
 
 const series_dli = {
-  id: "DLI",
+  id: "DLI", // id must not have spaces
   title: "DLI Courses",
   subseries_list: [
     {
-      id: "DLI FL Courses",
+      id: "DLI-FL-Courses", // id must not have spaces
       title: "DLI FL Courses",
       description: "FL with FLARE Series",
       cards: [
@@ -34,7 +34,7 @@ const series_self_paced_tutorials = {
   title: "FL with NVFLARE",
   subseries_list: [
     {
-      id: "Part 1: Federated Learning Introduction",
+      id: "self-paced-tutorials-part-1",
       title: "Part 1: Federated Learning Introduction",
       description: "We will use two chapters to illustrate how to run and develop federated learning applications.",
       cards: [
@@ -49,96 +49,96 @@ const series_self_paced_tutorials = {
           tags: ["beg.", "pytorch", "numpy", "pytorch-lightning"],
           description: "Explore the process of developing federated learning applications, Converting training to Federated training via Client API.",
           link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.0_introduction/introduction.ipynb`
-        }
+        },
       ]
     },
     {
-          id: "Part 2: Federated Computing System",
-          title: "Part 2: Federated Computing System",
-          description: "NVIDIA Federated Computing System, system architecture, core concepts and setup",
-          cards: [
-            {
-              title: "Chapter 3: NVIDIA FLARE's Federated Computing System",
-              tags: ["beg.", "doc"],
-              description: "Explore the core concepts and system architecture that make NVIDIA FLARE (NVFlare) a powerful platform for federated computing, examine different aspects of the NVFlare system, learn how to simulate deployments, and discover various ways to interact with the system.",
-              link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-3_federated_computing_platform/03.0_introduction/introduction.ipynb`
-            },
-            {
-              title: "Chapter 4 : Set Up a Federated System ",
-              tags: ["int.", "docker", "aws", "azure", "k8s"],
-              description: "Learn the process of setting up a federated system for simulated or real-world deployment.",
-              link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-4_setup_federated_system/04.0_introduction/introduction.ipynb`
-            }
-          ]
+      id: "self-paced-tutorials-part-2",
+      title: "Part 2: Federated Computing System",
+      description: "NVIDIA Federated Computing System, system architecture, core concepts and setup",
+      cards: [
+        {
+          title: "Chapter 3: NVIDIA FLARE's Federated Computing System",
+          tags: ["beg.", "doc"],
+          description: "Explore the core concepts and system architecture that make NVIDIA FLARE (NVFlare) a powerful platform for federated computing, examine different aspects of the NVFlare system, learn how to simulate deployments, and discover various ways to interact with the system.",
+          link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-3_federated_computing_platform/03.0_introduction/introduction.ipynb`
+        },
+        {
+          title: "Chapter 4 : Set Up a Federated System ",
+          tags: ["int.", "docker", "aws", "azure", "k8s"],
+          description: "Learn the process of setting up a federated system for simulated or real-world deployment.",
+          link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-4_setup_federated_system/04.0_introduction/introduction.ipynb`
+        },
+      ]
     },
     {
-                   id: "Part 3: Security and Privacy in FL",
-                   title: "Part 3: Security and Privacy in FL",
-                   description: "FL Privacy and security",
-                   cards: [
-                     {
-                       title: "Chapter 5: Privacy in Federated Learning",
-                       tags: ["beg.", "doc", "dp", "he"],
-                       description: "discuss privacy filters, differential privacy and Homomorphic encryption",
-                       link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-5_Privacy_In_Federated_Learning/05.0_introduction/introduction.ipynb`
-                     },
-                     {
-                       title: "Chapter 6: Security in Federated Learning with NVFLARE",
-                       tags: ["int.", "doc"],
-                       description: "Security Architecture, identity, roles, communication, site privacy & security policies, serialization etc.",
-                       link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-6_Security_in_federated_compute_system/06.0_introduction/introduction.ipynb`
-                     }
-                   ]
+      id: "self-paced-tutorials-part-3",
+      title: "Part 3: Security and Privacy in FL",
+      description: "FL Privacy and security",
+      cards: [
+        {
+          title: "Chapter 5: Privacy in Federated Learning",
+          tags: ["beg.", "doc", "dp", "he"],
+          description: "discuss privacy filters, differential privacy and Homomorphic encryption",
+          link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-5_Privacy_In_Federated_Learning/05.0_introduction/introduction.ipynb`
+        },
+        {
+          title: "Chapter 6: Security in Federated Learning with NVFLARE",
+          tags: ["int.", "doc"],
+          description: "Security Architecture, identity, roles, communication, site privacy & security policies, serialization etc.",
+          link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-6_Security_in_federated_compute_system/06.0_introduction/introduction.ipynb`
+        },
+      ]
      },
      {
-                   id: "Part 4: Advanced FL",
-                   title: "Part 4: Advanced FL Topics",
-                   description: "Advanced algorithms, workflows, LLM fine-tuning, low-level API and federated XGBoost",
-                   cards: [
-                     {
-                       title: "Chapter 7: Federated Learning algorithms and workflows",
-                       tags: ["adv.", "cyclic", "swarm", "split", "vf"],
-                       description: "discuss different FL algorithms and workflows",
-                       link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-7_algorithms_and_workflows/07.0_introduction/introduction.ipynb`
-                     },
-                     {
-                       title: "Chapter 8: Federated LLM training",
-                       tags: ["adv.", "llm", "sft", "peft", "pt"],
-                       description: "show how to file-tuning LLM models for supervised fine tuning, parameter efficient fine tuning, Prompt Tuning, Bert model training",
-                       link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.0_introduction/introduction.ipynb`
-                     },
-                     {
-                        title: "Chapter 9: FLARE Lower-Level APIs",
-                        tags: ["adv.", "ctr", "exec", "p2p"],
-                        description: "explore some of the low-level APIs available in NVFlare to build fully custom components and algorithms, including p2p communication ",
-                        link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-9_flare_low_level_apis/09.0_introduction/introduction.ipynb`
-                     },
-                    {
-                        title: "Chapter 10: Federated XGBoost",
-                        tags: ["adv.", "xgb"],
-                        description: "demonstrates how to use NVFlare to train an XGBoost model in a federated learning setting.",
-                        link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-10_federated_XGBoost/10.0_introduction/introduction.ipynb`
-                     }
-                   ]
+      id: "self-paced-tutorials-part-4",
+      title: "Part 4: Advanced FL Topics",
+      description: "Advanced algorithms, workflows, LLM fine-tuning, low-level API and federated XGBoost",
+      cards: [
+        {
+          title: "Chapter 7: Federated Learning algorithms and workflows",
+          tags: ["adv.", "cyclic", "swarm", "split", "vf"],
+          description: "discuss different FL algorithms and workflows",
+          link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-7_algorithms_and_workflows/07.0_introduction/introduction.ipynb`
+        },
+        {
+          title: "Chapter 8: Federated LLM training",
+          tags: ["adv.", "llm", "sft", "peft", "pt"],
+          description: "show how to file-tuning LLM models for supervised fine tuning, parameter efficient fine tuning, Prompt Tuning, Bert model training",
+          link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.0_introduction/introduction.ipynb`
+        },
+        {
+          title: "Chapter 9: FLARE Lower-Level APIs",
+          tags: ["adv.", "ctr", "exec", "p2p"],
+          description: "explore some of the low-level APIs available in NVFlare to build fully custom components and algorithms, including p2p communication ",
+          link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-9_flare_low_level_apis/09.0_introduction/introduction.ipynb`
+        },
+        {
+          title: "Chapter 10: Federated XGBoost",
+          tags: ["adv.", "xgb"],
+          description: "demonstrates how to use NVFlare to train an XGBoost model in a federated learning setting.",
+          link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-10_federated_XGBoost/10.0_introduction/introduction.ipynb`
+        },
+      ]
      },
      {
-                   id: "Part 5: FL applications in industries",
-                   title: "Part 5: FL applications in industries",
-                   description: "FL in healthcare & life science as well as financial industries",
-                   cards: [
-                     {
-                       title: "Chapter 11: Federated learning in healthcare and life science",
-                       tags: ["adv.", "health", "drug"],
-                       description: "Discuss healthcare in medical imaging, drug discovery and medical devices applications",
-                       link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-11_federated_learning_in_healthcare_lifescience/11.0_introduction/introduction.ipynb`
-                     },
-                     {
-                       title: "Chapter 12: Federated learning in financial services",
-                       tags: ["adv.", "xgboost", "gnn"],
-                       description: "discuss how to use FL in fraud detection with XGBoost and GNN as well federated feature engineering",
-                       link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/12.0_introduction/introduction.ipynb`
-                     }
-                   ]
+        id: "self-paced-tutorials-part-5",
+        title: "Part 5: FL applications in industries",
+        description: "FL in healthcare & life science as well as financial industries",
+        cards: [
+          {
+            title: "Chapter 11: Federated learning in healthcare and life science",
+            tags: ["adv.", "health", "drug"],
+            description: "Discuss healthcare in medical imaging, drug discovery and medical devices applications",
+            link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-11_federated_learning_in_healthcare_lifescience/11.0_introduction/introduction.ipynb`
+          },
+          {
+            title: "Chapter 12: Federated learning in financial services",
+            tags: ["adv.", "xgboost", "gnn"],
+            description: "discuss how to use FL in fraud detection with XGBoost and GNN as well federated feature engineering",
+            link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/12.0_introduction/introduction.ipynb`
+          },
+        ]
      },
   ]
 }
@@ -279,13 +279,13 @@ const series_100 = {
             "Utilize the secure provisioning tool for streamlining the process to provision, start, and operate federated learning with a trusted setup.",
           link: "https://nvflare.readthedocs.io/en/main/real_world_fl/overview.html",
         },
-         {
-            title: "Preflight Check",
-            tags: ["adv.", "deployment"],
-            description:
-              "Perform preliminary checks before starting up an NVFlare subsystem to catch errors early.",
-            link: "https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/preflight_check.html",
-          },
+        {
+          title: "Preflight Check",
+          tags: ["adv.", "deployment"],
+          description:
+            "Perform preliminary checks before starting up an NVFlare subsystem to catch errors early.",
+          link: "https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/preflight_check.html",
+        },
       ]
     },
   ]
