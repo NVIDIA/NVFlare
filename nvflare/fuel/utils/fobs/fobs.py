@@ -24,7 +24,13 @@ import msgpack
 
 from nvflare.fuel.utils.class_loader import get_class_name, load_class
 from nvflare.fuel.utils.fobs.datum import DatumManager
-from nvflare.fuel.utils.fobs.decomposer import DataClassDecomposer, Decomposer, EnumTypeDecomposer
+from nvflare.fuel.utils.fobs.decomposer import (
+    DataClassDecomposer,
+    Decomposer,
+    EnumTypeDecomposer,
+    Externalizer,
+    Internalizer,
+)
 
 __all__ = [
     "register",
@@ -115,7 +121,8 @@ class Packer:
 
         decomposed = decomposer.decompose(obj, self.manager)
         if self.manager:
-            decomposed = self.manager.externalize(decomposed)
+            externalizer = Externalizer(self.manager)
+            decomposed = externalizer.externalize(decomposed)
 
         return {FOBS_TYPE: type_name, FOBS_DATA: decomposed, FOBS_DECOMPOSER: get_class_name(type(decomposer))}
 
@@ -151,7 +158,8 @@ class Packer:
 
         data = obj[FOBS_DATA]
         if self.manager:
-            data = self.manager.internalize(data)
+            internalizer = Internalizer(self.manager)
+            data = internalizer.internalize(data)
 
         decomposer = _decomposers[type_name]
         return decomposer.recompose(data, self.manager)
