@@ -69,7 +69,7 @@ class BioNeMoLauncher(Executor):
                 if success:
                     # Get results path from inference script arguments
                     args = self.launcher._script.split()
-                    results_path = args[args.index("--results-path") + 1]
+                    results_path = os.path.join(args[args.index("--results-path") + 1], "predictions__rank_0.pt")
                     if os.path.isfile(results_path):
                         self.log_info(fl_ctx, f"Get result info from: {results_path}")
                         results = torch.load(results_path)
@@ -83,6 +83,7 @@ class BioNeMoLauncher(Executor):
 
                         n_sequences = len(results["embeddings"])
                     else:
+                        self.log_warning(fl_ctx, f"{results_path} doesn't exist!")
                         n_sequences, result_shapes = "n/a", "n/a"
 
                     # Prepare a DXO for our updated model. Create shareable and return
