@@ -8,7 +8,14 @@ info:
   license:
     name: Apache 2.0
 servers:
-  - url: http://localhost:8443/api/v1
+  - url: http://localhost:8443/nvflare-dashboard/api/v1
+    description: Local development server
+  - url: https://{dashboard_host}/nvflare-dashboard/api/v1
+    description: Production server
+    variables:
+      dashboard_host:
+        description: The hostname of the dashboard server
+        default: localhost
 paths:
   /login:
     post:
