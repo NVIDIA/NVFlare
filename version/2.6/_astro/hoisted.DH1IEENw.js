@@ -1,0 +1,1 @@
+import"./hoisted.CKZZV3w3.js";document.addEventListener("DOMContentLoaded",function(){const e=window.location.pathname;if(e.startsWith("/NVFlare/research")){document.getElementById("404-message").innerText="Redirecting to NVFlare GitHub research folder...";const t=e.replace("/NVFlare/research","");window.location.href=`https://github.com/NVIDIA/NVFlare/tree/main/research${t}`}});
