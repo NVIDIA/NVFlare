@@ -49,8 +49,8 @@ $ python3 -m pip install nvflare
   * Comprehensive documentation, technical blogs, tutorials, and videos
   * Slides and recordings of real-world federated learning use cases from past NVFLARE Day Events. 
   * Tools, API guides, CLI tutorials, training materials, and extensive examples
-* For hands-on learning, try our [step-by-step walkthroughs](https://chatgpt.com/c/examples/hello-world/step-by-step/README.md) using consistent datasets.
-* Learn how to adapt your centralized training code with our guide on [converting to federated learning](https://chatgpt.com/c/examples/hello-world/ml-to-fl/README.md).
+* For hands-on learning, try our [step-by-step walkthroughs](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/hello-world/step-by-step) using consistent datasets.
+* Learn how to adapt your centralized training code with our guide on [converting to federated learning](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/hello-world/ml-to-fl).
 
 * Structured, self-paced learning is available through curated tutorials and training paths on the website.
   * DLI courses:
