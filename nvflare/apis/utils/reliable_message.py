@@ -124,29 +124,29 @@ class _RequestReceiver:
                         return _status_reply(STATUS_IN_PROCESS)  # ack
                     except Exception as ex:
                         # it is possible that the RM is already closed (self.executor is shut down)
-                        ReliableMessage.error(fl_ctx, f"failed to submit request: {secure_format_exception(ex)}")
+                        ReliableMessage.warning(fl_ctx, f"failed to submit request: {secure_format_exception(ex)}")
                         return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
                 elif self.result:
                     # we already finished processing - send the result back
-                    ReliableMessage.info(fl_ctx, "resend result back to requester")
+                    ReliableMessage.debug(fl_ctx, "resend result back to requester")
                     return self.result
                 else:
                     # we are still processing
-                    ReliableMessage.info(fl_ctx, "got request - the request is being processed")
+                    ReliableMessage.debug(fl_ctx, "got request - the request is being processed")
                     return _status_reply(STATUS_IN_PROCESS)
             elif op == OP_QUERY:
                 if self.result:
                     if self.reply_time:
                         # result already sent back successfully
-                        ReliableMessage.info(fl_ctx, "got query: we already replied successfully")
+                        ReliableMessage.debug(fl_ctx, "got query: we already replied successfully")
                         return _status_reply(STATUS_REPLIED)
                     elif self.replying:
                         # result is being sent
-                        ReliableMessage.info(fl_ctx, "got query: reply is being sent")
+                        ReliableMessage.debug(fl_ctx, "got query: reply is being sent")
                         return _status_reply(STATUS_IN_REPLY)
                     else:
                         # try to send the result again
-                        ReliableMessage.info(fl_ctx, "got query: sending reply again")
+                        ReliableMessage.debug(fl_ctx, "got query: sending reply again")
                         return self.result
                 else:
                     # still in process
@@ -185,7 +185,7 @@ class _RequestReceiver:
         else:
             # unsure whether the reply was sent successfully
             # do not release the request receiver in case the requester asks for result in a query
-            ReliableMessage.error(
+            ReliableMessage.debug(
                 fl_ctx, f"failed to send reply in {time_spent} secs: {rc=}; will wait for requester to query"
             )
 
@@ -419,7 +419,7 @@ class ReliableMessage:
                         cls._req_receivers.pop(tx_id, None)
 
             time.sleep(2.0)
-        cls._logger.info("shutdown reliable message monitor")
+        cls._logger.debug("shutdown reliable message monitor")
 
     @classmethod
     def shutdown(cls):
@@ -528,7 +528,7 @@ class ReliableMessage:
 
         if not tx_timeout or tx_timeout <= per_msg_timeout:
             # simple aux message
-            cls.info(fl_ctx, f"send request with simple Aux Msg: {per_msg_timeout=} {tx_timeout=}")
+            cls.debug(fl_ctx, f"send request with simple Aux Msg: {per_msg_timeout=} {tx_timeout=}")
             engine = fl_ctx.get_engine()
             reply = engine.send_aux_request(
                 targets=[target],
@@ -542,7 +542,7 @@ class ReliableMessage:
 
         tx_id = str(uuid.uuid4())
         fl_ctx.set_prop(key=PROP_KEY_TX_ID, value=tx_id, private=True, sticky=False)
-        cls.info(fl_ctx, f"send request with Reliable Msg {per_msg_timeout=} {tx_timeout=}")
+        cls.debug(fl_ctx, f"send request with Reliable Msg {per_msg_timeout=} {tx_timeout=}")
         receiver = _ReplyReceiver(tx_id, per_msg_timeout, tx_timeout)
         cls._reply_receivers[tx_id] = receiver
         request.set_header(HEADER_TX_ID, tx_id)
@@ -575,7 +575,7 @@ class ReliableMessage:
         num_tries = 0
         while True:
             if abort_signal and abort_signal.triggered:
-                cls.info(fl_ctx, "send_request abort triggered")
+                cls.debug(fl_ctx, "send_request abort triggered")
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             if time.time() - receiver.tx_start_time >= receiver.tx_timeout:
@@ -672,7 +672,7 @@ class ReliableMessage:
                 return receiver.result
 
             if abort_signal and abort_signal.triggered:
-                cls.info(fl_ctx, "aborted query triggered by abort signal")
+                cls.debug(fl_ctx, "aborted query triggered by abort signal")
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             if time.time() - last_query_time < cls._query_interval:

@@ -230,7 +230,7 @@ class JsonFormatter(BaseFormatter):
 
         return fmt_dict
 
-    def formatMessage(self, record) -> dict:
+    def formatMessageDict(self, record) -> dict:
         message_dict = {}
         for fmt_key, fmt_val in self.fmt_dict.items():
             message_dict[fmt_key] = record.__dict__.get(fmt_val, "")
@@ -240,25 +240,27 @@ class JsonFormatter(BaseFormatter):
         super().format(record)
 
         self.record.asctime = self.formatTime(self.record, self.datefmt)
-        formatted_message_dict = self.formatMessage(self.record)
+        formatted_message_dict = self.formatMessageDict(self.record)
         message_dict = {k: v for k, v in formatted_message_dict.items()}
 
         return json.dumps(message_dict, default=str)
 
 
 class LoggerNameFilter(logging.Filter):
-    def __init__(self, logger_names=["nvflare"], exclude_logger_names=[]):
+    def __init__(self, logger_names=["nvflare"], exclude_logger_names=[], allow_all_error_logs=True):
         """Filter log records based on logger names.
-        Additionally allows all log records with levelno > logging.INFO through.
 
         Args:
             logger_names (List[str]): list of logger names to allow through filter
             exclude_logger_names (List[str]): list of logger names to disallow through filter (takes precedence over allowing from logger_names)
+            allow_all_error_logs (bool): allow all log records with levelno > logging.INFO through filter, even if they are not from a logger in logger_names.
+                Defaults to True.
 
         """
         super().__init__()
         self.logger_names = logger_names
         self.exclude_logger_names = exclude_logger_names
+        self.allow_all_error_logs = allow_all_error_logs
 
     def filter(self, record):
         name = getattr(record, "fullName", record.name)
@@ -266,13 +268,15 @@ class LoggerNameFilter(logging.Filter):
         is_logger_included = self.matches_name(name, self.logger_names)
         is_logger_excluded = self.matches_name(name, self.exclude_logger_names)
 
-        return (record.levelno > logging.INFO) or (not is_logger_excluded and is_logger_included)
+        return (self.allow_all_error_logs and record.levelno > logging.INFO) or (
+            is_logger_included and not is_logger_excluded
+        )
 
     def matches_name(self, name, logger_names) -> bool:
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
 
 
-def get_module_logger(module=None, name=None):
+def get_module_logger(module=None, name=None) -> logging.Logger:
     # Get module logger name adhering to logger hierarchy. Optionally add name as a suffix.
     if module is None:
         caller_globals = inspect.stack()[1].frame.f_globals
@@ -281,12 +285,12 @@ def get_module_logger(module=None, name=None):
     return logging.getLogger(f"{module}.{name}" if name else module)
 
 
-def get_obj_logger(obj):
+def get_obj_logger(obj) -> logging.Logger:
     # Get object logger name adhering to logger hierarchy.
     return logging.getLogger(f"{obj.__module__}.{obj.__class__.__qualname__}") if obj else None
 
 
-def get_script_logger():
+def get_script_logger() -> logging.Logger:
     # Get script logger name adhering to logger hierarchy. Based on package and filename. If not in a package, default to custom.
     caller_frame = inspect.stack()[1]
     package = caller_frame.frame.f_globals.get("__package__", "")
@@ -295,6 +299,11 @@ def get_script_logger():
     return logging.getLogger(
         f"{package if package else 'custom'}{'.' + os.path.splitext(os.path.basename(file))[0] if file else ''}"
     )
+
+
+def custom_logger(logger: logging.Logger) -> logging.Logger:
+    # From a logger, return a new logger with "custom" prepended to the logger name
+    return logging.getLogger(f"custom.{logger.name}")
 
 
 def configure_logging(workspace: Workspace, job_id: str = None, file_prefix: str = ""):

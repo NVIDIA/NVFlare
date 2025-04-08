@@ -57,6 +57,7 @@ class MessagePropKey:
 
     ENDPOINT = CELLNET_PREFIX + "endpoint"
     COMMON_NAME = CELLNET_PREFIX + "common_name"
+    FUTURES = CELLNET_PREFIX + "futures"
 
 
 class Encoding:
@@ -157,7 +158,6 @@ class CellChannel:
     MULTI_PROCESS_EXECUTOR = "multi_process_executor"
     SIMULATOR_RUNNER = "simulator_runner"
     RETURN_ONLY = "return_only"
-    EDGE_REQUEST = "edge_request"
 
 
 class CellChannelTopic:

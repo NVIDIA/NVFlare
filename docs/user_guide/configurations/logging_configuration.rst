@@ -193,9 +193,11 @@ LoggerNameFilter
 ----------------
 :class:`LoggerNameFilter<nvflare.fuel.utils.log_utils.LoggerNameFilter>` filters loggers based on a list of logger_names.
 Filters utilize the logger hierarchy, so any descendants of the specified names will also be allowed through the filter.
+By default, LoggerNameFilter is configured with allow_all_error_logs to allow all logs with level greater than INFO though even if they are not from a logger in logger_names.
 
 - **logger_names**: list of logger names to allow through filter
 - **exclude_logger_names**: list of logger names to disallow through filter (takes precedence over allowing from logger_names)
+- **allow_all_error_logs**: allow all log records with levelno > logging.INFO through filter, even if they are not from a logger in logger_names. Defaults to True.
 
 We leverage this in our FLFilter, which filters loggers related to fl training or custom code.
 
@@ -274,10 +276,15 @@ We define the root logger with INFO level and add the desired handlers.
 Given the hierarchical structure of loggers, specific loggers can be configured using their dot separated names.
 Furthermore, any intermediate logger parents are already created and are configureable.
 
-When creating loggers for FLARE, we provide several convenience functions to help adhere to the package logger hierarchy:
+When creating loggers for custom code, we provide a user custom logger function:
+
+:func:`custom_logger<nvflare.fuel.utils.log_utils.custom_logger>`: From a logger, return a new logger with "custom" prepended to the logger name.
+This enables logs from the custom logger to pass through the default FLFilter so the logs will be displayed in "concise" mode.
+
+When creating loggers for FLARE code, we provide several developer functions to help adhere to the package logger hierarchy:
 
 - :func:`get_obj_logger<nvflare.fuel.utils.log_utils.get_obj_logger>` for classes
-- :func:`get_script_logger<nvflare.fuel.utils.log_utils.get_script_logger>` for scripts (if not in a package, default to custom.<script_file_name>)
+- :func:`get_script_logger<nvflare.fuel.utils.log_utils.get_script_logger>` for scripts
 - :func:`get_module_logger<nvflare.fuel.utils.log_utils.get_module_logger>` for modules
 
 

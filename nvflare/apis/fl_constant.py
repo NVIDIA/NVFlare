@@ -230,7 +230,6 @@ class AdminCommandNames(object):
     DELETE_WORKSPACE = "delete_workspace"
     CHECK_RESOURCES = "check_resources"
     DEPLOY_APP = "deploy_app"
-    START_APP = "start_app"
     CHECK_STATUS = "check_status"
     ADMIN_CHECK_STATUS = "admin_check_status"
     ABORT = "abort"

@@ -30,7 +30,6 @@ class CommandCategory(object):
 COMMAND_CATEGORIES = {
     AC.ABORT: CommandCategory.MANAGE_JOB,
     AC.ABORT_JOB: CommandCategory.MANAGE_JOB,
-    AC.START_APP: CommandCategory.MANAGE_JOB,
     AC.DELETE_JOB: CommandCategory.MANAGE_JOB,
     AC.DELETE_WORKSPACE: CommandCategory.MANAGE_JOB,
     AC.CONFIGURE_JOB_LOG: CommandCategory.MANAGE_JOB,
