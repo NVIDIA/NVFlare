@@ -86,3 +86,11 @@ The `TBWriter` mimics Tensorboard SummaryWriter and streams events over to the s
 
 Note that in this job, the server still has `MLflowReceiver` and `TBAnalyticsReceiver` configured the same as in the job with `MLflowWriter`
 on the client side, and the events are converted by the `MLflowReceiver` to write to the MLflow tracking server.
+
+
+### 6. Sends to MLFlow server directly from client side
+
+You can stream the metrics to the MLFlow server without passing through the NVFlare server as well.
+Please check the job `hello-pt-mlflow-client`.
+
+You notice we configure the `MLflowReceiver` on the client side to process the `analytix_log_stats` event.
