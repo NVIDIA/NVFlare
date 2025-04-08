@@ -53,8 +53,7 @@
             "dataset_id": "CIFAR10",
             "optimizer": "SGD"
           }
-        },
-        "events": ["fed.analytix_log_stats"]
+        }
       }
     }
   ],
