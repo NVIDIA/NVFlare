@@ -45,12 +45,21 @@ $ python3 -m pip install nvflare
 ```
 ## Getting Started
 
-### To get started, take a look at the instructions and code examples on our [**website**](https://nvidia.github.io/NVFlare/).
+* To get started, visit our NVFLARE [website](https://nvidia.github.io/NVFlare/), which includes:
+  * Comprehensive documentation, technical blogs, tutorials, and videos
+  * Slides and recordings of real-world federated learning use cases from past NVFLARE Day Events. 
+  * Tools, API guides, CLI tutorials, training materials, and extensive examples
+* For hands-on learning, try our [step-by-step walkthroughs](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/hello-world/step-by-step) using consistent datasets.
+* Learn how to adapt your centralized training code with our guide on [converting to federated learning](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/hello-world/ml-to-fl).
 
-* For more details, see our getting started [tutorials](./examples/getting_started/README.md).
-* For more advanced examples and [step-by-step](./examples/hello-world/step-by-step/README.md) walk-troughs, see our [examples](examples).
-* There are also detailed instructions on how to convert your standalone/centralized training code to [federated learning code](./examples/hello-world/ml-to-fl/README.md).
+* Structured, self-paced learning is available through curated tutorials and training paths on the website.
+  * DLI courses:
+    * https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-28+V1
+    * https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-29+V1
+  * follow the notebooks: https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/self-paced-training
+ 
 * If you'd like to write your own NVIDIA FLARE components, a detailed programming guide can be found [here](https://nvflare.readthedocs.io/en/main/programming_guide.html).
+* visit developer portal https://developer.nvidia.com/flare
 
 ## Community
 
@@ -60,7 +69,8 @@ Ask and answer questions, share ideas, and engage with other community members a
 
 ## Related Talks and Publications
 
-Take a look at our growing list of [talks, blogs, and publications](https://nvflare.readthedocs.io/en/main/publications_and_talks.html) related to NVIDIA FLARE.
+Take a look at our growing list of [talks and publications](https://nvflare.readthedocs.io/en/main/publications_and_talks.html), and [technical blogs](https://developer.nvidia.com/blog/tag/federated-learning) related to NVIDIA FLARE.
+
 
 ## License
 
