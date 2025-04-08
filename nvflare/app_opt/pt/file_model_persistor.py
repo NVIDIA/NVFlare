@@ -42,6 +42,7 @@ class PTFileModelPersistor(ModelPersistor):
         best_global_model_file_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
         source_ckpt_file_full_name=None,
         filter_id: str = None,
+        load_weights_only: bool = False,
     ):
         """Persist pytorch-based model to/from file system.
 
@@ -93,6 +94,8 @@ class PTFileModelPersistor(ModelPersistor):
             source_ckpt_file_full_name (str, optional): full file name for source model checkpoint file. Defaults to None.
             filter_id: Optional string that defines a filter component that is applied to prepare the model to be saved,
                 e.g. for serialization of custom Python objects.
+            load_weights_only:  Indicates whether torch's unpickler should be restricted to loading only tensors, primitive types, dictionaries
+                and any types added via :func:`torch.serialization.add_safe_globals`. Defaults to False (<=PyTorch 2.6 behavior).
         Raises:
             ValueError: when source_ckpt_file_full_name does not exist
         """
@@ -109,6 +112,7 @@ class PTFileModelPersistor(ModelPersistor):
         self.global_model_file_name = global_model_file_name
         self.best_global_model_file_name = best_global_model_file_name
         self.source_ckpt_file_full_name = source_ckpt_file_full_name
+        self.load_weights_only = load_weights_only
 
         self.default_train_conf = None
 
@@ -198,7 +202,7 @@ class PTFileModelPersistor(ModelPersistor):
         if src_file_name:
             try:
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-                data = torch.load(src_file_name, map_location=device)
+                data = torch.load(src_file_name, map_location=device, weights_only=self.load_weights_only)
                 # "checkpoint may contain 'model', 'optimizer', 'lr_scheduler', etc. or only contain model dict directly."
             except Exception:
                 self.log_exception(fl_ctx, "error loading checkpoint from {}".format(src_file_name))
@@ -265,7 +269,7 @@ class PTFileModelPersistor(ModelPersistor):
         try:
             # Use the "cpu" to load the global model weights, avoid GPU out of memory
             device = "cpu"
-            data = torch.load(location, map_location=device)
+            data = torch.load(location, map_location=device, weights_only=self.load_weights_only)
             persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=self.default_train_conf)
             return persistence_manager.to_model_learnable(self.exclude_vars)
         except Exception:
