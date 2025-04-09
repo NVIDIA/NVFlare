@@ -14,36 +14,40 @@
 import time
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.edge.assessor import Assessment, Assessor
+from nvflare.edge.assessor import Assessment
+from nvflare.edge.assessors.saga import SAGAdaptor
 
 
-class CountAssessor(Assessor):
-    def __init__(self, min_count: int, max_count: int, timeout: float):
-        Assessor.__init__(self)
+class CountAssessor(SAGAdaptor):
+    def __init__(
+        self,
+        persistor_id: str,
+        shareable_generator_id: str,
+        aggregator_id: str,
+        min_count: int,
+        max_count: int,
+        timeout: float,
+    ):
+        SAGAdaptor.__init__(self, persistor_id, shareable_generator_id, aggregator_id)
         self.min_count = min_count
         self.max_count = max_count
         self.timeout = timeout
-        self._aggregator = None
         self._start_time = None
 
-    def initialize(self, aggregator: Aggregator, fl_ctx: FLContext):
-        self._aggregator = aggregator
-        if not hasattr(aggregator, "get_count"):
-            raise ValueError(f"aggregator {type(aggregator)} does not have get_count method")
-
-    def start(self, fl_ctx: FLContext):
+    def start_task(self, fl_ctx: FLContext):
         self._start_time = time.time()
+        return super().start_task(fl_ctx)
 
-    def reset(self, fl_ctx: FLContext):
+    def end_task(self, fl_ctx: FLContext):
+        super().end_task(fl_ctx)
         self._start_time = None
 
-    def assess(self, fl_ctx: FLContext) -> Assessment:
+    def do_assessment(self, fl_ctx: FLContext) -> Assessment:
         if time.time() - self._start_time > self.timeout:
             return Assessment.TASK_DONE
 
         # have we got enough count
-        count = self._aggregator.get_count()
+        count = self.aggregator.get_count()
         if count < self.min_count:
             return Assessment.CONTINUE
         elif count >= self.max_count:

@@ -38,8 +38,8 @@ class EdgeEventType:
 
 class EdgeTaskHeaderKey:
     TASK_SEQ = "task_seq"
-    HAS_AGGR_DATA = "has_aggr_data"
-    AGGR_INTERVAL = "aggr_interval"
+    HAS_UPDATE_DATA = "has_update_data"
+    UPDATE_INTERVAL = "update_interval"
 
 
 class MsgKey:

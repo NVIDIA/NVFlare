@@ -26,8 +26,8 @@ class AddAggrHeader(Filter):
         if rc != ReturnCode.OK:
             return shareable
 
-        has_aggr_data = shareable.get_header(EdgeTaskHeaderKey.HAS_AGGR_DATA)
+        has_aggr_data = shareable.get_header(EdgeTaskHeaderKey.HAS_UPDATE_DATA)
         if has_aggr_data is None:
-            shareable.set_header(EdgeTaskHeaderKey.HAS_AGGR_DATA, True)
-            self.log_info(fl_ctx, f"added {EdgeTaskHeaderKey.HAS_AGGR_DATA} header to result")
+            shareable.set_header(EdgeTaskHeaderKey.HAS_UPDATE_DATA, True)
+            self.log_info(fl_ctx, f"added {EdgeTaskHeaderKey.HAS_UPDATE_DATA} header to result")
         return shareable
