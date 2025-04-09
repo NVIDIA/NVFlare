@@ -1,15 +1,12 @@
 # Streaming API Testing Tools
 
-The following command line tools are provided to test the streaming API.
-
-There are 2 sets of tools:
-1. sender.py/receiver.py: Those can be used to send a memory buffer to the remote cell. The memory buffer size must
-   fit in the memory.
-2. file_sender.py/file_receiver.py: This uses StreamCell to send/receive files. This can be used to send 
-   files of any size, as long as receiving end has enough disk space.
-
+The following command line tools are not part of the F3 streaming library. 
+They are provided to test the streaming API.
 
 ## Sending a memory buffer
+
+sender.py/receiver.py can be used to send a memory buffer to the remote cell. 
+The memory buffer size must fit in the memory.
 
 Starting receiver side first:
 
@@ -18,6 +15,8 @@ Starting receiver side first:
 Starting sender on the same or different machine:
 
      python sender.py grpc://192.168.1.2:1234 -s 100000000
+
+where `-s` is the buffer size in bytes.
 
 ## Sending a file
 
