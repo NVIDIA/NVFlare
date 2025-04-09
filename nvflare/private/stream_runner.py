@@ -439,8 +439,10 @@ class ObjectStreamer(FLComponent):
                 # this is end of the streaming
                 if abort_signal and abort_signal.triggered:
                     rc = ReturnCode.TASK_ABORTED
-                else:
+                elif result:
                     rc = ReturnCode.OK
+                else:
+                    rc = ReturnCode.ERROR
                 self._notify_abort_streaming(targets, tx_id, secure, fl_ctx)
                 self.logger.debug(f"Done streaming: {rc}")
                 return rc, result
