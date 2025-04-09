@@ -18,14 +18,22 @@ import numpy as np
 import torch
 
 from nvflare.app_common.abstract.params_converter import ParamsConverter
+from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.fuel.utils.fobs import fobs
+
+TENSOR_SHAPE = "np_pc_tensor_shapes"
+EXCLUDE_VARS = "np_pc_exclude_vars"
 
 
 class NumpyToPTParamsConverter(ParamsConverter):
-    def convert(self, params: Dict, fl_ctx) -> Dict:
-        tensor_shapes = fl_ctx.get_prop("tensor_shapes")
-        exclude_vars = fl_ctx.get_prop("exclude_vars")
+    def __init__(self):
+        super().__init__()
+        fobs.register(TensorDecomposer)
 
-        return_params = {}
+    def convert(self, params: Dict, fl_ctx) -> Dict:
+        tensor_shapes = fl_ctx.get_prop(TENSOR_SHAPE)
+        exclude_vars = fl_ctx.get_prop(EXCLUDE_VARS)
+
         if tensor_shapes:
             return_params = {
                 k: torch.as_tensor(np.reshape(v, tensor_shapes[k])) if k in tensor_shapes else torch.as_tensor(v)
@@ -42,6 +50,10 @@ class NumpyToPTParamsConverter(ParamsConverter):
 
 
 class PTToNumpyParamsConverter(ParamsConverter):
+    def __init__(self):
+        super().__init__()
+        fobs.register(TensorDecomposer)
+
     def convert(self, params: Dict, fl_ctx) -> Dict:
         return_tensors = {}
         tensor_shapes = {}
@@ -60,9 +72,9 @@ class PTToNumpyParamsConverter(ParamsConverter):
                 exclude_vars[k] = v
 
         if tensor_shapes:
-            fl_ctx.set_prop("tensor_shapes", tensor_shapes)
+            fl_ctx.set_prop(TENSOR_SHAPE, tensor_shapes)
         if exclude_vars:
-            fl_ctx.set_prop("exclude_vars", exclude_vars)
+            fl_ctx.set_prop(EXCLUDE_VARS, exclude_vars)
             self.logger.warning(
                 f"{len(exclude_vars)} vars excluded as they were non-tensor type: " f"{list(exclude_vars.keys())}"
             )

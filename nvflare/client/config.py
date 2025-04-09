@@ -24,6 +24,7 @@ class ExchangeFormat:
     RAW = "raw"
     PYTORCH = "pytorch"
     NUMPY = "numpy"
+    KERAS_NUMPY = "keras_numpy"  # {layer.name: layer.get_weights() for layer in model.layers}
 
 
 class TransferType:

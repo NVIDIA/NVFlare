@@ -18,7 +18,7 @@ from src.lit_net import LitNet
 from src.net import Net
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.job_config.script_runner import ScriptRunner
 
 
 def define_parser():
@@ -61,7 +61,6 @@ def main():
             script=script,
             launch_external_process=launch_process,
             command=launch_command.replace("{PORT}", ports[i]),
-            framework=FrameworkType.PYTORCH,
         )
         job.to(executor, f"site-{i + 1}")
 

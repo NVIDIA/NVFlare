@@ -43,8 +43,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
-        from_nvflare_converter_id: Optional[str] = None,
-        to_nvflare_converter_id: Optional[str] = None,
         params_exchange_format: str = ExchangeFormat.NUMPY,
         params_transfer_type: str = TransferType.FULL,
         config_file_name: str = CLIENT_API_CONFIG,
@@ -69,10 +67,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             train_task_name (str): Task name of train mode.
             evaluate_task_name (str): Task name of evaluate mode.
             submit_model_task_name (str): Task name of submit_model mode.
-            from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
-                This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
-            to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
-                This ParamsConverter will be called when model is sent from nvflare executor side to controller side.
             params_exchange_format (str): What format to exchange the parameters.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent.
@@ -96,8 +90,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             train_task_name=train_task_name,
             evaluate_task_name=evaluate_task_name,
             submit_model_task_name=submit_model_task_name,
-            from_nvflare_converter_id=from_nvflare_converter_id,
-            to_nvflare_converter_id=to_nvflare_converter_id,
         )
 
         self._params_exchange_format = params_exchange_format

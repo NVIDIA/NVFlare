@@ -19,12 +19,12 @@ from typing import Any, Dict, Optional
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
 from nvflare.client.config import ClientConfig, ConfigKey, TransferType
 from nvflare.client.constants import SYS_ATTRS
-from nvflare.client.utils import DIFF_FUNCS
+from nvflare.client.utils import prepare_param_diff
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -189,23 +189,12 @@ class InProcessClientAPI(APISpec):
     def clear(self):
         self.fl_model = None
 
-    def _prepare_param_diff(self, model: FLModel) -> FLModel:
+    def _prepare_param_diff(self, new_model: FLModel) -> FLModel:
         exchange_format = self.client_config.get_exchange_format()
-        diff_func = DIFF_FUNCS.get(exchange_format, None)
-
-        if diff_func is None:
-            raise RuntimeError(f"no default params diff function for {exchange_format}")
-        elif self.fl_model is None:
+        if self.fl_model is None:
             raise RuntimeError("no received model")
-        elif self.fl_model.params is not None:
-            if model.params_type == ParamsType.FULL:
-                try:
-                    model.params = diff_func(original=self.fl_model.params, new=model.params)
-                    model.params_type = ParamsType.DIFF
-                except Exception as e:
-                    raise RuntimeError(f"params diff function failed: {e}")
-
-        return model
+        prepare_param_diff(old_model=self.fl_model, new_model=new_model, exchange_format=exchange_format)
+        return new_model
 
     def __receive_callback(self, topic, data, databus):
 

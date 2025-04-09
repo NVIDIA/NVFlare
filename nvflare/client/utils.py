@@ -14,6 +14,7 @@
 
 from typing import Dict
 
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from .config import ExchangeFormat
 
 
@@ -43,4 +44,26 @@ def numerical_params_diff(original: Dict, new: Dict) -> Dict:
     return diff_dict
 
 
-DIFF_FUNCS = {ExchangeFormat.PYTORCH: numerical_params_diff, ExchangeFormat.NUMPY: numerical_params_diff}
+BUILTIN_DIFF_FUNCS = {
+    ExchangeFormat.PYTORCH: numerical_params_diff,
+    ExchangeFormat.NUMPY: numerical_params_diff,
+    ExchangeFormat.KERAS_NUMPY: numerical_params_diff,
+}
+
+
+def prepare_param_diff(old_model: FLModel, new_model: FLModel, exchange_format):
+    diff_func = BUILTIN_DIFF_FUNCS.get(exchange_format, None)
+
+    if diff_func is None:
+        raise RuntimeError(f"no builtin params diff function for {exchange_format}")
+
+    if old_model is None:
+        raise RuntimeError("no received model")
+
+    if new_model.params is not None and old_model.params is not None:
+        if new_model.params_type == ParamsType.FULL:
+            try:
+                new_model.params = diff_func(original=old_model.params, new=new_model.params)
+                new_model.params_type = ParamsType.DIFF
+            except Exception as e:
+                raise RuntimeError(f"params diff function failed: {e}")

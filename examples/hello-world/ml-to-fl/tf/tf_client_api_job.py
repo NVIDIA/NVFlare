@@ -18,6 +18,7 @@ from src.tf_net import TFNet
 
 from nvflare.app_opt.tf.job_config.fed_avg import FedAvgJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.client.config import ExchangeFormat
 
 
 def define_parser():
@@ -51,7 +52,8 @@ def main():
     executor = ScriptRunner(
         script=script,
         launch_external_process=launch_process,
-        framework=FrameworkType.TENSORFLOW,
+        server_client_params_exchange_format=ExchangeFormat.NUMPY,
+        client_script_params_exchange_format=ExchangeFormat.KERAS_NUMPY,
     )
     job.to_clients(executor)
 
