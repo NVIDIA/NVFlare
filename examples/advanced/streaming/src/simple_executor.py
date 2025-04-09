@@ -18,12 +18,14 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.fuel.utils.log_utils import custom_logger
 
 
 class SimpleExecutor(Executor):
     def __init__(self):
         super().__init__()
         self.aborted = False
+        self.logger = custom_logger(self.logger)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.ABORT_TASK:
