@@ -18,7 +18,8 @@
       "id": "sender",
       "path": "file_streaming.FileSender",
       "args": {
-        "file_name": "/tmp/data/test.data"
+        "file_name": "/tmp/data/test.data",
+        "timeout": 10.0
       }
     }
   ]
