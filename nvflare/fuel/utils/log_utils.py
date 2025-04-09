@@ -276,7 +276,7 @@ class LoggerNameFilter(logging.Filter):
         return any(name.startswith(logger_name) or name.split(".")[-1] == logger_name for logger_name in logger_names)
 
 
-def get_module_logger(module=None, name=None):
+def get_module_logger(module=None, name=None) -> logging.Logger:
     # Get module logger name adhering to logger hierarchy. Optionally add name as a suffix.
     if module is None:
         caller_globals = inspect.stack()[1].frame.f_globals
@@ -285,12 +285,12 @@ def get_module_logger(module=None, name=None):
     return logging.getLogger(f"{module}.{name}" if name else module)
 
 
-def get_obj_logger(obj):
+def get_obj_logger(obj) -> logging.Logger:
     # Get object logger name adhering to logger hierarchy.
     return logging.getLogger(f"{obj.__module__}.{obj.__class__.__qualname__}") if obj else None
 
 
-def get_script_logger():
+def get_script_logger() -> logging.Logger:
     # Get script logger name adhering to logger hierarchy. Based on package and filename. If not in a package, default to custom.
     caller_frame = inspect.stack()[1]
     package = caller_frame.frame.f_globals.get("__package__", "")
@@ -299,6 +299,11 @@ def get_script_logger():
     return logging.getLogger(
         f"{package if package else 'custom'}{'.' + os.path.splitext(os.path.basename(file))[0] if file else ''}"
     )
+
+
+def custom_logger(logger: logging.Logger) -> logging.Logger:
+    # From a logger, return a new logger with "custom" prepended to the logger name
+    return logging.getLogger(f"custom.{logger.name}")
 
 
 def configure_logging(workspace: Workspace, job_id: str = None, file_prefix: str = ""):

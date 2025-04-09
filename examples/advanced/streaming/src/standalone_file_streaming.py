@@ -20,6 +20,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.streamers.file_streamer import FileStreamer
+from nvflare.fuel.utils.log_utils import custom_logger
 
 CHANNEL = "_test_channel"
 TOPIC = "_test_topic"
@@ -32,6 +33,7 @@ class FileSender(FLComponent):
         self.seq = 0
         self.aborted = False
         self.file_name = None
+        self.logger = custom_logger(self.logger)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -75,6 +77,7 @@ class FileReceiver(FLComponent):
     def __init__(self):
         super().__init__()
         self.done = False
+        self.logger = custom_logger(self.logger)
 
     def is_done(self):
         return self.done
