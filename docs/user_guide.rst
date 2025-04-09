@@ -25,3 +25,4 @@ please refer to the :ref:`programming_guide`.
    user_guide/hierarchy_unification_bridge
    user_guide/federated_xgboost
    user_guide/flower_integration
+   user_guide/monitoring
