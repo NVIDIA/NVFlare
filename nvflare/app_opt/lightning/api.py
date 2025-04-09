@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import threading
 from typing import Dict
 
 import pytorch_lightning as pl
@@ -30,6 +31,29 @@ from .callbacks import RestoreState
 FL_META_KEY = "__fl_meta__"
 
 
+def load_model_with_te_support(model, state_dict, strict=False):
+    """Load model state dict with support for Transformer Engine's extra state."""
+
+    # Create a lock for thread-safe model loading
+    model_lock = threading.Lock()
+
+    # Filter out _extra_state keys to avoid the UnpicklingError
+    filtered_state_dict = {k: v for k, v in state_dict.items() if "_extra_state" not in k}
+
+    # Use the lock to ensure thread safety during state loading
+    with model_lock:
+        # Initialize TE layers with default extra state if needed
+        for module in model.modules():
+            if hasattr(module, "_extra_state"):
+                if not hasattr(module, "_extra_state") or module._extra_state is None:
+                    module._extra_state = {}
+
+        # Load the state dict with strict=False to ignore missing keys
+        missing_keys, unexpected_keys = model.load_state_dict(filtered_state_dict, strict=strict)
+
+    return missing_keys, unexpected_keys
+
+
 def patch(
     trainer: pl.Trainer, restore_state: bool = True, load_state_dict_strict: bool = True, update_fit_loop: bool = True
 ):
@@ -43,7 +67,7 @@ def patch(
             used to load the received model. Defaults to `True`.
             See https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.load_state_dict for details.
         update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
-            Defaults to `True` which is suitable for most PyTorch Lightning applications.
+            Defaults to `True`, which is suitable for most PyTorch Lightning applications.
 
     Example:
 
@@ -198,8 +222,8 @@ class FLCallback(Callback):
         model = self._receive_model(trainer)
         if model:
             if model.params:
-                missing_keys, unexpected_keys = pl_module.load_state_dict(
-                    model.params, strict=self._load_state_dict_strict
+                missing_keys, unexpected_keys = load_model_with_te_support(
+                    pl_module, model.params, strict=self._load_state_dict_strict
                 )
                 if len(missing_keys) > 0:
                     self.logger.warning(f"There were missing keys when loading the global state_dict: {missing_keys}")
