@@ -20,8 +20,9 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.fuel.utils.log_utils import custom_logger
 
-logger = logging.getLogger(__name__)
+logger = custom_logger(logging.getLogger(__name__))
 
 
 class SimpleController(Controller):
