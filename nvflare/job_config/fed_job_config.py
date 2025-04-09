@@ -120,7 +120,10 @@ class FedJobConfig:
         """
         job_dir = os.path.join(job_root, self.job_name)
         if os.path.exists(job_dir):
-            shutil.rmtree(job_dir, ignore_errors=True)
+            if self._is_valid_job_folder(job_dir):
+                shutil.rmtree(job_dir, ignore_errors=True)
+            else:
+                raise RuntimeError(f"Job folder {job_dir} already exists and is not a valid job folder.")
 
         for app_name, fed_app in self.fed_apps.items():
             self.custom_modules = []
@@ -378,7 +381,7 @@ class FedJobConfig:
 
     def locate_imports(self, sf, dest_file):
         """Locate all the import statements from the python script, including the imports across multiple lines,
-        using the the line break continuing.
+        using the line break continuing.
 
         Args:
             sf: source file
@@ -416,3 +419,8 @@ class FedJobConfig:
         for i in range(len(strings)):
             strings[i] = strings[i].strip()
         return ",".join(strings)
+
+    @staticmethod
+    def _is_valid_job_folder(job_folder: str) -> bool:
+        meta_file = os.path.join(job_folder, META_JSON)
+        return os.path.exists(meta_file)
