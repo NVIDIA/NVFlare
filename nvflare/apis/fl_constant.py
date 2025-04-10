@@ -594,4 +594,4 @@ class ExchangeFormat:
     RAW = "raw"
     PYTORCH = "pytorch"
     NUMPY = "numpy"
-    KERAS_LAYER_WEIGHTS = 'keras_layer_weights'  # {layer.name: layer.get_weights() for layer in model.layers}
+    KERAS_LAYER_WEIGHTS = "keras_layer_weights"  # {layer.name: layer.get_weights() for layer in model.layers}

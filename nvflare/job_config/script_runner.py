@@ -114,7 +114,7 @@ def _add_np_keras_filter(job, ctx):
 # ScriptRunner supported builtin exchange format combinations
 # other combinations users need to make sure the params exchange
 # between nvflare server <-> nvflare client and nvflare client <-> script is good
-_SUPPORT_EXCHANGE_FORMAT = {
+AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS = {
     (ExchangeFormat.PYTORCH, ExchangeFormat.PYTORCH): _add_pt_pt_filter,
     (ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH): _add_np_pt_filter,
     (ExchangeFormat.NUMPY, ExchangeFormat.KERAS_LAYER_WEIGHTS): _add_np_keras_filter,
@@ -302,12 +302,12 @@ class BaseScriptRunner:
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
-        combine_exchange_format = (
+        exchange_format_combination = (
             self._server_expected_format,
             self._script_expected_format,
         )
-        if combine_exchange_format in _SUPPORT_EXCHANGE_FORMAT:
-            add_filter_cb = _SUPPORT_EXCHANGE_FORMAT[combine_exchange_format]
+        if exchange_format_combination in AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS:
+            add_filter_cb = AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS[exchange_format_combination]
             add_filter_cb(job=job, ctx=ctx)
         job.add_resources(resources=[self._script], ctx=ctx)
         return comp_ids
