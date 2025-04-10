@@ -23,9 +23,12 @@ from mlflow.tracking.client import MlflowClient
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsData, AnalyticsDataType, LogWriterName, TrackConst
 from nvflare.apis.dxo import from_shareable
+from nvflare.apis.fl_constant import ProcessType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
+
+DEFAULT_RUN_NAME = "FLARE FL Run"
 
 
 class MlflowConstants:
@@ -52,7 +55,7 @@ class MLflowReceiver(AnalyticsReceiver):
         Args:
             tracking_uri (Optional[str], optional): MLflow tracking server URI. When this is not specified, the metrics will be written to the local file system.
                 If the tracking URI is specified, the MLflow tracking server must started before running the job. Defaults to None.
-            kwargs (Optional[dict], optional): keyword arguments:
+            kw_args (Optional[dict], optional): keyword arguments:
                 "experiment_name" (str): Specifies the experiment name. If not specified, the default name of "FLARE FL Experiment" will be used.
                 "run_name" (str): Specifies the run name
                 "experiment_tags" (dict): Tags used when creating the MLflow experiment.
@@ -74,7 +77,6 @@ class MLflowReceiver(AnalyticsReceiver):
             events = ["fed." + ANALYTIC_EVENT_TYPE]
         super().__init__(events=events)
         self.artifact_location = artifact_location if artifact_location is not None else "artifacts"
-        self.fl_ctx = None
 
         self.kw_args = kw_args if kw_args else {}
         self.tracking_uri = tracking_uri
@@ -93,79 +95,107 @@ class MLflowReceiver(AnalyticsReceiver):
     def initialize(self, fl_ctx: FLContext):
         """Initializes MlflowClient for each site.
 
-        An MlflowClient for each client site is created, an experiment is created, and a run is created.
-        The kwargs in the params for MLflowReceiver for "experiment_name" and "experiment_tags" are used for the experiment if
-        provided. The "run_tags" are used for the run tags as well as "job_id" and "run_name" which are automatically generated.
-        The "run_name" from kwargs is concatenated after the site name and job_id: {site_name}-{job_id_tag}-{run_name}.
+        This method:
+        1. Sets up the FL context and timing
+        2. Validates and prepares experiment configuration
+        3. Determines participating sites
+        4. Sets up MLflow clients and experiments for each site
+        5. Initializes data buffers
 
         Args:
-            fl_ctx (FLContext): the FLContext
+            fl_ctx (FLContext): The FLContext containing runtime information
+
+        Raises:
+            ValueError: If experiment name is empty
+            RuntimeError: If unable to determine participating sites
         """
-        self.fl_ctx = fl_ctx
+        # Initialize context and timing
         self.time_start = 0
 
-        art_full_path = self.get_artifact_location(self.artifact_location)
+        # Validate and prepare experiment configuration
+        art_full_path = self._get_artifact_location(self.artifact_location, fl_ctx)
         experiment_name = self.kw_args.get(TrackConst.EXPERIMENT_NAME, "FLARE FL Experiment")
         if not experiment_name:
-            raise ValueError("Experiment name can't be empty.")
+            self.log_error(fl_ctx, "Experiment name cannot be empty")
+            raise ValueError("Experiment name cannot be empty")
+
         experiment_tags = self._get_tags(TrackConst.EXPERIMENT_TAGS, kwargs=self.kw_args)
 
-        sites = fl_ctx.get_engine().get_clients()
+        # Determine participating sites
+        if fl_ctx.get_process_type() == ProcessType.SERVER_JOB:
+            clients = fl_ctx.get_engine().get_clients()
+            if not clients:
+                raise RuntimeError("No clients found in server context")
+            site_names = [c.name for c in clients]
+        else:
+            # Client context - track only this client
+            site_name = fl_ctx.get_identity_name()
+            if not site_name:
+                raise RuntimeError("Unable to determine client identity")
+            site_names = [site_name]
 
-        self.mlflow_setup(art_full_path, experiment_name, experiment_tags, sites)
+        self.log_info(fl_ctx, f"Initializing MLflow tracking for sites: {site_names}")
 
-        self._init_buffer(sites)
+        # Set up MLflow for each site
+        self._mlflow_setup(art_full_path, experiment_name, experiment_tags, site_names, fl_ctx)
 
-    def mlflow_setup(self, art_full_path, experiment_name, experiment_tags, sites):
-        """Set up an MlflowClient for each client site and create an experiment and run.
+        # Initialize data buffers
+        self._init_buffer(site_names)
+
+        self.log_info(fl_ctx, "MLflow tracking initialization completed successfully")
+
+    def _mlflow_setup(self, art_full_path, experiment_name, experiment_tags, site_names: List[str], fl_ctx: FLContext):
+        """Set up an MlflowClient for each receiving site and create an experiment and run.
 
         Args:
             art_full_path (str): Full path to artifacts.
             experiment_name (str): Experiment name.
             experiment_tags (dict): Experiment tags.
-            sites (List[Client]): List of client sites.
+            sites (List[str]): List of sites.
+            fl_ctx (FLContext): An FLContext.
         """
-        for site in sites:
-            mlflow_client = self.mlflow_clients.get(site.name, None)
+        for site_name in site_names:
+            mlflow_client = self.mlflow_clients.get(site_name, None)
             if not mlflow_client:
                 mlflow_client = MlflowClient()
-                self.mlflow_clients[site.name] = mlflow_client
+                self.mlflow_clients[site_name] = mlflow_client
                 self.experiment_id = self._get_or_create_experiment(
                     mlflow_client, experiment_name, art_full_path, experiment_tags
                 )
-                run_group_id = str(int(time.time()))
 
-                default_run_name = "FLARE FL Run"
-                run_name = self.get_run_name(self.kw_args, default_run_name, site.name, run_group_id)
-                tags = self.get_run_tags(self.kw_args, run_group_id, run_name)
+                job_id_tag = self._get_job_id_tag(fl_ctx)
+
+                run_name = self._get_run_name(self.kw_args, site_name, job_id_tag)
+                tags = self._get_run_tags(self.kw_args, job_id_tag, run_name)
                 run = mlflow_client.create_run(experiment_id=self.experiment_id, run_name=run_name, tags=tags)
-                self.run_ids[site.name] = run.info.run_id
+                self.run_ids[site_name] = run.info.run_id
 
-    def _init_buffer(self, sites):
+    def _init_buffer(self, site_names: List[str]):
         """For each site, create a buffer (dict) consisting of a list each for metrics, parameters, and tags."""
-        for site in sites:
-            self.buffer[site.name] = {
+        for site_name in site_names:
+            self.buffer[site_name] = {
                 AnalyticsDataType.METRICS: [],
                 AnalyticsDataType.PARAMETERS: [],
                 AnalyticsDataType.TAGS: [],
             }
 
-    def get_run_name(self, kwargs: dict, default_name: str, site_name: str, run_group_id: str):
-        run_name = kwargs.get(TrackConst.RUN_NAME, default_name)
-        job_id_tag = self.get_job_id_tag(group_id=run_group_id)
+    def _get_run_name(self, kwargs: dict, site_name: str, job_id_tag: str):
+        run_name = kwargs.get(TrackConst.RUN_NAME, DEFAULT_RUN_NAME)
         return f"{site_name}-{job_id_tag[:6]}-{run_name}"
 
-    def get_run_tags(self, kwargs, run_group_id, run_name: str):
+    def _get_run_tags(self, kwargs, job_id_tag: str, run_name: str):
         run_tags = self._get_tags(TrackConst.RUN_TAGS, kwargs=kwargs)
-        run_tags["job_id"] = self.get_job_id_tag(group_id=run_group_id)
+        run_tags["job_id"] = job_id_tag
         run_tags["run_name"] = run_name
         return run_tags
 
-    def get_job_id_tag(self, group_id: str) -> str:
-        job_id = self.fl_ctx.get_job_id()
+    def _get_job_id_tag(self, fl_ctx: FLContext) -> str:
+        """Gets a unique job id tag."""
+        job_id = fl_ctx.get_job_id()
         if job_id == "simulate_job":
-            # Since all jobs run in the simulator have the same job_id of "simulate_job", use group_id instead
-            job_id = group_id
+            # Since all jobs run in the simulator have the same job_id of "simulate_job"
+            # Use timestamp as unique identifier for simulation runs
+            job_id = str(int(time.time()))
         return job_id
 
     def _get_tags(self, tag_key: str, kwargs: dict):
@@ -178,9 +208,9 @@ class MLflowReceiver(AnalyticsReceiver):
             print("tag key: ", tag_key, " not found in kwargs: ", kwargs)
         return tags if tags else {}
 
-    def get_artifact_location(self, relative_path: str):
-        workspace = self.fl_ctx.get_engine().get_workspace()
-        run_dir = workspace.get_run_dir(self.fl_ctx.get_job_id())
+    def _get_artifact_location(self, relative_path: str, fl_ctx: FLContext):
+        workspace = fl_ctx.get_engine().get_workspace()
+        run_dir = workspace.get_run_dir(fl_ctx.get_job_id())
         root_log_dir = os.path.join(run_dir, relative_path)
         return root_log_dir
 
