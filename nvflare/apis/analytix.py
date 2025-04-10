@@ -16,8 +16,6 @@ from enum import Enum
 
 from nvflare.apis.dxo import DXO, DataKind
 
-_DATA_TYPE_KEY = "analytics_data_type"
-_KWARGS_KEY = "analytics_kwargs"
 ANALYTIC_EVENT_TYPE = "analytix_log_stats"
 
 
