@@ -19,7 +19,7 @@ from typing import Optional
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
+from nvflare.apis.fl_constant import ExchangeFormat, FLContextKey, FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -28,7 +28,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
-from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
+from nvflare.client.config import ConfigKey
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
     TOPIC_GLOBAL_RESULT,
@@ -50,8 +50,7 @@ class InProcessClientAPIExecutor(Executor):
         task_wait_time: Optional[float] = None,
         result_pull_interval: float = 0.5,
         log_pull_interval: Optional[float] = None,
-        params_exchange_format: str = ExchangeFormat.NUMPY,
-        params_transfer_type: str = TransferType.FULL,
+        script_expected_format: str = ExchangeFormat.NUMPY,
         train_with_evaluation: bool = False,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
@@ -62,8 +61,7 @@ class InProcessClientAPIExecutor(Executor):
         self._client_api = None
         self._result_pull_interval = result_pull_interval
         self._log_pull_interval = log_pull_interval
-        self._params_exchange_format = params_exchange_format
-        self._params_transfer_type = params_transfer_type
+        self._script_expected_format = script_expected_format
 
         if not task_script_path or not task_script_path.endswith(".py"):
             raise ValueError(f"invalid task_script_path '{task_script_path}'")
@@ -172,8 +170,7 @@ class InProcessClientAPIExecutor(Executor):
             ConfigKey.TASK_NAME: task_name,
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
-                ConfigKey.EXCHANGE_FORMAT: self._params_exchange_format,
-                ConfigKey.TRANSFER_TYPE: self._params_transfer_type,
+                ConfigKey.EXCHANGE_FORMAT: self._script_expected_format,
                 ConfigKey.TRAIN_TASK_NAME: self._train_task_name,
                 ConfigKey.EVAL_TASK_NAME: self._evaluate_task_name,
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: self._submit_model_task_name,

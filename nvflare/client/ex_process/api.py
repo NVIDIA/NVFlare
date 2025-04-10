@@ -17,11 +17,11 @@ import os
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
+from nvflare.apis.fl_constant import ConnPropKey, ExchangeFormat, FLMetaKey
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
-from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, from_file
+from nvflare.client.config import ClientConfig, ConfigKey, from_file
 from nvflare.client.flare_agent import FlareAgentException
 from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry

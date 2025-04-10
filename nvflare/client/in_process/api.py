@@ -22,9 +22,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
-from nvflare.client.config import ClientConfig, ConfigKey, TransferType
+from nvflare.client.config import ClientConfig, ConfigKey
 from nvflare.client.constants import SYS_ATTRS
-from nvflare.client.utils import prepare_param_diff
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -126,9 +125,6 @@ class InProcessClientAPI(APISpec):
         if not self.receive_called:
             raise RuntimeError('"receive" needs to be called before sending model!')
 
-        if self.client_config.get_transfer_type() == TransferType.DIFF:
-            model = self._prepare_param_diff(model)
-
         if model.params is None and model.metrics is None:
             raise RuntimeError("the model to send does not have either params or metrics")
 
@@ -188,13 +184,6 @@ class InProcessClientAPI(APISpec):
 
     def clear(self):
         self.fl_model = None
-
-    def _prepare_param_diff(self, new_model: FLModel) -> FLModel:
-        exchange_format = self.client_config.get_exchange_format()
-        if self.fl_model is None:
-            raise RuntimeError("no received model")
-        prepare_param_diff(old_model=self.fl_model, new_model=new_model, exchange_format=exchange_format)
-        return new_model
 
     def __receive_callback(self, topic, data, databus):
 

@@ -16,9 +16,7 @@ from typing import Optional
 
 from nvflare.app_common.abstract.fl_model import FLModel
 
-from .config import TransferType
 from .task_registry import TaskRegistry
-from .utils import prepare_param_diff
 
 
 class ModelRegistry(TaskRegistry):
@@ -51,8 +49,6 @@ class ModelRegistry(TaskRegistry):
         """
         if not self.flare_agent:
             return None
-        if self.config.get_transfer_type() == TransferType.DIFF:
-            model = self._prepare_param_diff(model)
 
         if model.params is None and model.metrics is None:
             raise RuntimeError("the model to send does not have either params or metrics")
@@ -69,9 +65,3 @@ class ModelRegistry(TaskRegistry):
         elif self.received_task.data.params is None:
             raise RuntimeError("received_task.data.params is None.")
         return self.received_task.data
-
-    def _prepare_param_diff(self, new_model: FLModel) -> FLModel:
-        exchange_format = self.config.get_exchange_format()
-        original_model = self._get_original_model()
-        prepare_param_diff(old_model=original_model, new_model=new_model, exchange_format=exchange_format)
-        return new_model

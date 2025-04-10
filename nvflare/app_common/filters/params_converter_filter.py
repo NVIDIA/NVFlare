@@ -12,38 +12,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Union
+from typing import Union
 
 from nvflare.apis.dxo_filter import DXO, DXOFilter
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.params_converter import ParamsConverter
 
 
-def _get_params_converter(params_converter_ids: List[str], fl_ctx: FLContext) -> List[ParamsConverter]:
-    filters = []
-    for component_id in params_converter_ids:
-        c = fl_ctx.get_engine().get_component(component_id)
-        # disabled component return None
-        if c:
-            if not isinstance(c, ParamsConverter):
-                msg = f"component identified by {component_id} is type {type(c)} not type of ParamsConverter"
-                raise ValueError(msg)
-            filters.append(c)
-    return filters
+def _get_params_converter(params_converter_id: str, fl_ctx: FLContext) -> ParamsConverter:
+    c = fl_ctx.get_engine().get_component(params_converter_id)
+
+    if c:
+        if not isinstance(c, ParamsConverter):
+            msg = f"component identified by {params_converter_id} is type {type(c)} not type of ParamsConverter"
+            raise ValueError(msg)
+    return c
 
 
 class ParamsConverterFilter(DXOFilter):
-    def __init__(self, params_converter_ids: List[str]):
+    def __init__(self, params_converter_id: str):
         """Call ParamsConverter.
 
         Args:
-            params_converter_ids (List[str]): A list of params converter ids.
+            params_converter_id (str): ID to a ParamsConverter.
 
         """
         # TODO: any data kinds or supported types?
         super().__init__(supported_data_kinds=None, data_kinds_to_filter=None)
-        self.params_converter_ids = params_converter_ids
+        self._params_converter_id = params_converter_id
+        self._params_converter = None
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.START_RUN:
+            self._params_converter: ParamsConverter = _get_params_converter(self._params_converter_id, fl_ctx)
+        super().handle_event(event_type, fl_ctx)
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Convert the dxo.data using the specified converter in the order that is specified.
@@ -56,15 +60,5 @@ class ParamsConverterFilter(DXOFilter):
         Returns:
             Converted dxo.
         """
-        self.log_info(fl_ctx, f"processing with {dxo.data_kind}")
-        self.log_info(fl_ctx, "Starts ParamsConverterFilter")
-        params_converters: List[ParamsConverter] = _get_params_converter(self.params_converter_ids, fl_ctx)
-
-        identity_name = fl_ctx.get_identity_name()
-        self.log_info(fl_ctx, f"apply ParamsConverterFilter for {identity_name}")
-
-        for param_converter in params_converters:
-            dxo.data = param_converter.convert(dxo.data, fl_ctx)
-
-        self.log_info(fl_ctx, "end ParamsConverterFilter")
+        dxo.data = self._params_converter.convert(dxo.data, fl_ctx)
         return dxo

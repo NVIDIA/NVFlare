@@ -14,7 +14,7 @@
 
 from typing import Optional, Union
 
-from nvflare.apis.fl_constant import SystemVarName
+from nvflare.apis.fl_constant import ExchangeFormat, SystemVarName
 from nvflare.app_common.abstract.launcher import Launcher
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
@@ -23,7 +23,6 @@ from nvflare.app_common.filters.params_converter_filter import ParamsConverterFi
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
-from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe, Mode
 from nvflare.fuel.utils.pipe.pipe import Pipe
 from nvflare.fuel.utils.validation_utils import check_str
@@ -52,14 +51,73 @@ _PIPE_CONNECT_URL = {
 }
 
 
-# ScriptRunner supported exchange format combinations
+def _add_pt_pt_filter(job, ctx):
+    from nvflare.app_opt.pt.tensor_params_converter import PTReceiveParamsConverter, PTSendParamsConverter
+
+    job.add_component("pt_send", PTSendParamsConverter(), ctx)
+    job.add_component("pt_receive", PTReceiveParamsConverter(), ctx)
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="pt_receive"),
+        FilterType.TASK_DATA,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="pt_send"),
+        FilterType.TASK_RESULT,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    return
+
+
+def _add_np_pt_filter(job, ctx):
+    from nvflare.app_opt.pt.numpy_params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
+
+    job.add_component("np_to_pt", NumpyToPTParamsConverter(), ctx)
+    job.add_component("pt_to_np", PTToNumpyParamsConverter(), ctx)
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="np_to_pt"),
+        FilterType.TASK_DATA,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="pt_to_np"),
+        FilterType.TASK_RESULT,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    return
+
+
+def _add_np_keras_filter(job, ctx):
+    from nvflare.app_opt.tf.params_converter import KerasModelToNumpyParamsConverter, NumpyToKerasModelParamsConverter
+
+    job.add_component("keras_to_np", KerasModelToNumpyParamsConverter(), ctx)
+    job.add_component("np_to_keras", NumpyToKerasModelParamsConverter(), ctx)
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="np_to_keras"),
+        FilterType.TASK_DATA,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="keras_to_np"),
+        FilterType.TASK_RESULT,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    return
+
+
+# ScriptRunner supported builtin exchange format combinations
 # other combinations users need to make sure the params exchange
 # between nvflare server <-> nvflare client and nvflare client <-> script is good
 _SUPPORT_EXCHANGE_FORMAT = {
-    (ExchangeFormat.NUMPY, ExchangeFormat.NUMPY),
-    (ExchangeFormat.PYTORCH, ExchangeFormat.PYTORCH),
-    (ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH),
-    (ExchangeFormat.NUMPY, ExchangeFormat.KERAS_NUMPY),
+    (ExchangeFormat.PYTORCH, ExchangeFormat.PYTORCH): _add_pt_pt_filter,
+    (ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH): _add_np_pt_filter,
+    (ExchangeFormat.NUMPY, ExchangeFormat.KERAS_LAYER_WEIGHTS): _add_np_keras_filter,
 }
 
 
@@ -70,15 +128,14 @@ class BaseScriptRunner:
         script_args: str = "",
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        params_transfer_type: str = TransferType.FULL,
         executor: Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None] = None,
         task_pipe: Optional[Pipe] = None,
         launcher: Optional[Launcher] = None,
         metric_relay: Optional[MetricRelay] = None,
         metric_pipe: Optional[Pipe] = None,
         pipe_connect_type: str = None,
-        server_client_params_exchange_format: str = ExchangeFormat.NUMPY,
-        client_script_params_exchange_format: str = ExchangeFormat.NUMPY,
+        server_expected_format: str = ExchangeFormat.NUMPY,
+        script_expected_format: str = ExchangeFormat.NUMPY,
     ):
         """BaseScriptRunner is used with FedJob API to run or launch a script.
 
@@ -96,8 +153,6 @@ class BaseScriptRunner:
             script_args (str): Optional arguments for script (appended to script).
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
-            params_transfer_type (TransferType): How to transfer the parameters. FULL means the whole model parameters are sent.
-                DIFF means that only the difference is sent. Defaults to TransferType.FULL.
             executor (Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None], optional):
                 The executor to use in client process. Can be an instance of
                 `ClientAPILauncherExecutor`, `InProcessClientAPIExecutor`, or `None`. Defaults to `None`.
@@ -128,12 +183,9 @@ class BaseScriptRunner:
         self._script_args = script_args
         self._command = command
         self._launch_external_process = launch_external_process
-        self._params_transfer_type = params_transfer_type
-        self._server_client_params_exchange_format = server_client_params_exchange_format
-        self._client_script_params_exchange_format = client_script_params_exchange_format
+        self._server_expected_format = server_expected_format
+        self._script_expected_format = script_expected_format
         self._pipe_connect_type = pipe_connect_type
-
-        self._validate_exchange_format()
 
         if launch_external_process:
             if metric_pipe is not None:
@@ -160,14 +212,6 @@ class BaseScriptRunner:
         self._task_pipe = task_pipe
         self._executor = executor
         self._launcher = launcher
-
-    def _validate_exchange_format(self):
-        combine_exchange_format = (
-            self._server_client_params_exchange_format,
-            self._client_script_params_exchange_format,
-        )
-        if combine_exchange_format not in _SUPPORT_EXCHANGE_FORMAT:
-            raise ValueError(f"The combination of {combine_exchange_format} is not supported.")
 
     def _create_cell_pipe(self):
         ct = self._pipe_connect_type
@@ -221,8 +265,7 @@ class BaseScriptRunner:
                 else ClientAPILauncherExecutor(
                     pipe_id=task_pipe_id,
                     launcher_id=launcher_id,
-                    params_exchange_format=self._client_script_params_exchange_format,
-                    params_transfer_type=self._params_transfer_type,
+                    script_expected_format=self._script_expected_format,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
@@ -254,82 +297,20 @@ class BaseScriptRunner:
                 else InProcessClientAPIExecutor(
                     task_script_path=self._script,
                     task_script_args=self._script_args,
-                    params_exchange_format=self._client_script_params_exchange_format,
-                    params_transfer_type=self._params_transfer_type,
+                    script_expected_format=self._script_expected_format,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
-        self._add_params_converter_filter(job=job, ctx=ctx)
+        combine_exchange_format = (
+            self._server_expected_format,
+            self._script_expected_format,
+        )
+        if combine_exchange_format in _SUPPORT_EXCHANGE_FORMAT:
+            add_filter_cb = _SUPPORT_EXCHANGE_FORMAT[combine_exchange_format]
+            add_filter_cb(job=job, ctx=ctx)
         job.add_resources(resources=[self._script], ctx=ctx)
         return comp_ids
-
-    def _add_params_converter_filter(self, job, ctx):
-        if (
-            self._server_client_params_exchange_format == ExchangeFormat.PYTORCH
-            and self._client_script_params_exchange_format == ExchangeFormat.PYTORCH
-        ):
-            from nvflare.app_opt.pt.tensor_params_converter import PTReceiveParamsConverter, PTSendParamsConverter
-
-            job.add_component("pt_send", PTSendParamsConverter(), ctx)
-            job.add_component("pt_receive", PTReceiveParamsConverter(), ctx)
-            job.add_filter(
-                ParamsConverterFilter(params_converter_ids=["pt_receive"]),
-                FilterType.TASK_DATA,
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-                ctx,
-            )
-            job.add_filter(
-                ParamsConverterFilter(params_converter_ids=["pt_send"]),
-                FilterType.TASK_RESULT,
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-                ctx,
-            )
-
-        elif (
-            self._server_client_params_exchange_format == ExchangeFormat.NUMPY
-            and self._client_script_params_exchange_format == ExchangeFormat.PYTORCH
-        ):
-            from nvflare.app_opt.pt.numpy_params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
-
-            job.add_component("np_to_pt", NumpyToPTParamsConverter(), ctx)
-            job.add_component("pt_to_np", PTToNumpyParamsConverter(), ctx)
-            job.add_filter(
-                ParamsConverterFilter(params_converter_ids=["np_to_pt"]),
-                FilterType.TASK_DATA,
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-                ctx,
-            )
-            job.add_filter(
-                ParamsConverterFilter(params_converter_ids=["pt_to_np"]),
-                FilterType.TASK_RESULT,
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-                ctx,
-            )
-
-        elif (
-            self._server_client_params_exchange_format == ExchangeFormat.NUMPY
-            and self._client_script_params_exchange_format == ExchangeFormat.KERAS_NUMPY
-        ):
-            from nvflare.app_opt.tf.params_converter import (
-                KerasModelToNumpyParamsConverter,
-                NumpyToKerasModelParamsConverter,
-            )
-
-            job.add_component("keras_to_np", KerasModelToNumpyParamsConverter(), ctx)
-            job.add_component("np_to_keras", NumpyToKerasModelParamsConverter(), ctx)
-            job.add_filter(
-                ParamsConverterFilter(params_converter_ids=["np_to_keras"]),
-                FilterType.TASK_DATA,
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-                ctx,
-            )
-            job.add_filter(
-                ParamsConverterFilter(params_converter_ids=["keras_to_np"]),
-                FilterType.TASK_RESULT,
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-                ctx,
-            )
 
 
 class ScriptRunner(BaseScriptRunner):
@@ -339,10 +320,9 @@ class ScriptRunner(BaseScriptRunner):
         script_args: str = "",
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        params_transfer_type: str = TransferType.FULL,
         pipe_connect_type: str = PipeConnectType.VIA_CP,
-        server_client_params_exchange_format: str = ExchangeFormat.NUMPY,
-        client_script_params_exchange_format: str = ExchangeFormat.PYTORCH,
+        server_expected_format: str = ExchangeFormat.NUMPY,
+        script_expected_format: str = ExchangeFormat.NUMPY,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
@@ -356,8 +336,6 @@ class ScriptRunner(BaseScriptRunner):
             script_args (str): Optional arguments for script (appended to script).
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
             command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
-            params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-                DIFF means that only the difference is sent. Defaults to TransferType.FULL.
             pipe_connect_type (str): how pipe peers are to be connected
         """
         super().__init__(
@@ -365,8 +343,7 @@ class ScriptRunner(BaseScriptRunner):
             script_args=script_args,
             launch_external_process=launch_external_process,
             command=command,
-            params_transfer_type=params_transfer_type,
             pipe_connect_type=pipe_connect_type,
-            server_client_params_exchange_format=server_client_params_exchange_format,
-            client_script_params_exchange_format=client_script_params_exchange_format,
+            server_expected_format=server_expected_format,
+            script_expected_format=script_expected_format,
         )
