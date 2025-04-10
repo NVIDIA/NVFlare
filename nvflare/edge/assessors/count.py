@@ -15,20 +15,20 @@ import time
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.edge.assessor import Assessment
-from nvflare.edge.assessors.saga import SAGAdaptor
+from nvflare.edge.assessors.sgap import SGAPAssessor
 
 
-class CountAssessor(SAGAdaptor):
+class CountAssessor(SGAPAssessor):
     def __init__(
         self,
-        persistor_id: str,
         shareable_generator_id: str,
         aggregator_id: str,
+        persistor_id: str,
         min_count: int,
         max_count: int,
         timeout: float,
     ):
-        SAGAdaptor.__init__(self, persistor_id, shareable_generator_id, aggregator_id)
+        SGAPAssessor.__init__(self, shareable_generator_id, aggregator_id, persistor_id)
         self.min_count = min_count
         self.max_count = max_count
         self.timeout = timeout

@@ -15,12 +15,12 @@ import time
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.edge.assessor import Assessment
-from nvflare.edge.assessors.saga import SAGAdaptor
+from nvflare.edge.assessors.sgap import SGAPAssessor
 
 
-class TimeoutAssessor(SAGAdaptor):
-    def __init__(self, persistor_id: str, shareable_generator_id: str, aggregator_id: str, timeout: float):
-        SAGAdaptor.__init__(self, persistor_id, shareable_generator_id, aggregator_id)
+class TimeoutAssessor(SGAPAssessor):
+    def __init__(self, shareable_generator_id: str, aggregator_id: str, persistor_id: str, timeout: float):
+        SGAPAssessor.__init__(self, shareable_generator_id, aggregator_id, persistor_id)
         self.timeout = timeout
         self._start_time = None
 

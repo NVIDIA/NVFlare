@@ -19,17 +19,28 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.edge.updater import Updater
+from nvflare.fuel.utils.validation_utils import check_positive_int, check_str
 
 
 class AggrUpdater(Updater):
 
     def __init__(self, aggregator_id: str, min_accepted=2):
+        """Constructor of AggrUpdater.
+        AggrUpdater implements required logic by using an Aggregator.
+
+        Args:
+            aggregator_id: component ID of the aggregator
+            min_accepted: minimum updates required before aggregating.
+        """
         Updater.__init__(self)
         self.aggregator_id = aggregator_id
         self.aggregator = None
         self.num_accepted = 0
         self.min_accepted = min_accepted
         self.aggr_lock = threading.Lock()
+
+        check_str("aggregator_id", aggregator_id)
+        check_positive_int("min_accepted", min_accepted)
 
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
 
@@ -45,19 +56,24 @@ class AggrUpdater(Updater):
         self.aggregator = aggr
 
     def process_parent_update_reply(self, reply: Shareable, fl_ctx: FLContext):
-        pass
+        # do not update my state.
+        return
 
     def prepare_update_for_parent(self, fl_ctx: FLContext) -> Shareable:
+        # return aggregation result of the aggregator
         with self.aggr_lock:
             if self.num_accepted >= self.min_accepted:
+                # only when we have accepted enough updates from children
                 update = self.aggregator.aggregate(fl_ctx)
                 self.aggregator.reset(fl_ctx)
                 self.num_accepted = 0
             else:
+                # otherwise we don't update the parent
                 update = None
         return update
 
     def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+        # use the aggregator to accept the update
         self.log_info(fl_ctx, f"accepting child update by {type(self.aggregator)}")
         with self.aggr_lock:
             accepted = self.aggregator.accept(update, fl_ctx)

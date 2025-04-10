@@ -29,9 +29,19 @@ from nvflare.fuel.utils.validation_utils import check_str
 from nvflare.security.logging import secure_format_exception
 
 
-class SAGAdaptor(Assessor):
+class SGAPAssessor(Assessor):
 
-    def __init__(self, persistor_id: str, shareable_generator_id: str, aggregator_id: str):
+    def __init__(self, shareable_generator_id: str, aggregator_id: str, persistor_id: str):
+        """This assessor implements its required logic by using a Shareable Generator, an Aggregator, and a
+        Persistor (SGAP).
+
+        Args:
+            shareable_generator_id: component ID of the Shareable Generator. If empty, the PassthroughShareableGenerator
+                will be used.
+            aggregator_id: component ID of the Aggregator.
+            persistor_id: component ID of the Persistor. If not specified, the Persistor will load initial model
+                and save the final model.
+        """
         Assessor.__init__(self)
         check_str("persistor_id", persistor_id)
         check_str("shareable_generator_id", shareable_generator_id)
@@ -96,12 +106,13 @@ class SAGAdaptor(Assessor):
             self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
     def start_task(self, fl_ctx: FLContext) -> Shareable:
+        # Use the Shareable Generator to generate task data
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_info(fl_ctx, f"starting round {current_round}")
         return self.shareable_gen.learnable_to_shareable(self._global_weights, fl_ctx)
 
     def process_child_update(self, data: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
-        # process update data from child
+        # Process update from child.
         with self._aggr_lock:
             accepted = self.aggregator.accept(data, fl_ctx)
         return accepted, None
