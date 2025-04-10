@@ -54,14 +54,3 @@ class ModelRegistry(TaskRegistry):
             raise RuntimeError("the model to send does not have either params or metrics")
 
         self.submit_task(model)
-
-    def _get_original_model(self) -> FLModel:
-        if self.received_task is None:
-            raise RuntimeError("no received task")
-        elif self.received_task.data is None:
-            raise RuntimeError("no received model")
-        elif not isinstance(self.received_task.data, FLModel):
-            raise RuntimeError("received_task.data is not FLModel.")
-        elif self.received_task.data.params is None:
-            raise RuntimeError("received_task.data.params is None.")
-        return self.received_task.data

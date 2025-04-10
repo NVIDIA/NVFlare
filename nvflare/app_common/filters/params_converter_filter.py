@@ -24,10 +24,9 @@ from nvflare.app_common.abstract.params_converter import ParamsConverter
 def _get_params_converter(params_converter_id: str, fl_ctx: FLContext) -> ParamsConverter:
     c = fl_ctx.get_engine().get_component(params_converter_id)
 
-    if c:
-        if not isinstance(c, ParamsConverter):
-            msg = f"component identified by {params_converter_id} is type {type(c)} not type of ParamsConverter"
-            raise ValueError(msg)
+    if not isinstance(c, ParamsConverter):
+        msg = f"component identified by {params_converter_id} is type {type(c)} not type of ParamsConverter"
+        raise ValueError(msg)
     return c
 
 
