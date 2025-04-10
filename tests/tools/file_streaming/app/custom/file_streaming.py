@@ -17,7 +17,9 @@ from threading import Thread
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.streaming import StreamContextKey
 from nvflare.app_common.streamers.file_streamer import FileStreamer
 
 CHANNEL = "_test_channel"
@@ -28,11 +30,12 @@ FILE_NAME = "_filename"
 
 class FileSender(FLComponent):
 
-    def __init__(self, file_name: str):
+    def __init__(self, file_name: str, timeout=None):
         super().__init__()
         self.seq = 0
         self.aborted = False
         self.file_name = file_name
+        self.timeout = timeout
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -56,6 +59,7 @@ class FileSender(FLComponent):
                 topic=TOPIC,
                 file_name=self.file_name,
                 fl_ctx=fl_ctx,
+                chunk_timeout=self.timeout,
                 optional=False,
                 secure=False,
             )
@@ -90,8 +94,15 @@ class FileReceiver(FLComponent):
         )
 
     def _done_cb(self, stream_ctx: dict, fl_ctx: FLContext):
-        self.log_info(fl_ctx, "File streaming is done")
+        rc = stream_ctx[StreamContextKey.RC]
+        self.log_info(fl_ctx, f"File streaming is done with RC: {rc}")
         self.done = True
+
+        basename = stream_ctx.get(FILE_NAME, "No Name")
+        file_name = os.path.join(self.output_folder, basename)
+        if rc != ReturnCode.OK:
+            self.log_error(fl_ctx, f"File {file_name} receiving failed with RC: {rc})")
+            return
 
         file_location = FileStreamer.get_file_location(stream_ctx)
         file_size = FileStreamer.get_file_size(stream_ctx)
@@ -99,8 +110,7 @@ class FileReceiver(FLComponent):
         if size != file_size:
             self.log_error(fl_ctx, f"File {file_location} sizes mismatch {size} <> {file_size} bytes")
             return
-        basename = stream_ctx.get(FILE_NAME, "No Name")
-        file_name = os.path.join(self.output_folder, basename)
+
         if os.path.exists(file_name):
             self.log_info(fl_ctx, f"Existing file {file_name} is removed")
             os.remove(file_name)
