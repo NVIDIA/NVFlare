@@ -14,11 +14,9 @@
 
 from typing import Optional
 
-from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_common.abstract.fl_model import FLModel
 
-from .config import TransferType
 from .task_registry import TaskRegistry
-from .utils import DIFF_FUNCS
 
 
 class ModelRegistry(TaskRegistry):
@@ -51,31 +49,8 @@ class ModelRegistry(TaskRegistry):
         """
         if not self.flare_agent:
             return None
-        if self.config.get_transfer_type() == TransferType.DIFF:
-            model = self._prepare_param_diff(model)
 
         if model.params is None and model.metrics is None:
             raise RuntimeError("the model to send does not have either params or metrics")
 
         self.submit_task(model)
-
-    def _prepare_param_diff(self, model: FLModel) -> FLModel:
-        exchange_format = self.config.get_exchange_format()
-        diff_func = DIFF_FUNCS.get(exchange_format, None)
-        if diff_func is None:
-            raise RuntimeError(f"no default params diff function for {exchange_format}")
-        elif self.received_task is None:
-            raise RuntimeError("no received task")
-        elif self.received_task.data is None:
-            raise RuntimeError("no received model")
-        elif not isinstance(self.received_task.data, FLModel):
-            raise RuntimeError("received_task.data is not FLModel.")
-        elif model.params is not None:
-            if model.params_type == ParamsType.FULL:
-                try:
-                    model.params = diff_func(original=self.received_task.data.params, new=model.params)
-                    model.params_type = ParamsType.DIFF
-                except Exception as e:
-                    raise RuntimeError(f"params diff function failed: {e}")
-
-        return model

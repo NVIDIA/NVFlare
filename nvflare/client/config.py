@@ -20,20 +20,8 @@ from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
-class ExchangeFormat:
-    RAW = "raw"
-    PYTORCH = "pytorch"
-    NUMPY = "numpy"
-
-
-class TransferType:
-    FULL = "FULL"
-    DIFF = "DIFF"
-
-
 class ConfigKey:
     EXCHANGE_FORMAT = "exchange_format"
-    TRANSFER_TYPE = "transfer_type"
     TRAIN_WITH_EVAL = "train_with_eval"
     TRAIN_TASK_NAME = "train_task_name"
     EVAL_TASK_NAME = "eval_task_name"
@@ -56,8 +44,7 @@ class ClientConfig:
 
         .. code-block::
 
-            EXCHANGE_FORMAT: Format to exchange, pytorch, raw, or numpy
-            TRANSFER_TYPE: Either FULL or DIFF (means difference)
+            EXCHANGE_FORMAT: Format to exchange.
             TRAIN_WITH_EVAL: Whether train task needs to also do evaluation
             TRAIN_TASK_NAME: Name of the train task
             EVAL_TASK_NAME: Name of the evaluate task
@@ -96,7 +83,6 @@ class ClientConfig:
               "TASK_EXCHANGE": {
                 "train_with_eval": true,
                 "exchange_format": "numpy",
-                "transfer_type": "DIFF",
                 "train_task_name": "train",
                 "eval_task_name": "validate",
                 "submit_model_task_name": "submit_model",
@@ -136,9 +122,6 @@ class ClientConfig:
 
     def get_exchange_format(self) -> str:
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.EXCHANGE_FORMAT, "")
-
-    def get_transfer_type(self) -> str:
-        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRANSFER_TYPE, "FULL")
 
     def get_train_task(self):
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRAIN_TASK_NAME, "")

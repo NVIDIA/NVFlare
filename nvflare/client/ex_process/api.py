@@ -17,15 +17,16 @@ import os
 from typing import Any, Dict, Optional, Tuple
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
+from nvflare.apis.fl_constant import ConnPropKey, ExchangeFormat, FLMetaKey
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.client.api_spec import APISpec
-from nvflare.client.config import ClientConfig, ConfigKey, ExchangeFormat, from_file
+from nvflare.client.config import ClientConfig, ConfigKey, from_file
 from nvflare.client.flare_agent import FlareAgentException
 from nvflare.client.flare_agent_with_fl_model import FlareAgentWithFLModel
 from nvflare.client.model_registry import ModelRegistry
 from nvflare.fuel.data_event.utils import set_scope_property
+from nvflare.fuel.utils.fobs import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.pipe.pipe import Pipe
@@ -51,7 +52,7 @@ def _create_client_config(config: str) -> ClientConfig:
     if relay_conn_props:
         set_scope_property(site_name, ConnPropKey.RELAY_CONN_PROPS, relay_conn_props)
 
-    # get message auth info and put them into Databus for CellPipe to use
+    # get message auth info
     auth_token = client_config.get_auth_token()
     signature = client_config.get_auth_token_signature()
     set_scope_property(scope_name=site_name, key=FLMetaKey.AUTH_TOKEN, value=auth_token)
@@ -70,6 +71,14 @@ def _create_pipe_using_config(client_config: ClientConfig, section: str) -> Tupl
     pipe = pipe_class(**pipe_args)
     pipe_channel_name = client_config.get_pipe_channel_name(section)
     return pipe, pipe_channel_name
+
+
+def _register_tensor_decomposer():
+    tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
+    if ok:
+        fobs.register(tensor_decomposer)
+    else:
+        raise RuntimeError(f"Can't import TensorDecomposer for format: {ExchangeFormat.PYTORCH}")
 
 
 class ExProcessClientAPI(APISpec):
@@ -106,12 +115,8 @@ class ExProcessClientAPI(APISpec):
         flare_agent = None
         try:
             if rank == "0":
-                if client_config.get_exchange_format() in [ExchangeFormat.PYTORCH, ExchangeFormat.NUMPY]:
-                    # both numpy and pytorch exchange format can need tensor decomposer
-                    # import here, and register later when needed
-                    _, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
-                    if not ok:
-                        raise RuntimeError("Can't import TensorDecomposer")
+                if client_config.get_exchange_format() == ExchangeFormat.PYTORCH:
+                    _register_tensor_decomposer()
 
                 pipe, task_channel_name = None, ""
                 if ConfigKey.TASK_EXCHANGE in client_config.config:

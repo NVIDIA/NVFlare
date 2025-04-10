@@ -18,7 +18,7 @@ from nvflare import FedJob
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
-from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from nvflare.job_config.script_runner import ExchangeFormat, ScriptRunner
 
 
 def define_parser():
@@ -68,7 +68,8 @@ def main():
     executor = ScriptRunner(
         script=script,
         launch_external_process=launch_process,
-        framework=FrameworkType.NUMPY,
+        server_expected_format=ExchangeFormat.NUMPY,
+        script_expected_format=ExchangeFormat.NUMPY,
     )
     job.to_clients(executor)
 

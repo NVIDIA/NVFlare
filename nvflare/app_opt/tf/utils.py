@@ -33,7 +33,7 @@ def unflat_layer_weights_dict(data: dict):
     for k, v in data.items():
         if SPECIAL_KEY in k:
             # If the weight is: {"layer0_nvf_0": array1, "layer0_nvf_1": array2}
-            # We will convert it back to: {"layer0": [array1, array2]} and load it back
+            # We will convert it back to: {"layer0": [array1, array2]}
             layer_name, _ = k.split(SPECIAL_KEY)
             if layer_name not in result:
                 result[layer_name] = []
