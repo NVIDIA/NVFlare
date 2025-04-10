@@ -77,9 +77,9 @@ The running time of each job depends mainly on the encryption workload.
 
 ```
 python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal
-python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal --secure True
+python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal --secure
 python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical
-python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --secure True
+python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --secure
 ```
 
 In the secure horizontal scheme, secure aggregation is performed on the server-side. To support this, additional tenseal context must be provisioned before starting the job to prepare the server. In contrast, the secure vertical scheme doesn't require this step because the server's role is limited to message routing, without performing the actual secure message aggregation.
@@ -92,6 +92,17 @@ workdir=/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/horizontal_secure
 nvflare provision -p project.yml -w ${workdir}
 nvflare simulator ${jobdir} -w ${workdir}/example_project/prod_00/site-1 -n 3 -t 3
 ```
+
+> **_NOTE:_** From the running logs, you will see multiple `has_encrypted_data=None` and `Not secure content - ignore` messages.
+> These are expected because under the hood of XGBoost, there are multiple operations 
+> relying on the same "broadcast", "all_reduce", "all_gather" MPI calls - some requires
+> encryption (e.g. those related to gh gradient pairs), and others do not (e.g. collecting
+> the total feature slot number from clients). 
+> 
+>In our plugin implementation, we have a logic to recognize whether the payload needs 
+> to be handled with encryption. Therefore, the log can have `not for gh broadcast - ignore`, 
+> meaning the current message does not need to be taken care of by encryption, and 
+> will be passed on to XGBoost inner logic directly.
 
 ## Results
 Comparing the AUC results with centralized baseline, we have four observations:
