@@ -21,7 +21,7 @@ from .flare_agent import RC, FlareAgent, Task
 
 class TaskRegistry:
     """This class is used to remember attributes that need to be shared for a user code.
-    
+
     For multi-process scenarios:
     - Only rank 0 process communicates with the FL server
     - Other ranks get task information through their training framework
