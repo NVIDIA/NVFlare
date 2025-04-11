@@ -29,9 +29,7 @@ DEFAULT_HEARTBEAT_INTERVAL = 60
 
 class HeartbeatMonitor(Thread):
     def __init__(self, conns: Dict[str, SfmConnection]):
-        Thread.__init__(self)
-
-        self.thread_name = "hb_mon"
+        Thread.__init__(self, name="hb_mon", daemon=True)
         self.conns = conns
         self.stopped = Event()
         self.curr_time = 0
