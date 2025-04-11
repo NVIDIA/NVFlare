@@ -33,7 +33,7 @@ APIs
 The following is the complete definition of the backend APIs, written in OpenAPI 3.0 syntax. Developers can implement these APIs in different programming languages or
 create custom UIs while maintaining compatibility with the same API endpoints.
 
-Starting from NVIDIA FLARE 2.6, all API endpoints are prefixed with ``/nvflare-dashboard/api/v1/``. For example,
+In NVIDIA FLARE 2.6, all API endpoints are prefixed with ``/nvflare-dashboard/api/v1/``. For example,
 the login endpoint is ``/nvflare-dashboard/api/v1/login``.
 
 .. literalinclude:: ../../nvflare/dashboard/dashboard.yaml
