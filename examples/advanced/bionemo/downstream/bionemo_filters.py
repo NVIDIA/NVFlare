@@ -105,7 +105,7 @@ class BioNeMoExcludeParamsFilter(DXOFilter):
 
 
 class BioNeMoStateDictFilter(DXOFilter):
-    def __init__(self, precision="bf16-mixed"):
+    def __init__(self):
         """Filters out Transformer Engine's extra state keys to avoid the UnpicklingError.
 
         Args: None
@@ -114,12 +114,6 @@ class BioNeMoStateDictFilter(DXOFilter):
         # support weight and weight_diff data kinds
         data_kinds = [DataKind.WEIGHTS, DataKind.WEIGHT_DIFF]
         super().__init__(supported_data_kinds=data_kinds, data_kinds_to_filter=data_kinds)
-
-        self._precision = precision
-        if self._precision == "bf16-mixed":
-            self._prefix = "module.module."
-        else:
-            self._prefix = "module."
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Filter out _extra_state keys.
@@ -133,12 +127,12 @@ class BioNeMoStateDictFilter(DXOFilter):
 
         """
 
-        self.log_info(fl_ctx, f"Filtering out extra states...")
+        self.log_info(fl_ctx, "Filtering out extra states...")
 
         state_dict = dxo.data
 
         # Filter out _extra_state keys to avoid the UnpicklingError
-        filtered_state_dict = {k: v for k, v in state_dict.items() if '_extra_state' not in k}
+        filtered_state_dict = {k: v for k, v in state_dict.items() if "_extra_state" not in k}
 
         dxo.data = filtered_state_dict
         return dxo
