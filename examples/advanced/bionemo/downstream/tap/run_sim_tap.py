@@ -25,7 +25,7 @@ from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import BaseScriptRunner
 
 sys.path.append(os.path.join(os.getcwd(), ".."))  # include parent folder in path
-from bionemo_filters import BioNeMoExcludeParamsFilter, BioNeMoParamsFilter
+from bionemo_filters import BioNeMoExcludeParamsFilter, BioNeMoParamsFilter, BioNeMoStateDictFilter
 
 
 def main(args):
@@ -75,12 +75,16 @@ def main(args):
             launch_external_process=True,
             framework="pytorch",
             params_exchange_format="pytorch",
-            launcher=SubprocessLauncher(script=f"python3 custom/{args.train_script} {script_args}", launch_once=False),
+            # bionemo script is launched new at every FL round. Adds a shutdown grace period to make sure bionemo can save the local model
+            launcher=SubprocessLauncher(
+                script=f"python3 custom/{args.train_script} {script_args}", launch_once=False, shutdown_timeout=100.0
+            ),
         )
         job.to(runner, client_name)
         job.to(
             BioNeMoParamsFilter(precision), client_name, tasks=["train", "validate"], filter_type=FilterType.TASK_DATA
         )
+        job.to(BioNeMoStateDictFilter(), client_name, tasks=["train", "validate"], filter_type=FilterType.TASK_RESULT)
         job.to(
             BioNeMoExcludeParamsFilter(exclude_vars="regression_head"),
             client_name,
