@@ -70,6 +70,7 @@ def main():
     cifar10_dm = CIFAR10DataModule()
 
     trainer = Trainer(max_epochs=1, strategy="ddp", devices=2 if torch.cuda.is_available() else None)
+    print(f"Train global rank is {trainer.global_rank}")
 
     # perform local training
     print("--- train new model ---")
