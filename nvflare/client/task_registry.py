@@ -34,6 +34,13 @@ class TaskRegistry:
             if k in SYS_ATTRS:
                 self.sys_info[k] = v
         self.rank = rank
+        if not self.is_rank0 and flare_agent is not None:
+            raise ValueError("FlareAgent should only be provided for rank 0")
+
+    @property
+    def is_rank0(self) -> bool:
+        """Whether this is the rank 0 process."""
+        return self.rank is None or self.rank == "0"
 
     def _receive(self, timeout: Optional[float] = None) -> Task:
         if not self.flare_agent:
@@ -54,19 +61,6 @@ class TaskRegistry:
         self.task_name = task.task_name
         self.cache_loaded = True
 
-    def set_task_name(self, task_name: str) -> None:
-        """Sets the current task name.
-
-        This method is only used in multiprocess scenario in the lightning API.
-        For non-rank 0 processes, they are not getting tasks from the FLARE side,
-        thus they rely on the rank 0 process to tell them the current task name
-        and will use this method to set it.
-
-        Args:
-            task_name (str): current task name
-        """
-        self.task_name = task_name
-
     def get_task(self, timeout: Optional[float] = None) -> Optional[Task]:
         """Gets the cached received task.
 
@@ -77,7 +71,7 @@ class TaskRegistry:
         Returns:
             None if flare agent is None; or a Task object if task is available within timeout.
         """
-        if not self.cache_loaded:
+        if self.is_rank0 and not self.cache_loaded:
             task = self._receive(timeout)
             self._set_task(task)
         return self.received_task

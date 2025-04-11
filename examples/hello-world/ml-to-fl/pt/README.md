@@ -171,16 +171,22 @@ models back.
 
 The modified code can be found in [./src/cifar10_ddp_fl.py](./src/cifar10_ddp_fl.py)
 
-After we modify our training script, we can create a job using the ex-process ScriptRunner and set the command to the torch.distributed.run: [pt_client_api_job.py](pt_client_api_job.py).
-
-Then we run it using the NVFlare simulator with the ```torch.distributed.run``` with different ports:
+After we modify our training script, we can create a job using the ScriptRunner with `launch_external_process` set to True and set the command to the torch.distributed.run in: [pt_client_api_job.py](pt_client_api_job.py).
 
 ```bash
 bash ./prepare_data.sh
-python3 pt_client_api_job.py --script src/cifar10_ddp_fl.py --launch_process --launch_command 'python3 -m torch.distributed.run --nnodes\=1 --nproc_per_node\=2 --master_port\={PORT}' --ports 7777,8888
+python3 pt_client_api_job.py --script src/cifar10_ddp_fl.py --launch_external_process --launch_command 'python3 -m torch.distributed.run --nnodes\=1 --nproc_per_node\=2 --master_port\={PORT}' --ports 7777,8888 --export
 ```
 
-This will start 2 clients and each client will start 2 worker processes.
+Then we run it using the NVFlare simulator with 2 GPUs for each client:
+
+```bash
+nvflare simulator -n 2 -t 2 /tmp/nvflare/jobs/job_config/pt_client_api  --gpu "[0,1],[0,1]"
+```
+
+This will start 2 clients and each client will start 2 worker processes, and each of the worker process run on specified gpu.
+
+You can specify different gpu groups like "[0,1],[2,3]" as well if you have 4 GPUs in your machine.
 
 Note that you might need to change the ports if they are already taken on your machine.
 
@@ -209,9 +215,16 @@ which means the validation accuracy for that epoch.
 
 And we use `lit_net.LitNet` instead of `net.Net` for model class.
 
-Then we run it using the NVFlare simulator:
+
+After we modify our training script, we can create a job using the ScriptRunner with `launch_external_process` set to True:
 
 ```bash
 bash ./prepare_data.sh
-python3 pt_client_api_job.py --script src/cifar10_lightning_ddp_fl.py --key_metric val_acc_epoch --launch_process
+python3 pt_client_api_job.py --script src/cifar10_lightning_ddp_fl.py --key_metric val_acc_epoch --launch_external_process --export
+```
+
+Then we run it using the NVFlare simulator:
+
+```bash
+nvflare simulator -n 2 -t 2 /tmp/nvflare/jobs/job_config/pt_client_api  --gpu "[0,1],[0,1]"
 ```
