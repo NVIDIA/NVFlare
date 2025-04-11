@@ -52,6 +52,7 @@ Please refer to :ref:`application` for more details.
    programming_guide/resource_manager_and_consumer
    programming_guide/global_model_initialization
    programming_guide/experiment_tracking
+   programming_guide/message_quantization
 
 
 .. rubric:: Code Structure
