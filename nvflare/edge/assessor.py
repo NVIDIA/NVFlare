@@ -13,10 +13,11 @@
 # limitations under the License.
 from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.apis.shareable import Shareable
 
 
 class Assessment(Enum):
@@ -35,19 +36,6 @@ class Assessor(FLComponent, ABC):
         FLComponent.__init__(self)
 
     @abstractmethod
-    def initialize(self, aggregator: Aggregator, fl_ctx: FLContext):
-        """This is called by SAGE before starting the workflow.
-
-        Args:
-            aggregator: the Aggregator used by the workflow.
-            fl_ctx: FLContext object
-
-        Returns: None
-
-        """
-        pass
-
-    @abstractmethod
     def assess(self, fl_ctx: FLContext) -> Assessment:
         """This is called by SAGE to assess the situation of the current task, and decides whether the task should
         continue to run.
@@ -62,18 +50,23 @@ class Assessor(FLComponent, ABC):
         """
         pass
 
-    def start(self, fl_ctx: FLContext):
+    @abstractmethod
+    def start_task(self, fl_ctx: FLContext) -> Shareable:
         """This is called by SAGE at the start of a task.
 
         Args:
             fl_ctx: FLContext object
 
-        Returns: None
+        Returns: task data to be sent to clients
 
         """
         pass
 
-    def reset(self, fl_ctx: FLContext):
+    @abstractmethod
+    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+        pass
+
+    def end_task(self, fl_ctx: FLContext):
         """This is called by SAGE at the end of a task.
 
         Args:

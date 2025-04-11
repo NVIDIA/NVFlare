@@ -71,7 +71,7 @@ class EdgeTaskGenerator(Widget):
                         assert isinstance(result, dict)
                         status = result[EdgeProtoKey.STATUS]
                         job_id = result[EdgeProtoKey.DATA]
-                        self.logger.info(f"job reply from ETD: {status=} {job_id=}")
+                        self.logger.debug(f"job reply from ETD: {status=} {job_id=}")
                         if job_id:
                             self.job_id = job_id
                     else:
@@ -87,7 +87,7 @@ class EdgeTaskGenerator(Widget):
                     else:
                         status = result[EdgeProtoKey.STATUS]
                         edge_reply = result[EdgeProtoKey.DATA]
-                        self.logger.info(f"task reply from ETD: {status=} {edge_reply=}")
+                        self.logger.debug(f"task reply from ETD: {status=} {edge_reply=}")
 
                         if status == Status.NO_JOB:
                             # job already finished

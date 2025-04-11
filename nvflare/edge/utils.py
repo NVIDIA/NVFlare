@@ -20,35 +20,39 @@ from nvflare.security.logging import secure_format_exception
 TOPIC_PREFIX = "SAGE"
 
 
-def message_topic_for_task_report(task_name: str) -> str:
-    return f"{TOPIC_PREFIX}__{task_name}_report"
+def message_topic_for_task_update(task_name: str) -> str:
+    return f"{TOPIC_PREFIX}__{task_name}_update"
 
 
 def message_topic_for_task_end(task_name: str) -> str:
     return f"{TOPIC_PREFIX}__{task_name}_end"
 
 
-def make_aggr_reply(rc: str, seq: int) -> Shareable:
-    return make_reply(rc, {EdgeTaskHeaderKey.TASK_SEQ: seq})
+def _make_update_reply(rc: str, seq: int, data: Shareable = None) -> Shareable:
+    if not data:
+        data = Shareable()
+    data.set_return_code(rc)
+    data.set_header(EdgeTaskHeaderKey.TASK_SEQ, seq)
+    return data
 
 
-def process_aggr_result_from_child(
+def process_update_from_child(
     processor: FLComponent,
-    request: Shareable,
+    update: Shareable,
     current_task_seq: int,
     fl_ctx: FLContext,
-    accept_f,
+    update_f,
     **kwargs,
 ) -> (bool, Shareable):
     """Process aggregation report sent from a child client.
 
     Args:
-        processor: the component that received the report from the child.
-        request: the report request
+        processor: the component that received the update report from the child.
+        update: the report request
         current_task_seq: sequence number of the current task
         fl_ctx: FLContext object
-        accept_f: the function to be called to accept the aggregation report
-        **kwargs: args to be passed to accept_f
+        update_f: the function to be called to process the update report
+        **kwargs: args to be passed to update_f
 
     Returns: a tuple of (whether the report is accepted, reply to be sent back to the reporter).
 
@@ -57,10 +61,10 @@ def process_aggr_result_from_child(
     assert isinstance(peer_ctx, FLContext)
     child_name = peer_ctx.get_identity_name()
 
-    task_seq = request.get_header(EdgeTaskHeaderKey.TASK_SEQ)
+    task_seq = update.get_header(EdgeTaskHeaderKey.TASK_SEQ)
     if not task_seq:
-        processor.log_error(fl_ctx, f"missing {EdgeTaskHeaderKey.TASK_SEQ} from aggr result header")
-        return False, make_aggr_reply(ReturnCode.BAD_REQUEST_DATA, current_task_seq)
+        processor.log_error(fl_ctx, f"missing {EdgeTaskHeaderKey.TASK_SEQ} from update header")
+        return False, _make_update_reply(ReturnCode.BAD_REQUEST_DATA, current_task_seq)
 
     if task_seq != current_task_seq:
         rc = ReturnCode.TASK_ABORTED
@@ -71,27 +75,30 @@ def process_aggr_result_from_child(
         if current_task_seq == 0:
             # this means no current task
             processor.log_warning(
-                fl_ctx, f"dropped aggr result from {child_name}: got task seq {task_seq} but no current task"
+                fl_ctx, f"dropped update from {child_name}: got task seq {task_seq} but no current task"
             )
         else:
             processor.log_warning(
-                fl_ctx, f"dropped aggr result from {child_name}: expect task seq {current_task_seq} but got {task_seq}"
+                fl_ctx, f"dropped update from {child_name}: expect task seq {current_task_seq} but got {task_seq}"
             )
         return False, make_reply(rc, current_task_seq)
 
-    has_aggr_data = request.get_header(EdgeTaskHeaderKey.HAS_AGGR_DATA)
+    has_update_data = update.get_header(EdgeTaskHeaderKey.HAS_UPDATE_DATA)
 
-    if has_aggr_data is None:
-        processor.log_info(fl_ctx, f"request does not have header {EdgeTaskHeaderKey.HAS_AGGR_DATA}")
+    if has_update_data is None:
+        processor.log_info(fl_ctx, f"request does not have header {EdgeTaskHeaderKey.HAS_UPDATE_DATA}")
 
-    processor.log_debug(fl_ctx, f"result has aggr data: {has_aggr_data=}")
-    if not has_aggr_data:
+    processor.log_debug(fl_ctx, f"result has update data: {has_update_data=}")
+    if not has_update_data:
         return False, make_reply(rc, current_task_seq)
 
+    reply_data = None
     try:
-        accepted = accept_f(request, fl_ctx, **kwargs)
+        accepted, reply_data = update_f(update, fl_ctx, **kwargs)
     except Exception as ex:
-        processor.log_error(fl_ctx, f"exception accepting aggr result: {secure_format_exception(ex)}")
+        processor.log_exception(
+            fl_ctx, f"exception accepting update result from {update_f.__name__}: {secure_format_exception(ex)}"
+        )
         accepted = False
 
-    return accepted, make_aggr_reply(rc, current_task_seq)
+    return accepted, _make_update_reply(rc, current_task_seq, reply_data)

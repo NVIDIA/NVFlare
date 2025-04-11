@@ -24,8 +24,8 @@ class EdgeSurveyExecutor(EdgeTaskExecutor):
     HierarchicalAggregationManager.
     """
 
-    def __init__(self, aggregator_id: str, aggr_report_timeout: float, task_duration: float):
-        EdgeTaskExecutor.__init__(self, aggregator_id, aggr_report_timeout)
+    def __init__(self, updater_id: str, update_timeout: float, task_duration: float):
+        EdgeTaskExecutor.__init__(self, updater_id, update_timeout)
         self.task_duration = task_duration
         self.task = None
         self.task_start_time = None
@@ -52,9 +52,9 @@ class EdgeSurveyExecutor(EdgeTaskExecutor):
 
         assert isinstance(request, dict)
         self.log_info(fl_ctx, f"received edge request: {request}")
-        self.accept_contribution(
+        self.accept_update(
             task_id=current_task.id,
-            contribution=Shareable({"num_devices": 1}),
+            update=Shareable({"num_devices": 1}),
             fl_ctx=fl_ctx,
         )
         return {"status": "tryAgain", "comment": f"received {request}"}
