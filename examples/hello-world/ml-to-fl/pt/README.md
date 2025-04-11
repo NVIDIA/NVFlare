@@ -165,30 +165,58 @@ We made the following changes:
 6. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(xxx)```
 7. Send the model back to NVFlare: ```flare.send(output_model)```
 
-Note that we only do flare receive and send on the first process (rank 0).
-Because all the worker processes launched by torch distributed will have the same model in the end, we don't need to send duplicate
-models back.
+Note: The receive and send functions are executed only on rank 0 (the primary process in DDP). Since all worker processes will have the same model by the end of training, there is no need to send duplicate models from other workers.
 
-The modified code can be found in [./src/cifar10_ddp_fl.py](./src/cifar10_ddp_fl.py)
+The updated PyTorch DDP script can be found in [./src/cifar10_ddp_fl.py](./src/cifar10_ddp_fl.py)
 
-After we modify our training script, we can create a job using the ScriptRunner with `launch_external_process` set to True and set the command to the torch.distributed.run in: [pt_client_api_job.py](pt_client_api_job.py).
+After modifying the training script, the next step is to create a job using the ScriptRunner. It's important to note that multi-GPU training requires `launch_external_process`` to be set to True. This option ensures that the external command (e.g., torch.distributed.run) is executed outside the script, allowing for distributed training across multiple GPUs.
+
+Create the NVFlare Job with `ScriptRunner``: Use the following command to generate an NVFlare job directory. This command configures the job with the necessary settings for multi-GPU training, specifies the distributed training launch command, and sets the required ports.
+
+The key options in this command are:
+
+  - `--launch_external_process`: Enables launching an external process for multi-GPU training.
+
+  - `--launch_command`: Specifies the command to run for distributed training. In this case, it uses torch.distributed.run to launch the DDP processes.
+
+  - `--ports`: Defines the ports used for communication between processes.
+
+  - `--export`: Exports the job configuration.
+
+Here's the full command:
 
 ```bash
-bash ./prepare_data.sh
 python3 pt_client_api_job.py --script src/cifar10_ddp_fl.py --launch_external_process --launch_command 'python3 -m torch.distributed.run --nnodes\=1 --nproc_per_node\=2 --master_port\={PORT}' --ports 7777,8888 --export
 ```
 
-Then we run it using the NVFlare simulator with 2 GPUs for each client:
+Note: you might need to change the ports if they are already taken on your machine.
+
+
+Once the job directory has been created, you can run the federated learning job using the NVFlare simulator.
+
+Run the simulator with 2 clients, each using 2 GPUs. The --gpu option specifies the GPU devices to be used by each client. The format for the GPU assignment is [GPU_1, GPU_2], [GPU_3, GPU_4], where each pair corresponds to the GPUs for each client.
+
+The following command starts the simulator with two clients and assigns two GPUs to each client:
 
 ```bash
+bash ./prepare_data.sh
 nvflare simulator -n 2 -t 2 /tmp/nvflare/jobs/job_config/pt_client_api  --gpu "[0,1],[0,1]"
 ```
 
-This will start 2 clients and each client will start 2 worker processes, and each of the worker process run on specified gpu.
+Here’s what the command does:
 
-You can specify different gpu groups like "[0,1],[2,3]" as well if you have 4 GPUs in your machine.
+  - `-n 2`: Starts 2 clients.
 
-Note that you might need to change the ports if they are already taken on your machine.
+  - `-t 2`: Specifies that 2 worker processes will be started to run each client.
+
+  - `/tmp/nvflare/jobs/job_config/pt_client_api`: Path to the job configuration.
+
+  - `--gpu "[0,1],[0,1]"`: Assigns GPU 0 and 1 to the first client, and GPU 0 and 1 to the second client.
+
+If you have more than two GPUs on your machine (e.g., 4 GPUs), you can specify different GPU groups. For example, to assign GPUs 0 and 1 to the first client and GPUs 2 and 3 to the second client: `--gpu "[0,1],[2,3]"`
+
+
+Note: Ensure that the GPUs specified in the --gpu option correspond to the GPUs available on your machine. If using fewer or more GPUs, adjust the groups accordingly.
 
 
 ## Transform CIFAR10 PyTorch Lightning + ddp training code to FL with NVFLARE Client lightning integration API
@@ -216,15 +244,45 @@ which means the validation accuracy for that epoch.
 And we use `lit_net.LitNet` instead of `net.Net` for model class.
 
 
-After we modify our training script, we can create a job using the ScriptRunner with `launch_external_process` set to True:
+After modifying the training script, the next step is to create a job using the ScriptRunner. It's important to note that multi-GPU training requires `launch_external_process`` to be set to True. This option ensures that the external command (e.g., torch.distributed.run) is executed outside the script, allowing for distributed training across multiple GPUs.
+
+Create the NVFlare Job with `ScriptRunner``: Use the following command to generate an NVFlare job directory. This command configures the job with the necessary settings for multi-GPU training, specifies the distributed training launch command, and sets the required ports.
+
+The key options in this command are:
+
+  - `--launch_external_process`: Enables launching an external process for multi-GPU training.
+
+  - `--launch_command`: Specifies the command to run for distributed training. In this case, it uses torch.distributed.run to launch the DDP processes.
+
+  - `--export`: Exports the job configuration.
 
 ```bash
-bash ./prepare_data.sh
 python3 pt_client_api_job.py --script src/cifar10_lightning_ddp_fl.py --key_metric val_acc_epoch --launch_external_process --export
 ```
 
-Then we run it using the NVFlare simulator:
+Once the job directory has been created, you can run the federated learning job using the NVFlare simulator.
+
+Run the simulator with 2 clients, each using 2 GPUs. The --gpu option specifies the GPU devices to be used by each client. The format for the GPU assignment is [GPU_1, GPU_2], [GPU_3, GPU_4], where each pair corresponds to the GPUs for each client.
+
+The following command starts the simulator with two clients and assigns two GPUs to each client:
+
 
 ```bash
+bash ./prepare_data.sh
 nvflare simulator -n 2 -t 2 /tmp/nvflare/jobs/job_config/pt_client_api  --gpu "[0,1],[0,1]"
 ```
+
+Here’s what the command does:
+
+  - `-n 2`: Starts 2 clients.
+
+  - `-t 2`: Specifies that 2 worker processes will be started to run each client.
+
+  - `/tmp/nvflare/jobs/job_config/pt_client_api`: Path to the job configuration.
+
+  - `--gpu "[0,1],[0,1]"`: Assigns GPU 0 and 1 to the first client, and GPU 0 and 1 to the second client.
+
+If you have more than two GPUs on your machine (e.g., 4 GPUs), you can specify different GPU groups. For example, to assign GPUs 0 and 1 to the first client and GPUs 2 and 3 to the second client: `--gpu "[0,1],[2,3]"`
+
+
+Note: Ensure that the GPUs specified in the --gpu option correspond to the GPUs available on your machine. If using fewer or more GPUs, adjust the groups accordingly.

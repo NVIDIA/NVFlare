@@ -20,7 +20,13 @@ from .flare_agent import RC, FlareAgent, Task
 
 
 class TaskRegistry:
-    """This class is used to remember attributes that need to be shared for a user code."""
+    """This class is used to remember attributes that need to be shared for a user code.
+    
+    For multi-process scenarios:
+    - Only rank 0 process communicates with the FL server
+    - Other ranks get task information through their training framework
+    - Each rank maintains its own task state
+    """
 
     def __init__(self, config: ClientConfig, rank: Optional[str] = None, flare_agent: Optional[FlareAgent] = None):
         self.flare_agent = flare_agent
@@ -43,8 +49,12 @@ class TaskRegistry:
         return self.rank is None or self.rank == "0"
 
     def _receive(self, timeout: Optional[float] = None) -> Task:
-        if not self.flare_agent:
-            return
+        """Receives a task using flare agent.
+
+        This is only called on rank0.
+        """
+        if not self.is_rank0:
+            raise RuntimeError("only rank0 should call _receive.")
 
         task = self.flare_agent.get_task(timeout)
 
