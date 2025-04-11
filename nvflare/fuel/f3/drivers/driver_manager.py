@@ -78,19 +78,22 @@ class DriverManager:
                     if package:
                         module = package + "." + module
 
-                    imported = importlib.import_module(module)
-                    for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
-                        if cls_obj.__name__ in self.class_cache:
-                            continue
-                        self.class_cache.add(cls_obj.__name__)
+                    try:
+                        imported = importlib.import_module(module)
+                        for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
+                            if cls_obj.__name__ in self.class_cache:
+                                continue
+                            self.class_cache.add(cls_obj.__name__)
 
-                        if issubclass(cls_obj, Driver) and not inspect.isabstract(cls_obj):
-                            spec = inspect.getfullargspec(cls_obj.__init__)
-                            if len(spec.args) == 1:
-                                self.register(cls_obj)
-                            else:
-                                # Can't handle argument in constructor
-                                log.warning(f"Invalid driver, __init__ with extra arguments: {module}")
+                            if issubclass(cls_obj, Driver) and not inspect.isabstract(cls_obj):
+                                spec = inspect.getfullargspec(cls_obj.__init__)
+                                if len(spec.args) == 1:
+                                    self.register(cls_obj)
+                                else:
+                                    # Can't handle argument in constructor
+                                    log.warning(f"Invalid driver, __init__ with extra arguments: {module}")
+                    except Exception as e:
+                        log.warning(f"Driver ignored. Error loading {module}: {e}")
 
     def find_driver_class(self, scheme_or_url: str) -> Optional[Type[Driver]]:
         """Find the driver class based on scheme or URL
