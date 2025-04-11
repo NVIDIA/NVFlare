@@ -82,7 +82,7 @@ def main():
             "tree_method": "hist",
             "nthread": 1,
         },
-        client_ranks={"site-1": 0, "site-2": 1, "site-3": 2},
+        client_ranks={f"site-{x+1}": x for x in range(site_num)},
         in_process=True,
     )
     job.to_server(controller, id="xgb_controller")
