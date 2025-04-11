@@ -18,9 +18,15 @@ import numpy as np
 import torch
 
 from nvflare.app_common.abstract.params_converter import ParamsConverter
+from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.fuel.utils.fobs import fobs
 
 
 class PTReceiveParamsConverter(ParamsConverter):
+    def __init__(self):
+        super().__init__()
+        fobs.register(TensorDecomposer)
+
     def convert(self, params: Dict, fl_ctx) -> Dict:
         tensor_shapes = fl_ctx.get_prop("tensor_shapes")
         exclude_vars = fl_ctx.get_prop("exclude_vars")
@@ -47,6 +53,10 @@ class PTReceiveParamsConverter(ParamsConverter):
 
 
 class PTSendParamsConverter(ParamsConverter):
+    def __init__(self):
+        super().__init__()
+        fobs.register(TensorDecomposer)
+
     def convert(self, params: Dict, fl_ctx) -> Dict:
         return_tensors = {}
         exclude_vars = {}

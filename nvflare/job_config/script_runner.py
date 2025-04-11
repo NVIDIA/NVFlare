@@ -12,20 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Type, Union
+from typing import Optional, Union
 
-from nvflare.apis.fl_constant import SystemVarName
+from nvflare.apis.fl_constant import ExchangeFormat, SystemVarName
 from nvflare.app_common.abstract.launcher import Launcher
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
+from nvflare.app_common.filters.params_converter_filter import ParamsConverterFilter
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
-from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe, Mode
 from nvflare.fuel.utils.pipe.pipe import Pipe
 from nvflare.fuel.utils.validation_utils import check_str
+from nvflare.job_config.defs import FilterType
 
 from .api import FedJob, validate_object_for_job
 
@@ -50,6 +51,76 @@ _PIPE_CONNECT_URL = {
 }
 
 
+def _add_pt_pt_filter(job, ctx):
+    from nvflare.app_opt.pt.tensor_params_converter import PTReceiveParamsConverter, PTSendParamsConverter
+
+    job.add_component("pt_send", PTSendParamsConverter(), ctx)
+    job.add_component("pt_receive", PTReceiveParamsConverter(), ctx)
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="pt_receive"),
+        FilterType.TASK_DATA,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="pt_send"),
+        FilterType.TASK_RESULT,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    return
+
+
+def _add_np_pt_filter(job, ctx):
+    from nvflare.app_opt.pt.numpy_params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
+
+    job.add_component("np_to_pt", NumpyToPTParamsConverter(), ctx)
+    job.add_component("pt_to_np", PTToNumpyParamsConverter(), ctx)
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="np_to_pt"),
+        FilterType.TASK_DATA,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="pt_to_np"),
+        FilterType.TASK_RESULT,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    return
+
+
+def _add_np_keras_filter(job, ctx):
+    from nvflare.app_opt.tf.params_converter import KerasModelToNumpyParamsConverter, NumpyToKerasModelParamsConverter
+
+    job.add_component("keras_to_np", KerasModelToNumpyParamsConverter(), ctx)
+    job.add_component("np_to_keras", NumpyToKerasModelParamsConverter(), ctx)
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="np_to_keras"),
+        FilterType.TASK_DATA,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    job.add_filter(
+        ParamsConverterFilter(params_converter_id="keras_to_np"),
+        FilterType.TASK_RESULT,
+        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+        ctx,
+    )
+    return
+
+
+# ScriptRunner supported builtin exchange format combinations
+# other combinations users need to make sure the params exchange
+# between nvflare server <-> nvflare client and nvflare client <-> script is good
+AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS = {
+    (ExchangeFormat.PYTORCH, ExchangeFormat.PYTORCH): _add_pt_pt_filter,
+    (ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH): _add_np_pt_filter,
+    (ExchangeFormat.NUMPY, ExchangeFormat.KERAS_LAYER_WEIGHTS): _add_np_keras_filter,
+}
+
+
 class BaseScriptRunner:
     def __init__(
         self,
@@ -57,17 +128,14 @@ class BaseScriptRunner:
         script_args: str = "",
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        framework: FrameworkType = FrameworkType.PYTORCH,
-        params_transfer_type: str = TransferType.FULL,
         executor: Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None] = None,
-        params_exchange_format: Optional[str] = None,
-        from_nvflare_converter_id: Optional[str] = None,
-        to_nvflare_converter_id: Optional[str] = None,
         task_pipe: Optional[Pipe] = None,
         launcher: Optional[Launcher] = None,
         metric_relay: Optional[MetricRelay] = None,
         metric_pipe: Optional[Pipe] = None,
         pipe_connect_type: str = None,
+        server_expected_format: str = ExchangeFormat.NUMPY,
+        script_expected_format: str = ExchangeFormat.NUMPY,
     ):
         """BaseScriptRunner is used with FedJob API to run or launch a script.
 
@@ -84,25 +152,11 @@ class BaseScriptRunner:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
             script_args (str): Optional arguments for script (appended to script).
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
-            command (str): If launch_external_process=True, command to run script (preprended to script). Defaults to "python3".
-            framework (str): Framework type to connfigure converter and params exchange formats. Defaults to FrameworkType.PYTORCH.
-            params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-                DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
             executor (Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None], optional):
                 The executor to use in client process. Can be an instance of
                 `ClientAPILauncherExecutor`, `InProcessClientAPIExecutor`, or `None`. Defaults to `None`.
                 If specified, the script and script_args and command will be ignored.
-            params_exchange_format (Optional[str], optional):
-                The format to exchange the parameters. Defaults to `None`.
-                This specifies the format in which the parameters are exchanged between the client and the server.
-                For example, if the framework is pytorch, the exchange format can be pytorch or numpy;
-                if the framework is numpy, the exchange format can only be numpy.
-            from_nvflare_converter_id (Optional[str], optional):
-                The id of the converter to use to convert parameters from exchange format to the client format.
-                Defaults to `None`.
-            to_nvflare_converter_id (Optional[str], optional):
-                The id of the converter to use to convert parameters from the client format to exchange format.
-                Defaults to `None`.
             task_pipe (Optional[Pipe], optional):
                 An optional Pipe instance for passing task between ClientAPILauncherExecutor
                 and client api, this is only used if `launch_external_process` is True.
@@ -129,36 +183,9 @@ class BaseScriptRunner:
         self._script_args = script_args
         self._command = command
         self._launch_external_process = launch_external_process
-        self._framework = framework
-        self._params_transfer_type = params_transfer_type
-        self._params_exchange_format = params_exchange_format
-        self._from_nvflare_converter_id = from_nvflare_converter_id
-        self._to_nvflare_converter_id = to_nvflare_converter_id
+        self._server_expected_format = server_expected_format
+        self._script_expected_format = script_expected_format
         self._pipe_connect_type = pipe_connect_type
-
-        if self._framework == FrameworkType.PYTORCH:
-            _, torch_ok = optional_import(module="torch")
-            if torch_ok:
-                # If exchange format is not set, default to numpy
-                if self._params_exchange_format is None:
-                    self._params_exchange_format = ExchangeFormat.NUMPY
-            else:
-                raise ValueError("Using FrameworkType.PYTORCH, but unable to import torch")
-        elif self._framework == FrameworkType.TENSORFLOW:
-            _, tf_ok = optional_import(module="tensorflow")
-            if tf_ok:
-                # tf can only use numpy exchange format
-                self._params_exchange_format = ExchangeFormat.NUMPY
-            else:
-                raise ValueError("Using FrameworkType.TENSORFLOW, but unable to import tensorflow")
-        elif self._framework == FrameworkType.NUMPY:
-            # numpy can only use numpy exchange format
-            self._params_exchange_format = ExchangeFormat.NUMPY
-        elif self._framework == FrameworkType.RAW:
-            # raw can only use raw exchange format
-            self._params_exchange_format = ExchangeFormat.RAW
-        else:
-            raise ValueError(f"Framework {self._framework} unsupported")
 
         if launch_external_process:
             if metric_pipe is not None:
@@ -235,13 +262,10 @@ class BaseScriptRunner:
             executor = (
                 self._executor
                 if self._executor
-                else self._get_ex_process_executor_cls(self._framework)(
+                else ClientAPILauncherExecutor(
                     pipe_id=task_pipe_id,
                     launcher_id=launcher_id,
-                    params_exchange_format=self._params_exchange_format,
-                    params_transfer_type=self._params_transfer_type,
-                    from_nvflare_converter_id=self._from_nvflare_converter_id,
-                    to_nvflare_converter_id=self._to_nvflare_converter_id,
+                    script_expected_format=self._script_expected_format,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
@@ -270,43 +294,23 @@ class BaseScriptRunner:
             executor = (
                 self._executor
                 if self._executor
-                else self._get_in_process_executor_cls(self._framework)(
+                else InProcessClientAPIExecutor(
                     task_script_path=self._script,
                     task_script_args=self._script_args,
-                    params_exchange_format=self._params_exchange_format,
-                    params_transfer_type=self._params_transfer_type,
-                    from_nvflare_converter_id=self._from_nvflare_converter_id,
-                    to_nvflare_converter_id=self._to_nvflare_converter_id,
+                    script_expected_format=self._script_expected_format,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
+        exchange_format_combination = (
+            self._server_expected_format,
+            self._script_expected_format,
+        )
+        if exchange_format_combination in AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS:
+            add_filter_cb = AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS[exchange_format_combination]
+            add_filter_cb(job=job, ctx=ctx)
         job.add_resources(resources=[self._script], ctx=ctx)
         return comp_ids
-
-    def _get_ex_process_executor_cls(self, framework: FrameworkType) -> Type[ClientAPILauncherExecutor]:
-        if framework == FrameworkType.PYTORCH:
-            from nvflare.app_opt.pt.client_api_launcher_executor import PTClientAPILauncherExecutor
-
-            return PTClientAPILauncherExecutor
-        elif framework == FrameworkType.TENSORFLOW:
-            from nvflare.app_opt.tf.client_api_launcher_executor import TFClientAPILauncherExecutor
-
-            return TFClientAPILauncherExecutor
-        else:
-            return ClientAPILauncherExecutor
-
-    def _get_in_process_executor_cls(self, framework: FrameworkType) -> Type[InProcessClientAPIExecutor]:
-        if framework == FrameworkType.PYTORCH:
-            from nvflare.app_opt.pt.in_process_client_api_executor import PTInProcessClientAPIExecutor
-
-            return PTInProcessClientAPIExecutor
-        elif framework == FrameworkType.TENSORFLOW:
-            from nvflare.app_opt.tf.in_process_client_api_executor import TFInProcessClientAPIExecutor
-
-            return TFInProcessClientAPIExecutor
-        else:
-            return InProcessClientAPIExecutor
 
 
 class ScriptRunner(BaseScriptRunner):
@@ -316,25 +320,22 @@ class ScriptRunner(BaseScriptRunner):
         script_args: str = "",
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        framework: FrameworkType = FrameworkType.PYTORCH,
-        params_exchange_format: ExchangeFormat = ExchangeFormat.NUMPY,
-        params_transfer_type: str = TransferType.FULL,
         pipe_connect_type: str = PipeConnectType.VIA_CP,
+        server_expected_format: str = ExchangeFormat.NUMPY,
+        script_expected_format: str = ExchangeFormat.NUMPY,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
         in-process `launch_external_process=False` uses InProcessClientAPIExecutor (default).
         ex-process `launch_external_process=True` uses ClientAPILauncherExecutor.
 
+        It will call "[command][script][script_args]".
+
         Args:
             script (str): Script to run. For in-process must be a python script path. For ex-process can be any script support by `command`.
             script_args (str): Optional arguments for script (appended to script).
             launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
-            command (str): If launch_external_process=True, command to run script (preprended to script). Defaults to "python3".
-            framework (str): Framework type to connfigure converter and params exchange formats. Defaults to FrameworkType.PYTORCH.
-            params_exchange_format (str): The format to exchange the parameters. Defaults to ExchangeFormat.NUMPY.
-            params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
-                DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+            command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
             pipe_connect_type (str): how pipe peers are to be connected
         """
         super().__init__(
@@ -342,8 +343,7 @@ class ScriptRunner(BaseScriptRunner):
             script_args=script_args,
             launch_external_process=launch_external_process,
             command=command,
-            framework=framework,
-            params_exchange_format=params_exchange_format,
-            params_transfer_type=params_transfer_type,
             pipe_connect_type=pipe_connect_type,
+            server_expected_format=server_expected_format,
+            script_expected_format=script_expected_format,
         )

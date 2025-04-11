@@ -37,7 +37,6 @@ class TestInProcessClientAPI(unittest.TestCase):
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: "train_with_eval",
                 ConfigKey.EXCHANGE_FORMAT: "pytorch",
-                ConfigKey.TRANSFER_TYPE: "DIFF",
                 ConfigKey.TRAIN_TASK_NAME: "train",
                 ConfigKey.EVAL_TASK_NAME: "evaluate",
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: "submit_model",
@@ -70,10 +69,10 @@ class TestInProcessClientAPI(unittest.TestCase):
         # since the data bus is a singleton!
         assert set(xs).issuperset([TOPIC_ABORT, TOPIC_GLOBAL_RESULT, TOPIC_STOP])
 
-    def local_result_callback(self, data, topic):
+    def local_result_callback(self, topic, data, databus):
         pass
 
-    def log_result_callback(self, data, topic):
+    def log_result_callback(self, topic, data, databus):
         pass
 
     def test_init_subscriptions2(self):
