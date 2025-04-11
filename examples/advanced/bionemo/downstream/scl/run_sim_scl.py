@@ -25,7 +25,7 @@ from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import BaseScriptRunner
 
 sys.path.append(os.path.join(os.getcwd(), ".."))  # include parent folder in path
-from bionemo_filters import BioNeMoParamsFilter
+from bionemo_filters import BioNeMoParamsFilter, BioNeMoStateDictFilter
 
 
 def main(args):
@@ -80,6 +80,7 @@ def main(args):
         job.to(
             BioNeMoParamsFilter(precision), client_name, tasks=["train", "validate"], filter_type=FilterType.TASK_DATA
         )
+        job.to(BioNeMoStateDictFilter(), client_name, tasks=["train", "validate"], filter_type=FilterType.TASK_RESULT)
 
     job.export_job("./exported_jobs")
     job.simulator_run(f"/tmp/nvflare/bionemo/scl/{job.name}", gpu=args.sim_gpus)
