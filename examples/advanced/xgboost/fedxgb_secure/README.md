@@ -14,6 +14,9 @@ To be able to run all the examples, please install the requirements first.
 ```
 pip install -r requirements.txt
 ```
+
+If you want to run the secure vertical XGBoost with libnvflare.so plugin, you will need to install the [IPCL](https://github.com/intel/pailliercryptolib_python) library (by `git clone` and `pip install -e .`).
+
 ## Encryption Plugins
 The secure XGBoost requires encryption plugins to work. The plugins are distributed with NVFlare package. If you build NVFlare from source, you need
 to build the plugins following the instructions in this [README](https://github.com/NVIDIA/NVFlare/blob/main/integration/xgboost/encryption_plugins/README.md)
@@ -78,8 +81,15 @@ The running time of each job depends mainly on the encryption workload.
 ```
 python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal
 python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal --secure True
-python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical
-python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --secure True
+python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --site_num 2
+python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --site_num 2 --secure True
+```
+
+Note: you can specify which plugin you want to use by using the environment variable: NVFLARE_XGB_PLUGIN_NAME and NVFLARE_XGB_PLUGIN_PATH
+for example:
+
+```bash
+NVFLARE_XGB_PLUGIN_NAME=nvflare NVFLARE_XGB_PLUGIN_PATH=/tmp/libnvflare.so python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --site_num 2 --secure True
 ```
 
 In the secure horizontal scheme, secure aggregation is performed on the server-side. To support this, additional tenseal context must be provisioned before starting the job to prepare the server. In contrast, the secure vertical scheme doesn't require this step because the server's role is limited to message routing, without performing the actual secure message aggregation.
