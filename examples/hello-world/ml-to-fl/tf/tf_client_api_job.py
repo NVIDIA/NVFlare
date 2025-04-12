@@ -16,7 +16,10 @@ import argparse
 
 from src.tf_net import TFNet
 
-from nvflare.apis.fl_constant import ExchangeFormat
+from nvflare import FilterType
+from nvflare.apis.fl_constant import ParamFormat
+from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.filters.params_converter_filter import ParamsConverterFilter
 from nvflare.app_opt.tf.job_config.fed_avg import FedAvgJob
 from nvflare.job_config.script_runner import ScriptRunner
 
@@ -26,7 +29,7 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--script", type=str, default="src/cifar10_tf_fl.py")
-    parser.add_argument("--launch_process", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--launch_external_process", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
 
     return parser.parse_args()
@@ -39,7 +42,7 @@ def main():
     n_clients = args.n_clients
     num_rounds = args.num_rounds
     script = args.script
-    launch_process = args.launch_process
+    launch_external_process = args.launch_external_process
     export_config = args.export_config
 
     job = FedAvgJob(
@@ -51,11 +54,22 @@ def main():
 
     executor = ScriptRunner(
         script=script,
-        launch_external_process=launch_process,
-        server_expected_format=ExchangeFormat.NUMPY,
-        script_expected_format=ExchangeFormat.KERAS_LAYER_WEIGHTS,
+        launch_external_process=launch_external_process,
     )
     job.to_clients(executor)
+
+    job.to_clients(
+        obj=ParamsConverterFilter(source=ParamFormat.NUMPY, target=ParamFormat.KERAS_LAYER_WEIGHTS),
+        id="np_to_keras",
+        filter_type=FilterType.TASK_DATA,
+        tasks=[AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+    )
+    job.to_clients(
+        obj=ParamsConverterFilter(source=ParamFormat.KERAS_LAYER_WEIGHTS, target=ParamFormat.NUMPY),
+        id="keras_to_np",
+        filter_type=FilterType.TASK_RESULT,
+        tasks=[AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
+    )
 
     if export_config:
         job.export_job("/tmp/nvflare/jobs/job_config")

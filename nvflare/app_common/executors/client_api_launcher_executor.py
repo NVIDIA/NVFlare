@@ -15,7 +15,6 @@
 import os
 from typing import Optional
 
-from nvflare.apis.fl_constant import ExchangeFormat
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
@@ -44,7 +43,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
-        script_expected_format: str = ExchangeFormat.NUMPY,
         config_file_name: str = CLIENT_API_CONFIG,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
@@ -67,7 +65,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             train_task_name (str): Task name of train mode.
             evaluate_task_name (str): Task name of evaluate mode.
             submit_model_task_name (str): Task name of submit_model mode.
-            script_expected_format (str): What format to exchange the parameters.
             config_file_name (str): The config file name to write attributes into, the client api will read in this file.
         """
         LauncherExecutor.__init__(
@@ -90,7 +87,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             submit_model_task_name=submit_model_task_name,
         )
 
-        self._script_expected_format = script_expected_format
         self._config_file_name = config_file_name
 
     def initialize(self, fl_ctx: FLContext) -> None:
@@ -101,7 +97,6 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         pipe_export_class, pipe_export_args = self.pipe.export(ExportMode.PEER)
         task_exchange_attributes = {
             ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
-            ConfigKey.EXCHANGE_FORMAT: self._script_expected_format,
             ConfigKey.TRAIN_TASK_NAME: self._train_task_name,
             ConfigKey.EVAL_TASK_NAME: self._evaluate_task_name,
             ConfigKey.SUBMIT_MODEL_TASK_NAME: self._submit_model_task_name,

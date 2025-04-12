@@ -18,7 +18,7 @@ from nvflare import FedJob
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
-from nvflare.job_config.script_runner import ExchangeFormat, ScriptRunner
+from nvflare.job_config.script_runner import ScriptRunner
 
 
 def define_parser():
@@ -26,7 +26,7 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--script", type=str, default="src/train_full.py")
-    parser.add_argument("--launch_process", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--launch_external_process", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
 
     return parser.parse_args()
@@ -39,7 +39,7 @@ def main():
     n_clients = args.n_clients
     num_rounds = args.num_rounds
     script = args.script
-    launch_process = args.launch_process
+    launch_external_process = args.launch_external_process
     export_config = args.export_config
 
     job = FedJob(name="np_client_api")
@@ -67,9 +67,7 @@ def main():
 
     executor = ScriptRunner(
         script=script,
-        launch_external_process=launch_process,
-        server_expected_format=ExchangeFormat.NUMPY,
-        script_expected_format=ExchangeFormat.NUMPY,
+        launch_external_process=launch_external_process,
     )
     job.to_clients(executor)
 

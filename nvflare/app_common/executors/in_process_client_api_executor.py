@@ -19,7 +19,7 @@ from typing import Optional
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ExchangeFormat, FLContextKey, FLMetaKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -50,7 +50,6 @@ class InProcessClientAPIExecutor(Executor):
         task_wait_time: Optional[float] = None,
         result_pull_interval: float = 0.5,
         log_pull_interval: Optional[float] = None,
-        script_expected_format: str = ExchangeFormat.NUMPY,
         train_with_evaluation: bool = False,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
@@ -61,7 +60,6 @@ class InProcessClientAPIExecutor(Executor):
         self._client_api = None
         self._result_pull_interval = result_pull_interval
         self._log_pull_interval = log_pull_interval
-        self._script_expected_format = script_expected_format
 
         if not task_script_path or not task_script_path.endswith(".py"):
             raise ValueError(f"invalid task_script_path '{task_script_path}'")
@@ -170,7 +168,6 @@ class InProcessClientAPIExecutor(Executor):
             ConfigKey.TASK_NAME: task_name,
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
-                ConfigKey.EXCHANGE_FORMAT: self._script_expected_format,
                 ConfigKey.TRAIN_TASK_NAME: self._train_task_name,
                 ConfigKey.EVAL_TASK_NAME: self._evaluate_task_name,
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: self._submit_model_task_name,

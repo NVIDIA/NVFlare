@@ -17,10 +17,12 @@ import os
 from enum import Enum
 from typing import Optional
 
+from nvflare.apis.utils.decomposers import flare_decomposers
+from nvflare.app_common.decomposers import common_decomposers
+from nvflare.client.api_spec import CLIENT_API_KEY, CLIENT_API_TYPE_KEY, APISpec
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.data_event.data_bus import DataBus
 
-from .api_spec import CLIENT_API_KEY, CLIENT_API_TYPE_KEY, APISpec
 from .ex_process.api import ExProcessClientAPI
 from .in_process.api import InProcessClientAPI
 
@@ -60,4 +62,6 @@ class APIContext:
                 raise RuntimeError(f"api {api} is not a valid InProcessClientAPI")
             return api
         else:
+            flare_decomposers.register()
+            common_decomposers.register()
             return ExProcessClientAPI(config_file=self.config_file)

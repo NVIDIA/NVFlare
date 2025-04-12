@@ -14,19 +14,16 @@
 
 from typing import Optional, Union
 
-from nvflare.apis.fl_constant import ExchangeFormat, SystemVarName
+from nvflare.apis.fl_constant import SystemVarName
 from nvflare.app_common.abstract.launcher import Launcher
-from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api_launcher_executor import ClientAPILauncherExecutor
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
-from nvflare.app_common.filters.params_converter_filter import ParamsConverterFilter
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe, Mode
 from nvflare.fuel.utils.pipe.pipe import Pipe
 from nvflare.fuel.utils.validation_utils import check_str
-from nvflare.job_config.defs import FilterType
 
 from .api import FedJob, validate_object_for_job
 
@@ -51,76 +48,6 @@ _PIPE_CONNECT_URL = {
 }
 
 
-def _add_pt_pt_filter(job, ctx):
-    from nvflare.app_opt.pt.tensor_params_converter import PTReceiveParamsConverter, PTSendParamsConverter
-
-    job.add_component("pt_send", PTSendParamsConverter(), ctx)
-    job.add_component("pt_receive", PTReceiveParamsConverter(), ctx)
-    job.add_filter(
-        ParamsConverterFilter(params_converter_id="pt_receive"),
-        FilterType.TASK_DATA,
-        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-        ctx,
-    )
-    job.add_filter(
-        ParamsConverterFilter(params_converter_id="pt_send"),
-        FilterType.TASK_RESULT,
-        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-        ctx,
-    )
-    return
-
-
-def _add_np_pt_filter(job, ctx):
-    from nvflare.app_opt.pt.numpy_params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
-
-    job.add_component("np_to_pt", NumpyToPTParamsConverter(), ctx)
-    job.add_component("pt_to_np", PTToNumpyParamsConverter(), ctx)
-    job.add_filter(
-        ParamsConverterFilter(params_converter_id="np_to_pt"),
-        FilterType.TASK_DATA,
-        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-        ctx,
-    )
-    job.add_filter(
-        ParamsConverterFilter(params_converter_id="pt_to_np"),
-        FilterType.TASK_RESULT,
-        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-        ctx,
-    )
-    return
-
-
-def _add_np_keras_filter(job, ctx):
-    from nvflare.app_opt.tf.params_converter import KerasModelToNumpyParamsConverter, NumpyToKerasModelParamsConverter
-
-    job.add_component("keras_to_np", KerasModelToNumpyParamsConverter(), ctx)
-    job.add_component("np_to_keras", NumpyToKerasModelParamsConverter(), ctx)
-    job.add_filter(
-        ParamsConverterFilter(params_converter_id="np_to_keras"),
-        FilterType.TASK_DATA,
-        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-        ctx,
-    )
-    job.add_filter(
-        ParamsConverterFilter(params_converter_id="keras_to_np"),
-        FilterType.TASK_RESULT,
-        [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION, AppConstants.TASK_SUBMIT_MODEL],
-        ctx,
-    )
-    return
-
-
-# ScriptRunner supported builtin exchange format combinations
-# other combinations users need to make sure the params exchange
-# between nvflare server <-> nvflare client and nvflare client <-> script is good
-AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS = {
-    (ExchangeFormat.PYTORCH, ExchangeFormat.PYTORCH): _add_pt_pt_filter,
-    (ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH): _add_np_pt_filter,
-    (ExchangeFormat.NUMPY, ExchangeFormat.KERAS_LAYER_WEIGHTS): _add_np_keras_filter,
-}
-
-
 class BaseScriptRunner:
     def __init__(
         self,
@@ -134,8 +61,6 @@ class BaseScriptRunner:
         metric_relay: Optional[MetricRelay] = None,
         metric_pipe: Optional[Pipe] = None,
         pipe_connect_type: str = None,
-        server_expected_format: str = ExchangeFormat.NUMPY,
-        script_expected_format: str = ExchangeFormat.NUMPY,
     ):
         """BaseScriptRunner is used with FedJob API to run or launch a script.
 
@@ -183,8 +108,6 @@ class BaseScriptRunner:
         self._script_args = script_args
         self._command = command
         self._launch_external_process = launch_external_process
-        self._server_expected_format = server_expected_format
-        self._script_expected_format = script_expected_format
         self._pipe_connect_type = pipe_connect_type
 
         if launch_external_process:
@@ -265,7 +188,6 @@ class BaseScriptRunner:
                 else ClientAPILauncherExecutor(
                     pipe_id=task_pipe_id,
                     launcher_id=launcher_id,
-                    script_expected_format=self._script_expected_format,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
@@ -297,18 +219,10 @@ class BaseScriptRunner:
                 else InProcessClientAPIExecutor(
                     task_script_path=self._script,
                     task_script_args=self._script_args,
-                    script_expected_format=self._script_expected_format,
                 )
             )
             job.add_executor(executor, tasks=tasks, ctx=ctx)
 
-        exchange_format_combination = (
-            self._server_expected_format,
-            self._script_expected_format,
-        )
-        if exchange_format_combination in AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS:
-            add_filter_cb = AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS[exchange_format_combination]
-            add_filter_cb(job=job, ctx=ctx)
         job.add_resources(resources=[self._script], ctx=ctx)
         return comp_ids
 
@@ -321,8 +235,6 @@ class ScriptRunner(BaseScriptRunner):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         pipe_connect_type: str = PipeConnectType.VIA_CP,
-        server_expected_format: str = ExchangeFormat.NUMPY,
-        script_expected_format: str = ExchangeFormat.NUMPY,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
@@ -344,6 +256,4 @@ class ScriptRunner(BaseScriptRunner):
             launch_external_process=launch_external_process,
             command=command,
             pipe_connect_type=pipe_connect_type,
-            server_expected_format=server_expected_format,
-            script_expected_format=script_expected_format,
         )

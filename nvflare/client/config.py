@@ -21,7 +21,6 @@ from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
 class ConfigKey:
-    EXCHANGE_FORMAT = "exchange_format"
     TRAIN_WITH_EVAL = "train_with_eval"
     TRAIN_TASK_NAME = "train_task_name"
     EVAL_TASK_NAME = "eval_task_name"
@@ -44,7 +43,6 @@ class ClientConfig:
 
         .. code-block::
 
-            EXCHANGE_FORMAT: Format to exchange.
             TRAIN_WITH_EVAL: Whether train task needs to also do evaluation
             TRAIN_TASK_NAME: Name of the train task
             EVAL_TASK_NAME: Name of the evaluate task
@@ -82,7 +80,6 @@ class ClientConfig:
               "JOB_ID": "simulate_job",
               "TASK_EXCHANGE": {
                 "train_with_eval": true,
-                "exchange_format": "numpy",
                 "train_task_name": "train",
                 "eval_task_name": "validate",
                 "submit_model_task_name": "submit_model",
@@ -119,9 +116,6 @@ class ClientConfig:
 
     def get_pipe_class(self, section: str) -> str:
         return self.config[section][ConfigKey.PIPE][ConfigKey.CLASS_NAME]
-
-    def get_exchange_format(self) -> str:
-        return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.EXCHANGE_FORMAT, "")
 
     def get_train_task(self):
         return self.config.get(ConfigKey.TASK_EXCHANGE, {}).get(ConfigKey.TRAIN_TASK_NAME, "")

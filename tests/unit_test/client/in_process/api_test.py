@@ -36,7 +36,6 @@ class TestInProcessClientAPI(unittest.TestCase):
             "TASK_NAME": "train",
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: "train_with_eval",
-                ConfigKey.EXCHANGE_FORMAT: "pytorch",
                 ConfigKey.TRAIN_TASK_NAME: "train",
                 ConfigKey.EVAL_TASK_NAME: "evaluate",
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: "submit_model",

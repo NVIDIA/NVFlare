@@ -15,38 +15,63 @@
 from typing import Union
 
 from nvflare.apis.dxo_filter import DXO, DXOFilter
-from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import ParamFormat
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.params_converter import ParamsConverter
+from nvflare.fuel.utils.import_utils import optional_import
 
+# Optional imports
+NumpyToPTParamsConverter, has_pt_np2pt = optional_import(
+    "nvflare.app_opt.pt.numpy_params_converter", name="NumpyToPTParamsConverter"
+)
+PTToNumpyParamsConverter, has_pt_pt2np = optional_import(
+    "nvflare.app_opt.pt.numpy_params_converter", name="PTToNumpyParamsConverter"
+)
 
-def _get_params_converter(params_converter_id: str, fl_ctx: FLContext) -> ParamsConverter:
-    c = fl_ctx.get_engine().get_component(params_converter_id)
+KerasModelToNumpyParamsConverter, has_tf_keras2np = optional_import(
+    "nvflare.app_opt.tf.params_converter", name="KerasModelToNumpyParamsConverter"
+)
+NumpyToKerasModelParamsConverter, has_tf_np2keras = optional_import(
+    "nvflare.app_opt.tf.params_converter", name="NumpyToKerasModelParamsConverter"
+)
 
-    if not isinstance(c, ParamsConverter):
-        msg = f"component identified by {params_converter_id} is type {type(c)} not type of ParamsConverter"
-        raise ValueError(msg)
-    return c
+# Conditionally build exchange format map
+AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS = {}
+
+if has_pt_np2pt:
+    AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS[(ParamFormat.NUMPY, ParamFormat.PYTORCH)] = NumpyToPTParamsConverter()
+
+if has_pt_pt2np:
+    AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS[(ParamFormat.PYTORCH, ParamFormat.NUMPY)] = PTToNumpyParamsConverter()
+
+if has_tf_keras2np:
+    AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS[(ParamFormat.KERAS_LAYER_WEIGHTS, ParamFormat.NUMPY)] = (
+        KerasModelToNumpyParamsConverter()
+    )
+
+if has_tf_np2keras:
+    AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS[(ParamFormat.NUMPY, ParamFormat.KERAS_LAYER_WEIGHTS)] = (
+        NumpyToKerasModelParamsConverter()
+    )
 
 
 class ParamsConverterFilter(DXOFilter):
-    def __init__(self, params_converter_id: str):
+    def __init__(self, source: str, target: str):
         """Call ParamsConverter.
 
         Args:
-            params_converter_id (str): ID to a ParamsConverter.
+            source (str): Source ParamFormat.
+            target (str): Target ParamFormat.
 
         """
         # TODO: any data kinds or supported types?
         super().__init__(supported_data_kinds=None, data_kinds_to_filter=None)
-        self._params_converter_id = params_converter_id
-        self._params_converter = None
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self._params_converter: ParamsConverter = _get_params_converter(self._params_converter_id, fl_ctx)
-        super().handle_event(event_type, fl_ctx)
+        self.source = source
+        self.target = target
+        combination = (source, target)
+        if combination not in AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS:
+            raise ValueError(f"({source=},{target=}) does not have built in converter.")
+        self._params_converter = AUTO_REGISTERED_EXCHANGE_FORMAT_COMBINATIONS[combination]
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Convert the dxo.data using the specified converter in the order that is specified.

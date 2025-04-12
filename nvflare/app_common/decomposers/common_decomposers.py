@@ -23,6 +23,7 @@ from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _E
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposer import DictDecomposer, Externalizer, Internalizer
+from nvflare.fuel.utils.import_utils import optional_import
 
 
 class FLModelDecomposer(fobs.Decomposer):
@@ -61,6 +62,11 @@ class FLModelDecomposer(fobs.Decomposer):
 def register():
     if register.registered:
         return
+
+    # auto-register TensorDecomposer
+    tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
+    if ok:
+        fobs.register(tensor_decomposer)
 
     fobs.register(DictDecomposer(Learnable))
     fobs.register(DictDecomposer(ModelLearnable))

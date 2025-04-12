@@ -590,7 +590,7 @@ class ConnectionSecurity:
     MTLS = "mtls"
 
 
-class ExchangeFormat:
+class ParamFormat:
     RAW = "raw"
     PYTORCH = "pytorch"
     NUMPY = "numpy"

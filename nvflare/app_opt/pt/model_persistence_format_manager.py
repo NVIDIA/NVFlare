@@ -14,9 +14,6 @@
 
 from collections import OrderedDict
 
-import torch
-
-from nvflare.apis.dxo import MetaKey
 from nvflare.app_common.abstract.model import (
     ModelLearnable,
     ModelLearnableKey,
@@ -71,37 +68,20 @@ class PTModelPersistenceFormatManager(object):
         if not self.train_conf:
             self.train_conf = default_train_conf
 
-    def _get_processed_vars(self) -> dict:
-        if self.meta:
-            return self.meta.get(MetaKey.PROCESSED_KEYS, {})
-        else:
-            return {}
-
     def to_model_learnable(self, exclude_vars) -> ModelLearnable:
-        processed_vars = self._get_processed_vars()
-
         weights = {}
         for k, v in self.var_dict.items():
             if exclude_vars and exclude_vars.search(k):
                 continue
 
-            is_processed = processed_vars.get(k, False)
-            if is_processed:
-                weights[k] = v
-            else:
-                weights[k] = v.cpu().numpy()
+            weights[k] = v
 
         return make_model_learnable(weights, self.meta)
 
     def to_persistence_dict(self) -> dict:
-        processed_vars = self._get_processed_vars()
         weights_dict = OrderedDict()
         for k, v in self.var_dict.items():
-            is_processed = processed_vars.get(k, False)
-            if is_processed:
-                weights_dict[k] = v
-            else:
-                weights_dict[k] = torch.as_tensor(v)
+            weights_dict[k] = v
 
         # always use complex format for saving
         persistence_dict = OrderedDict()
