@@ -240,7 +240,7 @@ class CrossSiteEvalServerController(ServerSideController):
             task=task,
             fl_ctx=fl_ctx,
             targets=owners,
-            min_responses=1,
+            min_responses=len(owners),
             wait_time_after_min_received=0,
             abort_signal=abort_signal,
         )
