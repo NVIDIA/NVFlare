@@ -21,9 +21,9 @@ Assumptions
 Assume that clients will provide the following:
 
 * target statistics such as count, histogram only
-* local statistics for the target statistics (by implementing the statistic_spec)
+* local statistics for the target statistics (by implementing the `statistic_spec`)
 * data sets and dataset features (feature name, data type)
-  
+
 .. note::
 
     Count is always required as we use count to enforce data privacy policy. We only support numerical features, not categorical features. The client can return all types of features but the non-numerical features will be removed.
@@ -94,11 +94,11 @@ privacy.json provides local site specific privacy policy. The policy is likely s
 Privacy configuration
 ---------------------
 
-The NVFLARE privacy configuration is consists of set of task data filters and task result filters
+The NVFLARE privacy configuration is consists of set of task data filters and task result filters:
 
-* The task data filter applies before client executor executes;
-* The task results filter applies after client executor before it sends to server;
-* for both data filter and result filter, they are groups via scope.
+* The task data filter applies before client executor executes
+* The task results filter applies after client executor before it sends to server
+* For both data filter and result filter, they are groups via scope
 
 Each job will need to have privacy scope. If not specified, the default scope will be used. If default scope is not defined and job doesn't specify the privacy scope, the job deployment will fail, and job will not executed
 
@@ -131,7 +131,7 @@ With such rules, if we have both task result filters and privacy scoped filters,
 Statistics Privacy Filters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Statistics privacy filters are task result filters. We already build one for Statistics.
+Statistics privacy filters are task result filters. We already built one for Statistics.
 
 The :class:`StatisticsPrivacyFilter<nvflare.app_common.filters.statistics_privacy_filter.StatisticsPrivacyFilter>` consists of several ``StatisticsPrivacyCleansers`` focused on the statistics sent from client to server.
 
@@ -171,6 +171,59 @@ Some of the local statistics (such as count, failure count, sum etc.) can be cal
 * pre_run() -- controller send clients the target metrics information
 * 1st statistics task -- controller send clients 1st set of target metrics as well as local max/min if the global min/max estimation is needed
 * 2nd statistics task -- based on the aggregated global statistics, we do the 2nd round, we calculate the VAR (with global mean) and histogram based on the global rnage (or estimated global range)
+
+Statistics
+==========
+
+Federated statistics includes numerical statistics measures for:
+
+* count
+* mean
+* sum
+* std_dev
+* histogram
+* quantile
+
+We did not include min, max value to avoid data privacy concerns.
+
+Quantiles
+---------
+
+Quantile statistics refers to statistical measures that divide a probability distribution or dataset into intervals with equal probabilities or proportions. Quantiles help summarize the distribution of data by providing key points that indicate how values are spread.
+
+Key Quantiles:
+
+* Median (50th percentile): The middle value of a dataset, dividing it into two equal halves
+* Quartiles (25th, 50th, 75th percentiles): Divide the data into four equal parts
+* Deciles (10th, 20th, ..., 90th percentiles): Divide the data into ten equal parts
+* Percentiles (1st, 2nd, ..., 99th): Divide the data into 100 equal parts
+
+Usage of Quantiles:
+
+* Descriptive Statistics: Summarizes the spread of data
+* Outlier Detection: Helps identify extreme values
+* Machine Learning: Used in feature engineering, normalization, and decision tree algorithms
+* Risk Analysis: Used in finance (e.g., Value at Risk, VaR)
+
+Implementation Details:
+
+To calculate federated quantiles, we use the fastdigest package, which satisfies the following constraints:
+
+* Works in distributed systems
+* Does not copy the original data (avoiding privacy leaks)
+* Avoids transmitting large amounts of data
+* No system-level dependency
+
+The tdigest algorithm only carries the cluster coordinates, initially each data point is in its own cluster. By default, we compress with max_bin = sqrt(datasize) to compress the coordinates, so the data won't leak. You can always override max_bins if you prefer more or less compression.
+
+For detailed implementation instructions and configuration examples, please refer to the :github_nvflare_link:`Federated Statistics README <examples/advanced/federated-statistics/README.md>`.
+
+Privacy Considerations:
+
+* The quantile calculation uses the tdigest algorithm which only carries cluster coordinates
+* Data compression is applied by default (max_bin = sqrt(datasize))
+* The original data is never transmitted or exposed
+* The implementation works within the existing privacy filter framework
 
 Summary
 =======
