@@ -19,16 +19,17 @@ from typing import Optional
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ExchangeFormat, FLContextKey, FLMetaKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, FLMetaKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo, send_analytic_dxo
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
 from nvflare.client.api_spec import CLIENT_API_KEY
-from nvflare.client.config import ConfigKey
+from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType
 from nvflare.client.in_process.api import (
     TOPIC_ABORT,
     TOPIC_GLOBAL_RESULT,
@@ -39,6 +40,7 @@ from nvflare.client.in_process.api import (
 )
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.event_manager import EventManager
+from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.security.logging import secure_format_traceback
 
 
@@ -50,7 +52,10 @@ class InProcessClientAPIExecutor(Executor):
         task_wait_time: Optional[float] = None,
         result_pull_interval: float = 0.5,
         log_pull_interval: Optional[float] = None,
-        script_expected_format: str = ExchangeFormat.NUMPY,
+        params_exchange_format: str = ExchangeFormat.NUMPY,
+        params_transfer_type: TransferType = TransferType.FULL,
+        from_nvflare_converter_id: Optional[str] = None,
+        to_nvflare_converter_id: Optional[str] = None,
         train_with_evaluation: bool = False,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
@@ -61,7 +66,8 @@ class InProcessClientAPIExecutor(Executor):
         self._client_api = None
         self._result_pull_interval = result_pull_interval
         self._log_pull_interval = log_pull_interval
-        self._script_expected_format = script_expected_format
+        self._params_exchange_format = params_exchange_format
+        self._params_transfer_type = params_transfer_type
 
         if not task_script_path or not task_script_path.endswith(".py"):
             raise ValueError(f"invalid task_script_path '{task_script_path}'")
@@ -76,6 +82,11 @@ class InProcessClientAPIExecutor(Executor):
         self._train_task_name = train_task_name
         self._evaluate_task_name = evaluate_task_name
         self._submit_model_task_name = submit_model_task_name
+
+        self._from_nvflare_converter_id = from_nvflare_converter_id
+        self._from_nvflare_converter: Optional[ParamsConverter] = None
+        self._to_nvflare_converter_id = to_nvflare_converter_id
+        self._to_nvflare_converter: Optional[ParamsConverter] = None
 
         self._engine = None
         self._task_fn_thread = None
@@ -95,6 +106,7 @@ class InProcessClientAPIExecutor(Executor):
             super().handle_event(event_type, fl_ctx)
             self._engine = fl_ctx.get_engine()
             self._fl_ctx = fl_ctx
+            self._init_converter(fl_ctx)
 
             workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
             job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
@@ -126,6 +138,8 @@ class InProcessClientAPIExecutor(Executor):
 
             shareable.set_header(FLMetaKey.JOB_ID, fl_ctx.get_job_id())
             shareable.set_header(FLMetaKey.SITE_NAME, fl_ctx.get_identity_name())
+            if self._from_nvflare_converter is not None:
+                shareable = self._from_nvflare_converter.process(task_name, shareable, fl_ctx)
 
             self.log_info(fl_ctx, "send data to peer")
 
@@ -150,7 +164,8 @@ class InProcessClientAPIExecutor(Executor):
                     current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
                     if current_round is not None:
                         result.set_header(AppConstants.CURRENT_ROUND, current_round)
-
+                    if self._to_nvflare_converter is not None:
+                        result = self._to_nvflare_converter.process(task_name, result, fl_ctx)
                     return result
                 else:
                     self.log_debug(fl_ctx, f"waiting for result, sleep for {self._result_pull_interval} secs")
@@ -170,7 +185,8 @@ class InProcessClientAPIExecutor(Executor):
             ConfigKey.TASK_NAME: task_name,
             ConfigKey.TASK_EXCHANGE: {
                 ConfigKey.TRAIN_WITH_EVAL: self._train_with_evaluation,
-                ConfigKey.EXCHANGE_FORMAT: self._script_expected_format,
+                ConfigKey.EXCHANGE_FORMAT: self._params_exchange_format,
+                ConfigKey.TRANSFER_TYPE: self._params_transfer_type,
                 ConfigKey.TRAIN_TASK_NAME: self._train_task_name,
                 ConfigKey.EVAL_TASK_NAME: self._evaluate_task_name,
                 ConfigKey.SUBMIT_MODEL_TASK_NAME: self._submit_model_task_name,
@@ -181,6 +197,17 @@ class InProcessClientAPIExecutor(Executor):
     def send_data_to_peer(self, shareable, fl_ctx: FLContext):
         self.log_info(fl_ctx, "sending payload to peer")
         self._event_manager.fire_event(TOPIC_GLOBAL_RESULT, shareable)
+
+    def _init_converter(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id)
+        if from_nvflare_converter is not None:
+            check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
+            self._from_nvflare_converter = from_nvflare_converter
+        to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id)
+        if to_nvflare_converter is not None:
+            check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
+            self._to_nvflare_converter = to_nvflare_converter
 
     def check_output_shareable(self, task_name: str, shareable, fl_ctx: FLContext):
         """Checks output shareable after execute."""
