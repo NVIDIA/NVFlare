@@ -9,11 +9,9 @@ In this example, we further extend the existing horizontal and vertical federate
 
 In the following, we illustrate both *horizontal* and *vertical* federated XGBoost, *without* and *with* homomorphic encryption. Please refer to our [documentation](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html) for more details on the pipeline design and the encryption logic.
 
-## Installation
-To be able to run all the examples, please install the requirements first.
-```
-pip install -r requirements.txt
-```
+## Requirements
+To be able to run all the examples, please install the requirements first from the main folder.
+
 ## Encryption Plugins
 The secure XGBoost requires encryption plugins to work. From 2.6, we no longer distributed the plugins with NVFlare package. 
 Please build the plugins following the instructions in this [README](https://github.com/NVIDIA/NVFlare/blob/main/integration/xgboost/encryption_plugins/README.md)
