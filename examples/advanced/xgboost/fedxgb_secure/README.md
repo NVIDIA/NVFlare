@@ -19,11 +19,10 @@ Please build the plugins following the instructions in this [README](https://git
 > **_NOTE:_** Please make sure to use the correct versions of the required libraries, including CUDA driver and runtime.
 > The 'How to run XGBoost with encryption plugins' section is not needed for running Secure Federated XGBoost in simulator mode.
 
-The build process will generate 2 .so files: libcuda_paillier.so and libnvflare.so. Configure the path accordingly following the instructions in 
-[XGBoost User Guide](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html)
+The build process will generate 2 .so files: libcuda_paillier.so and libnvflare.so. 
 
-> **_NOTE:_** To use libnvflare.so plugin, the [IPCL](https://github.com/intel/pailliercryptolib_python) library installation is needed, 
-> and we recommend install it from source via `git clone` and `pip install -e .`.
+To use libnvflare.so plugin, the [IPCL](https://github.com/intel/pailliercryptolib_python) library installation is needed, 
+and we recommend install it from source.
 
 ## Key Checkups
 Before we move on to the next step, we want to double-check if we have properly set up our environments:
