@@ -41,7 +41,7 @@ class ModelController(BaseModelController, ABC):
 
     def send_model_and_wait(
         self,
-        task_name: str = AppConstants.TASK_TRAIN,
+        task_name: str = "train",
         data: FLModel = None,
         targets: Union[List[str], None] = None,
         min_responses: int = None,

@@ -24,6 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher, LauncherRunStatus
+from nvflare.app_common.abstract.params_converter import ParamsConverter
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.task_exchanger import TaskExchanger
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
@@ -52,6 +53,8 @@ class LauncherExecutor(TaskExchanger):
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
+        from_nvflare_converter_id: Optional[str] = None,
+        to_nvflare_converter_id: Optional[str] = None,
     ) -> None:
         """Initializes the LauncherExecutor.
 
@@ -73,6 +76,10 @@ class LauncherExecutor(TaskExchanger):
             train_task_name (str): Task name of train mode.
             evaluate_task_name (str): Task name of evaluate mode.
             submit_model_task_name (str): Task name of submit_model mode.
+            from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
+            to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This ParamsConverter will be called when model is sent from nvflare executor side to controller side.
         """
         TaskExchanger.__init__(
             self,
@@ -104,6 +111,11 @@ class LauncherExecutor(TaskExchanger):
         self._evaluate_task_name = evaluate_task_name
         self._submit_model_task_name = submit_model_task_name
 
+        self._from_nvflare_converter_id = from_nvflare_converter_id
+        self._from_nvflare_converter: Optional[ParamsConverter] = None
+        self._to_nvflare_converter_id = to_nvflare_converter_id
+        self._to_nvflare_converter: Optional[ParamsConverter] = None
+
         self._monitor_launcher_thread = None
         self._abort_signal = None
         self._current_task = None
@@ -111,6 +123,7 @@ class LauncherExecutor(TaskExchanger):
 
     def initialize(self, fl_ctx: FLContext) -> None:
         self._init_launcher(fl_ctx)
+        self._init_converter(fl_ctx)
         self._monitor_launcher_thread = threading.Thread(target=self._monitor_launcher, args=(fl_ctx,), daemon=True)
         self._monitor_launcher_thread.start()
 
@@ -141,6 +154,9 @@ class LauncherExecutor(TaskExchanger):
         if not self._initialize_external_execution(task_name, shareable, fl_ctx, abort_signal):
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+        if self._from_nvflare_converter is not None:
+            shareable = self._from_nvflare_converter.process(task_name, shareable, fl_ctx)
+
         result = super().execute(task_name, shareable, fl_ctx, abort_signal)
 
         if result.get_return_code() != ReturnCode.OK:
@@ -149,6 +165,9 @@ class LauncherExecutor(TaskExchanger):
                 method_name="stop_task", task_name=task_name, fl_ctx=fl_ctx, abort_signal=abort_signal
             )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        if self._to_nvflare_converter is not None:
+            result = self._to_nvflare_converter.process(task_name, result, fl_ctx)
 
         self._finalize_external_execution(task_name, shareable, fl_ctx, abort_signal)
 
@@ -193,6 +212,18 @@ class LauncherExecutor(TaskExchanger):
             == LAUNCHER_EXCEPTION
         ):
             raise RuntimeError("Launcher initialize failed.")
+
+    def _init_converter(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id)
+        if from_nvflare_converter is not None:
+            check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
+            self._from_nvflare_converter = from_nvflare_converter
+
+        to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id)
+        if to_nvflare_converter is not None:
+            check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
+            self._to_nvflare_converter = to_nvflare_converter
 
     def _initialize_external_execution(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
