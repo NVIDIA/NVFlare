@@ -121,6 +121,9 @@ nvflare simulator ${jobdir} -w ${workdir}/example_project/prod_00/site-1 -n 3 -t
 > to be handled with encryption. Therefore, the log can have `not for gh broadcast - ignore`, 
 > meaning the current message does not need to be taken care of by encryption, and 
 > will be passed on to XGBoost inner logic directly.
+> 
+> But if you do not see any `has_encrypted_gh=True`, the secure plugin is not functioning properly.
+> Please check the debug logs to find out the reason.
 
 ## Results
 Comparing the AUC results with centralized baseline, we have four observations:
