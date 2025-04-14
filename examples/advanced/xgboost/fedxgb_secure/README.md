@@ -111,6 +111,17 @@ nvflare provision -p project.yml -w ${workdir}
 nvflare simulator ${jobdir} -w ${workdir}/example_project/prod_00/site-1 -n 3 -t 3
 ```
 
+> **_NOTE:_** From the running logs, you will see multiple `has_encrypted_data=None` and `Not secure content - ignore` messages.
+> These are expected because under the hood of XGBoost, there are multiple operations 
+> relying on the same "broadcast", "all_reduce", "all_gather" MPI calls - some requires
+> encryption (e.g. those related to gh gradient pairs), and others do not (e.g. collecting
+> the total feature slot number from clients). 
+> 
+> In our plugin implementation, we have a logic to recognize whether the payload needs 
+> to be handled with encryption. Therefore, the log can have `not for gh broadcast - ignore`, 
+> meaning the current message does not need to be taken care of by encryption, and 
+> will be passed on to XGBoost inner logic directly.
+
 ## Results
 Comparing the AUC results with centralized baseline, we have four observations:
 1. The performance of the model trained with homomorphic encryption is identical to its counterpart without encryption.
