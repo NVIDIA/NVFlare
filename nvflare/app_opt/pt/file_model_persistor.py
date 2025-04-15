@@ -43,6 +43,7 @@ class PTFileModelPersistor(ModelPersistor):
         source_ckpt_file_full_name=None,
         filter_id: str = None,
         load_weights_only: bool = False,
+        allow_numpy_conversion: bool = True,
     ):
         """Persist pytorch-based model to/from file system.
 
@@ -113,6 +114,7 @@ class PTFileModelPersistor(ModelPersistor):
         self.best_global_model_file_name = best_global_model_file_name
         self.source_ckpt_file_full_name = source_ckpt_file_full_name
         self.load_weights_only = load_weights_only
+        self._allow_numpy_conversion = allow_numpy_conversion
 
         self.default_train_conf = None
 
@@ -226,7 +228,9 @@ class PTFileModelPersistor(ModelPersistor):
         if self.model:
             self.default_train_conf = {"train": {"model": type(self.model).__name__}}
 
-        self.persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=self.default_train_conf)
+        self.persistence_manager = PTModelPersistenceFormatManager(
+            data, default_train_conf=self.default_train_conf, allow_numpy_conversion=self._allow_numpy_conversion
+        )
         return self.persistence_manager.to_model_learnable(self.exclude_vars)
 
     def _get_persistence_manager(self, fl_ctx: FLContext):
@@ -270,7 +274,9 @@ class PTFileModelPersistor(ModelPersistor):
             # Use the "cpu" to load the global model weights, avoid GPU out of memory
             device = "cpu"
             data = torch.load(location, map_location=device, weights_only=self.load_weights_only)
-            persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=self.default_train_conf)
+            persistence_manager = PTModelPersistenceFormatManager(
+                data, default_train_conf=self.default_train_conf, allow_numpy_conversion=self._allow_numpy_conversion
+            )
             return persistence_manager.to_model_learnable(self.exclude_vars)
         except Exception:
             self.log_exception(fl_ctx, "error loading checkpoint from {}".format(location))
