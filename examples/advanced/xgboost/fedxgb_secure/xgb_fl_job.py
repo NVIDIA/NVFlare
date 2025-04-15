@@ -120,9 +120,11 @@ def main():
 
     # Run the job except for secure horizontal
     if args.data_split_mode == "horizontal" and args.secure:
-        print("Secure horizontal is not supported in this version")
+        print(
+            "Secure horizontal job prepared, to run it with simulator, tenseal context needs to be added, please see README for next steps."
+        )
     else:
-        job.simulator_run(f"/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/{job_name}")
+        job.simulator_run(workspace=f"/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/{job_name}")
 
 
 if __name__ == "__main__":
