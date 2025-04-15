@@ -151,10 +151,10 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 ## 8. Federated Policies & Security
 | Example                                                                                                                                | Summary                                                                                                                                                         |
 |----------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [Federated Policies](./advanced/federated-policies/README.rst)                                                                         | Discuss the federated site policies for authorization, resource and data privacy management.
-| [Custom Authentication](./advanced/custom_authentication/README.rst)                                                                         | Demonstrate the custom authentication policy and secure mode.
-| [Job-Level Authorization](./advanced/job-level-authorization/README.md)                                                                         | Demonstrate the job-level authorization policy and secure mode.
-| [KeyCloak Site Authentication Integration](./advanced/keycloak-site-authentication/README.md)                                                     | Demonstrate KeyCloak integration for supporting site-specific authentication.
+| [Federated Policies](./advanced/federated-policies/README.rst)                                                                         | Discuss the federated site policies for authorization, resource and data privacy management. | 
+| [Custom Authentication](./advanced/custom_authentication/README.rst)                                                                   | Demonstrate the custom authentication policy and secure mode. |
+| [Job-Level Authorization](./advanced/job-level-authorization/README.md)                                                                         | Demonstrate the job-level authorization policy and secure mode. |
+| [KeyCloak Site Authentication Integration](./advanced/keycloak-site-authentication/README.md)                                                     | Demonstrate KeyCloak integration for supporting site-specific authentication. |
 
 ## 9. Experiment tracking
 | Example                                                                                                                                | Framework    | Summary                                                                                                                                                         |
@@ -195,18 +195,10 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | [Financial Transaction Classification](./advanced/gnn#federated-gnn-on-graph-dataset-using-inductive-learning) | PyTorch Geometric   | Example using GNNs for Financial Transaction Classification with [Elliptic++](https://github.com/git-disl/EllipticPlusPlus) dataset using GraphSAGE. |
 | [Financial end-to-end](./advanced/finance-end-to-end/README.md)                                                | XGBoost & Geometric | This example demonstrates the use of an end-to-end process for credit card fraud detection using XGBoost. |
 
-
-## 14. FLARE EDGE
-
-| Example                                               | Framework | Summary                                                                                                                  |
-|-------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
-| [Flare Edge](./advanced/flare-edge/README.md) | NA        | This example demonstrates FLARE mobile training jobs |
-
-## 15. System Monitoring & Misc. 
+## 14. System Monitoring & Misc. 
 
 | Example                                                     | Framework | Summary                                                                                                                  |
 |-------------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
-| [Code-Pre-install](./advanced/code-pre-install/README.md)   | NA        | This example demonstrates how to use NVFLARE's code pre-installer in a real-world scenario. |
 | [Docker](./advanced/docker/README.md)                       | NA        | The notebook in this directory walks through the creation and launch of Docker containers for NVIDIA FLARE. |
 | [Monitoring](./advanced/monitoring/README.md)               | NA        | FLARE Monitoring provides a initial solution for tracking system metrics of your federated learning jobs. |
  
