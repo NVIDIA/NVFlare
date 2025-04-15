@@ -38,6 +38,9 @@ class PTModelPersistenceFormatManager(object):
         Args:
             data (dict): either the dictionary mapping variables to values or a dict of dict.
             default_train_conf (dict, optional): configuration for train. Defaults to None.
+            allow_numpy_conversion (bool): If set to True, enables conversion between PyTorch tensors and NumPy arrays.
+                PyTorch tensors will be converted to NumPy arrays during 'load_model',
+                and NumPy arrays will be converted to PyTorch tensors during 'save_model'. Defaults to True.
 
         Raises:
             TypeError: when data is not a dictionary

@@ -95,8 +95,11 @@ class PTFileModelPersistor(ModelPersistor):
             source_ckpt_file_full_name (str, optional): full file name for source model checkpoint file. Defaults to None.
             filter_id: Optional string that defines a filter component that is applied to prepare the model to be saved,
                 e.g. for serialization of custom Python objects.
-            load_weights_only:  Indicates whether torch's unpickler should be restricted to loading only tensors, primitive types, dictionaries
+            load_weights_only: Indicates whether torch's unpickler should be restricted to loading only tensors, primitive types, dictionaries
                 and any types added via :func:`torch.serialization.add_safe_globals`. Defaults to False (<=PyTorch 2.6 behavior).
+            allow_numpy_conversion (bool): If set to True, enables conversion between PyTorch tensors and NumPy arrays.
+                PyTorch tensors will be converted to NumPy arrays during 'load_model',
+                and NumPy arrays will be converted to PyTorch tensors during 'save_model'. Defaults to True.
         Raises:
             ValueError: when source_ckpt_file_full_name does not exist
         """
