@@ -9,17 +9,26 @@ In this example, we further extend the existing horizontal and vertical federate
 
 In the following, we illustrate both *horizontal* and *vertical* federated XGBoost, *without* and *with* homomorphic encryption. Please refer to our [documentation](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html) for more details on the pipeline design and the encryption logic.
 
-## Installation
-To be able to run all the examples, please install the requirements first.
-```
-pip install -r requirements.txt
-```
-## Encryption Plugins
-The secure XGBoost requires encryption plugins to work. The plugins are distributed with NVFlare package. If you build NVFlare from source, you need
-to build the plugins following the instructions in this [README](https://github.com/NVIDIA/NVFlare/blob/main/integration/xgboost/encryption_plugins/README.md)
+## Requirements
+To be able to run all the examples, please install the requirements first from the main folder.
 
-The build process will generate 2 .so files: libcuda_paillier.so and libnvflare.so. Configure the path accordingly following the instructions in 
-[XGBoost User Guide](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html)
+## Encryption Plugins
+The secure XGBoost requires encryption plugins to work. From 2.6, we no longer distributed the plugins with NVFlare package. 
+Please build the plugins following the instructions in this [README](https://github.com/NVIDIA/NVFlare/blob/main/integration/xgboost/encryption_plugins/README.md)
+
+> **_NOTE:_** Please make sure to use the correct versions of the required libraries, including CUDA driver and runtime.
+> The 'How to run XGBoost with encryption plugins' section is not needed for running Secure Federated XGBoost in simulator mode.
+
+The build process will generate 2 .so files: libcuda_paillier.so and libnvflare.so. 
+
+To use libnvflare.so plugin, the [IPCL](https://github.com/intel/pailliercryptolib_python) library installation is needed, 
+and we recommend install it from source.
+
+## Key Checkups
+Before we move on to the next step, we want to double-check if we have properly set up our environments:
+1. Check the XGBoost version, should be 2.2.0.dev as the version in the requirements.txt.
+2. Check the path of the encryption plugins, which will be used in the next step.
+3. Check the installation of `ipcl-python` for libnvflare.so plugin.
 
 ## Data Preparation
 ### Download and Store Data
@@ -75,14 +84,23 @@ This will cover baseline centralized training, federated xgboost run in the same
 We then run the federated XGBoost training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html), without and with homomorphic encryption.
 The running time of each job depends mainly on the encryption workload. 
 
+Assuming we use libnvflare.so plugin located in `/tmp/nvflare/plugins/libnvflare.so`, to run vertical simulations, we have  
+
 ```
-python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal
-python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal --secure True
 python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical
-python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --secure True
+NVFLARE_XGB_PLUGIN_NAME=nvflare NVFLARE_XGB_PLUGIN_PATH=/tmp/nvflare/plugins/libnvflare.so python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data --data_split_mode vertical --secure
 ```
 
-In the secure horizontal scheme, secure aggregation is performed on the server-side. To support this, additional tenseal context must be provisioned before starting the job to prepare the server. In contrast, the secure vertical scheme doesn't require this step because the server's role is limited to message routing, without performing the actual secure message aggregation.
+To run horizontal simulations, we have
+
+```
+python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal
+python xgb_fl_job.py --data_root /tmp/nvflare/dataset/xgb_dataset/horizontal_xgb_data --data_split_mode horizontal --secure
+```
+
+In this case, the secure horizontal job will need two steps: job preparation from above, and secure context preparation following below:
+
+As secure aggregation is performed on the server-side, to support this, additional tenseal context must be provisioned before starting the job to prepare the server. In contrast, the secure vertical scheme doesn't require this step because the server's role is limited to message routing, without performing the actual secure message aggregation.
 
 To enable this, we have implemented the nvflare.lighter.impl.he.HEBuilder, which is included in the prepared project.yml. You can provision the server by running the following commands:
 
@@ -92,6 +110,20 @@ workdir=/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/horizontal_secure
 nvflare provision -p project.yml -w ${workdir}
 nvflare simulator ${jobdir} -w ${workdir}/example_project/prod_00/site-1 -n 3 -t 3
 ```
+
+> **_NOTE:_** From the running logs, you will see multiple `has_encrypted_data=None` and `Not secure content - ignore` messages.
+> These are expected because under the hood of XGBoost, there are multiple operations 
+> relying on the same "broadcast", "all_reduce", "all_gather" MPI calls - some requires
+> encryption (e.g. those related to gh gradient pairs), and others do not (e.g. collecting
+> the total feature slot number from clients). 
+> 
+> In our plugin implementation, we have a logic to recognize whether the payload needs 
+> to be handled with encryption. Therefore, the log can have `not for gh broadcast - ignore`, 
+> meaning the current message does not need to be taken care of by encryption, and 
+> will be passed on to XGBoost inner logic directly.
+> 
+> But if you do not see any `has_encrypted_gh=True`, the secure plugin is not functioning properly.
+> Please check the debug logs to find out the reason.
 
 ## Results
 Comparing the AUC results with centralized baseline, we have four observations:
