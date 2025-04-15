@@ -153,7 +153,21 @@ New Examples
 1. Federated Embedding Model Training
 2. Object Streaming
 3. System Monitoring
-4. AI4EOSC
+4. Distributed Optimization 
+5. Logging Tutorial
+
+
+Other news
+================
+NVIDIA FLARE is now integrated with the Google's FL reference architecture
+Google implemented the following reference architecture for FLARE https://github.com/GoogleCloudPlatform/accelerated-platforms/tree/main/platforms/gke/base/use-cases/federated-learning/examples/nvflare-tff
+
+AI4EOSC + FLARE
+NVIDIA FLARE is now integrated with the AI4EOSC platform and available in the AI4EOSC Dashboard as a tool
+https://dashboard.cloud.ai4eosc.eu/catalog/tools/ai4os-nvflare
+
+
+
 
 **********************************
 Migration to 2.6.0: Notes and Tips
