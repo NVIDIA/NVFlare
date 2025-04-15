@@ -122,7 +122,7 @@ class EdgeTaskDispatcher(Widget):
             self._remove_job(job_id)
 
     def _handle_edge_job_request(self, event_type: str, fl_ctx: FLContext):
-        self.logger.info(f"handling event {event_type}")
+        self.logger.debug(f"handling event {event_type}")
         edge_capabilities = fl_ctx.get_prop(EdgeContextKey.EDGE_CAPABILITIES)
         if not edge_capabilities:
             self.logger.error(f"missing {EdgeContextKey.EDGE_CAPABILITIES} from fl_ctx for event {event_type}")

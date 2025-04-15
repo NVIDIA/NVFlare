@@ -30,8 +30,8 @@ from nvflare.security.logging import secure_format_exception
 class EdgeTorchExecutor(EdgeTaskExecutor):
     """A basic edge executor for torch that only does aggregation"""
 
-    def __init__(self, aggregator_id, aggr_report_timeout=60):
-        EdgeTaskExecutor.__init__(self, aggregator_id, aggr_report_timeout)
+    def __init__(self, updater_id: str, update_timeout=60):
+        EdgeTaskExecutor.__init__(self, updater_id, update_timeout)
 
         self.devices = None
 
@@ -74,7 +74,7 @@ class EdgeTorchExecutor(EdgeTaskExecutor):
 
         try:
             result = self.convert_result(report.result, current_task, fl_ctx)
-            self.accept_contribution(task_id=report.task_id, contribution=result, fl_ctx=fl_ctx)
+            self.accept_update(task_id=report.task_id, update=result, fl_ctx=fl_ctx)
             return ResultResponse(EdgeApiStatus.OK, task_id=report.task_id, task_name=report.task_name)
         except Exception as ex:
             msg = f"Error accepting contribution: {secure_format_exception(ex)}"
