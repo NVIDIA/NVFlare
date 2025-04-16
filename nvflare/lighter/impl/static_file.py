@@ -171,7 +171,13 @@ class StaticFileBuilder(Builder):
                 exe=True,
             )
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.START_SERVER_SH, ProvFileName.START_SH, exe=True)
+        ctx.build_from_template(
+            dest_dir,
+            TemplateSectionKey.START_SERVER_SH,
+            ProvFileName.START_SH,
+            replacement={"ha_mode": "false"},
+            exe=True,
+        )
 
         ctx.build_from_template(
             dest_dir,
