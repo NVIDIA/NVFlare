@@ -295,18 +295,6 @@ Check Status with FLARE Console
 You can launch the FLARE console with the ``fl_admin.sh`` script inside the startup kit of an admin user then use the ``check_status server`` command to
 see the status.
 
-Check Status with FLARE API
----------------------------
-For users who are familiar with Jupyter Notebook, there is one additional file, ``system_info.ipynb``, inside the startup kit. This Jupyter Notebook can run
-either in Azure ML Notebook or locally with the NVFlare package installed, and checks the status with the FLARE API.
-
-To run ``system_info.ipynb`` on Azure ML Notebook, users have to upload their startup kit to Azure's web UI.
-
-.. image:: notebook_for_cloud.png
-    :height: 400px
-
-
-
 FLARE On GOOGLE Cloud
 ---------------------------
 This is Google's FL Reference Architecture for NVIDIA FLARE
