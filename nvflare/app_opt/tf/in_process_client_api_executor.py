@@ -35,7 +35,8 @@ class TFInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
-        params_exchange_format=ExchangeFormat.NUMPY,
+        params_exchange_format=ExchangeFormat.KERAS_LAYER_WEIGHTS,
+        server_expected_format=ExchangeFormat.NUMPY,
     ):
         super(TFInProcessClientAPIExecutor, self).__init__(
             task_script_path=task_script_path,
@@ -51,13 +52,18 @@ class TFInProcessClientAPIExecutor(InProcessClientAPIExecutor):
             params_exchange_format=params_exchange_format,
             params_transfer_type=params_transfer_type,
             log_pull_interval=log_pull_interval,
+            server_expected_format=server_expected_format,
         )
 
-        if self._from_nvflare_converter is None:
-            self._from_nvflare_converter = NumpyToKerasModelParamsConverter(
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-            )
-        if self._to_nvflare_converter is None:
-            self._to_nvflare_converter = KerasModelToNumpyParamsConverter(
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-            )
+        if (
+            self._server_expected_format == ExchangeFormat.NUMPY
+            and self._params_exchange_format == ExchangeFormat.KERAS_LAYER_WEIGHTS
+        ):
+            if self._from_nvflare_converter is None:
+                self._from_nvflare_converter = NumpyToKerasModelParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
+                )
+            if self._to_nvflare_converter is None:
+                self._to_nvflare_converter = KerasModelToNumpyParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
+                )

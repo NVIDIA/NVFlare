@@ -63,7 +63,7 @@ def main():
     runner = ScriptRunner(
         script=train_script,
         script_args=script_args,
-        params_exchange_format="raw",
+        framework="raw",
         launch_external_process=False,
     )
     job.to_clients(runner, tasks=["train"])

@@ -24,6 +24,7 @@ class ExchangeFormat:
     RAW = "raw"
     PYTORCH = "pytorch"
     NUMPY = "numpy"
+    KERAS_LAYER_WEIGHTS = "keras_layer_weights"
 
 
 class TransferType:

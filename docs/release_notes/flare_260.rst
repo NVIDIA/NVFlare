@@ -171,19 +171,34 @@ In NVIDIA FLARE 2.6, several changes have been made to the Dashboard:
 
 #. The ``FLARE_DASHBOARD_NAMESPACE`` constant has been added to the codebase. All API endpoints should now use this namespace prefix.
 
-PTClientAPILauncherExecutor and PTInProcessClientAPIExecutor Changes
-====================================================================
 
-FLARE 2.6.0 introduces significant changes to the "params_exchange_format" argument in PTClientAPILauncherExecutor and PTInProcessClientAPIExecutor. These changes impact how data is exchanged between the client script and NVFlare.
+ScriptRunner Changes in FLARE 2.6.0
+===================================
 
-Changes in params_exchange_format
----------------------------------
+Overview
+--------
 
-In previous versions, setting "params_exchange_format" to "pytorch" indicated that the client was using a PyTorch tensor on the third-party side. In this case, the tensor would be converted to a NumPy array before being sent back to NVFlare.
+FLARE 2.6.0 introduces a new `server_expected_format` parameter to enhance data exchange flexibility across the entire pipeline. This parameter is now available in:
+- `ScriptRunner`
+- `ClientAPILauncherExecutor`
+- `InProcessClientAPIExecutor`
 
-With the improvements introduced in FLARE 2.6.0, which now natively support PyTorch tensors during transmission, the meaning of "params_exchange_format" = "pytorch" has changed. Now, this setting directly sends PyTorch tensors to NVFlare without converting them to NumPy arrays.
+## Previous Implementation
+Previously, data format was controlled by:
+- `params_exchange_format` in executors
+- `framework` in `ScriptRunner`
 
-Action Required
----------------
+These parameters only defined the communication format between the NVFlare client and the user script. For example, setting `params_exchange_format` to "pytorch" meant the client communicated with the script using PyTorch tensors.
 
-To maintain the previous behavior (where PyTorch tensors are converted to NumPy arrays), you will need to explicitly set "params_exchange_format" to "numpy".
+However, the server-to-client communication was always restricted to NumPy arrays.
+
+New Implementation
+------------------
+
+With FLARE 2.6.0, we now support:
+1. End-to-end PyTorch tensor pipeline
+2. Flexible format specification at each communication boundary
+3. Native PyTorch tensor transmission
+
+The new `server_expected_format` parameter specifically controls the format used in server-client communication. When set to "pytorch", the entire pipeline - from server to client to script - can operate using PyTorch tensors without any format conversion.
+

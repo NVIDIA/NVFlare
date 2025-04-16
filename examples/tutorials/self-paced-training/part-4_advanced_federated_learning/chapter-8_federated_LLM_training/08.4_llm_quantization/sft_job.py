@@ -91,16 +91,16 @@ def main():
 
         script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --clean_up {clean_up}"
         if message_mode == "tensor":
-            params_exchange_format = "pytorch"
+            server_expected_format = "pytorch"
         elif message_mode == "numpy":
-            params_exchange_format = "numpy"
+            server_expected_format = "numpy"
         else:
             raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
 
         runner = ScriptRunner(
             script=train_script,
             script_args=script_args,
-            params_exchange_format=params_exchange_format,
+            server_expected_format=server_expected_format,
             launch_external_process=False,
         )
         job.to(runner, site_name, tasks=["train"])
