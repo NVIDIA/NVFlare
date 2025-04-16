@@ -32,12 +32,15 @@ class PTModelPersistenceFormatManager(object):
     PERSISTENCE_KEY_TRAIN_CONF = "train_conf"
     PERSISTENCE_KEY_META_PROPS = "meta_props"
 
-    def __init__(self, data: dict, default_train_conf=None):
+    def __init__(self, data: dict, default_train_conf=None, allow_numpy_conversion=True):
         """Manage the format for model persistence.
 
         Args:
             data (dict): either the dictionary mapping variables to values or a dict of dict.
             default_train_conf (dict, optional): configuration for train. Defaults to None.
+            allow_numpy_conversion (bool): If set to True, enables conversion between PyTorch tensors and NumPy arrays.
+                PyTorch tensors will be converted to NumPy arrays during 'load_model',
+                and NumPy arrays will be converted to PyTorch tensors during 'save_model'. Defaults to True.
 
         Raises:
             TypeError: when data is not a dictionary
@@ -71,6 +74,8 @@ class PTModelPersistenceFormatManager(object):
         if not self.train_conf:
             self.train_conf = default_train_conf
 
+        self._allow_numpy_conversion = allow_numpy_conversion
+
     def _get_processed_vars(self) -> dict:
         if self.meta:
             return self.meta.get(MetaKey.PROCESSED_KEYS, {})
@@ -86,10 +91,11 @@ class PTModelPersistenceFormatManager(object):
                 continue
 
             is_processed = processed_vars.get(k, False)
-            if is_processed:
-                weights[k] = v
-            else:
+            if not is_processed and self._allow_numpy_conversion:
+                # convert to numpy
                 weights[k] = v.cpu().numpy()
+            else:
+                weights[k] = v
 
         return make_model_learnable(weights, self.meta)
 
@@ -98,10 +104,11 @@ class PTModelPersistenceFormatManager(object):
         weights_dict = OrderedDict()
         for k, v in self.var_dict.items():
             is_processed = processed_vars.get(k, False)
-            if is_processed:
-                weights_dict[k] = v
-            else:
+            if not is_processed and self._allow_numpy_conversion:
+                # convert back to tensor
                 weights_dict[k] = torch.as_tensor(v)
+            else:
+                weights_dict[k] = v
 
         # always use complex format for saving
         persistence_dict = OrderedDict()
