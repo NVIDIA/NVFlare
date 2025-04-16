@@ -200,7 +200,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 
 | Example                                               | Framework | Summary                                                                                                                  |
 |-------------------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------|
-| [Flare Edge](./advanced/flare-edge/README.md) | NA        | This example demonstrates FLARE mobile training jobs |
+| [Flare Edge](./advanced/edge/README.md) | NA        | This example demonstrates FLARE mobile training jobs |
 
 ## 15. System Monitoring & Misc. 
 
