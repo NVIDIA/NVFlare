@@ -213,6 +213,24 @@ The ``task_script_path`` is set to the path of the client training script.
 The full source code for this exercise can be found in
 :github_nvflare_link:`examples/hello-tf <examples/hello-world/hello-tf>`.
 
+
+Notes on running with GPU
+-------------------------
+
+We recommend to use [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow) if you want to use GPU.
+
+If you choose to run the example using GPUs, it is important to note that,
+by default, TensorFlow will attempt to allocate all available GPU memory at the start.
+In scenarios where multiple clients are involved, you have to prevent TensorFlow from allocating all GPU memory
+by setting the following flags.
+```bash
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
+```
+
+If you possess more GPUs than clients, a good strategy is to run one client on each GPU.
+This can be achieved by using the `--gpu` argument during simulation, e.g., `nvflare simulator -n 2 --gpu 0,1 [job]`.
+
+
 Previous Versions of Hello TensorFlow (previously Hello TensorFlow 2)
 ---------------------------------------------------------------------
 

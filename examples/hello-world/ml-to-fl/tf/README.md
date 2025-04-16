@@ -8,10 +8,22 @@ We will demonstrate how to transform an existing DL code into an FL application 
 
 ## Software Requirements
 
-Please install the requirements first. It is suggested to install them inside a virtual environment.
+We recommend to use [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow) if you want to use GPU.
+If you don't need to run using GPU, you can just use python virtual environment.
+
+### Run NVIDIA TensorFlow container
+
+Please install the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) first.
+Then run the following command:
 
 ```bash
-pip install -r requirements.txt
+docker run --gpus=all -it --rm -v [path_to_NVFlare]:/NVFlare nvcr.io/nvidia/tensorflow:xx.xx-tf2-py3
+```
+
+### Install NVFlare
+
+```bash
+pip3 install nvflare
 ```
 
 ## Minimum Hardware Requirements

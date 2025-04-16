@@ -157,16 +157,6 @@ New Examples
 5. Logging Tutorial
 
 
-Other news
-================
-NVIDIA FLARE is now integrated with the Google's FL reference architecture
-Google implemented the following reference architecture for FLARE https://github.com/GoogleCloudPlatform/accelerated-platforms/tree/main/platforms/gke/base/use-cases/federated-learning/examples/nvflare-tff
-
-AI4EOSC + FLARE
-NVIDIA FLARE is now integrated with the AI4EOSC platform and available in the AI4EOSC Dashboard as a tool
-https://dashboard.cloud.ai4eosc.eu/catalog/tools/ai4os-nvflare
-
-
 
 
 **********************************

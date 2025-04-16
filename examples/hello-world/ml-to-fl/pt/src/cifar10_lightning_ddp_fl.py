@@ -75,6 +75,7 @@ def main():
     trainer = Trainer(
         max_epochs=1, strategy="ddp", devices=2, accelerator="gpu" if torch.cuda.is_available() else "cpu"
     )
+    print(f"Train global rank is {trainer.global_rank}")
     # (2) patch the lightning trainer
     flare.patch(trainer)
 
