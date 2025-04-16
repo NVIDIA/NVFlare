@@ -17,8 +17,8 @@ Please also install "./requirements.txt" in each example folder.
   of TensorBoard metrics to the server during training 
   and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/).
 * [Federated XGBoost](./xgboost/README.md)
-  * Includes examples of [histogram-based](./xgboost/histogram-based/README.md) algorithm, [tree-based](./xgboost/tree-based/README.md).
-    Tree-based algorithms also include [bagging](./xgboost/tree-based/jobs/bagging_base) and [cyclic](./xgboost/tree-based/jobs/cyclic_base) approaches.
+  * Includes examples of [regular histogram-based and tree-based](./xgboost/fedxgb/README.md) algorithm, [secure histogram-based](./xgboost/fedxgb_secure/README.md).
+    Tree-based algorithms also include bagging and cyclic approaches.
 
 ## Traditional ML examples
 * [Federated Linear Model with Scikit-learn](./sklearn-linear/README.md)
@@ -51,7 +51,7 @@ Please also install "./requirements.txt" in each example folder.
 ## Vertical Federated Learning
 * [Vertical Federated Learning](./vertical_federated_learning/README.md)
    * Example of running split learning using the CIFAR-10 dataset.
-* [Vertical Federated XGBoost](./vertical_xgboost/README.md)
+* [Vertical Federated XGBoost](./xgboost/README.md)
    * Example of vertical federated learning with NVIDIA FLARE on tabular data.
 
 ## Federated Statistics
