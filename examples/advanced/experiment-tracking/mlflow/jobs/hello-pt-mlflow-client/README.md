@@ -70,38 +70,3 @@ which writes received data from these events to the MLflow tracking server.
 This allows for the server to be the only party that needs to deal with authentication for the MLflow tracking server, and the server
 can buffer the events from many clients to better manage the load of requests to the tracking server.
 
-
-
-
-
-
-
-Note that the server also has `TBAnalyticsReceiver` configured, which also listens to `fed.analytix_log_stats` events by default,
-so the data is also written into TB files on the server.
-
-
-
-
-
-### 6. Tensorboard Streaming with MLflow
-
-For the job `hello-pt-tb-mlflow`, on the client side, the client code in `PTLearner` uses the syntax for Tensorboard:
-
-```
-self.writer.add_scalar("train_loss", cost.item(), current_step)
-
-self.writer.add_scalar("validation_accuracy", metric, epoch)
-```
-
-The `TBWriter` mimics Tensorboard SummaryWriter and streams events over to the server side instead.
-
-Note that in this job, the server still has `MLflowReceiver` and `TBAnalyticsReceiver` configured the same as in the job with `MLflowWriter`
-on the client side, and the events are converted by the `MLflowReceiver` to write to the MLflow tracking server.
-
-
-### 7. Sends to MLFlow server directly from client side
-
-You can stream the metrics to the MLFlow server without passing through the NVFlare server as well.
-Please check the job `hello-pt-mlflow-client`.
-
-You notice we configure the `MLflowReceiver` on the client side to process the `analytix_log_stats` event.
