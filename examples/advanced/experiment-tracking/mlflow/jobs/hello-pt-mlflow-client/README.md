@@ -1,10 +1,10 @@
-# Hello PyTorch with MLflow
+# Hello PyTorch with MLflow: Streaming metrics to client side 
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
-using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/)
-as the deep learning training framework.
+NVIDIA FLARE metrics streaming capability is quite flexible. If you deciced to stream the metrics to client side instread of without passing through the NVFlare server, you can do that as well. 
+This example demonstrates how to do such setup. 
 
-This example also highlights the MLflow streaming capability from the clients to the server.
+here we use the CIFAR10 example to train an image classifier using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework.
+
 
 ### 1. Install requirements
 

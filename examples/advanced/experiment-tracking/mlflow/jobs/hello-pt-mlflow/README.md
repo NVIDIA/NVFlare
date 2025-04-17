@@ -71,37 +71,89 @@ This allows for the server to be the only party that needs to deal with authenti
 can buffer the events from many clients to better manage the load of requests to the tracking server.
 
 
+### 6. Experimental tracking with multi-receivers
 
+NVIDIA FLARE experiment tracking is designed in such a way that, the metrics collector ( such as MLflowWriter, or SummaryWriter) are not directly tie to the metrics receivers (such as MLflowReceiver or TBAnalyticsReceiver)
 
+The metrics collected can also streamed to any number of supported receivers, as long as it has registered receiver component.  By default, the ```BaseFedJob``` always pre-registered TensorBoard receiver for easy of use.  We can take a look at this by generating the job configuration of above job.  
 
-
-
-Note that the server also has `TBAnalyticsReceiver` configured, which also listens to `fed.analytix_log_stats` events by default,
-so the data is also written into TB files on the server.
-
-
-
-
-
-### 6. Tensorboard Streaming with MLflow
-
-For the job `hello-pt-tb-mlflow`, on the client side, the client code in `PTLearner` uses the syntax for Tensorboard:
 
 ```
-self.writer.add_scalar("train_loss", cost.item(), current_step)
+cd ./jobs/hello-pt-mlflow/code
 
-self.writer.add_scalar("validation_accuracy", metric, epoch)
+python3 fl_job.py -e 
+```
+The output will be something like this if the default values are used. 
+
+```Exporting job config... /tmp/nvflare/jobs/fedavg```
+
+
+We can now take a look at the configuration on the server
+
+```
+tmp/nvflare/jobs/fedavg
+├── app_server
+│   ├── config
+│   │   └── config_fed_server.json
+
 ```
 
-The `TBWriter` mimics Tensorboard SummaryWriter and streams events over to the server side instead.
-
-Note that in this job, the server still has `MLflowReceiver` and `TBAnalyticsReceiver` configured the same as in the job with `MLflowWriter`
-on the client side, and the events are converted by the `MLflowReceiver` to write to the MLflow tracking server.
 
 
-### 7. Sends to MLFlow server directly from client side
+Note that the server also has `TBAnalyticsReceiver` configured, which also listens to `fed.analytix_log_stats` events by default, so the data is also written into TB files on the server.
 
-You can stream the metrics to the MLFlow server without passing through the NVFlare server as well.
-Please check the job `hello-pt-mlflow-client`.
+```
+cat /tmp/nvflare/jobs/fedavg/app_server/config/config_fed_server.json 
 
-You notice we configure the `MLflowReceiver` on the client side to process the `analytix_log_stats` event.
+```
+Notice we have two receiver components: TBAnalyticsReceiver, MLflowReceiver, which means we should also have a tensorboard results. 
+
+```
+
+{
+ ...
+    "components": [
+      ....
+        {
+            "id": "receiver",
+            "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
+            "args": {
+                "events": [
+                    "analytix_log_stats",
+                    "fed.analytix_log_stats"
+                ]
+            }
+        },
+       
+        {
+            "id": "component",
+            "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
+            "args": {
+                "tracking_uri": "file:///tmp/nvflare/jobs/workdir/server/simulate_job/mlruns",
+                "kw_args": {
+                    "experiment_name": "nvflare-fedavg-experiment",
+                    "run_name": "nvflare-fedavg-with-mlflow",
+                    "experiment_tags": {
+                        "mlflow.note.content": "## **NVFlare FedAvg experiment with MLflow**"
+                    },
+                    "run_tags": {
+                        "mlflow.note.content": "## Federated Experiment tracking with MLflow.\n"
+                    }
+                },
+                "artifact_location": "artifacts",
+                "events": [
+                    "fed.analytix_log_stats"
+                ]
+            }
+        }
+    ],
+...
+
+```
+
+Now, let's take a look at this by directly loading the tensorboard
+ 
+```
+tensorboard --logdir=/tmp/nvflare/jobs/workdir/server/simulate_job/tb_events
+```
+

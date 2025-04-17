@@ -24,27 +24,39 @@ WORKSPACE = "/tmp/nvflare/jobs/workdir"
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("-n",  "--n_clients", type=int, default=2)
-    parser.add_argument("-j",  "--job_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/fedavg")
+    parser.add_argument("-j",  "--job_configs", type=str, nargs="?", default="/tmp/nvflare/jobs")
     parser.add_argument("-w",  "--work_dir", type=str, nargs="?", default=WORKSPACE)
-    parser.add_argument("-co", "--export_config", action="store_true", help="config only mode, export config")
+    parser.add_argument("-e",  "--export_config", action="store_true", help="config only mode, export config")
     parser.add_argument("-t",  "--tracking_uri",type=str, nargs="?", default=f"file://{WORKSPACE}/server/simulate_job/mlruns")
     parser.add_argument("-l",  "--log_config", type=str, default="concise")
 
     return parser.parse_args()
 
 if __name__ == "__main__":
-    n_clients = 2
+
+    args = define_parser()
+    n_clients = args.n_clients
+    job_configs = args.job_configs
+    work_dir = args.work_dir
+    export_config = args.export_config
+    log_config = args.log_config
+    tracking_uri = args.tracking_uri
+
+
+    n_clients = args.n_clients
     num_rounds = 5
 
     train_script = "src/client.py"
+    
+    job_name = "fedavg"
 
-    job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
+    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
     
     # Add a MLFlow Receiver component to the server component, 
     # all metrics will stream from client to server
     
     receiver = MLflowReceiver(
-        tracking_uri=f"file://{WORKSPACE}/server/simulate_job/mlruns",
+        tracking_uri=tracking_uri,
         kw_args={
             "experiment_name": "nvflare-fedavg-experiment",
             "run_name": "nvflare-fedavg-with-mlflow",
@@ -61,16 +73,9 @@ if __name__ == "__main__":
         )
         job.to(executor, f"site-{i + 1}")
 
-    # job.export_job(job_config_dir="/tmp/nvflare/jobs/fedavg")
-    job.simulator_run(workspace=WORKSPACE)
-
-    #
-    # args = define_parser()
-    #
-    # n_clients = args.n_clients
-    # data_root_dir = args.data_root_dir
-    # output_path = args.stats_output_path
-    # job_dir = args.job_dir
-    # work_dir = args.work_dir
-    # export_config = args.export_config
-    # log_config = args.log_config
+    if export_config:
+        print(f"Exporting job config...{job_configs}/{job_name}")
+        job.export_job(job_root = job_configs)
+    else:
+        job.simulator_run(workspace=work_dir, log_config=log_config)
+ 
