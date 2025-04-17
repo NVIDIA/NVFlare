@@ -4,7 +4,9 @@ This example demonstrates how to use the AMPLIFY protein language model from [ch
 
 In this scenario, each client trains a different downstream task from the [FLAb](https://github.com/Graylab/FLAb.git) antibody fitness datasets using a custom regression head. At the same time, they jointly fine-tune the AMPLIFY pretrained model trunk to benefit from each other using **Federated Learning (FL)**.
 
-<img src="./figs/amplify_multi_task.svg" alt="AMPLIFY model for multi-task fine-tuning" width="400"/>
+<div style="display: flex; justify-content: center; margin: 20px 0;">
+<img src="./figs/amplify_multi_task.svg" alt="AMPLIFY model for multi-task fine-tuning" style="width: 400px;"/>
+</div>
 
 The process involves:
 1. Obtaining antibody sequence data from [FLAb](https://github.com/Graylab/FLAb.git)
@@ -117,16 +119,16 @@ You can also use the plotting code in [figs/plot_training_curves.py](./figs/plot
 
 We plot the RMSE for different downstream tasks (lower is better): "aggregation", "binding", "expression", "immunogenicity", "polyreactivity", and "Thermostability (tm)". As can be observed, the models trained using FedAvg can achieve lower RMSE values for several downstream tasks compared to the locally only trained counterparts on the test set.
 
-<div class="image-row">
-<img src="./figs/tb_figs/aggregation.svg" alt="Aggregation" width="150"/>
-<img src="./figs/tb_figs/binding.svg" alt="Binding" width="150"/>
-<img src="./figs/tb_figs/expression.svg" alt="Expression" width="150"/>
+<div style="display: flex; justify-content: center; gap: 20px; flex-wrap: nowrap;">
+<img src="./figs/tb_figs/aggregation.svg" alt="Aggregation" style="width: 150px; flex-shrink: 0;"/>
+<img src="./figs/tb_figs/binding.svg" alt="Binding" style="width: 150px; flex-shrink: 0;"/>
+<img src="./figs/tb_figs/expression.svg" alt="Expression" style="width: 150px; flex-shrink: 0;"/>
 </div>
 
-<div class="image-row">
-<img src="./figs/tb_figs/immunogenicity.svg" alt="Immunogenicity" width="150"/>
-<img src="./figs/tb_figs/polyreactivity.svg" alt="Polyreactivity" width="150"/>
-<img src="./figs/tb_figs/tm.svg" alt="Thermostability" width="150"/>
+<div style="display: flex; justify-content: center; gap: 20px; flex-wrap: nowrap;">
+<img src="./figs/tb_figs/immunogenicity.svg" alt="Immunogenicity"  style="width: 150px; flex-shrink: 0;">
+<img src="./figs/tb_figs/polyreactivity.svg" alt="Polyreactivity"  style="width: 150px; flex-shrink: 0;">
+<img src="./figs/tb_figs/tm.svg" alt="Thermostability"  style="width: 150px; flex-shrink: 0;">
 </div>
 
 ## Acknowledgements
