@@ -67,3 +67,10 @@ which writes received data from these events.
 
 This allows for the server to be the only party that needs to deal with authentication for the WandB tracking server, and the server
 can buffer the events from many clients to better manage the load of requests to the tracking server.
+
+### 5. Sends to WandB server directly from client side
+
+You can stream the metrics to the MLFlow server without passing through the NVFlare server as well.
+Please check the job `hello-pt-wandb-client`.
+
+You notice we configure the `WandBReceiver` on the client side to process the `analytix_log_stats` event.

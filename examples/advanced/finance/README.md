@@ -12,11 +12,8 @@ In these examples, we illustrate the use of NVFlare to carry out the following f
   - tree-based collaboration with cyclic federation
   - tree-based collaboration with bagging federation
 
-For more details, please refer to the README files for 
-[vertical](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_xgboost/README.md), 
-[histogram-based](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/histogram-based/README.md),
-and [tree-based](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/tree-based/README.md) 
-methods.
+For more details, please refer to the README for 
+[federated xgboost](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/xgboost/fedxgb/README.md).
 
 ## Data Preparation
 ### Download and Store Data
