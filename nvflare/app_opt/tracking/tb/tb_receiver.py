@@ -68,7 +68,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
                     - peer_name_2:
 
         """
-        super().__init__(events=events, client_side_supported=True)
+        super().__init__(events=events)
         self.writers_table = {}
         self.tb_folder = tb_folder
         self.root_log_dir = None

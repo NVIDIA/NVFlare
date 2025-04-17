@@ -431,7 +431,7 @@ aws_start_dsb_sh: |
     echo "URL is http://${IP_ADDRESS}:443"
   fi
   echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
-  echo "Project admin credential (username:password) is ${credential} ."
+  echo "Project admin credential (username:password:organization) is ${credential} ."
   echo "To terminate the EC2 instance, run the following command."
   echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
   echo "Other resources provisioned"

@@ -21,6 +21,9 @@ The model is trained to segment 3 nested subregions of primary brain tumors (gli
 
 To run this example, please make sure you have downloaded BraTS 2018 data, which can be obtained from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/cbica/brats2018.html) [2-6]. Please download the data to [./dataset_brats18/dataset](./dataset_brats18/dataset). It should result in a sub-folder `./dataset_brats18/dataset/training`.
 In this example, we split BraTS18 dataset into [4 subsets](./dataset_brats18/datalist) for 4 clients. Each client requires at least a 12 GB GPU to run. 
+
+Note that for achieving FL and centralized training curves with a validation score that can be directly compared, we use an identical validation set across all clients and experiments without withholding a standalone testing set. In this case all scores will be computed against the same dataset, and when combining all clients' data we will have the same dataset as the centralized training. In reality though, each site will usually have its own validation set (in which case the validation curves are not directly comparable), and a testing set is usually withheld from the training process.
+
 ### Differential Privacy (DP)
 [Differential Privacy (DP)](https://arxiv.org/abs/1910.00962) [7] is method for ensuring that Federated Learning (FL) preserves privacy by obfuscating the model updates sent from clients to the central server.
 This example shows the usage of a MONAI-based trainer for medical image applications with NVFlare, as well as the usage of DP filters in your FL training. DP is added as a filter in `config_fed_client.json`. Here, we use the "Sparse Vector Technique", i.e. the [SVTPrivacy](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.filters.svt_privacy.html) protocol, as utilized in [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] (see [Lyu et al. 2016](https://arxiv.org/abs/1603.01699) [8] for more information).
@@ -210,10 +213,10 @@ Different DP settings will have different impacts over the performance.
 ### Validation score
 The accuracy metrics under each setting are:
 
-| Config	| Val Overall Dice | 	Val TC Dice	 | 	Val WT Dice	 | 	Val ET Dice	 | 
-| ----------- |------------------|---------------|---------------|---------------|  
-| brats18_central 	| 	0.8558	         | 	0.8648	      | 0.9070	       | 0.7894	       | 
-| brats18_fedavg  	| 	0.8573	         | 0.8687	       | 0.9088	       | 0.7879	       | 
+| Config	| Val Overall Dice | 	Val TC Dice	 | 	Val WT Dice	 | 	Val ET Dice	 |
+| ----------- |------------------|---------------|---------------|---------------|
+| brats18_central 	| 	0.8558	         | 	0.8648	      | 0.9070	       | 0.7894	       |
+| brats18_fedavg  	| 	0.8573	         | 0.8687	       | 0.9088	       | 0.7879	       |
 | brats18_fedavg_dp | 	0.8209	    | 0.8282	       | 0.8818	       | 0.7454	       |
 
 
