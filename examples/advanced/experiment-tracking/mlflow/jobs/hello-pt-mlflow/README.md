@@ -93,8 +93,8 @@ We can now take a look at the configuration on the server
 ```
 tmp/nvflare/jobs/fedavg
 ├── app_server
-│   ├── config
-│   │   └── config_fed_server.json
+│ ├── config
+│ │    └── config_fed_server.json
 
 ```
 
@@ -155,5 +155,22 @@ Now, let's take a look at this by directly loading the tensorboard
  
 ```
 tensorboard --logdir=/tmp/nvflare/jobs/workdir/server/simulate_job/tb_events
+```
+
+**Note**
+If you prefer not receive tensorboard metrics on server, you can simply remove the following 
+component from the job configuration  
+```json
+        {
+            "id": "receiver",
+            "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver",
+            "args": {
+                "events": [
+                    "analytix_log_stats",
+                    "fed.analytix_log_stats"
+                ]
+            }
+        }
+       
 ```
 
