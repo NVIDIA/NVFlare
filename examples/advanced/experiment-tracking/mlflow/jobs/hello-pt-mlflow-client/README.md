@@ -5,6 +5,32 @@ This example demonstrates how to do such setup.
 
 here we use the CIFAR10 example to train an image classifier using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework.
 
+The normal setup and code is almost the same as ```hello-pt-mlflow``` example. 
+
+The only differences are the followings
+1) we will registered a ```MLflowReceiver``` on the Client side instead of on Server Side
+2) we don't need to convert the local event to federated event, i.e don't need register ```ConvertToFedEvent``` component
+
+
+In FLARE job API, 
+
+```
+    # create a FedAvg job but not registered the default components for fed_event converter and analytics receiver.
+    # As we are going to add ourselves. 
+
+    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork(), 
+                                convert_to_fed_event = False, analytics_receiver =False)
+    
+    # Add a MLFlow Receiver component to the Client site 
+    receiver = MLflowReceiver(...)
+    
+    # Add clients
+    for i in range(n_clients):
+        ...
+        job.to(receiver, f"site-{i + 1}")
+
+```
+
 
 ### 1. Install requirements
 
@@ -26,10 +52,13 @@ Here we just use the same data for each site. It's better to pre-downloaded data
 Use nvflare job api with simulator to run the example:
 
 ```
-cd ./jobs/hello-pt-mlflow/code
+cd ./jobs/hello-pt-mlflow-client/code
 
 python3 fl_job.py
 ```
+
+
+
 
 ### 4. Access the logs and results
 
@@ -50,23 +79,15 @@ mlflow ui --backend-store-uri tmp/nvflare/jobs/workdir/server/simulate_job/mlrun
 
 ### 5. MLflow Streaming
 
-tracking_uri=f"file://{WORKSPACE}/server/simulate_job/mlruns",
+Now, since each site has a reciever, and we are have set the tracking URI as 
 
-For the job `hello-pt-mlflow`, on the client side, the client code in `client.py`
+```tracking_uri = f"file://{work_dir}/site-{i + 1}/mlruns"```
+
+We should be able to look at the 
+tracking_uri=f"file://{WORKSPACE}/site-n/mlruns",
 
 ```
-mlflow_writer.log_metric(key="local_accuracy", value=local_accuracy, step=global_step)
+ mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/site-2/mlruns
+
 ```
-
-The `MLflowWriter` actually mimics the mlflow to send the information in events to the server through NVFlare events
-of type `analytix_log_stats` for the server to write the data to the MLflow tracking server.
-
-The `ConvertToFedEvent` widget turns the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`,
-which will be delivered to the server side.
-
-On the server side, the `MLflowReceiver` is configured to process `fed.analytix_log_stats` events,
-which writes received data from these events to the MLflow tracking server.
-
-This allows for the server to be the only party that needs to deal with authentication for the MLflow tracking server, and the server
-can buffer the events from many clients to better manage the load of requests to the tracking server.
 
