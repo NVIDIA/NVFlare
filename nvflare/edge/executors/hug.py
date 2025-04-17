@@ -74,24 +74,36 @@ class HierarchicalUpdateGatherer(Executor):
         self._task_done = False
 
         self._msg_handler_registered = {}  # topic => bool
-        self.register_event_handler(EventType.START_RUN, self._handle_start_run)
+        self.register_event_handler(EventType.START_RUN, self._hug_handle_start_run)
         self.register_event_handler(EventType.POST_TASK_ASSIGNMENT_SENT, self._handle_task_sent)
         self.register_event_handler(EventType.POST_TASK_RESULT_RECEIVED, self._handle_result_received)
 
-    def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
+    def get_updater(self, fl_ctx: FLContext) -> Optional[Updater]:
+        raise NotImplementedError("subclass must implement get_updater if updater_id is not specified")
+
+    def _hug_handle_start_run(self, event_type: str, fl_ctx: FLContext):
         self.log_debug(fl_ctx, f"handling event {event_type}")
         engine = fl_ctx.get_engine()
 
-        updater = engine.get_component(self.updater_id)
-        if not isinstance(updater, Updater):
-            self.log_error(fl_ctx, f"component '{self.updater_id}' must be Updater but got {type(updater)}")
+        if self.updater_id:
+            updater = engine.get_component(self.updater_id)
+            if not isinstance(updater, Updater):
+                self.system_panic(f"component '{self.updater_id}' must be Updater but got {type(updater)}", fl_ctx)
+                return
+        else:
+            updater = self.get_updater(fl_ctx)
+            if not isinstance(updater, Updater):
+                self.system_panic(f"get_updater() must return Updater but got {type(updater)}", fl_ctx)
+                return
+
         self._updater = updater
         self.log_info(fl_ctx, f"got updater: {type(self._updater)}")
 
         if self.learner_id:
             learner = engine.get_component(self.learner_id)
             if not isinstance(learner, Executor):
-                self.log_error(fl_ctx, f"component '{self.learner_id}' must be Executor but got {type(learner)}")
+                self.system_panic(f"component '{self.learner_id}' must be Executor but got {type(learner)}", fl_ctx)
+                return
             self._learner = learner
 
         client_hierarchy = fl_ctx.get_prop(FLContextKey.CLIENT_HIERARCHY)
@@ -483,7 +495,7 @@ class HierarchicalUpdateGatherer(Executor):
             self.log_warning(fl_ctx, f"update dropped for task_id {task_id}: no current task")
             return False
 
-        if task_id != task_info.id:
+        if task_id and task_id != task_info.id:
             self.log_warning(
                 fl_ctx, f"contribution dropped for task_id {task_id}: it does not match current task {task_info.id}"
             )

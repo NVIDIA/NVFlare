@@ -25,6 +25,7 @@ class ResultReport(BaseModel):
         task_id: str,
         task_name: str = None,
         result: dict = None,
+        cookie: dict = None,
         **kwargs,
     ):
         super().__init__()
@@ -34,6 +35,7 @@ class ResultReport(BaseModel):
         self.task_id = task_id
         self.task_name = task_name
         self.result = result
+        self.cookie = cookie
 
         if kwargs:
             self.update(kwargs)

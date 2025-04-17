@@ -17,11 +17,12 @@ from nvflare.edge.web.models.user_info import UserInfo
 
 
 class TaskRequest(BaseModel):
-    def __init__(self, device_info: DeviceInfo, user_info: UserInfo, job_id: str, **kwargs):
+    def __init__(self, device_info: DeviceInfo, user_info: UserInfo, job_id: str, cookie: dict, **kwargs):
         super().__init__()
         self.device_info = device_info
         self.user_info = user_info
         self.job_id = job_id
+        self.cookie = cookie
 
         if kwargs:
             self.update(kwargs)
