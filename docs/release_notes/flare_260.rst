@@ -153,7 +153,11 @@ New Examples
 1. Federated Embedding Model Training
 2. Object Streaming
 3. System Monitoring
-4. AI4EOSC
+4. Distributed Optimization 
+5. Logging Tutorial
+
+
+
 
 **********************************
 Migration to 2.6.0: Notes and Tips
