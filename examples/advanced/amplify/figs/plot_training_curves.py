@@ -110,6 +110,10 @@ def plot_metrics(data, output_dir=None, title=None, figsize=(12, 8), y_limits=No
     if x_limits:
         plt.xlim(x_limits)
     
+    # Make tick labels larger
+    plt.xticks(fontsize=30)
+    plt.yticks(fontsize=30)
+    
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
         plt.savefig(os.path.join(output_dir, f'{title}.png'))

@@ -117,14 +117,17 @@ You can also use the plotting code in [figs/plot_training_curves.py](./figs/plot
 
 We plot the RMSE for different downstream tasks (lower is better): "aggregation", "binding", "expression", "immunogenicity", "polyreactivity", and "Thermostability (tm)". As can be observed, the models trained using FedAvg can achieve lower RMSE values for several downstream tasks compared to the locally only trained counterparts on the test set.
 
-<img src="./figs/tb_figs/aggregation.svg" alt="Aggregation" width="200"/>
-<img src="./figs/tb_figs/binding.svg" alt="Binding" width="200"/>
-<img src="./figs/tb_figs/expression.svg" alt="Expression" width="200"/>
+<div class="image-row">
+<img src="./figs/tb_figs/aggregation.svg" alt="Aggregation" width="150"/>
+<img src="./figs/tb_figs/binding.svg" alt="Binding" width="150"/>
+<img src="./figs/tb_figs/expression.svg" alt="Expression" width="150"/>
+</div>
 
-<img src="./figs/tb_figs/immunogenicity.svg" alt="Immunogenicity" width="200"/>
-<img src="./figs/tb_figs/polyreactivity.svg" alt="Polyreactivity" width="200"/>
-<img src="./figs/tb_figs/tm.svg" alt="Thermostability" width="200"/>
-
+<div class="image-row">
+<img src="./figs/tb_figs/immunogenicity.svg" alt="Immunogenicity" width="150"/>
+<img src="./figs/tb_figs/polyreactivity.svg" alt="Polyreactivity" width="150"/>
+<img src="./figs/tb_figs/tm.svg" alt="Thermostability" width="150"/>
+</div>
 
 ## Acknowledgements
 
