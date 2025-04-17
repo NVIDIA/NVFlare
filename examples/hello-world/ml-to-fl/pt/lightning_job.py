@@ -16,9 +16,9 @@ import argparse
 
 from src.lit_net import LitNet
 
-from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
-from nvflare.job_config.script_runner import FrameworkType, BaseScriptRunner
+from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.job_config.script_runner import BaseScriptRunner, FrameworkType
 
 
 def define_parser():
@@ -59,9 +59,7 @@ def main():
             framework=FrameworkType.PYTORCH,
             # Adds a shutdown grace period to make sure after
             # flare.send the lightning script can finish predict and test and exit gracefully
-            launcher=SubprocessLauncher(
-                script=f"python3 -u custom/{script}", shutdown_timeout=100.0
-            ),
+            launcher=SubprocessLauncher(script=f"python3 -u custom/{script}", shutdown_timeout=100.0),
         )
         job.to(executor, f"site-{i + 1}")
 
