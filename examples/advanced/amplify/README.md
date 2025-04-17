@@ -120,15 +120,15 @@ You can also use the plotting code in [figs/plot_training_curves.py](./figs/plot
 We plot the RMSE for different downstream tasks (lower is better): "aggregation", "binding", "expression", "immunogenicity", "polyreactivity", and "Thermostability (tm)". As can be observed, the models trained using FedAvg can achieve lower RMSE values for several downstream tasks compared to the locally only trained counterparts on the test set.
 
 <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: nowrap;">
-<img src="./figs/tb_figs/aggregation.svg" alt="Aggregation" style="width: 150px; flex-shrink: 0;"/>
-<img src="./figs/tb_figs/binding.svg" alt="Binding" style="width: 150px; flex-shrink: 0;"/>
-<img src="./figs/tb_figs/expression.svg" alt="Expression" style="width: 150px; flex-shrink: 0;"/>
+<img src="./figs/tb_figs/aggregation.svg" alt="Aggregation" style="width: 300px; flex-shrink: 0;"/>
+<img src="./figs/tb_figs/binding.svg" alt="Binding" style="width: 300px; flex-shrink: 0;"/>
+<img src="./figs/tb_figs/expression.svg" alt="Expression" style="width: 300px; flex-shrink: 0;"/>
 </div>
 
 <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: nowrap;">
-<img src="./figs/tb_figs/immunogenicity.svg" alt="Immunogenicity"  style="width: 150px; flex-shrink: 0;">
-<img src="./figs/tb_figs/polyreactivity.svg" alt="Polyreactivity"  style="width: 150px; flex-shrink: 0;">
-<img src="./figs/tb_figs/tm.svg" alt="Thermostability"  style="width: 150px; flex-shrink: 0;">
+<img src="./figs/tb_figs/immunogenicity.svg" alt="Immunogenicity"  style="width: 300px; flex-shrink: 0;">
+<img src="./figs/tb_figs/polyreactivity.svg" alt="Polyreactivity"  style="width: 300px; flex-shrink: 0;">
+<img src="./figs/tb_figs/tm.svg" alt="Thermostability"  style="width: 300px; flex-shrink: 0;">
 </div>
 
 ## Acknowledgements
