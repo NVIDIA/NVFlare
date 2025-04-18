@@ -26,6 +26,7 @@ CHANNEL = "_test_channel"
 TOPIC = "_test_topic"
 TIMESTAMP = "_timestamp"
 FILE_NAME = "_filename"
+SITE_NAME = "_site_name"
 
 
 class FileSender(FLComponent):
@@ -51,6 +52,7 @@ class FileSender(FLComponent):
             context = {
                 TIMESTAMP: time.time(),
                 FILE_NAME: os.path.basename(self.file_name),
+                SITE_NAME: fl_ctx.get_identity_name(),
             }
             rc, result = FileStreamer.stream_file(
                 targets=["server"],
@@ -99,7 +101,8 @@ class FileReceiver(FLComponent):
         self.done = True
 
         basename = stream_ctx.get(FILE_NAME, "No Name")
-        file_name = os.path.join(self.output_folder, basename)
+        site_name = stream_ctx.get(SITE_NAME, "unknown")
+        file_name = os.path.join(self.output_folder, site_name + "_" + basename)
         if rc != ReturnCode.OK:
             self.log_error(fl_ctx, f"File {file_name} receiving failed with RC: {rc})")
             return
