@@ -122,8 +122,6 @@ class MLflowReceiver(AnalyticsReceiver):
         experiment_tags = self._get_tags(TrackConst.EXPERIMENT_TAGS, kwargs=self.kw_args)
 
         # Determine participating sites
-        print("fl_ctx.get_process_type() = ", fl_ctx.get_process_type())
-
         if fl_ctx.get_process_type() == ProcessType.SERVER_JOB:
             clients = fl_ctx.get_engine().get_clients()
             if not clients:
