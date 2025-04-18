@@ -59,7 +59,7 @@ The `mlflow` folder contains [examples](./mlflow/README.md) showcasing the usage
 the clients to the server to write to an MLflow tracking server, as well as concurrent streaming to Tensorboard.
 It also illustrate how to stream the metrics to site-specific mlflow server.
 
-## Weights and Biases
+### Weights and Biases
 
 The `wandb` folder contains the [Hello PyTorch with Weights and Biases](./wandb/README.md) example
 showing how Weights and Biases can be used as a back end for the `WandBReceiver` to write to.  
