@@ -13,6 +13,7 @@
 # limitations under the License.
 import argparse
 
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from src.network import SimpleNetwork
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
@@ -40,7 +41,7 @@ if __name__ == "__main__":
     export_config = args.export_config
     log_config = args.log_config
 
-    num_rounds = 10
+    num_rounds = 5
 
     train_script = "src/client.py"
     
@@ -51,6 +52,7 @@ if __name__ == "__main__":
     
     job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork(), 
                                 convert_to_fed_event = False, analytics_receiver =False)
+    
     # Add a MLFlow Receiver component to the Client site 
    
     # Add clients
@@ -59,10 +61,11 @@ if __name__ == "__main__":
             script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
         )
         job.to(executor, f"site-{i + 1}")
-         
+        
         tracking_uri = f"file://{work_dir}/site-{i + 1}/mlruns"
         receiver = MLflowReceiver(
             tracking_uri=tracking_uri,
+            events=[ANALYTIC_EVENT_TYPE],
             kw_args={
                 "experiment_name": "nvflare-fedavg-experiment",
                 "run_name": "nvflare-fedavg-with-mlflow",
@@ -71,7 +74,7 @@ if __name__ == "__main__":
             },
         )
         
-        job.to(receiver, f"site-{i + 1}")
+        job.to(receiver, target="site-{i + 1}")
 
     if export_config:
         print(f"Exporting job config...{job_configs}/{job_name}")
