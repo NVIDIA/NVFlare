@@ -55,16 +55,15 @@ wandb_writer.log({"train_loss": cost.item()}, current_step)
 
 The `WandBWriter` follows a syntax similar to the native WandB API, making it easy to adopt.
 
-Under the hood, `WandBWriter` uses NVFlare’s event system to send tracking data. Specifically, it fires an `analytix_log_stats` event. On the server side, this event needs to be received and processed — which is where the `WandBReceiver` comes in.
+Internally, `WandBWriter` leverages the NVFlare client API to send metrics and trigger an `analytix_log_stats` event. This event can be received and processed by our `AnalyticsReceiver`, with the `WandBReceiver` being one implementation of it.
 
-By default, we configured `WandBReceiver` and a `ConvertToFedEvent` on the NVFlare server side.
+In `wandb_job.py`, we configure the following components by default:
 
-The `ConvertToFedEvent` widget turns the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`, enabling it to be sent from the NVFlare client to the NVFlare server.
+  - The `ConvertToFedEvent` widget on the NVFlare client side, which transfroms the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`. This enables the event to be sent from the NVFlare client to the NVFlare server.
 
-The `WandBReceiver` listens for `fed.analytix_log_stats` events on the NVFlare server side and forwards the metric data to the WandB tracking server.
+  - The `WandBReceiver` on the NVFlare server side, which listens for `fed.analytix_log_stats` events and forwards the metric data to the WandB tracking server.
 
-This allows for the server to be the only party that needs to deal with authentication for the WandB tracking server, and the server
-can buffer the events from many clients to better manage the load of requests to the tracking server.
+This setup ensures that the server handles all authentication with the WandB tracking server and buffers events from multiple clients, effectively managing the load of requests to the server.
 
 ### 6. Optional: Stream Metrics Directly from Clients
 
@@ -76,6 +75,6 @@ To enable this mode, run your training script with the following flags:
 python wandb_job.py --streamed_to_clients --no-streamed_to_server
 ```
 
-In this mode, the `WandBReceiver` is configured on the NVFlare client side to process the `analytix_log_stats` event.
+In this configuration, the `WandBReceiver` is set up on the NVFlare client side to process the `analytix_log_stats` event.
 
-So each NVFlare client will directly send the metrics to their corresponding WandB server.
+As a result, each NVFlare client sends its metrics directly to its corresponding WandB server.

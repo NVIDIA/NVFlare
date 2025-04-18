@@ -23,7 +23,6 @@ from nvflare.app_common.workflows.cross_site_eval import CrossSiteEval
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.app_opt.tracking.wandb.wandb_receiver import WandBReceiver
-from nvflare.app_opt.tracking.wandb.wandb_writer import WandBWriter
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 
@@ -31,7 +30,7 @@ def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=5)
-    parser.add_argument("--script", type=str, default="src/fl.py")
+    parser.add_argument("--script", type=str, default="src/train_script.py")
     parser.add_argument("--launch_external_process", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument(
         "--streamed_to_clients",
@@ -103,7 +102,6 @@ def main():
             framework=FrameworkType.PYTORCH,
         )
         job.to(executor, site_name)
-        job.to(WandBWriter(event_type=ANALYTIC_EVENT_TYPE), site_name)
         job.to(ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE]), site_name)
 
         if streamed_to_clients:
