@@ -32,6 +32,8 @@ class FileTransferController(Controller):
             while not receiver.is_done():
                 time.sleep(0.2)
 
+            # Wait for a while to make sure the reply is sent to client
+            time.sleep(5)
             self.log_info(fl_ctx, "Control flow ends")
         except Exception as ex:
             self.log_error(fl_ctx, f"Control flow error: {ex}")
