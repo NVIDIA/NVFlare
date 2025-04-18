@@ -1,107 +1,37 @@
-# Hello PyTorch with MLflow
+# MLflow Experiment Tracking with NVIDIA FLARE
+ 
+## Example 1: Centralized MLflow Tracking
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
-using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/)
-as the deep learning training framework.
+In this example:
 
-This example also highlights the MLflow streaming capability from the clients to the server.
+- The client uses the MLflow writer to collect training metrics.
+- Metrics are streamed to the server-side receiver.
+- The server receiver then sends the metrics to an MLflow server (either remote or local).
+- The same metrics can optionally be concurrently sent to TensorBoard for visualization.
 
-### 1. Install requirements
+**Use case**: When a consolidated, centralized view of all clients' training progress is required.
 
-Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
+---
 
-```
-python -m pip install -r requirements.txt
-```
-### 2. Download data
-Here we just use the same data for each site. It's better to pre-downloaded data to avoid multiple sites to concurrent download the same data.
+## Example 2: Site-Specific MLflow Tracking
 
-```bash
-../prepare_data.sh
-```
+In this setup:
 
+- The client uses the MLflow writer to collect training metrics.
+- Metrics are sent to a client-side receiver instead of a centralized server.
+- These metrics are then delivered to a site-local MLflow server or written to local storage.
 
-### 3. Run the experiment
+**Use case**: When each client site wants to track and manage its own training metrics independently.
 
-Use nvflare job api with simulator to run the example:
+---
 
-```
-cd ./jobs/hello-pt-mlflow/code
+## Configuration Flexibility
 
-python3 fl_job.py
-```
+FLARE allows seamless switching between centralized and decentralized experiment tracking by modifying only the configuration:
 
-### 4. Access the logs and results
+- The training code remains unchanged.
+- You can control:
+  - Where the metrics are sent (server or site-local).
+  - Which experiment tracking framework is used.
 
-You can find the running logs and results inside the server's simulator's workspace in a directory named "simulate_job".
-
-```WORKSPACE = "/tmp/nvflare/jobs/workdir"```
-
-By default, MLflow will create an experiment log directory under a directory named "mlruns" in the simulator's workspace. 
-If you ran the simulator with "/tmp/nvflare/jobs/workdir" as the workspace, then you can launch the MLflow UI with:
-
-```bash
-$ tree /tmp/nvflare/jobs/workdir/server/simulate_job/mlruns/
-```
-
-```
-mlflow ui --backend-store-uri tmp/nvflare/jobs/workdir/server/simulate_job/mlruns/
-```
-
-### 5. MLflow Streaming
-
-tracking_uri=f"file://{WORKSPACE}/server/simulate_job/mlruns",
-
-For the job `hello-pt-mlflow`, on the client side, the client code in `client.py`
-
-```
-mlflow_writer.log_metric(key="local_accuracy", value=local_accuracy, step=global_step)
-```
-
-The `MLflowWriter` actually mimics the mlflow to send the information in events to the server through NVFlare events
-of type `analytix_log_stats` for the server to write the data to the MLflow tracking server.
-
-The `ConvertToFedEvent` widget turns the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`,
-which will be delivered to the server side.
-
-On the server side, the `MLflowReceiver` is configured to process `fed.analytix_log_stats` events,
-which writes received data from these events to the MLflow tracking server.
-
-This allows for the server to be the only party that needs to deal with authentication for the MLflow tracking server, and the server
-can buffer the events from many clients to better manage the load of requests to the tracking server.
-
-
-
-
-
-
-
-Note that the server also has `TBAnalyticsReceiver` configured, which also listens to `fed.analytix_log_stats` events by default,
-so the data is also written into TB files on the server.
-
-
-
-
-
-### 6. Tensorboard Streaming with MLflow
-
-For the job `hello-pt-tb-mlflow`, on the client side, the client code in `PTLearner` uses the syntax for Tensorboard:
-
-```
-self.writer.add_scalar("train_loss", cost.item(), current_step)
-
-self.writer.add_scalar("validation_accuracy", metric, epoch)
-```
-
-The `TBWriter` mimics Tensorboard SummaryWriter and streams events over to the server side instead.
-
-Note that in this job, the server still has `MLflowReceiver` and `TBAnalyticsReceiver` configured the same as in the job with `MLflowWriter`
-on the client side, and the events are converted by the `MLflowReceiver` to write to the MLflow tracking server.
-
-
-### 7. Sends to MLFlow server directly from client side
-
-You can stream the metrics to the MLFlow server without passing through the NVFlare server as well.
-Please check the job `hello-pt-mlflow-client`.
-
-You notice we configure the `MLflowReceiver` on the client side to process the `analytix_log_stats` event.
+This flexible design enables easy integration with different observability platforms, tailored to your deployment needs.
