@@ -14,7 +14,7 @@ Key features:
   - Direct cropping and casting for fp32 to fp16 conversion
   - 8- and 4-bit quantization using bitsandbytes
 
-.. image:: ../resources/quantization.png
+.. image:: resources/message_quantization.png
     :height: 300px
 
 
@@ -42,7 +42,7 @@ The table below illustrates the message size in MB for a 1B parameter LLM under 
 
 By applying message quantization techniques, FL can achieve significant bandwidth savings, and for training LLM with Supervised Fine-Tuning (SFT) in our experiments. As shown in the Figure below, message quantization does not sacrifice model convergence quality with regard to the training loss.
 
-.. image:: ../resources/quantization_loss.png
+.. image:: resources/quantization_loss.png
     :height: 300px
 
 Native Tensor Transfer
@@ -103,7 +103,7 @@ System Monitoring
 =================
 FLARE Monitoring provides system metrics tracking for federated learning jobs, focusing on job and system lifecycle metrics. It leverages StatsD Exporter to monitor FLARE job and system events, which can be scraped by Prometheus and visualized with Grafana. This differs from machine learning experiment tracking by focusing on system-level metrics rather than training metrics. For more information, see :ref:`Monitoring <monitoring>`.
 
-.. image:: ../resources/system_monitoring.png
+.. image:: resources/system_monitoring.png
     :height: 450px
 
 Flower Integration v2
@@ -153,7 +153,7 @@ New Examples
 1. Federated Embedding Model Training
 2. Object Streaming
 3. System Monitoring
-4. Distributed Optimization 
+4. Distributed Optimization
 5. Logging Tutorial
 
 
@@ -175,19 +175,33 @@ In NVIDIA FLARE 2.6, several changes have been made to the Dashboard:
 
 #. The ``FLARE_DASHBOARD_NAMESPACE`` constant has been added to the codebase. All API endpoints should now use this namespace prefix.
 
-PTClientAPILauncherExecutor and PTInProcessClientAPIExecutor Changes
-====================================================================
 
-FLARE 2.6.0 introduces significant changes to the "params_exchange_format" argument in PTClientAPILauncherExecutor and PTInProcessClientAPIExecutor. These changes impact how data is exchanged between the client script and NVFlare.
+ScriptRunner Changes in FLARE 2.6.0
+===================================
 
-Changes in params_exchange_format
----------------------------------
+Overview
+--------
 
-In previous versions, setting "params_exchange_format" to "pytorch" indicated that the client was using a PyTorch tensor on the third-party side. In this case, the tensor would be converted to a NumPy array before being sent back to NVFlare.
+FLARE 2.6.0 introduces a new `server_expected_format` parameter to enhance data exchange flexibility across the entire pipeline. This parameter is now available in:
+- `ScriptRunner`
+- `ClientAPILauncherExecutor`
+- `InProcessClientAPIExecutor`
 
-With the improvements introduced in FLARE 2.6.0, which now natively support PyTorch tensors during transmission, the meaning of "params_exchange_format" = "pytorch" has changed. Now, this setting directly sends PyTorch tensors to NVFlare without converting them to NumPy arrays.
+## Previous Implementation
+Previously, data format was controlled by:
+- `params_exchange_format` in executors
+- `framework` in `ScriptRunner`
 
-Action Required
----------------
+These parameters only defined the communication format between the NVFlare client and the user script. For example, setting `params_exchange_format` to "pytorch" meant the client communicated with the script using PyTorch tensors.
 
-To maintain the previous behavior (where PyTorch tensors are converted to NumPy arrays), you will need to explicitly set "params_exchange_format" to "numpy".
+However, the server-to-client communication was always restricted to NumPy arrays.
+
+New Implementation
+------------------
+
+With FLARE 2.6.0, we now support:
+1. End-to-end PyTorch tensor pipeline
+2. Flexible format specification at each communication boundary
+3. Native PyTorch tensor transmission
+
+The new `server_expected_format` parameter specifically controls the format used in server-client communication. When set to "pytorch", the entire pipeline - from server to client to script - can operate using PyTorch tensors without any format conversion.
