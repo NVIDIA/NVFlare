@@ -21,7 +21,7 @@ if __name__ == "__main__":
     n_clients = 2
     num_rounds = 5
 
-    train_script = "src/client.py"
+    train_script = "src/train_script.py"
 
     job = FedAvgJob(name="fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
 

@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     num_rounds = 5
 
-    train_script = "src/client.py"
+    train_script = "src/train_script.py"
 
     job_name = "fedavg"
 

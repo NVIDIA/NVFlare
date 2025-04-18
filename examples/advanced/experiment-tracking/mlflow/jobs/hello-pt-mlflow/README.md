@@ -17,7 +17,7 @@ python -m pip install -r requirements.txt
 Here we just use the same data for each site. It's better to pre-downloaded data to avoid multiple sites to concurrent download the same data.
 
 ```bash
-../prepare_data.sh
+../../../prepare_data.sh
 ```
 
 
