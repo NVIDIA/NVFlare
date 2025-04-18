@@ -19,7 +19,7 @@ In this setup:
 
 - The client uses the MLflow writer to collect training metrics.
 - Metrics are sent to a client-side receiver instead of a centralized server.
-- These metrics are then delivered to a site-local MLflow server or written to local storage.
+- These metrics are then delivered to a client site hosted MLflow server or written to local storage.
 
 **Use case**: When each client site wants to track and manage its own training metrics independently.
 
@@ -31,7 +31,7 @@ FLARE allows seamless switching between centralized and decentralized experiment
 
 - The training code remains unchanged.
 - You can control:
-  - Where the metrics are sent (server or site-local).
+  - Where the metrics are sent (server or client site).
   - Which experiment tracking framework is used.
 
 This flexible design enables easy integration with different observability platforms, tailored to your deployment needs.
