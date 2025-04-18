@@ -139,7 +139,7 @@ Then we run it using the NVFlare simulator:
 
 ```bash
 bash ./prepare_data.sh
-python3 pt_client_api_job.py --script src/cifar10_lightning_fl.py --key_metric val_acc_epoch
+python3 lightning_job.py --script src/cifar10_lightning_fl.py --key_metric val_acc_epoch
 ```
 
 ## Transform CIFAR10 PyTorch + DDP training code to FL using Client API
@@ -252,12 +252,10 @@ The key options in this command are:
 
   - `--launch_external_process`: Enables launching an external process for multi-GPU training.
 
-  - `--launch_command`: Specifies the command to run for distributed training. In this case, it uses torch.distributed.run to launch the DDP processes.
-
   - `--export`: Exports the job configuration.
 
 ```bash
-python3 pt_client_api_job.py --script src/cifar10_lightning_ddp_fl.py --key_metric val_acc_epoch --launch_external_process --export
+python3 lightning_job.py --script src/cifar10_lightning_ddp_fl.py --key_metric val_acc_epoch --launch_external_process --export
 ```
 
 Once the job directory has been created, you can run the federated learning job using the NVFlare simulator.
@@ -269,7 +267,7 @@ The following command starts the simulator with two clients and assigns two GPUs
 
 ```bash
 bash ./prepare_data.sh
-nvflare simulator -n 2 -t 2 /tmp/nvflare/jobs/job_config/pt_client_api  --gpu "[0,1],[0,1]"
+nvflare simulator -n 2 -t 2 /tmp/nvflare/jobs/job_config/pt_lightning_client_api  --gpu "[0,1],[0,1]"
 ```
 
 Here’s what the command does:
@@ -278,7 +276,7 @@ Here’s what the command does:
 
   - `-t 2`: Specifies that 2 worker processes will be started to run each client.
 
-  - `/tmp/nvflare/jobs/job_config/pt_client_api`: Path to the job configuration.
+  - `/tmp/nvflare/jobs/job_config/pt_lightning_client_api`: Path to the job configuration.
 
   - `--gpu "[0,1],[0,1]"`: Assigns GPU 0 and 1 to the first client, and GPU 0 and 1 to the second client.
 
