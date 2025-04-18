@@ -101,9 +101,12 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
         job_ctx_props.update({FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB})
 
-        client_config = client.client_args
-        fqsn = client_config.get("fqsn", client.client_name)
-        is_leaf = client_config.get("is_leaf", True)
+        is_leaf = True
+        fqsn = client.client_name
+        if client:
+            client_config = client.client_args
+            fqsn = client_config.get("fqsn", client.client_name)
+            is_leaf = client_config.get("is_leaf", True)
 
         self.fl_ctx_mgr = FLContextManager(
             engine=self,
