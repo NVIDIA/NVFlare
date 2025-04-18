@@ -49,9 +49,17 @@ class FedAvgJob(BaseFedJob):
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
-            convert_to_fed_event: (bool, ConvertToFedEvent, None): A component to covert certain events to fed events.
-                if not provided, a ConvertToFedEvent object will be created.
-            analytics_receiver (bool, AnlyticsReceiver, None): Receive analytics.
+            convert_to_fed_event (Union[bool, ConvertToFedEvent, None]): A component to convert certain events to fed events.
+                If not provided, a ConvertToFedEvent object will be created and add to Client
+                If provided, a ConvertToFedEvent object will be add to Client
+                If set to True, a ConvertToFedEvent object will be created  and add to Client
+                If set to False, no ConvertToFedEvent will be created.
+            
+            analytics_receiver (Union[bool, AnalyticsReceiver, None]): A component to receive analytics.
+                If not provided, a TBAnalyticsReceiver object will be created  and add to seerver
+                If provided, a AnalyticsReceiver object will be add to Server
+                If set to True, a TBAnalyticsReceiver object will be created  and add to seerver
+                If set to False, no AnalyticsReceiver will be created.
         """
 
         if not isinstance(initial_model, nn.Module):
