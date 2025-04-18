@@ -171,7 +171,13 @@ class StaticFileBuilder(Builder):
                 exe=True,
             )
 
-        ctx.build_from_template(dest_dir, TemplateSectionKey.START_SERVER_SH, ProvFileName.START_SH, exe=True)
+        ctx.build_from_template(
+            dest_dir,
+            TemplateSectionKey.START_SERVER_SH,
+            ProvFileName.START_SH,
+            replacement={"ha_mode": "false"},
+            exe=True,
+        )
 
         ctx.build_from_template(
             dest_dir,
@@ -551,6 +557,7 @@ class StaticFileBuilder(Builder):
         server_name = ctx.get(CtxKey.SERVER_NAME)
 
         replacement_dict = {
+            "admin_name": admin.name,
             "cn": f"{server_name}",
             "admin_port": f"{admin_port}",
             "docker_image": self.docker_image,
@@ -571,6 +578,13 @@ class StaticFileBuilder(Builder):
             ProvFileName.FL_ADMIN_SH,
             replacement=replacement_dict,
             exe=True,
+        )
+
+        ctx.build_from_template(
+            dest_dir,
+            TemplateSectionKey.ADM_NOTEBOOK,
+            ProvFileName.SYSTEM_INFO_IPYNB,
+            replacement=replacement_dict,
         )
 
         ctx.build_from_template(dest_dir, TemplateSectionKey.ADMIN_README, ProvFileName.README_TXT)
