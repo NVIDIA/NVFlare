@@ -51,14 +51,21 @@ class FedAvgJob(BaseFedJob):
                 Defaults to "accuracy".
             convert_to_fed_event: (bool, ConvertToFedEvent, None): A component to covert certain events to fed events.
                 if not provided, a ConvertToFedEvent object will be created.
-            analytics_receiver (bool, AnlyticsReceiver, None): Receive analytics.                
+            analytics_receiver (bool, AnlyticsReceiver, None): Receive analytics.
         """
-       
+
         if not isinstance(initial_model, nn.Module):
             raise ValueError(f"Expected initial model to be nn.Module, but got type f{type(initial_model)}.")
 
-        super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric, convert_to_fed_event=convert_to_fed_event,
-            analytics_receiver=analytics_receiver,)
+        super().__init__(
+            initial_model,
+            name,
+            min_clients,
+            mandatory_clients,
+            key_metric,
+            convert_to_fed_event=convert_to_fed_event,
+            analytics_receiver=analytics_receiver,
+        )
 
         controller = FedAvg(
             num_clients=n_clients,

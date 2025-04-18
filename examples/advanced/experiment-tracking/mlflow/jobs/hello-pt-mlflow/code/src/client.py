@@ -152,7 +152,7 @@ def main():
             # (6.2) evaluation on local trained model to save best model
             local_accuracy = evaluate(net.state_dict())
             global_step = input_model.current_round * n_loaders + i
-            
+
             # log metrics to MLflow
             mlflow_writer.log_metric(key="local_accuracy", value=local_accuracy, step=global_step)
             print(f"({client_id}) Evaluating local trained model. Accuracy on the 10000 test images: {local_accuracy}")

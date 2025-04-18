@@ -88,7 +88,7 @@ class BaseFedJob(FedJob):
             self.to_server(id="model_selector", obj=intime_model_selector)
         elif key_metric:
             self.to_server(id="model_selector", obj=IntimeModelSelector(key_metric=key_metric))
-        
+
         if convert_to_fed_event is False:
             self.convert_to_fed_event = None
         elif convert_to_fed_event is True:

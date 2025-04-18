@@ -21,16 +21,20 @@ from nvflare.job_config.script_runner import ScriptRunner
 
 WORKSPACE = "/tmp/nvflare/jobs/workdir"
 
+
 def define_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-n",  "--n_clients", type=int, default=2)
-    parser.add_argument("-j",  "--job_configs", type=str, nargs="?", default="/tmp/nvflare/jobs")
-    parser.add_argument("-w",  "--work_dir", type=str, nargs="?", default=WORKSPACE)
-    parser.add_argument("-e",  "--export_config", action="store_true", help="config only mode, export config")
-    parser.add_argument("-t",  "--tracking_uri",type=str, nargs="?", default=f"file://{WORKSPACE}/server/simulate_job/mlruns")
-    parser.add_argument("-l",  "--log_config", type=str, default="concise")
+    parser.add_argument("-n", "--n_clients", type=int, default=2)
+    parser.add_argument("-j", "--job_configs", type=str, nargs="?", default="/tmp/nvflare/jobs")
+    parser.add_argument("-w", "--work_dir", type=str, nargs="?", default=WORKSPACE)
+    parser.add_argument("-e", "--export_config", action="store_true", help="config only mode, export config")
+    parser.add_argument(
+        "-t", "--tracking_uri", type=str, nargs="?", default=f"file://{WORKSPACE}/server/simulate_job/mlruns"
+    )
+    parser.add_argument("-l", "--log_config", type=str, default="concise")
 
     return parser.parse_args()
+
 
 if __name__ == "__main__":
 
@@ -42,19 +46,18 @@ if __name__ == "__main__":
     log_config = args.log_config
     tracking_uri = args.tracking_uri
 
-
     n_clients = args.n_clients
     num_rounds = 5
 
     train_script = "src/client.py"
-    
+
     job_name = "fedavg"
 
     job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
-    
-    # Add a MLFlow Receiver component to the server component, 
+
+    # Add a MLFlow Receiver component to the server component,
     # all metrics will stream from client to server
-    
+
     receiver = MLflowReceiver(
         tracking_uri=tracking_uri,
         kw_args={
@@ -75,7 +78,6 @@ if __name__ == "__main__":
 
     if export_config:
         print(f"Exporting job config...{job_configs}/{job_name}")
-        job.export_job(job_root = job_configs)
+        job.export_job(job_root=job_configs)
     else:
         job.simulator_run(workspace=work_dir, log_config=log_config)
- 
