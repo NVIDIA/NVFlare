@@ -14,7 +14,7 @@ Key features:
   - Direct cropping and casting for fp32 to fp16 conversion
   - 8- and 4-bit quantization using bitsandbytes
 
-.. image:: ../resources/quantization.png
+.. image:: ../resources/message_quantization.png
     :height: 300px
 
 
