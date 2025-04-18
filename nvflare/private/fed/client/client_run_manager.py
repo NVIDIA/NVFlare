@@ -102,7 +102,7 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         job_ctx_props.update({FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB})
 
         is_leaf = True
-        fqsn = client.client_name
+        fqsn = client_name
         if client:
             client_config = client.client_args
             fqsn = client_config.get("fqsn", client.client_name)
