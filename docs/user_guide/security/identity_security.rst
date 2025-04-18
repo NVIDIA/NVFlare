@@ -91,7 +91,7 @@ Rights
 NVFLARE supports more accurate right definitions to be more flexible:
 
     - Each server-side admin command is a right! This makes it possible for an org to control each command explicitly;
-    - Admin commands are grouped into categories. For example, commands like abort_job, delete_job, start_app are in manage_job category; all shell commands are put into the shell_commands category. Each category is also a right.
+    - Admin commands are grouped into categories. For example, commands like abort_job and delete_job are in the manage_job category; all shell commands are put into the shell_commands category. Each category is also a right.
     - BYOC is now defined as a right so that some users are allowed to submit jobs with BYOC whereas some are not.
 
 This right system makes it easy to write simple policies that only use command categories. It also makes it possible to write policies to control individual commands. When both categories and commands are used, command-based control takes precedence over category-based control.
@@ -197,7 +197,6 @@ Command Categories
     COMMAND_CATEGORIES = {
         AC.ABORT: CommandCategory.MANAGE_JOB,
         AC.ABORT_JOB: CommandCategory.MANAGE_JOB,
-        AC.START_APP: CommandCategory.MANAGE_JOB,
         AC.DELETE_JOB: CommandCategory.MANAGE_JOB,
         AC.DELETE_WORKSPACE: CommandCategory.MANAGE_JOB,
         AC.CONFIGURE_JOB_LOG: CommandCategory.MANAGE_JOB,

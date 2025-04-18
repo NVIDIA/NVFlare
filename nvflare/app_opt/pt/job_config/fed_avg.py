@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import torch.nn as nn
 
+from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 
@@ -29,6 +30,8 @@ class FedAvgJob(BaseFedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         key_metric: str = "accuracy",
+        convert_to_fed_event: Union[bool, ConvertToFedEvent, None] = None,
+        analytics_receiver: Union[bool, ConvertToFedEvent, None] = None,
     ):
         """PyTorch FedAvg Job.
 
@@ -46,11 +49,31 @@ class FedAvgJob(BaseFedJob):
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
+            convert_to_fed_event (Union[bool, ConvertToFedEvent, None]): A component to convert certain events to fed events.
+                If not provided, a ConvertToFedEvent object will be created and add to Client
+                If provided, a ConvertToFedEvent object will be add to Client
+                If set to True, a ConvertToFedEvent object will be created  and add to Client
+                If set to False, no ConvertToFedEvent will be created.
+
+            analytics_receiver (Union[bool, AnalyticsReceiver, None]): A component to receive analytics.
+                If not provided, a TBAnalyticsReceiver object will be created  and add to seerver
+                If provided, a AnalyticsReceiver object will be add to Server
+                If set to True, a TBAnalyticsReceiver object will be created  and add to seerver
+                If set to False, no AnalyticsReceiver will be created.
         """
+
         if not isinstance(initial_model, nn.Module):
             raise ValueError(f"Expected initial model to be nn.Module, but got type f{type(initial_model)}.")
 
-        super().__init__(initial_model, name, min_clients, mandatory_clients, key_metric)
+        super().__init__(
+            initial_model,
+            name,
+            min_clients,
+            mandatory_clients,
+            key_metric,
+            convert_to_fed_event=convert_to_fed_event,
+            analytics_receiver=analytics_receiver,
+        )
 
         controller = FedAvg(
             num_clients=n_clients,
