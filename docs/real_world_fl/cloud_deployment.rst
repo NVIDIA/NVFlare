@@ -33,6 +33,12 @@ needed credentials to access and create the cloud infrastructure. In Azure, your
 subscription must be able to create Resource Group, Virtual Machine and configure Network Security Group and its rules.
 In AWS, your role should have AmazonEC2FullAccess.
 
+.. note::
+    The dashboard cloud launch scripts are convenient tools to quickly launch dashboard instances in CSP.  If the default configurations do not
+    meet users' own CSP configuration, we suggest users launch their own EC2 instances in AWS or VM instances in Azure, then ssh into the instnace.
+    Install NVFlare with pip.  Run dashboard with nvflare dashboard command.  This approach has more flexibilities and users have more controls on
+    the region/zone, AMI/VM image, EC2/VM types.
+
 Create Dashboard on Azure
 -------------------------
 To run NVFlare dashboard on Azure, run:
