@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from torch import nn as nn
 
@@ -38,8 +38,8 @@ class BaseFedJob(FedJob):
         key_metric: str = "accuracy",
         validation_json_generator: Optional[ValidationJsonGenerator] = None,
         intime_model_selector: Optional[IntimeModelSelector] = None,
-        convert_to_fed_event: Optional[ConvertToFedEvent] = None,
-        analytics_receiver: Optional[AnalyticsReceiver] = None,
+        convert_to_fed_event: Union[bool, ConvertToFedEvent, None] = None,
+        analytics_receiver: Union[bool, ConvertToFedEvent, None] = None,
         model_persistor: Optional[ModelPersistor] = None,
         model_locator: Optional[ModelLocator] = None,
     ):
@@ -61,9 +61,9 @@ class BaseFedJob(FedJob):
                 if not provided, a ValidationJsonGenerator will be configured.
             intime_model_selector: (IntimeModelSelector, optional): A component for select the model.
                 if not provided, an IntimeModelSelector will be configured.
-            convert_to_fed_event: (ConvertToFedEvent, optional): A component to covert certain events to fed events.
+            convert_to_fed_event: (bool, ConvertToFedEvent, None): A component to covert certain events to fed events.
                 if not provided, a ConvertToFedEvent object will be created.
-            analytics_receiver (AnlyticsReceiver, optional): Receive analytics.
+            analytics_receiver (bool, AnlyticsReceiver, None): Receive analytics.
                 If not provided, a TBAnalyticsReceiver will be configured.
             model_persistor (optional, ModelPersistor): how to persistor the model.
             model_locator (optional, ModelLocator): how to locate the model.
@@ -89,21 +89,29 @@ class BaseFedJob(FedJob):
         elif key_metric:
             self.to_server(id="model_selector", obj=IntimeModelSelector(key_metric=key_metric))
 
-        if convert_to_fed_event:
+        if convert_to_fed_event is False:
+            self.convert_to_fed_event = None
+        elif convert_to_fed_event is True:
+            self.convert_to_fed_event = ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE])
+        elif convert_to_fed_event:
             validate_object_for_job("convert_to_fed_event", convert_to_fed_event, ConvertToFedEvent)
+            self.convert_to_fed_event = convert_to_fed_event
         else:
-            convert_to_fed_event = ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE])
-        self.convert_to_fed_event = convert_to_fed_event
+            self.convert_to_fed_event = ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE])
 
-        if analytics_receiver:
+        if analytics_receiver is False:
+            self.analytics_receiver = None
+        elif analytics_receiver is True:
+            # Same as default None
+            self.analytics_receiver = TBAnalyticsReceiver()
+        elif analytics_receiver:
             validate_object_for_job("analytics_receiver", analytics_receiver, AnalyticsReceiver)
+            self.analytics_receiver = analytics_receiver
         else:
-            analytics_receiver = TBAnalyticsReceiver()
+            self.analytics_receiver = TBAnalyticsReceiver()
 
-        self.to_server(
-            id="receiver",
-            obj=analytics_receiver,
-        )
+        if self.analytics_receiver:
+            self.to_server(id="receiver", obj=self.analytics_receiver)
 
         if initial_model:
             self.comp_ids.update(
@@ -111,4 +119,6 @@ class BaseFedJob(FedJob):
             )
 
     def set_up_client(self, target: str):
-        self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target)
+        if self.convert_to_fed_event:
+            print("Adding convert_to_fed_event to client")
+            self.to(id="event_to_fed", obj=self.convert_to_fed_event, target=target)
