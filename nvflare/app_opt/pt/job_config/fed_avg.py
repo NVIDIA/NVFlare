@@ -54,7 +54,7 @@ class FedAvgJob(BaseFedJob):
                 If provided, a ConvertToFedEvent object will be add to Client
                 If set to True, a ConvertToFedEvent object will be created  and add to Client
                 If set to False, no ConvertToFedEvent will be created.
-            
+
             analytics_receiver (Union[bool, AnalyticsReceiver, None]): A component to receive analytics.
                 If not provided, a TBAnalyticsReceiver object will be created  and add to seerver
                 If provided, a AnalyticsReceiver object will be add to Server
