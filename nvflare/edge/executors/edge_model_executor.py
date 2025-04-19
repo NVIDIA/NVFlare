@@ -20,7 +20,7 @@ from nvflare.edge.constants import EdgeApiStatus, MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.executors.hug import TaskInfo
 from nvflare.edge.model_protocol import ModelExchangeFormat
-from nvflare.edge.mud import BaseState, DeviceInfo, ModelUpdate, StateUpdateReport
+from nvflare.edge.mud import BaseState, Device, ModelUpdate, StateUpdateReport
 from nvflare.edge.updaters.emd import AggregatorFactory, EdgeModelUpdater
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
@@ -31,7 +31,7 @@ from nvflare.security.logging import secure_format_exception
 
 class CookieKey:
     MODEL_VERSION = "model_version"
-    DEVICE_SELECTION_VERSION = "device_selection_version"
+    DEVICE_SELECTION_ID = "device_selection_id"
 
 
 class EdgeModelExecutor(EdgeTaskExecutor):
@@ -89,21 +89,22 @@ class EdgeModelExecutor(EdgeTaskExecutor):
     def accept_alive_device(self, device_id: str, fl_ctx: FLContext):
         client_name = fl_ctx.get_identity_name()
         update_report = StateUpdateReport(
-            current_model_version=None,
-            current_device_list_version=None,
+            current_model_version=0,
+            current_device_selection_version=0,
             model_updates=None,
-            devices=[DeviceInfo(device_id, client_name, time.time())],
+            available_devices={device_id: Device(device_id, client_name, time.time())},
         )
         return self.accept_update("", update_report.to_shareable(), fl_ctx)
 
     def accept_device_result(self, result_report: ResultReport, current_task: TaskInfo, fl_ctx: FLContext):
         client_name = fl_ctx.get_identity_name()
         device_id = result_report.get_device_id()
+        model_update = self._convert_device_result_to_model_update(result_report, current_task, fl_ctx)
         update_report = StateUpdateReport(
-            current_model_version=None,
-            current_device_list_version=None,
-            model_updates=[self._convert_device_result_to_model_update(result_report, current_task, fl_ctx)],
-            devices=[DeviceInfo(device_id, client_name, time.time())],
+            current_model_version=0,
+            current_device_selection_version=0,
+            model_updates={model_update.model_version: model_update},
+            available_devices={device_id: Device(device_id, client_name, time.time())},
         )
         return self.accept_update(result_report.task_id, update_report.to_shareable(), fl_ctx)
 
@@ -112,10 +113,10 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         return TaskResponse("RETRY", job_id, 30, message=msg)
 
     @staticmethod
-    def _make_cookie(model_version, device_selection_version):
+    def _make_cookie(model_version, device_selection_id):
         return {
             CookieKey.MODEL_VERSION: model_version,
-            CookieKey.DEVICE_SELECTION_VERSION: device_selection_version,
+            CookieKey.DEVICE_SELECTION_ID: device_selection_id,
         }
 
     def handle_task_request(self, request: TaskRequest, current_task: TaskInfo, fl_ctx: FLContext) -> TaskResponse:
@@ -133,13 +134,12 @@ class EdgeModelExecutor(EdgeTaskExecutor):
             # nothing to train
             return self._make_retry(job_id, "Model not ready")
 
-        if not task_state.is_device_in_list(device_id):
-            return self._make_retry(job_id, "Device not selected")
-
         cookie = request.cookie
-        device_selection_version = cookie.get(CookieKey.DEVICE_SELECTION_VERSION)
-        if device_selection_version == task_state.device_list_version:
-            return self._make_retry(job_id, "Model is already processed by this device")
+        device_selection_id = cookie.get(CookieKey.DEVICE_SELECTION_ID, 0)
+
+        selected, new_selection_id = task_state.is_device_selected(device_id, device_selection_id)
+        if not selected:
+            return self._make_retry(job_id, "Device not selected")
 
         task_data = self._convert_task(task_state, current_task, fl_ctx)
         return TaskResponse(
@@ -149,7 +149,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
             task_id=current_task.id,
             task_name=current_task.name,
             task_data=task_data,
-            cookie=self._make_cookie(task_state.model_version, task_state.device_list_version),
+            cookie=self._make_cookie(task_state.model_version, new_selection_id),
         )
 
     def handle_result_report(self, report: ResultReport, current_task: TaskInfo, fl_ctx: FLContext) -> ResultResponse:

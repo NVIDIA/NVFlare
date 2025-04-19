@@ -20,7 +20,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.edge.mud import BaseState, DeviceInfo, ModelUpdate, StateUpdateReply, StateUpdateReport
+from nvflare.edge.mud import BaseState, Device, ModelUpdate, StateUpdateReply, StateUpdateReport
 from nvflare.edge.updater import Updater
 
 
@@ -63,8 +63,8 @@ class EdgeModelUpdater(Updater):
         self.aggr_factory_id = aggr_factory_id
         self.max_model_versions = max_model_versions
         self.aggr_factory = None
-        self.aggregators: List[ModelAggrState] = []
-        self.available_devices: Dict[str, DeviceInfo] = {}  # device_id => Device
+        self.aggr_states: Dict[int, ModelAggrState] = {}  # model_version => ModelAggrState
+        self.available_devices: Dict[str, Device] = {}  # device_id => Device
         self._update_lock = threading.Lock()
         self.register_event_handler(EventType.START_RUN, self._emu_handle_start_run)
 
@@ -95,12 +95,12 @@ class EdgeModelUpdater(Updater):
         with self._update_lock:
             report = StateUpdateReport(
                 current_model_version=state.model_version,
-                current_device_list_version=state.device_list_version,
-                model_updates=[a.to_model_update(fl_ctx) for a in self.aggregators],
-                devices=[d for d in self.available_devices.values()],
+                current_device_selection_version=state.device_selection_version,
+                model_updates={k: v.to_model_update(fl_ctx) for k, v in self.aggr_states.items()},
+                available_devices=self.available_devices,
             )
 
-            for a in self.aggregators:
+            for a in self.aggr_states.values():
                 a.reset(fl_ctx)
 
             return report.to_shareable()
@@ -111,55 +111,55 @@ class EdgeModelUpdater(Updater):
         # update the current_state
         num_changes = 0
         with self._update_lock:
+            # make a new state based on current state.
+            # then make changes to the new state, only when necessary
             new_state = copy.copy(self.current_state)
 
         if update_reply.model_version != new_state.model_version:
+            # model has changed.
             new_state.model_version = update_reply.model_version
             new_state.model = update_reply.model
             num_changes += 1
 
-        if update_reply.device_list_version != new_state.device_list_version:
-            new_state.device_list_version = update_reply.device_list_version
-            new_state.device_list = update_reply.device_list
+        if update_reply.device_selection_version != new_state.device_election_version:
+            # device selection has changed.
+            new_state.device_election_version = update_reply.device_election_version
+            new_state.device_election = update_reply.device_election
             num_changes += 1
 
         if num_changes > 0:
+            # switch to the new state in one atomic operation
             self.current_state = new_state
 
-        # drop old aggrs
+        # drop old model versions
         with self._update_lock:
-            old_aggrs = []
-            for a in self.aggregators:
-                if new_state.model_version - a.model_version > self.max_model_versions:
-                    old_aggrs.append(a)
+            old_versions = []
+            for mv in self.aggr_states.keys():
+                if new_state.model_version - mv > self.max_model_versions:
+                    old_versions.append(mv)
 
-            for a in old_aggrs:
-                self.aggregators.remove(a)
+            for mv in old_versions:
+                self.aggr_states.pop(mv, None)
 
     def _update_one_model(self, mu: ModelUpdate, fl_ctx: FLContext):
-        mas = None
-        for a in self.aggregators:
-            if mu.model_version == a.model_version:
-                mas = a
-                break
+        mas = self.aggr_states.get(mu.model_version)
 
         if not mas:
             assert isinstance(self.aggr_factory, AggregatorFactory)
             aggr = self.aggr_factory.get_aggregator()
             mas = ModelAggrState(aggr, mu.model_version)
-            self.aggregators.append(mas)
+            self.aggr_states[mu.model_version] = mas
 
         return mas.accept(mu.update, mu.devices, fl_ctx)
 
     def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
         report = StateUpdateReport.from_shareable(update)
         with self._update_lock:
-            if report.devices:
-                for d in report.devices:
-                    self.available_devices[d.device_id] = d
+            if report.available_devices:
+                self.available_devices.update(report.available_devices)
 
             if report.model_updates:
-                for mu in report.model_updates:
+                for mu in report.model_updates.values():
                     self._update_one_model(mu, fl_ctx)
 
             if report.current_model_version is None:
@@ -168,21 +168,23 @@ class EdgeModelUpdater(Updater):
 
             # send base state back
             state = self.current_state
+            assert isinstance(state, BaseState)
             model = state.model if state.model_version != report.current_model_version else None
-            dev_list = state.device_list
-            if state.device_list_version == report.current_device_list_version:
-                dev_list = None
+            dev_selection = state.device_selection
+            if state.device_selection_version == report.current_device_selection_version:
+                dev_selection = None
 
             reply = StateUpdateReply(
                 model_version=state.model_version,
                 model=model,
-                device_list_version=state.device_list_version,
-                device_list=dev_list,
+                device_selection_version=state.device_selection_version,
+                device_selection=dev_selection,
             )
 
             return True, reply.to_shareable()
 
     def end_task(self, fl_ctx: FLContext):
         super().end_task(fl_ctx)
-        for a in self.aggregators:
+        for a in self.aggr_states.values():
             a.reset(fl_ctx)
+        self.aggr_states = {}

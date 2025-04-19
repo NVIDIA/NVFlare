@@ -79,7 +79,7 @@ class HierarchicalUpdateGatherer(Executor):
         self.register_event_handler(EventType.POST_TASK_RESULT_RECEIVED, self._handle_result_received)
 
     def get_updater(self, fl_ctx: FLContext) -> Optional[Updater]:
-        raise NotImplementedError("subclass must implement get_updater if updater_id is not specified")
+        return None
 
     def _hug_handle_start_run(self, event_type: str, fl_ctx: FLContext):
         self.log_debug(fl_ctx, f"handling event {event_type}")
