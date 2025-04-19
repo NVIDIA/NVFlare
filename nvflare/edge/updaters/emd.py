@@ -14,7 +14,7 @@
 import copy
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
