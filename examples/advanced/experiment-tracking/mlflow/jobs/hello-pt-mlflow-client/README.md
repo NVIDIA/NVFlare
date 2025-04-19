@@ -48,9 +48,11 @@ python -m pip install -r requirements.txt
 
 Here we just use the same data for each site. It's better to pre-download the data to avoid multiple sites concurrently downloading the same data.
 
+
 ```bash
-../prepare_data.sh
+../../../prepare_data.sh
 ```
+
 
 ### 3. Run the experiment
 
