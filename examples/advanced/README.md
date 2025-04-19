@@ -51,7 +51,7 @@ Please also install "./requirements.txt" in each example folder.
 ## Vertical Federated Learning
 * [Vertical Federated Learning](./vertical_federated_learning/README.md)
    * Example of running split learning using the CIFAR-10 dataset.
-* [Vertical Federated XGBoost](./vertical_xgboost/README.md)
+* [Vertical Federated XGBoost](./xgboost/README.md)
    * Example of vertical federated learning with NVIDIA FLARE on tabular data.
 
 ## Federated Statistics
