@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-#DOCKER_IMAGE="nvcr.io/nvidia/clara/bionemo-framework:2.4"
-DOCKER_IMAGE="nvcr.io/nvidia/clara/bionemo-framework:nightly"
+DOCKER_IMAGE="nvcr.io/nvidia/clara/bionemo-framework:2.5"
+#DOCKER_IMAGE="nvcr.io/nvidia/clara/bionemo-framework:nightly"   # use nightly version for latest features
 
 NB_DIR="/bionemo_nvflare_examples"
 
