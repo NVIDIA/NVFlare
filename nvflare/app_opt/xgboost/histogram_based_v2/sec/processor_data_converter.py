@@ -124,7 +124,11 @@ class ProcessorDataConverter(DataConverter):
 
     @staticmethod
     def slot_to_bin(cuts: [int], slot: int) -> Tuple[int, int]:
-        if slot < 0 or slot >= cuts[-1]:
+
+        if slot < 0:
+            return 0, -1
+
+        if slot >= cuts[-1]:
             raise RuntimeError(f"Invalid slot {slot}, out of range [0-{cuts[-1] - 1}]")
 
         for i in range(len(cuts) - 1):
