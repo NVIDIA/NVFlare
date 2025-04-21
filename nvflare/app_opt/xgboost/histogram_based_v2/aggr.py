@@ -22,6 +22,9 @@ class Aggregator:
 
     def _update_aggregation(self, gh_values, sample_bin_assignment, sample_id, aggr):
         bin_id = sample_bin_assignment[sample_id]
+        if bin_id < 0:
+            return
+
         sample_value = gh_values[sample_id]
         current_value = aggr[bin_id]
         if current_value == 0:
