@@ -36,23 +36,6 @@ pip3 install nvflare
 \* depends on whether TF can found GPU or not
 
 
-## Notes on running with GPUs
-
-For running with GPUs, we recommend using
-[NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow)
-
-If you choose to run the example using GPUs, it is important to note that,
-by default, TensorFlow will attempt to allocate all available GPU memory at the start.
-In scenarios where multiple clients are involved, you have to prevent TensorFlow from allocating all GPU memory 
-by setting the following flags.
-```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
-```
-
-If you possess more GPUs than clients, a good strategy is to run one client on each GPU.
-This can be achieved by using the `-gpu` argument during simulation, e.g., `nvflare simulator -n 2 -gpu 0,1 [job]`.
-
-
 ## Transform CIFAR10 TensorFlow training code to FL with NVFLARE Client API
 
 Given a TensorFlow CIFAR-10 example: [./src/cifar10_tf_original.py](./src/cifar10_tf_original.py).
@@ -60,7 +43,7 @@ Given a TensorFlow CIFAR-10 example: [./src/cifar10_tf_original.py](./src/cifar1
 You can run it using
 
 ```bash
-python3 ./src/cifar10_tf_original.py
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 ./src/cifar10_tf_original.py
 ```
 
 To transform the existing code into FL training code, we made the following changes:
@@ -97,7 +80,7 @@ a multi-device version: [./src/cifar10_tf_multi_gpu_original.py](./src/cifar10_t
 You can run it using
 
 ```bash
-python3 ./src/cifar10_tf_multi_gpu_original.py
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 ./src/cifar10_tf_multi_gpu_original.py
 ```
 
 To transform the existing multi-gpu code to FL training code, we can apply the same changes as in [single GPU case](#transform-cifar10-tensorflow-training-code-to-fl-with-nvflare-client-api).
@@ -112,3 +95,17 @@ Then we can run the job using the simulator:
 bash ./prepare_data.sh
 TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 tf_client_api_job.py --script src/cifar10_tf_multi_gpu_fl.py --launch_process
 ```
+
+
+### Notes on running with GPUs
+
+If you choose to run the example using GPUs, it is important to note that,
+by default, TensorFlow will attempt to allocate all available GPU memory at the start.
+In scenarios where multiple clients are involved, you have to prevent TensorFlow from allocating all GPU memory 
+by setting the following flags.
+```bash
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
+```
+
+If you possess more GPUs than clients, a good strategy is to run one client on each GPU.
+This can be achieved by using the `--gpu` argument during simulation, e.g., `nvflare simulator -n 2 --gpu 0,1 [job]`.

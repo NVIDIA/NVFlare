@@ -1,7 +1,7 @@
 {
-  "name": "hello-pt-mlflow",
+  "name": "newton_raphson",
   "resource_spec": {},
-  "min_clients" : 2,
+  "min_clients" : 4,
   "deploy_map": {
     "app": [
       "@ALL"
