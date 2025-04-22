@@ -15,7 +15,7 @@ The process involves:
     - Local training: Each data owner/client trains only on their local data.
     - Federated learning: We use the federated averaging algorithm to jointly train a global model on all the clients' data.
 
-To allow clients to keep their regressor model local, we simply add a NVFlare [filter](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html#filters) that removes the local regression layers before returnign the updated AMPLIFY trunk to the server for aggregation. See the [run_fl.py](run_fl.py) where we add the [ExcludeParamsFilter](src/filters.py) filter.
+To allow clients to keep their regressor model local, we simply add a NVFlare [filter](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html#filters) that removes the local regression layers before returning the updated AMPLIFY trunk to the server for aggregation. See the [run_fl.py](run_fl.py) where we add the [ExcludeParamsFilter](src/filters.py) filter.
 
 ## Dataset
 
@@ -46,7 +46,7 @@ pip install -r requirements.txt
 
 ## Data Preparation
 
-The `prepare_data.py` script is used to prepare data for sequence classification. It processes CSV files containing 'heavy' and 'light' feature columns, combines them, and splits the data into training and test sets for each task.
+The [combine_data.py](src/combine_data.py) script is used to prepare data for sequence classification. It processes CSV files containing 'heavy' and 'light' feature columns, combines them, and splits the data into training and test sets for each task.
 
 ### Combine the CSV Datasets
 ```bash
@@ -59,7 +59,7 @@ done
 ### 
 
 This will:
-1. Read all CSV files from the `data` directory for each of the 
+1. Read all CSV files from the `data` directory for each of the six antibody properties (aggregation, binding, expression, immunogenicity, polyreactivity, and thermostability)
 2. Combine the 'heavy' and 'light' columns with a '|' separator into a 'combined' column
 3. Split the data into training (80%) and test (20%) sets
 5. Save the processed data to the specified output directory
@@ -82,7 +82,7 @@ python run_fl.py \
 
 This command will:
 1. Run federated learning with 3 clients
-2. Perform 1 rounds of training with NVFlare
+2. Perform one round of training with NVFlare
 3. Each client will train for 60 local epochs per round
 4. Use the 120M parameter AMPLIFY model by default
 5. Configure the regression MLP with layer sizes [128, 64, 32]
@@ -137,6 +137,5 @@ We plot the RMSE for different downstream tasks (lower is better): "aggregation"
 - The fine-tuning script is based on the example code provided [here](https://github.com/chandar-lab/AMPLIFY/issues/17#issuecomment-2725030523) with modifications to support whole sequence regression tasks.
 - For more details about AMPLIFY, please refer to their [paper](https://www.biorxiv.org/content/10.1101/2024.09.23.614603v1):
 
-```
-Fournier, Q., Vernon, R. M., van der Sloot, A., Schulz, B., Chandar, S., & Langmead, C. J. (2024). Protein language models: is scaling necessary?. bioRxiv, 2024-09.
+```Fournier, Q., Vernon, R. M., van der Sloot, A., Schulz, B., Chandar, S., & Langmead, C. J. (2024). Protein language models: is scaling necessary?. bioRxiv, 2024-09.
 ```
