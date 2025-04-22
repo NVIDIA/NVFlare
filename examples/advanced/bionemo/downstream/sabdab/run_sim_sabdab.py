@@ -76,7 +76,7 @@ def main(args):
             script=args.train_script,
             launch_external_process=True,
             framework="pytorch",
-            server_expected_format="pytorch",
+            params_exchange_format="pytorch",
             # bionemo script is launched new at every FL round. Adds a shutdown grace period to make sure bionemo can save the local model
             launcher=SubprocessLauncher(
                 script=f"python3 custom/{args.train_script} {script_args}", launch_once=False, shutdown_timeout=100.0
