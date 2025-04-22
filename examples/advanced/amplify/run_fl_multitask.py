@@ -67,7 +67,7 @@ def main(args):
         )  # do not share the regression head with the server; each client will train their personal endpoint in this example
 
     job.export_job("./job_configs")  # optionally save the job configs (not needed for simulation)
-    job.simulator_run(f"/tmp/nvflare/AMPLIFY/{job.name}", gpu=args.sim_gpus, log_config="full")
+    job.simulator_run(f"/tmp/nvflare/AMPLIFY/multitask/{job.name}", gpu=args.sim_gpus, log_config="full")
 
 
 if __name__ == "__main__":

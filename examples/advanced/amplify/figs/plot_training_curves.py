@@ -21,6 +21,8 @@ import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tensorboard.backend.event_processing.event_multiplexer import EventMultiplexer
+import pandas as pd
+import numpy as np
 
 
 def load_tensorboard_data(log_dir, tag, out_metric):
@@ -49,6 +51,8 @@ def load_tensorboard_data(log_dir, tag, out_metric):
 
         if "fedavg" in event_file:
             run_name = f"fedavg/{task_name}"
+            if "private_regressors" in event_file:
+                run_name = f"fedavg_private_regressors/{task_name}"
         elif "local" in event_file:
             run_name = f"local/{task_name}"
 
@@ -78,7 +82,7 @@ def load_tensorboard_data(log_dir, tag, out_metric):
     return data
 
 
-def plot_metrics(data, output_dir=None, title=None, figsize=(12, 8), y_limits=None, x_limits=None, out_metric="RMSE"):
+def plot_metrics(data, output_dir=None, title=None, figsize=(12, 8), y_limits=None, x_limits=None, out_metric="RMSE", smoothing_window=10):
     """
     Plot metrics from multiple TensorBoard runs for comparison.
 
@@ -90,10 +94,29 @@ def plot_metrics(data, output_dir=None, title=None, figsize=(12, 8), y_limits=No
         y_limits (tuple): Y-axis limits as (min, max)
         x_limits (tuple): X-axis limits as (min, max)
         out_metric (str): Metric name to plot.
+        smoothing_window (int): Window size for moving average smoothing. Set to 0 for no smoothing.
     """
+    # Create a copy of the data to avoid modifying the original
+    smoothed_data = data.copy()
+    
+    if smoothing_window > 0:
+        # Convert to DataFrame for easier manipulation
+        df = pd.DataFrame(smoothed_data)
+        
+        # Apply smoothing to each mode separately
+        for mode in df['Mode'].unique():
+            mask = df['Mode'] == mode
+            df.loc[mask, out_metric] = df.loc[mask, out_metric].rolling(
+                window=smoothing_window, 
+                min_periods=1
+            ).mean()
+        
+        # Convert back to dictionary format
+        smoothed_data = df.to_dict('list')
 
     plt.figure(figsize=figsize)
-    sns.lineplot(x="Step", y=out_metric, data=data, hue="Mode", linewidth=4)
+    print(f"Plotting {out_metric} for {title}")
+    sns.lineplot(x="Step", y=out_metric, data=smoothed_data, hue="Mode", linewidth=4)
 
     plt.xlabel("Steps", fontsize=40)
     plt.ylabel(out_metric, fontsize=40)
@@ -127,6 +150,7 @@ def main():
     parser.add_argument("--output_dir", type=str, default="./tb_figs", help="Directory to save plots")
     parser.add_argument("--tag", type=str, default="RMSE/local_test", help="Tag to plot")
     parser.add_argument("--out_metric", type=str, default="RMSE", help="Tag to plot")
+    parser.add_argument("--smoothing_window", type=int, default=30, help="Window size for moving average smoothing")
 
     args = parser.parse_args()
 
@@ -138,6 +162,8 @@ def main():
             data=task_data,
             output_dir=args.output_dir,
             title=task_name,
+            out_metric=args.out_metric,
+            smoothing_window=args.smoothing_window,
         )
 
 
