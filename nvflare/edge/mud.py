@@ -13,8 +13,9 @@
 # limitations under the License.
 
 # Model Update Definitions (MUD) - defines common structures used for model update exchanges
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
+from nvflare.apis.dxo import DXO
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_object_type, check_positive_int, check_str
 
@@ -38,7 +39,7 @@ class BaseState:
     def __init__(
         self,
         model_version: int,
-        model: Any,
+        model: DXO,
         device_selection_version: int,
         device_selection: Dict[str, int],  # device_id => selection_id
     ):
@@ -65,6 +66,9 @@ class BaseState:
         """
         check_non_negative_int("model_version", model_version)
         check_non_negative_int("device_selection_version", device_selection_version)
+
+        if model:
+            check_object_type("model", model, DXO)
 
         if model_version > 0 and not model:
             raise ValueError(f"invalid model_version {model_version} when model is not provided")
@@ -153,6 +157,8 @@ class BaseState:
 
         if model_version > 0:
             model = shareable.get(PropKey.MODEL)
+            if not isinstance(model, DXO):
+                raise ValueError(f"prop {PropKey.MODEL} must be DXO but got {type(model)}")
         else:
             model = None
 
@@ -164,6 +170,8 @@ class BaseState:
 
         if dev_selection_version > 0:
             dev_selection = shareable.get(PropKey.DEVICE_SELECTION)
+            if not isinstance(dev_selection, dict):
+                raise ValueError(f"prop {PropKey.DEVICE_SELECTION} must be dict but got {type(dev_selection)}")
         else:
             dev_selection = {}
 
@@ -225,7 +233,7 @@ class Device:
 
 class ModelUpdate:
 
-    def __init__(self, model_version: int, update: Any, devices: Dict[str, float]):
+    def __init__(self, model_version: int, update: Shareable, devices: Dict[str, float]):
         """ModelUpdate specifies information of a model update.
 
         Args:
@@ -236,6 +244,7 @@ class ModelUpdate:
         """
         check_positive_int("model_version", model_version)
         check_object_type("devices", devices, dict)
+        check_object_type("update", update, Shareable)
 
         if not devices:
             raise ValueError("devices for ModelUpdate must not be empty")
@@ -359,7 +368,7 @@ class StateUpdateReply:
     def __init__(
         self,
         model_version: int,
-        model: Any,
+        model: DXO,
         device_selection_version: int,
         device_selection: Optional[Dict[str, int]],
     ):
@@ -377,6 +386,9 @@ class StateUpdateReply:
 
         if device_selection:
             check_object_type("device_selection", device_selection, dict)
+
+        if model:
+            check_object_type("model", model, DXO)
 
         self.model_version = model_version
         self.model = model

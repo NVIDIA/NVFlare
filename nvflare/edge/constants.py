@@ -50,6 +50,7 @@ class MsgKey:
     NUM_DEVICES = "num_devices"
     TASK_ID = "task_id"
     TASK_DONE = "task_done"
+    MODEL_VERSION = "model_version"
 
 
 class EdgeApiStatus:

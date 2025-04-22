@@ -87,12 +87,12 @@ class DXO(object):
     def update_meta_props(self, meta):
         self.meta.update(copy.deepcopy(meta))
 
-    def _encode(self) -> dict:
+    def to_dict(self) -> dict:
         return {_KEY_KIND: self.data_kind, _KEY_DATA: self.data, _KEY_META: self.meta}
 
     def update_shareable(self, s: Shareable) -> Shareable:
         s.set_header(key=ReservedHeaderKey.CONTENT_TYPE, value="DXO")
-        s[_KEY_DXO] = self._encode()
+        s[_KEY_DXO] = self.to_dict()
         return s
 
     def to_shareable(self) -> Shareable:
@@ -176,11 +176,15 @@ def from_shareable(s: Shareable) -> DXO:
             "the shareable is not a valid DXO - should be encoded as dict but got {}".format(type(encoded))
         )
 
-    k = encoded.get(_KEY_KIND, None)
-    d = encoded.get(_KEY_DATA, None)
-    m = encoded.get(_KEY_META, None)
+    return from_dict(encoded)
 
-    return DXO(data_kind=k, data=d, meta=m)
+
+def from_dict(encoded: dict) -> DXO:
+    if not isinstance(encoded, dict):
+        raise ValueError(f"encoded value must be dict but got {type(encoded)}")
+    return DXO(
+        data_kind=encoded.get(_KEY_KIND, None), data=encoded.get(_KEY_DATA, None), meta=encoded.get(_KEY_META, None)
+    )
 
 
 def from_bytes(data: bytes) -> DXO:

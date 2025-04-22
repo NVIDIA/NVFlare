@@ -39,9 +39,14 @@ class ModelAggrState:
         self.devices: Dict[str, float] = {}
 
     def accept(self, contribution: Shareable, devices: Dict[str, float], fl_ctx: FLContext) -> bool:
+        if not devices:
+            raise ValueError("cannot accept contribution with no devices")
+
         accepted = self.aggregator.accept(contribution, fl_ctx)
         if accepted:
             self.devices.update(devices)
+        else:
+            raise RuntimeError(f"aggregator {type(self.aggregator)} failed to accept")
         return accepted
 
     def to_model_update(self, fl_ctx: FLContext) -> ModelUpdate:
@@ -93,11 +98,29 @@ class EdgeModelUpdater(Updater):
         state = self.current_state
         assert isinstance(state, BaseState)
         with self._update_lock:
+            model_updates = {}
+            for k, v in self.aggr_states.items():
+                if not v.devices:
+                    # nothing to report
+                    continue
+                model_updates[k] = v.to_model_update(fl_ctx)
+
+            if model_updates:
+                self.log_info(fl_ctx, f"prepared {len(model_updates)} model updates for parent")
+
             report = StateUpdateReport(
                 current_model_version=state.model_version,
                 current_device_selection_version=state.device_selection_version,
-                model_updates={k: v.to_model_update(fl_ctx) for k, v in self.aggr_states.items()},
+                model_updates=model_updates,
                 available_devices=self.available_devices,
+            )
+
+            self.log_info(
+                fl_ctx,
+                f"prepared parent update report: {report.current_model_version=} "
+                f"model_updates={report.model_updates.keys()}"
+                f"{report.current_device_selection_version=} "
+                f"available_devices={len(report.available_devices)}",
             )
 
             for a in self.aggr_states.values():
@@ -121,10 +144,10 @@ class EdgeModelUpdater(Updater):
             new_state.model = update_reply.model
             num_changes += 1
 
-        if update_reply.device_selection_version != new_state.device_election_version:
+        if update_reply.device_selection_version != new_state.device_selection_version:
             # device selection has changed.
-            new_state.device_election_version = update_reply.device_election_version
-            new_state.device_election = update_reply.device_election
+            new_state.device_selection_version = update_reply.device_selection_version
+            new_state.device_selection = update_reply.device_selection
             num_changes += 1
 
         if num_changes > 0:
@@ -150,7 +173,9 @@ class EdgeModelUpdater(Updater):
             mas = ModelAggrState(aggr, mu.model_version)
             self.aggr_states[mu.model_version] = mas
 
-        return mas.accept(mu.update, mu.devices, fl_ctx)
+        accepted = mas.accept(mu.update, mu.devices, fl_ctx)
+        self.log_info(fl_ctx, f"updated one model V{mu.model_version} with {len(mu.devices)} devices: {accepted=}")
+        return accepted
 
     def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
         report = StateUpdateReport.from_shareable(update)
