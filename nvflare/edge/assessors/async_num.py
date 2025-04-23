@@ -150,13 +150,14 @@ class AsyncNumAssessor(Assessor):
                     self.current_selection.pop(k, None)
 
             current_model_state = self.updates.get(self.current_model_version)
-            assert isinstance(current_model_state, _ModelState)
-            num_updates = len(current_model_state.devices)
-            if num_updates >= self.num_updates_for_model:
-                self.log_info(
-                    fl_ctx, f"model V{self.current_model_version} got {num_updates} updates: generate new model version"
-                )
-                self._generate_new_model(fl_ctx)
+            if isinstance(current_model_state, _ModelState):
+                num_updates = len(current_model_state.devices)
+                if num_updates >= self.num_updates_for_model:
+                    self.log_info(
+                        fl_ctx,
+                        f"model V{self.current_model_version} got {num_updates} updates: generate new model version",
+                    )
+                    self._generate_new_model(fl_ctx)
 
             # recompute selection
             self._fill_selection(fl_ctx)

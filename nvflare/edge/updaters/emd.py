@@ -193,6 +193,11 @@ class EdgeModelUpdater(Updater):
 
             # send base state back
             state = self.current_state
+
+            if not state:
+                # no current state data
+                return True, None
+
             assert isinstance(state, BaseState)
             model = state.model if state.model_version != report.current_model_version else None
             dev_selection = state.device_selection
