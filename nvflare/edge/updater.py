@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -25,7 +25,7 @@ class Updater(FLComponent, ABC):
         FLComponent.__init__(self)
         self.current_state = None
 
-    def start_task(self, task_data: Shareable, fl_ctx: FLContext) -> Shareable:
+    def start_task(self, task_data: Shareable, fl_ctx: FLContext) -> Any:
         """This is called by HUG at the start of a task.
 
         Args:
@@ -38,7 +38,7 @@ class Updater(FLComponent, ABC):
         self.current_state = task_data
         return task_data
 
-    def get_current_state(self, fl_ctx: FLContext) -> Shareable:
+    def get_current_state(self, fl_ctx: FLContext) -> Any:
         """Get the current state of the updater, which will be used as the value of the "task" in TaskInfo
         for edge devices.
 
