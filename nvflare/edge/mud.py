@@ -353,7 +353,7 @@ class StateUpdateReport:
                 raise ValueError(f"prop {PropKey.DEVICES} must be dict but got {type(devs)}")
             available_devices = {k: Device.from_dict(v) for k, v in devs.items()}
         else:
-            available_devices = None
+            available_devices = {}
 
         return StateUpdateReport(
             current_model_version=model_version,

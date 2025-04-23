@@ -16,7 +16,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.edge.constants import EdgeApiStatus, EdgeEventType, Status
 from nvflare.edge.simulated_device import DeviceFactory, DeviceState, SimulatedDevice
@@ -55,6 +55,11 @@ class DeviceRunner(Widget):
         self.register_event_handler(EventType.END_RUN, self._dr_end_run)
 
     def _dr_about_to_start(self, event_type: str, fl_ctx: FLContext):
+        is_leaf = fl_ctx.get_prop(ReservedKey.IS_LEAF)
+        if not is_leaf:
+            # devices are only for leaf nodes
+            return
+
         self.log_info(fl_ctx, "device runner about to start ...")
         engine = fl_ctx.get_engine()
         factory = engine.get_component(self.device_factory_id)
@@ -71,6 +76,11 @@ class DeviceRunner(Widget):
         self.log_info(fl_ctx, f"got device factory {type(factory)} for job {self.job_id}")
 
     def _dr_start_run(self, event_type: str, fl_ctx: FLContext):
+        is_leaf = fl_ctx.get_prop(ReservedKey.IS_LEAF)
+        if not is_leaf:
+            # devices are only for leaf nodes
+            return
+
         for _ in range(self.num_devices):
             try:
                 device = self.device_factory.make_device()
@@ -94,6 +104,11 @@ class DeviceRunner(Widget):
         self.runner.start()
 
     def _dr_end_run(self, event_type: str, fl_ctx: FLContext):
+        is_leaf = fl_ctx.get_prop(ReservedKey.IS_LEAF)
+        if not is_leaf:
+            # devices are only for leaf nodes
+            return
+
         self.done = True
         self.worker_pool.shutdown(wait=False, cancel_futures=True)
         self.device_factory.shutdown()

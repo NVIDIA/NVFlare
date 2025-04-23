@@ -109,8 +109,12 @@ class AsyncNumAssessor(Assessor):
     def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
         report = StateUpdateReport.from_shareable(update)
         if report.available_devices:
-            self.log_info(fl_ctx, f"got reported {len(report.available_devices)} available devices")
             self.available_devices.update(report.available_devices)
+            self.log_info(
+                fl_ctx,
+                f"assessor got reported {len(report.available_devices)} available devices from child. "
+                f"total num available devices: {len(self.available_devices)}",
+            )
 
         accepted = True
         if report.model_updates:

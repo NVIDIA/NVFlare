@@ -206,6 +206,12 @@ class EdgeModelUpdater(Updater):
                 device_selection=dev_selection,
             )
 
+            self.log_info(
+                fl_ctx,
+                f"accepted {len(report.available_devices)} available devices from child "
+                f"total available devices is now {len(self.available_devices)}",
+            )
+
             return True, reply.to_shareable()
 
     def end_task(self, fl_ctx: FLContext):
