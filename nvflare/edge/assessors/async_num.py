@@ -55,7 +55,6 @@ class AsyncNumAssessor(Assessor):
         self.updates = {}  # model_version => _ModelState
         self.available_devices = {}
         self.used_devices = {}
-        self.num_updates = 0
         self.num_updates_for_model = num_updates_for_model
         self.max_model_versions = max_model_versions
         self.device_selection_size = device_selection_size
@@ -82,16 +81,14 @@ class AsyncNumAssessor(Assessor):
             assert isinstance(ms, _ModelState)
             aggr = ms.aggregator
             assert isinstance(aggr, NumDXOAggregator)
-            aggr_info[v] = {"weight": weight, "value": aggr.value, "count": aggr.count}
-
             score = aggr.value / aggr.count if aggr.count > 0 else 0.0
+            aggr_info[v] = {"weight": weight, "value": aggr.value, "count": aggr.count, "score": score}
             total += weight * score
 
             if self.current_model_version - v >= self.max_model_versions:
                 old_model_versions.append(v)
 
         self.log_info(fl_ctx, f"model version info: {aggr_info}")
-
         self.log_info(fl_ctx, f"generated new model version {self.current_model_version}: value={total}")
 
         for v in old_model_versions:
@@ -152,15 +149,17 @@ class AsyncNumAssessor(Assessor):
                         self.log_error(fl_ctx, f"got update from device {k} but it's not in device selection")
                     self.current_selection.pop(k, None)
 
-                self.num_updates += len(model_update.devices)
+            current_model_state = self.updates.get(self.current_model_version)
+            assert isinstance(current_model_state, _ModelState)
+            num_updates = len(current_model_state.devices)
+            if num_updates >= self.num_updates_for_model:
+                self.log_info(
+                    fl_ctx, f"model V{self.current_model_version} got {num_updates} updates: generate new model version"
+                )
+                self._generate_new_model(fl_ctx)
 
-                if self.num_updates >= self.num_updates_for_model:
-                    self.log_info(fl_ctx, f"got {self.num_updates} updates: generate new model version")
-                    self._generate_new_model(fl_ctx)
-                    self.num_updates = 0
-
-                # recompute selection
-                self._fill_selection(fl_ctx)
+            # recompute selection
+            self._fill_selection(fl_ctx)
         else:
             self.log_info(fl_ctx, "no model updates")
 

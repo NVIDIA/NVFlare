@@ -33,11 +33,11 @@ class NumDevice(SimulatedDevice):
         model = from_dict(task_data)
         if not isinstance(model, DXO):
             self.logger.error(f"expect model to be DXO but got {type(model)}")
-            raise ValueError(f"bad model data")
+            raise ValueError("bad model data")
 
         if model.data_kind != "number":
             self.logger.error(f"expect model data kind to be 'number' but got {model.data_kind}")
-            raise ValueError(f"bad model data kind")
+            raise ValueError("bad model data kind")
 
         value = model.data.get("value", 0)
         result = value + 1
