@@ -18,41 +18,6 @@ warnings.warn(
     f"This module: {__file__} is deprecated. Please use nvflare.apis.analytix", category=FutureWarning, stacklevel=2
 )
 
-from enum import Enum
 
-ANALYTIC_EVENT_TYPE = "analytix_log_stats"
-
-
-class LogWriterName(Enum):
-    TORCH_TB = "TORCH_TENSORBOARD"
-    MLFLOW = "MLFLOW"
-    WANDB = "WEIGHTS_AND_BIASES"
-
-
-class TrackConst(object):
-    TRACKER_KEY = "tracker_key"
-
-    TRACK_KEY = "track_key"
-    TRACK_VALUE = "track_value"
-
-    TAG_KEY = "tag_key"
-    TAGS_KEY = "tags_key"
-
-    EXP_TAGS_KEY = "tags_key"
-
-    GLOBAL_STEP_KEY = "global_step"
-    PATH_KEY = "path"
-    DATA_TYPE_KEY = "analytics_data_type"
-    KWARGS_KEY = "analytics_kwargs"
-
-    PROJECT_NAME = "project_name"
-    PROJECT_TAGS = "project_name"
-
-    EXPERIMENT_NAME = "experiment_name"
-    RUN_NAME = "run_name"
-    EXPERIMENT_TAGS = "experiment_tags"
-    INIT_CONFIG = "init_config"
-    RUN_TAGS = "run_tags"
-
-    SITE_KEY = "site"
-    JOB_ID_KEY = "job_id"
+# these for backward compatibility
+from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, LogWriterName, TrackConst  # noqa: F401

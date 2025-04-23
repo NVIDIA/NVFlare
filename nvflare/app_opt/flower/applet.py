@@ -91,6 +91,7 @@ class FlowerServerApplet(Applet):
         database: str,
         superlink_ready_timeout: float,
         superlink_grace_period=1.0,
+        superlink_min_query_interval=10.0,
     ):
         """Constructor of FlowerServerApplet.
 
@@ -98,13 +99,16 @@ class FlowerServerApplet(Applet):
             database: database spec to be used by the server app
             superlink_ready_timeout: how long to wait for the superlink process to become ready
             superlink_grace_period: how long to wait for superlink to gracefully shutdown
+            superlink_min_query_interval: minimal interval for querying superlink for status
         """
         Applet.__init__(self)
         self._superlink_process_mgr = None
         self.database = database
         self.superlink_ready_timeout = superlink_ready_timeout
         self.superlink_grace_period = superlink_grace_period
+        self.superlink_min_query_interval = superlink_min_query_interval
         self.run_id = None
+        self.last_query_time = None
         self.last_check_status = None
         self.last_check_stopped = False
         self.flower_app_dir = None
@@ -297,6 +301,14 @@ class FlowerServerApplet(Applet):
             return True, 0
 
     def _check_flower_run_status(self):
+        if not self.last_query_time or time.time() - self.last_query_time > self.superlink_min_query_interval:
+            # time to query
+            self.last_query_time = time.time()
+            self.last_check_stopped, self.last_check_status = self._query_for_run_status()
+
+        return self.last_check_stopped, self.last_check_status
+
+    def _query_for_run_status(self):
         # check whether the app is finished
         flwr_ls_cmd = self._flower_command("ls")
         try:
