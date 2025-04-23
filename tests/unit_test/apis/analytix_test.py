@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.apis.analytix import _DATA_TYPE_KEY, AnalyticsData, AnalyticsDataType, LogWriterName, TrackConst
+from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType, LogWriterName, TrackConst
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.utils.analytix_utils import create_analytic_dxo
 
@@ -78,7 +78,7 @@ class TestAnalytix:
     @pytest.mark.parametrize("tag,value,step, data_type", FROM_DXO_TEST_CASES)
     def test_from_dxo(self, tag, value, step, data_type):
         dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, global_step=step)
-        assert dxo.get_meta_prop(_DATA_TYPE_KEY) == data_type
+        assert dxo.get_meta_prop(TrackConst.DATA_TYPE_KEY) == data_type
         result = AnalyticsData.from_dxo(dxo)
         assert result.tag == tag
         assert result.value == value
@@ -98,7 +98,7 @@ class TestAnalytix:
         if data.kwargs:
             assert result.data[TrackConst.KWARGS_KEY] == data.kwargs
 
-        assert result.get_meta_prop(_DATA_TYPE_KEY) == data.data_type
+        assert result.get_meta_prop(TrackConst.DATA_TYPE_KEY) == data.data_type
         assert result.get_meta_prop(TrackConst.TRACKER_KEY) == data.sender
 
     @pytest.mark.parametrize("dxo,expected_error,expected_msg", FROM_DXO_INVALID_TEST_CASES)

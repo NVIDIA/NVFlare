@@ -75,10 +75,18 @@ def main():
     trainer = Trainer(
         max_epochs=1, strategy="ddp", devices=2, accelerator="gpu" if torch.cuda.is_available() else "cpu"
     )
+    print(f"Train global rank is {trainer.global_rank}")
     # (2) patch the lightning trainer
     flare.patch(trainer)
 
-    while flare.is_running():
+    while True:
+        # Check if FLARE is running and broadcast to all ranks
+        is_running = flare.is_running()
+        is_running = trainer.strategy.broadcast(is_running, src=0)
+
+        if not is_running:
+            break
+
         # (3) receives FLModel from NVFlare
         # Note that we don't need to pass this input_model to trainer
         # because after flare.patch the trainer.fit/validate will get the

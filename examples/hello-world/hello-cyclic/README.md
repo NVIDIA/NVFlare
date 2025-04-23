@@ -5,20 +5,27 @@
 
 > **_NOTE:_** This example uses the [MNIST](http://yann.lecun.com/exdb/mnist/) handwritten digits dataset and will load its data within the trainer code.
 
-To run this example with the FLARE API, you can follow the [hello_world notebook](../hello_world.ipynb), or you can quickly get
-started with the following:
+We recommend to use [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow) if you want to use GPU.
+If you don't need to run using GPU, you can just use python virtual environment.
 
-### 1. Install NVIDIA FLARE
+To run this example with the FLARE API, you can follow the [hello_world notebook](../hello_world.ipynb).
 
-Follow the [Installation](../../getting_started/README.md) instructions to install NVFlare.
+## Run NVIDIA TensorFlow container
 
-Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
+Please install the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) first.
+Then run the following command:
 
+```bash
+docker run --gpus=all -it --rm -v [path_to_NVFlare]:/NVFlare nvcr.io/nvidia/tensorflow:xx.xx-tf2-py3
 ```
-pip3 install tensorflow
+
+## Install NVFlare
+
+```bash
+pip3 install nvflare
 ```
 
-### 2. Run the experiment
+## Run the experiment
 
 Prepare the data first:
 
@@ -32,7 +39,7 @@ Run the script using the job API to create the job and run it with the simulator
 python3 cyclic_script_runner.py
 ```
 
-### 3. Access the logs and results
+## Access the logs and results
 
 You can find the running logs and results inside the simulator's workspace:
 
@@ -40,17 +47,15 @@ You can find the running logs and results inside the simulator's workspace:
 $ ls /tmp/nvflare/jobs/workdir
 ```
 
-### 4. Notes on running with GPUs
+### Notes on running with GPUs
 
-For running with GPUs, we recommend using the
-[NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow)
-
-If you choose to run the example using GPUs, it is important to note that by default, TensorFlow will attempt to allocate all available GPU memory at the start.
-In scenarios where multiple clients are involved, you have a couple of options to address this.
-
-One approach is to include specific flags to prevent TensorFlow from allocating all GPU memory.
-For instance:
-
+If you choose to run the example using GPUs, it is important to note that,
+by default, TensorFlow will attempt to allocate all available GPU memory at the start.
+In scenarios where multiple clients are involved, you have to prevent TensorFlow from allocating all GPU memory 
+by setting the following flags.
 ```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true python3 cyclic_script-executor-hello-cyclic.py
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
 ```
+
+If you possess more GPUs than clients, a good strategy is to run one client on each GPU.
+This can be achieved by using the `--gpu` argument during simulation, e.g., `nvflare simulator -n 2 --gpu 0,1 [job]`.

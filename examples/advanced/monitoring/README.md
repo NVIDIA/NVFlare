@@ -1,6 +1,6 @@
 # NVFLARE System Metrics Monitoring
 
-FLARE Monitoring provides a initial solution for tracking system metrics of your federated learning jobs.
+FLARE Monitoring provides an initial solution for tracking system metrics of your federated learning jobs.
 Different from Machine learning experiment tracking, where it focused on the training metrics, the monitoring here focused on the FL system: i.e. job and system lifecycle metrics.
 
 This guide describes how to set up NVFLARE metrics publishing to StatsD Exporter, which then can be scraped by Prometheus and visualized with Grafana.

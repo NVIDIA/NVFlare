@@ -66,7 +66,7 @@ def start(args):
         org_name = answer
         print("generating random password")
         pwd = utils.generate_password(8)
-        print(f"Project admin credential is {answer} and the password is {pwd}")
+        print(f"Project admin credential is {email} and the password is {pwd}")
         environment.update({"NVFL_CREDENTIAL": f"{email}:{pwd}:{org_name}"})
     if args.local:
         return start_local(environment)
