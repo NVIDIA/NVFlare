@@ -7,9 +7,7 @@
             "path": "nvflare.edge.controllers.sage.ScatterAndGatherForEdge",
             "args": {
                 "num_rounds": "{num_rounds}",
-                "aggregator_id": "aggregator",
-                "assessor_id": "assessor",
-                "shareable_generator_id": ""
+                "assessor_id": "assessor"
             }
         }
     ],
@@ -25,9 +23,11 @@
             "args": {
                 "min_count": 10,
                 "max_count": 100,
-                "timeout": 30.0
+                "timeout": 30.0,
+                "aggregator_id": "aggregator",
+                "persistor_id": "",
+                "shareable_generator_id": ""
             }
         }
-
     ]
 }

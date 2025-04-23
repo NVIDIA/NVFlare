@@ -23,6 +23,7 @@ class TaskResponse(BaseModel):
         task_id: str = None,
         task_name: str = None,
         task_data: dict = None,
+        cookie: dict = None,
         **kwargs,
     ):
         super().__init__()
@@ -32,6 +33,7 @@ class TaskResponse(BaseModel):
         self.task_id = task_id
         self.task_name = task_name
         self.task_data = task_data
+        self.cookie = cookie
 
         if kwargs:
             self.update(kwargs)
