@@ -88,6 +88,8 @@ class AsyncNumAssessor(Assessor):
             if self.current_model_version - v >= self.max_model_versions:
                 old_model_versions.append(v)
 
+        # create the ModelState for the new model version
+        self.updates[self.current_model_version] = _ModelState(NumDXOAggregator())
         self.log_info(fl_ctx, f"model version info: {aggr_info}")
         self.log_info(fl_ctx, f"generated new model version {self.current_model_version}: value={total}")
 
@@ -134,8 +136,8 @@ class AsyncNumAssessor(Assessor):
 
                 model_state = self.updates.get(model_version)
                 if not model_state:
-                    model_state = _ModelState(NumDXOAggregator())
-                    self.updates[model_version] = model_state
+                    self.log_error(fl_ctx, f"No model state for version {model_version}")
+                    continue
 
                 accepted = model_state.accept(model_update, fl_ctx)
                 self.log_info(
@@ -150,7 +152,11 @@ class AsyncNumAssessor(Assessor):
                     self.current_selection.pop(k, None)
 
             current_model_state = self.updates.get(self.current_model_version)
-            if isinstance(current_model_state, _ModelState):
+            if not isinstance(current_model_state, _ModelState):
+                self.log_error(
+                    fl_ctx, f"bad model state for version {self.current_model_version}: {type(current_model_state)}"
+                )
+            else:
                 num_updates = len(current_model_state.devices)
                 if num_updates >= self.num_updates_for_model:
                     self.log_info(
