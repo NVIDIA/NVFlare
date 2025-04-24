@@ -18,7 +18,7 @@ Supported Operating Systems
 Python Version
 --------------
 
-NVIDIA FLARE requires Python 3.8+.
+NVIDIA FLARE requires Python 3.9+.
 
 Install NVIDIA FLARE in a virtual environment
 ---------------------------------------------
