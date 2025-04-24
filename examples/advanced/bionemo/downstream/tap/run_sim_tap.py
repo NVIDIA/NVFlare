@@ -25,7 +25,7 @@ from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import BaseScriptRunner
 
 sys.path.append(os.path.join(os.getcwd(), ".."))  # include parent folder in path
-from bionemo_filters import BioNeMoExcludeParamsFilter, BioNeMoParamsFilter
+from bionemo_filters import BioNeMoExcludeParamsFilter, BioNeMoParamsFilter, BioNeMoStateDictFilter
 
 
 def main(args):
@@ -66,7 +66,7 @@ def main(args):
         # define training script arguments
         # precision = "bf16-mixed"
         precision = "fp32"
-        script_args = f"--restore-from-checkpoint-path {checkpoint_path} --train-data-path {train_data_path} --valid-data-path {val_data_path} --config-class ESM2FineTuneSeqConfig --dataset-class InMemorySingleValueDataset --task-type regression --mlp-ft-dropout 0.1 --mlp-hidden-size 256 --mlp-target-size 1 --experiment-name {job.name} --num-steps {args.local_steps} --num-gpus 1 --val-check-interval {val_check_interval} --log-every-n-steps 10 --lr 1e-4 --lr-multiplier 5 --scale-lr-layer regression_head --result-dir bionemo --micro-batch-size 8 --precision {precision} --save-top-k 1 --limit-val-batches 1.0 --label-column {label_column}"
+        script_args = f"--restore-from-checkpoint-path {checkpoint_path} --train-data-path {train_data_path} --valid-data-path {val_data_path} --config-class ESM2FineTuneSeqConfig --dataset-class InMemorySingleValueDataset --task-type regression --mlp-ft-dropout 0.1 --mlp-hidden-size 256 --mlp-target-size 1 --experiment-name {job.name} --num-steps {args.local_steps} --num-gpus 1 --val-check-interval {val_check_interval} --log-every-n-steps 10 --lr 5e-4 --lr-multiplier 1e3 --scale-lr-layer regression_head --result-dir bionemo --micro-batch-size 8 --precision {precision} --save-top-k 1 --limit-val-batches 1.0 --label-column {label_column}"
         print(f"Running {args.train_script} with args: {script_args}")
 
         # Define training script runner
@@ -75,12 +75,16 @@ def main(args):
             launch_external_process=True,
             framework="pytorch",
             params_exchange_format="pytorch",
-            launcher=SubprocessLauncher(script=f"python3 custom/{args.train_script} {script_args}", launch_once=False),
+            # bionemo script is launched new at every FL round. Adds a shutdown grace period to make sure bionemo can save the local model
+            launcher=SubprocessLauncher(
+                script=f"python3 custom/{args.train_script} {script_args}", launch_once=False, shutdown_timeout=100.0
+            ),
         )
         job.to(runner, client_name)
         job.to(
             BioNeMoParamsFilter(precision), client_name, tasks=["train", "validate"], filter_type=FilterType.TASK_DATA
         )
+        job.to(BioNeMoStateDictFilter(), client_name, tasks=["train", "validate"], filter_type=FilterType.TASK_RESULT)
         job.to(
             BioNeMoExcludeParamsFilter(exclude_vars="regression_head"),
             client_name,
