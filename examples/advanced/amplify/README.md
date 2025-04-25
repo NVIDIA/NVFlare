@@ -54,7 +54,7 @@ The process involves:
     - Local training: Each data owner/client trains only on their local data.
     - Federated learning: We use the federated averaging algorithm to jointly train a global model on all the clients' data.
 
-To allow clients to keep their regressor model local, we simply add a NVFlare [filter](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html#filters) that removes the local regression layers before returning the updated AMPLIFY trunk to the server for aggregation. See the [run_fl.py](run_fl.py) where we add the [ExcludeParamsFilter](src/filters.py) filter.
+To allow clients to keep their regressor model local, we simply add a NVFlare [filter](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html#filters) that removes the local regression layers before returning the updated AMPLIFY trunk to the server for aggregation. See the [run_fl_multitask.py](run_fl_multitask.py) where we add the [ExcludeParamsFilter](src/filters.py) filter.
 
 ## 1.1 Data Preparation
 
@@ -77,7 +77,7 @@ This will:
 
 ## 1.2 Experiments
 The following experiments use the [120M AMPLIFY](https://huggingface.co/chandar-lab/AMPLIFY_120M) pretrained model from HuggingFace. It was tested using three NVIDIA A100 GPUs with 80 GB memory each.
-With the 120M AMPLIFY model, we can run two clients on each GPU as specified by the ``--sim_gpus`` argument to `run_fl.py`.
+With the 120M AMPLIFY model, we can run two clients on each GPU as specified by the ``--sim_gpus`` argument to `run_fl_*.py`.
 
 ### 1.2.1 Local Training
 First we run the local training. Here, Each data owner/client trains only on their local data. As we only run 1 round, the clients will never get the benefit of the updated global model and can only learn from their own data.
@@ -219,7 +219,7 @@ Choosing an `alpha=1.0` value will result in a heaterogenaous or imbalanced data
 
 ## 2.2 Experiments for fitting all tasks
 The following experiments use the [120M AMPLIFY](https://huggingface.co/chandar-lab/AMPLIFY_120M) pretrained model from HuggingFace. It was tested using three NVIDIA A100 GPUs with 80 GB memory each.
-With the 120M AMPLIFY model, we can run two clients on each GPU as specified by the ``--sim_gpus`` argument to `run_fl.py`.
+With the 120M AMPLIFY model, we can run two clients on each GPU as specified by the ``--sim_gpus`` argument to `run_fl_*.py`.
 
 ### 2.2.1 Local Training
 First we run the local training. Here, Each data owner/client trains only on their local data. As we only run 1 round, the clients will never get the benefit of the updated global model and can only learn from their own data.
