@@ -21,7 +21,12 @@ from executorch.extension.training import _load_for_executorch_for_training_from
 from torch.utils.data import DataLoader, Dataset
 
 from nvflare.apis.dxo import DXO, from_dict
-from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelNativeFormat, verify_payload
+from nvflare.edge.model_protocol import (
+    ModelBufferType,
+    ModelEncoding,
+    ModelNativeFormat,
+    verify_payload,
+)
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse

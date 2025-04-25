@@ -1,0 +1,11 @@
+{
+  "name": "cifar10-sync-et",
+  "resource_spec": {},
+  "min_clients" : 2,
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  },
+  "edge_method": "cnn"
+}
