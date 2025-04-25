@@ -85,7 +85,7 @@ def plot_metrics(
     data,
     output_dir=None,
     title=None,
-    figsize=(12, 8),
+    figsize=(16, 12),
     y_limits=None,
     x_limits=None,
     out_metric="RMSE",
