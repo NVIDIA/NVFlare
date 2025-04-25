@@ -46,7 +46,7 @@ class AsyncNumAssessor(Assessor):
         max_model_history,
         device_selection_size,
         min_hole_to_fill=1,
-        device_reuse = True
+        device_reuse=True,
     ):
         Assessor.__init__(self)
         self.current_model_version = 0
