@@ -131,10 +131,10 @@ class EdgeTaskDispatcher(Widget):
                     # pick one randomly
                     i = randrange(len(jobs))
                     self.logger.debug(f"matched job {jobs[i]}")
-                    return jobs[i]
+                    return jobs[i], edge_method
 
             # no job matched
-            return None
+            return None, None
 
     def _find_job(self, job_id: str):
         with self.lock:
@@ -172,9 +172,15 @@ class EdgeTaskDispatcher(Widget):
 
         # find job for the caps
         self.logger.debug(f"trying to match job with caps: {edge_capabilities}")
-        job_id = self._match_job(edge_capabilities)
+        job_id, edge_method = self._match_job(edge_capabilities)
         if job_id:
-            reply = JobResponse(EdgeApiStatus.OK, job_id)
+            reply = JobResponse(
+                status=EdgeApiStatus.OK,
+                job_id=job_id,
+                job_name=self.job_metas.get(job_id).get(JobMetaKey.JOB_NAME),
+                job_data=self.job_metas.get(job_id),
+                method=edge_method,
+            )
         else:
             reply = JobResponse(EdgeApiStatus.NO_JOB)
 
@@ -209,6 +215,7 @@ class EdgeTaskDispatcher(Widget):
         no_job_reply,
         comm_err_reply,
     ):
+        self.logger.debug(f"handling event {event_type}")
         req = fl_ctx.get_prop(EdgeContextKey.REQUEST_FROM_EDGE)
         job_id = req.job_id
 
@@ -219,6 +226,7 @@ class EdgeTaskDispatcher(Widget):
             return
 
         if not self._find_job(job_id):
+            self.logger.debug(f"handling event {event_type}: no job found for {job_id}")
             self._set_edge_reply(no_job_reply, fl_ctx)
             return
 
