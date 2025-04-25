@@ -36,9 +36,9 @@ import nvflare.client as flare
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tune AMPLIFY model for sequence regression")
     # Data paths
-    parser.add_argument("--train_csvs", type=str, nargs='+', required=True, help="List of paths to training CSV files")
-    parser.add_argument("--test_csvs", type=str, nargs='+', required=True, help="List of paths to test CSV files")
-    parser.add_argument("--tasks", type=str, nargs='+', required=True, help="List of task names for each regressor")
+    parser.add_argument("--train_csvs", type=str, nargs="+", required=True, help="List of paths to training CSV files")
+    parser.add_argument("--test_csvs", type=str, nargs="+", required=True, help="List of paths to test CSV files")
+    parser.add_argument("--tasks", type=str, nargs="+", required=True, help="List of task names for each regressor")
     parser.add_argument(
         "--output_dir",
         type=str,
@@ -119,7 +119,7 @@ def main():
     model = AmplifyRegressor(
         pretrained_model_name_or_path=args.pretrained_model,
         layer_sizes=layer_sizes,
-        num_targets=len(args.tasks)  # One regressor per task/CSV file
+        num_targets=len(args.tasks),  # One regressor per task/CSV file
     )
 
     # Print model architecture and configuration
@@ -131,7 +131,7 @@ def main():
     # Create dataloaders for each CSV file pair
     dataloaders_train = []
     dataloaders_test = []
-    
+
     for train_csv, test_csv in zip(args.train_csvs, args.test_csvs):
         # Add data files
         data_files = {"train": train_csv, "test": test_csv}
@@ -163,7 +163,7 @@ def main():
             num_workers=8,
             worker_init_fn=lambda worker_id: np.random.seed(args.seed + worker_id),
         )
-        
+
         dataloaders_train.append(dataloader_train)
         dataloaders_test.append(dataloader_test)
 
@@ -211,11 +211,9 @@ def main():
             global_mean_test_loss, global_rmse_test_loss, global_pearson_corr = evaluate(
                 model, dataloader_test, loss_fn, device, regressor_idx=regressor_idx, task_name=task_name
             )
-            global_metrics.append({
-                "mean_loss": global_mean_test_loss,
-                "rmse": global_rmse_test_loss,
-                "pearson": global_pearson_corr
-            })
+            global_metrics.append(
+                {"mean_loss": global_mean_test_loss, "rmse": global_rmse_test_loss, "pearson": global_pearson_corr}
+            )
             # Log test metrics to TensorBoard
             writer.add_scalar(f"{client_name}/Loss/global_test_{task_name}", global_mean_test_loss, global_step)
             writer.add_scalar(f"{client_name}/RMSE/global_test_{task_name}", global_rmse_test_loss, global_step)
@@ -225,7 +223,7 @@ def main():
         for epoch in range(args.n_epochs):
             train_losses = [[] for _ in range(len(dataloaders_train))]
             model.train()
-            
+
             # Train each regressor with its corresponding dataloader
             for regressor_idx, (dataloader_train, task_name) in enumerate(zip(dataloaders_train, args.tasks)):
                 for i, batch in enumerate(dataloader_train):
@@ -238,7 +236,9 @@ def main():
                     attention_mask = torch.where(attention_mask == 1, float(0.0), float("-inf"))
 
                     # Compute the model output for the specific regressor
-                    output = model(input_ids, attention_mask, frozen_trunk=args.frozen_trunk, regressor_idx=regressor_idx)
+                    output = model(
+                        input_ids, attention_mask, frozen_trunk=args.frozen_trunk, regressor_idx=regressor_idx
+                    )
 
                     # Compute the loss and accuracy
                     loss = loss_fn(output.squeeze(), labels)
@@ -274,11 +274,9 @@ def main():
                 local_mean_test_loss, local_rmse_test_loss, local_pearson_corr = evaluate(
                     model, dataloader_test, loss_fn, device, regressor_idx=regressor_idx, task_name=task_name
                 )
-                local_metrics.append({
-                    "mean_loss": local_mean_test_loss,
-                    "rmse": local_rmse_test_loss,
-                    "pearson": local_pearson_corr
-                })
+                local_metrics.append(
+                    {"mean_loss": local_mean_test_loss, "rmse": local_rmse_test_loss, "pearson": local_pearson_corr}
+                )
                 # Log test metrics to TensorBoard
                 writer.add_scalar(f"{client_name}/Loss/local_test_{task_name}", local_mean_test_loss, global_step)
                 writer.add_scalar(f"{client_name}/RMSE/local_test_{task_name}", local_rmse_test_loss, global_step)
@@ -336,20 +334,22 @@ def evaluate(model, dataloader_test, loss_fn, device, regressor_idx=None, task_n
             loss = loss_fn(output.squeeze(), labels)
 
             test_loss.append(loss.item())
-            
+
             # Store predictions and labels for correlation calculation
             all_predictions.extend(output.squeeze().cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
 
         mean_test_loss = np.mean(test_loss)
         rmse_test_loss = np.sqrt(np.mean(test_loss))
-        
+
         # Calculate Pearson correlation
         all_predictions = np.array(all_predictions)
         all_labels = np.array(all_labels)
         pearson_corr = np.corrcoef(all_predictions, all_labels)[0, 1]
-        
-        print(f"\n>>> Task {task_name} - Test MSE loss: {mean_test_loss:.3f} Test RMSE loss: {rmse_test_loss:.3f} Pearson correlation: {pearson_corr:.3f}")
+
+        print(
+            f"\n>>> Task {task_name} - Test MSE loss: {mean_test_loss:.3f} Test RMSE loss: {rmse_test_loss:.3f} Pearson correlation: {pearson_corr:.3f}"
+        )
 
     return mean_test_loss, rmse_test_loss, pearson_corr
 

@@ -233,7 +233,7 @@ python run_fl_alltasks.py \
 This command will:
 1. Run federated learning with 6 clients
 2. Perform one round of training with NVFlare
-3. Each client will train for 60 local epochs per round
+3. Each client will train for 600 local epochs per round
 4. Use the 120M parameter AMPLIFY model by default
 5. Configure the regression MLP with layer sizes [128, 64, 32]
 
@@ -258,7 +258,9 @@ This command will:
 5. Configure the regression MLP with layer sizes [128, 64, 32]
 
 ### 2.2.3 Federated Learning Without Sharing the Regressors
+
 Next, we again the federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) algorithm, but now we keep the regressors private to each client (as in the above multi-task scenario). The advantage here is that each data owner can train personalized regressors for their local data and still benefit from the jointly fine-tuned AMPLIFY trunk. If the `--private_regressors` argument is used, we simply add the  [ExcludeParamsFilter](src/filters.py) filter that removes the regressor layers from the model state dictionary shared with the server.
+
 ```bash
 python run_fl_alltasks.py \
     --num_clients 6 \
@@ -270,6 +272,13 @@ python run_fl_alltasks.py \
     --private_regressors \
     --sim_gpus "0,1,2,0,1,2"
 ```
+This command will:
+1. Run federated learning with 6 clients
+2. Perform 300 rounds of federated averaging
+3. Each client will train for 2 local epochs per round
+4. Use the 120M parameter AMPLIFY model by default
+5. Configure the regression MLP with layer sizes [128, 64, 32]
+6. The regression heads will not be shared and kept private on the clients
 
 ## 2.3 Visualize the results
 

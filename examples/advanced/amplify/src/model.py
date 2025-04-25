@@ -23,25 +23,25 @@ from transformers import AutoModel
 
 class AmplifyRegressor(nn.Module):
     """A multi-target regression model based on a pretrained transformer trunk.
-    
+
     This model combines a pretrained transformer model (trunk) with multiple independent
     regressor networks to predict multiple continuous target values. Each target has its
     own dedicated regressor network, allowing for specialized feature learning for each
     target value.
-    
+
     Architecture:
         - A pretrained transformer trunk that processes input text
         - Multiple independent regressor networks, one for each target value
         - Each regressor consists of multiple linear layers with GroupNorm, GELU activation,
           and dropout for regularization.
-    
+
     Args:
         pretrained_model_name_or_path (str): Name or path of the pretrained transformer model
         layer_sizes (list[int]): List of hidden layer sizes for each regressor network
         num_targets (int, optional): Number of target values to predict. Defaults to 1
         dropout_rate (float, optional): Dropout rate for regularization. Defaults to 0.1
         num_groups (int, optional): Number of groups for GroupNorm. Defaults to 8
-    
+
     Forward Args:
         input_ids (torch.Tensor): Input token IDs
         attention_mask (torch.Tensor): Attention mask for the input
@@ -50,10 +50,11 @@ class AmplifyRegressor(nn.Module):
         layer_idx (int, optional): Index of the transformer layer to use. Defaults to -1 (the last layer)
         regressor_idx (int or list[int], optional): Index or indices of regressors to use. If None, uses all regressors.
             Defaults to None.
-    
+
     Returns:
         torch.Tensor: A tensor of shape (batch_size, num_targets) containing predictions for each target
     """
+
     def __init__(self, pretrained_model_name_or_path, layer_sizes, num_targets=1, dropout_rate=0.1, num_groups=8):
         super().__init__()
         self.pretrained_model_name_or_path = pretrained_model_name_or_path
@@ -91,9 +92,17 @@ class AmplifyRegressor(nn.Module):
             layers.append(nn.Linear(prev_size, 1))
             self.regressors.append(nn.Sequential(*layers))
 
-    def forward(self, input_ids, attention_mask, frozen_trunk=True, normalize_hidden_states=True, layer_idx=-1, regressor_idx=None):
+    def forward(
+        self,
+        input_ids,
+        attention_mask,
+        frozen_trunk=True,
+        normalize_hidden_states=True,
+        layer_idx=-1,
+        regressor_idx=None,
+    ):
         """Forward pass of the model.
-        
+
         Args:
             input_ids (torch.Tensor): Input token IDs
             attention_mask (torch.Tensor): Attention mask for the input
@@ -102,7 +111,7 @@ class AmplifyRegressor(nn.Module):
             layer_idx (int, optional): Index of the transformer layer to use. Defaults to -1 (the last layer)
             regressor_idx (int or list[int], optional): Index or indices of regressors to use. If None, uses all regressors.
                 Defaults to None.
-        
+
         Returns:
             torch.Tensor: A tensor of shape (batch_size, num_targets) containing predictions for each target
         """
@@ -127,7 +136,7 @@ class AmplifyRegressor(nn.Module):
                 regressor_idx = [regressor_idx]
             for idx in regressor_idx:
                 outputs.append(self.regressors[idx](h))
-        
+
         return torch.cat(outputs, dim=1)
 
 

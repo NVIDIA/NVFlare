@@ -37,7 +37,9 @@ def main(args):
     layer_sizes = [int(size) for size in args.layer_sizes.split(",")]
 
     # Define the initial global model on the server
-    model = AmplifyRegressor(pretrained_model_name_or_path=args.pretrained_model, layer_sizes=layer_sizes, num_targets=len(tasks))
+    model = AmplifyRegressor(
+        pretrained_model_name_or_path=args.pretrained_model, layer_sizes=layer_sizes, num_targets=len(tasks)
+    )
 
     # Create BaseFedJob with initial model
     job = BaseFedJob(name=f"amplify_seqregression_{args.exp_name}", initial_model=model)
@@ -57,12 +59,14 @@ def main(args):
         test_csvs = []
         for task in tasks:
             train_csv = os.path.join(args.data_root, task, f"{client_name}_train_data.csv")
-            test_csv = os.path.join(args.data_root, task, f"test_data.csv")  # all clients share the same test sets to be comparable
+            test_csv = os.path.join(
+                args.data_root, task, "test_data.csv"
+            )  # all clients share the same test sets to be comparable
             # check if the files exist (only for local simulation)
             if not os.path.exists(train_csv):
                 raise ValueError(f"Train CSV file for task {task} does not exist: {train_csv}")
             if not os.path.exists(test_csv):
-                raise ValueError(f"Test CSV file for task {task} does not exist: {test_csv} ")            
+                raise ValueError(f"Test CSV file for task {task} does not exist: {test_csv} ")
             train_csvs.append(train_csv)
             test_csvs.append(test_csv)
 
@@ -115,7 +119,9 @@ if __name__ == "__main__":
         "--data_root", type=str, default=f"{os.getcwd()}/FLAb/data_fl", help="Root directory for training and test data"
     )
     parser.add_argument(
-        "--private_regressors", action="store_true", help="If set, each client will train their own regression head without sharing with the server"
+        "--private_regressors",
+        action="store_true",
+        help="If set, each client will train their own regression head without sharing with the server",
     )
     args = parser.parse_args()
 

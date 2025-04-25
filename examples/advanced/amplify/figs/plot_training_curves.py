@@ -19,10 +19,9 @@ import glob
 import os
 
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
 from tensorboard.backend.event_processing.event_multiplexer import EventMultiplexer
-import pandas as pd
-import numpy as np
 
 
 def load_tensorboard_data(log_dir, tag, out_metric):
@@ -82,7 +81,16 @@ def load_tensorboard_data(log_dir, tag, out_metric):
     return data
 
 
-def plot_metrics(data, output_dir=None, title=None, figsize=(12, 8), y_limits=None, x_limits=None, out_metric="RMSE", smoothing_window=10):
+def plot_metrics(
+    data,
+    output_dir=None,
+    title=None,
+    figsize=(12, 8),
+    y_limits=None,
+    x_limits=None,
+    out_metric="RMSE",
+    smoothing_window=10,
+):
     """
     Plot metrics from multiple TensorBoard runs for comparison.
 
@@ -98,21 +106,18 @@ def plot_metrics(data, output_dir=None, title=None, figsize=(12, 8), y_limits=No
     """
     # Create a copy of the data to avoid modifying the original
     smoothed_data = data.copy()
-    
+
     if smoothing_window > 0:
         # Convert to DataFrame for easier manipulation
         df = pd.DataFrame(smoothed_data)
-        
+
         # Apply smoothing to each mode separately
-        for mode in df['Mode'].unique():
-            mask = df['Mode'] == mode
-            df.loc[mask, out_metric] = df.loc[mask, out_metric].rolling(
-                window=smoothing_window, 
-                min_periods=1
-            ).mean()
-        
+        for mode in df["Mode"].unique():
+            mask = df["Mode"] == mode
+            df.loc[mask, out_metric] = df.loc[mask, out_metric].rolling(window=smoothing_window, min_periods=1).mean()
+
         # Convert back to dictionary format
-        smoothed_data = df.to_dict('list')
+        smoothed_data = df.to_dict("list")
 
     plt.figure(figsize=figsize)
     print(f"Plotting {out_metric} for {title}")
