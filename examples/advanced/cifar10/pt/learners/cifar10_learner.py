@@ -44,7 +44,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         lr: float = 1e-2,
         fedproxloss_mu: float = 0.0,
         central: bool = False,
-        analytic_sender_id: str = "analytic_sender",
+        tb_writer_id: str = "tb_writer",
         batch_size: int = 64,
         num_workers: int = 0,
     ):
@@ -56,8 +56,8 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
             lr: local learning rate. Float number. Defaults to 1e-2.
             fedproxloss_mu: weight for FedProx loss. Float number. Defaults to 0.0 (no FedProx).
             central: Bool. Whether to simulate central training. Default False.
-            analytic_sender_id: id of `AnalyticsSender` if configured as a client component.
-                If configured, TensorBoard events will be fired. Defaults to "analytic_sender".
+            tb_writer_id: id of `TBWriter` if configured as a client component.
+                If configured, TensorBoard events will be fired. Defaults to "tb_writer".
             batch_size: batch size for training and validation.
             num_workers: number of workers for data loaders.
 
@@ -78,7 +78,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         self.num_workers = num_workers
 
         self.writer = None
-        self.analytic_sender_id = analytic_sender_id
+        self.tb_writer_id = tb_writer_id
 
         # Epoch counter
         self.epoch_of_start_time = 0
@@ -124,7 +124,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         self.best_local_model_file = os.path.join(self.app_root, "best_local_model.pt")
 
         # Select local TensorBoard writer or event-based writer for streaming
-        self.writer = parts.get(self.analytic_sender_id)  # user configured config_fed_client.json for streaming
+        self.writer = parts.get(self.tb_writer_id)  # user configured config_fed_client.json for streaming
         if not self.writer:  # use local TensorBoard writer only
             self.writer = SummaryWriter(self.app_root)
 
