@@ -190,6 +190,10 @@ or
 
 The decision for each setting is mainly due to who own's the model IP for the regression heads. In the first case (similar to the above multi-task example), each client owns their regression head (it's never shared with the server). Only the AMPLIFY trunk is being shared and jointly trained using FedAvg. In the 2nd case, all clients jointly own the IP of all regression heads and the fine-tuned AMPLIFY trunk.
 
+<div style="display: flex; justify-content: center; margin: 20px 0;">
+<img src="./figs/amplify_all_tasks.svg" alt="AMPLIFY model for fine-tuning all tasks" style="width: 400px;"/>
+</div>
+
 ## 2.1 Data Preparation
 
 > Note, this assumes you have cloned the [FLAb dataset](https://github.com/Graylab/FLAb.git) as in the above example.
