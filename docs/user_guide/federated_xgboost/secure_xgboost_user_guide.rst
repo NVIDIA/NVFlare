@@ -40,6 +40,10 @@ XGBoost 2.2 or above, which can be installed from the binary build using this co
 
     pip install https://s3-us-west-2.amazonaws.com/xgboost-nightly-builds/federated-secure/xgboost-2.2.0.dev0%2B4601688195708f7c31fcceeb0e0ac735e7311e61-py3-none-manylinux_2_28_x86_64.whl
 
+.. note::
+
+   The xgboost build environment may depend on specific numpy versions that require Python < 3.12.
+
 or in case you need to get the most current build of XGBoost,
 
 .. code-block:: bash

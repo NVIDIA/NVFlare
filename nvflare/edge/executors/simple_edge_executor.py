@@ -15,9 +15,9 @@ from typing import Any
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable
-from nvflare.app_common.executors.ham import TaskInfo
 from nvflare.edge.constants import EdgeApiStatus, MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
+from nvflare.edge.executors.hug import TaskInfo
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
 from nvflare.edge.web.models.task_request import TaskRequest
