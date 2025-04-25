@@ -149,7 +149,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         if not selected:
             return self._make_retry(job_id, "Device not selected")
 
-        self.log_info(
+        self.log_debug(
             fl_ctx, f"task for model V{task_state.model_version} sent to device {device_id}: {new_selection_id=}"
         )
         task_data = self._convert_task(task_state, current_task, fl_ctx)
@@ -196,7 +196,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         self.log_info(fl_ctx, f"Got task_ended: {task.id} (seq {task.seq})")
 
     def process_edge_request(self, request: Any, current_task: TaskInfo, fl_ctx: FLContext) -> Any:
-        self.log_info(fl_ctx, f"Received edge request from device: {request['device_info']}")
+        self.log_debug(fl_ctx, f"Received edge request from device: {request['device_info']}")
 
         try:
             if isinstance(request, TaskRequest):
