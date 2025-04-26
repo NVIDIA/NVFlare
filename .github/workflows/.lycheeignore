@@ -19,3 +19,12 @@ file:\/\/\/.*
 
 # Ignore https://drive.google.com/file/d/1hmlyG7g1SU8vhQ5wdTFhkqFO9Ty8BiYG/view?usp=sharing from docs/publications_and_talks.rst
 https://drive.google.com/.*
+
+# Ignore http://localhost:9102/metrics in examples/advanced/monitoring/jobs/README.md
+http://localhost:9102/metrics
+
+# Ignore http://localhost:9090/metrics in examples/advanced/monitoring/jobs/README.md
+http://localhost:9090/metrics
+
+# Ignore http://localhost:3000 in examples/advanced/monitoring/jobs/README.md
+http://localhost:3000
