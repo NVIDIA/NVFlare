@@ -1,20 +1,21 @@
 # Secure Federated XGBoost with Homomorphic Encryption
-This example illustrates the use of [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) enabling secure federated [XGBoost](https://github.com/dmlc/xgboost) under both horizontal and vertical collaborations.
+This example illustrates the use of NVIDIA FLARE enabling secure federated [XGBoost](https://github.com/dmlc/xgboost) under both horizontal and vertical collaborations.
 The examples are based on a [finance dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) to perform fraud detection.
 
 ## Secure Federated Training of XGBoost
-Several mechanisms have been proposed for training an XGBoost model in a federated learning setting, e.g. [vertical, histogram-based horizontal, and tree-based horizontal](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/xgboost/fedxgb/README.md). 
+Several mechanisms have been proposed for training an XGBoost model in a federated learning setting, e.g. [vertical, histogram-based horizontal, and tree-based horizontal](../fedxgb/README.md). 
 
 In this example, we further extend the existing horizontal and vertical federated learning approaches to support secure federated learning using homomorphic encryption. Depending on the characteristics of the data to be encrypted, we can choose between [CKKS](https://github.com/OpenMined/TenSEAL) and [Paillier](https://github.com/intel/pailliercryptolib_python).
 
-In the following, we illustrate both *horizontal* and *vertical* federated XGBoost, *without* and *with* homomorphic encryption. Please refer to our [documentation](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html) for more details on the pipeline design and the encryption logic.
+In the following, we illustrate both *horizontal* and *vertical* federated XGBoost, *without* and *with* homomorphic encryption.
+Please refer to our [documentation](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html) for more details on the pipeline design and the encryption logic.
 
 ## Requirements
 To be able to run all the examples, please install the requirements first from the main folder.
 
 ## Encryption Plugins
 The secure XGBoost requires encryption plugins to work. From 2.6, we no longer distributed the plugins with NVFlare package. 
-Please build the plugins following the instructions in this [README](https://github.com/NVIDIA/NVFlare/blob/main/integration/xgboost/encryption_plugins/README.md)
+Please build the plugins following the instructions in this [README](../../../../integration/xgboost/encryption_plugins/README.md)
 
 > **_NOTE:_** Please make sure to use the correct versions of the required libraries, including CUDA driver and runtime.
 > The 'How to run XGBoost with encryption plugins' section is not needed for running Secure Federated XGBoost in simulator mode.
@@ -58,7 +59,7 @@ This will generate data splits for 3 clients under all experimental settings.
 > Intersection (PSI). However, in practice, each site initially has its own separate dataset. To
 > combine these datasets accurately, you need to use PSI to match records with the same ID across
 > different sites. For more information on how to perform PSI, please refer to the 
-> [PSI example](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/psi).
+> [PSI example](../../../../examples/advanced/psi).
 
 
 > **_NOTE:_** The generated data files will be stored in the folder `/tmp/nvflare/xgb_dataset/`,
@@ -67,8 +68,6 @@ This will generate data splits for 3 clients under all experimental settings.
 ## Run Baseline and Standalone Experiments
 First, we run the baseline centralized training and standalone federated XGBoost training for comparison.
 In this case, we utilized the `mock` plugin to simulate the homomorphic encryption process. 
-For more details regarding federated XGBoost and the interface-plugin design,
-please refer to our [documentation](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html).
 
 To run all experiments, we provide a script for all settings.
 ```
