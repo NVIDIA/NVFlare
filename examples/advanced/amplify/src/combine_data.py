@@ -77,7 +77,7 @@ def plot_client_distribution(client_dfs, output_dir, alpha):
     """
     # Get number of samples for each client
     client_sizes = [len(df) for df in client_dfs]
-    client_ids = [f"Client {i+1}" for i in range(len(client_dfs))]
+    client_ids = [f"Client {i + 1}" for i in range(len(client_dfs))]
 
     # Create bar plot
     plt.figure(figsize=(10, 6))
@@ -195,10 +195,10 @@ def prepare_data(
 
         # Save each client's data
         for i, client_df in enumerate(client_dfs):
-            client_output_file = os.path.join(output_dir, f"client{i+1}_train_data.csv")
-            print(f"Saving client {i+1} data to {client_output_file}...")
+            client_output_file = os.path.join(output_dir, f"client{i + 1}_train_data.csv")
+            print(f"Saving client {i + 1} data to {client_output_file}...")
             client_df.to_csv(client_output_file, index=False)
-            print(f"Client {i+1} data saved: {len(client_df)} rows")
+            print(f"Client {i + 1} data saved: {len(client_df)} rows")
     else:
         # Save training data to a single file
         train_output_file = os.path.join(output_dir, "train_data.csv")
