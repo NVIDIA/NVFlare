@@ -34,7 +34,7 @@ NVFlare 2.5.0 or above,
 
     pip install nvflare~=2.5.0
 
-XGBoost 2.2 or above, which can be installed from the binary build using this command,
+Federated Secure XGBoost, which can be installed from the binary build using this command,
 
 .. code-block:: bash
 
