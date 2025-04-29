@@ -63,7 +63,7 @@ class BaseFedJob(FedJob):
                 if not provided, an IntimeModelSelector will be configured.
             convert_to_fed_event: (bool, ConvertToFedEvent, None): A component to covert certain events to fed events.
                 if not provided, a ConvertToFedEvent object will be created.
-            analytics_receiver (bool, AnlyticsReceiver, None): Receive analytics.
+            analytics_receiver (bool, AnalyticsReceiver, None): Receive analytics.
                 If not provided, a TBAnalyticsReceiver will be configured.
             model_persistor (optional, ModelPersistor): how to persistor the model.
             model_locator (optional, ModelLocator): how to locate the model.
