@@ -14,10 +14,10 @@
 
 import argparse
 import os
-import shutil
 
 # Add deterministic seed for reproducibility illustration
 import random
+import shutil
 
 import datasets
 import numpy as np
