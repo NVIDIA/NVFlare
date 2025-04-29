@@ -17,11 +17,13 @@ from typing import Any, Optional
 from nvflare.apis.dxo import DXO, from_dict
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode
-from nvflare.edge.constants import EdgeApiStatus, MsgKey, Status
+from nvflare.edge.constants import EdgeApiStatus, MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.executors.hug import TaskInfo
 from nvflare.edge.mud import BaseState, Device, ModelUpdate, StateUpdateReport
 from nvflare.edge.updaters.emd import AggregatorFactory, EdgeModelUpdater
+from nvflare.edge.web.models.job_request import JobRequest
+from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
 from nvflare.edge.web.models.task_request import TaskRequest
@@ -169,7 +171,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         """
 
         try:
-            if not report.result or report.status != Status.OK:
+            if not report.result or report.status != EdgeApiStatus.OK:
                 self.log_error(
                     fl_ctx,
                     f"no result or bad status ({report.status}) in report from device "
@@ -199,13 +201,18 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         self.log_info(fl_ctx, f"Received edge request from device: {request['device_info']}")
 
         try:
-            if isinstance(request, TaskRequest):
+            if isinstance(request, JobRequest):
+                response = JobResponse(
+                    status=EdgeApiStatus.OK,
+                    job_id=fl_ctx.get_job_id(),
+                )
+            elif isinstance(request, TaskRequest):
                 response = self.handle_task_request(request, current_task, fl_ctx)
             elif isinstance(request, ResultReport):
                 response = self.handle_result_report(request, current_task, fl_ctx)
             else:
                 raise RuntimeError(f"Received unknown request type: {type(request)}")
-            return {"status": ReturnCode.OK, "response": response}
+            return {"status": EdgeApiStatus.OK, "response": response}
         except Exception as ex:
             self.log_exception(fl_ctx, f"exception processing edge request: {secure_format_exception(ex)}")
-            return {"status": ReturnCode.EXECUTION_EXCEPTION, "response": None}
+            return {"status": EdgeApiStatus.ERROR, "response": None}

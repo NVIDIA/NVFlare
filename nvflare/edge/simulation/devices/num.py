@@ -16,7 +16,7 @@ import time
 import uuid
 
 from nvflare.apis.dxo import DXO, from_dict
-from nvflare.edge.simulated_device import DeviceFactory, SimulatedDevice
+from nvflare.edge.simulation.simulated_device import DeviceFactory, SimulatedDevice
 from nvflare.edge.web.models.task_response import TaskResponse
 
 

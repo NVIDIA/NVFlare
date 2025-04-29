@@ -19,7 +19,7 @@ import re
 import sys
 from typing import Any, Type
 
-from nvflare.edge.device_simulator.device_task_processor import DeviceTaskProcessor
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 
 VAR_PATTERN = re.compile(r"\{(.*?)}")
 

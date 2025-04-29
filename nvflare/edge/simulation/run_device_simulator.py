@@ -16,9 +16,9 @@ import logging
 import traceback
 from concurrent.futures import ThreadPoolExecutor, wait
 
-from nvflare.edge.device_simulator.config import ConfigParser
-from nvflare.edge.device_simulator.device_simulator import DeviceSimulator
-from nvflare.edge.device_simulator.device_task_processor import DeviceTaskProcessor
+from nvflare.edge.simulation.config import ConfigParser
+from nvflare.edge.simulation.device_simulator import DeviceSimulator
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.user_info import UserInfo
 

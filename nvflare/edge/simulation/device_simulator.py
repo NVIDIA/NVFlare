@@ -16,8 +16,8 @@ import time
 from typing import Optional
 
 from nvflare.edge.constants import EdgeApiKey, EdgeApiStatus
-from nvflare.edge.device_simulator.device_task_processor import DeviceTaskProcessor
-from nvflare.edge.device_simulator.feg_api import FegApi
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
+from nvflare.edge.simulation.feg_api import FegApi
 from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse

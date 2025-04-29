@@ -97,6 +97,7 @@ class ScatterAndGatherForEdge(Controller):
         self._num_children = 0
         self._children = None
         self._end_task_topic = message_topic_for_task_end(self.task_name)
+        self._wf_done = False
 
     @classmethod
     def get_next_task_seq(cls):
@@ -210,6 +211,7 @@ class ScatterAndGatherForEdge(Controller):
                 self.log_info(fl_ctx, f"Round {self._current_round} finished in {time.time() - round_start} seconds")
                 gc.collect()
 
+            self._wf_done = True
             self._current_task_seq = 0
             self.log_info(fl_ctx, f"Finished {self._name}")
 
@@ -306,7 +308,8 @@ class ScatterAndGatherForEdge(Controller):
     def process_result_of_unknown_task(
         self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext
     ) -> None:
-        self.log_error(fl_ctx, f"Ignoring result from {client.name} for unknown task '{task_name}' {client_task_id}")
+        if not self._wf_done:
+            self.log_warning(fl_ctx, f"Ignoring late result from {client.name} for task '{task_name}' {client_task_id}")
 
     def _process_update_report(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         accepted, reply = process_update_from_child(
