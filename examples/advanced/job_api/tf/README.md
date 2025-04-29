@@ -9,7 +9,7 @@ All examples in this folder are based on using [TensorFlow](https://tensorflow.o
 
 This example demonstrates TensorFlow-based federated learning algorithms on the CIFAR-10 dataset.
 This example is analogous to [the example using `Pytorch`
-backend](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim)
+backend](../../cifar10/cifar10-sim)
 on the same dataset, where same experiments
 were conducted and analyzed. You should expect the same
 experimental results when comparing this example with the `Pytorch` one.
@@ -18,7 +18,7 @@ In this example, the latest Client APIs were used to implement
 client-side training logics (details in file
 [`cifar10_tf_fl_alpha_split.py`](src/cifar10_tf_fl_alpha_split.py)),
 and the new
-[`FedJob`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/job_config/api.py)
+[`FedJob`](../../../../nvflare/job_config/api.py)
 APIs were used to programmatically set up an
 NVFlare job to be exported or ran by simulator (details in file
 [`tf_fl_script_runner_cifar10.py`](tf_fl_script_runner_cifar10.py)),
