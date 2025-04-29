@@ -93,7 +93,7 @@ def main():
     flare.init()
     summary_writer = SummaryWriter()
 
-    # (3) run continously when launch_once=true
+    # (3) run continuously when launch_once=true
     while flare.is_running():
 
         # (4) receive FLModel from NVFlare
