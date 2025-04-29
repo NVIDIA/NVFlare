@@ -41,8 +41,27 @@ python ./utils/preprocess_oasst1.py --training_file dataset/oasst1/data/train-00
 ```
 
 ## Adaptation of Centralized Training Script to Federated
+Below, we illustrate how to adapt a standard HuggingFace SFT/PEFT training script to a federated paradigm with NVFlare. 
+
+The original HuggingFace training script is located at `utils/hf_sft_peft.py`, which is a modified version of [HuggingFace SFT Trainer](https://huggingface.co/docs/trl/sft_trainer).
 To illustrate the adaptation process, we use a single dataset [databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k).
-### One-call training
+
+Unlike a basic iterative pytorch-based training script, HuggingFace training is usually a single call to `trainer.train()`, which is not suitable for federated training.
+
+Therefore, we will perform the adaptation process in two steps:
+1. Adapt the one-call training script to iterative training by breaking the single `.train()` call to several iterations, which is a prerequisite for federated training.
+2. Adapt the iterative training script to federated training with NVFlare.
+
+During the process, we will examine three training modes:
+1. Centralized one-call training (baseline) without NVFlare
+2. Centralized iterative training (adapted) without NVFlare
+3. Federated training (adapted) with NVFlare
+
+> Note: all training runs are logged with TensorBoard, and the training loss curves can be visualized with TensorBoard via `tensorboard --logdir=./workspace`. 
+> Curves related to each experiment will be associated with the corresponding workspace folder, e.g. `./workspace/dolly_cen_sft`, `./workspace/dolly_cen_peft`, etc.
+
+### Baseline: One-call training
+The original HuggingFace training script is a single call to `trainer.train()`, which is not suitable for federated training.
 Centralized trainings, as the baseline for comparison with other results, are done with the following command:
 ```
 python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_sft --train_mode SFT
@@ -60,9 +79,10 @@ Note that the `trainer.train()` call is replaced by a `for` loop, and the three 
 
 This setting (1 epoch per round) is for simplicity of this example. In practice, we can set the number of rounds and local epoch per round according to the needs: e.g. 2 rounds with 2 epochs per round will result in 4 training epochs in total.
 
-At the beginning of each round, we intentionally load a fixed model weights saved at the beginning, over-writing the previous round's saved model weights, then call `trainer.train(resume_from_checkpoint=True)` with `trainer.args.num_train_epochs` incremented by 1 so that previous logging results are not overwritten. 
+One important requirement from federated learning is that the model weights need to be set to the "global model" at the beginning of each round.
+Therefore, the iterative training needs to explicitly reflect this behavior - at the beginning of each round, we intentionally load a fixed model weights, over-writing the previous round's saved model weights, then call `trainer.train(resume_from_checkpoint=True)` with `trainer.args.num_train_epochs` incremented by 1 so that previous logging results are not overwritten. 
 
-The purpose of doing so is to tell if the intended weights are succesfully loaded at each round. Without using a fixed starting model, even if the model weights are not properly loaded, the training loss curve will still follow the one-call result, which is not what we want to see. 
+The purpose of doing so is to tell if the intended weights are successfully loaded at each round. Without using a fixed starting model, even if the model weights are not properly loaded, the training loss curve will still follow the one-call result, which will not be able to tell us if we have loaded a new model, rather than reusing the existing trainer record. 
 
 If the intended model weights (serving as the starting point for each round, the "global model" for FL use case) is properly loaded, then we shall observe a "zig-zag" pattern in the training loss curve. This is because the model weights are reset to the same starting point at the beginning of each round, in contrast to the one-shot centralized training, where the model weights are updated continuously, and the training loss curve should follow an overall decreasing trend.
 
@@ -81,12 +101,12 @@ Similar patterns can be observed from the PEFT curves, purple for single call, g
 ### Adaptation Step 2: federated with NVFlare
 Once we have the iterative training script ready with "starting model" loading capability, it can be easily adapted to a NVFlare trainer by using [Client API](../../hello-world/ml-to-fl/pt/README.md).
 
-The major code modifications are for receiving and returning the global model (replacing the constant one used by iterative training), as shown below:
+The major code modifications are for replacing the fixed model reloading processing with 
+receiving and returning the global model, as shown below:
 
 ![diff](./figs/diff_fl_1.png)
 ![diff](./figs/diff_fl_2.png)
 
-### Federated Training Results
 We run the federated training on a single client using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
 ```
 python3 sft_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft --job_dir ${PWD}/workspace/jobs/hf_sft --train_mode SFT 
