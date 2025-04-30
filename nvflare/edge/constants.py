@@ -11,17 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-
-
-class Status(CellReturnCode):
-    NO_TASK = "no_task"
-    NO_JOB = "no_job"
 
 
 class EdgeProtoKey:
     STATUS = "status"
     DATA = "data"
+    RESPONSE = "response"
 
 
 class EdgeContextKey:
@@ -60,6 +55,7 @@ class EdgeApiStatus:
     ERROR = "ERROR"
     NO_JOB = "NO_JOB"
     NO_TASK = "NO_TASK"
+    INVALID_REQUEST = "invalid_request"
 
 
 class EdgeApiKey:

@@ -70,8 +70,11 @@ class SimulatedDevice(ABC):
     def get_capabilities(self) -> Capabilities:
         return Capabilities(methods=["deep_learning"])
 
+    def shutdown(self):
+        pass
+
     @abstractmethod
-    def do_task(self, data: TaskResponse) -> dict:
+    def do_task(self, task: TaskResponse) -> dict:
         pass
 
 

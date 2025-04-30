@@ -13,30 +13,17 @@
 # limitations under the License.
 import argparse
 import logging
-import traceback
-from concurrent.futures import ThreadPoolExecutor, wait
 
 from nvflare.edge.simulation.config import ConfigParser
-from nvflare.edge.simulation.device_simulator import DeviceSimulator
-from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
-from nvflare.edge.web.models.device_info import DeviceInfo
-from nvflare.edge.web.models.user_info import UserInfo
+from nvflare.edge.simulation.devices.tp import TPDeviceFactory
+from nvflare.edge.simulation.feg_api import FegApi
+from nvflare.edge.simulation.simulated_device import SimulatedDevice
+from nvflare.edge.simulation.simulator import Simulator
+from nvflare.edge.web.models.job_request import JobRequest
+from nvflare.edge.web.models.result_report import ResultReport
+from nvflare.edge.web.models.task_request import TaskRequest
 
 log = logging.getLogger(__name__)
-
-
-def device_run(
-    endpoint_url: str, device_info: DeviceInfo, user_info: UserInfo, capabilities: dict, processor: DeviceTaskProcessor
-):
-    device_id = device_info.device_id
-    try:
-        device_simulator = DeviceSimulator(endpoint_url, device_info, user_info, capabilities, processor)
-        device_simulator.run()
-
-        log.info(f"DeviceSimulator run for device {device_id} ended")
-    except Exception as ex:
-        traceback.print_exc()
-        log.error(f"Device {device_id} failed to run: {ex}")
 
 
 def run_device_simulator(config_file: str):
@@ -45,25 +32,37 @@ def run_device_simulator(config_file: str):
     endpoint_url = parser.get_endpoint()
     log.info(f"Running {num} devices. Endpoint URL: {endpoint_url}")
 
-    with ThreadPoolExecutor(max_workers=num) as thread_pool:
-        futures = []
-        for i in range(num):
-            prefix = parser.get_device_id_prefix()
-            if not prefix:
-                prefix = "device-"
-            device_id = f"{prefix}{i}"
-            device_info = DeviceInfo(f"{device_id}", "flare_mobile", "1.0")
-            user_info = UserInfo("demo_id", "demo_user")
-            variables = {"device_id": device_id, "user_id": user_info.user_id}
-            processor = parser.get_processor(variables)
-            f = thread_pool.submit(
-                device_run, endpoint_url, device_info, user_info, parser.get_capabilities(), processor
-            )
-            futures.append(f)
+    simulator = Simulator(
+        device_factory=TPDeviceFactory(parser),
+        num_active_devices=parser.get_active_num_devices(),
+        max_num_devices=parser.get_num_devices(),
+        num_workers=parser.get_num_workers(),
+        cycle_length=parser.get_cycle_length(),
+        device_reuse_rate=parser.device_reuse_rate,
+    )
 
-        wait(futures)
+    simulator.set_send_func(_send_request, parser=parser)
+    simulator.start()
 
     log.info("DeviceSimulator run ended")
+
+
+def _send_request(request, device: SimulatedDevice, parser: ConfigParser):
+    api = FegApi(
+        endpoint=parser.get_endpoint(),
+        device_info=device.get_device_info(),
+        user_info=device.get_user_info(),
+    )
+    if isinstance(request, TaskRequest):
+        return api.get_task(request)
+
+    if isinstance(request, JobRequest):
+        return api.get_job(request)
+
+    if isinstance(request, ResultReport):
+        return api.report_result(request)
+
+    raise ValueError(f"unknown type of request {type(request)}")
 
 
 def main():

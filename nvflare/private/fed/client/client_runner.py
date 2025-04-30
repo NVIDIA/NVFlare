@@ -27,8 +27,7 @@ from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
-from nvflare.edge.constants import EdgeEventType
-from nvflare.edge.constants import Status as EdgeStatus
+from nvflare.edge.constants import EdgeApiStatus, EdgeEventType
 from nvflare.fuel.f3.cellnet.defs import CellChannel
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
@@ -221,18 +220,18 @@ class ClientRunner(TBI):
                 self.engine.fire_event(EdgeEventType.EDGE_REQUEST_RECEIVED, fl_ctx)
                 exception = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
                 if exception:
-                    return make_cell_reply(EdgeStatus.PROCESS_EXCEPTION)
+                    return make_cell_reply(EdgeApiStatus.ERROR)
 
                 reply = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
                 if not reply:
                     self.logger.debug("no result for edge request")
-                    return make_cell_reply(EdgeStatus.NO_TASK)
+                    return make_cell_reply(EdgeApiStatus.NO_TASK)
                 else:
                     self.logger.debug("sending back edge result")
-                    return make_cell_reply(EdgeStatus.OK, body=reply)
+                    return make_cell_reply(EdgeApiStatus.OK, body=reply)
             except Exception as ex:
                 self.log_error(fl_ctx, f"exception from receive_edge_request: {secure_format_exception(ex)}")
-                return make_cell_reply(EdgeStatus.PROCESS_EXCEPTION)
+                return make_cell_reply(EdgeApiStatus.ERROR)
 
     def find_executor(self, task_name):
         return self.task_router.route(task_name)

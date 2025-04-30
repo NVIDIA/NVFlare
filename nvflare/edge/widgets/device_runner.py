@@ -16,9 +16,9 @@ import threading
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.edge.constants import EdgeApiStatus, EdgeEventType
-from nvflare.edge.simulation.dm import DeviceManager
+from nvflare.edge.constants import EdgeApiStatus, EdgeEventType, EdgeProtoKey
 from nvflare.edge.simulation.simulated_device import DeviceFactory
+from nvflare.edge.simulation.simulator import Simulator
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.validation_utils import check_number_range, check_positive_int, check_positive_number, check_str
 from nvflare.widgets.widget import Widget
@@ -57,7 +57,7 @@ class DeviceRunner(Widget):
         self.cycle_length = cycle_length
         self.device_reuse_rate = device_reuse_rate
         self.num_workers = num_workers
-        self.manager = None
+        self.simulator = None
 
         self.register_event_handler(EventType.START_RUN, self._dr_start_run)
         self.register_event_handler(EventType.END_RUN, self._dr_end_run)
@@ -78,7 +78,7 @@ class DeviceRunner(Widget):
             )
             return
 
-        manager = DeviceManager(
+        simulator = Simulator(
             device_factory=factory,
             num_active_devices=self.num_devices,
             max_num_devices=self.max_num_devices,
@@ -86,17 +86,17 @@ class DeviceRunner(Widget):
             cycle_length=self.cycle_length,
             device_reuse_rate=self.device_reuse_rate,
         )
-        manager.set_send_func(self._post_request, engine=engine)
-        self.manager = manager
+        simulator.set_send_func(self._post_request, engine=engine)
+        self.simulator = simulator
 
         runner = threading.Thread(target=self._run, daemon=True)
         runner.start()
 
     def _dr_end_run(self, event_type: str, fl_ctx: FLContext):
-        if self.manager:
-            self.manager.stop()
+        if self.simulator:
+            self.simulator.stop()
 
-    def _post_request(self, request, engine):
+    def _post_request(self, request, device, engine):
         cell_msg = CellMessage(payload=request)
         with engine.new_context() as fl_ctx:
             assert isinstance(fl_ctx, FLContext)
@@ -111,9 +111,9 @@ class DeviceRunner(Widget):
             if not isinstance(reply_dict, dict):
                 raise RuntimeError(f"prop {FLContextKey.TASK_RESULT} should be dict but got {type(reply_dict)}")
 
-            status = reply_dict.get("status", EdgeApiStatus.OK)
-            response = reply_dict.get("response")
+            status = reply_dict.get(EdgeProtoKey.STATUS, EdgeApiStatus.OK)
+            response = reply_dict.get(EdgeProtoKey.RESPONSE)
             return status, response
 
     def _run(self):
-        self.manager.start()
+        self.simulator.start()

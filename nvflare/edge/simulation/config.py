@@ -20,6 +20,13 @@ import sys
 from typing import Any, Type
 
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
+from nvflare.fuel.utils.validation_utils import (
+    check_non_negative_number,
+    check_object_type,
+    check_positive_int,
+    check_positive_number,
+    check_str,
+)
 
 VAR_PATTERN = re.compile(r"\{(.*?)}")
 
@@ -41,7 +48,11 @@ class ConfigParser:
     def __init__(self, config_file: str):
         self.processor = None
         self.endpoint = None
-        self.num_devices = 16
+        self.num_devices = 100
+        self.active_num_devices = 20
+        self.num_workers = 10
+        self.cycle_length = 30.0
+        self.device_reuse_rate = 0.0
         self.capabilities = {}
         self.device_id_prefix = None
         self.processor_class = None
@@ -63,6 +74,18 @@ class ConfigParser:
 
     def get_num_devices(self):
         return self.num_devices
+
+    def get_active_num_devices(self):
+        return self.active_num_devices
+
+    def get_num_workers(self):
+        return self.num_workers
+
+    def get_cycle_length(self):
+        return self.cycle_length
+
+    def get_device_reuse_rate(self):
+        return self.device_reuse_rate
 
     def get_capabilities(self):
         return self.capabilities
@@ -95,13 +118,42 @@ class ConfigParser:
             raise TypeError(f"Processor {path} is not a subclass of DeviceTaskProcessor")
 
         self.endpoint = config.get("endpoint", None)
+        if self.endpoint is not None:
+            check_str("endpoint", self.endpoint)
 
         n = config.get("num_devices", None)
         if n:
+            check_positive_int("num_devices", n)
             self.num_devices = n
 
+        n = config.get("active_num_devices", None)
+        if n:
+            check_positive_int("active_num_devices", n)
+            self.active_num_devices = n
+        else:
+            self.active_num_devices = min(self.num_devices / 2, 1000)
+
+        n = config.get("num_workers", None)
+        if n:
+            check_positive_int("num_workers", n)
+            self.num_workers = n
+
+        n = config.get("cycle_length")
+        if n is not None:
+            check_positive_number("cycle_length", n)
+            self.cycle_length = n
+
+        n = config.get("device_reuse_rate")
+        if n is not None:
+            check_non_negative_number("device_reuse_rate", n)
+            self.device_reuse_rate = n
+
         self.capabilities = config.get("capabilities", {})
+        check_object_type("capabilities", self.capabilities, dict)
+
         self.device_id_prefix = config.get("device_id_prefix", None)
+        if self.device_id_prefix is not None:
+            check_str("device_id_prefix", self.device_id_prefix)
 
     def _variable_substitution(self, args: Any, variables: dict) -> Any:
         if isinstance(args, dict):

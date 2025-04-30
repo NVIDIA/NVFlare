@@ -27,8 +27,8 @@ class NumDevice(SimulatedDevice):
         self.min_train_time = min_train_time
         self.max_train_time = max_train_time
 
-    def do_task(self, data: TaskResponse) -> dict:
-        task_data = data.task_data
+    def do_task(self, task: TaskResponse) -> dict:
+        task_data = task.task_data
         assert isinstance(task_data, dict)
         model = from_dict(task_data)
         if not isinstance(model, DXO):

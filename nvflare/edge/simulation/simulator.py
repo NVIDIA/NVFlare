@@ -28,7 +28,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 
-class DeviceManager:
+class Simulator:
 
     def __init__(
         self,
@@ -158,7 +158,7 @@ class DeviceManager:
             job_id=device.get_job_id(),
             cookie=device.cookie,
         )
-        status, resp = self.send_f(req, **self.send_kwargs)
+        status, resp = self.send_f(req, device, **self.send_kwargs)
         if resp and not isinstance(resp, TaskResponse):
             self.logger.error(f"received response must be TaskResponse but got {type(resp)}")
             if status == EdgeApiStatus.OK:
@@ -171,7 +171,7 @@ class DeviceManager:
             user_info=device.get_user_info(),
             capabilities=device.get_capabilities(),
         )
-        status, resp = self.send_f(req, **self.send_kwargs)
+        status, resp = self.send_f(req, device, **self.send_kwargs)
         if resp and not isinstance(resp, JobResponse):
             self.logger.error(f"received response must be JobResponse but got {type(resp)}")
             if status == EdgeApiStatus.OK:
@@ -227,7 +227,7 @@ class DeviceManager:
             cookie=device.cookie,
         )
 
-        _, resp = self.send_f(report, **self.send_kwargs)
+        _, resp = self.send_f(report, device, **self.send_kwargs)
         if resp and not isinstance(resp, ResultResponse):
             self.logger.error(f"received response must be ResultResponse but got {type(resp)}")
 

@@ -18,8 +18,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.edge.constants import EdgeContextKey, EdgeEventType, EdgeProtoKey
-from nvflare.edge.constants import Status as EdgeStatus
+from nvflare.edge.constants import EdgeApiStatus, EdgeContextKey, EdgeEventType, EdgeProtoKey
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message as CellMessage
@@ -29,6 +28,14 @@ from nvflare.widgets.widget import Widget
 class EdgeTaskDispatcher(Widget):
     """Edge Task Dispatcher (ETD) is to be used to dispatch a received edge request to a running job (CJ).
     ETD must be installed on CP before the CP is started.
+
+    Note: ETD does not interact with edge devices directly. It's another component's responsibility (e.g. web agent)
+    to interact with edge devices with whatever protocol between them.
+
+    ETD indirectly interacts with edge-device-interacting component (also installed on the CP) via Flare Events:
+        EdgeEventType.EDGE_JOB_REQUEST_RECEIVED for receiving job requests;
+        EdgeEventType.EDGE_REQUEST_RECEIVED for receiving task requests;
+
     """
 
     def __init__(self, request_timeout: float = 10.0):
@@ -126,15 +133,15 @@ class EdgeTaskDispatcher(Widget):
         edge_capabilities = fl_ctx.get_prop(EdgeContextKey.EDGE_CAPABILITIES)
         if not edge_capabilities:
             self.logger.error(f"missing {EdgeContextKey.EDGE_CAPABILITIES} from fl_ctx for event {event_type}")
-            self._set_edge_reply(EdgeStatus.INVALID_REQUEST, None, fl_ctx)
+            self._set_edge_reply(EdgeApiStatus.INVALID_REQUEST, None, fl_ctx)
             return
 
         # find job for the caps
         job_id = self._match_job(edge_capabilities)
         if job_id:
-            status = EdgeStatus.OK
+            status = EdgeApiStatus.OK
         else:
-            status = EdgeStatus.NO_JOB
+            status = EdgeApiStatus.NO_JOB
         self._set_edge_reply(status, job_id, fl_ctx)
         fl_ctx.set_prop(FLContextKey.JOB_META, self.job_metas.get(job_id), private=True, sticky=False)
 
@@ -152,11 +159,11 @@ class EdgeTaskDispatcher(Widget):
         job_id = fl_ctx.get_prop(EdgeContextKey.JOB_ID)
         if not job_id:
             self.logger.error(f"handling event {event_type}: missing {EdgeContextKey.JOB_ID} from fl_ctx")
-            self._set_edge_reply(EdgeStatus.INVALID_REQUEST, None, fl_ctx)
+            self._set_edge_reply(EdgeApiStatus.INVALID_REQUEST, None, fl_ctx)
             return
 
         if not self._find_job(job_id):
-            self._set_edge_reply(EdgeStatus.NO_JOB, None, fl_ctx)
+            self._set_edge_reply(EdgeApiStatus.NO_JOB, None, fl_ctx)
             return
 
         # send edge request data to CJ
