@@ -31,8 +31,8 @@
             }
         },
         {
-            "id": "analytic_sender",
-            "path": "nvflare.app_common.widgets.streaming.AnalyticsSender",
+            "id": "tb_writer",
+            "path": "nvflare.app_opt.tracking.tb.tb_writer.TBWriter",
             "args": {
                 "event_type": "analytix_log_stats"
             }

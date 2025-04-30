@@ -31,7 +31,7 @@ class CIFAR10ScaffoldModelLearner(CIFAR10ModelLearner):
         lr: float = 1e-2,
         fedproxloss_mu: float = 0.0,
         central: bool = False,
-        analytic_sender_id: str = "analytic_sender",
+        tb_writer_id: str = "tb_writer",
         batch_size: int = 64,
         num_workers: int = 0,
     ):
@@ -46,8 +46,8 @@ class CIFAR10ScaffoldModelLearner(CIFAR10ModelLearner):
             lr: local learning rate. Float number. Defaults to 1e-2.
             fedproxloss_mu: weight for FedProx loss. Float number. Defaults to 0.0 (no FedProx).
             central: Bool. Whether to simulate central training. Default False.
-            analytic_sender_id: id of `AnalyticsSender` if configured as a client component.
-                If configured, TensorBoard events will be fired. Defaults to "analytic_sender".
+            tb_writer_id: id of `TBWriter` if configured as a client component.
+                If configured, TensorBoard events will be fired. Defaults to "tb_writer".
             batch_size: batch size for training and validation.
             num_workers: number of workers for data loaders.
 
@@ -62,7 +62,7 @@ class CIFAR10ScaffoldModelLearner(CIFAR10ModelLearner):
             lr=lr,
             fedproxloss_mu=fedproxloss_mu,
             central=central,
-            analytic_sender_id=analytic_sender_id,
+            tb_writer_id=tb_writer_id,
             batch_size=batch_size,
             num_workers=num_workers,
         )
