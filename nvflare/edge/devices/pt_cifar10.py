@@ -11,24 +11,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import hashlib
+import os
 import random
 import time
 import uuid
-import hashlib
-import os
-
-from nvflare.apis.dxo import DXO, from_dict, DataKind
-from nvflare.edge.simulated_device import DeviceFactory, SimulatedDevice
-from nvflare.edge.web.models.task_response import TaskResponse
 
 import filelock
 import torch
 from torch.utils.data import Subset
 from torchvision import datasets, transforms
 
+from nvflare.apis.dxo import DXO, DataKind, from_dict
 from nvflare.edge.models.model import Cifar10ConvNet
+from nvflare.edge.simulated_device import DeviceFactory, SimulatedDevice
+from nvflare.edge.web.models.task_response import TaskResponse
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+
 
 class PTCifar10Device(SimulatedDevice):
 
@@ -51,7 +51,7 @@ class PTCifar10Device(SimulatedDevice):
         # Hash the bytes using SHA-256 for better distribution
         hashed_bytes = hashlib.sha256(uuid_bytes).digest()
         # Convert the first 8 bytes of the hash to an integer (64-bit)
-        seed_number = int.from_bytes(hashed_bytes[:8], byteorder='big')
+        seed_number = int.from_bytes(hashed_bytes[:8], byteorder="big")
 
         return seed_number
 
@@ -72,7 +72,7 @@ class PTCifar10Device(SimulatedDevice):
         indices = list(range(len(train_set)))
         random.shuffle(indices)
         # select the first subset_size indices
-        indices = indices[:self.subset_size]
+        indices = indices[: self.subset_size]
         # create a new train_set from the selected indices
         train_subset = Subset(train_set, indices)
         # create a dataloader for the train_subset
@@ -102,7 +102,7 @@ class PTCifar10Device(SimulatedDevice):
                 optimizer.step()
 
                 # print the loss every ${subset_size / batch_size}/10 iterations
-                #if i % (self.subset_size / batch_size / 10) == 0:
+                # if i % (self.subset_size / batch_size / 10) == 0:
                 #    print(f"Epoch {epoch}, Step {i}, Loss: {loss.item()}")
 
         # Calculate the model param diff
@@ -110,7 +110,7 @@ class PTCifar10Device(SimulatedDevice):
         for key, param in net.state_dict().items():
             diff_dict[key] = param.cpu().numpy() - global_model[key].numpy()
         return diff_dict
-    
+
     def do_task(self, data: TaskResponse) -> dict:
         task_data = data.task_data
         assert isinstance(task_data, dict)
@@ -152,4 +152,6 @@ class PTCifar10DeviceFactory(DeviceFactory):
         self.subset_size = subset_size
 
     def make_device(self) -> SimulatedDevice:
-        return PTCifar10Device(str(uuid.uuid4()), self.data_root, self.subset_size, self.min_train_time, self.max_train_time)
+        return PTCifar10Device(
+            str(uuid.uuid4()), self.data_root, self.subset_size, self.min_train_time, self.max_train_time
+        )
