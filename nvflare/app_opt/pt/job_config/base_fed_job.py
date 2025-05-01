@@ -50,23 +50,23 @@ class BaseFedJob(FedJob):
         User must add controllers and executors.
 
         Args:
-            initial_model (nn.Module): initial PyTorch Model. Defaults to None.
-            name (name, optional): name of the job. Defaults to "fed_job".
+            initial_model (nn.Module, optional): initial PyTorch Model. Defaults to None.
+            name (str, optional): name of the job. Defaults to "fed_job".
             min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
-            mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
+            mandatory_clients (list[str] | None, optional): mandatory clients to run the job. Default None.
             key_metric (str, optional): Metric used to determine if the model is globally best.
                 if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
                 Defaults to "accuracy".
-            validation_json_generator (ValidationJsonGenerator, optional): A component for generating validation results.
+            validation_json_generator (ValidationJsonGenerator | None, optional): A component for generating validation results.
                 if not provided, a ValidationJsonGenerator will be configured.
-            intime_model_selector: (IntimeModelSelector, optional): A component for select the model.
+            intime_model_selector: (IntimeModelSelector | None, optional): A component for select the model.
                 if not provided, an IntimeModelSelector will be configured.
-            convert_to_fed_event: (ConvertToFedEvent, optional): A component to covert certain events to fed events.
+            convert_to_fed_event: (ConvertToFedEvent | None, optional): A component to covert certain events to fed events.
                 if not provided, a ConvertToFedEvent object will be created.
-            analytics_receiver (AnlyticsReceiver, optional): Receive analytics.
+            analytics_receiver (bool | AnalyticsReceiver | None, optional): Receive analytics.
                 If not provided, a TBAnalyticsReceiver will be configured.
-            model_persistor (optional, ModelPersistor): how to persistor the model.
-            model_locator (optional, ModelLocator): how to locate the model.
+            model_persistor (ModelPersistor | None, optional): how to persistor the model.
+            model_locator (ModelLocator | None, optional): how to locate the model.
         """
         super().__init__(
             name=name,
