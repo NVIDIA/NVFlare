@@ -135,7 +135,7 @@ def main():
             script_args=f"--data_path {data_path} "
             f"--train_start {train_start} --train_end {train_end} "
             f"--valid_start {valid_start} --valid_end {valid_end}",
-            params_exchange_format="raw",
+            framework="raw",
         )
         job.to(executor, f"site-{i}", tasks=["train"])
 
