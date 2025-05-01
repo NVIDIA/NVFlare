@@ -14,7 +14,7 @@
 from typing import Any
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.edge.constants import EdgeApiStatus, EdgeProtoKey, MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.executors.hug import TaskInfo

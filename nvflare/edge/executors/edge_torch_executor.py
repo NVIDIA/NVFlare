@@ -14,11 +14,11 @@
 from typing import Any
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.executors.ham import TaskInfo
 from nvflare.edge.constants import EdgeApiStatus, EdgeProtoKey, MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
+from nvflare.edge.executors.hug import TaskInfo
 from nvflare.edge.model_protocol import ModelExchangeFormat
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
