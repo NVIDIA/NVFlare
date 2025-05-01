@@ -10,9 +10,9 @@
       "args": {
         "max_model_version": 15,
         "max_model_history": 3,
-        "num_updates_for_model": 50,
-        "device_selection_size": 100,
-        "min_hole_to_fill": 20,
+        "num_updates_for_model": 10,
+        "device_selection_size": 30,
+        "min_hole_to_fill": 1,
         "device_reuse": true
       }
     }
