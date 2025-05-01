@@ -16,18 +16,20 @@ import threading
 import time
 from typing import Optional
 
+import numpy as np
+
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_context import FLContext
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.abstract.model import ModelLearnable, model_learnable_to_dxo, make_model_learnable
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
+from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable, model_learnable_to_dxo
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.edge.aggregators.model_update_dxo import ModelUpdateDXOAggregator
 from nvflare.edge.assessor import Assessment, Assessor
 from nvflare.edge.mud import BaseState, ModelUpdate, StateUpdateReply, StateUpdateReport
-import numpy as np
+
 
 class _ModelState:
 
@@ -97,7 +99,6 @@ class GeneralModelUpdateAssessor(Assessor):
             self.system_panic(reason="cannot find persistor component '{}'".format(self.persistor_id), fl_ctx=fl_ctx)
             return
 
-    
     def start_task(self, fl_ctx: FLContext) -> Shareable:
         self.start_time = time.time()
         # empty base state to start with
@@ -122,7 +123,7 @@ class GeneralModelUpdateAssessor(Assessor):
             # Aggregate all updates
             for v, ms in self.updates.items():
                 # FedBuff weight is 1/(1+staleness)^0.5
-                weight = 1 / (1 + (self.current_model_version - v)**0.5)
+                weight = 1 / (1 + (self.current_model_version - v) ** 0.5)
                 assert isinstance(ms, _ModelState)
                 aggr = ms.aggregator
                 assert isinstance(aggr, ModelUpdateDXOAggregator)
@@ -142,7 +143,7 @@ class GeneralModelUpdateAssessor(Assessor):
                 # If too old, remove it
                 if self.current_model_version - v >= self.max_model_history:
                     old_model_versions.append(v)
-            
+
             # Add the aggregated updates to the current global weights
             global_weights = self.current_model.data
             for key, value in new_model.items():
