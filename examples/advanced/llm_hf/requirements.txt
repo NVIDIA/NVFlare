@@ -1,5 +1,5 @@
-nvflare
 torch==2.5.1
+torchvision
 datasets
 tensorboard
 transformers==4.48.0
