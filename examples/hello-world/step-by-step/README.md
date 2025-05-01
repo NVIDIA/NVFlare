@@ -16,7 +16,7 @@ Here are some common questions we aim to cover in these examples series when for
 * What does the data look like?
 * How do we compare global statistics with the site's local data statistics? 
 * How to formulate the [federated algorithms](https://developer.download.nvidia.com/healthcare/clara/docs/federated_traditional_machine_learning_algorithms.pdf)?
-* How do we convert the existing machine learning or deep learning code to federated learning code? [ML to FL examples](https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/ml-to-fl/README.md)
+* How do we convert the existing machine learning or deep learning code to federated learning code? [ML to FL examples](../../../examples/hello-world/ml-to-fl/README.md)
 * How do we use different types of federated learning workflows (e.g. Scatter and Gather, Cyclic Weight Transfer, Swarming learning,
 Vertical learning) and what do we need to change?
 * How can we capture the experiment log, so all sites' metrics and global metrics can be viewed in experiment tracking tools such as Weights & Biases MLfLow, or Tensorboard

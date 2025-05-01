@@ -1,0 +1,31 @@
+{
+  "format_version": 2,
+  "min_clients": 2,
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "assessor",
+      "path": "nvflare.edge.assessors.async_num.AsyncNumAssessor",
+      "args": {
+        "max_model_version": 3,
+        "max_model_history": 1,
+        "num_updates_for_model": 4,
+        "device_selection_size": 4,
+        "min_hole_to_fill": 4,
+        "device_reuse": true
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "scatter_and_gather",
+      "path": "nvflare.edge.controllers.sage.ScatterAndGatherForEdge",
+      "args": {
+        "num_rounds": 1,
+        "assessor_id": "assessor",
+        "task_name": "train"
+      }
+    }
+  ]
+}
