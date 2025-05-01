@@ -115,7 +115,7 @@ Below is a sample config for site-1, saved to `/tmp/nvflare/workspace/jobs/kmean
 }
 ```
 
-Alternative to using Learner+Executor as above, we can also use [ClientAPI](https://github.com/NVIDIA/NVFlare/blob/main/docs/programming_guide/execution_api_type/client_api.rst) 
+Alternative to using Learner+Executor as above, we can also use [ClientAPI](https://nvflare.readthedocs.io/en/2.6/programming_guide/execution_api_type/client_api.html) 
 to run the federated training:
 ```commandline
 python kmeans_job_clientapi.py --num_clients 3 --split_mode uniform --workspace_dir "/tmp/nvflare/workspace/works/kmeans_clientapi" --job_dir "/tmp/nvflare/workspace/jobs/kmeans_clientapi"

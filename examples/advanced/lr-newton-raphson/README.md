@@ -70,30 +70,30 @@ optimization is implemented as follows.
 
 On the server side, all workflow logics are implemented in
 class `FedAvgNewtonRaphson`, which can be found
-[here](job/newton_raphson/app/custom/newton_raphson_workflow.py). The
+[here](./src/newton_raphson_workflow.py). The
 `FedAvgNewtonRaphson` class inherits from the
-[`BaseFedAvg`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/base_fedavg.py)
+[`BaseFedAvg`](../../../nvflare/app_common/workflows/base_fedavg.py)
 class, which itself inherits from the **ModelController**
-([`ModelController`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/model_controller.py))
-class. This is the preferrable approach to implement a custom
+([`ModelController`](../../../nvflare/app_common/workflows/model_controller.py))
+class. This is the preferable approach to implement a custom
 workflow, since `ModelController` decouples communication logic from
 actual workflow (training & validation) logic. The mandatory
 method to override in `ModelController` is the
-[`run()`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/model_controller.py#L37)
+[`run()`](../../../nvflare/app_common/workflows/model_controller.py)
 method, where the orchestration of server-side workflow actually
 happens. The implementation of `run()` method in
-[`FedAvgNewtonRaphson`](job/newton_raphson/app/custom/newton_raphson_workflow.py)
+[`FedAvgNewtonRaphson`](./src/newton_raphson_workflow.py)
 is similar to the classic
-[`FedAvg`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/fedavg.py#L44):
-- Initialize the global model, this is acheived through method `load_model()`
+[`FedAvg`](../../../nvflare/app_common/workflows/fedavg.py):
+- Initialize the global model, this is achieved through method `load_model()`
   from base class
-  [`ModelController`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/model_controller.py#L292),
+  [`ModelController`](../../../nvflare/app_common/workflows/model_controller.py),
   which relies on the
   [`ModelPersistor`](https://nvflare.readthedocs.io/en/main/glossary.html#persistor). A
   custom
-  [`NewtonRaphsonModelPersistor`](job/newton_raphson/app/custom/newton_raphson_persistor.py)
+  [`NewtonRaphsonModelPersistor`](./src/newton_raphson_persistor.py)
   is implemented in this example, which is based on the
-  [`NPModelPersistor`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/np/np_model_persistor.py)
+  [`NPModelPersistor`](../../../nvflare/app_common/np/np_model_persistor.py)
   for numpy data, since the _model_ in the case of logistic regression
   is just the parameter vector $\theta$ that can be represented by a
   numpy array. Only the `__init__` method needs to be re-implemented
@@ -102,24 +102,24 @@ is similar to the classic
 - During each training round, the global model will be sent to the
   list of participating clients to perform a training task. This is
   done using the
-  [`send_model_and_wait()`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/workflows/model_controller.py#L41)
+  [`send_model_and_wait()`](../../../nvflare/app_common/workflows/model_controller.py)
   method. Once
   the clients finish their local training, results will be collected
   and sent back to server as
   [`FLModel`](https://nvflare.readthedocs.io/en/main/programming_guide/fl_model.html#flmodel)s.
 - Results sent by clients contain their locally computed gradient and
   Hessian. A [custom aggregation
-  function](job/newton_raphson/app/custom/newton_raphson_workflow.py)
+  function](./src/newton_raphson_workflow.py)
   is implemented to get the averaged gradient and Hessian, and compute
   the Newton-Raphson update for the global parameter vector $\theta$,
   based on the theoretical formula shown above. The averaging of
   gradient and Hessian is based on the
-  [`WeightedAggregationHelper`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_common/aggregators/weighted_aggregation_helper.py#L20),
+  [`WeightedAggregationHelper`](../../../nvflare/app_common/aggregators/weighted_aggregation_helper.py),
   which weighs the contribution from each client based on the number
   of local training samples. The aggregated Newton-Raphson update is
   returned as an `FLModel`.
 - After getting the aggregated Newton-Raphson update, an
-  [`update_model()`](job/newton_raphson/app/custom/newton_raphson_workflow.py#L172)
+  [`update_model()`](./src/newton_raphson_workflow.py)
   method is implemented to actually apply the Newton-Raphson update to
   the global model.
 - The last step is to save the updated global model, again through
@@ -127,7 +127,7 @@ is similar to the classic
 
 
 On the client side, the local training logic is implemented
-[here](job/newton_raphson/app/custom/newton_raphson_train.py). The
+[here](./src/newton_raphson_train.py). The
 implementation is based on the [`Client
 API`](https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type.html#client-api). This
 allows user to add minimum `nvflare`-specific codes to turn a typical
@@ -138,12 +138,12 @@ script.
   global model is an instance of `FLModel`.
 - A local validation is first performed, where validation metrics
   (accuracy and precision) are streamed to server using the
-  [`SummaryWriter`](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.client.tracking.html#nvflare.client.tracking.SummaryWriter). The
+  [`SummaryWriter`](../../../nvflare/client/tracking.py). The
   streamed metrics can be loaded and visualized using tensorboard.
 - Then each client computes it's gradient and Hessian based on local
   training data, using their respective theoretical formula described
   above. This is implemented in the
-  [`train_newton_raphson()`](job/newton_raphson/app/custom/newton_raphson_train.py#L82)
+  [`train_newton_raphson()`](./src/newton_raphson_train.py)
   method. Each client then sends the computed results (always in
   `FLModel` format) to server for aggregation, using `flare.send()`
   API.
@@ -159,7 +159,7 @@ optimized model was then tested separately on testing data samples of
 the 4 sites, using accuracy and precision as metrics.
 
 Comparing the federated [client-side training
-code](job/newton_raphson/app/custom/newton_raphson_train.py) with the
+code](./src/newton_raphson_train.py) with the
 centralized [training code](./train_centralized.py), we can see that
 the training logic remains similar: load data, perform training
 (Newton-Raphson updates), and valid trained model. The only added
@@ -169,7 +169,7 @@ FL system, such as receiving and send `FLModel`.
 ## Set Up Environment & Install Dependencies
 
 Follow instructions
-[here](https://github.com/NVIDIA/NVFlare/tree/main/examples#set-up-a-virtual-environment)
+[here](../../README.md#set-up-a-virtual-environment)
 to set up a virtual environment for `nvflare` examples and install
 dependencies for this example.
 

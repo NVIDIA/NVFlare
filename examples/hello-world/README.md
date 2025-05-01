@@ -37,5 +37,5 @@ Before you run the notebook, the following preparation work must be done:
 ### Deep Learning
 * [Hello PyTorch](./hello-pt/README.md)
   * Example using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) an image classifier using ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework.
-* [Hello TensorFlow](./hello-tf2/README.md)
+* [Hello TensorFlow](./hello-tf/README.md)
   * Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) an image classifier using ([FedAvg](https://arxiv.org/abs/1602.05629)) and [TensorFlow](https://tensorflow.org/) as the deep learning training framework.
