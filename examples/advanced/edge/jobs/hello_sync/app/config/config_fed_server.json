@@ -6,7 +6,7 @@
   "components": [
     {
       "id": "assessor",
-      "path": "nvflare.edge.assessors.async_num.AsyncNumAssessor",
+      "path": "nvflare.edge.assessors.general_num.GeneralNumAssessor",
       "args": {
         "max_model_version": 3,
         "max_model_history": 1,
