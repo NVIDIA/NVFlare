@@ -11,20 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import threading
+from typing import Optional
 
-from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.edge.constants import EdgeApiStatus, EdgeEventType, EdgeProtoKey
 from nvflare.edge.simulation.simulated_device import DeviceFactory
 from nvflare.edge.simulation.simulator import Simulator
-from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.edge.widgets.runner import SimulationRunner
 from nvflare.fuel.utils.validation_utils import check_number_range, check_positive_int, check_positive_number, check_str
-from nvflare.widgets.widget import Widget
 
 
-class DeviceRunner(Widget):
+class DeviceRunner(SimulationRunner):
 
     def __init__(
         self,
@@ -35,7 +31,7 @@ class DeviceRunner(Widget):
         cycle_length: float = 30,
         device_reuse_rate: float = 0,
     ):
-        Widget.__init__(self)
+        SimulationRunner.__init__(self)
 
         check_str("device_factory_id", device_factory_id)
         check_positive_int("num_devices", num_devices)
@@ -59,16 +55,7 @@ class DeviceRunner(Widget):
         self.num_workers = num_workers
         self.simulator = None
 
-        self.register_event_handler(EventType.START_RUN, self._dr_start_run)
-        self.register_event_handler(EventType.END_RUN, self._dr_end_run)
-
-    def _dr_start_run(self, event_type: str, fl_ctx: FLContext):
-        is_leaf = fl_ctx.get_prop(ReservedKey.IS_LEAF)
-        if not is_leaf:
-            # devices are only for leaf nodes
-            return
-
-        self.log_info(fl_ctx, "device runner about to start ...")
+    def create_simulator(self, fl_ctx: FLContext) -> Optional[Simulator]:
         engine = fl_ctx.get_engine()
         factory = engine.get_component(self.device_factory_id)
         if not isinstance(factory, DeviceFactory):
@@ -76,9 +63,9 @@ class DeviceRunner(Widget):
                 f"component {self.device_factory_id} must be DeviceFactory but got {type(factory)}",
                 fl_ctx,
             )
-            return
+            return None
 
-        simulator = Simulator(
+        return Simulator(
             device_factory=factory,
             num_active_devices=self.num_devices,
             max_num_devices=self.max_num_devices,
@@ -86,34 +73,3 @@ class DeviceRunner(Widget):
             cycle_length=self.cycle_length,
             device_reuse_rate=self.device_reuse_rate,
         )
-        simulator.set_send_func(self._post_request, engine=engine)
-        self.simulator = simulator
-
-        runner = threading.Thread(target=self._run, daemon=True)
-        runner.start()
-
-    def _dr_end_run(self, event_type: str, fl_ctx: FLContext):
-        if self.simulator:
-            self.simulator.stop()
-
-    def _post_request(self, request, device, engine):
-        cell_msg = CellMessage(payload=request)
-        with engine.new_context() as fl_ctx:
-            assert isinstance(fl_ctx, FLContext)
-            fl_ctx.set_prop(FLContextKey.CELL_MESSAGE, cell_msg, private=True, sticky=False)
-            self.fire_event(EdgeEventType.EDGE_REQUEST_RECEIVED, fl_ctx)
-            reply_dict = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
-
-            if reply_dict is None:
-                # client not ready yet
-                return EdgeApiStatus.OK, None
-
-            if not isinstance(reply_dict, dict):
-                raise RuntimeError(f"prop {FLContextKey.TASK_RESULT} should be dict but got {type(reply_dict)}")
-
-            status = reply_dict.get(EdgeProtoKey.STATUS, EdgeApiStatus.OK)
-            response = reply_dict.get(EdgeProtoKey.RESPONSE)
-            return status, response
-
-    def _run(self):
-        self.simulator.start()

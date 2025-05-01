@@ -146,10 +146,20 @@ class Simulator:
             # pause before next cycle
             time.sleep(interval)
 
+        # shut down all devices
+        self.worker_pool.shutdown()
+
+        for d in self.devices:
+            assert isinstance(d, SimulatedDevice)
+            d.shutdown()
+
+        for d in self.used_devices:
+            d.shutdown()
+
+        self.device_factory.shutdown()
+
     def stop(self):
         self.done = True
-        self.worker_pool.shutdown()
-        self.device_factory.shutdown()
 
     def _ask_for_task(self, device: SimulatedDevice) -> (str, TaskResponse):
         req = TaskRequest(
