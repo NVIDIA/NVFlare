@@ -10,7 +10,7 @@ license = "Apache-2.0"
 dependencies = [
     "flwr>=1.16,<2.0",
     "nvflare~=2.6.0rc",
-    "torch==2.2.1",
+    "torch==2.7.0",
     "torchvision==0.17.1",
     "tensorboard"
 ]
