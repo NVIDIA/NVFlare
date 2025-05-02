@@ -26,7 +26,7 @@ New FLARE API to provide better user experience
 ===============================================
 The new FLARE API is an improved version of the FLAdminAPI with better ease of use. FLARE API currently supports selected commands. See
 :ref:`migrating_to_flare_api` for details on migrating to the new FLARE API. For now, the FLAdminAPI should still remain functional.
-For details on the FLARE API, you can see this notebook: https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_api.ipynb.
+For details on the FLARE API, you can see this notebook: https://github.com/NVIDIA/NVFlare/blob/2.3/examples/tutorials/flare_api.ipynb.
 
 Job Signing for Improved Security
 =================================
@@ -42,7 +42,7 @@ The model was either initialized from a model file or custom model initiation co
 and saving the model file and then sending it over to the server. Running custom model initialization code on server could be a security risk.
 
 FLARE 2.3.0 introduces another way to initialize the model on the client side. The FL Server can select
-the initial model based on a user-chosen strategy. Here is an example using client-side model initialization: https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-pt.
+the initial model based on a user-chosen strategy. Here is an example using client-side model initialization: https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-pt.
 You can read more about this feature in :ref:`initialize_global_weights_workflow`.
 
 Traditional Machine Learning Examples
@@ -76,7 +76,7 @@ It is worth noting that PSI is used as a pre-processing step in the split learni
 
 Split Learning
 --------------
-Split Learning can allow the training of deep neural networks on vertically separated data. With this release, we include an [example](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md)
+Split Learning can allow the training of deep neural networks on vertically separated data. With this release, we include an [example](https://github.com/NVIDIA/NVFlare/blob/2.3/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md)
 on how to run [split learning](https://arxiv.org/abs/1810.06060) using the CIFAR-10 dataset assuming one client holds the images and the other client holds the labels to compute losses and accuracy metrics.
 
 Activations and corresponding gradients are being exchanged between the clients using FLARE's new communication API.

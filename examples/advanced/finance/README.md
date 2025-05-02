@@ -13,7 +13,7 @@ In these examples, we illustrate the use of NVFlare to carry out the following f
   - tree-based collaboration with bagging federation
 
 For more details, please refer to the README for 
-[federated xgboost](https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/xgboost/fedxgb/README.md).
+[federated xgboost](../xgboost/fedxgb/README.md).
 
 ## Data Preparation
 ### Download and Store Data
