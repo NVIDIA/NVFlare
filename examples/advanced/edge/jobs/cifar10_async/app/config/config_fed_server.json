@@ -13,7 +13,7 @@
         "max_model_history": 5,
         "num_updates_for_model": 20,
         "device_selection_size": 40,
-        "min_hole_to_fill": 10,
+        "min_hole_to_fill": 1,
         "device_reuse": true
       }
     },
