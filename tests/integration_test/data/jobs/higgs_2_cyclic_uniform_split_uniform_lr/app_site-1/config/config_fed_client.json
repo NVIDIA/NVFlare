@@ -18,7 +18,7 @@
     "components": [
         {
             "id": "dataloader",
-            "path": "src.higgs_data_loader.HIGGSDataLoader",
+            "path": "higgs_data_loader.HIGGSDataLoader",
             "args": {
                 "data_split_filename": "/tmp/nvflare/dataset/xgboost_higgs_horizontal/2_uniform/data_site-1.json"
             }
