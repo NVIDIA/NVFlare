@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import threading
+from unittest.mock import patch
 
 import pytest
 
@@ -42,24 +44,27 @@ class TestStreamCell:
 
     @pytest.fixture(scope="session")
     def server_cell(self, port, state):
-        listening_url = f"tcp://localhost:{port}"
-        cell = CoreCell(RX_CELL, listening_url, secure=False, credentials={})
-        stream_cell = StreamCell(cell)
-        stream_cell.register_blob_cb(TEST_CHANNEL, TEST_TOPIC, self.blob_cb, state=state)
-        cell.start()
+        # Patch STREAM_ACK_WAIT in the byte_streamer module
+        with patch("nvflare.fuel.f3.streaming.byte_streamer.STREAM_ACK_WAIT", 400):
+            listening_url = f"tcp://localhost:{port}"
+            cell = CoreCell(RX_CELL, listening_url, secure=False, credentials={})
+            stream_cell = StreamCell(cell)
+            stream_cell.register_blob_cb(TEST_CHANNEL, TEST_TOPIC, self.blob_cb, state=state)
+            cell.start()
 
-        yield stream_cell
-        cell.stop()
+            yield stream_cell
+            cell.stop()
 
     @pytest.fixture(scope="session")
     def client_cell(self, port, state):
-        connect_url = f"tcp://localhost:{port}"
-        cell = CoreCell(TX_CELL, connect_url, secure=False, credentials={})
-        stream_cell = StreamCell(cell)
-        cell.start()
+        with patch("nvflare.fuel.f3.streaming.byte_streamer.STREAM_ACK_WAIT", 400):
+            connect_url = f"tcp://localhost:{port}"
+            cell = CoreCell(TX_CELL, connect_url, secure=False, credentials={})
+            stream_cell = StreamCell(cell)
+            cell.start()
 
-        yield stream_cell
-        cell.stop()
+            yield stream_cell
+            cell.stop()
 
     def test_streaming_blob(self, server_cell, client_cell, state):
 
