@@ -25,32 +25,31 @@ class DeviceRunner(SimulationRunner):
     def __init__(
         self,
         device_factory_id: str,
-        num_devices=100,
+        num_active_devices=100,
         num_workers=10,
         max_num_devices=10000,
-        cycle_length: float = 30,
+        cycle_duration: float = 30,
         device_reuse_rate: float = 0,
     ):
         SimulationRunner.__init__(self)
 
         check_str("device_factory_id", device_factory_id)
-        check_positive_int("num_devices", num_devices)
+        check_positive_int("num_active_devices", num_active_devices)
 
         check_positive_int("max_num_devices", max_num_devices)
-        check_number_range("max_num_devices", max_num_devices, num_devices, 1000000)
+        check_number_range("max_num_devices", max_num_devices, num_active_devices, 1000000)
 
         check_positive_int("num_workers", num_workers)
-        check_number_range("num_workers", num_workers, 1, num_devices)
+        check_number_range("num_workers", num_workers, 1, num_active_devices)
         check_number_range("num_workers", num_workers, 1, 100)
 
-        check_positive_number("cycle_length", cycle_length)
-
+        check_positive_number("cycle_duration", cycle_duration)
         check_number_range("device_reuse_rate", device_reuse_rate, 0.0, 1.0)
 
         self.device_factory_id = device_factory_id
-        self.num_devices = num_devices
+        self.num_active_devices = num_active_devices
         self.max_num_devices = max_num_devices
-        self.cycle_length = cycle_length
+        self.cycle_length = cycle_duration
         self.device_reuse_rate = device_reuse_rate
         self.num_workers = num_workers
         self.simulator = None
@@ -67,9 +66,9 @@ class DeviceRunner(SimulationRunner):
 
         return Simulator(
             device_factory=factory,
-            num_active_devices=self.num_devices,
+            num_active_devices=self.num_active_devices,
             max_num_devices=self.max_num_devices,
             num_workers=self.num_workers,
-            cycle_length=self.cycle_length,
+            cycle_duration=self.cycle_length,
             device_reuse_rate=self.device_reuse_rate,
         )

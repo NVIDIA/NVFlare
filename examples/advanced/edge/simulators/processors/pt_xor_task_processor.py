@@ -27,10 +27,9 @@ from nvflare.edge.model_protocol import (
 )
 from nvflare.edge.models.model import XorNet
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
-from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.edge.simulation.simulated_device import SimulatedDevice
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.models.user_info import UserInfo
 
 log = logging.getLogger(__name__)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -38,17 +37,11 @@ DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 class PTXorTaskProcessor(DeviceTaskProcessor):
     def __init__(self):
-        self.device_info = None
-        self.user_info = None
-        self.job_id = None
-        self.job_name = None
+        DeviceTaskProcessor.__init__(self)
 
-    def setup(self, device_info: DeviceInfo, user_info: UserInfo, job: JobResponse) -> None:
-        self.device_info = device_info
-        self.user_info = user_info
-        self.job_id = job.job_id
-        self.job_name = job.job_name
-        device_io_dir = f"/tmp/nvflare/workspaces/edge_simulator_xor/{device_info.device_id}"
+    def setup(self, job: JobResponse) -> None:
+        assert isinstance(self.device, SimulatedDevice)
+        device_io_dir = f"/tmp/nvflare/workspaces/edge_simulator_xor/{self.device_info.device_id}"
         os.makedirs(device_io_dir, exist_ok=True)
         self.tb_writer = SummaryWriter(device_io_dir)
 

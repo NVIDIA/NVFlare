@@ -49,9 +49,9 @@ class ConfigParser:
         self.processor = None
         self.endpoint = None
         self.num_devices = 100
-        self.active_num_devices = 20
+        self.num_active_devices = 20
         self.num_workers = 10
-        self.cycle_length = 30.0
+        self.cycle_duration = 30.0
         self.device_reuse_rate = 0.0
         self.capabilities = {}
         self.device_id_prefix = None
@@ -75,14 +75,14 @@ class ConfigParser:
     def get_num_devices(self):
         return self.num_devices
 
-    def get_active_num_devices(self):
-        return self.active_num_devices
+    def get_num_active_devices(self):
+        return self.num_active_devices
 
     def get_num_workers(self):
         return self.num_workers
 
-    def get_cycle_length(self):
-        return self.cycle_length
+    def get_cycle_duration(self):
+        return self.cycle_duration
 
     def get_device_reuse_rate(self):
         return self.device_reuse_rate
@@ -126,22 +126,22 @@ class ConfigParser:
             check_positive_int("num_devices", n)
             self.num_devices = n
 
-        n = config.get("active_num_devices", None)
+        n = config.get("num_active_devices", None)
         if n:
-            check_positive_int("active_num_devices", n)
-            self.active_num_devices = n
+            check_positive_int("num_active_devices", n)
+            self.num_active_devices = n
         else:
-            self.active_num_devices = min(self.num_devices / 2, 1000)
+            self.num_active_devices = min(self.num_devices / 2, 1000)
 
         n = config.get("num_workers", None)
         if n:
             check_positive_int("num_workers", n)
             self.num_workers = n
 
-        n = config.get("cycle_length")
+        n = config.get("cycle_duration")
         if n is not None:
-            check_positive_number("cycle_length", n)
-            self.cycle_length = n
+            check_positive_number("cycle_duration", n)
+            self.cycle_duration = n
 
         n = config.get("device_reuse_rate")
         if n is not None:

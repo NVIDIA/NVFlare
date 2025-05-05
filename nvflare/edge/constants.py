@@ -60,3 +60,8 @@ class EdgeApiStatus:
 
 class EdgeApiKey:
     JOB_DONE = "_job_done"
+
+
+class CookieKey:
+    MODEL_VERSION = "model_version"
+    DEVICE_SELECTION_ID = "device_selection_id"

@@ -31,9 +31,9 @@ class TPRunner(SimulationRunner):
         parser = ConfigParser(self.config_file)
         return Simulator(
             device_factory=TPDeviceFactory(parser),
-            num_active_devices=parser.get_active_num_devices(),
+            num_active_devices=parser.get_num_active_devices(),
             max_num_devices=parser.get_num_devices(),
             num_workers=parser.get_num_workers(),
-            cycle_length=parser.get_cycle_length(),
+            cycle_duration=parser.get_cycle_duration(),
             device_reuse_rate=parser.device_reuse_rate,
         )

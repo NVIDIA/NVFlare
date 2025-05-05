@@ -92,23 +92,11 @@ def read_training_result(result_path: str = "training_result.json"):
 
 
 class ETCppTaskProcessor(DeviceTaskProcessor):
-    def __init__(
-        self, device_info: DeviceInfo, user_info: UserInfo, et_binary_path: str, et_model_path: str, data_path: str
-    ):
-        super().__init__(device_info, user_info)
-        self.job_id = None
-        self.job_name = None
-        self.device_info = device_info
+    def __init__(self, et_binary_path: str, et_model_path: str, data_path: str):
+        super().__init__()
         self.et_binary_path = et_binary_path
         self.et_model_path = et_model_path
         self.data_path = data_path
-
-        device_io_dir = f"{device_info.device_id}_output"
-        os.makedirs(device_io_dir, exist_ok=True)
-        self.model_path = os.path.abspath(os.path.join(device_io_dir, self.et_model_path))
-        self.result_path = os.path.abspath(os.path.join(device_io_dir, "training_result.json"))
-        self.train_binary = os.path.abspath(os.path.join(device_io_dir, self.et_binary_path))
-        self._setup_train_program()
 
     def _setup_train_program(self):
         if not os.path.exists(self.train_binary):
@@ -117,8 +105,12 @@ class ETCppTaskProcessor(DeviceTaskProcessor):
             os.chmod(self.train_binary, 0o755)
 
     def setup(self, job: JobResponse) -> None:
-        self.job_id = job.job_id
-        self.job_name = job.job_name
+        device_io_dir = f"{self.device_info.device_id}_output"
+        os.makedirs(device_io_dir, exist_ok=True)
+        self.model_path = os.path.abspath(os.path.join(device_io_dir, self.et_model_path))
+        self.result_path = os.path.abspath(os.path.join(device_io_dir, "training_result.json"))
+        self.train_binary = os.path.abspath(os.path.join(device_io_dir, self.et_binary_path))
+        self._setup_train_program()
 
     def shutdown(self) -> None:
         pass

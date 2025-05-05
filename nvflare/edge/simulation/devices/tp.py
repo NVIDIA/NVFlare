@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import threading
+import uuid
 
 from nvflare.edge.constants import EdgeApiStatus
 from nvflare.edge.simulation.config import ConfigParser
@@ -42,6 +42,7 @@ class TaskProcessingDevice(SimulatedDevice):
         self.user_info = user_info
         self.capabilities = capabilities
         self.processor = processor
+        processor.device = self
 
     def get_device_info(self):
         return self.device_info
@@ -68,7 +69,7 @@ class TaskProcessingDevice(SimulatedDevice):
             method=method,
             job_data=job_data,
         )
-        self.processor.setup(self.device_info, self.user_info, job)
+        self.processor.setup(job)
 
     def shutdown(self):
         self.processor.shutdown()
@@ -84,8 +85,6 @@ class TPDeviceFactory(DeviceFactory):
         self.parser = parser
         self.endpoint_url = parser.get_endpoint()
         self.capabilities = parser.get_capabilities()
-        self._idx_lock = threading.Lock()
-        self._last_device_idx = 0
 
         prefix = parser.get_device_id_prefix()
         if not prefix:
@@ -93,9 +92,7 @@ class TPDeviceFactory(DeviceFactory):
         self._id_prefix = prefix
 
     def _make_device_id(self):
-        with self._idx_lock:
-            self._last_device_idx += 1
-            return f"{self._id_prefix}_{self._last_device_idx}"
+        return f"{self._id_prefix}_{uuid.uuid4()}"
 
     def make_device(self) -> SimulatedDevice:
         device_id = self._make_device_id()
