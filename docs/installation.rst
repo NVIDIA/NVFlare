@@ -78,12 +78,54 @@ Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nv
 
   $ python3 -m pip install nvflare
 
-.. note::
+Optional Dependencies
+^^^^^^^^^^^^^^^^^^^^
 
-    In addition to the dependencies included when installing nvflare, many of our example applications have additional packages that must be installed.
-    Make sure to install from any requirement.txt files before running the examples. If you already have a specific version of nvflare installed in your
-    environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare.
-    See :github_nvflare_link:`nvflare/app_opt <nvflare/app_opt>` for modules and components with optional dependencies.
+NVFlare provides several optional dependency groups that you can install based on your needs:
+
+* **HE** - Homomorphic Encryption support:
+  .. code-block:: shell
+     $ pip install nvflare[HE]
+
+* **PSI** - Private Set Intersection support:
+  .. code-block:: shell
+     $ pip install nvflare[PSI]
+
+* **PT** - PyTorch support:
+  .. code-block:: shell
+     $ pip install nvflare[PT]
+
+* **SKLEARN** - Scikit-learn support:
+  .. code-block:: shell
+     $ pip install nvflare[SKLEARN]
+
+* **TRACKING** - MLflow, Weights & Biases, and TensorBoard support:
+  .. code-block:: shell
+     $ pip install nvflare[TRACKING]
+
+* **MONITORING** - Datadog monitoring support:
+  .. code-block:: shell
+     $ pip install nvflare[MONITORING]
+
+* **CONFIG** - OmegaConf configuration support:
+  .. code-block:: shell
+     $ pip install nvflare[CONFIG]
+
+You can also install multiple optional dependencies at once:
+
+.. code-block:: shell
+
+  $ pip install nvflare[PT,SKLEARN,TRACKING]  # Install PyTorch, Scikit-learn, and tracking support
+
+For development, you can install all dependencies (except HE and PSI on macOS):
+
+.. code-block:: shell
+
+  # On Linux
+  $ pip install nvflare[dev]
+
+  # On macOS
+  $ pip install nvflare[dev_mac]
 
 Install from Source
 ------------------
@@ -94,7 +136,14 @@ Clone NVFlare repo and install from source (useful for accessing latest nightly 
 
   $ git clone https://github.com/NVIDIA/NVFlare.git
   $ cd NVFlare
-  $ pip install -e .
+  $ pip install -e .  # Install in editable mode
+
+You can also install with optional dependencies from source:
+
+.. code-block:: shell
+
+  $ pip install -e ".[dev]"  # Install all development dependencies
+  $ pip install -e ".[PT,SKLEARN]"  # Install specific optional dependencies
 
 Note on branches:
 
