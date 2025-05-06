@@ -106,7 +106,7 @@ class EdgeModelUpdater(Updater):
                 model_updates[k] = v.to_model_update(fl_ctx)
 
             if model_updates:
-                self.log_info(fl_ctx, f"prepared {len(model_updates)} model updates for parent")
+                self.log_debug(fl_ctx, f"prepared {len(model_updates)} model updates for parent")
 
             report = StateUpdateReport(
                 current_model_version=state.model_version,
@@ -115,7 +115,7 @@ class EdgeModelUpdater(Updater):
                 available_devices=self.available_devices,
             )
 
-            self.log_info(
+            self.log_debug(
                 fl_ctx,
                 f"prepared parent update report: {report.current_model_version=} "
                 f"model_updates={report.model_updates.keys()}"
@@ -211,7 +211,7 @@ class EdgeModelUpdater(Updater):
                 device_selection=dev_selection,
             )
 
-            self.log_info(
+            self.log_debug(
                 fl_ctx,
                 f"accepted {len(report.available_devices)} available devices from child "
                 f"total available devices is now {len(self.available_devices)}",

@@ -109,7 +109,7 @@ This is done by adding additional components on top of the existing code:
 
 We need to manually edit the configuration files for System Metrics collections.
 
-The detailed configurations can be found [here](./setup-1/local_config/). We need to copy them to the proper locations, or you can manually edit these files.
+The detailed configurations can be found [here](./setup-1/local_config). We need to copy them to the proper locations, or you can manually edit these files.
 
 ```bash
 cd setup-1
@@ -158,24 +158,22 @@ nvflare job submit -j /tmp/nvflare/jobs/job_config/hello-pt
 
 ## Monitoring View
 
-Once you setup the system, you can view from the followingt website
+Once you setup the system, you can view from the following website
 for statsd-exporter, you can look at 
 
 ### Statsd-exporter metrics view
 
-<!-- markdown-link-check-disable -->
 metrics page: "http://localhost:9102/metrics" 
 
 for the metrics published to statsd-export, which can be scraped by prometheus.
-Here is a screen shot
+Here is a screenshot
 
-![screen shot](../figures/statsd_export_metrics_view.png)
+![screenshot](../figures/statsd_export_metrics_view.png)
 
 
 ### Prometheus metrics view
 The same metrics is scraped by Prometheus can be found in this URL
 
-<!-- markdown-link-check-disable -->
 metrics page: "http://localhost:9090/metrics"
 
 
@@ -183,14 +181,13 @@ metrics page: "http://localhost:9090/metrics"
 
 We can visualize them better via Grafana. 
 
-<!-- markdown-link-check-disable -->
 Visualization: http://localhost:3000
 
 Here are two metrics dashboards examples
 
 ![Client heartbeat (before & after) time taken](../figures/grafana_plot_metrics_heatbeat_time_taken.png)
 
-![task processed accumated count](../figures/grafana_plot_metrics_view_task_count.png)
+![task processed accumulated count](../figures/grafana_plot_metrics_view_task_count.png)
 
 
 
@@ -249,7 +246,7 @@ for i in range(n_clients):
 
 We need to manually edit the configuration files for System Metrics collections.
 
-The detailed configurations can be found [here](./setup-2/local_config/). We need to copy them to the proper locations, or you can manually edit these files.
+The detailed configurations can be found [here](./setup-2/local_config). We need to copy them to the proper locations, or you can manually edit these files.
 
 ```bash
 cd setup-2

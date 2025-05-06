@@ -123,7 +123,6 @@ We have several components to use depending on the type of metrics and the setup
 1. **StatsDReporter**: This component will post the collected metrics to StatsD Exporter service.
 2. **JobMetricsCollector**: This component collects job-level metrics and publishes them to the databus. It can be added to the workflow components on both client and server sites.
 3. **SysMetricsCollector**: This component collects system-level metrics running in the parent process of the server and clients. The metrics will be published to the databus.
-4. **RemoteMetricsReceiver**: This component receives the federated metrics streamed from client sides and publish the metriics. 
 4. **RemoteMetricsReceiver**: This component receives the federated metrics streamed from client sides and publishes the metrics.
 
 

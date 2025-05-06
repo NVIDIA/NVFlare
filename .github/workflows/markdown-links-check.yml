@@ -13,21 +13,31 @@
 # limitations under the License.
 
 # A workflow to check if PR got broken hyperlinks
-name: Check Markdown links
+name: Check links
 
 on:
   push:
   pull_request:
 
 jobs:
-  markdown-link-check:
+  link-check:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     steps:
     - uses: actions/checkout@v4
-    - uses: gaurav-nelson/github-action-markdown-link-check@1.0.15
+    - name: Check Links
+      id: lychee
+      uses: lycheeverse/lychee-action@v2
       with:
-        max-depth: -1
-        use-verbose-mode: 'yes'
-        config-file: '.github/workflows/mlc_config.json'
-        check-modified-files-only: 'yes'
-        base-branch: 'main'
+        workingDirectory: .github/workflows
+        args: >-
+          --accept=200,403,429
+          --verbose
+          --no-progress
+          '${{ github.workspace }}/**/*.md'
+          '${{ github.workspace }}/**/*.html'
+          '${{ github.workspace }}/**/*.rst'
+        fail: true
+        jobSummary: true
+
