@@ -28,10 +28,8 @@ from nvflare.edge.model_protocol import (
     verify_payload,
 )
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
-from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.models.user_info import UserInfo
 
 log = logging.getLogger(__name__)
 
