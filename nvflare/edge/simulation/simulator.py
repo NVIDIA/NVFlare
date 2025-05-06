@@ -36,7 +36,7 @@ class Simulator:
         self,
         device_factory: DeviceFactory,
         num_active_devices: int = 1000,
-        max_num_devices: int = 10000,
+        num_devices: int = 10000,
         num_workers: int = 10,
         cycle_duration: float = 30,
         device_reuse_rate: float = 0,
@@ -46,14 +46,14 @@ class Simulator:
         Args:
             device_factory: object for creating new devices
             num_active_devices: number of active devices
-            max_num_devices: max number of devices to be created
+            num_devices: max number of devices to be created
             num_workers: number of threads for doing tasks
             cycle_duration: time duration for one query cycle
             device_reuse_rate: odds for reusing used devices
         """
         self.device_factory = device_factory
         self.num_active_devices = num_active_devices
-        self.max_num_devices = max_num_devices
+        self.num_devices = num_devices
         self.num_workers = num_workers
         self.cycle_duration = cycle_duration
         self.device_reuse_rate = device_reuse_rate
@@ -384,7 +384,7 @@ class Simulator:
             # no used devices - make a new device
             return self._make_new_device()
 
-        if len(self.all_devices) >= self.max_num_devices:
+        if len(self.all_devices) >= self.num_devices:
             # We've got max allowed devices - have to pick a used one
             return self._pick_a_used_device()
 
@@ -413,7 +413,7 @@ class Simulator:
             result = device.do_task(task_data)
             status = EdgeApiStatus.OK
         except Exception as ex:
-            self.logger.error(f"exception when processing task: {secure_format_exception(ex)}")
+            self.logger.error(f"exception processing task: {secure_format_exception(ex)}")
             result = {}
             status = EdgeApiStatus.ERROR
 
