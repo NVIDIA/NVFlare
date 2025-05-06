@@ -34,14 +34,35 @@ class WandBTask(NamedTuple):
     step: int
 
 
+def _check_wandb_args(wandb_args):
+    if "project" not in wandb_args:
+        raise ValueError("must provide 'project' value")
+
+    if "group" not in wandb_args:
+        raise ValueError("must provide 'group' value")
+
+    if "job_type" not in wandb_args:
+        raise ValueError("must provide 'job_type' value")
+
+
+def _get_job_id_tag(fl_ctx: FLContext) -> str:
+    """Gets a unique job id tag."""
+    job_id = fl_ctx.get_job_id()
+    if job_id == "simulate_job":
+        # Since all jobs run in the simulator have the same job_id of "simulate_job"
+        # Use timestamp as unique identifier for simulation runs
+        job_id = str(int(time.time()))
+    return job_id
+
+
 class WandBReceiver(AnalyticsReceiver):
     def __init__(
-        self, kwargs: dict, mode: str = "offline", events: Optional[List[str]] = None, process_timeout: float = 10.0
+        self, wandb_args: dict, mode: str = "offline", events: Optional[List[str]] = None, process_timeout: float = 10.0
     ):
         super().__init__(events=events)
         self.fl_ctx = None
         self.mode = mode
-        self.kwargs = kwargs
+        self.wandb_args = wandb_args
         self.queues = {}
         self.processes = {}
         self.metrics_buffer = {}
@@ -71,28 +92,28 @@ class WandBReceiver(AnalyticsReceiver):
                     if cnt % 500 == 0:
                         self.log_info(self.fl_ctx, f"process task : {wandb_task}, cnt = {cnt}")
 
-                if wandb_task.step is not None:
-                    if wandb_task.step < current_step:
-                        self.log_warning(
-                            self.fl_ctx, f"Received out-of-order step: {wandb_task.step} (current: {current_step})"
-                        )
-                        continue
+                    if wandb_task.step is not None:
+                        if wandb_task.step < current_step:
+                            self.log_warning(
+                                self.fl_ctx, f"Received out-of-order step: {wandb_task.step} (current: {current_step})"
+                            )
+                            continue
 
-                    # If we see a new step, log the previous step's metrics
-                    if wandb_task.step > current_step and current_step in self.metrics_buffer:
-                        wandb.log(self.metrics_buffer[current_step], current_step)
-                        del self.metrics_buffer[current_step]
+                        # If we see a new step, log the previous step's metrics
+                        if wandb_task.step > current_step and current_step in self.metrics_buffer:
+                            wandb.log(self.metrics_buffer[current_step], current_step)
+                            del self.metrics_buffer[current_step]
 
-                    # Store metrics in buffer for current step
-                    if wandb_task.step not in self.metrics_buffer:
-                        self.metrics_buffer[wandb_task.step] = {}
-                    self.metrics_buffer[wandb_task.step].update(wandb_task.task_data)
-                    current_step = wandb_task.step
-                else:
-                    # Use current step for metrics without a step
-                    if current_step not in self.metrics_buffer:
-                        self.metrics_buffer[current_step] = {}
-                    self.metrics_buffer[current_step].update(wandb_task.task_data)
+                        # Store metrics in buffer for current step
+                        if wandb_task.step not in self.metrics_buffer:
+                            self.metrics_buffer[wandb_task.step] = {}
+                        self.metrics_buffer[wandb_task.step].update(wandb_task.task_data)
+                        current_step = wandb_task.step
+                    else:
+                        # Use current step for metrics without a step
+                        if current_step not in self.metrics_buffer:
+                            self.metrics_buffer[current_step] = {}
+                        self.metrics_buffer[current_step].update(wandb_task.task_data)
         finally:
             if run:
                 run.finish()
@@ -115,9 +136,9 @@ class WandBReceiver(AnalyticsReceiver):
 
         self.fl_ctx = fl_ctx
 
-        run_name = self.kwargs["name"]
-        job_id_tag = self._get_job_id_tag(fl_ctx)
-        wand_config = self.kwargs.get("config", {})
+        run_name = self.wandb_args["name"]
+        job_id_tag = _get_job_id_tag(fl_ctx)
+        wand_config = self.wandb_args.get("config", {})
 
         if self.mode == "online":
             try:
@@ -128,17 +149,17 @@ class WandBReceiver(AnalyticsReceiver):
 
         for site_name in site_names:
             self.log_info(fl_ctx, f"initialize WandB run for site {site_name}")
-            self.kwargs["name"] = f"{site_name}-{job_id_tag[:6]}-{run_name}"
-            self.kwargs["group"] = f"{run_name}-{job_id_tag}"
-            self.kwargs["mode"] = self.mode
+            self.wandb_args["name"] = f"{site_name}-{job_id_tag}-{run_name}"
+            self.wandb_args["group"] = f"{run_name}-{job_id_tag}"
+            self.wandb_args["mode"] = self.mode
             wand_config["job_id"] = job_id_tag
             wand_config["client"] = site_name
             wand_config["run_name"] = run_name
 
-            self.check_kwargs(self.kwargs)
+            _check_wandb_args(self.wandb_args)
 
             q = Queue()
-            wandb_task = WandBTask(task_owner=site_name, task_type="init", task_data=self.kwargs, step=0)
+            wandb_task = WandBTask(task_owner=site_name, task_type="init", task_data=self.wandb_args, step=0)
             q.put(wandb_task)
 
             self.queues[site_name] = q
@@ -146,15 +167,6 @@ class WandBReceiver(AnalyticsReceiver):
             self.processes[site_name] = p
             p.start()
             time.sleep(0.2)
-
-    def _get_job_id_tag(self, fl_ctx: FLContext) -> str:
-        """Gets a unique job id tag."""
-        job_id = fl_ctx.get_job_id()
-        if job_id == "simulate_job":
-            # Since all jobs run in the simulator have the same job_id of "simulate_job"
-            # Use timestamp as unique identifier for simulation runs
-            job_id = str(int(time.time()))
-        return job_id
 
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
         dxo = from_shareable(shareable)
@@ -188,13 +200,3 @@ class WandBReceiver(AnalyticsReceiver):
 
     def get_task_queue(self, record_origin):
         return self.queues.get(record_origin, None)
-
-    def check_kwargs(self, kwargs):
-        if "project" not in kwargs:
-            raise ValueError("must provide 'project' value")
-
-        if "group" not in kwargs:
-            raise ValueError("must provide 'group' value")
-
-        if "job_type" not in kwargs:
-            raise ValueError("must provide 'job_type' value")

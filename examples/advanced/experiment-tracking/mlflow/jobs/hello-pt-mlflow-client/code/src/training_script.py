@@ -95,7 +95,7 @@ def main():
     flare.init()
     mlflow_writer = MLflowWriter()
 
-    # (4) run continously when launch_once=true
+    # (4) run continuously when launch_once=true
     while flare.is_running():
 
         # (5) receive FLModel from NVFlare

@@ -174,7 +174,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         if not selected:
             return self._make_retry(job_id, "Device not selected")
 
-        self.log_info(
+        self.log_debug(
             fl_ctx, f"task for model V{task_state.model_version} sent to device {device_id}: {new_selection_id=}"
         )
         task_data = self._convert_task(task_state, current_task, fl_ctx)

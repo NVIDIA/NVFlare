@@ -60,7 +60,7 @@ learnt by the central aggregation server.
 With our encryption plugins working with XGBoost, NVFlare now supports all secure federated schemes for XGBoost model training, with
 both CPU and GPU.
 
-Please check `federated xgboost with nvflare user guide <https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost.html>`
+Please check `federated xgboost with nvflare user guide <https://nvflare.readthedocs.io/en/2.5/user_guide/federated_xgboost.html>`
 and the :github_nvflare_link:`example <examples/advanced/xgboost_secure>`
 
 Tensorflow support

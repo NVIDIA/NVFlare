@@ -205,3 +205,4 @@ With FLARE 2.6.0, we now support:
 3. Native PyTorch tensor transmission
 
 The new `server_expected_format` parameter specifically controls the format used in server-client communication. When set to "pytorch", the entire pipeline - from server to client to script - can operate using PyTorch tensors without any format conversion.
+

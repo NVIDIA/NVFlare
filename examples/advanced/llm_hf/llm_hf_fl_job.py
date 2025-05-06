@@ -73,11 +73,17 @@ def main():
         job.to(dequantizer, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
     # Define the model persistor and send to server
-    # First send the model to the server
-    job.to("src/hf_sft_model.py", "server")
-    # Then send the model persistor to the server
-    model_args = {"path": "src.hf_sft_model.CausalLMModel", "args": {"model_name_or_path": model_name_or_path}}
-    job.to(PTFileModelPersistor(model=model_args), "server", id="persistor")
+    if train_mode.lower() == "sft":
+        # First send the model to the server
+        job.to("src/hf_sft_model.py", "server")
+        # Then send the model persistor to the server
+        model_args = {"path": "src.hf_sft_model.CausalLMModel", "args": {"model_name_or_path": model_name_or_path}}
+    elif train_mode.lower() == "peft":
+        # First send the model to the server
+        job.to("src/hf_peft_model.py", "server")
+        # Then send the model persistor to the server
+        model_args = {"path": "src.hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": model_name_or_path}}
+    job.to(PTFileModelPersistor(model=model_args, allow_numpy_conversion=False), "server", id="persistor")
 
     # Add model selection widget and send to server
     job.to(IntimeModelSelector(key_metric="eval_loss", negate_key_metric=True), "server", id="model_selector")
@@ -91,16 +97,16 @@ def main():
 
         script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --clean_up {clean_up}"
         if message_mode == "tensor":
-            params_exchange_format = "pytorch"
+            server_expected_format = "pytorch"
         elif message_mode == "numpy":
-            params_exchange_format = "numpy"
+            server_expected_format = "numpy"
         else:
             raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
 
         runner = ScriptRunner(
             script=train_script,
             script_args=script_args,
-            params_exchange_format=params_exchange_format,
+            server_expected_format=server_expected_format,
             launch_external_process=False,
         )
         job.to(runner, site_name, tasks=["train"])

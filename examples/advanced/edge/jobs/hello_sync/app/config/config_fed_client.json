@@ -1,0 +1,44 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": ["train"],
+      "executor": {
+        "path": "nvflare.edge.executors.edge_model_executor.EdgeModelExecutor",
+        "args": {
+          "aggr_factory_id": "aggr_factory",
+          "max_model_versions": 4,
+          "update_timeout": 5.0
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
+  "components": [
+    {
+      "id": "aggr_factory",
+      "path": "nvflare.edge.aggregators.num_dxo_factory.NumDXOAggrFactory",
+      "args": {}
+    },
+    {
+      "id": "device_factory",
+      "path": "nvflare.edge.devices.num.NumDeviceFactory",
+      "args": {
+        "min_train_time": 0.2,
+        "max_train_time": 1.0
+      }
+    },
+    {
+      "id": "device_runner",
+      "path": "nvflare.edge.widgets.device_runner.DeviceRunner",
+      "args": {
+        "device_factory_id": "device_factory",
+        "num_devices": 1,
+        "num_workers": 1
+      }
+    }
+  ]
+}
