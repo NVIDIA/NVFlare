@@ -123,7 +123,7 @@ class SimulatorRunner(FLComponent):
         running_dir = os.getcwd()
         if self.workspace is None:
             self.workspace = "simulator_workspace"
-            self.logger.warn(
+            self.logger.warning(
                 f"Simulator workspace is not provided. Set it to the default location:"
                 f" {os.path.join(running_dir, self.workspace)}"
             )
@@ -220,12 +220,12 @@ class SimulatorRunner(FLComponent):
 
             if not self.client_names:
                 self.args.n_clients = 2
-                self.logger.warn("The number of simulator clients is not provided. Setting it to default: 2")
+                self.logger.warning("The number of simulator clients is not provided. Setting it to default: 2")
                 for i in range(self.args.n_clients):
                     self.client_names.append("site-" + str(i + 1))
             if self.args.gpu is None and self.args.threads is None:
                 self.args.threads = 1
-                self.logger.warn("The number of threads is not provided. Set it to default: 1")
+                self.logger.warning("The number of threads is not provided. Set it to default: 1")
 
             if self.max_clients < len(self.client_names):
                 self.logger.error(
@@ -264,7 +264,7 @@ class SimulatorRunner(FLComponent):
                 elif len(gpu_groups) == 1:
                     if self.args.threads is None:
                         self.args.threads = 1
-                        self.logger.warn("The number of threads is not provided. Set it to default: 1")
+                        self.logger.warning("The number of threads is not provided. Set it to default: 1")
 
             if self.args.threads and self.args.threads > len(self.client_names):
                 self.logger.error("The number of threads to run can not be larger than the number of clients.")
@@ -641,7 +641,7 @@ class SimulatorClientRunner(FLComponent):
             client.communicator.cell.stop()
         except:
             # Ignore the exception for the simulator client shutdown
-            self.logger.warn(f"Exception happened to client{client.name} during shutdown ")
+            self.logger.warning(f"Exception happened to client{client.name} during shutdown ")
 
     def run_client_thread(self, num_of_threads, gpu, lock, end_run_for_all, timeout=60):
         stop_run = False

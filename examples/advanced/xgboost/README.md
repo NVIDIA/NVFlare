@@ -10,7 +10,7 @@ and install the additional requirements:
 ```
 python3 -m pip install -r requirements.txt
 ```
-Also, follow [encryption plugins instruction](https://github.com/NVIDIA/NVFlare/tree/main/integration/xgboost/encryption_plugins) to setup encryption plugins.
+Also, follow [encryption plugins instruction](../../../integration/xgboost/encryption_plugins) to setup encryption plugins.
 
 ## XGBoost 
 XGBosot is a machine learning algorithm that uses decision/regression trees to perform classification and regression tasks, 

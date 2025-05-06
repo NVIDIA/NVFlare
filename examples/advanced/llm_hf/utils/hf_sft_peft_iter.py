@@ -17,6 +17,7 @@ import os
 
 # Add deterministic seed for reproducibility illustration
 import random
+import shutil
 
 import datasets
 import numpy as np
@@ -67,6 +68,11 @@ def main():
         help="training mode, SFT or PEFT, default to SFT",
     )
     args = parser.parse_args()
+
+    # If output path exists, remove it
+    if os.path.exists(args.output_path):
+        print(f"Output path {args.output_path} exists, removing it.")
+        shutil.rmtree(args.output_path)
 
     # Dataset
     dataset_train = datasets.load_dataset("json", data_files=args.data_path_train, split="train")
