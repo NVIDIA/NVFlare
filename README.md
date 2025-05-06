@@ -43,6 +43,9 @@ To install the [current release](https://pypi.org/project/nvflare/):
 ```
 $ python3 -m pip install nvflare
 ```
+
+For detailed installation please refer to [NVIDIA FLARE installation](https://nvflare.readthedocs.io/en/main/installation.html).
+
 ## Getting Started
 
 * To get started, visit our NVFLARE [website](https://nvidia.github.io/NVFlare/), which includes:
