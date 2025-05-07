@@ -2,10 +2,10 @@
 
 # NVIDIA FLARE
 
-[Website](https://nvidia.github.io/NVFlare) | [Paper](https://arxiv.org/abs/2210.13291) | [Blogs](https://developer.nvidia.com/blog/tag/federated-learning) | [Talks & Papers](https://nvflare.readthedocs.io/en/main/publications_and_talks.html) | [Research](./research/README.md) | [Documentation](https://nvflare.readthedocs.io/en/main)
+[Website](https://nvidia.github.io/NVFlare) | [Paper](https://arxiv.org/abs/2210.13291) | [Blogs](https://developer.nvidia.com/blog/tag/federated-learning) | [Talks & Papers](https://nvflare.readthedocs.io/en/2.6/publications_and_talks.html) | [Research](./research/README.md) | [Documentation](https://nvflare.readthedocs.io/en/2.6)
 
-[![Blossom-CI](https://github.com/NVIDIA/nvflare/workflows/Blossom-CI/badge.svg?branch=main)](https://github.com/NVIDIA/nvflare/actions)
-[![documentation](https://readthedocs.org/projects/nvflare/badge/?version=main)](https://nvflare.readthedocs.io/en/main/?badge=main)
+[![Blossom-CI](https://github.com/NVIDIA/nvflare/workflows/Blossom-CI/badge.svg?branch=2.6)](https://github.com/NVIDIA/nvflare/actions)
+[![documentation](https://readthedocs.org/projects/nvflare/badge/?version=2.6)](https://nvflare.readthedocs.io/en/2.6/?badge=2.6)
 [![license](https://img.shields.io/badge/License-Apache%202.0-brightgreen.svg)](./LICENSE)
 [![pypi](https://badge.fury.io/py/nvflare.svg)](https://badge.fury.io/py/nvflare)
 [![pyversion](https://img.shields.io/pypi/pyversions/nvflare.svg)](https://badge.fury.io/py/nvflare)
@@ -36,13 +36,16 @@ From Simulation to Real-World
 * Security enforcement through federated authorization and privacy policy
 * Built-in support for system resiliency and fault tolerance
 
-> _Take a look at [NVIDIA FLARE Overview](https://nvflare.readthedocs.io/en/main/flare_overview.html) for a complete overview, and [What's New](https://nvflare.readthedocs.io/en/main/whats_new.html) for the lastest changes._
+> _Take a look at [NVIDIA FLARE Overview](https://nvflare.readthedocs.io/en/2.6/flare_overview.html) for a complete overview, and [What's New](https://nvflare.readthedocs.io/en/2.6/whats_new.html) for the lastest changes._
 
 ## Installation
 To install the [current release](https://pypi.org/project/nvflare/):
 ```
 $ python3 -m pip install nvflare
 ```
+
+For detailed installation please refer to [NVIDIA FLARE installation](https://nvflare.readthedocs.io/en/2.6/installation.html).
+
 ## Getting Started
 
 * To get started, visit our NVFLARE [website](https://nvidia.github.io/NVFlare/), which includes:
@@ -56,22 +59,22 @@ $ python3 -m pip install nvflare
   * DLI courses:
     * https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-28+V1
     * https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-29+V1
-  * follow the notebooks: https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/self-paced-training
+  * follow the notebooks: https://github.com/NVIDIA/NVFlare/tree/2.6/examples/tutorials/self-paced-training
  
-* If you'd like to write your own NVIDIA FLARE components, a detailed programming guide can be found [here](https://nvflare.readthedocs.io/en/main/programming_guide.html).
+* If you'd like to write your own NVIDIA FLARE components, a detailed programming guide can be found [here](https://nvflare.readthedocs.io/en/2.6/programming_guide.html).
 * visit developer portal https://developer.nvidia.com/flare
 
 ## Community
 
-We welcome community contributions! Please refer to the [contributing guidelines](https://github.com/NVIDIA/NVFlare/blob/main/CONTRIBUTING.md) for more details.
+We welcome community contributions! Please refer to the [contributing guidelines](./CONTRIBUTING.md) for more details.
 
 Ask and answer questions, share ideas, and engage with other community members at [NVFlare Discussions](https://github.com/NVIDIA/NVFlare/discussions).
 
 ## Related Talks and Publications
 
-Take a look at our growing list of [talks and publications](https://nvflare.readthedocs.io/en/main/publications_and_talks.html), and [technical blogs](https://developer.nvidia.com/blog/tag/federated-learning) related to NVIDIA FLARE.
+Take a look at our growing list of [talks and publications](https://nvflare.readthedocs.io/en/2.6/publications_and_talks.html), and [technical blogs](https://developer.nvidia.com/blog/tag/federated-learning) related to NVIDIA FLARE.
 
 
 ## License
 
-NVIDIA FLARE is released under an [Apache 2.0 license](https://github.com/NVIDIA/NVFlare/blob/main/LICENSE).
+NVIDIA FLARE is released under an [Apache 2.0 license](./LICENSE).

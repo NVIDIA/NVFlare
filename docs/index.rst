@@ -9,8 +9,10 @@ NVIDIA FLARE
 
    fl_introduction
    flare_overview
+   Installation <installation>
+   Quickstart <quickstart>
+   getting_started
    whats_new
-   Getting Started <quickstart>
 
 .. toctree::
    :maxdepth: -1
@@ -52,9 +54,13 @@ Learn more about FLARE features in the :ref:`FLARE Overview <flare_overview>` an
 
 Getting Started
 ===============
+To get started with NVIDIA FLARE:
+
+1. Follow the :ref:`installation` guide to set up your environment
+2. Run through the :ref:`quickstart` guide to try your first example
+3. Explore more examples in the :ref:`Example Applications <example_applications>` section
+
 For first-time users and FL researchers, FLARE provides the :ref:`FL Simulator <fl_simulator>` that allows you to build, test, and deploy applications locally.
-The :ref:`Getting Started <getting_started>` guide covers installation and walks through an example application using the FL Simulator.
-Additional examples can be found at the :ref:`Examples Applications <example_applications>`, which showcase different federated learning workflows and algorithms on various machine learning and deep learning tasks.
 
 FLARE for Users
 ===============
