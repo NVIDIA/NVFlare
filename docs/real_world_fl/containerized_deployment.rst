@@ -51,7 +51,7 @@ Using any text editor to edit the Dockerfile and paste the following:
 
 .. note::
     Feel free to substitute the base image with the latest version of the NGC PyTorch container.
-    See the `NGC PyTorch Container <https://catalog.ngc.nvidia.com/orgs/nvidia/collections/pytorch>`_
+    See the `NGC PyTorch Container <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch>`_
     for the latest versions.
 
 We can then build the new container by running docker build in the directory containing
