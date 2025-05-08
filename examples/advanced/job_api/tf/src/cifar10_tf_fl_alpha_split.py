@@ -124,7 +124,7 @@ def main():
         print(
             (
                 f"Loaded {len(train_idx)} training indices from {args.train_idx_path} "
-                "with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}"
+                f"with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}"
             )
         )
 
