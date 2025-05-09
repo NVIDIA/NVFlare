@@ -19,10 +19,12 @@ class SelectionRequest(BaseModel):
     def __init__(
         self,
         device_info: DeviceInfo,
+        job_id: str,
         **kwargs,
     ):
         super().__init__()
         self.device_info = device_info
+        self.job_id = job_id
 
         if kwargs:
             self.update(kwargs)
