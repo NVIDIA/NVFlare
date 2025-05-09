@@ -71,6 +71,7 @@ class PropKey:
     FQSN = "__fqsn__"
     IS_LEAF = "__is_leaf__"
     COMM_CONFIG_ARGS = "__comm_config_args__"
+    AUTHZ_SECTION_KEY = "__authz_section_key__"
 
 
 class CtxKey(WorkDir, PropKey):
@@ -79,6 +80,7 @@ class CtxKey(WorkDir, PropKey):
     TEMP_FILES_LOADED = "__temp_files_loaded__"
     PROVISION_MODE = "__provision_model__"
     LOGGER = "__logger__"
+    BUILD_ERROR = "__build_error__"
     LAST_PROD_STAGE = "last_prod_stage"
     SERVER_NAME = "server_name"
     ROOT_CERT = "root_cert"
@@ -136,6 +138,7 @@ class TemplateSectionKey:
     LOCAL_CLIENT_RESOURCES = "local_client_resources"
     SAMPLE_PRIVACY = "sample_privacy"
     DEFAULT_AUTHZ = "default_authz"
+    CC_AUTHZ = "cc_authz"
     SERVER_README = "readme_fs"
     CLIENT_README = "readme_fc"
     ADMIN_README = "readme_am"
