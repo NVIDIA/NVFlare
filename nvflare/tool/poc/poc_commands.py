@@ -27,7 +27,6 @@ from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
-from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.constants import ProvisionMode
