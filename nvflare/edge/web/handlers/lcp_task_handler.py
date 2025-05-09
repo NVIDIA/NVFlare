@@ -23,6 +23,8 @@ from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
+from nvflare.edge.web.models.selection_request import SelectionRequest
+from nvflare.edge.web.models.selection_response import SelectionResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
 
@@ -80,6 +82,17 @@ class LcpTaskHandler(EdgeTaskHandler):
         status = reply.get(EdgeProtoKey.STATUS)
         if status != EdgeApiStatus.OK:
             response = ResultResponse(EdgeApiStatus.RETRY, retry_wait=30)
+        else:
+            data = reply.get(EdgeProtoKey.DATA)
+            response = data.get(EdgeProtoKey.RESPONSE)
+
+        return response
+
+    def handle_selection(self, selection_request: SelectionRequest) -> SelectionResponse:
+        reply = self._handle_task_request(selection_request)
+        status = reply.get(EdgeProtoKey.STATUS)
+        if status != EdgeApiStatus.OK:
+            response = SelectionResponse(EdgeApiStatus.RETRY, job_id=selection_request.job_id)
         else:
             data = reply.get(EdgeProtoKey.DATA)
             response = data.get(EdgeProtoKey.RESPONSE)

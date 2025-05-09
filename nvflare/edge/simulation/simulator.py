@@ -164,6 +164,7 @@ class Simulator:
         self.logger.info(f"starting device simulator: {interval=} {self.cycle_duration=}")
         active_device_candidates = {}
         cycle_num = 0
+        job_id = None
 
         while not self.done:
             cycle_num += 1
@@ -175,8 +176,8 @@ class Simulator:
             # current active devices, then the device used before will never be active, and hence will never get
             # the assigned task!
             selected_devices = {}
-            if self.all_devices:
-                _, resp = self._ask_for_selection()
+            if self.all_devices and job_id:
+                _, resp = self._ask_for_selection(job_id)
                 if resp:
                     assert isinstance(resp, SelectionResponse)
                     if resp.selection:
@@ -252,6 +253,10 @@ class Simulator:
                                 job_data=resp.job_data,
                                 method=resp.method,
                             )
+                            if not job_id:
+                                job_id = resp.job_id
+                            elif job_id != resp.job_id:
+                                self.logger.warning(f"multiple jobs detected: {job_id}, {resp.job_id}")
                         elif resp.status in [EdgeApiStatus.RETRY, EdgeApiStatus.NO_JOB]:
                             pass
                         elif resp.status in [EdgeApiStatus.DONE]:
@@ -311,7 +316,7 @@ class Simulator:
                 status = EdgeApiStatus.ERROR
         return status, resp
 
-    def _ask_for_selection(self) -> (str, SelectionResponse):
+    def _ask_for_selection(self, job_id: str) -> (str, SelectionResponse):
         """Send a request to Flare for ask for the current device selection.
         Note: this is used for simulation purpose. Real devices don't make this request.
 
@@ -320,7 +325,7 @@ class Simulator:
         """
         first_key = next(iter(self.all_devices))
         device = self.all_devices[first_key]
-        req = SelectionRequest(device.get_device_info())
+        req = SelectionRequest(device.get_device_info(), job_id)
         status, resp = self.send_f(req, device, **self.send_kwargs)
         if resp and not isinstance(resp, SelectionResponse):
             self.logger.error(f"received response must be SelectionResponse but got {type(resp)}")
