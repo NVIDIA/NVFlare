@@ -17,6 +17,10 @@ class EdgeProtoKey:
     STATUS = "status"
     DATA = "data"
     RESPONSE = "response"
+    JOB_ID = "job_id"
+    TASK_ID = "task_id"
+    TASK_NAME = "task_name"
+    RESULT = "result"
 
 
 class EdgeContextKey:
@@ -58,10 +62,12 @@ class EdgeApiStatus:
     INVALID_REQUEST = "invalid_request"
 
 
-class EdgeApiKey:
-    JOB_DONE = "_job_done"
-
-
 class CookieKey:
     MODEL_VERSION = "model_version"
     DEVICE_SELECTION_ID = "device_selection_id"
+
+
+class HttpHeaderKey:
+    DEVICE_ID = "X-Flare-Device-ID"
+    DEVICE_INFO = "X-Flare-Device-Info"
+    USER_INFO = "X-Flare-User-Info"
