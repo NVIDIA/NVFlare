@@ -21,9 +21,9 @@ import shutil
 import sys
 from typing import Optional
 
-from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.lighter.constants import PropKey
 from nvflare.lighter.entity import participant_from_dict
+from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Project
 from nvflare.lighter.utils import load_yaml
@@ -118,17 +118,9 @@ def provision(
     project_dict = load_yaml(project_full_path)
     project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
     builders = prepare_builders(project_dict)
-    provisioner = Provisioner(workspace_full_path, builders)
+    packager = prepare_packager(project_dict)
+    provisioner = Provisioner(workspace_full_path, builders, packager)
     provisioner.provision(project)
-
-
-def prepare_builders(project_dict):
-    builders = list()
-    for b in project_dict.get("builders"):
-        path = b.get("path")
-        args = b.get("args")
-        builders.append(instantiate_class(path, args))
-    return builders
 
 
 def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
