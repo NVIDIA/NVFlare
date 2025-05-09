@@ -11,8 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import grpc
 import threading
+
+import grpc
 
 from .edge_api_pb2 import Reply, Request
 from .edge_api_pb2_grpc import EdgeApiStub
