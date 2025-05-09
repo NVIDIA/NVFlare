@@ -138,6 +138,7 @@ class TemplateSectionKey:
     LOCAL_CLIENT_RESOURCES = "local_client_resources"
     SAMPLE_PRIVACY = "sample_privacy"
     DEFAULT_AUTHZ = "default_authz"
+    CC_AUTHZ = "cc_authz"
     SERVER_README = "readme_fs"
     CLIENT_README = "readme_fc"
     ADMIN_README = "readme_am"
