@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import threading
 import time
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
@@ -46,36 +47,40 @@ CC_VERIFICATION_FAILED = "not meeting CC requirements"
 class CCManager(FLComponent):
     def __init__(
         self,
-        cc_issuers_conf: [Dict[str, str]],
-        cc_verifier_ids: [str],
-        verify_frequency=600,
+        cc_issuers_conf: List[Dict[str, str]],
+        cc_verifier_ids: List[str],
+        verify_frequency: int = 600,
         critical_level=SHUTDOWN_JOB,
+        cc_enabled_sites: List[str] = [],
     ):
         """Manage all confidential computing related tasks.
 
         This manager does the following tasks:
-        obtaining its own CC token
-        preparing the token to the server
-        keeping clients' tokens in server
-        validating all tokens in the entire NVFlare system
-        not allowing the system to start if failed to get CC token
-        shutdown the running jobs if CC tokens expired
+            1. obtaining its own CC token
+            2. preparing the token to the server
+            3. keeping clients' tokens in server
+            4. validating all tokens in the entire NVFlare system
+            5. not allowing the system to start if failed to get CC token
+            6. shutdown the running jobs if CC tokens expired
+
+        # TODO: should we separate the server and client side into two components?
 
         Args:
             cc_issuers_conf: configuration of the CC token issuers. each contains the CC token issuer component ID,
                             and the token expiration time
             cc_verifier_ids: CC token verifiers component IDs
             verify_frequency: CC tokens verification frequency
-            critical_level: critical_level
-
+            critical_level: critical level for shutting down the system or jobs
+            cc_enabled_sites: list of sites that are enabled for CC
         """
         FLComponent.__init__(self)
         self.site_name = None
         self.cc_issuers_conf = cc_issuers_conf
         self.cc_verifier_ids = cc_verifier_ids
+        self.cc_enabled_sites = cc_enabled_sites
 
         if not isinstance(verify_frequency, int):
-            raise ValueError(f"verify_frequency must be in, but got {verify_frequency.__class__}")
+            raise ValueError(f"verify_frequency must be int, but got {verify_frequency.__class__}")
         self.verify_frequency = int(verify_frequency)
 
         self.critical_level = critical_level
@@ -159,6 +164,7 @@ class CCManager(FLComponent):
         engine = fl_ctx.get_engine()
         for conf in self.cc_issuers_conf:
             issuer_id = conf.get(CC_ISSUER_ID)
+            # TODO: should we make expiration an instance variable of the issuer?
             expiration = conf.get(TOKEN_EXPIRATION)
             issuer = engine.get_component(issuer_id)
             if not isinstance(issuer, CCAuthorizer):
@@ -176,7 +182,7 @@ class CCManager(FLComponent):
 
     def _prepare_cc_info(self, fl_ctx: FLContext):
         # client side: if token expired then generate a new one
-        self._handle_expired_tokens()
+        self._refresh_expired_tokens()
 
         if not self.token_submitted:
             site_cc_info = self.participant_cc_info[self.site_name]
@@ -209,7 +215,8 @@ class CCManager(FLComponent):
                 for _, client in job_participants.items():
                     participants.append(client.name)
 
-                err, participant_tokens = self._verify_participants(participants)
+                participants_tokens = self._collect_participants_tokens(participants)
+                err = self._validate_participants_tokens(participants_tokens)
                 if err:
                     if self.critical_level == SHUTDOWN_JOB:
                         # maybe shutdown the whole system here. leave the user to define the action
@@ -231,7 +238,6 @@ class CCManager(FLComponent):
     def _generate_tokens(self, fl_ctx: FLContext) -> str:
         # both server and client sides
         self.site_name = fl_ctx.get_identity_name()
-        workspace_folder = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT).get_site_config_dir()
 
         self.participant_cc_info[self.site_name] = []
         for issuer, expiration in self.cc_issuers.items():
@@ -245,7 +251,7 @@ class CCManager(FLComponent):
                     return f"{issuer} failed to get CC token"
 
                 self.logger.info(f"site: {self.site_name} namespace: {namespace} got the token: {my_token}")
-                cc_info = {
+                site_cc_info = {
                     CC_TOKEN: my_token,
                     CC_ISSUER: issuer,
                     CC_NAMESPACE: namespace,
@@ -253,7 +259,7 @@ class CCManager(FLComponent):
                     TOKEN_EXPIRATION: int(expiration),
                     CC_TOKEN_VALIDATED: True,
                 }
-                self.participant_cc_info[self.site_name].append(cc_info)
+                self.participant_cc_info[self.site_name].append(site_cc_info)
                 self.token_submitted = False
             except CCTokenGenerateError:
                 raise RuntimeError(f"{issuer} failed to generate CC token.")
@@ -265,21 +271,20 @@ class CCManager(FLComponent):
         peer_ctx = fl_ctx.get_peer_context()
         if peer_ctx is None:
             return f"Empty peer context in {self.site_name=}"
-        participants_to_validate = peer_ctx.get_prop(PEER_CTX_CC_TOKEN, None)
-        if not participants_to_validate:
+        participants_tokens = peer_ctx.get_prop(PEER_CTX_CC_TOKEN, None)
+        if not participants_tokens:
             return "missing PEER_CTX_CC_TOKEN prop in peer context"
 
-        if not isinstance(participants_to_validate, dict):
-            return (
-                f"bad PEER_CTX_CC_TOKEN prop in peer context: must be a dict but got {type(participants_to_validate)}"
-            )
+        if not isinstance(participants_tokens, dict):
+            return f"bad PEER_CTX_CC_TOKEN prop in peer context: must be a dict but got {type(participants_tokens)}"
 
-        if not participants_to_validate:
+        if not participants_tokens:
             return ""
 
-        return self._validate_participants_tokens(participants_to_validate)
+        return self._validate_participants_tokens(participants_tokens)
 
     def _server_to_check_client_token(self, fl_ctx: FLContext) -> str:
+        # Server side
         participants = fl_ctx.get_prop(FLContextKey.JOB_PARTICIPANTS)
         if not participants:
             return f"missing '{FLContextKey.JOB_PARTICIPANTS}' prop in fl_ctx"
@@ -287,24 +292,37 @@ class CCManager(FLComponent):
         if not isinstance(participants, list):
             return f"bad value for {FLContextKey.JOB_PARTICIPANTS} in fl_ctx: expect list bot got {type(participants)}"
 
-        err, participant_tokens = self._verify_participants(participants)
+        for p in participants:
+            if not isinstance(p, str):
+                return f"bad value for {FLContextKey.JOB_PARTICIPANTS} in fl_ctx: expect list of str but got list of {type(p)}"
+
+        participants_tokens = self._collect_participants_tokens(participants)
+        err = self._validate_participants_tokens(participants_tokens)
         if err:
             return err
 
-        fl_ctx.set_prop(key=PEER_CTX_CC_TOKEN, value=participant_tokens, sticky=False, private=False)
-        self.logger.info(f"{self.site_name=} set PEER_CTX_CC_TOKEN with {participant_tokens=}")
+        fl_ctx.set_prop(key=PEER_CTX_CC_TOKEN, value=participants_tokens, sticky=False, private=False)
+        self.logger.info(f"{self.site_name=} set PEER_CTX_CC_TOKEN with {participants_tokens=}")
         return ""
 
-    def _verify_participants(self, participants):
+    def _collect_participants_tokens(self, participants: List[str]) -> Dict[str, List[Dict[str, str]]]:
+        """Collects tokens from all participants including itself.
+
+        Args:
+            participants: list of participant names
+
+        Returns:
+            dict of participant name to list of tokens
+        """
+        # server side to collect tokens from all participants including itself
         # if server token expired, then generates a new one
-        self._handle_expired_tokens()
+        self._refresh_expired_tokens()
 
         participant_tokens = {}
         site_cc_info = self.participant_cc_info[self.site_name]
         participant_tokens[self.site_name] = self._get_participant_tokens(site_cc_info)
 
         for p in participants:
-            assert isinstance(p, str)
             if p == self.site_name:
                 continue
             # if p not in self.participant_cc_info:
@@ -313,7 +331,7 @@ class CCManager(FLComponent):
                 participant_tokens[p] = self._get_participant_tokens(self.participant_cc_info[p])
             else:
                 participant_tokens[p] = [{CC_TOKEN: "", CC_NAMESPACE: ""}]
-        return self._validate_participants_tokens(participant_tokens), participant_tokens
+        return participant_tokens
 
     def _get_participant_tokens(self, site_cc_info):
         cc_info = []
@@ -323,7 +341,7 @@ class CCManager(FLComponent):
             cc_info.append({CC_TOKEN: token, CC_NAMESPACE: namespace, CC_TOKEN_VALIDATED: False})
         return cc_info
 
-    def _handle_expired_tokens(self):
+    def _refresh_expired_tokens(self):
         site_cc_info = self.participant_cc_info[self.site_name]
         for i in site_cc_info:
             issuer = i.get(CC_ISSUER)
@@ -339,9 +357,9 @@ class CCManager(FLComponent):
 
                 self.token_submitted = False
 
-    def _validate_participants_tokens(self, participants) -> str:
-        self.logger.debug(f"Validating participant tokens {participants=}")
-        result, invalid_participant_list = self._validate_participants(participants)
+    def _validate_participants_tokens(self, participants_tokens: Dict[str, List[Dict[str, str]]]) -> str:
+        self.logger.debug(f"Validating participant tokens {participants_tokens=}")
+        _, invalid_participant_list = self._verify_participants_tokens(participants_tokens)
         if invalid_participant_list:
             invalid_participant_string = ",".join(invalid_participant_list)
             self.logger.debug(f"{invalid_participant_list=}")
@@ -349,12 +367,27 @@ class CCManager(FLComponent):
         else:
             return ""
 
-    def _validate_participants(self, participants: Dict[str, List[Dict[str, str]]]) -> (Dict[str, bool], List[str]):
+    def _verify_participants_tokens(
+        self, participants_tokens: Dict[str, List[Dict[str, str]]]
+    ) -> Tuple[Dict[str, bool], List[str]]:
+        """Verifies tokens for all participants.
+
+        Args:
+            participants_tokens: dict of participant name to list of tokens
+
+        Returns:
+            tuple of (result, invalid_participant_list)
+            result: dict of participant name to bool
+            invalid_participant_list: list of invalid participants
+        """
         result = {}
         invalid_participant_list = []
-        if not participants:
+        if not participants_tokens:
             return result, invalid_participant_list
-        for k, cc_info in participants.items():
+        for k, cc_info in participants_tokens.items():
+            if k not in self.cc_enabled_sites:
+                result[k] = True
+                continue
             for v in cc_info:
                 token = v.get(CC_TOKEN, "")
                 namespace = v.get(CC_NAMESPACE, "")
@@ -366,7 +399,7 @@ class CCManager(FLComponent):
                         invalid_participant_list.append(k + " namespace: {" + namespace + "}")
                 except CCTokenVerifyError:
                     invalid_participant_list.append(k + " namespace: {" + namespace + "}")
-        self.logger.info(f"CC - results from validating participants' tokens: {result}")
+        self.logger.info(f"CC - results from _verify_participants_tokens: {result}")
         return result, invalid_participant_list
 
     def _block_job(self, reason: str, fl_ctx: FLContext):
