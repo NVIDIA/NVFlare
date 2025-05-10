@@ -562,6 +562,7 @@ class SystemVarName:
     RELAY_URL = "RELAY_URL"  # URL to relay that the CP is connected to
     SECURE_MODE = "SECURE_MODE"  # whether the system is running in secure mode
     JOB_CUSTOM_DIR = "JOB_CUSTOM_DIR"  # custom dir of the job
+    JOB_CONFIG_DIR = "JOB_CONFIG_DIR"  # custom dir of the job
     PYTHONPATH = "PYTHONPATH"
 
 

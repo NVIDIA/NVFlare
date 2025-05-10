@@ -88,6 +88,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             SystemVarName.RELAY_URL: relay_url,
             SystemVarName.SECURE_MODE: self.cmd_vars.get("secure_train", True),
             SystemVarName.JOB_CUSTOM_DIR: workspace_obj.get_app_custom_dir(args.job_id),
+            SystemVarName.JOB_CONFIG_DIR: workspace_obj.get_app_config_dir(args.job_id),
         }
 
         FedJsonConfigurator.__init__(

@@ -16,7 +16,9 @@ import time
 import uuid
 
 from nvflare.apis.dxo import DXO, from_dict
-from nvflare.edge.simulated_device import DeviceFactory, SimulatedDevice
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
+from nvflare.edge.simulation.simulated_device import DeviceFactory, SimulatedDevice
+from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
 
 
@@ -27,8 +29,8 @@ class NumDevice(SimulatedDevice):
         self.min_train_time = min_train_time
         self.max_train_time = max_train_time
 
-    def do_task(self, data: TaskResponse) -> dict:
-        task_data = data.task_data
+    def do_task(self, task: TaskResponse) -> dict:
+        task_data = task.task_data
         assert isinstance(task_data, dict)
         model = from_dict(task_data)
         if not isinstance(model, DXO):
@@ -56,3 +58,36 @@ class NumDeviceFactory(DeviceFactory):
 
     def make_device(self) -> SimulatedDevice:
         return NumDevice(str(uuid.uuid4()), self.min_train_time, self.max_train_time)
+
+
+class NumProcessor(DeviceTaskProcessor):
+
+    def __init__(self, min_train_time=1.0, max_train_time=5.0):
+        DeviceTaskProcessor.__init__(self)
+        self.min_train_time = min_train_time
+        self.max_train_time = max_train_time
+
+    def setup(self, job: JobResponse) -> None:
+        pass
+
+    def shutdown(self) -> None:
+        pass
+
+    def process_task(self, task: TaskResponse) -> dict:
+        task_data = task.task_data
+        assert isinstance(task_data, dict)
+        model = from_dict(task_data)
+        if not isinstance(model, DXO):
+            self.logger.error(f"expect model to be DXO but got {type(model)}")
+            raise ValueError("bad model data")
+
+        if model.data_kind != "number":
+            self.logger.error(f"expect model data kind to be 'number' but got {model.data_kind}")
+            raise ValueError("bad model data kind")
+
+        value = model.data.get("value", 0)
+        result = value + 1
+        result_dxo = DXO(data_kind="number", data={"value": result})
+        delay = random.uniform(self.min_train_time, self.max_train_time)
+        time.sleep(delay)
+        return result_dxo.to_dict()

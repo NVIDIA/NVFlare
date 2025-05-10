@@ -15,6 +15,7 @@ from typing import Optional
 
 from flask import Blueprint, request
 
+from nvflare.edge.constants import EdgeApiStatus
 from nvflare.edge.web.handlers.edge_task_handler import EdgeTaskHandler
 from nvflare.edge.web.handlers.lcp_task_handler import LcpTaskHandler
 from nvflare.edge.web.models.api_error import ApiError
@@ -60,8 +61,9 @@ def job_view():
 def task_view():
     device_info, user_info = process_header(request.headers)
     job_id = request.args.get("job_id")
+    cookie = request.args.get("cookie", {})
 
-    req = TaskRequest(device_info, user_info, job_id)
+    req = TaskRequest(device_info, user_info, job_id, cookie)
 
     return task_handler.handle_task(req)
 
@@ -72,9 +74,19 @@ def result_view():
     job_id = request.args.get("job_id")
     task_id = request.args.get("task_id")
     task_name = request.args.get("task_name")
+    status = request.args.get("status", EdgeApiStatus.OK)
+    cookie = request.args.get("cookie")
     data = request.get_json()
 
-    req = ResultReport(device_info, user_info, job_id, task_id, task_name)
+    req = ResultReport(
+        device_info,
+        user_info,
+        job_id,
+        task_id,
+        task_name,
+        status=status,
+        cookie=cookie,
+    )
     req.update(data)
 
     return task_handler.handle_result(req)

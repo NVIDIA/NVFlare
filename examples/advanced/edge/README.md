@@ -130,7 +130,7 @@ python ../../../nvflare/edge/device_simulator/run_device_simulator.py ./simulato
 ```
 
 The DeviceSimulator polls the NVFlare system for job assignments. It runs one job and then quits.
-Please refer to [DeviceSimulator docs](../../../nvflare/edge/device_simulator/README.md) for more details.
+Please refer to [DeviceSimulator docs](../../../nvflare/edge/simulation/README.md) for more details.
 
 #### Step4: Start NVFlare Job
 First, copy the job to the admin console transfer folder:

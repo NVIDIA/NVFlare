@@ -14,8 +14,8 @@
 from typing import Any
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable
-from nvflare.edge.constants import EdgeApiStatus, MsgKey
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.edge.constants import EdgeApiStatus, EdgeProtoKey, MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.executors.hug import TaskInfo
 from nvflare.edge.web.models.result_report import ResultReport
@@ -55,7 +55,7 @@ class SimpleEdgeExecutor(EdgeTaskExecutor):
         task_id = current_task.id
         if task_id == last_task_id:
             msg = f"Task {task_id} is already processed by this device"
-            return TaskResponse("RETRY", job_id, 30, message=msg)
+            return TaskResponse(EdgeApiStatus.RETRY, job_id, 30, message=msg)
 
         task_data = self.convert_task(current_task.task, current_task, fl_ctx)
         self.devices[device_id] = task_id
@@ -93,4 +93,4 @@ class SimpleEdgeExecutor(EdgeTaskExecutor):
         else:
             raise RuntimeError(f"Received unknown request type: {type(request)}")
 
-        return {"status": ReturnCode.OK, "response": response}
+        return {EdgeProtoKey.STATUS: EdgeApiStatus.OK, EdgeProtoKey.RESPONSE: response}

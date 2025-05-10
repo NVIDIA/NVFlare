@@ -16,22 +16,21 @@ from typing import Any, Optional
 
 from nvflare.apis.dxo import DXO, from_dict
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode
-from nvflare.edge.constants import EdgeApiStatus, MsgKey, Status
+from nvflare.apis.shareable import ReservedHeaderKey
+from nvflare.edge.constants import CookieKey, EdgeApiStatus, EdgeProtoKey, MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.executors.hug import TaskInfo
 from nvflare.edge.mud import BaseState, Device, ModelUpdate, StateUpdateReport
 from nvflare.edge.updaters.emd import AggregatorFactory, EdgeModelUpdater
+from nvflare.edge.web.models.job_request import JobRequest
+from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
+from nvflare.edge.web.models.selection_request import SelectionRequest
+from nvflare.edge.web.models.selection_response import SelectionResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.security.logging import secure_format_exception
-
-
-class CookieKey:
-    MODEL_VERSION = "model_version"
-    DEVICE_SELECTION_ID = "device_selection_id"
 
 
 class EdgeModelExecutor(EdgeTaskExecutor):
@@ -124,7 +123,33 @@ class EdgeModelExecutor(EdgeTaskExecutor):
             CookieKey.DEVICE_SELECTION_ID: device_selection_id,
         }
 
-    def handle_task_request(self, request: TaskRequest, current_task: TaskInfo, fl_ctx: FLContext) -> TaskResponse:
+    def _handle_selection_request(
+        self, request: SelectionRequest, current_task: TaskInfo, fl_ctx: FLContext
+    ) -> SelectionResponse:
+        """Handle selection request from device"""
+        device_id = request.get_device_id()
+        job_id = fl_ctx.get_job_id()
+
+        self.accept_alive_device(device_id, fl_ctx)
+
+        task_state = current_task.task
+        assert isinstance(task_state, BaseState)
+
+        if not task_state.model_version or not task_state.device_selection_version:
+            # nothing to train
+            return SelectionResponse(
+                EdgeApiStatus.OK,
+                job_id=job_id,
+            )
+
+        return SelectionResponse(
+            status=EdgeApiStatus.OK,
+            job_id=job_id,
+            task_id=current_task.id,
+            selection=task_state.device_selection,
+        )
+
+    def _handle_task_request(self, request: TaskRequest, current_task: TaskInfo, fl_ctx: FLContext) -> TaskResponse:
         """Handle task request from device"""
 
         device_id = request.get_device_id()
@@ -163,13 +188,13 @@ class EdgeModelExecutor(EdgeTaskExecutor):
             cookie=self._make_cookie(task_state.model_version, new_selection_id),
         )
 
-    def handle_result_report(self, report: ResultReport, current_task: TaskInfo, fl_ctx: FLContext) -> ResultResponse:
+    def _handle_result_report(self, report: ResultReport, current_task: TaskInfo, fl_ctx: FLContext) -> ResultResponse:
         """Handle result report from device
         The report task_id may be different from current task_id. Let HAM deal with it
         """
 
         try:
-            if not report.result or report.status != Status.OK:
+            if not report.result or report.status != EdgeApiStatus.OK:
                 self.log_error(
                     fl_ctx,
                     f"no result or bad status ({report.status}) in report from device "
@@ -195,17 +220,32 @@ class EdgeModelExecutor(EdgeTaskExecutor):
     def task_ended(self, task: TaskInfo, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"Got task_ended: {task.id} (seq {task.seq})")
 
+    @staticmethod
+    def _edge_response(status: str, resp):
+        return {EdgeProtoKey.STATUS: status, EdgeProtoKey.RESPONSE: resp}
+
     def process_edge_request(self, request: Any, current_task: TaskInfo, fl_ctx: FLContext) -> Any:
-        self.log_debug(fl_ctx, f"Received edge request from device: {request['device_info']}")
+        if isinstance(request, dict):
+            self.log_debug(fl_ctx, f"Received edge request from device: {request.get('device_info')}")
 
         try:
-            if isinstance(request, TaskRequest):
-                response = self.handle_task_request(request, current_task, fl_ctx)
+            if isinstance(request, JobRequest):
+                device_id = request.get_device_id()
+                self.accept_alive_device(device_id, fl_ctx)
+
+                response = JobResponse(
+                    status=EdgeApiStatus.OK,
+                    job_id=fl_ctx.get_job_id(),
+                )
+            elif isinstance(request, SelectionRequest):
+                response = self._handle_selection_request(request, current_task, fl_ctx)
+            elif isinstance(request, TaskRequest):
+                response = self._handle_task_request(request, current_task, fl_ctx)
             elif isinstance(request, ResultReport):
-                response = self.handle_result_report(request, current_task, fl_ctx)
+                response = self._handle_result_report(request, current_task, fl_ctx)
             else:
                 raise RuntimeError(f"Received unknown request type: {type(request)}")
-            return {"status": ReturnCode.OK, "response": response}
+            return self._edge_response(EdgeApiStatus.OK, response)
         except Exception as ex:
             self.log_exception(fl_ctx, f"exception processing edge request: {secure_format_exception(ex)}")
-            return {"status": ReturnCode.EXECUTION_EXCEPTION, "response": None}
+            return self._edge_response(EdgeApiStatus.ERROR, None)

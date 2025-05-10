@@ -20,7 +20,6 @@ import shutil
 import subprocess
 
 from nvflare.edge.constants import MsgKey
-from nvflare.edge.device_simulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.model_protocol import (
     ModelBufferType,
     ModelEncoding,
@@ -28,10 +27,9 @@ from nvflare.edge.model_protocol import (
     ModelNativeFormat,
     verify_payload,
 )
-from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.models.user_info import UserInfo
 
 log = logging.getLogger(__name__)
 
@@ -92,23 +90,11 @@ def read_training_result(result_path: str = "training_result.json"):
 
 
 class ETCppTaskProcessor(DeviceTaskProcessor):
-    def __init__(
-        self, device_info: DeviceInfo, user_info: UserInfo, et_binary_path: str, et_model_path: str, data_path: str
-    ):
-        super().__init__(device_info, user_info)
-        self.job_id = None
-        self.job_name = None
-        self.device_info = device_info
+    def __init__(self, et_binary_path: str, et_model_path: str, data_path: str):
+        super().__init__()
         self.et_binary_path = et_binary_path
         self.et_model_path = et_model_path
         self.data_path = data_path
-
-        device_io_dir = f"{device_info.device_id}_output"
-        os.makedirs(device_io_dir, exist_ok=True)
-        self.model_path = os.path.abspath(os.path.join(device_io_dir, self.et_model_path))
-        self.result_path = os.path.abspath(os.path.join(device_io_dir, "training_result.json"))
-        self.train_binary = os.path.abspath(os.path.join(device_io_dir, self.et_binary_path))
-        self._setup_train_program()
 
     def _setup_train_program(self):
         if not os.path.exists(self.train_binary):
@@ -117,8 +103,12 @@ class ETCppTaskProcessor(DeviceTaskProcessor):
             os.chmod(self.train_binary, 0o755)
 
     def setup(self, job: JobResponse) -> None:
-        self.job_id = job.job_id
-        self.job_name = job.job_name
+        device_io_dir = f"{self.device_info.device_id}_output"
+        os.makedirs(device_io_dir, exist_ok=True)
+        self.model_path = os.path.abspath(os.path.join(device_io_dir, self.et_model_path))
+        self.result_path = os.path.abspath(os.path.join(device_io_dir, "training_result.json"))
+        self.train_binary = os.path.abspath(os.path.join(device_io_dir, self.et_binary_path))
+        self._setup_train_program()
 
     def shutdown(self) -> None:
         pass

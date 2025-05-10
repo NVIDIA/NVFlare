@@ -13,10 +13,9 @@
 # limitations under the License.
 from abc import ABC, abstractmethod
 
-from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.models.user_info import UserInfo
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class DeviceTaskProcessor(ABC):
@@ -24,14 +23,41 @@ class DeviceTaskProcessor(ABC):
     The spec for a task processor that handles tasks on edge devices
     """
 
+    def __init__(self):
+        self.device = None
+        self.logger = get_obj_logger(self)
+
+    @property
+    def device_info(self):
+        return self.device.get_device_info() if self.device else None
+
+    @property
+    def user_info(self):
+        return self.device.get_user_info() if self.device else None
+
+    @property
+    def job_id(self):
+        return self.device.job_id
+
+    @property
+    def job_name(self):
+        return self.device.job_name
+
+    @property
+    def job_data(self):
+        return self.device.job_data
+
+    @property
+    def job_method(self):
+        return self.device.job_method
+
     @abstractmethod
-    def setup(self, device_info: DeviceInfo, user_info: UserInfo, job: JobResponse) -> None:
+    def setup(self, job: JobResponse) -> None:
         """
         Setup for a new job
 
         Args
-            device_info: Device information from request header
-            user_info: User information from request header
+            device: the SimulatedDevice object
             job: Job information returned by server
         """
         pass

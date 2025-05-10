@@ -15,6 +15,7 @@ import enum
 import uuid
 from abc import ABC, abstractmethod
 
+from nvflare.edge.web.models.capabilities import Capabilities
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.edge.web.models.user_info import UserInfo
@@ -31,6 +32,10 @@ class SimulatedDevice(ABC):
 
     def __init__(self, device_id: str):
         self.device_id = device_id
+        self.job_id = None
+        self.job_name = None
+        self.job_data = None
+        self.job_method = None
         self.idle = True
         self.cookie = None
         self.state: DeviceState = DeviceState.IDLE
@@ -47,8 +52,29 @@ class SimulatedDevice(ABC):
     def get_user_info(self):
         return UserInfo(user_id=self.device_id)
 
+    def set_job(
+        self,
+        job_id: str,
+        job_name: str,
+        method: str,
+        job_data: dict,
+    ):
+        self.job_id = job_id
+        self.job_name = job_name
+        self.job_method = method
+        self.job_data = job_data
+
+    def get_job_id(self):
+        return self.job_id
+
+    def get_capabilities(self) -> Capabilities:
+        return Capabilities(methods=["deep_learning"])
+
+    def shutdown(self):
+        pass
+
     @abstractmethod
-    def do_task(self, data: TaskResponse) -> dict:
+    def do_task(self, task: TaskResponse) -> dict:
         pass
 
 

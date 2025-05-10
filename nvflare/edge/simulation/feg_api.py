@@ -17,8 +17,11 @@ import requests
 
 from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
+from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
+from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.edge.web.models.user_info import UserInfo
 
@@ -39,9 +42,9 @@ class FegApi:
             "X-Flare-User-Info": user_qs,
         }
 
-    def get_job(self, capabilities: dict = None) -> JobResponse:
+    def get_job(self, request: JobRequest) -> JobResponse:
         url = urljoin(self.endpoint, "job")
-        body = {"capabilities": capabilities}
+        body = {"capabilities": request.capabilities}
         headers = {"Content-Type": "application/json"}
         headers.update(self.common_headers)
         response = requests.post(url, json=body, headers=headers)
@@ -52,10 +55,10 @@ class FegApi:
 
         raise ApiError(code, "ERROR", f"API Call failed with status code {code}", response.json())
 
-    def get_task(self, job: JobResponse) -> TaskResponse:
+    def get_task(self, request: TaskRequest) -> TaskResponse:
         url = urljoin(self.endpoint, "task")
         params = {
-            "job_id": job.job_id,
+            "job_id": request.job_id,
         }
         response = requests.get(url, params=params, headers=self.common_headers)
         code = response.status_code
@@ -64,15 +67,15 @@ class FegApi:
 
         raise ApiError(code, "ERROR", f"API Call failed with status code {code}", response.json())
 
-    def report_result(self, task: TaskResponse, result: dict) -> ResultResponse:
+    def report_result(self, report: ResultReport) -> ResultResponse:
         url = urljoin(self.endpoint, "result")
-        body = {"result": result}
+        body = {"result": report.result}
         headers = {"Content-Type": "application/json"}
         headers.update(self.common_headers)
         params = {
-            "job_id": task.job_id,
-            "task_name": task.task_name,
-            "task_id": task.task_id,
+            "job_id": report.job_id,
+            "task_name": report.task_name,
+            "task_id": report.task_id,
         }
         response = requests.post(url, json=body, params=params, headers=headers)
 

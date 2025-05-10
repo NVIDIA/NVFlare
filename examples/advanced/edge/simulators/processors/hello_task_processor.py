@@ -14,25 +14,21 @@
 import logging
 from typing import Optional
 
-from nvflare.edge.device_simulator.device_task_processor import DeviceTaskProcessor
-from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.models.user_info import UserInfo
 
 log = logging.getLogger(__name__)
 
 
 class HelloTaskProcessor(DeviceTaskProcessor):
     def __init__(self, parameters: Optional[dict], data_file: str = "test.data"):
+        DeviceTaskProcessor.__init__(self)
         self.parameters = parameters
-        self.job_id = None
-        self.job_name = None
         self.data_file = data_file
 
-    def setup(self, device_info: DeviceInfo, user_info: UserInfo, job: JobResponse) -> None:
-        self.job_id = job.job_id
-        self.job_name = job.job_name
+    def setup(self, job: JobResponse) -> None:
+        pass
 
     def shutdown(self) -> None:
         pass
