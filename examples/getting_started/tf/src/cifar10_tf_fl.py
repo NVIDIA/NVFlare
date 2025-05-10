@@ -14,7 +14,7 @@
 
 
 import tensorflow as tf
-from tensorflow.keras import datasets
+from cifar10_data_split import load_cifar10_with_retry
 from tf_net import TFNet
 
 # (1) import nvflare client API
@@ -27,7 +27,7 @@ def main():
     # (2) initializes NVFlare client API
     flare.init()
 
-    (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
+    (train_images, train_labels), (test_images, test_labels) = load_cifar10_with_retry()
 
     # Normalize pixel values to be between 0 and 1
     train_images, test_images = train_images / 255.0, test_images / 255.0
