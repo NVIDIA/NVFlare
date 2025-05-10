@@ -25,7 +25,15 @@ ERROR_FILE = "error.txt"
 
 
 class TDXAuthorizer(CCAuthorizer):
+    """Intel TDX Authorizer"""
+
     def __init__(self, tdx_cli_command: str, config_dir: str) -> None:
+        """Initialize the TDXAuthorizer
+
+        Args:
+            tdx_cli_command (str): The command to run the TDX CLI
+            config_dir (str): The directory to store the TDX CLI configuration and token
+        """
         super().__init__()
         self.tdx_cli_command = tdx_cli_command
         self.config_dir = config_dir
