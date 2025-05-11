@@ -3,6 +3,9 @@
 Hello PyTorch with Job API
 ==========================
 
+This example demonstrates how to use NVIDIA FLARE with PyTorch to train an image classifier using federated averaging (FedAvg).
+The complete example code can be found in the :github_nvflare_link:`hello-pt directory <examples/hello-world/hello-pt/>`.
+
 Before You Start
 ----------------
 
@@ -32,29 +35,36 @@ The following steps compose one cycle of weight updates, called a **round**:
  #. These updates are then sent to the server which will aggregate them to produce a model with new weights. 
  #. Finally, the server sends this updated version of the model back to each client.
 
-For this exercise, we will be working with the ``hello-pt`` application in the examples folder.
+Running the Example
+------------------
+To run this example:
 
-Let's get started. First clone the repo:
-
-.. code-block:: shell
-
-  $ git clone https://github.com/NVIDIA/NVFlare.git
-
-Remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.
-
-Since you will use PyTorch and torchvision for this exercise, let's go ahead and install both libraries: 
+1. Clone the repository and navigate to the example directory:
 
 .. code-block:: shell
 
-  (nvflare-env) $ python3 -m pip install torch torchvision
+   $ git clone https://github.com/NVIDIA/NVFlare.git
+   $ cd NVFlare/examples/hello-world/hello-pt
 
-If you would like to go ahead and run the exercise now, you can run the ``fedavg_script_executor_hello-pt.py`` script which
-builds the job with the Job API and runs the job with the FLARE Simulator.
+2. Install the required dependencies:
+
+.. code-block:: shell
+
+   $ pip install -r requirements.txt
+
+3. Run the example:
+
+.. code-block:: shell
+
+   $ python fedavg_script_runner_pt.py
+
+The script will create an NVFlare job in /tmp/nvflare/jobs/job_config/hello-pt_cifar10_fedavg
+and run it using the FL Simulator.
 
 NVIDIA FLARE Job API
 --------------------
 
-The ``fedavg_script_executor_hello-pt.py`` script for this hello-pt example is very similar to the ``fedavg_script_executor_hello-numpy.py`` script
+The ``fedavg_script_runner_pt.py`` script for this hello-pt example is very similar to the ``fedavg_script_runner_hello-numpy.py`` script
 for the :doc:`Hello FedAvg with NumPy <hello_fedavg_numpy>` exercise. Other than changes to the names of the job and client script, the only difference
 is a line to define the initial global model for the server:
 
@@ -222,15 +232,15 @@ The client configuration is ``config_fed_client.json`` in the config folder of e
       "format_version": 2,
       "executors": [
          {
-               "tasks": [
-                  "*"
-               ],
-               "executor": {
-                  "path": "nvflare.app_common.executors.script_executor.ScriptExecutor",
-                  "args": {
-                     "task_script_path": "src/hello-pt_cifar10_fl.py"
-                  }
+            "tasks": [
+               "*"
+            ],
+            "executor": {
+               "path": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor",
+               "args": {
+                  "task_script_path": "src/hello-pt_cifar10_fl.py"
                }
+            }
          }
       ],
       "components": [
@@ -261,3 +271,4 @@ Previous Versions of Hello PyTorch
    - `hello-pt for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-pt>`_
    - `hello-pt for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-pt>`_
    - `hello-pt for 2.4 <https://github.com/NVIDIA/NVFlare/tree/2.4/examples/hello-world/hello-pt>`_
+   - `hello-pt for 2.5 <https://github.com/NVIDIA/NVFlare/tree/2.5/examples/hello-world/hello-pt>`_
