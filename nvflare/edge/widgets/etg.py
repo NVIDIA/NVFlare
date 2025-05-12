@@ -13,7 +13,8 @@
 # limitations under the License.
 
 """Edge Task Generator - for test only
-Randomly generate edge tasks
+Randomly generate edge tasks.
+It should be installed to the CP.
 """
 import threading
 import time
