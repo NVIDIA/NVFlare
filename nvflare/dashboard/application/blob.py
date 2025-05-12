@@ -71,7 +71,11 @@ def _get_provisioner(root_dir: str, scheme, docker_image=None):
         CertBuilder(),
         SignatureBuilder(),
     ]
-    return Provisioner(root_dir, builders)
+
+    # TBD: need to add Packager object to the provisioner!
+    # Should we create the Provisioner based on a project.yml file?
+    packager = None
+    return Provisioner(root_dir, builders, packager)
 
 
 def gen_server_blob(key):

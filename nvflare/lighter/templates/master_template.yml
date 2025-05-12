@@ -320,6 +320,38 @@ default_authz: |
     }
   }
 
+cc_authz: |
+  {
+    "format_version": "1.0",
+    "permissions": {
+      "project_admin": "any",
+      "org_admin": {
+        "submit_job": "none",
+        "clone_job": "none",
+        "manage_job": "o:submitter",
+        "download_job": "none",
+        "view": "any",
+        "operate": "none",
+        "shell_commands": "none",
+        "byoc": "none"
+      },
+      "lead": {
+        "submit_job": "any",
+        "clone_job": "n:submitter",
+        "manage_job": "n:submitter",
+        "download_job": "none",
+        "view": "any",
+        "operate": "none",
+        "shell_commands": "none",
+        "byoc": "none"
+      },
+      "member": {
+        "view": "any"
+      }
+    }
+  }
+
+
 fl_admin_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"

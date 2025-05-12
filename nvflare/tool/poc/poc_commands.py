@@ -27,10 +27,10 @@ from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
-from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.constants import ProvisionMode
+from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.utils import (
@@ -255,25 +255,6 @@ def get_fl_client_names(project_config: OrderedDict) -> List[str]:
     return client_names
 
 
-def prepare_builders(project_dict: OrderedDict) -> List:
-    builders = list()
-    for b in project_dict.get("builders"):
-        path = b.get("path")
-        args = b.get("args")
-
-        # No longer need the following since we can simply set the default_host to localhost!
-        # if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
-        #     path = "nvflare.lighter.impl.local_static_file.LocalStaticFileBuilder"
-        #     sp_end_point = args["overseer_agent"]["args"]["sp_end_point"]
-        #     args["overseer_agent"]["args"]["sp_end_point"] = replace_server_with_localhost(sp_end_point)
-        #
-        # elif b.get("path") == "nvflare.lighter.impl.cert.CertBuilder":
-        #     path = "nvflare.lighter.impl.local_cert.LocalCertBuilder"
-
-        builders.append(instantiate_class(path, args))
-    return builders
-
-
 def local_provision(
     clients: List[str],
     number_of_clients: int,
@@ -307,8 +288,8 @@ def local_provision(
     service_config = get_service_config(project_config)
     project = prepare_project(project_config)
     builders = prepare_builders(project_config)
-
-    provisioner = Provisioner(workspace, builders)
+    packager = prepare_packager(project_config)
+    provisioner = Provisioner(workspace, builders, packager)
     provisioner.provision(project, mode=ProvisionMode.POC)
 
     return project_config, service_config
