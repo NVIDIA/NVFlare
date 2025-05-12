@@ -11,34 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.edge.constants import EdgeApiStatus
+from typing import Optional
+
 from nvflare.edge.web.models.base_model import BaseModel
-from nvflare.edge.web.models.device_info import DeviceInfo
-from nvflare.edge.web.models.user_info import UserInfo
 
 
-class ResultReport(BaseModel):
+class SelectionResponse(BaseModel):
     def __init__(
         self,
-        device_info: DeviceInfo,
-        user_info: UserInfo,
-        job_id: str,
-        task_id: str,
-        task_name: str = None,
-        status: str = EdgeApiStatus.OK,
-        result: dict = None,
-        cookie: dict = None,
+        status: str,
+        job_id: str = None,
+        task_id: str = None,
+        selection: Optional[dict] = None,
         **kwargs,
     ):
         super().__init__()
-        self.device_info = device_info
-        self.user_info = user_info
+        self.status = status
         self.job_id = job_id
         self.task_id = task_id
-        self.task_name = task_name
-        self.result = result
-        self.cookie = cookie
-        self.status = status
+        self.selection = selection
 
         if kwargs:
             self.update(kwargs)

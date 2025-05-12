@@ -21,7 +21,6 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 
 from nvflare.edge.constants import MsgKey
-from nvflare.edge.device_simulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.model_protocol import (
     ModelBufferType,
     ModelEncoding,
@@ -30,10 +29,9 @@ from nvflare.edge.model_protocol import (
     verify_payload,
 )
 from nvflare.edge.models.model import Cifar10ConvNet
-from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.models.user_info import UserInfo
 
 log = logging.getLogger(__name__)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -41,19 +39,12 @@ DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 class PTCifar10TaskProcessor(DeviceTaskProcessor):
     def __init__(self, data_root: str, subset_size: int):
+        DeviceTaskProcessor.__init__(self)
         self.data_root = data_root
         self.subset_size = subset_size
-        self.device_info = None
-        self.user_info = None
-        self.job_id = None
-        self.job_name = None
 
-    def setup(self, device_info: DeviceInfo, user_info: UserInfo, job: JobResponse) -> None:
-        self.device_info = device_info
-        self.user_info = user_info
-        self.job_id = job.job_id
-        self.job_name = job.job_name
-        device_io_dir = f"/tmp/nvflare/workspaces/edge_simulator_cifar10/{device_info.device_id}"
+    def setup(self, job: JobResponse) -> None:
+        device_io_dir = f"/tmp/nvflare/workspaces/edge_simulator_cifar10/{self.device_info.device_id}"
         os.makedirs(device_io_dir, exist_ok=True)
         self.tb_writer = SummaryWriter(device_io_dir)
 

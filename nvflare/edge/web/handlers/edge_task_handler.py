@@ -18,6 +18,8 @@ from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
+from nvflare.edge.web.models.selection_request import SelectionRequest
+from nvflare.edge.web.models.selection_response import SelectionResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
 
@@ -37,4 +39,8 @@ class EdgeTaskHandler(ABC):
 
     @abstractmethod
     def handle_result(self, result_report: ResultReport) -> ResultResponse:
+        pass
+
+    @abstractmethod
+    def handle_selection(self, selection_request: SelectionRequest) -> SelectionResponse:
         pass
