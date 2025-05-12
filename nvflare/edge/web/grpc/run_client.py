@@ -52,7 +52,7 @@ def request_job(req: ReqInfo, client: Client, addr):
     )
     reply = client.query(addr, request)
     req.rcv_time = time.time()
-    print(f"{req.idx}: got reply after {req.rcv_time-req.send_time} seconds")
+    print(f"{req.idx}: got reply after {req.rcv_time - req.send_time} seconds")
     assert isinstance(reply, Reply)
 
 
