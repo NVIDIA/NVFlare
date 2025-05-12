@@ -16,11 +16,9 @@ message Request {
   string method = 2;
   bytes header = 3;  // JSON string
   bytes payload = 4;  // JSON string
-  bytes cookie = 5;  // JSON string
 }
 
 message Reply {
   string status = 1;
   bytes payload = 2;  // JSON string
-  bytes cookie = 3;  // JSON string
 }

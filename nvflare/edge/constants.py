@@ -21,6 +21,7 @@ class EdgeProtoKey:
     TASK_ID = "task_id"
     TASK_NAME = "task_name"
     RESULT = "result"
+    COOKIE = "cookie"
 
 
 class EdgeContextKey:

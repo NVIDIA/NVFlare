@@ -18,7 +18,7 @@ import time
 
 from nvflare.edge.constants import HttpHeaderKey
 from nvflare.edge.web.grpc.client import Client, Reply, Request
-from nvflare.edge.web.grpc.constants import NONE_DATA, QueryType
+from nvflare.edge.web.grpc.constants import QueryType
 
 
 class ReqInfo:
@@ -48,7 +48,6 @@ def request_job(req: ReqInfo, client: Client, addr):
         method="post",
         header=_to_bytes(header),
         payload=_to_bytes(job_payload),
-        cookie=NONE_DATA,
     )
     reply = client.query(addr, request)
     req.rcv_time = time.time()
@@ -63,7 +62,7 @@ def main():
     client = Client()
     addr = "127.0.0.1:8009"
 
-    num_threads = 90
+    num_threads = 30
     reqs = []
     for i in range(num_threads):
         req = ReqInfo(i + 1)

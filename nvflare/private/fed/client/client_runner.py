@@ -27,11 +27,7 @@ from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
-from nvflare.edge.constants import EdgeApiStatus, EdgeEventType
-from nvflare.fuel.f3.cellnet.defs import CellChannel
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
-from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from nvflare.private.fed.tbi import TBI
@@ -205,33 +201,7 @@ class ClientRunner(TBI):
             self.fire_event(event, fl_ctx)
 
     def set_cell(self, cell):
-        cell.register_request_cb(
-            channel=CellChannel.EDGE_REQUEST,
-            topic="*",
-            cb=self._receive_edge_request,
-        )
-
-    def _receive_edge_request(self, request: CellMessage):
-        with self.engine.new_context() as fl_ctx:
-            assert isinstance(fl_ctx, FLContext)
-            try:
-                # place the cell message into fl_ctx in case it's needed by process_edge_request.
-                fl_ctx.set_prop(FLContextKey.CELL_MESSAGE, request, private=True, sticky=False)
-                self.engine.fire_event(EdgeEventType.EDGE_REQUEST_RECEIVED, fl_ctx)
-                exception = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
-                if exception:
-                    return make_cell_reply(EdgeApiStatus.ERROR)
-
-                reply = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
-                if not reply:
-                    self.logger.debug("no result for edge request")
-                    return make_cell_reply(EdgeApiStatus.NO_TASK)
-                else:
-                    self.logger.debug("sending back edge result")
-                    return make_cell_reply(EdgeApiStatus.OK, body=reply)
-            except Exception as ex:
-                self.log_error(fl_ctx, f"exception from receive_edge_request: {secure_format_exception(ex)}")
-                return make_cell_reply(EdgeApiStatus.ERROR)
+        pass
 
     def find_executor(self, task_name):
         return self.task_router.route(task_name)
