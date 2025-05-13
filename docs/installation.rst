@@ -84,31 +84,45 @@ Optional Dependencies
 NVFlare provides several optional dependency groups that you can install based on your needs:
 
 * **HE** - Homomorphic Encryption support:
+
   .. code-block:: shell
+
      $ pip install nvflare[HE]
 
 * **PSI** - Private Set Intersection support:
+
   .. code-block:: shell
+
      $ pip install nvflare[PSI]
 
 * **PT** - PyTorch support:
+
   .. code-block:: shell
+
      $ pip install nvflare[PT]
 
 * **SKLEARN** - Scikit-learn support:
+
   .. code-block:: shell
+
      $ pip install nvflare[SKLEARN]
 
 * **TRACKING** - MLflow, Weights & Biases, and TensorBoard support:
+
   .. code-block:: shell
+
      $ pip install nvflare[TRACKING]
 
 * **MONITORING** - Datadog monitoring support:
+
   .. code-block:: shell
+
      $ pip install nvflare[MONITORING]
 
 * **CONFIG** - OmegaConf configuration support:
+
   .. code-block:: shell
+
      $ pip install nvflare[CONFIG]
 
 You can also install multiple optional dependencies at once:
