@@ -1,0 +1,4 @@
+cc_authorizers:
+  - id: "gpu_authorizer"
+    path: "nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer"
+    args: {}
