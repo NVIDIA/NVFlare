@@ -409,32 +409,3 @@ def _write(file_full_path, content, mode, exe=False):
 
 def write(file_full_path, content, mode, exe=False):
     _write(file_full_path, content, mode, exe)
-
-
-def add_component_to_resources(resources_file: str, component: dict):
-    """Add a component to the resources file, merging with existing components.
-
-    Args:
-        resources_file: The name of the resource file
-        component: The component to add
-    """
-    components = []
-    if os.path.exists(resources_file):
-        with open(resources_file, "r") as f:
-            existing = json.load(f)
-            components = existing.get("components", [])
-
-    components.append(component)
-    write(
-        resources_file,
-        json.dumps({"components": components}, indent=2),
-        "t",
-    )
-
-
-def copy_script(script_name: str, src_dir: str, dest_dir: str, mode: str = "t", exe: bool = True):
-    src_path = os.path.join(src_dir, script_name)
-    dest_path = os.path.join(dest_dir, script_name)
-    with open(src_path, f"r{mode}") as f:
-        content = f.read()
-    write(dest_path, content, mode, exe=exe)
