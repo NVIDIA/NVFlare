@@ -22,7 +22,7 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
 
 
-class EdgeRequestReceiver(Widget):
+class EdgeTaskReceiver(Widget):
 
     def __init__(self):
         Widget.__init__(self)
