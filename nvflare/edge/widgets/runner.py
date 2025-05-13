@@ -18,8 +18,12 @@ from typing import Optional
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.edge.constants import EdgeApiStatus, EdgeEventType, EdgeProtoKey
+from nvflare.edge.constants import EdgeApiStatus, EdgeContextKey, EdgeEventType, EdgeProtoKey
 from nvflare.edge.simulation.simulator import Simulator
+from nvflare.edge.web.models.job_request import JobRequest
+from nvflare.edge.web.models.result_report import ResultReport
+from nvflare.edge.web.models.selection_request import SelectionRequest
+from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.widgets.widget import Widget
 
@@ -56,23 +60,23 @@ class SimulationRunner(Widget):
             self.simulator.stop()
 
     def _post_request(self, request, device, engine):
-        cell_msg = CellMessage(payload=request)
         with engine.new_context() as fl_ctx:
             assert isinstance(fl_ctx, FLContext)
-            fl_ctx.set_prop(FLContextKey.CELL_MESSAGE, cell_msg, private=True, sticky=False)
-            self.fire_event(EdgeEventType.EDGE_REQUEST_RECEIVED, fl_ctx)
-            reply_dict = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
+            fl_ctx.set_prop(EdgeContextKey.REQUEST_FROM_EDGE, request, private=True, sticky=False)
 
-            if reply_dict is None:
-                # client not ready yet
-                return EdgeApiStatus.OK, None
+            if isinstance(request, TaskRequest):
+                event_type = EdgeEventType.EDGE_TASK_REQUEST_RECEIVED
+            elif isinstance(request, SelectionRequest):
+                event_type = EdgeEventType.EDGE_SELECTION_REQUEST_RECEIVED
+            elif isinstance(request, ResultReport):
+                event_type = EdgeEventType.EDGE_RESULT_REPORT_RECEIVED
+            elif isinstance(request, JobRequest):
+                event_type = EdgeEventType.EDGE_JOB_REQUEST_RECEIVED
+            else:
+                raise RuntimeError(f"invalid request type {type(request)}")
 
-            if not isinstance(reply_dict, dict):
-                raise RuntimeError(f"prop {FLContextKey.TASK_RESULT} should be dict but got {type(reply_dict)}")
-
-            status = reply_dict.get(EdgeProtoKey.STATUS, EdgeApiStatus.OK)
-            response = reply_dict.get(EdgeProtoKey.RESPONSE)
-            return status, response
+            self.fire_event(event_type, fl_ctx)
+            return fl_ctx.get_prop(EdgeContextKey.REPLY_TO_EDGE)
 
     def _run(self):
         self.simulator.start()

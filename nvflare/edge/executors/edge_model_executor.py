@@ -220,10 +220,6 @@ class EdgeModelExecutor(EdgeTaskExecutor):
     def task_ended(self, task: TaskInfo, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"Got task_ended: {task.id} (seq {task.seq})")
 
-    @staticmethod
-    def _edge_response(status: str, resp):
-        return {EdgeProtoKey.STATUS: status, EdgeProtoKey.RESPONSE: resp}
-
     def process_edge_request(self, request: Any, current_task: TaskInfo, fl_ctx: FLContext) -> Any:
         if isinstance(request, dict):
             self.log_debug(fl_ctx, f"Received edge request from device: {request.get('device_info')}")
@@ -233,19 +229,21 @@ class EdgeModelExecutor(EdgeTaskExecutor):
                 device_id = request.get_device_id()
                 self.accept_alive_device(device_id, fl_ctx)
 
-                response = JobResponse(
+                return JobResponse(
                     status=EdgeApiStatus.OK,
                     job_id=fl_ctx.get_job_id(),
                 )
-            elif isinstance(request, SelectionRequest):
-                response = self._handle_selection_request(request, current_task, fl_ctx)
-            elif isinstance(request, TaskRequest):
-                response = self._handle_task_request(request, current_task, fl_ctx)
-            elif isinstance(request, ResultReport):
-                response = self._handle_result_report(request, current_task, fl_ctx)
+
+            if isinstance(request, SelectionRequest):
+                return self._handle_selection_request(request, current_task, fl_ctx)
+
+            if isinstance(request, TaskRequest):
+                return self._handle_task_request(request, current_task, fl_ctx)
+
+            if isinstance(request, ResultReport):
+                return self._handle_result_report(request, current_task, fl_ctx)
             else:
                 raise RuntimeError(f"Received unknown request type: {type(request)}")
-            return self._edge_response(EdgeApiStatus.OK, response)
         except Exception as ex:
             self.log_exception(fl_ctx, f"exception processing edge request: {secure_format_exception(ex)}")
-            return self._edge_response(EdgeApiStatus.ERROR, None)
+            return None

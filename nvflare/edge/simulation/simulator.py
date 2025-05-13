@@ -177,7 +177,7 @@ class Simulator:
             # the assigned task!
             selected_devices = {}
             if self.all_devices and job_id:
-                _, resp = self._ask_for_selection(job_id)
+                resp = self._ask_for_selection(job_id)
                 if resp:
                     assert isinstance(resp, SelectionResponse)
                     if resp.selection:
@@ -204,10 +204,10 @@ class Simulator:
 
                 if device.get_job_id():
                     # the device already got a job: ask for task
-                    status, resp = self._ask_for_task(device)
-                    self.logger.debug(f"tried to get task for device {did}: {status=}")
+                    resp = self._ask_for_task(device)
+                    self.logger.debug(f"tried to get task for device {did}")
 
-                    if status == EdgeApiStatus.OK and resp:
+                    if resp and resp.status == EdgeApiStatus.OK:
                         assert isinstance(resp, TaskResponse)
                         self.logger.debug(f"TaskResponse status for device {did}: {resp.status}")
 
@@ -238,12 +238,16 @@ class Simulator:
                             self.logger.info(f"stop running due to bad TaskResponse status: {resp.status}")
                             return
                     else:
+                        if resp:
+                            status = resp.status
+                        else:
+                            status = "No Response"
                         self.logger.debug(f"failed to get task ({status=}): will retry")
                 else:
                     # the device has no job yet - asking for job
                     self.logger.debug(f"asking for job for device {did}")
-                    status, resp = self._ask_for_job(device)
-                    if status == EdgeApiStatus.OK and resp:
+                    resp = self._ask_for_job(device)
+                    if resp:
                         assert isinstance(resp, JobResponse)
                         if resp.status == EdgeApiStatus.OK:
                             self.logger.debug(f"Device {did} got job {resp.job_id}")
@@ -266,7 +270,7 @@ class Simulator:
                             self.logger.info(f"stop running due to bad JobResponse status: {resp.status}")
                             return
                     else:
-                        self.logger.debug(f"failed to get job ({status=}): will retry")
+                        self.logger.debug("failed to get job: will retry")
 
                 # pause before next query
                 time.sleep(interval)
@@ -294,13 +298,13 @@ class Simulator:
         # set the flag to stop the query loop
         self.done = True
 
-    def _ask_for_task(self, device: SimulatedDevice) -> (str, TaskResponse):
+    def _ask_for_task(self, device: SimulatedDevice) -> TaskResponse:
         """Send a request to Flare to ask for a task for a device
 
         Args:
             device: the device that the request is for
 
-        Returns: tuple of (status, TaskResponse)
+        Returns: TaskResponse
 
         """
         req = TaskRequest(
@@ -309,32 +313,21 @@ class Simulator:
             job_id=device.get_job_id(),
             cookie=device.cookie,
         )
-        status, resp = self.send_f(req, device, **self.send_kwargs)
-        if resp and not isinstance(resp, TaskResponse):
-            self.logger.error(f"received response must be TaskResponse but got {type(resp)}")
-            if status == EdgeApiStatus.OK:
-                status = EdgeApiStatus.ERROR
-        return status, resp
+        return self.send_f(req, device, **self.send_kwargs)
 
-    def _ask_for_selection(self, job_id: str) -> (str, SelectionResponse):
+    def _ask_for_selection(self, job_id: str) -> SelectionResponse:
         """Send a request to Flare for ask for the current device selection.
         Note: this is used for simulation purpose. Real devices don't make this request.
 
-        Returns: tuple of (status, SelectionResponse)
+        Returns: SelectionResponse
 
         """
         first_key = next(iter(self.all_devices))
         device = self.all_devices[first_key]
         req = SelectionRequest(device.get_device_info(), job_id)
-        status, resp = self.send_f(req, device, **self.send_kwargs)
-        if resp and not isinstance(resp, SelectionResponse):
-            self.logger.error(f"received response must be SelectionResponse but got {type(resp)}")
-            if status == EdgeApiStatus.OK:
-                status = EdgeApiStatus.ERROR
-            resp = None
-        return status, resp
+        return self.send_f(req, device, **self.send_kwargs)
 
-    def _ask_for_job(self, device: SimulatedDevice) -> (str, JobResponse):
+    def _ask_for_job(self, device: SimulatedDevice) -> JobResponse:
         """Send a request to Flare to ask for a Job for the specified device
 
         Args:
@@ -348,12 +341,7 @@ class Simulator:
             user_info=device.get_user_info(),
             capabilities=device.get_capabilities(),
         )
-        status, resp = self.send_f(req, device, **self.send_kwargs)
-        if resp and not isinstance(resp, JobResponse):
-            self.logger.error(f"received response must be JobResponse but got {type(resp)}")
-            if status == EdgeApiStatus.OK:
-                status = EdgeApiStatus.ERROR
-        return status, resp
+        return self.send_f(req, device, **self.send_kwargs)
 
     def _pick_a_used_device(self):
         """Pick a used device for inclusion to active device list.
@@ -439,7 +427,7 @@ class Simulator:
         )
 
         # report the result to Flare
-        _, resp = self.send_f(report, device, **self.send_kwargs)
+        resp = self.send_f(report, device, **self.send_kwargs)
         if resp and not isinstance(resp, ResultResponse):
             self.logger.error(f"received response must be ResultResponse but got {type(resp)}")
 

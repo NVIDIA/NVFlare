@@ -14,12 +14,13 @@
 from abc import abstractmethod
 from typing import Any
 
-from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.edge.constants import EdgeEventType
+from nvflare.edge.constants import EdgeApiStatus, EdgeContextKey, EdgeEventType
 from nvflare.edge.executors.hug import HierarchicalUpdateGatherer, TaskInfo
-from nvflare.fuel.f3.message import Message as CellMessage
-from nvflare.security.logging import secure_format_exception
+from nvflare.edge.web.models.job_response import JobResponse
+from nvflare.edge.web.models.result_response import ResultResponse
+from nvflare.edge.web.models.selection_response import SelectionResponse
+from nvflare.edge.web.models.task_response import TaskResponse
 
 
 class EdgeTaskExecutor(HierarchicalUpdateGatherer):
@@ -49,7 +50,25 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
             update_timeout=update_timeout,
             learner_id=learner_id,
         )
-        self.register_event_handler(EdgeEventType.EDGE_REQUEST_RECEIVED, self._handle_edge_request)
+        self.register_event_handler(
+            EdgeEventType.EDGE_TASK_REQUEST_RECEIVED,
+            self._handle_edge_request,
+            no_task_reply=TaskResponse(EdgeApiStatus.RETRY),
+        )
+        self.register_event_handler(
+            EdgeEventType.EDGE_SELECTION_REQUEST_RECEIVED,
+            self._handle_edge_request,
+            no_task_reply=SelectionResponse(EdgeApiStatus.RETRY),
+        )
+        self.register_event_handler(
+            EdgeEventType.EDGE_RESULT_REPORT_RECEIVED,
+            self._handle_edge_request,
+            no_task_reply=ResultResponse(EdgeApiStatus.OK),
+        )
+        self.register_event_handler(
+            EdgeEventType.EDGE_JOB_REQUEST_RECEIVED,
+            self._handle_edge_job_request,
+        )
 
     @abstractmethod
     def process_edge_request(self, request: Any, current_task: TaskInfo, fl_ctx: FLContext) -> Any:
@@ -65,18 +84,21 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
         """
         pass
 
-    def _handle_edge_request(self, event_type: str, fl_ctx: FLContext):
+    def _handle_edge_request(self, event_type: str, fl_ctx: FLContext, no_task_reply):
         task_info = self.get_current_task(fl_ctx)
         if not task_info:
-            self.logger.debug(f"received edge event {event_type} but I don't have pending task")
-            return
+            self.log_debug(fl_ctx, f"received edge event {event_type} but I don't have pending task")
+            reply = no_task_reply
+        else:
+            request = fl_ctx.get_prop(EdgeContextKey.REQUEST_FROM_EDGE)
+            self.log_debug(fl_ctx, f"received edge request: {request}")
+            reply = self.process_edge_request(request=request, fl_ctx=fl_ctx, current_task=task_info)
 
-        try:
-            msg = fl_ctx.get_prop(FLContextKey.CELL_MESSAGE)
-            assert isinstance(msg, CellMessage)
-            self.log_debug(fl_ctx, f"received edge request: {msg.payload}")
-            reply = self.process_edge_request(request=msg.payload, fl_ctx=fl_ctx, current_task=task_info)
-            fl_ctx.set_prop(FLContextKey.TASK_RESULT, reply, private=True, sticky=False)
-        except Exception as ex:
-            self.log_exception(fl_ctx, f"exception process_edge_request: {secure_format_exception(ex)}")
-            fl_ctx.set_prop(FLContextKey.EXCEPTIONS, ex, private=True, sticky=False)
+        self.log_debug(fl_ctx, f"Reply to edge: {reply}")
+        fl_ctx.set_prop(EdgeContextKey.REPLY_TO_EDGE, reply, private=True, sticky=False)
+
+    def _handle_edge_job_request(self, event_type: str, fl_ctx: FLContext):
+        job_id = fl_ctx.get_job_id()
+        reply = JobResponse(EdgeApiStatus.OK, job_id)
+        self.log_debug(fl_ctx, f"Reply to edge: {reply}")
+        fl_ctx.set_prop(EdgeContextKey.REPLY_TO_EDGE, reply, private=True, sticky=False)

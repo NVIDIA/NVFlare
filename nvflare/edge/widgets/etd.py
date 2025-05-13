@@ -18,7 +18,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.edge.constants import EdgeApiStatus, EdgeContextKey, EdgeEventType, EdgeProtoKey
+from nvflare.edge.constants import EdgeApiStatus, EdgeContextKey, EdgeEventType, EdgeMsgTopic
+from nvflare.edge.web.models.job_request import JobRequest
+from nvflare.edge.web.models.job_response import JobResponse
+from nvflare.edge.web.models.result_response import ResultResponse
+from nvflare.edge.web.models.selection_response import SelectionResponse
+from nvflare.edge.web.models.task_response import TaskResponse
+from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message as CellMessage
@@ -27,14 +33,16 @@ from nvflare.widgets.widget import Widget
 
 class EdgeTaskDispatcher(Widget):
     """Edge Task Dispatcher (ETD) is to be used to dispatch a received edge request to a running job (CJ).
-    ETD must be installed on CP before the CP is started.
+    ETD must be installed on CP (local/resources.json) before the CP is started.
 
     Note: ETD does not interact with edge devices directly. It's another component's responsibility (e.g. web agent)
     to interact with edge devices with whatever protocol between them.
 
     ETD indirectly interacts with edge-device-interacting component (also installed on the CP) via Flare Events:
         EdgeEventType.EDGE_JOB_REQUEST_RECEIVED for receiving job requests;
-        EdgeEventType.EDGE_REQUEST_RECEIVED for receiving task requests;
+        EdgeEventType.EDGE_TASK_REQUEST_RECEIVED for receiving task requests;
+        EdgeEventType.EDGE_SELECTION_REQUEST_RECEIVED for receiving selection requests;
+        EdgeEventType.EDGE_RESULT_REPORT_RECEIVED for receiving result reports;
 
     """
 
@@ -58,8 +66,28 @@ class EdgeTaskDispatcher(Widget):
             self._handle_edge_job_request,
         )
         self.register_event_handler(
-            EdgeEventType.EDGE_REQUEST_RECEIVED,
+            EdgeEventType.EDGE_TASK_REQUEST_RECEIVED,
             self._handle_edge_request,
+            msg_topic=EdgeMsgTopic.TASK_REQUEST,
+            bad_req_reply=TaskResponse(EdgeApiStatus.INVALID_REQUEST),
+            no_job_reply=TaskResponse(EdgeApiStatus.DONE),
+            comm_err_reply=TaskResponse(EdgeApiStatus.RETRY),
+        )
+        self.register_event_handler(
+            EdgeEventType.EDGE_SELECTION_REQUEST_RECEIVED,
+            self._handle_edge_request,
+            msg_topic=EdgeMsgTopic.SELECTION_REQUEST,
+            bad_req_reply=SelectionResponse(EdgeApiStatus.INVALID_REQUEST),
+            no_job_reply=SelectionResponse(EdgeApiStatus.DONE),
+            comm_err_reply=SelectionResponse(EdgeApiStatus.RETRY),
+        )
+        self.register_event_handler(
+            EdgeEventType.EDGE_RESULT_REPORT_RECEIVED,
+            self._handle_edge_request,
+            msg_topic=EdgeMsgTopic.RESULT_REPORT,
+            bad_req_reply=ResultResponse(EdgeApiStatus.INVALID_REQUEST),
+            no_job_reply=ResultResponse(EdgeApiStatus.DONE),
+            comm_err_reply=ResultResponse(EdgeApiStatus.RETRY),
         )
         self.logger.info("EdgeTaskDispatcher created!")
 
@@ -130,82 +158,81 @@ class EdgeTaskDispatcher(Widget):
 
     def _handle_edge_job_request(self, event_type: str, fl_ctx: FLContext):
         self.logger.debug(f"handling event {event_type}")
-        edge_capabilities = fl_ctx.get_prop(EdgeContextKey.EDGE_CAPABILITIES)
+        req = fl_ctx.get_prop(EdgeContextKey.REQUEST_FROM_EDGE)
+        assert isinstance(req, JobRequest)
+        edge_capabilities = req.capabilities
         if not edge_capabilities:
-            self.logger.error(f"missing {EdgeContextKey.EDGE_CAPABILITIES} from fl_ctx for event {event_type}")
-            self._set_edge_reply(EdgeApiStatus.INVALID_REQUEST, None, fl_ctx)
+            self.logger.error(f"missing 'capabilities' from JobRequest for event {event_type}")
+            self._set_edge_reply(reply=JobResponse(EdgeApiStatus.INVALID_REQUEST), fl_ctx=fl_ctx)
             return
 
         # find job for the caps
         job_id = self._match_job(edge_capabilities)
         if job_id:
-            status = EdgeApiStatus.OK
+            reply = JobResponse(EdgeApiStatus.OK, job_id)
         else:
-            status = EdgeApiStatus.NO_JOB
-        self._set_edge_reply(status, job_id, fl_ctx)
+            reply = JobResponse(EdgeApiStatus.NO_JOB)
+        self._set_edge_reply(reply, fl_ctx)
         fl_ctx.set_prop(FLContextKey.JOB_META, self.job_metas.get(job_id), private=True, sticky=False)
 
     @staticmethod
-    def _set_edge_reply(status, data, fl_ctx: FLContext):
+    def _set_edge_reply(reply, fl_ctx: FLContext):
         """Prepare the reply to the edge device.
 
         Args:
-            status:
-            data:
-            fl_ctx:
+            reply: the reply to be set
+            fl_ctx: FLContext object
 
         Returns: None
 
-        The "data" is response to the edge device.
-        If is either generated by CJ or by self._handle_edge_job_request.
-        If generated by self._handle_edge_job_request, the data is simpy the job id.
-
-        If generated by CJ, the data is a dict with two elements:
-            status: the processing status of the request
-            response: the response data to the request. It is one of predefined XXXResponse
-
-        Note that the "data" could be None in case the communication to CJ failed.
-
-        Here we wrap the "data" in yet another dict with two elements:
-            status: the communication status to CJ. This status is not to be confused with the status in data.
-            data: the data received from CJ.
-
         """
-
         fl_ctx.set_prop(
             key=EdgeContextKey.REPLY_TO_EDGE,
-            value={EdgeProtoKey.STATUS: status, EdgeProtoKey.DATA: data},
+            value=reply,
             private=True,
             sticky=False,
         )
 
-    def _handle_edge_request(self, event_type: str, fl_ctx: FLContext):
+    def _handle_edge_request(
+        self,
+        event_type: str,
+        fl_ctx: FLContext,
+        msg_topic: str,
+        bad_req_reply,
+        no_job_reply,
+        comm_err_reply,
+    ):
+        req = fl_ctx.get_prop(EdgeContextKey.REQUEST_FROM_EDGE)
+        job_id = req.job_id
+
         # try to find the job
-        job_id = fl_ctx.get_prop(EdgeContextKey.JOB_ID)
         if not job_id:
-            self.logger.error(f"handling event {event_type}: missing {EdgeContextKey.JOB_ID} from fl_ctx")
-            self._set_edge_reply(EdgeApiStatus.INVALID_REQUEST, None, fl_ctx)
+            self.logger.error(f"handling event {event_type}: missing job_id from {type(req)}")
+            self._set_edge_reply(bad_req_reply, fl_ctx)
             return
 
         if not self._find_job(job_id):
-            self._set_edge_reply(EdgeApiStatus.NO_JOB, None, fl_ctx)
+            self._set_edge_reply(no_job_reply, fl_ctx)
             return
 
-        # send edge request data to CJ
-        edge_req_data = fl_ctx.get_prop(EdgeContextKey.REQUEST_FROM_EDGE)
+        # send task request data to CJ
         self.logger.debug(f"Sending edge request to CJ {job_id}")
         engine = fl_ctx.get_engine()
         reply = engine.send_to_job(
             job_id=job_id,
             channel=CellChannel.EDGE_REQUEST,
-            topic="request",
-            msg=new_cell_message({}, edge_req_data),
+            topic=msg_topic,
+            msg=new_cell_message({}, req),
             timeout=self.request_timeout,
             optional=True,
         )
 
         assert isinstance(reply, CellMessage)
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
-        reply_data = reply.payload
-        self.logger.debug(f"got edge result from CJ: {rc=} {reply_data=}")
-        self._set_edge_reply(rc, reply_data, fl_ctx)
+
+        if rc != CellReturnCode.OK:
+            reply = comm_err_reply
+        else:
+            reply = reply.payload
+
+        self._set_edge_reply(reply, fl_ctx)
