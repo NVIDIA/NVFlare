@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import abstractmethod
-from typing import Any
+from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.edge.constants import EdgeApiStatus, EdgeContextKey, EdgeEventType
 from nvflare.edge.executors.hug import HierarchicalUpdateGatherer, TaskInfo
 from nvflare.edge.web.models.job_response import JobResponse
+from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
+from nvflare.edge.web.models.selection_request import SelectionRequest
 from nvflare.edge.web.models.selection_response import SelectionResponse
+from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
 
 
@@ -53,16 +56,19 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
         self.register_event_handler(
             EdgeEventType.EDGE_TASK_REQUEST_RECEIVED,
             self._handle_edge_request,
+            process_f=self.process_edge_task_request,
             no_task_reply=TaskResponse(EdgeApiStatus.RETRY),
         )
         self.register_event_handler(
             EdgeEventType.EDGE_SELECTION_REQUEST_RECEIVED,
             self._handle_edge_request,
+            process_f=self.process_edge_selection_request,
             no_task_reply=SelectionResponse(EdgeApiStatus.RETRY),
         )
         self.register_event_handler(
             EdgeEventType.EDGE_RESULT_REPORT_RECEIVED,
             self._handle_edge_request,
+            process_f=self.process_edge_result_report,
             no_task_reply=ResultResponse(EdgeApiStatus.OK),
         )
         self.register_event_handler(
@@ -71,8 +77,10 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
         )
 
     @abstractmethod
-    def process_edge_request(self, request: Any, current_task: TaskInfo, fl_ctx: FLContext) -> Any:
-        """This is called to process an edge request sent from the edge device.
+    def process_edge_task_request(
+        self, request: TaskRequest, current_task: TaskInfo, fl_ctx: FLContext
+    ) -> Optional[TaskResponse]:
+        """This is called to process an edge task request sent from the edge device.
 
         Args:
             request: the request from edge device
@@ -84,7 +92,39 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
         """
         pass
 
-    def _handle_edge_request(self, event_type: str, fl_ctx: FLContext, no_task_reply):
+    @abstractmethod
+    def process_edge_selection_request(
+        self, request: SelectionRequest, current_task: TaskInfo, fl_ctx: FLContext
+    ) -> Optional[SelectionResponse]:
+        """This is called to process an edge selection request sent from the edge device.
+
+        Args:
+            request: the request from edge device
+            current_task: the current pending task
+            fl_ctx: FLContext object
+
+        Returns: reply to the edge device
+
+        """
+        pass
+
+    @abstractmethod
+    def process_edge_result_report(
+        self, request: ResultReport, current_task: TaskInfo, fl_ctx: FLContext
+    ) -> Optional[ResultResponse]:
+        """This is called to process an edge result report sent from the edge device.
+
+        Args:
+            request: the request from edge device
+            current_task: the current pending task
+            fl_ctx: FLContext object
+
+        Returns: reply to the edge device
+
+        """
+        pass
+
+    def _handle_edge_request(self, event_type: str, fl_ctx: FLContext, process_f, no_task_reply):
         task_info = self.get_current_task(fl_ctx)
         if not task_info:
             self.log_debug(fl_ctx, f"received edge event {event_type} but I don't have pending task")
@@ -92,7 +132,7 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
         else:
             request = fl_ctx.get_prop(EdgeContextKey.REQUEST_FROM_EDGE)
             self.log_debug(fl_ctx, f"received edge request: {request}")
-            reply = self.process_edge_request(request=request, fl_ctx=fl_ctx, current_task=task_info)
+            reply = process_f(request=request, fl_ctx=fl_ctx, current_task=task_info)
 
         self.log_debug(fl_ctx, f"Reply to edge: {reply}")
         fl_ctx.set_prop(EdgeContextKey.REPLY_TO_EDGE, reply, private=True, sticky=False)
