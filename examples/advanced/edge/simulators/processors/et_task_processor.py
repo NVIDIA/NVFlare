@@ -21,7 +21,6 @@ from executorch.extension.training import _load_for_executorch_for_training_from
 from torch.utils.data import DataLoader, Dataset
 
 from nvflare.edge.constants import MsgKey
-from nvflare.edge.device_simulator.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.model_protocol import (
     ModelBufferType,
     ModelEncoding,
@@ -29,10 +28,9 @@ from nvflare.edge.model_protocol import (
     ModelNativeFormat,
     verify_payload,
 )
-from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.models.user_info import UserInfo
 
 log = logging.getLogger(__name__)
 
@@ -73,8 +71,6 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         """Initialize the task processor.
 
         Args:
-            device_info: Information about the device
-            user_info: Information about the user
             data_path: Path to the dataset
             training_config: Configuration for training including:
                 - batch_size (int): Size of each training batch (default: 32)
@@ -86,10 +82,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
                 - dampening (float): Dampening for momentum (default: 0.0)
                 - nesterov (bool): Enables Nesterov momentum (default: False)
         """
-        self.job_id = None
-        self.job_name = None
-        self.user_info = None
-        self.device_info = None
+        DeviceTaskProcessor.__init__(self)
         self.data_path = data_path
 
         # Set default training configuration
@@ -129,17 +122,13 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         """
         pass
 
-    def setup(self, device_info: DeviceInfo, user_info: UserInfo, job: JobResponse) -> None:
+    def setup(self, job: JobResponse) -> None:
         """Set up the task processor for a new job.
 
         Args:
             job: Job response containing job information and configuration
         """
-        self.job_id = job.job_id
-        self.job_name = job.job_name
         log.info(f"Setting up job {self.job_name} (ID: {self.job_id})")
-        self.device_info = device_info
-        self.user_info = user_info
 
         # Additional setup could be added here, such as:
         # - Loading job-specific configurations

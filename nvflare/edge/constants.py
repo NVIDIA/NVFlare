@@ -11,17 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-
-
-class Status(CellReturnCode):
-    NO_TASK = "no_task"
-    NO_JOB = "no_job"
 
 
 class EdgeProtoKey:
     STATUS = "status"
     DATA = "data"
+    RESPONSE = "response"
+    JOB_ID = "job_id"
+    TASK_ID = "task_id"
+    TASK_NAME = "task_name"
+    RESULT = "result"
+    COOKIE = "cookie"
 
 
 class EdgeContextKey:
@@ -60,7 +60,15 @@ class EdgeApiStatus:
     ERROR = "ERROR"
     NO_JOB = "NO_JOB"
     NO_TASK = "NO_TASK"
+    INVALID_REQUEST = "invalid_request"
 
 
-class EdgeApiKey:
-    JOB_DONE = "_job_done"
+class CookieKey:
+    MODEL_VERSION = "model_version"
+    DEVICE_SELECTION_ID = "device_selection_id"
+
+
+class HttpHeaderKey:
+    DEVICE_ID = "X-Flare-Device-ID"
+    DEVICE_INFO = "X-Flare-Device-Info"
+    USER_INFO = "X-Flare-User-Info"

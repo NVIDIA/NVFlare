@@ -18,7 +18,8 @@ import copy
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import datasets, losses
+from cifar10_data_split import load_cifar10_with_retry
+from tensorflow.keras import losses
 from tf_net import ModerateTFNet
 
 # (1) import nvflare client API
@@ -138,7 +139,8 @@ def main():
     # (2) initializes NVFlare client API
     flare.init()
 
-    (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
+    # Load CIFAR10 dataset with retry mechanism
+    (train_images, train_labels), (test_images, test_labels) = load_cifar10_with_retry()
 
     # Use alpha-split per-site data to simulate data heteogeniety,
     # only if if train_idx_path is not None.
@@ -154,7 +156,7 @@ def main():
         print(
             (
                 f"Loaded {len(train_idx)} training indices from {args.train_idx_path} "
-                "with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}"
+                f"with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}"
             )
         )
 
@@ -184,7 +186,7 @@ def main():
     flare.init()
 
     summary_writer = SummaryWriter()
-    tf_summary_writer = tf.summary.create_file_writer(logdir="./logs/validation")
+    tf_summary_writer = tf.summary.create_file_writer(logdir="./logs/rounds")
     while flare.is_running():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()

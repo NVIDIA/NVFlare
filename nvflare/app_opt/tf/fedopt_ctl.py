@@ -171,7 +171,7 @@ class FedOpt(FedAvg):
             f"FedOpt ({type(self.optimizer)}) server model update "
             f"round {self.current_round}, "
             f"{type(self.lr_scheduler)} "
-            f"lr: {self.optimizer.learning_rate(self.optimizer.iterations).numpy()}, "
+            f"lr: {self.optimizer.learning_rate.numpy()}, "
             f"update: {secs} secs., detach: {secs_detach} secs.",
         )
 
