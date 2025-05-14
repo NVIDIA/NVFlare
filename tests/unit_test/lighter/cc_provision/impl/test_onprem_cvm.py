@@ -14,6 +14,7 @@
 
 import json
 import os
+import shutil
 import tempfile
 from unittest.mock import patch
 
@@ -40,7 +41,8 @@ def basic_project():
 @pytest.fixture
 def ctx(basic_project):
     """Create a basic provisioning context."""
-    return ProvisionContext("test_workspace", basic_project)
+    yield ProvisionContext("test_workspace", basic_project)
+    shutil.rmtree("test_workspace")
 
 
 @pytest.fixture
