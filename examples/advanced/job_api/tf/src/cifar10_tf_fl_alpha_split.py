@@ -18,7 +18,8 @@ import copy
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import datasets, losses
+from cifar10_data_split import load_cifar10_with_retry
+from tensorflow.keras import losses
 from tf_net import ModerateTFNet
 
 # (1) import nvflare client API
@@ -108,7 +109,7 @@ def main():
     parser.add_argument("--fedprox_mu", type=float, default=0.0)
     args = parser.parse_args()
 
-    (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
+    (train_images, train_labels), (test_images, test_labels) = load_cifar10_with_retry()
 
     # Use alpha-split per-site data to simulate data heteogeniety,
     # only if if train_idx_path is not None.
@@ -124,7 +125,7 @@ def main():
         print(
             (
                 f"Loaded {len(train_idx)} training indices from {args.train_idx_path} "
-                "with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}"
+                f"with label distribution:\nUnique labels: {unq}\nUnique Counts: {unq_cnt}"
             )
         )
 
