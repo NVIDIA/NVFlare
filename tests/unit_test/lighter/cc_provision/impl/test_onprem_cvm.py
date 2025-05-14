@@ -42,7 +42,7 @@ def basic_project():
 def ctx(basic_project):
     """Create a basic provisioning context."""
     yield ProvisionContext("test_workspace", basic_project)
-    shutil.rmtree("test_workspace")
+    shutil.rmtree("test_workspace", ignore_errors=True)
 
 
 @pytest.fixture
