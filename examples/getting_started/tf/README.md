@@ -139,7 +139,8 @@ heterogeneity](./figs/fedavg-diff-alphas.png)
 ### 3.3 Impact of different FL algorithms
 
 Lastly, we compare the performance of different FL algorithms, with
-`alpha` value fixed to 0.1, i.e., a high client data heterogeneity. We can observe from the figure below that, FedProx and
+`alpha` value fixed to 0.1, i.e., a high client data heterogeneity.
+We can observe from the figure below that, FedOpt and
 SCAFFOLD achieve better performance, with better convergence rates
 compared to FedAvg and FedProx with the same alpha setting. SCAFFOLD
 achieves that by adding a correction term when updating the client
