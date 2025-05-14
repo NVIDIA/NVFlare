@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import threading
+import time
 from random import randrange
 
 from nvflare.apis.event_type import EventType
@@ -19,6 +20,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.edge.constants import EdgeApiStatus, EdgeContextKey, EdgeEventType, EdgeMsgTopic
+from nvflare.edge.web.models.capabilities import Capabilities
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_response import ResultResponse
@@ -46,7 +48,7 @@ class EdgeTaskDispatcher(Widget):
 
     """
 
-    def __init__(self, request_timeout: float = 10.0):
+    def __init__(self, request_timeout: float = 5.0):
         Widget.__init__(self)
         self.request_timeout = request_timeout
         self.edge_jobs = {}  # edge_method => list of job_ids
@@ -89,7 +91,7 @@ class EdgeTaskDispatcher(Widget):
             no_job_reply=ResultResponse(EdgeApiStatus.DONE),
             comm_err_reply=ResultResponse(EdgeApiStatus.RETRY),
         )
-        self.logger.info("EdgeTaskDispatcher created!")
+        self.logger.debug("EdgeTaskDispatcher created!")
 
     def _add_job(self, job_meta: dict):
         with self.lock:
@@ -121,13 +123,14 @@ class EdgeTaskDispatcher(Widget):
                         # no more jobs for this edge method
                         self.edge_jobs.pop(edge_method)
 
-    def _match_job(self, caps: dict):
-        methods = caps.get("methods")
+    def _match_job(self, caps: Capabilities):
+        methods = caps.methods
         with self.lock:
             for edge_method, jobs in self.edge_jobs.items():
                 if edge_method in methods:
                     # pick one randomly
                     i = randrange(len(jobs))
+                    self.logger.debug(f"matched job {jobs[i]}")
                     return jobs[i]
 
             # no job matched
@@ -141,15 +144,16 @@ class EdgeTaskDispatcher(Widget):
             return False
 
     def _handle_job_launched(self, event_type: str, fl_ctx: FLContext):
-        self.logger.info(f"handling event {event_type}")
+        self.logger.debug(f"handling event {event_type}")
         job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
         if not job_meta:
             self.logger.error(f"missing {FLContextKey.JOB_META} from fl_ctx for event {event_type}")
         else:
+            self.logger.debug(f"adding job: {job_meta=}")
             self._add_job(job_meta)
 
     def _handle_job_done(self, event_type: str, fl_ctx: FLContext):
-        self.logger.info(f"handling event {event_type}")
+        self.logger.debug(f"handling event {event_type}")
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
         if not job_id:
             self.logger.error(f"missing {FLContextKey.CURRENT_JOB_ID} from fl_ctx for event {event_type}")
@@ -167,11 +171,14 @@ class EdgeTaskDispatcher(Widget):
             return
 
         # find job for the caps
+        self.logger.debug(f"trying to match job with caps: {edge_capabilities}")
         job_id = self._match_job(edge_capabilities)
         if job_id:
             reply = JobResponse(EdgeApiStatus.OK, job_id)
         else:
             reply = JobResponse(EdgeApiStatus.NO_JOB)
+
+        self.logger.debug(f"sending job response: {reply}")
         self._set_edge_reply(reply, fl_ctx)
         fl_ctx.set_prop(FLContextKey.JOB_META, self.job_metas.get(job_id), private=True, sticky=False)
 
@@ -218,6 +225,7 @@ class EdgeTaskDispatcher(Widget):
         # send task request data to CJ
         self.logger.debug(f"Sending edge request to CJ {job_id}")
         engine = fl_ctx.get_engine()
+        start = time.time()
         reply = engine.send_to_job(
             job_id=job_id,
             channel=CellChannel.EDGE_REQUEST,
@@ -231,6 +239,7 @@ class EdgeTaskDispatcher(Widget):
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
 
         if rc != CellReturnCode.OK:
+            self.logger.debug(f"Failed to get edge response after {time.time() - start} secs: {rc}")
             reply = comm_err_reply
         else:
             reply = reply.payload

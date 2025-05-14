@@ -65,7 +65,7 @@ class EdgeSurveyExecutor(EdgeTaskExecutor):
             update=Shareable({"num_devices": 1}),
             fl_ctx=fl_ctx,
         )
-        return TaskResponse(EdgeApiStatus.RETRY)
+        return TaskResponse(EdgeApiStatus.RETRY, job_id=fl_ctx.get_job_id())
 
     def process_edge_selection_request(
         self, request: SelectionRequest, current_task: TaskInfo, fl_ctx: FLContext

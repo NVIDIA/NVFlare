@@ -76,9 +76,12 @@ class EdgeTaskGenerator(Widget):
                         capabilities=caps,
                     )
 
+                    self.logger.debug(f"trying to get job: {job_request}")
                     fl_ctx.set_prop(EdgeContextKey.REQUEST_FROM_EDGE, job_request, private=True, sticky=False)
                     self.fire_event(EdgeEventType.EDGE_JOB_REQUEST_RECEIVED, fl_ctx)
                     result = fl_ctx.get_prop(EdgeContextKey.REPLY_TO_EDGE)
+                    self.logger.debug(f"job response received: {result}")
+
                     if result:
                         assert isinstance(result, JobResponse)
                         status = result.status
@@ -90,9 +93,11 @@ class EdgeTaskGenerator(Widget):
                         self.logger.error(f"no result from ETD for event {EdgeEventType.EDGE_JOB_REQUEST_RECEIVED}")
                 else:
                     task_req = self._make_task(job_id)
+                    self.logger.debug(f"sending task request {task_req}")
                     fl_ctx.set_prop(EdgeContextKey.REQUEST_FROM_EDGE, task_req, sticky=False, private=True)
                     self.fire_event(EdgeEventType.EDGE_TASK_REQUEST_RECEIVED, fl_ctx)
                     result = fl_ctx.get_prop(EdgeContextKey.REPLY_TO_EDGE)
+                    self.logger.debug(f"got task response {result}")
                     if not result:
                         self.logger.error(f"no result from ETD for event {EdgeEventType.EDGE_TASK_REQUEST_RECEIVED}")
                     else:
