@@ -23,15 +23,26 @@ import yaml
 
 from nvflare.lighter.cc_provision.cc_constants import CC_AUTHORIZERS_KEY
 from nvflare.lighter.cc_provision.impl.onprem_cvm import OnPremCVMBuilder
+from nvflare.lighter.constants import PropKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Entity, Project
 
 
 @pytest.fixture
 def basic_project():
-    """Create a basic project with server and clients."""
+    """Create a basic project with server and clients and cc enabled."""
     project = Project("test_project", "A testing project")
-    props = {}
+    props = {
+        PropKey.CC_CONFIG: "test_cc_config.yml",
+        PropKey.CC_ENABLED: True,
+        PropKey.CC_CONFIG_DICT: {
+            "compute_env": "onprem_cvm",
+            "cc_cpu_mechanism": "tdx",
+            "cc_gpu_mechanism": "nvidia_cc",
+            "cc_issuer": "test_issuer",
+            "cc_attestation": "test_attestation",
+        },
+    }
     project.set_server("server", "orgC", props)
     project.add_client("client1", "orgA", props)
     project.add_client("client2", "orgB", props)

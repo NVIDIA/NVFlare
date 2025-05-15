@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 
 from nvflare.lighter import utils
+from nvflare.lighter.constants import PropKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Entity, Project
 from nvflare.lighter.spec import Builder
@@ -67,11 +68,12 @@ class OnPremCVMBuilder(Builder):
     def build(self, project: Project, ctx: ProvisionContext):
         """Build CVM configuration for all participants."""
         server = project.get_server()
-        if server:
+        if server and server.get_prop(PropKey.CC_ENABLED, False):
             self._build_resources(server, ctx)
 
         for client in project.get_clients():
-            self._build_resources(client, ctx)
+            if client.get_prop(PropKey.CC_ENABLED, False):
+                self._build_resources(client, ctx)
 
     def _build_resources(self, entity: Entity, ctx: ProvisionContext):
         """Build resources for the entity."""

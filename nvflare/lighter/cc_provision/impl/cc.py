@@ -64,10 +64,8 @@ class CCBuilder(Builder):
 
     def __init__(
         self,
-        cc_config_key="cc_config",
         cc_mgr_id="cc_manager",
     ):
-        self.cc_config_key = cc_config_key
         self.project_name: Optional[str] = None
         self.project: Optional[Project] = None
         self.cc_config: Optional[Dict[str, Any]] = None
@@ -82,11 +80,12 @@ class CCBuilder(Builder):
         self.project_name = project.name
         self.project = project
         for participant in project.get_all_participants():
-            if participant.get_prop(self.cc_config_key):
-                cc_config = self._load_cc_config(participant.get_prop(self.cc_config_key))
+            if participant.get_prop(PropKey.CC_CONFIG):
+                cc_config = self._load_cc_config(participant.get_prop(PropKey.CC_CONFIG))
                 if self._validate_cc_env(cc_config):
                     self._cc_enabled_sites.append(participant)
-                    participant.set_prop(PropKey.CC_CONFIG, cc_config)
+                    participant.set_prop(PropKey.CC_ENABLED, True)
+                    participant.set_prop(PropKey.CC_CONFIG_DICT, cc_config)
                     participant.set_prop(PropKey.AUTHZ_SECTION_KEY, TemplateSectionKey.CC_AUTHZ)
                     compute_env = cc_config.get(CCConfigKey.COMPUTE_ENV)
                     if compute_env not in self._cc_builders:
@@ -137,7 +136,11 @@ class CCBuilder(Builder):
         """Build CCManager component for a participant."""
         cc_authorizers = ctx.get(CC_AUTHORIZERS_KEY)
         cc_mgr_args = {CCManagerArgs.CC_ISSUERS_CONF: [], CCManagerArgs.CC_VERIFIER_IDS: []}
-        cc_config = participant.get_prop(PropKey.CC_CONFIG, {})
+        cc_enabled = participant.get_prop(PropKey.CC_ENABLED, False)
+        if not cc_enabled:
+            return
+
+        cc_config = participant.get_prop(PropKey.CC_CONFIG_DICT, {})
         if cc_config == {}:
             return
 
