@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
-from typing import Optional, Tuple, Union
+from typing import Tuple, Union
 
 from nvflare.edge.constants import EdgeApiStatus
 from nvflare.edge.web.models.job_request import JobRequest
