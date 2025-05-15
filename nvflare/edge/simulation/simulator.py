@@ -230,9 +230,9 @@ class Simulator:
                             active_device_candidates.pop(did)
                         elif resp.status in [EdgeApiStatus.RETRY, EdgeApiStatus.NO_TASK]:
                             pass
-                        elif resp.status in [EdgeApiStatus.DONE]:
-                            # this device is done - discard it
-                            pass
+                        elif resp.status in [EdgeApiStatus.DONE, EdgeApiStatus.NO_JOB]:
+                            # this device is done - job is done
+                            device.device_id = None
                         else:
                             # ERROR or NO_JOB
                             self.logger.info(f"stop running due to bad TaskResponse status: {resp.status}")
@@ -250,7 +250,7 @@ class Simulator:
                     if resp:
                         assert isinstance(resp, JobResponse)
                         if resp.status == EdgeApiStatus.OK:
-                            self.logger.debug(f"Device {did} got job {resp.job_id}")
+                            self.logger.info(f"Device {did} got job {resp.job_id}")
                             device.set_job(
                                 job_id=resp.job_id,
                                 job_name=resp.job_name,
@@ -264,7 +264,7 @@ class Simulator:
                         elif resp.status in [EdgeApiStatus.RETRY, EdgeApiStatus.NO_JOB]:
                             pass
                         elif resp.status in [EdgeApiStatus.DONE]:
-                            # this device is done
+                            # this device is done - what to do?
                             pass
                         else:
                             self.logger.info(f"stop running due to bad JobResponse status: {resp.status}")
@@ -313,7 +313,9 @@ class Simulator:
             job_id=device.get_job_id(),
             cookie=device.cookie,
         )
-        return self.send_f(req, device, **self.send_kwargs)
+        resp = self.send_f(req, device, **self.send_kwargs)
+        self.logger.debug(f"got task response: {resp}")
+        return resp
 
     def _ask_for_selection(self, job_id: str) -> SelectionResponse:
         """Send a request to Flare for ask for the current device selection.
@@ -325,7 +327,9 @@ class Simulator:
         first_key = next(iter(self.all_devices))
         device = self.all_devices[first_key]
         req = SelectionRequest(device.get_device_info(), job_id)
-        return self.send_f(req, device, **self.send_kwargs)
+        resp = self.send_f(req, device, **self.send_kwargs)
+        self.logger.debug(f"got selection response: {resp}")
+        return resp
 
     def _ask_for_job(self, device: SimulatedDevice) -> JobResponse:
         """Send a request to Flare to ask for a Job for the specified device
@@ -341,7 +345,9 @@ class Simulator:
             user_info=device.get_user_info(),
             capabilities=device.get_capabilities(),
         )
-        return self.send_f(req, device, **self.send_kwargs)
+        resp = self.send_f(req, device, **self.send_kwargs)
+        self.logger.debug(f"got job response: {resp}")
+        return resp
 
     def _pick_a_used_device(self):
         """Pick a used device for inclusion to active device list.
@@ -402,6 +408,7 @@ class Simulator:
         Returns:
 
         """
+        self.logger.info(f"Device {device.device_id} is selected ({selection_id}): started training ")
         try:
             result = device.do_task(task_data)
             status = EdgeApiStatus.OK
@@ -427,7 +434,10 @@ class Simulator:
         )
 
         # report the result to Flare
+        self.logger.info(f"Device {device.device_id} result: {report}")
         resp = self.send_f(report, device, **self.send_kwargs)
+        self.logger.info(f"got result response: {resp}")
+
         if resp and not isinstance(resp, ResultResponse):
             self.logger.error(f"received response must be ResultResponse but got {type(resp)}")
 

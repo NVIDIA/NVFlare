@@ -26,3 +26,7 @@ class TaskRequest(BaseModel):
 
         if kwargs:
             self.update(kwargs)
+
+    @staticmethod
+    def from_dict(cls, d: dict):
+        return TaskRequest(device_info=d.pop(""))

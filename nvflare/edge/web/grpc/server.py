@@ -48,7 +48,7 @@ class Servicer(EdgeApiServicer):
             return make_reply(EdgeApiStatus.ERROR)
 
 
-class Server:
+class EdgeApiServer:
 
     def __init__(
         self,

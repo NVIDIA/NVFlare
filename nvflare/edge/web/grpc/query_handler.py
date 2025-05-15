@@ -15,7 +15,8 @@ import json
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from nvflare.edge.constants import EdgeApiStatus, EdgeProtoKey, HttpHeaderKey
+from nvflare.edge.constants import EdgeApiStatus, EdgeProtoKey
+from nvflare.edge.web.models.capabilities import Capabilities
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
@@ -48,7 +49,7 @@ class QueryHandler(ABC):
 
         self.processors = {
             QueryType.JOB_REQUEST: (
-                None,
+                self._check_job_request,
                 self._to_job_request,
                 self.handle_job_request,
             ),
@@ -76,29 +77,28 @@ class QueryHandler(ABC):
             self.logger.error(f"error decoding {name} data: {secure_format_exception(ex)}")
             return None
 
-    def _get_query_info(self, request: Request) -> (str, Optional[_QueryInfo]):
-        header = self._to_dict("header", request.header)
-        if not header:
+    def _get_query_info(self, payload: dict) -> (str, Optional[_QueryInfo]):
+        device_info_dict = payload.pop("device_info", None)
+        if not device_info_dict:
+            self.logger.error("missing device_info")
             return EdgeApiStatus.INVALID_REQUEST, None
 
-        device_id = header.get(HttpHeaderKey.DEVICE_ID, None)
+        device_id = device_info_dict.pop("device_id", None)
         if not device_id:
-            self.logger.error("missing device ID header")
+            self.logger.error("missing device_id")
             return EdgeApiStatus.INVALID_REQUEST, None
 
         device_info = DeviceInfo(device_id)
-        device_info_header = header.get(HttpHeaderKey.DEVICE_INFO, None)
-        if device_info_header:
-            device_info.from_query_string(device_info_header)
+        device_info.update(device_info_dict)
 
-        user_info_header = header.get(HttpHeaderKey.USER_INFO, None)
-        if user_info_header:
+        user_info_dict = payload.pop("user_info", None)
+        if user_info_dict:
             user_info = UserInfo()
-            user_info.from_query_string(user_info_header)
+            user_info.update(user_info_dict)
         else:
             user_info = None
 
-        self.logger.info(f"QueryInfo: {device_id=} {device_info=} {user_info=}")
+        self.logger.debug(f"QueryInfo: {device_id=} {device_info=} {user_info=}")
         return EdgeApiStatus.OK, _QueryInfo(device_info, user_info)
 
     def _check_payload_keys(self, payload: dict, keys, query_type: str) -> bool:
@@ -110,33 +110,34 @@ class QueryHandler(ABC):
                 return False
         return True
 
-    def _to_job_request(self, payload: dict, info: _QueryInfo) -> (str, Optional[JobRequest]):
+    def _check_job_request(self, payload: dict, info: _QueryInfo, req_type: str) -> bool:
+        return self._check_payload_keys(payload, EdgeProtoKey.CAPABILITIES, req_type)
+
+    def _to_job_request(self, payload: dict, info: _QueryInfo) -> Optional[JobRequest]:
         job_req = JobRequest(info.device_info, info.user_info, **payload)
-        return EdgeApiStatus.OK, job_req
+
+        # convert "capabilities" to Capabilities object!
+        caps = job_req.get(EdgeProtoKey.CAPABILITIES)
+        job_req[EdgeProtoKey.CAPABILITIES] = Capabilities(caps.get("methods"))
+        return job_req
 
     def _check_task_request(self, payload: dict, info: _QueryInfo, req_type: str) -> bool:
-        if not self._check_payload_keys(payload, EdgeProtoKey.JOB_ID, req_type):
-            return False
-        else:
-            return True
+        return self._check_payload_keys(payload, EdgeProtoKey.JOB_ID, req_type)
 
-    def _to_task_request(self, payload: dict, info: _QueryInfo) -> (str, Optional[TaskRequest]):
+    def _to_task_request(self, payload: dict, info: _QueryInfo) -> Optional[TaskRequest]:
         task_req = TaskRequest(
             info.device_info, info.user_info, payload.get(EdgeProtoKey.JOB_ID), payload.get(EdgeProtoKey.COOKIE)
         )
-        return EdgeApiStatus.OK, task_req
+        return task_req
 
     def _check_selection_request(self, payload: dict, info: _QueryInfo, req_type: str) -> bool:
-        if not self._check_payload_keys(payload, EdgeProtoKey.JOB_ID, req_type):
-            return False
-        else:
-            return True
+        return self._check_payload_keys(payload, EdgeProtoKey.JOB_ID, req_type)
 
-    def _to_selection_request(self, payload: dict, info: _QueryInfo) -> (str, Optional[SelectionRequest]):
-        return EdgeApiStatus.OK, SelectionRequest(info.device_info, payload.get(EdgeProtoKey.JOB_ID))
+    def _to_selection_request(self, payload: dict, info: _QueryInfo) -> Optional[SelectionRequest]:
+        return SelectionRequest(info.device_info, payload.get(EdgeProtoKey.JOB_ID))
 
     def _check_result_report(self, payload: dict, info: _QueryInfo, req_type: str) -> bool:
-        if not self._check_payload_keys(
+        return self._check_payload_keys(
             payload,
             [
                 EdgeProtoKey.JOB_ID,
@@ -147,12 +148,9 @@ class QueryHandler(ABC):
                 EdgeProtoKey.COOKIE,
             ],
             req_type,
-        ):
-            return False
-        else:
-            return True
+        )
 
-    def _to_result_report(self, payload: dict, info: _QueryInfo) -> (str, Optional[ResultReport]):
+    def _to_result_report(self, payload: dict, info: _QueryInfo) -> Optional[ResultReport]:
         report = ResultReport(
             info.device_info,
             info.user_info,
@@ -164,7 +162,7 @@ class QueryHandler(ABC):
             cookie=payload.get(EdgeProtoKey.COOKIE),
         )
         report.update(payload)
-        return EdgeApiStatus.OK, report
+        return report
 
     @abstractmethod
     def handle_job_request(self, request: JobRequest) -> JobResponse:
@@ -188,13 +186,13 @@ class QueryHandler(ABC):
             self.logger.error(f"received invalid query type: {request.type}")
             return make_reply(EdgeApiStatus.INVALID_REQUEST)
 
-        self.logger.info(f"received request {request.type}")
+        self.logger.debug(f"received request {request.type}")
 
         payload = self._to_dict("payload", request.payload)
         if not payload:
             return make_reply(EdgeApiStatus.INVALID_REQUEST)
 
-        status, query_info = self._get_query_info(request)
+        status, query_info = self._get_query_info(payload)
         if status != EdgeApiStatus.OK:
             return make_reply(status, NONE_DATA)
 
@@ -206,11 +204,7 @@ class QueryHandler(ABC):
                 if not is_valid:
                     return make_reply(EdgeApiStatus.INVALID_REQUEST)
 
-            status, req = to_request_f(payload, query_info)
-
-            if status != EdgeApiStatus.OK:
-                return make_reply(status)
-
+            req = to_request_f(payload, query_info)
             resp = process_f(req)
             return make_reply(EdgeApiStatus.OK, resp)
         except Exception as ex:

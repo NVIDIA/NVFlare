@@ -19,6 +19,7 @@ class EdgeProtoKey:
     RESPONSE = "response"
     JOB_ID = "job_id"
     TASK_ID = "task_id"
+    CAPABILITIES = "capabilities"
     TASK_NAME = "task_name"
     RESULT = "result"
     COOKIE = "cookie"

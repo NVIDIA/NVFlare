@@ -19,6 +19,7 @@ from nvflare.edge.simulation.devices.tp import TPDeviceFactory
 from nvflare.edge.simulation.feg_api import FegApi
 from nvflare.edge.simulation.simulated_device import SimulatedDevice
 from nvflare.edge.simulation.simulator import Simulator
+from nvflare.edge.web.grpc.query import Query
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.task_request import TaskRequest
@@ -26,7 +27,7 @@ from nvflare.edge.web.models.task_request import TaskRequest
 log = logging.getLogger(__name__)
 
 
-def run_device_simulator(config_file: str):
+def run_simulator(config_file: str, lcp_mapping_file: str = None):
     parser = ConfigParser(config_file)
     num = parser.get_num_devices()
     endpoint_url = parser.get_endpoint()
@@ -41,13 +42,23 @@ def run_device_simulator(config_file: str):
         device_reuse_rate=parser.device_reuse_rate,
     )
 
-    simulator.set_send_func(_send_request, parser=parser)
+    if lcp_mapping_file:
+        # use gRPC Query
+        query = Query(lcp_mapping_file)
+        simulator.set_send_func(_send_request_to_lcp, query=query)
+    else:
+        simulator.set_send_func(_send_request_to_proxy, parser=parser)
+
     simulator.start()
 
     log.info("DeviceSimulator run ended")
 
 
-def _send_request(request, device: SimulatedDevice, parser: ConfigParser):
+def _send_request_to_lcp(request, device: SimulatedDevice, query: Query):
+    return query(request)
+
+
+def _send_request_to_proxy(request, device: SimulatedDevice, parser: ConfigParser):
     api = FegApi(
         endpoint=parser.get_endpoint(),
         device_info=device.get_device_info(),
@@ -82,11 +93,19 @@ def main():
         help="Location of JSON configuration file",
     )
 
+    parser.add_argument(
+        "--lcp_mapping_file",
+        "-m",
+        type=str,
+        default="",
+        help="Location of LCP mapping file",
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
-    # Run DeviceSimulator
-    run_device_simulator(args.config_file)
+    # Run Device Simulator
+    run_simulator(args.config_file, args.lcp_mapping_file)
 
 
 if __name__ == "__main__":

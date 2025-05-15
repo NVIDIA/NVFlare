@@ -18,7 +18,7 @@ import uuid
 
 from nvflare.edge.constants import CookieKey, EdgeApiStatus
 from nvflare.edge.web.grpc.query_handler import QueryHandler
-from nvflare.edge.web.grpc.server import Server
+from nvflare.edge.web.grpc.server import EdgeApiServer
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
@@ -84,7 +84,7 @@ def shutdown_server(server):
 def main():
     logging.basicConfig()
     logging.getLogger().setLevel(logging.INFO)
-    server = Server(address="127.0.0.1:8009", handler=TestQueryHandler(), max_workers=100)
+    server = EdgeApiServer(address="127.0.0.1:8009", handler=TestQueryHandler(), max_workers=100)
     t = threading.Thread(target=shutdown_server, daemon=True, args=(server,))
     t.start()
     server.start()

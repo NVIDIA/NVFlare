@@ -19,7 +19,7 @@ from .edge_api_pb2 import Reply, Request
 from .edge_api_pb2_grpc import EdgeApiStub
 
 
-class Client:
+class EdgeApiClient:
 
     def __init__(self, grpc_options=None):
         self.grpc_options = grpc_options

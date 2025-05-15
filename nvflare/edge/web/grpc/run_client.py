@@ -16,9 +16,12 @@ import logging
 import threading
 import time
 
-from nvflare.edge.constants import HttpHeaderKey
-from nvflare.edge.web.grpc.client import Client, Reply, Request
-from nvflare.edge.web.grpc.constants import QueryType
+from nvflare.edge.web.grpc.client import EdgeApiClient, Reply
+from nvflare.edge.web.grpc.utils import grpc_reply_to_job_response, job_request_to_grpc_request
+from nvflare.edge.web.models.capabilities import Capabilities
+from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.edge.web.models.job_request import JobRequest
+from nvflare.edge.web.models.user_info import UserInfo
 
 
 class ReqInfo:
@@ -29,40 +32,31 @@ class ReqInfo:
         self.rcv_time = None
 
 
-def _to_bytes(d: dict) -> bytes:
-    str_data = json.dumps(d)
-    return str_data.encode("utf-8")
-
-
-def request_job(req: ReqInfo, client: Client, addr):
+def request_job(req: ReqInfo, client: EdgeApiClient, addr):
     req.send_time = time.time()
     print(f"{req.idx}: sending job request")
-    header = {
-        HttpHeaderKey.DEVICE_ID: "aaaaa",
-    }
 
-    job_payload = {"capabilities": {"methods": ["xgb", "deep-learn"]}}
-
-    request = Request(
-        type=QueryType.JOB_REQUEST,
-        method="post",
-        header=_to_bytes(header),
-        payload=_to_bytes(job_payload),
+    job_req = JobRequest(
+        device_info=DeviceInfo("aaaaa"),
+        user_info=UserInfo(user_name="john"),
+        capabilities=Capabilities(["xgb", "deep-learn"]),
     )
+    request = job_request_to_grpc_request(job_req)
     reply = client.query(addr, request)
     req.rcv_time = time.time()
-    print(f"{req.idx}: got reply after {req.rcv_time - req.send_time} seconds")
     assert isinstance(reply, Reply)
+    resp = grpc_reply_to_job_response(reply)
+    print(f"{req.idx}: got response after {req.rcv_time - req.send_time} seconds: {resp}")
 
 
 def main():
     logging.basicConfig()
     logging.getLogger().setLevel(logging.INFO)
 
-    client = Client()
+    client = EdgeApiClient()
     addr = "127.0.0.1:8009"
 
-    num_threads = 30
+    num_threads = 5
     reqs = []
     for i in range(num_threads):
         req = ReqInfo(i + 1)
