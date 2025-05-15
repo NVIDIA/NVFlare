@@ -53,25 +53,35 @@ class TestOnPremPackager:
         assert packager.cc_config_key == "cc_config"
         assert packager.build_image_cmd == "custom_build_cmd.sh"
 
-    def test_package_for_participant(self, packager, basic_project, ctx):
+    @patch("shutil.copytree")
+    @patch("shutil.rmtree")
+    @patch("os.makedirs")
+    @patch("builtins.open", new_callable=mock_open, read_data="docker run {~~cvm_image_name~~}")
+    @patch("nvflare.lighter.utils.load_yaml")
+    @patch("nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager._build_cc_image")
+    def test_package_for_participant(
+        self,
+        mock_build_cc_image,
+        mock_load_yaml,
+        mock_open,
+        mock_makedirs,
+        mock_rmtree,
+        mock_copytree,
+        packager,
+        basic_project,
+        ctx,
+    ):
         """Test packaging for a participant."""
-        participant = basic_project.get_server()
 
-        m = mock_open(read_data="docker run {~~cvm_image_name~~}")
-        with patch("shutil.copytree"), patch("shutil.rmtree"), patch("os.makedirs"), patch("builtins.open", m), patch(
-            "nvflare.lighter.utils.load_yaml"
-        ) as mock_load_yaml, patch(
-            "nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager._build_cc_image"
-        ) as mock_build_cc_image:
-            mock_load_yaml.return_value = {CCConfigKey.CVM_IMAGE_NAME: "nvflare_cvm"}
-            packager.package(basic_project, ctx)
+        mock_load_yaml.return_value = {CCConfigKey.CVM_IMAGE_NAME: "nvflare_cvm"}
+        packager.package(basic_project, ctx)
 
-            assert mock_build_cc_image.call_count == 3
-            mock_build_cc_image.assert_has_calls(
-                [
-                    call("test_config.yaml", "server", "test_workspace/server-copy"),
-                    call("test_config.yaml", "client1", "test_workspace/client1-copy"),
-                    call("test_config.yaml", "client2", "test_workspace/client2-copy"),
-                ],
-                any_order=True,
-            )
+        assert mock_build_cc_image.call_count == 3
+        mock_build_cc_image.assert_has_calls(
+            [
+                call("test_config.yaml", "server", "test_workspace/server-copy"),
+                call("test_config.yaml", "client1", "test_workspace/client1-copy"),
+                call("test_config.yaml", "client2", "test_workspace/client2-copy"),
+            ],
+            any_order=True,
+        )
