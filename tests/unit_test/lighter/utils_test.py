@@ -47,10 +47,10 @@ def generate_cert(subject, subject_org, issuer, signing_pri_key, subject_pub_key
         .issuer_name(x509_issuer)
         .public_key(subject_pub_key)
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_before(datetime.datetime.now(datetime.timezone.utc))
         .not_valid_after(
             # Our certificate will be valid for 360 days
-            datetime.datetime.utcnow()
+            datetime.datetime.now(datetime.timezone.utc)
             + datetime.timedelta(days=valid_days)
             # Sign our certificate with our private key
         )
