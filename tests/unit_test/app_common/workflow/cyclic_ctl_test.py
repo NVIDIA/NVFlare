@@ -92,9 +92,10 @@ class TestCyclicController:
             abort_signal = Signal()
             fl_ctx = FLContext()
 
-            with patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_method1, patch.object(
-                ctl.shareable_generator, "shareable_to_learnable"
-            ) as mock_method2:
+            with (
+                patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_method1,
+                patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_method2,
+            ):
                 mock_method1.return_value = Shareable()
                 mock_method2.return_value = Learnable()
 
@@ -115,9 +116,11 @@ class TestCyclicController:
         ]
 
         fl_ctx = FLContext()
-        with patch.object(ctl, "cancel_task") as mock_method, patch.object(
-            ctl.shareable_generator, "learnable_to_shareable"
-        ) as mock_method1, patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_method2:
+        with (
+            patch.object(ctl, "cancel_task") as mock_method,
+            patch.object(ctl.shareable_generator, "learnable_to_shareable") as mock_method1,
+            patch.object(ctl.shareable_generator, "shareable_to_learnable") as mock_method2,
+        ):
             mock_method1.return_value = Shareable()
             mock_method2.return_value = Learnable()
 

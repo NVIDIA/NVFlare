@@ -136,6 +136,27 @@ as data heterogeneity becomes higher.
 ![Impact of client data
 heterogeneity](./figs/fedavg-diff-alphas.png)
 
+### 3.3 Impact of different FL algorithms
+
+Lastly, we compare the performance of different FL algorithms, with
+`alpha` value fixed to 0.1, i.e., a high client data heterogeneity.
+We can observe from the figure below that, FedOpt and
+SCAFFOLD achieve better performance, with better convergence rates
+compared to FedAvg and FedProx with the same alpha setting. SCAFFOLD
+achieves that by adding a correction term when updating the client
+models, while FedOpt utilizes SGD with momentum to update the global
+model on the server. Both achieve better performance with the same
+number of training steps as FedAvg/FedProx.
+
+| Config |	Alpha |	Val score |
+| ----------- | ----------- |  ----------- |
+| cifar10_fedavg |	0.1 |	0.7903 |
+| cifar10_fedopt |	0.1 |	0.8145 |
+| cifar10_fedprox |	0.1 |	0.7843 |
+| cifar10_scaffold |	0.1 |	0.8164 |
+
+![Impact of different FL algorithms](./figs/fedavg-diff-algos.png)
+
 > [!NOTE]
 > More examples can be found at https://nvidia.github.io/NVFlare.
 
