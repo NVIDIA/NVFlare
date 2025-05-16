@@ -19,10 +19,11 @@ from nvflare.edge.simulation.devices.tp import TPDeviceFactory
 from nvflare.edge.simulation.feg_api import FegApi
 from nvflare.edge.simulation.simulated_device import SimulatedDevice
 from nvflare.edge.simulation.simulator import Simulator
-from nvflare.edge.web.grpc.query import Query
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.result_report import ResultReport
+from nvflare.edge.web.models.selection_request import SelectionRequest
 from nvflare.edge.web.models.task_request import TaskRequest
+from nvflare.edge.web.rpc.query import Query
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,9 @@ def _send_request_to_proxy(request, device: SimulatedDevice, parser: ConfigParse
 
     if isinstance(request, ResultReport):
         return api.report_result(request)
+
+    if isinstance(request, SelectionRequest):
+        return api.get_selection(request)
 
     raise ValueError(f"unknown type of request {type(request)}")
 

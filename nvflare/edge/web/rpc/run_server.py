@@ -17,8 +17,6 @@ import time
 import uuid
 
 from nvflare.edge.constants import CookieKey, EdgeApiStatus
-from nvflare.edge.web.grpc.query_handler import QueryHandler
-from nvflare.edge.web.grpc.server import EdgeApiServer
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
@@ -27,6 +25,8 @@ from nvflare.edge.web.models.selection_request import SelectionRequest
 from nvflare.edge.web.models.selection_response import SelectionResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
+from nvflare.edge.web.rpc.query_handler import QueryHandler
+from nvflare.edge.web.rpc.server import EdgeApiServer
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 

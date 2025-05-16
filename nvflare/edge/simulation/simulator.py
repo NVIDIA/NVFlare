@@ -298,6 +298,13 @@ class Simulator:
         # set the flag to stop the query loop
         self.done = True
 
+    def _send_request(self, req, device, default_resp, **kwargs):
+        try:
+            return self.send_f(req, device, **self.send_kwargs)
+        except Exception as ex:
+            self.logger.warning(f"exception sending request: {secure_format_exception(ex)}")
+            return default_resp
+
     def _ask_for_task(self, device: SimulatedDevice) -> TaskResponse:
         """Send a request to Flare to ask for a task for a device
 
@@ -313,7 +320,7 @@ class Simulator:
             job_id=device.get_job_id(),
             cookie=device.cookie,
         )
-        resp = self.send_f(req, device, **self.send_kwargs)
+        resp = self._send_request(req, device, TaskResponse(EdgeApiStatus.RETRY), **self.send_kwargs)
         self.logger.debug(f"got task response: {resp}")
         return resp
 
@@ -327,7 +334,7 @@ class Simulator:
         first_key = next(iter(self.all_devices))
         device = self.all_devices[first_key]
         req = SelectionRequest(device.get_device_info(), job_id)
-        resp = self.send_f(req, device, **self.send_kwargs)
+        resp = self._send_request(req, device, SelectionResponse(EdgeApiStatus.RETRY), **self.send_kwargs)
         self.logger.debug(f"got selection response: {resp}")
         return resp
 
@@ -345,7 +352,7 @@ class Simulator:
             user_info=device.get_user_info(),
             capabilities=device.get_capabilities(),
         )
-        resp = self.send_f(req, device, **self.send_kwargs)
+        resp = self._send_request(req, device, JobResponse(EdgeApiStatus.RETRY), **self.send_kwargs)
         self.logger.debug(f"got job response: {resp}")
         return resp
 
@@ -435,7 +442,7 @@ class Simulator:
 
         # report the result to Flare
         self.logger.info(f"Device {device.device_id} result: {report}")
-        resp = self.send_f(report, device, **self.send_kwargs)
+        resp = self._send_request(report, device, ResultResponse(EdgeApiStatus.RETRY), **self.send_kwargs)
         self.logger.info(f"got result response: {resp}")
 
         if resp and not isinstance(resp, ResultResponse):

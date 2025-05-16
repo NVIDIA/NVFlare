@@ -42,11 +42,12 @@ from .utils import (
 
 class Query:
 
-    def __init__(self, lcp_mapping_file: str):
+    def __init__(self, lcp_mapping_file: str = None):
         self.lcp_list = []
         self.client = EdgeApiClient()
         self.logger = get_obj_logger(self)
-        self._load_lcp_map(lcp_mapping_file)
+        if lcp_mapping_file:
+            self.load_lcp_map(lcp_mapping_file)
 
     def _add_lcp(self, name: str, addr: str):
         self.lcp_list.append((name, addr))
@@ -56,7 +57,7 @@ class Query:
         index = uniform_hash.hash(device_id)
         return self.lcp_list[index]
 
-    def _load_lcp_map(self, mapping_file: str):
+    def load_lcp_map(self, mapping_file: str):
         with open(mapping_file, "r") as f:
             mapping = json.load(f)
 

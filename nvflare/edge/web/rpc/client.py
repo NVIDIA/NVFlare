@@ -11,3 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import grpc
+
+from .edge_api_pb2 import Reply, Request
+from .edge_api_pb2_grpc import EdgeApiStub
+
+
+class EdgeApiClient:
+
+    def __init__(self, grpc_options=None):
+        self.grpc_options = grpc_options
+
+    def query(self, address: str, request: Request) -> Reply:
+        channel = grpc.insecure_channel(address, options=self.grpc_options)
+        stub = EdgeApiStub(channel)
+        return stub.Query(request)

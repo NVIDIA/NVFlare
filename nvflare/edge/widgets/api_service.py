@@ -19,8 +19,6 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.edge.constants import EdgeContextKey, EdgeEventType
-from nvflare.edge.web.grpc.query_handler import QueryHandler
-from nvflare.edge.web.grpc.server import EdgeApiServer
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
@@ -29,17 +27,19 @@ from nvflare.edge.web.models.selection_request import SelectionRequest
 from nvflare.edge.web.models.selection_response import SelectionResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
+from nvflare.edge.web.rpc.query_handler import QueryHandler
+from nvflare.edge.web.rpc.server import EdgeApiServer
 from nvflare.widgets.widget import Widget
 
 
 class ApiService(Widget, QueryHandler):
-    def __init__(self, max_workers=100):
+    def __init__(self, max_workers=100, lcp_mapping_file_name="lcp_map.json"):
         Widget.__init__(self)
         QueryHandler.__init__(self)
 
+        self.lcp_mapping_file_name = lcp_mapping_file_name
         self.max_workers = max_workers
-        self.port = None
-        self.host = None
+        self.address = None
         self.engine = None
         self.server = None
 
@@ -71,26 +71,26 @@ class ApiService(Widget, QueryHandler):
     def _startup(self, _event_type: str, fl_ctx: FLContext):
         self.engine = fl_ctx.get_engine()
         workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        mapping_file = workspace.get_file_path_in_site_config("lcp_map.json")
+        mapping_file = workspace.get_file_path_in_site_config(self.lcp_mapping_file_name)
         with open(mapping_file, "r") as mapping_file:
             mapping = json.load(mapping_file)
         client_name = fl_ctx.get_identity_name()
         client_config = mapping.get(client_name)
         if client_config is None:
             raise ValueError(f"Client {client_name} not found in {mapping_file}")
-        self.host = client_config.get("host")
-        self.port = client_config.get("port")
-        address = f"{self.host}:{self.port}"
+        host = client_config.get("host")
+        port = client_config.get("port")
+        self.address = f"{host}:{port}"
         self.server = EdgeApiServer(
             handler=self,
-            address=address,
+            address=self.address,
             max_workers=self.max_workers,
         )
         t = threading.Thread(target=self.server.start, daemon=True)
         t.start()
-        self.log_info(fl_ctx, f"Edge API GRPC Service is started on address {address}")
+        self.log_info(fl_ctx, f"Edge API GRPC Service is started on address {self.address}")
 
     def _shutdown(self, _event_type: str, fl_ctx: FLContext):
-        self.log_info(fl_ctx, f"Edge web API endpoint on port {self.port} is shutting down")
+        self.log_info(fl_ctx, f"Edge API GRPC Service on address {self.address} is shutting down")
         if self.server:
             self.server.shutdown()

@@ -13,18 +13,6 @@
 # limitations under the License.
 
 
-class EdgeProtoKey:
-    STATUS = "status"
-    DATA = "data"
-    RESPONSE = "response"
-    JOB_ID = "job_id"
-    TASK_ID = "task_id"
-    CAPABILITIES = "capabilities"
-    TASK_NAME = "task_name"
-    RESULT = "result"
-    COOKIE = "cookie"
-
-
 class EdgeContextKey:
     EDGE_CAPABILITIES = "__edge_capabilities__"
     REQUEST_FROM_EDGE = "__request_from_edge__"

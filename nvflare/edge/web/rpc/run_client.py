@@ -15,12 +15,12 @@ import logging
 import threading
 import time
 
-from nvflare.edge.web.grpc.client import EdgeApiClient, Reply
-from nvflare.edge.web.grpc.utils import grpc_reply_to_job_response, job_request_to_grpc_request
 from nvflare.edge.web.models.capabilities import Capabilities
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.user_info import UserInfo
+from nvflare.edge.web.rpc.client import EdgeApiClient, Reply
+from nvflare.edge.web.rpc.utils import grpc_reply_to_job_response, job_request_to_grpc_request
 
 
 class ReqInfo:
