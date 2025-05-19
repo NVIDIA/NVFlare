@@ -22,9 +22,9 @@ The FLAb repository contains experimental data for six properties of therapeutic
 
 ## Installation
 
-First, we clone the AMPLIFY code and install it as a local pip package following the instructions [here](https://github.com/chandar-lab/AMPLIFY/blob/rc-0.1/README.md#installation-as-a-local-pip-package):
+First, we clone the AMPLIFY code and install it as a local pip package following the instructions [here](https://github.com/chandar-lab/AMPLIFY?tab=readme-ov-file#installation-as-a-local-pip-package):
 ```bash
-git clone -b rc-0.1 https://github.com/chandar-lab/AMPLIFY
+git clone https://github.com/chandar-lab/AMPLIFY
 python3 -m venv env && \
 source env/bin/activate && \
 python3 -m pip install --upgrade pip && \
@@ -322,6 +322,7 @@ For simplicity, we only plot the performance for one task ("expression") across 
 ```
 Fournier, Q., Vernon, R. M., van der Sloot, A., Schulz, B., Chandar, S., & Langmead, C. J. (2024). Protein language models: is scaling necessary?. bioRxiv, 2024-09.
 ```
+
 - We thank the [FLAb](https://github.com/Graylab/FLAb) team for providing the antibody fitness datasets used in this example. For more details about the FLAb dataset, please refer to their [paper](https://www.biorxiv.org/content/10.1101/2024.01.13.575504v1):
 
 ```
