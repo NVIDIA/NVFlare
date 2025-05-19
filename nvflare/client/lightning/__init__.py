@@ -41,3 +41,4 @@ if ok:
     from nvflare.client import receive as receive
     from nvflare.client import shutdown as shutdown
     from nvflare.client import system_info as system_info
+    from nvflare.app_opt.lightning.loggers.client_logger import ClientLogger as logger

@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
-
-from src.network import SimpleNetwork
-
+from src.lit_net import LitNet
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
 from nvflare.job_config.script_runner import ScriptRunner
@@ -47,13 +45,13 @@ if __name__ == "__main__":
     tracking_uri = args.tracking_uri
 
     n_clients = args.n_clients
-    num_rounds = 5
+    num_rounds = 2
 
-    train_script = "src/train_script.py"
+    train_script = "src/client.py"
 
     job_name = "fedavg"
 
-    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork())
+    job = FedAvgJob(name=job_name, n_clients=n_clients, num_rounds=num_rounds, initial_model=LitNet())
 
     # Add a MLFlow Receiver component to the server component,
     # all metrics will stream from client to server

@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType, LogWriterName
-from nvflare.fuel.utils.import_utils import optional_import
 # flake8: noqa
 from .api import get_context, log
 from .api_context import APIContext
@@ -215,35 +214,3 @@ class MLflowWriter(_BaseWriter):
                 not)
         """
         log(key="tags", value=tags, data_type=AnalyticsDataType.TAGS, writer=LogWriterName.MLFLOW, ctx=self.ctx)
-
-
-class LightningLogger:
-    """Factory class for PyTorch Lightning logger.
-
-    Creates a ClientLogger only when PyTorch Lightning is available.
-    """
-
-    @staticmethod
-    def get_logger(prefix: str = "") -> Optional[Any]:
-        """Get a PyTorch Lightning logger instance if Lightning is available.
-
-        Args:
-            prefix (str, optional): Prefix to add to metric names. Defaults to "".
-
-        Returns:
-            Optional[Logger]: ClientLogger instance if Lightning is available, None otherwise.
-
-        Example:
-            >>> logger = LightningLogger.get_logger(prefix="client1")
-            >>> if logger:
-            >>>     trainer = Trainer(logger=logger)
-        """
-        lightning, ok = optional_import("lightning.pytorch")
-        if not ok:
-            return None
-
-        client_logger, ok = optional_import("nvflare.app_opt.lightning.loggers.client_logger", "ClientLogger")
-        if not ok:
-            return None
-
-        return client_logger(prefix=prefix)
