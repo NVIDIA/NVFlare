@@ -1,5 +1,5 @@
-ARG PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:24.07-py3
-FROM ${PYTORCH_IMAGE}
+ARG BASE_IMAGE=nvcr.io/nvidia/pytorch:25.04-py3
+FROM ${BASE_IMAGE}
 
 ARG NVF_VERSION=main
 ENV NVF_BRANCH=${NVF_VERSION}

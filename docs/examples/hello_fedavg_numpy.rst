@@ -50,14 +50,14 @@ Ensure numpy is installed.
 
   (nvflare-env) $ python3 -m pip install numpy
 
-Now that you have all your dependencies installed, let's look into the ``fedavg_script_executor_hello-numpy.py`` script which
+Now that you have all your dependencies installed, let's look into the ``fedavg_script_runner_hello-numpy.py`` script which
 builds the job with the Job API.
 
 
 NVIDIA FLARE Job API
 --------------------
 
-The ``fedavg_script_executor_hello-numpy.py`` script builds the job with the Job API. The following sections are the key lines to focus on:
+The ``fedavg_script_runner_hello-numpy.py`` script builds the job with the Job API. The following sections are the key lines to focus on:
 
 Define a FedJob
 ^^^^^^^^^^^^^^^^
@@ -88,7 +88,7 @@ clients and rounds, then use the :func:`to<nvflare.job_config.api.FedJob.to>` ro
 
 Add Clients
 ^^^^^^^^^^^^
-Next, we can use the :class:`ScriptExecutor<nvflare.app_common.executors.script_executor.ScriptExecutor>` and send it to each of the
+Next, we can use the :class:`ScriptRunner<nvflare.job_config.script_runner.ScriptRunner>` and send it to each of the
 clients to run our training script. We will examine the training script ``hello-numpy_fl.py`` in the next main section.
 
 The :func:`to<nvflare.job_config.api.FedJob.to>` routine sends the component to the specified client for the job. Here, our clients
@@ -101,7 +101,7 @@ are named "site-0" and "site-1" and we are using the same training script for bo
    train_script = "src/hello-numpy_fl.py"
 
    for i in range(n_clients):
-      executor = ScriptExecutor(
+      executor = ScriptRunner(
          task_script_path=train_script, task_script_args="", params_exchange_format=ExchangeFormat.NUMPY
       )
       job.to(executor, f"site-{i}")
@@ -166,11 +166,11 @@ script ``hello-numpy_fl.py`` in the ``src`` directory of :github_nvflare_link:`e
 
 Running the Job API Script
 ---------------------------
-Now that you have a good understanding of the training script, you can run the job with the ``fedavg_script_executor_hello-numpy.py`` script:
+Now that you have a good understanding of the training script, you can run the job with the ``fedavg_script_runner_hello-numpy.py`` script:
 
 .. code-block:: shell
 
-   (nvflare-env) $ python3 fedavg_script_executor_hello-numpy.py
+   (nvflare-env) $ python3 fedavg_script_runner_hello-numpy.py
 
 This will run the job in a simulator environment and you should be able to see the output as the job proceeds to completion.
 
