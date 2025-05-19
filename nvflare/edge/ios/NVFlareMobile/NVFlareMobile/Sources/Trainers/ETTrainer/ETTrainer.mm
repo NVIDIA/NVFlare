@@ -191,7 +191,7 @@ using namespace ::executorch::extension;
 
     @try {
         int batchSize = [_meta[kMetaKeyBatchSize] intValue];
-        
+
         // Get initial parameters
         auto param_res = _training_module->named_parameters("forward");
         if (param_res.error() != executorch::runtime::Error::Ok) {
@@ -202,9 +202,9 @@ using namespace ::executorch::extension;
         auto initial_params = param_res.get();
         NSDictionary<NSString *, id>* old_params = [ETTrainer toTensorDictionary:initial_params];
         
-        #ifdef DEBUG
-        printTensorDictionary(old_params, @"Initial Params");
-        #endif
+//        #ifdef DEBUG
+//        printTensorDictionary(old_params, @"Initial Params");
+//        #endif
 
         // Configure optimizer
         float learningRate = [_meta[kMetaKeyLearningRate] floatValue];
@@ -221,6 +221,10 @@ using namespace ::executorch::extension;
             _dataset->reset(); // Reset dataset at the start of each epoch
             
             for (size_t batchIdx = 0; batchIdx < numBatchesPerEpoch; batchIdx++) {
+                if ((batchIdx + 1) * batchSize > datasetSize) {
+                    NSLog(@"Dropping last batch because it does not fit the batch size.");
+                    break;  // Exit the loop early, dropping the last batch
+                }
                 auto batchOpt = _dataset->getBatch(batchSize);
                 if (!batchOpt) break;  // End of dataset
                 
@@ -231,12 +235,12 @@ using namespace ::executorch::extension;
                 );
                 
                 if (results.error() != executorch::runtime::Error::Ok) {
-                    NSLog(@"Failed to execute forward_backward");
+                    NSLog(@"Failed to execute forward_backward: %u", static_cast<uint32_t>(results.error()));
                     return @{};
                 }
                 
-                size_t samplesProcessed = batchIdx * batchSize + input->sizes()[0];
-                if (totalSteps % 500 == 0 || (epoch == totalEpochs - 1 && batchIdx == numBatchesPerEpoch - 1)) {
+                size_t samplesProcessed = (batchIdx + 1) * batchSize;
+                if (totalSteps % 1 == 0 || (epoch == totalEpochs - 1 && batchIdx == numBatchesPerEpoch - 1)) {
                     NSLog(@"Epoch %d/%lld, Progress %.1f%%, Step %d, Loss %f, Prediction %lld, Label %lld",
                         epoch + 1, (long long)totalEpochs,
                         (float)samplesProcessed * 100 / datasetSize,
@@ -253,15 +257,15 @@ using namespace ::executorch::extension;
         
         NSDictionary<NSString *, id>* final_params = [ETTrainer toTensorDictionary:param_res.get()];
         
-        #ifdef DEBUG
-        printTensorDictionary(final_params, @"Final Params");
-        #endif
+//        #ifdef DEBUG
+//        printTensorDictionary(final_params, @"Final Params");
+//        #endif
         
         auto tensor_diff = [ETTrainer calculateTensorDifference:old_params newDict:final_params];
         
-        #ifdef DEBUG
-        printTensorDictionary(tensor_diff, @"Tensor Diff");
-        #endif
+//        #ifdef DEBUG
+//        printTensorDictionary(tensor_diff, @"Tensor Diff");
+//        #endif
         
         return tensor_diff;
         
