@@ -20,7 +20,7 @@ from flask import Flask, jsonify
 from flask.json.provider import DefaultJSONProvider
 
 from nvflare.edge.web.models.api_error import ApiError
-from nvflare.edge.web.views.feg_views import APIService, feg_bp
+from nvflare.edge.web.views.feg_views import api_query, feg_bp
 
 log = logging.getLogger(__name__)
 app = Flask(__name__)
@@ -53,14 +53,18 @@ if __name__ == "__main__":
         handlers=[logging.StreamHandler()],
     )
 
-    if len(sys.argv) != 3:
-        print(f"Usage: python {os.path.basename(sys.argv[0])} <port> <mapping_file>")
+    if len(sys.argv) != 4:
+        print(f"Usage: python {os.path.basename(sys.argv[0])} <port> <mapping_file> <ca_cert_file>")
         sys.exit(1)
 
     proxy_port = int(sys.argv[1])
     lcp_mapping_file = sys.argv[2]
+    ca_cert_file = sys.argv[3]
 
-    APIService.load_lcp_map(lcp_mapping_file)
+    api_query.set_lcp_mapping(lcp_mapping_file)
+    api_query.set_ca_cert(ca_cert_file)
+    api_query.start()
+
     app.json = FilteredJSONProvider(app)
     app.register_blueprint(feg_bp)
     app.run(host="0.0.0.0", port=proxy_port, debug=False)

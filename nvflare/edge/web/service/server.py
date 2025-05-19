@@ -56,6 +56,7 @@ class EdgeApiServer:
         address: str,
         grpc_options=None,
         max_workers=100,
+        ssl_credentials=None,
     ):
         self.aio_ctx = AioContext.get_global_context()
         self.logger = get_obj_logger(self)
@@ -66,15 +67,27 @@ class EdgeApiServer:
         self.grpc_server = None
         self.grpc_server_stop_grace = 0.5
         self.waiter = threading.Event()
+        self.root_cert = None
+        self.cert_chain = None
+        self.private_key = None
+        self.ssl_credentials = ssl_credentials
 
     async def _start(self):
         # Note: the AIO grpc server must be created in this coro, because it has to be created in the thread
         # that runs the event loop!
+        self.logger.info("starting Edge API Server ...")
         self.grpc_server = grpc.aio.server(options=self.grpc_options)
         servicer = Servicer(self.handler, self.aio_ctx, self.max_workers)
         add_EdgeApiServicer_to_server(servicer, self.grpc_server)
-        self.grpc_server.add_insecure_port(self.address)
-        self.logger.info(f"added insecure port at {self.address}")
+
+        if self.ssl_credentials:
+            # one-way SSL
+            self.logger.info(f"adding secure port at {self.address} for 1-way ssl")
+            self.grpc_server.add_secure_port(self.address, server_credentials=self.ssl_credentials)
+            self.logger.info(f"added secure port at {self.address}")
+        else:
+            self.grpc_server.add_insecure_port(self.address)
+            self.logger.info(f"added insecure port at {self.address}")
 
         self.logger.info("starting server engine")
         await self.grpc_server.start()

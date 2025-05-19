@@ -23,12 +23,12 @@ from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.selection_request import SelectionRequest
 from nvflare.edge.web.models.task_request import TaskRequest
-from nvflare.edge.web.rpc.query import Query
+from nvflare.edge.web.service.query import Query
 
 log = logging.getLogger(__name__)
 
 
-def run_simulator(config_file: str, lcp_mapping_file: str = None):
+def run_simulator(config_file: str, lcp_mapping_file: str = None, ca_cert_file: str = None):
     parser = ConfigParser(config_file)
     num = parser.get_num_devices()
     endpoint_url = parser.get_endpoint()
@@ -45,7 +45,7 @@ def run_simulator(config_file: str, lcp_mapping_file: str = None):
 
     if lcp_mapping_file:
         # use gRPC Query
-        query = Query(lcp_mapping_file)
+        query = Query(lcp_mapping_file, ca_cert_file)
         simulator.set_send_func(_send_request_to_lcp, query=query)
     else:
         simulator.set_send_func(_send_request_to_proxy, parser=parser)
@@ -105,11 +105,19 @@ def main():
         help="Location of LCP mapping file",
     )
 
+    parser.add_argument(
+        "--ca_cert_file",
+        "-c",
+        type=str,
+        default="",
+        help="Location of CA Cert file",
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
     # Run Device Simulator
-    run_simulator(args.config_file, args.lcp_mapping_file)
+    run_simulator(args.config_file, args.lcp_mapping_file, args.ca_cert_file)
 
 
 if __name__ == "__main__":

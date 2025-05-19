@@ -15,7 +15,7 @@ import json
 import threading
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, SecureTrainConst
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.edge.constants import EdgeContextKey, EdgeEventType
@@ -27,8 +27,11 @@ from nvflare.edge.web.models.selection_request import SelectionRequest
 from nvflare.edge.web.models.selection_response import SelectionResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.rpc.query_handler import QueryHandler
-from nvflare.edge.web.rpc.server import EdgeApiServer
+from nvflare.edge.web.service.query_handler import QueryHandler
+from nvflare.edge.web.service.server import EdgeApiServer
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.grpc.utils import get_grpc_server_credentials
+from nvflare.fuel.f3.drivers.net_utils import enhance_credential_info
 from nvflare.widgets.widget import Widget
 
 
@@ -69,6 +72,22 @@ class ApiService(Widget, QueryHandler):
         return self._handle_all_request(request, EdgeEventType.EDGE_RESULT_REPORT_RECEIVED)
 
     def _startup(self, _event_type: str, fl_ctx: FLContext):
+        client_config = fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG)
+        root_cert_path = client_config.get(SecureTrainConst.SSL_ROOT_CERT)
+        parms = {
+            DriverParams.CA_CERT.value: root_cert_path,
+            DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS,
+        }
+        enhance_credential_info(parms)
+
+        ssl_credentials = None
+        ca_cert_file = root_cert_path
+        server_cert_file = parms.get(DriverParams.SERVER_CERT.value)
+        server_key_file = parms.get(DriverParams.SERVER_KEY.value)
+
+        if ca_cert_file and server_cert_file and server_key_file:
+            ssl_credentials = get_grpc_server_credentials(parms)
+
         self.engine = fl_ctx.get_engine()
         workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         mapping_file = workspace.get_file_path_in_site_config(self.lcp_mapping_file_name)
@@ -85,6 +104,7 @@ class ApiService(Widget, QueryHandler):
             handler=self,
             address=self.address,
             max_workers=self.max_workers,
+            ssl_credentials=ssl_credentials,
         )
         t = threading.Thread(target=self.server.start, daemon=True)
         t.start()

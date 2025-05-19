@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Union
+
 from flask import Blueprint, request
 
 from nvflare.edge.constants import EdgeApiStatus, HttpHeaderKey
@@ -22,10 +24,31 @@ from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.selection_request import SelectionRequest
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.user_info import UserInfo
-from nvflare.edge.web.rpc.query import Query
+from nvflare.edge.web.service.query import Query
+
+
+class APIQuery:
+
+    def __init__(self):
+        self.lcp_mapping_file = None
+        self.ca_cert_file = None
+        self.query = None
+
+    def set_lcp_mapping(self, file_name: str):
+        self.lcp_mapping_file = file_name
+
+    def set_ca_cert(self, file_name: str):
+        self.ca_cert_file = file_name
+
+    def start(self):
+        self.query = Query(lcp_mapping_file=self.lcp_mapping_file, ca_cert_file=self.ca_cert_file)
+
+    def __call__(self, req: Union[TaskRequest, JobRequest, SelectionRequest, ResultReport]):
+        return self.query(req)
+
 
 feg_bp = Blueprint("feg", __name__)
-APIService = Query()
+api_query = APIQuery()
 
 
 def _process_headers() -> dict:
@@ -67,7 +90,7 @@ def _update_args(d: dict, keys: dict):
 
 
 def _do_query(req):
-    resp = APIService(req)
+    resp = api_query(req)
     if not resp:
         raise ApiError(400, EdgeApiStatus.INVALID_REQUEST, "unknown request type")
     return resp

@@ -25,8 +25,8 @@ from nvflare.edge.web.models.selection_request import SelectionRequest
 from nvflare.edge.web.models.selection_response import SelectionResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.edge.web.rpc.query_handler import QueryHandler
-from nvflare.edge.web.rpc.server import EdgeApiServer
+from nvflare.edge.web.service.query_handler import QueryHandler
+from nvflare.edge.web.service.server import EdgeApiServer
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 

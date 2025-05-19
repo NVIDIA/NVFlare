@@ -20,13 +20,16 @@ This tool automatically provisions a project with relay and client hierarchy bas
 import argparse
 import json
 import os.path
+import shutil
 
+from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, ParticipantType, Project
 from nvflare.lighter.impl.cert import CertBuilder
 from nvflare.lighter.impl.signature import SignatureBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provisioner import Provisioner
+from nvflare.lighter.spec import Packager
 
 
 def _new_participant(name: str, ptype: str, props: dict) -> Participant:
@@ -63,6 +66,28 @@ class _Node:
         self.parent = None
         self.children = []
         self.port = PortManager.get_port()
+
+
+LCP_MAP_BASENAME = "lcp_map.json"
+
+
+class _Packager(Packager):
+
+    def __init__(self, lcp_map):
+        self.lcp_map = lcp_map
+
+    def package(self, project: Project, ctx: ProvisionContext):
+        location = ctx.get_result_location()
+        lcp_map_file_name = os.path.join(location, LCP_MAP_BASENAME)
+        with open(lcp_map_file_name, "wt") as f:
+            json.dump(self.lcp_map, f, indent=4)
+        print(f"Generated LCP Map: {lcp_map_file_name}")
+
+        # copy lcp_map.json to each client's local
+        clients = project.get_clients()
+        for client in clients:
+            local_dir = os.path.join(location, client.name, "local")
+            shutil.copyfile(lcp_map_file_name, os.path.join(local_dir, LCP_MAP_BASENAME))
 
 
 def _build_tree(
@@ -102,7 +127,10 @@ def _build_tree(
         Stats.num_leaf_relays += 1
         for i in range(num_clients):
             name = _make_client_name(parent.name) + str(i + 1)
-            props = {"connect_to": {"name": parent.name}}
+            props = {
+                "connect_to": {"name": parent.name},
+                "listening_host": "localhost",  # create server cert for the Edge API Service
+            }
             if not lcp_only:
                 props["parent"] = parent.client_name
             client = _new_participant(name, ParticipantType.CLIENT, props=props)
@@ -209,7 +237,6 @@ def main():
         SignatureBuilder(),
     ]
 
-    provisioner = Provisioner(args.root_dir, builders)
     project = Project(
         name=args.project_name,
         description="this is a test",
@@ -256,12 +283,8 @@ def main():
         "admin@nvidia.com", ParticipantType.ADMIN, props={"role": "project_admin", "connect_to": "localhost"}
     )
     project.add_participant(admin)
-    ctx = provisioner.provision(project)
-    location = ctx.get_result_location()
-    lcp_map_file_name = os.path.join(location, "lcp_map.json")
-    with open(lcp_map_file_name, "wt") as f:
-        json.dump(lcp_map, f, indent=4)
-    print(f"Generated LCP Map: {lcp_map_file_name}")
+    provisioner = Provisioner(args.root_dir, builders, _Packager(lcp_map))
+    provisioner.provision(project)
 
 
 if __name__ == "__main__":
