@@ -148,7 +148,7 @@ This will generate plots for each task comparing the local and federated trainin
 
 We plot the RMSE and Pearson Coefficients for different downstream tasks (lower is better): "aggregation", "binding", "expression", "immunogenicity", "polyreactivity", and "Thermostability (tm)". As can be observed, the models trained using FedAvg can achieve lower RMSE values for several downstream tasks compared to the locally only trained counterparts on the test set. 
 
-Pearson Coefficients closer to 1.0 would indicate a direct positive correlation between the ground trouth and predicted values. It can be observerd that several downstream tasks are challinging for the 120M and only achieve low correlation scores. See the [FLAb paper](https://www.biorxiv.org/content/10.1101/2024.01.13.575504v1) for comnparison. However, the FedAvg experiment shows benefits for several downstream tasks.
+Pearson Coefficients closer to 1.0 would indicate a direct positive correlation between the ground truth and predicted values. It can be observed that several downstream tasks are challenging for the 120M and only achieve low correlation scores. See the [FLAb paper](https://www.biorxiv.org/content/10.1101/2024.01.13.575504v1) for comparison. However, the FedAvg experiment shows benefits for several downstream tasks.
 
 > Note, by default, we smooth the training curves with a smoothing window of 30 (controlled by the `smoothing_window` argument).
 
@@ -211,7 +211,7 @@ do
 done
 ```
 
-Choosing an `alpha=1.0` value will result in a heaterogenaous or imbalanced data split for each downstream tasks among the participating clients. For example, the "binding" task results in a distributation such shown here:
+Choosing an `alpha=1.0` value will result in a heterogeneous or imbalanced data split for each downstream task among the participating clients. For example, the "binding" task results in a distribution as shown here:
 
 <div style="display: flex; justify-content: center; margin: 20px 0;">
 <img src="./figs/client_distribution_alpha_1.0.png" alt="Binding client distribution with alpha=1.0" style="width: 300px;"/>
@@ -299,7 +299,7 @@ python figs/plot_training_curves.py \
 
 
 **Pearson Coefficient for 120M AMPLIFY Model on All Tasks**
-For simplicity, we only plot the performance for one task ("expression") across the different clients. Again, we can see the benefits of sharing model parameters across clients. The models trained with FedAvg improve the performance in most clients. Sharing the regressors across clients furthermore improves the results.
+For simplicity, we only plot the performance for one task ("expression") across the different clients. Again, we can see the benefits of sharing model parameters across clients. The models trained with FedAvg improve the performance in most clients. Sharing the regressors across clients further improves the results.
 
 <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: nowrap;">
 <img src="./figs/tb_figs_pearson_alltasks/client1.svg" alt="Client 1" style="width: 300px; flex-shrink: 0;"/>
