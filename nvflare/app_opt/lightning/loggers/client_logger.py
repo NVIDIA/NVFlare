@@ -34,13 +34,12 @@ class ClientLogger(Logger):
     LOGGER_JOIN_CHAR = "-"
 
     def __init__(
-            self,
-            prefix: str = "",
+        self,
+        prefix: str = "",
     ):
         super().__init__()
         self._prefix = prefix
         self._log_writer = MLflowWriter()
-
 
     @override
     @rank_zero_only

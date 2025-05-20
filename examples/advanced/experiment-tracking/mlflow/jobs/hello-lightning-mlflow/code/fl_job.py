@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
+
 from src.lit_net import LitNet
+
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
 from nvflare.job_config.script_runner import ScriptRunner

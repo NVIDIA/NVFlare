@@ -74,7 +74,9 @@ def main():
     flare_logger = flare.logger()
 
     if torch.cuda.is_available():
-        trainer = Trainer(max_epochs=1, accelerator="gpu", devices=1 if torch.cuda.is_available() else None, logger=flare_logger)
+        trainer = Trainer(
+            max_epochs=1, accelerator="gpu", devices=1 if torch.cuda.is_available() else None, logger=flare_logger
+        )
     else:
         trainer = Trainer(max_epochs=1, devices=None, logger=flare_logger)
 
