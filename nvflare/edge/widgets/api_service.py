@@ -11,13 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
 import threading
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, SecureTrainConst
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.workspace import Workspace
 from nvflare.edge.constants import EdgeContextKey, EdgeEventType
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
@@ -36,13 +34,12 @@ from nvflare.widgets.widget import Widget
 
 
 class ApiService(Widget, QueryHandler):
-    def __init__(self, max_workers=100, lcp_mapping_file_name="lcp_map.json"):
+    def __init__(self, host: str, port: int, max_workers=100):
         Widget.__init__(self)
         QueryHandler.__init__(self)
 
-        self.lcp_mapping_file_name = lcp_mapping_file_name
         self.max_workers = max_workers
-        self.address = None
+        self.address = f"{host}:{port}"
         self.engine = None
         self.server = None
 
@@ -74,32 +71,21 @@ class ApiService(Widget, QueryHandler):
     def _startup(self, _event_type: str, fl_ctx: FLContext):
         client_config = fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG)
         root_cert_path = client_config.get(SecureTrainConst.SSL_ROOT_CERT)
-        parms = {
+        params = {
             DriverParams.CA_CERT.value: root_cert_path,
             DriverParams.CONNECTION_SECURITY.value: ConnectionSecurity.TLS,
         }
-        enhance_credential_info(parms)
+        enhance_credential_info(params)
 
         ssl_credentials = None
         ca_cert_file = root_cert_path
-        server_cert_file = parms.get(DriverParams.SERVER_CERT.value)
-        server_key_file = parms.get(DriverParams.SERVER_KEY.value)
+        server_cert_file = params.get(DriverParams.SERVER_CERT.value)
+        server_key_file = params.get(DriverParams.SERVER_KEY.value)
 
         if ca_cert_file and server_cert_file and server_key_file:
-            ssl_credentials = get_grpc_server_credentials(parms)
+            ssl_credentials = get_grpc_server_credentials(params)
 
         self.engine = fl_ctx.get_engine()
-        workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-        mapping_file = workspace.get_file_path_in_site_config(self.lcp_mapping_file_name)
-        with open(mapping_file, "r") as mapping_file:
-            mapping = json.load(mapping_file)
-        client_name = fl_ctx.get_identity_name()
-        client_config = mapping.get(client_name)
-        if client_config is None:
-            raise ValueError(f"Client {client_name} not found in {mapping_file}")
-        host = client_config.get("host")
-        port = client_config.get("port")
-        self.address = f"{host}:{port}"
         self.server = EdgeApiServer(
             handler=self,
             address=self.address,

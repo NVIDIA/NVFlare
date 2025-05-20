@@ -1,0 +1,21 @@
+edge_lcp_resources: |
+  {
+    "format_version": 2,
+    "components": [
+      {
+        "id": "api_service",
+        "path": "nvflare.edge.widgets.api_service.ApiService",
+        "args": {
+          "host": "{~~host~~}",
+          "port": {~~port~~}
+        }
+      },
+      {
+        "id": "task_dispatcher",
+        "path": "nvflare.edge.widgets.etd.EdgeTaskDispatcher",
+        "args": {
+          "request_timeout": 5.0
+        }
+      }
+    ]
+  }

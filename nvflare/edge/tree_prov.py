@@ -22,9 +22,11 @@ import json
 import os.path
 import shutil
 
+import nvflare.lighter.utils as utils
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, ParticipantType, Project
 from nvflare.lighter.impl.cert import CertBuilder
+from nvflare.lighter.impl.edge import EdgeBuilder
 from nvflare.lighter.impl.signature import SignatureBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
@@ -69,25 +71,69 @@ class _Node:
 
 
 LCP_MAP_BASENAME = "lcp_map.json"
+LOCAL_HOST = "localhost"
+CA_CERT_NAME = "rootCA.pem"
+SIMULATION_CONFIG = "simulation_config.json"
+RUN_SIMULATOR = "python -m nvflare.edge.simulation.run_device_simulator"
 
 
 class _Packager(Packager):
 
-    def __init__(self, lcp_map):
+    def __init__(self, lcp_map, rp_port):
         self.lcp_map = lcp_map
+        self.rp_port = rp_port
 
     def package(self, project: Project, ctx: ProvisionContext):
         location = ctx.get_result_location()
-        lcp_map_file_name = os.path.join(location, LCP_MAP_BASENAME)
+        demo_dir = os.path.join(location, "demo")
+        os.mkdir(demo_dir)
+        lcp_map_file_name = os.path.join(demo_dir, LCP_MAP_BASENAME)
+
         with open(lcp_map_file_name, "wt") as f:
             json.dump(self.lcp_map, f, indent=4)
-        print(f"Generated LCP Map: {lcp_map_file_name}")
 
-        # copy lcp_map.json to each client's local
-        clients = project.get_clients()
-        for client in clients:
-            local_dir = os.path.join(location, client.name, "local")
-            shutil.copyfile(lcp_map_file_name, os.path.join(local_dir, LCP_MAP_BASENAME))
+        # copy CA cert to demo dir
+        ca_cert_path = os.path.join(location, "server", "startup", CA_CERT_NAME)
+        shutil.copy(ca_cert_path, os.path.join(demo_dir, CA_CERT_NAME))
+
+        utils.write(
+            file_full_path=os.path.join(demo_dir, "start_rp.sh"),
+            content=f"python -m nvflare.edge.web.routing_proxy {self.rp_port} {LCP_MAP_BASENAME} {CA_CERT_NAME}",
+            mode="t",
+            exe=True,
+        )
+
+        utils.write(
+            file_full_path=os.path.join(demo_dir, "simulate_lcp.sh"),
+            content=f"{RUN_SIMULATOR} {SIMULATION_CONFIG} -m {LCP_MAP_BASENAME} -c {CA_CERT_NAME}",
+            mode="t",
+            exe=True,
+        )
+
+        utils.write(
+            file_full_path=os.path.join(demo_dir, "simulate_rp.sh"),
+            content=f"{RUN_SIMULATOR} {SIMULATION_CONFIG}",
+            mode="t",
+            exe=True,
+        )
+
+        sample_sim_config = {
+            "endpoint": f"http://localhost:{self.rp_port}",
+            "num_devices": 10000,
+            "num_active_devices": 100,
+            "num_workers": 30,
+            "cycle_duration": 30.0,
+            "device_reuse_rate": 0.0,
+            "device_id_prefix": "sim-device-",
+            "processor": {
+                "path": "nvflare.edge.simulation.devices.num.NumProcessor",
+                "args": {"min_train_time": 0.2, "max_train_time": 1.0},
+            },
+            "capabilities": {"methods": ["cnn"]},
+        }
+
+        with open(os.path.join(demo_dir, SIMULATION_CONFIG), "wt") as f:
+            json.dump(sample_sim_config, f, indent=4)
 
 
 def _build_tree(
@@ -127,9 +173,11 @@ def _build_tree(
         Stats.num_leaf_relays += 1
         for i in range(num_clients):
             name = _make_client_name(parent.name) + str(i + 1)
+            edge_service_port = PortManager.get_port()
             props = {
                 "connect_to": {"name": parent.name},
-                "listening_host": "localhost",  # create server cert for the Edge API Service
+                "listening_host": LOCAL_HOST,  # create server cert for the Edge API Service
+                "edge_service_port": edge_service_port,
             }
             if not lcp_only:
                 props["parent"] = parent.client_name
@@ -137,8 +185,7 @@ def _build_tree(
             project.add_participant(client)
             Stats.num_clients += 1
             Stats.num_leaf_clients += 1
-
-            lcp_map[name] = {"host": "localhost", "port": PortManager.get_port()}
+            lcp_map[name] = {"host": LOCAL_HOST, "port": edge_service_port}
         return
 
     if depth > 0:
@@ -154,7 +201,7 @@ def _build_tree(
 
         props = {
             "listening_host": {
-                "default_host": "localhost",
+                "default_host": LOCAL_HOST,
                 "port": child.port,
             },
         }
@@ -204,10 +251,11 @@ def main():
     # number of sites will go up exponentially when depth goes up.
     # do not do provision if the number of sites exceeds max_sites
     parser.add_argument("--max_sites", "-m", type=int, help="max number sites", required=False, default=100)
-
     parser.add_argument("--clients", "-c", type=int, help="number of clients per leaf node", required=False, default=2)
-    args = parser.parse_args()
 
+    parser.add_argument("--rp", "-rp", type=int, help="routing proxy port", required=False, default=4321)
+
+    args = parser.parse_args()
     if args.depth < 1 or args.depth > 5:
         print(f"bad depth {args.depth}: must be [1..5]")
         return
@@ -235,6 +283,7 @@ def main():
         ),
         CertBuilder(),
         SignatureBuilder(),
+        EdgeBuilder(),
     ]
 
     project = Project(
@@ -253,8 +302,8 @@ def main():
         props={
             "fed_learn_port": 8002,
             "admin_port": 8003,
-            "host_names": ["localhost", "127.0.0.1"],
-            "default_host": "localhost",
+            "host_names": [LOCAL_HOST, "127.0.0.1"],
+            "default_host": LOCAL_HOST,
         },
     )
     project.add_participant(server)
@@ -280,10 +329,10 @@ def main():
 
     # add admins
     admin = _new_participant(
-        "admin@nvidia.com", ParticipantType.ADMIN, props={"role": "project_admin", "connect_to": "localhost"}
+        "admin@nvidia.com", ParticipantType.ADMIN, props={"role": "project_admin", "connect_to": LOCAL_HOST}
     )
     project.add_participant(admin)
-    provisioner = Provisioner(args.root_dir, builders, _Packager(lcp_map))
+    provisioner = Provisioner(args.root_dir, builders, _Packager(lcp_map, args.rp))
     provisioner.provision(project)
 
 

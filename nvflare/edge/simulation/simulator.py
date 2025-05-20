@@ -192,7 +192,17 @@ class Simulator:
                 active_devices = self._determine_active_devices(selected_devices, active_device_candidates)
 
             self.logger.debug(f"got active devices: {len(active_devices)}")
-            for did, sid in active_devices.items():
+
+            # Shuffle the keys to spread the selected devices evenly to avoid training spike.
+            # Otherwise, since those devices are added first, they will also query first, which will make them
+            # start to train at same time and cause spike.
+            keys = list(active_devices.keys())
+            random.shuffle(keys)
+
+            num_activities = 0
+            for did in keys:
+                sid = active_devices[did]
+
                 if self.done:
                     return
 
@@ -207,7 +217,8 @@ class Simulator:
                     resp = self._ask_for_task(device)
                     self.logger.debug(f"tried to get task for device {did}")
 
-                    if resp and resp.status == EdgeApiStatus.OK:
+                    if resp.status == EdgeApiStatus.OK:
+                        num_activities += 1
                         assert isinstance(resp, TaskResponse)
                         self.logger.debug(f"TaskResponse status for device {did}: {resp.status}")
 
@@ -228,21 +239,16 @@ class Simulator:
                             # mark the device to be busy and remove from device candidates for next cycle.
                             self.busy_devices[did] = selection_id
                             active_device_candidates.pop(did)
-                        elif resp.status in [EdgeApiStatus.RETRY, EdgeApiStatus.NO_TASK]:
-                            pass
-                        elif resp.status in [EdgeApiStatus.DONE, EdgeApiStatus.NO_JOB]:
-                            # this device is done - job is done
-                            device.device_id = None
-                        else:
-                            # ERROR or NO_JOB
-                            self.logger.info(f"stop running due to bad TaskResponse status: {resp.status}")
-                            return
+                    elif resp.status in [EdgeApiStatus.RETRY, EdgeApiStatus.NO_TASK]:
+                        num_activities += 1
+                    elif resp.status in [EdgeApiStatus.DONE, EdgeApiStatus.NO_JOB]:
+                        # this device is done - job is done
+                        self.logger.debug(f"device {did} is {resp.status}!")
+                        device.device_id = None
                     else:
-                        if resp:
-                            status = resp.status
-                        else:
-                            status = "No Response"
-                        self.logger.debug(f"failed to get task ({status=}): will retry")
+                        # ERROR or NO_JOB
+                        self.logger.info(f"stop running due to bad TaskResponse status: {resp.status}")
+                        return
                 else:
                     # the device has no job yet - asking for job
                     self.logger.debug(f"asking for job for device {did}")
@@ -250,6 +256,7 @@ class Simulator:
                     if resp:
                         assert isinstance(resp, JobResponse)
                         if resp.status == EdgeApiStatus.OK:
+                            num_activities += 1
                             self.logger.info(f"Device {did} got job {resp.job_id}")
                             device.set_job(
                                 job_id=resp.job_id,
@@ -264,8 +271,8 @@ class Simulator:
                         elif resp.status in [EdgeApiStatus.RETRY, EdgeApiStatus.NO_JOB]:
                             pass
                         elif resp.status in [EdgeApiStatus.DONE]:
-                            # this device is done - what to do?
-                            pass
+                            # this device is done
+                            device.job_id = None
                         else:
                             self.logger.info(f"stop running due to bad JobResponse status: {resp.status}")
                             return
@@ -276,7 +283,13 @@ class Simulator:
                 time.sleep(interval)
 
             # pause before next cycle
-            self.logger.info(f"Finished cycle {cycle_num}")
+            self.logger.info(f"Finished cycle {cycle_num}: {num_activities=}")
+
+            # is the job done?
+            if job_id and num_activities == 0:
+                self.logger.info(f"Job {job_id} is done - stopping simulation")
+                break
+
             time.sleep(interval)
 
         # Stop all tasks if any
