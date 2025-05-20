@@ -14,7 +14,7 @@
         "num_updates_for_model": 20,
         "device_selection_size": 20,
         "min_hole_to_fill": 1,
-        "device_reuse": false
+        "device_reuse": true
       }
     },
     {
