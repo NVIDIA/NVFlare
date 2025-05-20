@@ -45,7 +45,7 @@ $ tree /tmp/nvflare/jobs/workdir/server/simulate_job/mlruns/
 ```
 
 ```
-mlflow ui --backend-store-uri tmp/nvflare/jobs/workdir/server/simulate_job/mlruns/
+mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/server/simulate_job/mlruns/
 ```
 
 ### 5. MLflow Streaming
