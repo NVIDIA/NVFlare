@@ -11,12 +11,21 @@ This example also highlights the Weights and Biases streaming capability from th
 ### 1. Install requirements
 
 Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
+Wwe are assuming the current directory is `examples/advanced/experiment-tracking/wandb`,
 
 ```
 python -m pip install -r requirements.txt
 ```
 
-### 2. Make sure the FL server is logged into Weights and Biases
+### 2. Download data
+Here we just use the same data for each site. It's better to pre-download the data to avoid multiple sites concurrently downloading the same data.
+
+again, we are assuming the current directory is `examples/advanced/experiment-tracking/wandb`,
+
+```bash
+examples/advanced/experiment-tracking/prepare_data.sh
+```
+### 3. Make sure the FL server is logged into Weights and Biases
 
 Import the W&B Python SDK and log in:
 
@@ -28,7 +37,7 @@ python3
 
 Provide your API key when prompted.
 
-### 3. Run the experiment
+### 4. Run the experiment
 
 Use job api to run the example:
 
@@ -36,12 +45,12 @@ Use job api to run the example:
 python wandb_job.py
 ```
 
-### 4. Access the logs and results
+### 5. Access the logs and results
 
 By default, Weights and Biases will create a directory named "wandb" in the server workspace. With "mode": "online" in the WandBReceiver, the
 files will be synced with the Weights and Biases server. You can visit https://wandb.ai/ and log in to see your run data.
 
-### 5. How it works
+### 6. How it works
 
 To enable tracking with Weights & Biases (WandB), you can use the `WandBWriter` utility provided by NVFlare. Here's a basic example of how to integrate it into your training script:
 
@@ -65,7 +74,7 @@ In `wandb_job.py`, we configure the following components by default:
 
 This setup ensures that the server handles all authentication with the WandB tracking server and buffers events from multiple clients, effectively managing the load of requests to the server.
 
-### 6. Optional: Stream Metrics Directly from Clients
+### 7. Optional: Stream Metrics Directly from Clients
 
 Alternatively, you can stream metrics **directly from each NVFlare client** to WandB, bypassing the NVFlare server entirely.
 
