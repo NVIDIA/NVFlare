@@ -490,11 +490,11 @@ const series_list = [
                 <span class="flex items-center space-x-4 justify-center mb-10">
                   <p class="text-[26px] leading-tight text-gray-700">{series.title}</p>
                 </span>
-                <ol class="relative text-gray-500 border-s border-gray-200 dark:border-gray-700 dark:text-gray-400" data-tabs-toggle="#default-styled-tab-content" role="tablist" data-tabs-active-classes="text-nvidia [&>span]:bg-nvidia-light" data-tabs-inactive-classes="text-gray-500 [&>span]:bg-gray-100">
+                <ol class="relative text-gray-500 border-s border-gray-200" data-tabs-toggle="#default-styled-tab-content" role="tablist" data-tabs-active-classes="text-nvidia [&>span]:bg-nvidia-light" data-tabs-inactive-classes="text-gray-500 [&>span]:bg-gray-100">
                   {series.subseries_list.map((subseries, index) => (
                     <li class="mb-10 ms-6" role="presentation">
                       <button data-tabs-target={"#subseries-content"+subseries.id} type="button" role="tab">
-                        <span class="absolute flex items-center justify-center ms-1 w-5 h-5 rounded-full -start-4 ring-4 ring-white dark:ring-gray-900 dark:bg-green-900">
+                        <span class="absolute flex items-center justify-center ms-1 w-5 h-5 rounded-full -start-4 ring-4 ring-white">
                         </span>
                         <h3 class="font-medium leading-tight bg-white text-left">{subseries.title}</h3>
                         <p class="text-sm bg-white text-left">{subseries.description}</p>
@@ -510,13 +510,13 @@ const series_list = [
         <div class="glide__arrows" data-glide-el="controls">
           <!-- Left Carousel Arrow -->
           <button class="glide__arrow glide__arrow--left top-8 left-0 shadow-none border-none" data-glide-dir="<">
-            <svg class="stroke-gray-400 w-10 h-10 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+            <svg class="stroke-gray-400 w-10 h-10 text-gray-800" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 16.881V7.119a1 1 0 0 0-1.636-.772l-5.927 4.881a1 1 0 0 0 0 1.544l5.927 4.88a1 1 0 0 0 1.636-.77Z"/>
             </svg>
           </button>
           <!-- Right Carousel Arrow -->
           <button class="glide__arrow glide__arrow--right top-8 right-0 shadow-none border-none" data-glide-dir=">">
-              <svg class="stroke-gray-400 w-10 h-10 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+              <svg class="stroke-gray-400 w-10 h-10 text-gray-800" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16.881V7.119a1 1 0 0 1 1.636-.772l5.927 4.881a1 1 0 0 1 0 1.544l-5.927 4.88A1 1 0 0 1 8 16.882Z"/>
               </svg>
           </button>
