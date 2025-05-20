@@ -1,4 +1,4 @@
-nvflare~=2.6.0rc
+nvflare~=2.6.0
 torch
 torchvision
 tensorboard

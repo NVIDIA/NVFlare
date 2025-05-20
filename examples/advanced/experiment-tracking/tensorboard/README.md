@@ -8,10 +8,11 @@ This example also highlights the TensorBoard streaming capability from the clien
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
 
-### 1. Install requirements and configure PYTHONPATH
+### 1. Install requirements 
 
-Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare from the requirements to avoid reinstalling it):
+Install additional requirements:
 
+Assuming the current directory is `examples/advanced/experiment-tracking/tensorboard`, run the following command to install the requirements:
 
 ```
 python -m pip install -r requirements.txt
@@ -20,8 +21,10 @@ python -m pip install -r requirements.txt
 ### 2. Download data
 Here we just use the same data for each site. It's better to pre-download the data to avoid multiple sites concurrently downloading the same data.
 
+again, we are assuming the current directory is `examples/advanced/experiment-tracking/tensorboard`,
+
 ```bash
-../../../prepare_data.sh
+examples/advanced/experiment-tracking/prepare_data.sh
 ```
 ### 3. Run the experiment
 
