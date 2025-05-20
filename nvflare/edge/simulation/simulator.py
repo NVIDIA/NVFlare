@@ -244,7 +244,7 @@ class Simulator:
                     elif resp.status in [EdgeApiStatus.DONE, EdgeApiStatus.NO_JOB]:
                         # this device is done - job is done
                         self.logger.debug(f"device {did} is {resp.status}!")
-                        device.device_id = None
+                        device.job_id = None
                     else:
                         # ERROR or NO_JOB
                         self.logger.info(f"stop running due to bad TaskResponse status: {resp.status}")
