@@ -1,5 +1,5 @@
 {
-  "name": "hello-sync",
+  "name": "cifar10-async-device-runner",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {

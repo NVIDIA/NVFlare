@@ -16,17 +16,24 @@ import threading
 import time
 from typing import Optional
 
-from nvflare.apis.dxo import DXO
+import numpy as np
+
+from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.edge.aggregators.num_dxo import NumDXOAggregator
+from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
+from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable, model_learnable_to_dxo
+from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.app_event_type import AppEventType
+from nvflare.edge.aggregators.model_update_dxo import ModelUpdateDXOAggregator
 from nvflare.edge.assessor import Assessment, Assessor
 from nvflare.edge.mud import BaseState, ModelUpdate, StateUpdateReply, StateUpdateReport
 
 
 class _ModelState:
 
-    def __init__(self, aggr: NumDXOAggregator):
+    def __init__(self, aggr: ModelUpdateDXOAggregator):
         self.aggregator = aggr
         self.devices = {}
         self.last_update_time = None
@@ -37,10 +44,11 @@ class _ModelState:
         return self.aggregator.accept(model_update.update, fl_ctx)
 
 
-class GeneralNumAssessor(Assessor):
+class ModelUpdateAssessor(Assessor):
 
     def __init__(
         self,
+        persistor_id,
         num_updates_for_model,
         max_model_version,
         max_model_history,
@@ -49,10 +57,12 @@ class GeneralNumAssessor(Assessor):
         device_reuse=True,
     ):
         Assessor.__init__(self)
-        self.current_model_version = 0
+        self.persistor_id = persistor_id
+        self.persistor = None
         self.current_model = None
-        self.current_selection_version = 0
+        self.current_model_version = 0
         self.current_selection = {}
+        self.current_selection_version = 0
         self.updates = {}  # model_version => _ModelState
         self.available_devices = {}
         self.used_devices = {}
@@ -64,38 +74,89 @@ class GeneralNumAssessor(Assessor):
         self.device_reuse = device_reuse
         self.update_lock = threading.Lock()
         self.start_time = None
+        self.register_event_handler(EventType.START_RUN, self._handle_start_run)
+
+    def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        self.persistor = engine.get_component(self.persistor_id)
+        if not isinstance(self.persistor, LearnablePersistor):
+            self.system_panic(reason="persistor must be a Persistor type object", fl_ctx=fl_ctx)
+            return
+        if self.persistor:
+            model = self.persistor.load(fl_ctx)
+
+            if not isinstance(model, ModelLearnable):
+                self.system_panic(
+                    reason=f"Expected model loaded by persistor to be `ModelLearnable` but received {type(model)}",
+                    fl_ctx=fl_ctx,
+                )
+                return
+
+            # Wrap learnable model into a DXO
+            self.current_model = model_learnable_to_dxo(model)
+            self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
+        else:
+            self.system_panic(reason="cannot find persistor component '{}'".format(self.persistor_id), fl_ctx=fl_ctx)
+            return
 
     def start_task(self, fl_ctx: FLContext) -> Shareable:
         self.start_time = time.time()
+        # empty base state to start with
         base_state = BaseState(
-            model_version=self.current_model_version,
-            model=self.current_model,
-            device_selection_version=self.current_selection_version,
-            device_selection=self.current_selection,
+            model_version=0,
+            model=None,
+            device_selection_version=0,
+            device_selection={},
         )
         return base_state.to_shareable()
 
     def _generate_new_model(self, fl_ctx: FLContext):
-        total = 0.0
+        # New model generated based on the current global weights and all updates
+        new_model = {}
         self.current_model_version += 1
         old_model_versions = []
-        aggr_info = {}
-        for v, ms in self.updates.items():
-            weight = 1 / (self.current_model_version - v)
-            assert isinstance(ms, _ModelState)
-            aggr = ms.aggregator
-            assert isinstance(aggr, NumDXOAggregator)
-            score = aggr.value / aggr.count if aggr.count > 0 else 0.0
-            aggr_info[v] = {"weight": weight, "value": aggr.value, "count": aggr.count, "score": score}
-            total += weight * score
 
-            if self.current_model_version - v >= self.max_model_history:
-                old_model_versions.append(v)
+        if self.current_model_version == 1:
+            # Initial global weights
+            new_model = self.current_model.data
+        else:
+            # Aggregate all updates
+            for v, ms in self.updates.items():
+                # FedBuff weight is 1/(1+staleness)^0.5
+                weight = 1 / (1 + (self.current_model_version - v) ** 0.5)
+                assert isinstance(ms, _ModelState)
+                aggr = ms.aggregator
+                assert isinstance(aggr, ModelUpdateDXOAggregator)
+                # Add the dict to new_model by multiplying the weight and dividing by the count
+                update_dict = aggr.dict
+                count = aggr.count
+                if count > 0:
+                    # aggregate updates
+                    for key, value in update_dict.items():
+                        # apply weight and divide by count
+                        value = weight * value / count
+                        # update the new model
+                        if key not in new_model:
+                            new_model[key] = value
+                        else:
+                            new_model[key] = new_model[key] + value
+                # If too old, remove it
+                if self.current_model_version - v >= self.max_model_history:
+                    old_model_versions.append(v)
+
+            # Add the aggregated updates to the current global weights
+            global_weights = self.current_model.data
+            for key, value in new_model.items():
+                # check key alignment
+                if key not in global_weights:
+                    self.log_error(fl_ctx, f"key {key} not in new model")
+                    continue
+                else:
+                    new_model[key] = np.array(global_weights[key]) + value
 
         # create the ModelState for the new model version
-        self.updates[self.current_model_version] = _ModelState(NumDXOAggregator())
-        self.log_info(fl_ctx, f"model version info: {aggr_info}")
-        self.log_info(fl_ctx, f"generated new model version {self.current_model_version}: value={total}")
+        self.updates[self.current_model_version] = _ModelState(ModelUpdateDXOAggregator())
+        self.log_info(fl_ctx, f"generated new model version {self.current_model_version}")
 
         for v in old_model_versions:
             self.updates.pop(v)
@@ -103,7 +164,15 @@ class GeneralNumAssessor(Assessor):
         if old_model_versions:
             self.log_info(fl_ctx, f"removed old model versions {old_model_versions}")
 
-        self.current_model = DXO(data_kind="number", data={"value": total})
+        # update the current model
+        self.current_model = DXO(data_kind=DataKind.WEIGHTS, data=new_model)
+
+        # set fl_ctx and fire the event
+        # wrap new_model to a learnable
+        learnable = make_model_learnable(new_model, {})
+        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, learnable, private=True, sticky=True)
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self.current_model_version, private=True, sticky=True)
+        self.fire_event(AppEventType.GLOBAL_WEIGHTS_UPDATED, fl_ctx)
 
     def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
         with self.update_lock:
@@ -218,7 +287,10 @@ class GeneralNumAssessor(Assessor):
                     self.used_devices[device_id] = self.current_model_version
                     if not usable_devices:
                         break
-        self.log_info(fl_ctx, f"current selection: V{self.current_selection_version}; {self.current_selection}")
+        self.log_info(
+            fl_ctx,
+            f"current selection: V{self.current_selection_version}; {dict(sorted(self.current_selection.items()))}",
+        )
 
     def assess(self, fl_ctx: FLContext) -> Assessment:
         if self.current_model_version >= self.max_model_version:

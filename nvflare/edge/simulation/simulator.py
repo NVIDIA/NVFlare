@@ -112,10 +112,7 @@ class Simulator:
                 # ignore since it's not our device
                 continue
 
-            if did in self.busy_devices:
-                # This device is working a task already
-                continue
-
+            # Busy devices do not need to be excluded at this point. Only when they become "used" devices, they will be excluded.
             if did in self.used_devices and self.used_devices[did] == sid:
                 # we already reported result, but it has not been processed by server
                 continue
@@ -168,7 +165,7 @@ class Simulator:
 
         while not self.done:
             cycle_num += 1
-            self.logger.info(f"Starting query cycle: {cycle_num}")
+            self.logger.debug(f"Starting query cycle: {cycle_num}")
 
             # Get selections from Flare for two reasons:
             # 1. Proactively place selected devices in active_devices can make task assignment happen quickly;
@@ -185,7 +182,7 @@ class Simulator:
                         selected_devices = resp.selection
 
             if selected_devices:
-                self.logger.debug(f"got selected devices: {selected_devices}")
+                self.logger.debug(f"got selected devices: {dict(sorted(selected_devices.items()))}")
 
             with self.update_lock:
                 # determine active devices for query
@@ -272,7 +269,7 @@ class Simulator:
                 time.sleep(interval)
 
             # pause before next cycle
-            self.logger.info(f"Finished cycle {cycle_num}")
+            self.logger.debug(f"Finished cycle {cycle_num}")
             time.sleep(interval)
 
         # Stop all tasks if any

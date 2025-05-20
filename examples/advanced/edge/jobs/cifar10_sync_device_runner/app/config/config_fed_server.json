@@ -6,14 +6,14 @@
   "components": [
     {
       "id": "assessor",
-      "path": "nvflare.edge.assessors.general_model_update.GeneralModelUpdateAssessor",
+      "path": "nvflare.edge.assessors.model_update.ModelUpdateAssessor",
       "args": {
         "persistor_id": "persistor",
-        "max_model_version": 20,
-        "max_model_history": 5,
-        "num_updates_for_model": 20,
-        "device_selection_size": 40,
-        "min_hole_to_fill": 1,
+        "max_model_version": 10,
+        "max_model_history": 1,
+        "num_updates_for_model": 16,
+        "device_selection_size": 16,
+        "min_hole_to_fill": 16,
         "device_reuse": true
       }
     },

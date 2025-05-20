@@ -24,7 +24,7 @@ from torchvision import datasets, transforms
 
 from nvflare.apis.dxo import DXO, DataKind, from_dict
 from nvflare.edge.models.model import Cifar10ConvNet
-from nvflare.edge.simulated_device import DeviceFactory, SimulatedDevice
+from nvflare.edge.simulation.simulated_device import DeviceFactory, SimulatedDevice
 from nvflare.edge.web.models.task_response import TaskResponse
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"

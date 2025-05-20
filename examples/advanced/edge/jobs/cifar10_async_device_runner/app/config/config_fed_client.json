@@ -7,8 +7,8 @@
         "path": "nvflare.edge.executors.edge_model_executor.EdgeModelExecutor",
         "args": {
           "aggr_factory_id": "aggr_factory",
-          "max_model_versions": 4,
-          "update_timeout": 5.0
+          "max_model_versions": 3,
+          "update_timeout": 600.0
         }
       }
     }
@@ -20,13 +20,15 @@
   "components": [
     {
       "id": "aggr_factory",
-      "path": "nvflare.edge.aggregators.num_dxo_factory.NumDXOAggrFactory",
+      "path": "nvflare.edge.aggregators.model_update_dxo_factory.ModelUpdateDXOAggrFactory",
       "args": {}
     },
     {
       "id": "device_factory",
-      "path": "nvflare.edge.devices.num.NumDeviceFactory",
+      "path": "nvflare.edge.devices.pt_cifar10.PTCifar10DeviceFactory",
       "args": {
+        "data_root": "/tmp/nvflare/datasets/cifar10",
+        "subset_size": 1000,
         "min_train_time": 0.2,
         "max_train_time": 1.0
       }
@@ -36,8 +38,10 @@
       "path": "nvflare.edge.widgets.device_runner.DeviceRunner",
       "args": {
         "device_factory_id": "device_factory",
-        "num_devices": 1,
-        "num_workers": 1
+        "num_active_devices": 20,
+        "num_workers": 20,
+        "num_devices": 100,
+        "device_reuse_rate": 0.2
       }
     }
   ]

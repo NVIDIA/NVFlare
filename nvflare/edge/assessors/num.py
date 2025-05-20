@@ -37,7 +37,7 @@ class _ModelState:
         return self.aggregator.accept(model_update.update, fl_ctx)
 
 
-class AsyncNumAssessor(Assessor):
+class NumAssessor(Assessor):
 
     def __init__(
         self,
