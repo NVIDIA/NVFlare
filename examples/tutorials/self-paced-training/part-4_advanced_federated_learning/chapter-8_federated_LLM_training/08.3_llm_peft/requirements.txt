@@ -1,7 +1,13 @@
-torch==2.5.1
+# Tested with the following versions:
+# torch==2.5.1
+# transformers==4.48.0
+# peft==0.14.0
+# trl==0.13.0
+
+torch
 datasets
 tensorboard
-transformers==4.48.0
-peft==0.14.0
-trl==0.13.0
+transformers
+peft
+trl
 bitsandbytes
