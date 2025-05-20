@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from abc import ABC
+
+from abc import ABC, abstractmethod
 
 from .ctx import ProvisionContext
 from .entity import Project
@@ -21,6 +22,7 @@ class Builder(ABC):
     def initialize(self, project: Project, ctx: ProvisionContext):
         pass
 
+    @abstractmethod
     def build(self, project: Project, ctx: ProvisionContext):
         pass
 
@@ -35,6 +37,7 @@ class Packager(ABC):
     The packager, if specified, is called as the last step of the provision process.
     """
 
+    @abstractmethod
     def package(self, project: Project, ctx: ProvisionContext):
         """Package the generated startup kits for release.
 

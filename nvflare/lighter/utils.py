@@ -18,6 +18,7 @@ import os
 import random
 import shutil
 from base64 import b64decode, b64encode
+from pathlib import Path
 
 import yaml
 from cryptography import x509
@@ -273,11 +274,13 @@ def load_yaml(file):
 
     root = os.path.split(file)[0]
     yaml_data = None
-    if isinstance(file, str):
+    if isinstance(file, str) or isinstance(file, Path):
         with open(file, "r") as f:
             yaml_data = yaml.safe_load(f)
     elif isinstance(file, bytes):
         yaml_data = yaml.safe_load(file)
+    else:
+        raise ValueError(f"Invalid file type: {type(file)}")
 
     yaml_data = load_yaml_include(root, yaml_data)
 
@@ -409,3 +412,24 @@ def _write(file_full_path, content, mode, exe=False):
 
 def write(file_full_path, content, mode, exe=False):
     _write(file_full_path, content, mode, exe)
+
+
+def add_component_to_resources(resources_file: str, component: dict):
+    """Add a component to the resources file, merging with existing components.
+
+    Args:
+        resources_file: The name of the resource file
+        component: The component to add
+    """
+    components = []
+    if os.path.exists(resources_file):
+        with open(resources_file, "r") as f:
+            existing = json.load(f)
+            components = existing.get("components", [])
+
+    components.append(component)
+    write(
+        resources_file,
+        json.dumps({"components": components}, indent=2),
+        "t",
+    )
