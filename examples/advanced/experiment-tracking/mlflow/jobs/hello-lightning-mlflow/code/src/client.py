@@ -71,9 +71,7 @@ def main():
     model = LitNet()
     cifar10_dm = CIFAR10DataModule()
     flare.init()
-    # flare_logger = flare.logger
-    from nvflare.app_opt.lightning.loggers.client_logger import ClientLogger as ClientLogger
-    flare_logger = ClientLogger()
+    flare_logger = flare.logger()
 
     if torch.cuda.is_available():
         trainer = Trainer(max_epochs=1, accelerator="gpu", devices=1 if torch.cuda.is_available() else None, logger=flare_logger)
