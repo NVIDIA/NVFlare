@@ -11,38 +11,42 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# import os.path
+
 from abc import ABC, abstractmethod
 
 
 class CCAuthorizer(ABC):
+    """Abstract base class for confidential computing authorizers"""
+
     @abstractmethod
     def get_namespace(self) -> str:
-        """This returns the namespace of the CCAuthorizer.
+        """Returns the namespace of the CCAuthorizer.
 
-        Returns: namespace string
+        Returns:
+            namespace string
 
         """
         pass
 
     @abstractmethod
     def generate(self) -> str:
-        """To generate and return the active CCAuthorizer token.
+        """Generates and returns the active CCAuthorizer token.
 
-        Returns: token string
+        Returns:
+            token string
 
         """
         pass
 
     @abstractmethod
     def verify(self, token: str) -> bool:
-        """To return the token verification result.
+        """Returns the token verification result.
 
         Args:
-            token: bool
+            token: str
 
         Returns:
-
+            a boolean value indicating the token verification result
         """
         pass
 

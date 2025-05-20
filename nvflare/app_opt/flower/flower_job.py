@@ -94,6 +94,8 @@ class FlowerJob(FedJob):
         self.to_clients(obj=flower_content)
 
         if not stream_metrics:
+            conf = ExternalConfigurator(component_ids=[])
+            self.to_clients(conf, "client_api_config_preparer")
             return
 
         # add required components for metrics streaming

@@ -22,12 +22,95 @@ import argparse
 import glob
 import os
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
 
+def split_data_dirichlet(df, num_clients, alpha, random_seed=42):
+    """
+    Split data into multiple clients using Dirichlet distribution based on total data length.
+
+    Args:
+        df (pd.DataFrame): Input dataframe to split
+        num_clients (int): Number of clients to split data into
+        alpha (float): Concentration parameter for Dirichlet distribution
+        random_seed (int): Random seed for reproducibility
+
+    Returns:
+        list: List of dataframes, one for each client
+    """
+    np.random.seed(random_seed)
+
+    # Get total number of samples
+    n_samples = len(df)
+
+    # Generate proportions using Dirichlet distribution
+    proportions = np.random.dirichlet([alpha] * num_clients)
+    client_sizes = (proportions * n_samples).astype(int)
+
+    # Adjust sizes to ensure all samples are distributed
+    remaining = n_samples - sum(client_sizes)
+    client_sizes[np.random.choice(num_clients, remaining)] += 1
+
+    # Split and assign data to clients
+    client_dfs = []
+    start_idx = 0
+    for size in client_sizes:
+        if size > 0:
+            client_dfs.append(df.iloc[start_idx : start_idx + size])
+        else:
+            client_dfs.append(pd.DataFrame(columns=df.columns))
+        start_idx += size
+
+    return client_dfs
+
+
+def plot_client_distribution(client_dfs, output_dir, alpha):
+    """
+    Plot the distribution of samples across clients using a bar plot.
+
+    Args:
+        client_dfs (list): List of dataframes, one for each client
+        output_dir (str): Directory to save the plot
+    """
+    # Get number of samples for each client
+    client_sizes = [len(df) for df in client_dfs]
+    client_ids = [f"Client {i + 1}" for i in range(len(client_dfs))]
+
+    # Create bar plot
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(client_ids, client_sizes)
+
+    # Add value labels on top of each bar
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width() / 2.0, height, f"{int(height)}", ha="center", va="bottom")
+
+    plt.title("Number of Samples per Client (alpha={alpha})")
+    plt.xlabel("Client ID")
+    plt.ylabel("Number of Samples")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    # Save the plot
+    plot_path = os.path.join(output_dir, f"client_distribution_alpha_{alpha}.png")
+    plt.savefig(plot_path)
+    print(f"Client distribution plot saved to {plot_path}")
+    plt.close()
+
+
 def prepare_data(
-    input_dir, output_dir, heavy_col="heavy", light_col="light", combined_col="combined", test_ratio=0.2, random_seed=42
+    input_dir,
+    output_dir,
+    heavy_col="heavy",
+    light_col="light",
+    combined_col="combined",
+    test_ratio=0.2,
+    random_seed=42,
+    num_clients=None,
+    alpha=None,
 ):
     """
     Read multiple CSV files from a directory, combine the 'heavy' and 'light' columns with a '|' separator,
@@ -41,6 +124,8 @@ def prepare_data(
         combined_col (str): Name for the new combined column
         test_ratio (float): Ratio of data to use for testing (default: 0.2)
         random_seed (int): Random seed for reproducibility (default: 42)
+        num_clients (int): Number of clients to split data into (default: None)
+        alpha (float): Alpha parameter for Dirichlet distribution (default: None)
     """
     # Check if input directory exists
     if not os.path.isdir(input_dir):
@@ -100,11 +185,26 @@ def prepare_data(
     test_df.to_csv(test_output_file, index=False)
     print(f"Test data saved: {len(test_df)} rows")
 
-    # Save training data to a single file
-    train_output_file = os.path.join(output_dir, "train_data.csv")
-    print(f"Saving training data to {train_output_file}...")
-    train_df.to_csv(train_output_file, index=False)
-    print(f"Training data preparation completed. Output saved {len(train_df)} rows to {train_output_file}")
+    # If num_clients and alpha are provided, split training data using Dirichlet distribution
+    if num_clients is not None and alpha is not None:
+        print(f"Splitting training data into {num_clients} clients using Dirichlet distribution (alpha={alpha})...")
+        client_dfs = split_data_dirichlet(train_df, num_clients, alpha, random_seed)
+
+        # Plot client distribution
+        plot_client_distribution(client_dfs, output_dir, alpha)
+
+        # Save each client's data
+        for i, client_df in enumerate(client_dfs):
+            client_output_file = os.path.join(output_dir, f"client{i + 1}_train_data.csv")
+            print(f"Saving client {i + 1} data to {client_output_file}...")
+            client_df.to_csv(client_output_file, index=False)
+            print(f"Client {i + 1} data saved: {len(client_df)} rows")
+    else:
+        # Save training data to a single file
+        train_output_file = os.path.join(output_dir, "train_data.csv")
+        print(f"Saving training data to {train_output_file}...")
+        train_df.to_csv(train_output_file, index=False)
+        print(f"Training data preparation completed. Output saved {len(train_df)} rows to {train_output_file}")
 
 
 def main():
@@ -120,6 +220,12 @@ def main():
         "--random_seed", "-r", type=int, default=42, help="Random seed for reproducibility (default: 42)"
     )
     parser.add_argument(
+        "--num_clients", "-n", type=int, default=None, help="Number of clients to split the data into (default: None)"
+    )
+    parser.add_argument(
+        "--alpha", "-a", type=float, default=None, help="Alpha for the Dirichlet distribution (default: None)"
+    )
+    parser.add_argument(
         "--combined_col",
         "-c",
         type=str,
@@ -129,13 +235,15 @@ def main():
 
     args = parser.parse_args()
 
-    # Prepare data using a uniform split
+    # Prepare data
     prepare_data(
         args.input_dir,
         args.output_dir,
         combined_col=args.combined_col,
         test_ratio=args.test_ratio,
         random_seed=args.random_seed,
+        num_clients=args.num_clients,
+        alpha=args.alpha,
     )
 
 
