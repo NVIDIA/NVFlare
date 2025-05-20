@@ -29,6 +29,7 @@ from typing_extensions import override
 
 import nvflare
 from nvflare.client.tracking import MLflowWriter
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class ClientLogger(Logger):
@@ -40,12 +41,13 @@ class ClientLogger(Logger):
     ):
         super().__init__()
         self._prefix = prefix
-        self._log_writer = MLflowWriter()
+        self._metric_writer = MLflowWriter()
+        self._logger = get_obj_logger(self)
 
     @override
     @rank_zero_only
     def log_hyperparams(self, params: Union[dict[str, Any], Namespace]) -> None:
-        pass
+        self._logger.warning("log_hyperparams is not supported.")
 
     @override
     @rank_zero_only
@@ -53,7 +55,7 @@ class ClientLogger(Logger):
         assert rank_zero_only.rank == 0, "experiment tried to log from global_rank != 0"
         metrics = dict(_add_prefix(metrics, self._prefix, self.LOGGER_JOIN_CHAR))
 
-        self._log_writer.log_metrics(metrics=metrics, step=step)
+        self._metric_writer.log_metrics(metrics=metrics, step=step)
         pass
 
     @override
