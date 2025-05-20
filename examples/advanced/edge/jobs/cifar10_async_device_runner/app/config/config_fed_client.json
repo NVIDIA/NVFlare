@@ -38,9 +38,9 @@
       "path": "nvflare.edge.widgets.device_runner.DeviceRunner",
       "args": {
         "device_factory_id": "device_factory",
-        "num_active_devices": 20,
-        "num_workers": 20,
-        "num_devices": 10000,
+        "num_active_devices": 5,
+        "num_workers": 5,
+        "num_devices": 1000,
         "device_reuse_rate": 0.0
       }
     }
