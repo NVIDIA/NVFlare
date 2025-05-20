@@ -64,6 +64,9 @@ class PropKey:
     CAPACITY = "capacity"
     NUM_GPUS = "num_of_gpus"
     GPU_MEM = "mem_per_gpu_in_GiB"
+    CC_CONFIG = "cc_config"
+    CC_CONFIG_DICT = "cc_config_dict"
+    CC_ENABLED = "cc_enabled"
 
     # the following are internal properties added by builders during provision
     PARENT = "parent"
