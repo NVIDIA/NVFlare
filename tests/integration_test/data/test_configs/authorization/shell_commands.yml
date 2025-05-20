@@ -14,7 +14,7 @@ tests:
         "admin_user_name": "admin@a.org"
         "result":
           "type": "admin_api_response"
-          "data": "audit.log daemon_pid.fl local log.txt pid.fl readme.txt startup transfer"
+          "data": "audit.log daemon_pid.fl local log.json log.txt log_error.txt pid.fl readme.txt startup transfer"
       - "trigger":
           "type": "server_log"
           "data": "Server started"
