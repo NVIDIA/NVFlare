@@ -24,6 +24,8 @@ SNP_NAMESPACE = "x-snp"
 
 
 class SNPAuthorizer(CCAuthorizer):
+    """AMD SEV-SNP Authorizer"""
+
     def __init__(self):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)

@@ -31,48 +31,68 @@ tasks = ["aggregation", "binding", "expression", "immunogenicity", "polyreactivi
 
 
 def main(args):
-    train_script = "src/finetune_seqclassification_fl.py"
+    train_script = "src/finetune_seqclassification_fl_all.py"
 
     # Parse layer sizes from string to list of integers
     layer_sizes = [int(size) for size in args.layer_sizes.split(",")]
 
     # Define the initial global model on the server
-    model = AmplifyRegressor(pretrained_model_name_or_path=args.pretrained_model, layer_sizes=layer_sizes)
+    model = AmplifyRegressor(
+        pretrained_model_name_or_path=args.pretrained_model, layer_sizes=layer_sizes, num_targets=len(tasks)
+    )
 
     # Create BaseFedJob with initial model
     job = BaseFedJob(name=f"amplify_seqregression_{args.exp_name}", initial_model=model)
 
     # Define the controller and send to server
     controller = FedAvg(
-        num_clients=len(tasks),
+        num_clients=args.num_clients,
         num_rounds=args.num_rounds,
     )
     job.to_server(controller)
 
     # Add clients using "task" as client_name
-    for client_name in tasks:
-        train_csv = os.path.join(args.data_root, client_name, "train_data.csv")
-        test_csv = os.path.join(args.data_root, client_name, "test_data.csv")
+    for client_id in range(args.num_clients):
+        # add tasks and corresponding train and test csvs
+        client_name = f"client{client_id + 1}"
+        train_csvs = []
+        test_csvs = []
+        for task in tasks:
+            train_csv = os.path.join(args.data_root, task, f"{client_name}_train_data.csv")
+            test_csv = os.path.join(
+                args.data_root, task, "test_data.csv"
+            )  # all clients share the same test sets to be comparable
+            # check if the files exist (only for local simulation)
+            if not os.path.exists(train_csv):
+                raise ValueError(f"Train CSV file for task {task} does not exist: {train_csv}")
+            if not os.path.exists(test_csv):
+                raise ValueError(f"Test CSV file for task {task} does not exist: {test_csv} ")
+            train_csvs.append(train_csv)
+            test_csvs.append(test_csv)
+
+        # add the client script runner
         runner = ScriptRunner(
             script=train_script,
-            script_args=f"--n_epochs {args.local_epochs} --pretrained_model {args.pretrained_model} --layer_sizes {args.layer_sizes} --train_csv {train_csv} --test_csv {test_csv}",
+            script_args=f"--n_epochs {args.local_epochs} --pretrained_model {args.pretrained_model} --layer_sizes {args.layer_sizes} --train_csvs {' '.join(train_csvs)} --test_csvs {' '.join(test_csvs)} --tasks {' '.join(tasks)}",
         )
         job.to(runner, client_name)
 
-        job.to(
-            ExcludeParamsFilter(exclude_vars="regressor"),
-            client_name,
-            tasks=["train", "validate"],
-            filter_type=FilterType.TASK_RESULT,
-        )  # do not share the regression head with the server; each client will train their personal endpoint in this example
+        if args.private_regressors:
+            job.to(
+                ExcludeParamsFilter(exclude_vars="regressor"),
+                client_name,
+                tasks=["train", "validate"],
+                filter_type=FilterType.TASK_RESULT,
+            )  # do not share the regression head with the server; each client will train their personal endpoint in this example
 
     job.export_job("./job_configs")  # optionally save the job configs (not needed for simulation)
-    job.simulator_run(f"/tmp/nvflare/AMPLIFY/{job.name}", gpu=args.sim_gpus, log_config="full")
+    job.simulator_run(f"/tmp/nvflare/AMPLIFY/alltasks/{job.name}", gpu=args.sim_gpus, log_config="full")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_rounds", type=int, help="Number of rounds", required=False, default=30)
+    parser.add_argument("--num_clients", type=int, help="Number of clients", required=False, default=6)
     parser.add_argument("--local_epochs", type=int, help="Number of local epochs", required=False, default=10)
     parser.add_argument("--exp_name", type=str, help="Job name prefix", required=False, default="fedavg")
     parser.add_argument(
@@ -97,6 +117,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data_root", type=str, default=f"{os.getcwd()}/FLAb/data_fl", help="Root directory for training and test data"
+    )
+    parser.add_argument(
+        "--private_regressors",
+        action="store_true",
+        help="If set, each client will train their own regression head without sharing with the server",
     )
     args = parser.parse_args()
 

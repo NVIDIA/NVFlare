@@ -1,0 +1,4 @@
+cc_authorizers:
+  - id: "mock_authorizer"
+    path: "nvflare.app_opt.confidential_computing.mock_authorizer.MockAuthorizer"
+    args: {}

@@ -189,10 +189,13 @@ def main():
         model = model.to(device)
 
         # (5) Evaluate the global model on the test set
-        global_mean_test_loss, global_rmse_test_loss = evaluate(model, dataloader_test, loss_fn, device)
+        global_mean_test_loss, global_rmse_test_loss, global_pearson_corr = evaluate(
+            model, dataloader_test, loss_fn, device
+        )
         # Log test loss to TensorBoard
         writer.add_scalar(f"{client_name}/Loss/global_test", global_mean_test_loss, global_step)
         writer.add_scalar(f"{client_name}/RMSE/global_test", global_rmse_test_loss, global_step)
+        writer.add_scalar(f"{client_name}/Pearson/global_test", global_pearson_corr, global_step)
 
         # Training loop
         for epoch in range(args.n_epochs):
@@ -239,10 +242,13 @@ def main():
                 global_step += 1
 
             # Evaluate the local model after each epoch
-            local_mean_test_loss, local_rmse_test_loss = evaluate(model, dataloader_test, loss_fn, device)
+            local_mean_test_loss, local_rmse_test_loss, local_pearson_corr = evaluate(
+                model, dataloader_test, loss_fn, device
+            )
             # Log test loss to TensorBoard
             writer.add_scalar(f"{client_name}/Loss/local_test", local_mean_test_loss, global_step)
             writer.add_scalar(f"{client_name}/RMSE/local_test", local_rmse_test_loss, global_step)
+            writer.add_scalar(f"{client_name}/Pearson/local_test", local_pearson_corr, global_step)
 
         # End of training
 
@@ -253,6 +259,7 @@ def main():
             metrics={
                 "Loss": global_mean_test_loss,
                 "RMSE": global_rmse_test_loss,
+                "Pearson": global_pearson_corr,
                 "accuracy": -1 * global_rmse_test_loss,
             },
             meta={"NUM_STEPS_CURRENT_ROUND": args.n_epochs * len(dataloader_train)},
@@ -278,6 +285,8 @@ def evaluate(model, dataloader_test, loss_fn, device):
     with torch.no_grad():
         model.eval()
         test_loss = []
+        all_predictions = []
+        all_labels = []
         for batch in dataloader_test:
             # Convert to correct dtype and move to GPU
             input_ids = batch["input_ids"].to(torch.long).to(device)
@@ -290,11 +299,23 @@ def evaluate(model, dataloader_test, loss_fn, device):
 
             test_loss.append(loss.item())
 
+            # Store predictions and labels for correlation calculation
+            all_predictions.extend(output.squeeze().cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
         mean_test_loss = np.mean(test_loss)
         rmse_test_loss = np.sqrt(np.mean(test_loss))
-        print(f"\n>>> Test MSE loss: {mean_test_loss:.3f} Test RMSE loss: {rmse_test_loss:.3f}")
 
-    return mean_test_loss, rmse_test_loss
+        # Calculate Pearson correlation
+        all_predictions = np.array(all_predictions)
+        all_labels = np.array(all_labels)
+        pearson_corr = np.corrcoef(all_predictions, all_labels)[0, 1]
+
+        print(
+            f"\n>>> Test MSE loss: {mean_test_loss:.3f} Test RMSE loss: {rmse_test_loss:.3f} Pearson correlation: {pearson_corr:.3f}"
+        )
+
+    return mean_test_loss, rmse_test_loss, pearson_corr
 
 
 if __name__ == "__main__":
