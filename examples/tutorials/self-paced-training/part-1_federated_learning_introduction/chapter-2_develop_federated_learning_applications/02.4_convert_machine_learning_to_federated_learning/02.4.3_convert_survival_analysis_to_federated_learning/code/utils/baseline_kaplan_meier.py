@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import argparse
 
 import matplotlib.pyplot as plt
@@ -47,6 +48,9 @@ def main():
 
     # Set parameters
     output_curve_path = args.output_curve_path
+
+    if not os.path.exists(os.path.dirname(output_curve_path)):
+        os.makedirs(os.path.dirname(output_curve_path), exist_ok=True)
 
     # Set plot
     plt.figure()
