@@ -64,6 +64,7 @@ class PropKey:
     CAPACITY = "capacity"
     NUM_GPUS = "num_of_gpus"
     GPU_MEM = "mem_per_gpu_in_GiB"
+    EDGE_SERVICE_PORT = "edge_service_port"
     CC_CONFIG = "cc_config"
     CC_CONFIG_DICT = "cc_config_dict"
     CC_ENABLED = "cc_enabled"
@@ -163,6 +164,7 @@ class TemplateSectionKey:
     AZURE_START_COMMON_SH = "azure_start_common_sh"
     AZURE_START_CLN_HEADER_SH = "azure_start_cln_header_sh"
     AWS_START_SH = "aws_start_sh"
+    EDGE_LCP_RESOURCES = "edge_lcp_resources"
 
 
 class ProvFileName:
@@ -205,6 +207,7 @@ class ProvFileName:
     FED_RELAY_JSON = "fed_relay.json"
     AZURE_START_SH = "azure_start.sh"
     AWS_START_SH = "aws_start.sh"
+    EDGE_RESOURCES_JSON = "edge__p_resources.json"
 
 
 class CertFileBasename:

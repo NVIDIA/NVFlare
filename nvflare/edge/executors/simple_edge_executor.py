@@ -11,15 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any
+from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
-from nvflare.edge.constants import EdgeApiStatus, EdgeProtoKey, MsgKey
+from nvflare.edge.constants import EdgeApiStatus, MsgKey
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.executors.hug import TaskInfo
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
+from nvflare.edge.web.models.selection_request import SelectionRequest
+from nvflare.edge.web.models.selection_response import SelectionResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.security.logging import secure_format_exception
@@ -44,7 +46,9 @@ class SimpleEdgeExecutor(EdgeTaskExecutor):
         shareable.set_header(ReservedHeaderKey.TASK_ID, current_task.id)
         return shareable
 
-    def handle_task_request(self, request: TaskRequest, current_task: TaskInfo, fl_ctx: FLContext) -> TaskResponse:
+    def process_edge_task_request(
+        self, request: TaskRequest, current_task: TaskInfo, fl_ctx: FLContext
+    ) -> TaskResponse:
         """Handle task request from device"""
 
         device_id = request.get_device_id()
@@ -61,7 +65,9 @@ class SimpleEdgeExecutor(EdgeTaskExecutor):
         self.devices[device_id] = task_id
         return TaskResponse(EdgeApiStatus.OK, job_id, 0, task_id, current_task.name, task_data)
 
-    def handle_result_report(self, report: ResultReport, current_task: TaskInfo, fl_ctx: FLContext) -> ResultResponse:
+    def process_edge_result_report(
+        self, report: ResultReport, current_task: TaskInfo, fl_ctx: FLContext
+    ) -> ResultResponse:
         """Handle result report from device
         The report task_id may be different from current task_id. Let HAM deal with it
         """
@@ -83,14 +89,7 @@ class SimpleEdgeExecutor(EdgeTaskExecutor):
         self.log_info(fl_ctx, f"Got task_ended: {task.id} (seq {task.seq})")
         self.devices = None
 
-    def process_edge_request(self, request: Any, current_task: TaskInfo, fl_ctx: FLContext) -> Any:
-        self.log_info(fl_ctx, f"Received edge request from device: {request['device_info']}")
-
-        if isinstance(request, TaskRequest):
-            response = self.handle_task_request(request, current_task, fl_ctx)
-        elif isinstance(request, ResultReport):
-            response = self.handle_result_report(request, current_task, fl_ctx)
-        else:
-            raise RuntimeError(f"Received unknown request type: {type(request)}")
-
-        return {EdgeProtoKey.STATUS: EdgeApiStatus.OK, EdgeProtoKey.RESPONSE: response}
+    def process_edge_selection_request(
+        self, request: SelectionRequest, current_task: TaskInfo, fl_ctx: FLContext
+    ) -> Optional[SelectionResponse]:
+        return None
