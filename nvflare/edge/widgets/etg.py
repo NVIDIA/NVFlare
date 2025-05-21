@@ -25,7 +25,13 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.edge.constants import EdgeApiStatus, EdgeContextKey
 from nvflare.edge.constants import EdgeEventType as EdgeEventType
-from nvflare.edge.constants import EdgeProtoKey
+from nvflare.edge.web.models.capabilities import Capabilities
+from nvflare.edge.web.models.device_info import DeviceInfo
+from nvflare.edge.web.models.job_request import JobRequest
+from nvflare.edge.web.models.job_response import JobResponse
+from nvflare.edge.web.models.task_request import TaskRequest
+from nvflare.edge.web.models.task_response import TaskResponse
+from nvflare.edge.web.models.user_info import UserInfo
 from nvflare.widgets.widget import Widget
 
 
@@ -49,14 +55,13 @@ class EdgeTaskGenerator(Widget):
             self.abort_signal.trigger(True)
 
     @staticmethod
-    def _make_task():
-        return {
-            "device_id": str(uuid.uuid4()),
-            "request_type": "getTask",
-        }
+    def _make_task(job_id: str) -> TaskRequest:
+        return TaskRequest(
+            job_id=job_id, device_info=DeviceInfo(device_id=str(uuid.uuid4())), user_info=UserInfo(), cookie={}
+        )
 
     def _generate_tasks(self):
-        caps = {"methods": ["xgb", "llm"]}
+        caps = Capabilities(["xgb", "llm"])
         while True:
             if self.abort_signal.triggered:
                 self.logger.info("received abort signal - exiting")
@@ -65,31 +70,40 @@ class EdgeTaskGenerator(Widget):
             with self.engine.new_context() as fl_ctx:
                 assert isinstance(fl_ctx, FLContext)
                 if not self.job_id:
-                    fl_ctx.set_prop(EdgeContextKey.EDGE_CAPABILITIES, caps, private=True, sticky=False)
+                    job_request = JobRequest(
+                        device_info=DeviceInfo(device_id=str(uuid.uuid4())),
+                        user_info=UserInfo(),
+                        capabilities=caps,
+                    )
+
+                    self.logger.debug(f"trying to get job: {job_request}")
+                    fl_ctx.set_prop(EdgeContextKey.REQUEST_FROM_EDGE, job_request, private=True, sticky=False)
                     self.fire_event(EdgeEventType.EDGE_JOB_REQUEST_RECEIVED, fl_ctx)
                     result = fl_ctx.get_prop(EdgeContextKey.REPLY_TO_EDGE)
+                    self.logger.debug(f"job response received: {result}")
+
                     if result:
-                        assert isinstance(result, dict)
-                        status = result[EdgeProtoKey.STATUS]
-                        job_id = result[EdgeProtoKey.DATA]
+                        assert isinstance(result, JobResponse)
+                        status = result.status
+                        job_id = result.job_id
                         self.logger.debug(f"job reply from ETD: {status=} {job_id=}")
                         if job_id:
                             self.job_id = job_id
                     else:
                         self.logger.error(f"no result from ETD for event {EdgeEventType.EDGE_JOB_REQUEST_RECEIVED}")
                 else:
-                    task = self._make_task()
-                    fl_ctx.set_prop(EdgeContextKey.JOB_ID, self.job_id, sticky=False, private=True)
-                    fl_ctx.set_prop(EdgeContextKey.REQUEST_FROM_EDGE, task, sticky=False, private=True)
-                    self.fire_event(EdgeEventType.EDGE_REQUEST_RECEIVED, fl_ctx)
+                    task_req = self._make_task(job_id)
+                    self.logger.debug(f"sending task request {task_req}")
+                    fl_ctx.set_prop(EdgeContextKey.REQUEST_FROM_EDGE, task_req, sticky=False, private=True)
+                    self.fire_event(EdgeEventType.EDGE_TASK_REQUEST_RECEIVED, fl_ctx)
                     result = fl_ctx.get_prop(EdgeContextKey.REPLY_TO_EDGE)
+                    self.logger.debug(f"got task response {result}")
                     if not result:
-                        self.logger.error(f"no result from ETD for event {EdgeEventType.EDGE_REQUEST_RECEIVED}")
+                        self.logger.error(f"no result from ETD for event {EdgeEventType.EDGE_TASK_REQUEST_RECEIVED}")
                     else:
-                        status = result[EdgeProtoKey.STATUS]
-                        edge_reply = result[EdgeProtoKey.DATA]
-                        self.logger.debug(f"task reply from ETD: {status=} {edge_reply=}")
-
+                        assert isinstance(result, TaskResponse)
+                        status = result.status
+                        self.logger.debug(f"task reply from ETD: {result}")
                         if status == EdgeApiStatus.NO_JOB:
                             # job already finished
                             self.job_id = None

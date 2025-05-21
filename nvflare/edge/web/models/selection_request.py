@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.edge.web.models.base_model import BaseModel
+from nvflare.edge.web.models.base_model import BaseModel, EdgeProtoKey
 from nvflare.edge.web.models.device_info import DeviceInfo
 
 
@@ -28,3 +28,21 @@ class SelectionRequest(BaseModel):
 
         if kwargs:
             self.update(kwargs)
+
+    @classmethod
+    def validate(cls, d: dict) -> str:
+        return cls.check_keys(d, [EdgeProtoKey.JOB_ID, EdgeProtoKey.DEVICE_INFO])
+
+    @classmethod
+    def from_dict(cls, d: dict):
+        error = cls.validate(d)
+        if error:
+            return error, None
+
+        error, device_info = DeviceInfo.extract_from_dict(d)
+        if error:
+            return error, None
+
+        req = SelectionRequest(device_info, d.get(EdgeProtoKey.JOB_ID))
+        req.update(d)
+        return "", req

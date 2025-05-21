@@ -67,7 +67,7 @@ class Adapter:
         self.cell = cell
         self.logger = get_obj_logger(self)
 
-    def call(self, future):  # this will be called by StreamCell upon receiving the first byte of blob
+    def call(self, future, *args, **kwargs):  # this will be called by StreamCell upon receiving the first byte of blob
         headers = future.headers
         stream_req_id = headers.get(StreamHeaderKey.STREAM_REQ_ID, "")
         origin = headers.get(MessageHeaderKey.ORIGIN, None)
@@ -87,7 +87,7 @@ class Adapter:
         secure = request.get_header(MessageHeaderKey.SECURE, False)
         optional = request.get_header(MessageHeaderKey.OPTIONAL, False)
         self.logger.debug(f"{stream_req_id=}: on {channel=}, {topic=}")
-        response = self.cb(request)
+        response = self.cb(request, *args, **kwargs)
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
 
         if not stream_req_id:

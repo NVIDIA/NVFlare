@@ -13,26 +13,16 @@
 # limitations under the License.
 
 
-class EdgeProtoKey:
-    STATUS = "status"
-    DATA = "data"
-    RESPONSE = "response"
-    JOB_ID = "job_id"
-    TASK_ID = "task_id"
-    TASK_NAME = "task_name"
-    RESULT = "result"
-    COOKIE = "cookie"
-
-
 class EdgeContextKey:
-    JOB_ID = "__edge_job_id__"
     EDGE_CAPABILITIES = "__edge_capabilities__"
     REQUEST_FROM_EDGE = "__request_from_edge__"
     REPLY_TO_EDGE = "__reply_to_edge__"
 
 
 class EdgeEventType:
-    EDGE_REQUEST_RECEIVED = "_edge_request_received"
+    EDGE_TASK_REQUEST_RECEIVED = "_edge_task_request_received"
+    EDGE_RESULT_REPORT_RECEIVED = "_edge_result_report_received"
+    EDGE_SELECTION_REQUEST_RECEIVED = "_edge_selection_request_received"
     EDGE_JOB_REQUEST_RECEIVED = "_edge_job_request_received"
 
 
@@ -40,6 +30,12 @@ class EdgeTaskHeaderKey:
     TASK_SEQ = "task_seq"
     HAS_UPDATE_DATA = "has_update_data"
     UPDATE_INTERVAL = "update_interval"
+
+
+class EdgeMsgTopic:
+    TASK_REQUEST = "task_request"
+    SELECTION_REQUEST = "selection_request"
+    RESULT_REPORT = "result_report"
 
 
 class MsgKey:
@@ -60,7 +56,7 @@ class EdgeApiStatus:
     ERROR = "ERROR"
     NO_JOB = "NO_JOB"
     NO_TASK = "NO_TASK"
-    INVALID_REQUEST = "invalid_request"
+    INVALID_REQUEST = "INVALID_REQUEST"
 
 
 class CookieKey:
