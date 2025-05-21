@@ -25,6 +25,7 @@ from typing import Dict
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
@@ -40,7 +41,7 @@ META_JSON = "meta.json"
 class FedJobConfig:
     """FedJobConfig represents the job in the NVFlare."""
 
-    def __init__(self, job_name, min_clients, mandatory_clients=None) -> None:
+    def __init__(self, job_name, min_clients, mandatory_clients=None, meta_props=None) -> None:
         """FedJobConfig uses the job_name,  min_clients and optional mandatory_clients to create the object.
         It also provides the method to add in the FedApp, the deployment map of the FedApp and participants,
         and the resource _spec requirements of the participants if needed.
@@ -49,12 +50,17 @@ class FedJobConfig:
             job_name: the name of the NVFlare job
             min_clients: the minimum number of clients for the job
             mandatory_clients: mandatory clients to run the job (optional)
+            meta_props: additional meta properties for the job (optional)
         """
         super().__init__()
+
+        if meta_props:
+            check_object_type("meta_props", meta_props, dict)
 
         self.job_name = job_name
         self.min_clients = min_clients
         self.mandatory_clients = mandatory_clients
+        self.meta_props = meta_props
 
         self.fed_apps: Dict[str, FedAppConfig] = {}
         self.deploy_map: Dict[str, str] = {}
@@ -108,6 +114,9 @@ class FedJobConfig:
         if self.mandatory_clients:
             meta_json["mandatory_clients"] = self.mandatory_clients
 
+        if self.meta_props:
+            meta_json.update(self.meta_props)
+
         with open(meta_file, "w") as outfile:
             json_dump = json.dumps(meta_json, indent=4)
             outfile.write(json_dump)
@@ -130,6 +139,7 @@ class FedJobConfig:
             config_dir = os.path.join(job_dir, app_name, CONFIG)
             custom_dir = os.path.join(job_dir, app_name, CUSTOM)
             os.makedirs(config_dir, exist_ok=True)
+            os.makedirs(custom_dir, exist_ok=True)
 
             if fed_app.server_app:
                 self._get_server_app(config_dir, custom_dir, fed_app)
@@ -191,18 +201,24 @@ class FedJobConfig:
 
         self._copy_ext_scripts(custom_dir, fed_app.server_app.ext_scripts)
         self._copy_ext_dirs(custom_dir, fed_app.server_app)
-        self._copy_file_sources(custom_dir, fed_app.server_app.file_sources)
+        self._copy_file_sources(config_dir, custom_dir, fed_app.server_app.file_sources)
 
-    def _copy_file_sources(self, custom_dir, file_sources):
+    def _copy_file_sources(self, config_dir, custom_dir, file_sources):
         for s in file_sources:
             # s is a tuple of (src_path, dest_dir)
-            src_path, dest_dir = s
+            src_path, dest_dir, app_folder_type = s
+
+            if app_folder_type == "config":
+                target_dir = config_dir
+            else:
+                target_dir = custom_dir
+
             if dest_dir:
-                dest_path = os.path.join(custom_dir, dest_dir)
+                dest_path = os.path.join(target_dir, dest_dir)
                 if not os.path.exists(dest_path):
                     os.makedirs(dest_path, exist_ok=True)
             else:
-                dest_path = custom_dir
+                dest_path = target_dir
 
             if os.path.isfile(src_path):
                 base_name = os.path.basename(src_path)
@@ -307,7 +323,7 @@ class FedJobConfig:
 
         self._copy_ext_scripts(custom_dir, fed_app.client_app.ext_scripts)
         self._copy_ext_dirs(custom_dir, fed_app.client_app)
-        self._copy_file_sources(custom_dir, fed_app.client_app.file_sources)
+        self._copy_file_sources(config_dir, custom_dir, fed_app.client_app.file_sources)
 
     def _get_base_app(self, custom_dir, app, app_config):
         app_config["components"] = []
