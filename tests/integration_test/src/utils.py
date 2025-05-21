@@ -286,6 +286,7 @@ def _replace_config_fed_server(server_json_path: str):
         config_fed_server = json.load(f)
         config_fed_server["num_rounds"] = 2
         config_fed_server["min_clients"] = 2
+        config_fed_server["num_clients"] = 2
         config_fed_server["TRAIN_SPLIT_ROOT"] = "/tmp/nvflare/test_data"
         f.seek(0)
         json.dump(config_fed_server, f, indent=4)
