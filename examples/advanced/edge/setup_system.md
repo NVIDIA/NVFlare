@@ -10,28 +10,6 @@ Use tree_prov.py to generate a hierarchical NVFlare system with 2 levels and 2 c
 
 This will create a deployment with 4 leaf nodes, 2 aggregators, 2 relays, and 1 server.
 
-This file needs to be copied to the `local` folder of each leaf clients, C11, C12, C21 and C22.
-
-`edge__p_resources.json`:
-
-```
-{
-  "format_version": 2,
-  "components": [
-    {
-      "id": "web_agent",
-      "path": "nvflare.edge.widgets.web_agent.WebAgent",
-      "args": {}
-    },
-    {
-      "id": "etd",
-      "path": "nvflare.edge.widgets.etd.EdgeTaskDispatcher",
-      "args": {}
-    }
-  ]
-}
-```
-
 To start the system, just run the following command in the prepared workspace,
 
 ```commandline
