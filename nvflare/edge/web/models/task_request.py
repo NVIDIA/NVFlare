@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.edge.web.models.base_model import BaseModel
+from nvflare.edge.web.models.base_model import BaseModel, EdgeProtoKey
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.user_info import UserInfo
 
@@ -26,3 +26,23 @@ class TaskRequest(BaseModel):
 
         if kwargs:
             self.update(kwargs)
+
+    @classmethod
+    def validate(cls, d: dict) -> str:
+        return cls.check_keys(d, [EdgeProtoKey.JOB_ID, EdgeProtoKey.DEVICE_INFO])
+
+    @classmethod
+    def from_dict(cls, d: dict):
+        error = cls.validate(d)
+        if error:
+            return error, None
+
+        error, device_info = DeviceInfo.extract_from_dict(d)
+        if error:
+            return error, None
+
+        _, user_info = UserInfo.extract_from_dict(d)
+
+        task_req = TaskRequest(device_info, user_info, d.pop(EdgeProtoKey.JOB_ID), d.pop(EdgeProtoKey.COOKIE, {}))
+        task_req.update(d)
+        return "", task_req

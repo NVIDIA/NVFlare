@@ -1,0 +1,18 @@
+{
+    "C11": {
+        "host": "localhost",
+        "port": 9003
+    },
+    "C12": {
+        "host": "localhost",
+        "port": 9004
+    },
+    "C21": {
+        "host": "localhost",
+        "port": 9006
+    },
+    "C22": {
+        "host": "localhost",
+        "port": 9007
+    }
+}
