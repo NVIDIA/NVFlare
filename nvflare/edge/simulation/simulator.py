@@ -450,7 +450,7 @@ class Simulator:
         )
 
         # report the result to Flare
-        self.logger.info(f"Device {device.device_id} result: {report}")
+        self.logger.debug(f"Device {device.device_id} result: {report}")
         resp = self._send_request(report, device, ResultResponse(EdgeApiStatus.RETRY), **self.send_kwargs)
         self.logger.info(f"got result response: {resp}")
 
