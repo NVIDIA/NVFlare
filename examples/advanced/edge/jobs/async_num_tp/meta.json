@@ -1,0 +1,17 @@
+{
+  "name": "hello-numpy-sag",
+  "resource_spec": {},
+  "min_clients" : 2,
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  },
+  "stats_pool_config": {
+        "save_pools": [
+            "request_processing",
+            "request_response",
+          "*"
+        ]
+    }
+}
