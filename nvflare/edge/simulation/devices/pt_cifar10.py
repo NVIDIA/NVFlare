@@ -37,16 +37,17 @@ log = logging.getLogger(__name__)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
-class PTCifar10TaskProcessor(DeviceTaskProcessor):
+class PTCifar10Processor(DeviceTaskProcessor):
+
     def __init__(self, data_root: str, subset_size: int):
         DeviceTaskProcessor.__init__(self)
         self.data_root = data_root
         self.subset_size = subset_size
+        self.min_train_time = min_train_time
+        self.max_train_time = max_train_time
 
     def setup(self, job: JobResponse) -> None:
-        device_io_dir = f"/tmp/nvflare/workspaces/edge_simulator_cifar10/{self.device_info.device_id}"
-        os.makedirs(device_io_dir, exist_ok=True)
-        self.tb_writer = SummaryWriter(device_io_dir)
+        pass
 
     def shutdown(self) -> None:
         pass
@@ -107,39 +108,22 @@ class PTCifar10TaskProcessor(DeviceTaskProcessor):
         return diff_dict
 
     def process_task(self, task: TaskResponse) -> dict:
-        """Process received task and return results.
-
-        Args:
-            task: The task response containing model and instructions
-
-        Returns:
-            dict: Results from training
-
-        Raises:
-            ValueError: If task data is invalid or protocol validation fails
-            RuntimeError: If training operations fail
-        """
-        log.info(f"Processing task {task.task_name}")
-
-        if task.task_name != "train":
-            log.error(f"Received unknown task: {task.task_name}")
-            raise ValueError(f"Unsupported task type: {task.task_name}")
-
-        # Validate inputs first - fail fast if invalid
-        payload = verify_payload(
-            task.task_data[MsgKey.PAYLOAD],
-            expected_type=ModelBufferType.PYTORCH,
-            expected_format=ModelNativeFormat.STRING,
-            expected_encoding=ModelEncoding.NONE,
-        )
-        global_round = payload[ModelExchangeFormat.MODEL_VERSION]
-        global_model = payload[ModelExchangeFormat.MODEL_BUFFER]
+        task_data = task.task_data
+        assert isinstance(task_data, dict)
+        model = from_dict(task_data)
+        if not isinstance(model, DXO):
+            self.logger.error(f"expect model to be DXO but got {type(model)}")
+            raise ValueError("bad model data")
 
         # Convert list to numpy to tensor and run training
         global_model = {k: torch.tensor(v) for k, v in global_model.items()}
         diff_dict = self._pytorch_training(global_model, global_round)
 
-        # Compose simple returning message
-        return_msg = {MsgKey.WEIGHTS: diff_dict, MsgKey.MODE: "diff"}
+        # Random delay
+        delay = random.uniform(self.min_train_time, self.max_train_time)
+        time.sleep(delay)
 
-        return return_msg
+        # Compose simple returning message
+        result_dxo = DXO(data_kind="model", data={"value": diff_dict})
+
+        return result_dxo.to_dict()
