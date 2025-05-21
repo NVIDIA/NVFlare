@@ -8,7 +8,7 @@
       "id": "assessor",
       "path": "nvflare.edge.assessors.async_num.AsyncNumAssessor",
       "args": {
-        "max_model_version": 20,
+        "max_model_version": 10,
         "max_model_history": 3,
         "num_updates_for_model": 10,
         "device_selection_size": 30

@@ -24,8 +24,11 @@
       "args": {}
     },
     {
-      "id": "etr",
-      "path": "nvflare.edge.widgets.etr.EdgeTaskReceiver"
+      "id": "tp_runner",
+      "path": "nvflare.edge.widgets.tp_runner.TPRunner",
+      "args": {
+        "config_file": "{JOB_CONFIG_DIR}/tp_config.json"
+      }
     }
   ]
 }

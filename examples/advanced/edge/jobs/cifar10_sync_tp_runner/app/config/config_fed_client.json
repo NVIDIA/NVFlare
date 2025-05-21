@@ -24,24 +24,10 @@
       "args": {}
     },
     {
-      "id": "device_factory",
-      "path": "nvflare.edge.devices.pt_cifar10.PTCifar10DeviceFactory",
+      "id": "tp_runner",
+      "path": "nvflare.edge.widgets.tp_runner.TPRunner",
       "args": {
-        "data_root": "/tmp/nvflare/datasets/cifar10",
-        "subset_size": 3125,
-        "min_train_time": 0.2,
-        "max_train_time": 1.0
-      }
-    },
-    {
-      "id": "device_runner",
-      "path": "nvflare.edge.widgets.device_runner.DeviceRunner",
-      "args": {
-        "device_factory_id": "device_factory",
-        "num_active_devices": 4,
-        "num_workers": 4,
-        "num_devices": 4,
-        "device_reuse_rate": 1.0
+        "config_file": "{JOB_CONFIG_DIR}/tp_config.json"
       }
     }
   ]
