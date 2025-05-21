@@ -17,17 +17,8 @@ import os
 import filelock
 import torch
 from torch.utils.data import Subset
-from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 
-from nvflare.edge.constants import MsgKey
-from nvflare.edge.model_protocol import (
-    ModelBufferType,
-    ModelEncoding,
-    ModelExchangeFormat,
-    ModelNativeFormat,
-    verify_payload,
-)
 from nvflare.edge.models.model import Cifar10ConvNet
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
