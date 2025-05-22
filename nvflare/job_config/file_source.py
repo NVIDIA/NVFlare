@@ -15,19 +15,31 @@ import os
 
 
 class FileSource:
-    def __init__(self, src_path: str, dest_dir=None):
+    def __init__(self, src_path: str, dest_dir=None, app_folder_type=None):
         """Constructor of FileSource
-        A FileSource defines additional file(s) to be added to the job app's "custom" folder when generating job config.
+        A FileSource defines additional file(s) to be added to the job app's app_folder_type folder
+        when generating the job config.
 
         Args:
             src_path: the path to the source, which could be a single file or a directory.
-            dest_dir: the relative dir within the "custom" folder that the copied source will be placed.
+            dest_dir: the relative dir within the app_folder folder that the copied source will be placed.
+            app_folder_type: the type of the app folder to place the copied files.
+                Valid values are: custom, config
+                If not specified, default to "custom"
 
         Note: a FileSource could be any type of files, not limited to "py" files!
         Even if the source is a python script, no special processing (e.g. package import scanning) will be done.
         """
         self.src_path = src_path
         self.dest_dir = dest_dir
+        self.app_folder_type = app_folder_type
+
+        if app_folder_type:
+            valid_folder_types = ["custom", "config"]
+            if app_folder_type not in valid_folder_types:
+                raise ValueError(
+                    f"invalid value of 'app_folder_type' ({app_folder_type}): must be one of {valid_folder_types}"
+                )
 
         if not os.path.exists(src_path):
             raise ValueError(f"src_path {src_path} does not exist")
@@ -50,4 +62,9 @@ class FileSource:
 
         """
         job.check_kwargs(args_to_check=kwargs, args_expected={})
-        job.add_file_source(src_path=self.src_path, dest_dir=self.dest_dir, ctx=ctx)
+        job.add_file_source(
+            src_path=self.src_path,
+            dest_dir=self.dest_dir,
+            ctx=ctx,
+            app_folder_type=self.app_folder_type,
+        )
