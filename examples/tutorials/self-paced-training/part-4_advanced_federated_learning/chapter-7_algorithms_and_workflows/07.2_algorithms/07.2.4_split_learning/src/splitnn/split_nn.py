@@ -37,6 +37,7 @@
 
 import torch.nn as nn
 
+
 class ModerateCNN(nn.Module):
     def __init__(self):
         super(ModerateCNN, self).__init__()
