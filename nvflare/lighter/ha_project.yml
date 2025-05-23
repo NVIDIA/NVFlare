@@ -54,7 +54,7 @@ builders:
   - path: nvflare.lighter.impl.template.TemplateBuilder
   - path: nvflare.lighter.impl.docker.DockerBuilder
     args:
-      base_image: python:3.8
+      base_image: python:3.10
       requirements_file: docker_compose_requirements.txt
   - path: nvflare.lighter.impl.helm_chart.HelmChartBuilder
     args:
