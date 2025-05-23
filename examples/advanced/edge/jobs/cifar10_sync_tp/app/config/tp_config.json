@@ -4,7 +4,7 @@
   "num_active_devices": 4,
   "num_workers": 4,
   "device_reuse_rate": 1.0,
-  "device_id_prefix": "sim-device-",
+  "device_id_prefix": "sim-device",
   "processor": {
     "path": "nvflare.edge.simulation.devices.pt_cifar10.PTCifar10Processor",
     "args": {

@@ -9,7 +9,7 @@
       "path": "nvflare.edge.assessors.model_update.ModelUpdateAssessor",
       "args": {
         "persistor_id": "persistor",
-        "max_model_version": 20,
+        "max_model_version": 10,
         "max_model_history": 5,
         "num_updates_for_model": 20,
         "device_selection_size": 20,

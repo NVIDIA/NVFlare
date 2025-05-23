@@ -1,10 +1,10 @@
 {
-  "name": "cifar10-sync-tp-runner",
+  "name": "cifar10-async-tp",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {
     "app": [
       "@ALL"
     ]
-  },
+  }
 }

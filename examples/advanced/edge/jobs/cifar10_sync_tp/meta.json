@@ -1,5 +1,5 @@
 {
-  "name": "cifar10-async-device-runner",
+  "name": "cifar10-sync-tp",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {
