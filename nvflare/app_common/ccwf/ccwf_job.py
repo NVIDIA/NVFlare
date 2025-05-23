@@ -30,6 +30,8 @@ from .cyclic_server_ctl import CyclicServerController
 from .swarm_client_ctl import SwarmClientController
 from .swarm_server_ctl import SwarmServerController
 
+_EXECUTOR_TASKS = ["train", "validate", "submit_model"]
+
 
 class SwarmServerConfig:
     def __init__(
@@ -189,6 +191,7 @@ class CCWFJob(FedJob):
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
+        executor_tasks: Optional[List[str]] = None,
         external_resources: Optional[str] = None,
     ):
         """Client-Controlled Workflow Job.
@@ -199,9 +202,19 @@ class CCWFJob(FedJob):
             name (name, optional): name of the job. Defaults to "fed_job"
             min_clients (int, optional): the minimum number of clients for the job. Defaults to 1.
             mandatory_clients (List[str], optional): mandatory clients to run the job. Default None.
+            executor_tasks (List[str], optional): tasks for the executor
             external_resources (str, optional): External resources directory or filename. Defaults to None.
         """
         super().__init__(name, min_clients, mandatory_clients)
+
+        # A CCWF job can have multiple workflows (swarm, cyclic, etc.), but can only have one executor for training!
+        # This executor can be added by any workflow.
+        self.executor = None
+
+        self.executor_tasks = executor_tasks
+        if not executor_tasks:
+            self.executor_tasks = _EXECUTOR_TASKS
+
         if external_resources:
             self.to_server(external_resources)
             self.to_clients(external_resources)
@@ -249,7 +262,10 @@ class CCWFJob(FedJob):
             wait_time_after_min_resps_received=client_config.wait_time_after_min_resps_received,
         )
         self.to_clients(client_controller, tasks=["swarm_*"])
-        self.to_clients(client_config.executor, tasks=["train", "validate", "submit_model"])
+        if not self.executor:
+            # We add the executor only if it's not added yet.
+            self.to_clients(client_config.executor, tasks=self.executor_tasks)
+            self.executor = client_config.executor
 
         if client_config.model_selector:
             self.to_clients(client_config.model_selector, id="model_selector")
@@ -287,7 +303,11 @@ class CCWFJob(FedJob):
             final_result_ack_timeout=client_config.final_result_ack_timeout,
         )
         self.to_clients(client_controller, tasks=["cyclic_*"])
-        self.to_clients(client_config.executor, tasks=["train", "validate", "submit_model"])
+
+        if not self.executor:
+            # We add the executor only if it's not added yet.
+            self.to_clients(client_config.executor, tasks=self.executor_tasks)
+            self.executor = client_config.executor
 
         if cse_config:
             self.add_cross_site_eval(cse_config, persistor_id)

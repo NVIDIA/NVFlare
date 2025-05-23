@@ -54,10 +54,20 @@ def start(args):
                 print(f"Expecting an email address, but got one in an invalid format.  Reason: {reason}")
             else:
                 need_email = False
+        email = answer
+        need_org = True
+        while need_org:
+            answer = input("Please provide project admin organization name.\n")
+            error, reason = name_check(answer, "org")
+            if error:
+                print(f"Expecting an organization name, but got one in an invalid format.  Reason: {reason}")
+            else:
+                need_org = False
+        org_name = answer
         print("generating random password")
         pwd = utils.generate_password(8)
-        print(f"Project admin credential is {answer} and the password is {pwd}")
-        environment.update({"NVFL_CREDENTIAL": f"{answer}:{pwd}"})
+        print(f"Project admin credential is {email} and the password is {pwd}")
+        environment.update({"NVFL_CREDENTIAL": f"{email}:{pwd}:{org_name}"})
     if args.local:
         return start_local(environment)
     try:
@@ -137,9 +147,9 @@ def stop():
 
 def cloud(args):
     lighter_folder = os.path.dirname(utils.__file__)
-    template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
-    template.update(utils.load_yaml(os.path.join(lighter_folder, "impl", "aws_template.yml")))
-    template.update(utils.load_yaml(os.path.join(lighter_folder, "impl", "azure_template.yml")))
+    template = utils.load_yaml(os.path.join(lighter_folder, "templates", "master_template.yml"))
+    template.update(utils.load_yaml(os.path.join(lighter_folder, "templates", "aws_template.yml")))
+    template.update(utils.load_yaml(os.path.join(lighter_folder, "templates", "azure_template.yml")))
     tplt = tplt_utils.Template(template)
     cwd = os.getcwd()
     csp = args.cloud

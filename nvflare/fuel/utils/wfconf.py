@@ -22,7 +22,8 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.security.logging import secure_format_exception
 
 from .argument_utils import parse_vars
-from .class_utils import ModuleScanner, get_class, instantiate_class
+from .class_loader import load_class
+from .class_utils import ModuleScanner, instantiate_class
 from .dict_utils import extract_first_level_primitive, merge_dict
 from .json_scanner import JsonObjectProcessor, JsonScanner, Node
 
@@ -125,7 +126,15 @@ class _EnvUpdater(JsonObjectProcessor):
                 # this is a single var without params
                 element = self.vars.get(var_name, None)
         else:
-            element = element.format(**self.vars)
+            # Treat the element as a string that may contain var replacements expressed within {}:
+            # For example: "{ROOT_DIR}"
+            # Such vars will be replaced with values defined in self.vars.
+            try:
+                element = element.format(**self.vars)
+            except:
+                # If the substitution fails, return the original value
+                element = original_value
+
         if element != original_value:
             self.num_updated += 1
         return element
@@ -362,7 +371,7 @@ class Configurator(JsonObjectProcessor):
         return class_path
 
     def is_configured_subclass(self, config_dict, base_class):
-        return issubclass(get_class(self.get_class_path(config_dict)), base_class)
+        return issubclass(load_class(self.get_class_path(config_dict)), base_class)
 
     def start_config(self, config_ctx: ConfigContext):
         pass

@@ -203,12 +203,12 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_client_job(self, job_id, client_sites, fl_ctx: FLContext):
+    def start_client_job(self, job, client_sites, fl_ctx: FLContext):
         """To send the start client run commands to the clients
 
         Args:
             client_sites: client sites
-            job_id: job_id
+            job: job object
             fl_ctx: FLContext
 
         Returns:
@@ -262,4 +262,31 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     def register_app_command(self, topic: str, cmd_func, *args, **kwargs):
+        """Register app command handler.
+
+        Args:
+            topic: topic of the command to be handled
+            cmd_func: the function to handle the app command
+            *args: optional args to be passed to the cmd_func
+            **kwargs: optional kwargs to be passed to the cmd_func
+
+        Returns: None
+
+        """
         pass
+
+
+def app_command_handler(topic: str, data, fl_ctx: FLContext, *args, **kwargs):
+    """This is the signature of App Command handler
+
+    Args:
+        topic: topic of the command
+        data: command data
+        fl_ctx: the FLContext object
+        *args:
+        **kwargs:
+
+    Returns: None
+
+    """
+    pass

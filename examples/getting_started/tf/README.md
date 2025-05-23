@@ -1,26 +1,21 @@
 # Getting Started with NVFlare (TensorFlow)
 [![TensorFlow Logo](https://upload.wikimedia.org/wikipedia/commons/a/ab/TensorFlow_logo.svg)](https://tensorflow.org/)
 
-We provide several examples to quickly get you started using NVFlare's Job API. 
+We provide several examples to help you quickly get started with NVFlare.
 All examples in this folder are based on using [TensorFlow](https://tensorflow.org/) as the model training framework.
 
 ## Simulated Federated Learning with CIFAR10 Using Tensorflow
 
-This example shows `Tensorflow`-based classic Federated Learning
-algorithms, namely FedAvg and FedOpt on CIFAR10
-dataset. This example is analogous to [the example using `Pytorch`
-backend](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim)
-on the same dataset, where same experiments
-were conducted and analyzed. You should expect the same
-experimental results when comparing this example with the `Pytorch` one.
+This example demonstrates TensorFlow-based federated learning algorithms,
+FedAvg and FedOpt, on the CIFAR-10 dataset.
 
 In this example, the latest Client APIs were used to implement
 client-side training logics (details in file
 [`cifar10_tf_fl_alpha_split.py`](src/cifar10_tf_fl_alpha_split.py)),
 and the new
-[`FedJob`](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/job_config/api.py)
+[`FedJob`](../../../nvflare/job_config/api.py)
 APIs were used to programmatically set up an
-`nvflare` job to be exported or ran by simulator (details in file
+NVFlare job to be exported or ran by simulator (details in file
 [`tf_fl_script_runner_cifar10.py`](tf_fl_script_runner_cifar10.py)),
 alleviating the need of writing job config files, simplifying
 development process.
@@ -60,20 +55,15 @@ script.
 > [!WARNING]
 > If you are using GPU, make sure to set the following
 > environment variables before running a training job, to prevent
-> `Tensoflow` from allocating full GPU memory all at once:
+> `TensorFlow` from allocating full GPU memory all at once:
 > `export TF_FORCE_GPU_ALLOW_GROWTH=true && export
 > TF_GPU_ALLOCATOR=cuda_malloc_asyncp`
 
-The set-up of all experiments in this example are kept the same as
-[the example using `Pytorch`
-backend](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-sim). Refer
-to the `Pytorch` example for more details. Similar to the Pytorch
-example, we here also use Dirichelet sampling on CIFAR10 data labels
-to simulate data heterogeneity among data splits for different client
-sites, controlled by an alpha value, ranging from 0 (not including 0)
-to 1. A high alpha value indicates less data heterogeneity, i.e., an
-alpha value equal to 1.0 would result in homogeneous data distribution
-among different splits.
+We apply Dirichlet sampling (as implemented in FedMA: https://github.com/IBM/FedMA) to
+CIFAR10 data labels to simulate data heterogeneity among client sites, controlled by an
+alpha value between 0 (exclusive) and 1. A high alpha value indicates less data
+heterogeneity, i.e., an alpha value equal to 1.0 would result in homogeneous data 
+distribution among different splits.
 
 ### 2.1 Centralized training
 
@@ -111,11 +101,11 @@ for alpha in 1.0 0.5 0.3 0.1; do
 done
 ```
 
-## 2. Results
+## 3. Results
 
 Now let's compare experimental results.
 
-### 2.1 Centralized training vs. FedAvg for homogeneous split
+### 3.1 Centralized training vs. FedAvg for homogeneous split
 Let's first compare FedAvg with homogeneous data split
 (i.e. `alpha=1.0`) and centralized training. As can be seen from the
 figure and table below, FedAvg can achieve similar performance to
@@ -129,7 +119,7 @@ no difference in data distributions among different clients.
 
 ![Central vs. FedAvg](./figs/fedavg-vs-centralized.png)
 
-### 2.2 Impact of client data heterogeneity
+### 3.2 Impact of client data heterogeneity
 
 Here we compare the impact of data heterogeneity by varying the
 `alpha` value, where lower values cause higher heterogeneity. As can
@@ -145,7 +135,28 @@ as data heterogeneity becomes higher.
 
 ![Impact of client data
 heterogeneity](./figs/fedavg-diff-alphas.png)
- 
+
+### 3.3 Impact of different FL algorithms
+
+Lastly, we compare the performance of different FL algorithms, with
+`alpha` value fixed to 0.1, i.e., a high client data heterogeneity.
+We can observe from the figure below that, FedOpt and
+SCAFFOLD achieve better performance, with better convergence rates
+compared to FedAvg and FedProx with the same alpha setting. SCAFFOLD
+achieves that by adding a correction term when updating the client
+models, while FedOpt utilizes SGD with momentum to update the global
+model on the server. Both achieve better performance with the same
+number of training steps as FedAvg/FedProx.
+
+| Config |	Alpha |	Val score |
+| ----------- | ----------- |  ----------- |
+| cifar10_fedavg |	0.1 |	0.7903 |
+| cifar10_fedopt |	0.1 |	0.8145 |
+| cifar10_fedprox |	0.1 |	0.7843 |
+| cifar10_scaffold |	0.1 |	0.8164 |
+
+![Impact of different FL algorithms](./figs/fedavg-diff-algos.png)
+
 > [!NOTE]
 > More examples can be found at https://nvidia.github.io/NVFlare.
 

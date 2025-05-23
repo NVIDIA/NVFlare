@@ -6,15 +6,6 @@ test_configs:
     - ./data/test_configs/authorization/abort_job.yml
     - ./data/test_configs/authorization/list_job.yml
     - ./data/test_configs/authorization/shell_commands.yml
-  ha:
-    - ./data/test_configs/ha/kill_one_server_during_training_after_first_round.yml
-    - ./data/test_configs/ha/kill_one_server_during_training_before_first_round.yml
-    - ./data/test_configs/ha/kill_server_after_training_complete.yml
-    - ./data/test_configs/ha/kill_server_during_training_after_first_round.yml
-    - ./data/test_configs/ha/kill_server_during_training_before_first_round.yml
-    - ./data/test_configs/ha/kill_server_during_training_sending_model.yml
-    - ./data/test_configs/ha/two_servers.yml
-    - ./data/test_configs/ha/fladminapi.yml
   numpy:
     - ./data/test_configs/standalone_job/np_job.yml
     - ./data/test_configs/standalone_job/np_app.yml
@@ -22,7 +13,6 @@ test_configs:
     - ./data/test_configs/standalone_job/tf_job.yml
     - ./data/test_configs/standalone_job/tf_app.yml
   pytorch:
-    - ./data/test_configs/standalone_job/advanced_pt_examples.yml
     - ./data/test_configs/standalone_job/pt_job.yml
     - ./data/test_configs/standalone_job/pt_app.yml
   cifar:
@@ -30,8 +20,8 @@ test_configs:
   stats:
     - ./data/test_configs/standalone_job/image_stats.yml
   xgboost:
-    - ./data/test_configs/standalone_job/xgb_histogram_examples.yml
-    - ./data/test_configs/standalone_job/xgb_tree_examples.yml
+    - ./data/test_configs/standalone_job/xgb_histogram.yml
+    - ./data/test_configs/standalone_job/xgb_tree.yml
   client_api:
     - ./data/test_configs/standalone_job/client_api.yml
   client_api_qa:

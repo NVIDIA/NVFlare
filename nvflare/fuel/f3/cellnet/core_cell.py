@@ -22,6 +22,7 @@ import uuid
 from typing import Dict, List, Tuple, Union
 from urllib.parse import urlparse
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorManager
 from nvflare.fuel.f3.cellnet.credential_manager import CredentialManager
 from nvflare.fuel.f3.cellnet.defs import (
@@ -49,6 +50,7 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 _CHANNEL = "cellnet.channel"
@@ -155,7 +157,7 @@ class _BulkSender:
         self.messages = []
         self.last_send_time = 0
         self.lock = threading.Lock()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def queue_message(self, channel: str, topic: str, message: Message):
         if self.secure:
@@ -242,25 +244,21 @@ class CertificateExchanger:
             return cert
 
         cert = self.exchange_certificate(target)
-        self.credential_manager.save_certificate(target, cert)
-
         return cert
 
     def exchange_certificate(self, target: str) -> bytes:
-        root = FQCN.get_root(target)
-        req = self.credential_manager.create_request(root)
-        response = self.core_cell.send_request(_SM_CHANNEL, _SM_TOPIC, root, Message(None, req))
+        req = self.credential_manager.create_request()
+        response = self.core_cell.send_request(_SM_CHANNEL, _SM_TOPIC, target, Message(None, req))
         reply = response.payload
 
         if not reply:
             error_code = response.get_header(MessageHeaderKey.RETURN_CODE)
-            raise RuntimeError(f"Cert exchanged to {root} failed: {error_code}")
+            raise RuntimeError(f"Cert exchanged to {target} failed: {error_code}")
 
-        return self.credential_manager.process_response(reply)
+        return self.credential_manager.process_response(response)
 
     def _handle_cert_request(self, request: Message):
-
-        reply = self.credential_manager.process_request(request.payload)
+        reply = self.credential_manager.process_request(request)
         return Message(None, reply)
 
 
@@ -284,6 +282,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         credentials: dict,
         create_internal_listener: bool = False,
         parent_url: str = None,
+        parent_resources: dict = None,
         max_timeout=3600,
         bulk_check_interval=0.5,
         bulk_process_interval=0.5,
@@ -299,6 +298,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             max_timeout: default timeout for send_and_receive
             create_internal_listener: whether to create an internal listener for child cells
             parent_url: url for connecting to parent cell
+            parent_resources: extra resources for making connection to parent
 
         FQCN is the names of all ancestor, concatenated with dots.
 
@@ -322,7 +322,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         comm_configurator = CommConfigurator()
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = get_obj_logger(self)
         self.max_msg_size = comm_configurator.get_max_message_size()
         self.comm_configurator = comm_configurator
 
@@ -330,6 +330,16 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if err:
             raise ValueError(f"Invalid FQCN '{fqcn}': {err}")
 
+        # Determine the value of 'secure' based on configured connection_security in credentials.
+        # If configured, use it; otherwise keep the original value of 'secure'.
+        conn_security = credentials.get(DriverParams.CONNECTION_SECURITY.value)
+        if conn_security:
+            if conn_security == ConnectionSecurity.CLEAR:
+                secure = False
+            else:
+                secure = True
+
+        self.logger.debug(f"connection secure: {secure}")
         self.my_info = FqcnInfo(FQCN.normalize(fqcn))
         self.secure = secure
         self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")
@@ -357,9 +367,13 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             if not _validate_url(root_url):
                 raise ValueError(f"{self.my_info.fqcn}: invalid Root URL '{root_url}'")
 
+        if parent_url and not _validate_url(parent_url):
+            raise ValueError(f"{self.my_info.fqcn}: invalid Parent URL '{parent_url}'")
+
         self.root_url = root_url
         self.create_internal_listener = create_internal_listener
         self.parent_url = parent_url
+        self.parent_resources = parent_resources
         self.bulk_check_interval = bulk_check_interval
         self.max_bulk_size = max_bulk_size
         self.bulk_checker = None
@@ -396,6 +410,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.communicator.register_message_receiver(app_id=self.APP_ID, receiver=self)
         self.communicator.register_monitor(monitor=self)
         self.req_reg = Registry()
+        self.in_filter_reg = Registry()  # for any incoming messages
         self.in_req_filter_reg = Registry()  # for request received
         self.out_reply_filter_reg = Registry()  # for reply going out
         self.out_req_filter_reg = Registry()  # for request sent
@@ -555,7 +570,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def _set_bb_for_client_child(self, parent_url: str, create_internal_listener: bool):
         if parent_url:
-            self._create_internal_connector(parent_url)
+            self._create_internal_connector(parent_url, self.parent_resources)
 
         if create_internal_listener:
             self._create_internal_listener()
@@ -682,6 +697,11 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             return None
         return self.int_listener.get_connection_url()
 
+    def get_internal_listener_params(self) -> Union[None, dict]:
+        if not self.int_listener:
+            return None
+        return self.int_listener.get_connection_params()
+
     def _add_adhoc_connector(self, to_cell: str, url: str):
         if self.bb_ext_connector:
             # it is possible that the server root offers connect url after the bb_ext_connector is created
@@ -775,8 +795,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         else:
             raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone external connector to {self.root_url}")
 
-    def _create_internal_connector(self, url: str):
-        self.bb_int_connector = self.connector_manager.get_internal_connector(url)
+    def _create_internal_connector(self, url: str, resources=None):
+        self.bb_int_connector = self.connector_manager.get_internal_connector(url, resources)
         if self.bb_int_connector:
             self.logger.info(f"{self.my_info.fqcn}: created backbone internal connector to {url} on parent")
         else:
@@ -980,6 +1000,11 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         message.payload = self.credential_manager.decrypt(origin_cert, message.payload)
         if len(message.payload) != payload_len:
             raise RuntimeError(f"Payload size changed after decryption {len(message.payload)} <> {payload_len}")
+
+    def add_incoming_filter(self, channel: str, topic: str, cb, *args, **kwargs):
+        if not callable(cb):
+            raise ValueError(f"specified incoming_filter {type(cb)} is not callable")
+        self.in_filter_reg.append(channel, topic, Callback(cb, args, kwargs))
 
     def add_incoming_request_filter(self, channel: str, topic: str, cb, *args, **kwargs):
         if not callable(cb):
@@ -1423,7 +1448,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         with self.bulk_lock:
             if self.bulk_checker is None:
                 self.logger.info(f"{self.my_info.fqcn}: starting bulk_checker")
-                self.bulk_checker = threading.Thread(target=self._check_bulk, name="check_bulk_msg")
+                self.bulk_checker = threading.Thread(target=self._check_bulk, name="check_bulk_msg", daemon=True)
                 self.bulk_checker.start()
                 self.logger.info(f"{self.my_info.fqcn}: started bulk_checker")
             for t in targets:
@@ -1458,7 +1483,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         with self.bulk_msg_lock:
             if self.bulk_processor is None:
                 self.logger.debug(f"{self.my_info.fqcn}: starting bulk message processor")
-                self.bulk_processor = threading.Thread(target=self._process_bulk_messages, name="process_bulk_msg")
+                self.bulk_processor = threading.Thread(
+                    target=self._process_bulk_messages, name="process_bulk_msg", daemon=True
+                )
                 self.bulk_processor.start()
                 self.logger.debug(f"{self.my_info.fqcn}: started bulk message processor")
             self.bulk_messages.append(request)
@@ -1845,6 +1872,19 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.received_msg_counter_pool.increment(
             category=self._stats_category(message), counter_name=_CounterName.RECEIVED
         )
+
+        # invoke incoming filters
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        in_filters = self.in_filter_reg.find(channel, topic)
+        if in_filters:
+            self.logger.debug(f"{self.my_info.fqcn}: invoking incoming filters")
+            assert isinstance(in_filters, list)
+            for f in in_filters:
+                assert isinstance(f, Callback)
+                reply = self._try_cb(message, f.cb, *f.args, **f.kwargs)
+                if reply:
+                    return reply
 
         if msg_type == MessageType.REQ and self.message_interceptor is not None:
             reply = self._try_cb(

@@ -33,7 +33,7 @@ if versions["error"]:
     if base_version:
         version = f"{base_version}.dev{year:02d}{month:02d}{day:02d}"
     else:
-        version = f"2.5.0.dev{year:02d}{month:02d}{day:02d}"
+        version = f"2.6.0.dev{year:02d}{month:02d}{day:02d}"
 else:
     version = versions["version"]
 

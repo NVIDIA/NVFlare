@@ -1,0 +1,29 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "*"
+            ],
+            "executor": {
+                "path": "nvflare.app_opt.xgboost.tree_based.executor.FedXGBTreeExecutor",
+                "args": {
+                    "training_mode": "cyclic",
+                    "lr_scale": 1,
+                    "data_loader_id": "dataloader"
+                }
+            }
+        }
+    ],
+    "components": [
+        {
+            "id": "dataloader",
+            "path": "higgs_data_loader.HIGGSDataLoader",
+            "args": {
+                "data_split_filename": "/tmp/nvflare/dataset/xgboost_higgs_horizontal/2_uniform/data_site-1.json"
+            }
+        }
+    ],
+    "task_data_filters": [],
+    "task_result_filters": []
+}

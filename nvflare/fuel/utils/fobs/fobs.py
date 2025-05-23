@@ -22,8 +22,15 @@ from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
 
 import msgpack
 
+from nvflare.fuel.utils.class_loader import get_class_name, load_class
 from nvflare.fuel.utils.fobs.datum import DatumManager
-from nvflare.fuel.utils.fobs.decomposer import DataClassDecomposer, Decomposer, EnumTypeDecomposer
+from nvflare.fuel.utils.fobs.decomposer import (
+    DataClassDecomposer,
+    Decomposer,
+    EnumTypeDecomposer,
+    Externalizer,
+    Internalizer,
+)
 
 __all__ = [
     "register",
@@ -57,28 +64,6 @@ _enum_auto_registration = True
 _data_auto_registration = True
 
 
-def _get_type_name(cls: Type) -> str:
-    module = cls.__module__
-    if module == "builtins":
-        return cls.__qualname__
-    return module + "." + cls.__qualname__
-
-
-def _load_class(type_name: str):
-    try:
-        parts = type_name.split(".")
-        if len(parts) == 1:
-            parts = ["builtins", type_name]
-
-        mod = __import__(parts[0])
-        for comp in parts[1:]:
-            mod = getattr(mod, comp)
-
-        return mod
-    except Exception as ex:
-        raise TypeError(f"Can't load class {type_name}: {ex}")
-
-
 def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
     """Register a decomposer. It does nothing if decomposer is already registered for the type
 
@@ -93,7 +78,7 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
     else:
         instance = decomposer
 
-    name = _get_type_name(instance.supported_type())
+    name = get_class_name(instance.supported_type())
     if name in _decomposers:
         return
 
@@ -107,15 +92,15 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
 class Packer:
     def __init__(self, manager: DatumManager):
         self.manager = manager
-        self.enum_decomposer_name = _get_type_name(EnumTypeDecomposer)
-        self.data_decomposer_name = _get_type_name(DataClassDecomposer)
+        self.enum_decomposer_name = get_class_name(EnumTypeDecomposer)
+        self.data_decomposer_name = get_class_name(DataClassDecomposer)
 
     def pack(self, obj: Any) -> dict:
 
         if type(obj) in MSGPACK_TYPES:
             return obj
 
-        type_name = _get_type_name(obj.__class__)
+        type_name = get_class_name(obj.__class__)
         if type_name not in _decomposers:
             registered = False
             if isinstance(obj, Enum):
@@ -136,9 +121,10 @@ class Packer:
 
         decomposed = decomposer.decompose(obj, self.manager)
         if self.manager:
-            decomposed = self.manager.externalize(decomposed)
+            externalizer = Externalizer(self.manager)
+            decomposed = externalizer.externalize(decomposed)
 
-        return {FOBS_TYPE: type_name, FOBS_DATA: decomposed, FOBS_DECOMPOSER: _get_type_name(type(decomposer))}
+        return {FOBS_TYPE: type_name, FOBS_DATA: decomposed, FOBS_DECOMPOSER: get_class_name(type(decomposer))}
 
     def unpack(self, obj: Any) -> Any:
 
@@ -149,7 +135,7 @@ class Packer:
         if type_name not in _decomposers:
             registered = False
             decomposer_name = obj.get(FOBS_DECOMPOSER)
-            cls = _load_class(type_name)
+            cls = load_class(type_name)
             if not decomposer_name:
                 # Maintaining backward compatibility with auto enum registration
                 if _enum_auto_registration:
@@ -157,7 +143,7 @@ class Packer:
                         register_enum_types(cls)
                         registered = True
             else:
-                decomposer_class = _load_class(decomposer_name)
+                decomposer_class = load_class(decomposer_name)
                 if decomposer_name == self.enum_decomposer_name or decomposer_name == self.data_decomposer_name:
                     # Generic decomposer's __init__ takes the target class as argument
                     decomposer = decomposer_class(cls)
@@ -172,7 +158,8 @@ class Packer:
 
         data = obj[FOBS_DATA]
         if self.manager:
-            data = self.manager.internalize(data)
+            internalizer = Internalizer(self.manager)
+            data = internalizer.internalize(data)
 
         decomposer = _decomposers[type_name]
         return decomposer.recompose(data, self.manager)
@@ -205,10 +192,10 @@ def register_enum_types(*enum_types: Type[Enum]) -> None:
 
 
 def auto_register_enum_types(enabled=True) -> None:
-    """Enable or disable auto registering of enum types
+    """Enable or disable the auto-registration of enum types.
 
     Args:
-        enabled: Auto-registering of enum classes is enabled if True
+        enabled: Auto-registration of enum classes is enabled if True.
     """
     global _enum_auto_registration
 
@@ -216,14 +203,14 @@ def auto_register_enum_types(enabled=True) -> None:
 
 
 def auto_register_data_classes(enabled=True) -> None:
-    """Enable or disable auto registering of data classes
+    """Enable or disable the auto-registration of data classes.
 
     Args:
-        enabled: Auto-registering of data classes is enabled if True
+        enabled: Auto-registration of data classes is enabled if True.
     """
     global _data_auto_registration
 
-    _enum_data_registration = enabled
+    _data_auto_registration = enabled
 
 
 def register_folder(folder: str, package: str):

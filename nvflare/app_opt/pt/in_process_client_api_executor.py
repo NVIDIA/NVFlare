@@ -16,7 +16,7 @@ from typing import Optional
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.in_process_client_api_executor import InProcessClientAPIExecutor
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
-from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
+from nvflare.app_opt.pt.numpy_params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.fuel.utils import fobs
 
@@ -37,6 +37,7 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
         params_exchange_format=ExchangeFormat.PYTORCH,
+        server_expected_format=ExchangeFormat.NUMPY,
     ):
         super(PTInProcessClientAPIExecutor, self).__init__(
             task_script_path=task_script_path,
@@ -52,14 +53,19 @@ class PTInProcessClientAPIExecutor(InProcessClientAPIExecutor):
             params_exchange_format=params_exchange_format,
             params_transfer_type=params_transfer_type,
             log_pull_interval=log_pull_interval,
+            server_expected_format=server_expected_format,
         )
         fobs.register(TensorDecomposer)
+        if (
+            self._server_expected_format == ExchangeFormat.NUMPY
+            and self._params_exchange_format == ExchangeFormat.PYTORCH
+        ):
+            if self._from_nvflare_converter is None:
+                self._from_nvflare_converter = NumpyToPTParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
+                )
 
-        if self._from_nvflare_converter is None:
-            self._from_nvflare_converter = NumpyToPTParamsConverter(
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_VALIDATION]
-            )
-        if self._to_nvflare_converter is None:
-            self._to_nvflare_converter = PTToNumpyParamsConverter(
-                [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
-            )
+            if self._to_nvflare_converter is None:
+                self._to_nvflare_converter = PTToNumpyParamsConverter(
+                    [AppConstants.TASK_TRAIN, AppConstants.TASK_SUBMIT_MODEL]
+                )

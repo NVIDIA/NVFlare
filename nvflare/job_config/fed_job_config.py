@@ -14,7 +14,6 @@
 import builtins
 import inspect
 import json
-import logging
 import os
 import shlex
 import shutil
@@ -25,6 +24,8 @@ from tempfile import TemporaryDirectory
 from typing import Dict
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
+from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
 from nvflare.job_config.fed_app_config import FedAppConfig
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
@@ -40,7 +41,7 @@ META_JSON = "meta.json"
 class FedJobConfig:
     """FedJobConfig represents the job in the NVFlare."""
 
-    def __init__(self, job_name, min_clients, mandatory_clients=None) -> None:
+    def __init__(self, job_name, min_clients, mandatory_clients=None, meta_props=None) -> None:
         """FedJobConfig uses the job_name,  min_clients and optional mandatory_clients to create the object.
         It also provides the method to add in the FedApp, the deployment map of the FedApp and participants,
         and the resource _spec requirements of the participants if needed.
@@ -49,19 +50,24 @@ class FedJobConfig:
             job_name: the name of the NVFlare job
             min_clients: the minimum number of clients for the job
             mandatory_clients: mandatory clients to run the job (optional)
+            meta_props: additional meta properties for the job (optional)
         """
         super().__init__()
+
+        if meta_props:
+            check_object_type("meta_props", meta_props, dict)
 
         self.job_name = job_name
         self.min_clients = min_clients
         self.mandatory_clients = mandatory_clients
+        self.meta_props = meta_props
 
         self.fed_apps: Dict[str, FedAppConfig] = {}
         self.deploy_map: Dict[str, str] = {}
         self.resource_specs: Dict[str, Dict] = {}
 
         self.custom_modules = []
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def add_fed_app(self, app_name: str, fed_app: FedAppConfig):
         if not isinstance(fed_app, FedAppConfig):
@@ -108,6 +114,9 @@ class FedJobConfig:
         if self.mandatory_clients:
             meta_json["mandatory_clients"] = self.mandatory_clients
 
+        if self.meta_props:
+            meta_json.update(self.meta_props)
+
         with open(meta_file, "w") as outfile:
             json_dump = json.dumps(meta_json, indent=4)
             outfile.write(json_dump)
@@ -120,13 +129,17 @@ class FedJobConfig:
         """
         job_dir = os.path.join(job_root, self.job_name)
         if os.path.exists(job_dir):
-            shutil.rmtree(job_dir, ignore_errors=True)
+            if self._is_valid_job_folder(job_dir):
+                shutil.rmtree(job_dir, ignore_errors=True)
+            else:
+                raise RuntimeError(f"Job folder {job_dir} already exists and is not a valid job folder.")
 
         for app_name, fed_app in self.fed_apps.items():
             self.custom_modules = []
             config_dir = os.path.join(job_dir, app_name, CONFIG)
             custom_dir = os.path.join(job_dir, app_name, CUSTOM)
             os.makedirs(config_dir, exist_ok=True)
+            os.makedirs(custom_dir, exist_ok=True)
 
             if fed_app.server_app:
                 self._get_server_app(config_dir, custom_dir, fed_app)
@@ -136,7 +149,7 @@ class FedJobConfig:
 
         self._generate_meta(job_dir)
 
-    def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None):
+    def simulator_run(self, workspace, clients=None, n_clients=None, threads=None, gpu=None, log_config=None):
         with TemporaryDirectory() as job_root:
             self.generate_job_config(job_root)
 
@@ -157,6 +170,8 @@ class FedJobConfig:
                 if gpu:
                     gpu = self._trim_whitespace(gpu)
                     command += " -gpu " + str(gpu)
+                if log_config:
+                    command += " -l" + str(log_config)
 
                 new_env = os.environ.copy()
                 process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
@@ -186,6 +201,32 @@ class FedJobConfig:
 
         self._copy_ext_scripts(custom_dir, fed_app.server_app.ext_scripts)
         self._copy_ext_dirs(custom_dir, fed_app.server_app)
+        self._copy_file_sources(config_dir, custom_dir, fed_app.server_app.file_sources)
+
+    def _copy_file_sources(self, config_dir, custom_dir, file_sources):
+        for s in file_sources:
+            # s is a tuple of (src_path, dest_dir)
+            src_path, dest_dir, app_folder_type = s
+
+            if app_folder_type == "config":
+                target_dir = config_dir
+            else:
+                target_dir = custom_dir
+
+            if dest_dir:
+                dest_path = os.path.join(target_dir, dest_dir)
+                if not os.path.exists(dest_path):
+                    os.makedirs(dest_path, exist_ok=True)
+            else:
+                dest_path = target_dir
+
+            if os.path.isfile(src_path):
+                base_name = os.path.basename(src_path)
+                dest_file = os.path.join(dest_path, base_name)
+                shutil.copy(src_path, dest_file)
+            else:
+                # this is a dir
+                shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
 
     def _copy_ext_scripts(self, custom_dir, ext_scripts):
         for script in ext_scripts:
@@ -282,6 +323,7 @@ class FedJobConfig:
 
         self._copy_ext_scripts(custom_dir, fed_app.client_app.ext_scripts)
         self._copy_ext_dirs(custom_dir, fed_app.client_app)
+        self._copy_file_sources(config_dir, custom_dir, fed_app.client_app.file_sources)
 
     def _get_base_app(self, custom_dir, app, app_config):
         app_config["components"] = []
@@ -293,34 +335,34 @@ class FedJobConfig:
                     "args": self._get_args(component, custom_dir),
                 }
             )
-        app_config["task_data_filters"] = []
-        for tasks, filter in app.task_data_filters:
-            app_config["task_data_filters"].append(
-                {
-                    "tasks": tasks,
-                    "filters": [
-                        {
-                            # self._get_filters(task_filter.filter, custom_dir)
-                            "path": self._get_class_path(filter, custom_dir),
-                            "args": self._get_args(filter, custom_dir),
-                        }
-                    ],
-                }
-            )
-        app_config["task_result_filters"] = []
-        for tasks, filter in app.task_result_filters:
-            app_config["task_result_filters"].append(
-                {
-                    "tasks": tasks,
-                    "filters": [
-                        {
-                            # self._get_filters(result_filer.filter, custom_dir)
-                            "path": self._get_class_path(filter, custom_dir),
-                            "args": self._get_args(filter, custom_dir),
-                        }
-                    ],
-                }
-            )
+
+        app_config["task_data_filters"] = self._process_filters(app.task_data_filters, custom_dir)
+        app_config["task_result_filters"] = self._process_filters(app.task_result_filters, custom_dir)
+
+    def _process_filters(self, taskset_filters: list, custom_dir):
+        """Process taskset_filters into app filter configuration
+
+        Args:
+            taskset_filters: the list of tuples that contain taskset/filters association.
+            custom_dir: custom dir of the app.
+
+        Returns: app filter configuration that is a list of dicts, each dict represents a taskset/filters
+            association.
+
+        """
+        app_config_filters = []
+        for task_set, filter_list in taskset_filters:
+            filters = []
+            for f in filter_list:
+                filters.append(
+                    {
+                        "path": self._get_class_path(f, custom_dir),
+                        "args": self._get_args(f, custom_dir),
+                    }
+                )
+
+            app_config_filters.append({"tasks": list(task_set), "filters": filters})
+        return app_config_filters
 
     def _get_args(self, component, custom_dir):
         args = {}
@@ -355,7 +397,7 @@ class FedJobConfig:
 
     def locate_imports(self, sf, dest_file):
         """Locate all the import statements from the python script, including the imports across multiple lines,
-        using the the line break continuing.
+        using the line break continuing.
 
         Args:
             sf: source file
@@ -393,3 +435,8 @@ class FedJobConfig:
         for i in range(len(strings)):
             strings[i] = strings[i].strip()
         return ",".join(strings)
+
+    @staticmethod
+    def _is_valid_job_folder(job_folder: str) -> bool:
+        meta_file = os.path.join(job_folder, META_JSON)
+        return os.path.exists(meta_file)

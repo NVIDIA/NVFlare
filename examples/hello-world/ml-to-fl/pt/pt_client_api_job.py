@@ -14,7 +14,6 @@
 
 import argparse
 
-from src.lit_net import LitNet
 from src.net import Net
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
@@ -27,7 +26,7 @@ def define_parser():
     parser.add_argument("--num_rounds", type=int, default=5)
     parser.add_argument("--script", type=str, default="src/cifar10_fl.py")
     parser.add_argument("--key_metric", type=str, default="accuracy")
-    parser.add_argument("--launch_process", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--launch_external_process", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--launch_command", type=str, default="python3 -u")
     parser.add_argument("--ports", type=str, default="7777,8888")
     parser.add_argument("--export_config", action=argparse.BooleanOptionalAction, default=False)
@@ -43,7 +42,7 @@ def main():
     num_rounds = args.num_rounds
     script = args.script
     key_metric = args.key_metric
-    launch_process = args.launch_process
+    launch_external_process = args.launch_external_process
     launch_command = args.launch_command
     ports = args.ports.split(",")
     export_config = args.export_config
@@ -53,13 +52,13 @@ def main():
         n_clients=n_clients,
         num_rounds=num_rounds,
         key_metric=key_metric,
-        initial_model=LitNet() if "lightning" in script else Net(),
+        initial_model=Net(),
     )
 
     for i in range(n_clients):
         executor = ScriptRunner(
             script=script,
-            launch_external_process=launch_process,
+            launch_external_process=launch_external_process,
             command=launch_command.replace("{PORT}", ports[i]),
             framework=FrameworkType.PYTORCH,
         )

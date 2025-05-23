@@ -18,6 +18,7 @@ import tempfile
 import pytest
 
 from nvflare.dashboard.application import init_app
+from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
 
 TEST_USER = "admin@test.com"
 TEST_PW = "testing1234"
@@ -31,7 +32,7 @@ def app():
     if os.path.exists(sqlite_file):
         os.remove(sqlite_file)
     os.environ["DATABASE_URL"] = f"sqlite:///{sqlite_file}"
-    os.environ["NVFL_CREDENTIAL"] = f"{TEST_USER}:{TEST_PW}"
+    os.environ["NVFL_CREDENTIAL"] = f"{TEST_USER}:{TEST_PW}:nvidia"
     app = init_app()
     app.config.update(
         {
@@ -53,7 +54,7 @@ def client(app):
 
 @pytest.fixture(scope="session")
 def access_token(client):
-    response = client.post("/api/v1/login", json={"email": TEST_USER, "password": TEST_PW})
+    response = client.post(FLARE_DASHBOARD_NAMESPACE + "/api/v1/login", json={"email": TEST_USER, "password": TEST_PW})
     assert response.status_code == 200
     return response.json["access_token"]
 

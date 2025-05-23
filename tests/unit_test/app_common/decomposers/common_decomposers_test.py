@@ -65,7 +65,7 @@ class TestCommonDecomposers:
         model_learnable["B"] = 456
         s = Shareable()
         s["model"] = model_learnable
-        ds = fobs.dumps(s, max_value_size=20)
+        ds = fobs.dumps(s, max_value_size=1024)
         s2 = fobs.loads(ds)
         assert s == s2
 

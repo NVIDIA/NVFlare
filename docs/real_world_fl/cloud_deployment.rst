@@ -3,11 +3,15 @@
 ################
 Cloud Deployment
 ################
-In version 2.3.0 of NVFLARE, deploying to the cloud has become much easier than before. Previously, deploying to the cloud required someone to
-create the necessary virtual machine (VM) and infrastructure before attempting to deploy. However, with this release, users can simplify the
-cloud deployment process with a one-line command via the NVFLARE CLI tool. This command will create the necessary cloud infrastructure, such
-as resource groups, networking, DNS, and VM instances for Azure, or EC2 instances, security groups, and networks for AWS. The one-line command
-is applicable for NVFLARE Dashboard UI, FL Server, and FL clients.
+NVFlare provides cloud deployment tools that simplify the setup process. The CLI tool can automatically provision and configure cloud infrastructure, including:
+
+- Azure: resource groups, networking, DNS, and VM instances
+- AWS: EC2 instances, security groups, and networks
+
+These tools support deployment of:
+- NVFlare Dashboard UI
+- FL Server
+- FL Clients
 
 There are two ways to provision and deploy NVFLARE. The first way is to use the :ref:`NVFLARE CLI tool for provisioning <provision_command>`. However,
 the startup kits for different FL clients will need to be distributed manually via email, sftp, etc.
@@ -287,7 +291,7 @@ Checking FL System Status
 =========================
 With deployed FL server and clients, to make sure all systems are running correctly, you can check the server status.
 
-With 2.3.0, there are two ways to check server status, using the FLARE console (aka Admin console) or FLARE API.
+There are two ways to check server status, using the FLARE console (aka Admin console) or FLARE API.
 You can find more information on FLARE console commands on :ref:`this page <operating_nvflare>`, and the FLARE API :ref:`here <flare_api>`.
 
 Check Status with FLARE Console
@@ -304,3 +308,10 @@ To run ``system_info.ipynb`` on Azure ML Notebook, users have to upload their st
 
 .. image:: notebook_for_cloud.png
     :height: 400px
+
+
+
+FLARE On GOOGLE Cloud
+---------------------------
+This is Google's FL Reference Architecture for NVIDIA FLARE
+https://github.com/GoogleCloudPlatform/accelerated-platforms/tree/main/platforms/gke/base/use-cases/federated-learning/examples/nvflare-tff

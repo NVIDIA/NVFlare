@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-
-from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
+from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 
 from .server_commands import ServerCommands
@@ -31,7 +30,7 @@ class ServerCommandAgent(object):
         Args:
             listen_port: port to listen the command
         """
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
         self.asked_to_stop = False
         self.engine = engine
         self.cell = cell
@@ -113,19 +112,17 @@ class ServerCommandAgent(object):
                 make_reply(ReturnCode.AUTHENTICATION_ERROR, error, None)
 
             engine = fl_ctx.get_engine()
+            if not engine:
+                # I (SJ) cannot process this request because my engine is not set yet.
+                # This happens only when a CJ became ready quickly and send runner_sync request to the SJ.
+                # I'll simply tell it that my service is not available, and it will retry.
+                return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+
             reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
-
-            self.logger.debug("Before gen_new_peer_ctx")
-            shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-            self.logger.debug("After gen_new_peer_ctx")
-            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
-
-            if reply is not None:
-                return_message = new_cell_message({}, reply)
-                return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
-            else:
-                return_message = new_cell_message({}, None)
-            return return_message
+            if reply:
+                shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+                reply.set_peer_context(shared_fl_ctx)
+            return new_cell_message({MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, reply)
 
     def shutdown(self):
         self.asked_to_stop = True

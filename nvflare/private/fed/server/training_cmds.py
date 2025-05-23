@@ -13,15 +13,16 @@
 # limitations under the License.
 
 import json
-import logging
 import time
 from typing import List
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, SiteType
+from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import ClientStatusKey, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
@@ -37,7 +38,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
     def __init__(self):
         """A class for training commands."""
         super().__init__()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -105,7 +106,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return err
         else:
-            conn.append_string("FL app has been shutdown.")
+            conn.append_string("Flare Server has been shutdown.")
             conn.append_shutdown("Goodbye!")
             return ""
 
@@ -159,6 +160,12 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             if not success:
                 conn.update_meta(make_meta(MetaStatusValue.ERROR, "failed to shut down all clients"))
                 return
+
+        if target_type in [self.TARGET_TYPE_ALL]:
+            # shutdown the cellnet
+            data_bus = DataBus()
+            data_bus.publish(["stop_cellnet"], conn)
+            # time.sleep(2.0)
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             # shut down the server
@@ -261,13 +268,24 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_string("Registered clients: {} ".format(len(clients)))
 
             if clients:
-                table = conn.append_table(["client", "token", "last connect time"], name=MetaKey.CLIENTS)
+                table = conn.append_table(
+                    ["client", "fqcn", "fqsn", "leaf", "token", "last connect time"], name=MetaKey.CLIENTS
+                )
+
                 for c in clients:
                     if not isinstance(c, Client):
                         raise TypeError("c must be Client but got {}".format(type(c)))
+                    fqcn = c.get_fqcn()
+                    fqsn = c.get_fqsn()
+                    leaf = c.get_is_leaf()
+                    last_connect_time = time.asctime(time.localtime(c.last_connect_time))
                     table.add_row(
-                        [c.name, str(c.token), time.asctime(time.localtime(c.last_connect_time))],
-                        meta={MetaKey.CLIENT_NAME: c.name, MetaKey.CLIENT_LAST_CONNECT_TIME: c.last_connect_time},
+                        [c.name, fqcn, fqsn, str(leaf), str(c.token), last_connect_time],
+                        meta={
+                            MetaKey.CLIENT_NAME: c.name,
+                            MetaKey.CLIENT_LAST_CONNECT_TIME: c.last_connect_time,
+                            MetaKey.FQCN: fqcn,
+                        },
                     )
 
         if dst in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
@@ -376,7 +394,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if dst in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             # get the server's scope info
             scope_names, default_scope_name = get_scope_info()
-            self._add_scope_info(table, "server", scope_names, default_scope_name)
+            self._add_scope_info(table, SiteType.SERVER, scope_names, default_scope_name)
 
         if dst in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
             message = new_message(conn, topic=TrainingTopic.GET_SCOPES, body="", require_authz=True)

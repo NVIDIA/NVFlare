@@ -1,4 +1,6 @@
 ---
+import ClickTracker from './clickTracker.astro';
+
 const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
 
 const walkthrough = [
@@ -93,7 +95,8 @@ const series = [
 ]
 ---
 
-<div class="bg-gray-50 py-24 sm:py-24">
+<ClickTracker div_id="getting_started_div" eventLabel="Getting Started"/>
+<div id="getting_started_div" class="bg-gray-50 py-24 sm:py-24">
   <div class="mx-auto max-w-7xl px-6 lg:px-8">
     <div class="mt-16 md:mt-0 text-center">
       <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight">
@@ -107,10 +110,10 @@ const series = [
     </div>
 
     <!-- FLARE Walkthrough: CIFAR-10 / End-to-End: Kaplan-Meier -->
-    <div class="mt-5 mb-2 border-b border-gray-200 dark:border-gray-700">
-      <ul class="flex flex-wrap -mb-px text-xl font-medium text-center place-content-center space-x-24" id="default-styled-tab" data-tabs-toggle="#default-styled-tab-content" data-tabs-active-classes="text-nvidia hover:text-nvidia dark:text-nvidia-light dark:hover:text-nvidia-light border-nvidia dark:border-nvidia-light" data-tabs-inactive-classes="dark:border-transparent text-gray-500 hover:text-gray-600 dark:text-gray-400 border-transparent hover:border-gray-300 dark:border-gray-700 dark:hover:text-gray-300" role="tablist">
+    <div class="mt-5 mb-2 border-b border-gray-200">
+      <ul class="flex flex-wrap -mb-px text-xl font-medium text-center place-content-center lg:space-x-24" id="default-styled-tab" data-tabs-toggle="#default-styled-tab-content" data-tabs-active-classes="text-nvidia hover:text-nvidia border-nvidia" data-tabs-inactive-classes="text-gray-500 hover:text-gray-600 border-transparent hover:border-gray-300" role="tablist">
           <li class="me-2" role="presentation">
-            <button class="inline-block p-4 border-b-2 rounded-t-lg font-bold hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300" id="walkthrough-tab" data-tabs-target="#series0" type="button" role="tab" aria-controls="settings" aria-selected="false">Walkthrough: CIFAR-10</button>
+            <button class="inline-block p-4 border-b-2 rounded-t-lg font-bold hover:text-gray-600 hover:border-gray-300" id="walkthrough-tab" data-tabs-target="#series0" type="button" role="tab" aria-controls="settings" aria-selected="false">Walkthrough: CIFAR-10</button>
           </li>
           <li class="me-2" role="presentation">
               <button class="inline-block p-4 border-b-2 rounded-t-lg font-bold" id="km-tab" data-tabs-target="#series1" type="button" role="tab" aria-controls="profile" aria-selected="false">End-to-End: Kaplan-Meier</button>
@@ -121,7 +124,7 @@ const series = [
     {
       series.map((item, index) => (
         <div id={"series" + index}>
-          <div class="glide px-20 py-8 bg-gray-50 bg-opacity-60 rounded-3xl" role="tabpanel">
+          <div class="glide px-8 lg:px-20 py-8 bg-gray-50 bg-opacity-60 rounded-3xl" role="tabpanel">
             <div class="glide__track" data-glide-el="track">
               <ul class="glide__slides">
                 {
@@ -158,7 +161,7 @@ const series = [
             <div class="glide__arrows" data-glide-el="controls">
               <!-- Left Carousel Arrow -->
               <button class="glide__arrow glide__arrow--left left-0 shadow-none border-none" data-glide-dir="<">
-                <svg class="stroke-gray-400 hover:stroke-nvidia w-12 h-12 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                <svg class="stroke-gray-400 hover:stroke-nvidia w-12 h-12 text-gray-800" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="m15 19-7-7 7-7"/>
                 </svg>
               </button>
@@ -172,11 +175,9 @@ const series = [
               </div>
               <!-- Right Carousel Arrow -->
               <button class="glide__arrow glide__arrow--right right-0 shadow-none border-none" data-glide-dir=">">
-                <div class="h-14 w-14 flex justify-center items-center">
-                  <svg class="stroke-gray-400 hover:stroke-nvidia w-12 h-12 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="m9 5 7 7-7 7"/>
-                  </svg>
-                </div>
+                <svg class="stroke-gray-400 hover:stroke-nvidia w-12 h-12 text-gray-800" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="m9 5 7 7-7 7"/>
+                </svg>
               </button>
             </div>
           </div>
@@ -186,7 +187,7 @@ const series = [
             {
               item.map((card) => (
                 <div id={"series" + index + card.id + "-video"} class="mt-20 flex flex-wrap place-content-center hidden">
-                  <video class="h-3/4 w-3/4" controls="controls">
+                  <video class="lg:h-3/4 lg:w-3/4" controls="controls">
                     <source src={card.video} type="video/mp4">
                   </video>
                 </div>
@@ -214,7 +215,7 @@ const series = [
     startAt: 0,
     perView: 3,
     gap: 32,
-    peek: {before: 0, after: 45},
+    peek: {before: 0, after: 48},
     dragThreshold: true,
     breakpoints: {
       1280: {

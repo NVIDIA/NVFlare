@@ -11,6 +11,7 @@ participants:
     org: nvidia
     fed_learn_port: 8002
     admin_port: 8003
+#    docker_comm_port: 8005
   - name: site-1
     type: client
     org: nvidia
@@ -19,6 +20,7 @@ participants:
     # as a server for 3rd-party integration.
     # The value must be a hostname that the external trainer can reach via the network.
     # listening_host: site-1-lh
+#    docker_comm_port: 8006
   - name: site-2
     type: client
     org: nvidia
@@ -35,7 +37,6 @@ builders:
         - master_template.yml
         - aws_template.yml
         - azure_template.yml
-  - path: nvflare.lighter.impl.template.TemplateBuilder
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
     args:
       # config_folder can be set to inform NVIDIA FLARE where to get configuration
@@ -66,5 +67,12 @@ builders:
         args:
           sp_end_point: server1:8002:8003
 
+#      docker_image: localhost/nvflare:0.0.1
+#
+#  - path: nvflare.lighter.impl.docker.DockerBuilder
+#    args:
+#      docker_image: localhost/nvflare:0.0.1
+#      base_image: python:3.10
+#      requirements_file: docker_compose_requirements.txt
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder

@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import logging
+from typing import List, Union
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_traceback
 
 from .analytix import AnalyticsData, AnalyticsDataType
@@ -35,13 +35,28 @@ class FLComponent(StatePersistable):
         FLComponents have the capability to handle and fire events and contain various methods for logging.
         """
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = get_obj_logger(self)
+        self._event_handlers = {}
+
+    def _self_check(self):
+        # This is used to dynamically construct all required elements of FLComponent.
+        # We try to make it work for subclasses that fail to call super().__init__(), due to bad programming.
+        if not hasattr(self, "_name"):
+            self._name = self.__class__.__name__
+
+        if not hasattr(self, "logger"):
+            self.logger = get_obj_logger(self)
+
+        if not hasattr(self, "_event_handlers"):
+            self._event_handlers = {}
 
     @property
     def name(self):
+        self._self_check()
         return self._name
 
     def _fire(self, event_type: str, fl_ctx: FLContext):
+        self._self_check()
         fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN, self._name, private=True, sticky=False)
         engine = fl_ctx.get_engine()
         if engine is None:
@@ -124,6 +139,7 @@ class FLComponent(StatePersistable):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event.
         """
+        self._self_check()
         log_msg = generate_log_message(fl_ctx, msg)
         self.logger.info(log_msg)
 
@@ -140,6 +156,7 @@ class FLComponent(StatePersistable):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event.
         """
+        self._self_check()
         log_msg = generate_log_message(fl_ctx, msg)
         self.logger.warning(log_msg)
         if fire_event:
@@ -158,6 +175,7 @@ class FLComponent(StatePersistable):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event.
         """
+        self._self_check()
         log_msg = generate_log_message(fl_ctx, msg)
         self.logger.error(log_msg)
         if fire_event:
@@ -173,6 +191,7 @@ class FLComponent(StatePersistable):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event.
         """
+        self._self_check()
         log_msg = generate_log_message(fl_ctx, msg)
         self.logger.debug(log_msg)
         if fire_event:
@@ -188,6 +207,7 @@ class FLComponent(StatePersistable):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event.
         """
+        self._self_check()
         log_msg = generate_log_message(fl_ctx, msg)
         self.logger.critical(log_msg)
         if fire_event:
@@ -206,6 +226,7 @@ class FLComponent(StatePersistable):
             msg (str): The message to log.
             fire_event (bool): Whether to fire a log event. Unused.
         """
+        self._self_check()
         log_msg = generate_log_message(fl_ctx, msg)
         self.logger.error(log_msg)
         ex_text = secure_format_traceback()
@@ -228,3 +249,33 @@ class FLComponent(StatePersistable):
         dxo = event_data.to_dxo()
         fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
         self.fire_event(event_type=event_type, fl_ctx=fl_ctx)
+
+    def register_event_handler(self, event_types: Union[str, List[str]], handler, **kwargs):
+        self._self_check()
+        if isinstance(event_types, str):
+            event_types = [event_types]
+        elif not isinstance(event_types, list):
+            raise ValueError(f"event_types must be string or list of strings but got {type(event_types)}")
+
+        if not callable(handler):
+            raise ValueError(f"handler {handler.__name__} is not callable")
+
+        for e in event_types:
+            entries = self._event_handlers.get(e)
+            if not entries:
+                entries = []
+                self._event_handlers[e] = entries
+
+            already_registered = False
+            for h, _ in entries:
+                if handler == h:
+                    # already registered: either by a super class or by the class itself.
+                    already_registered = True
+                    break
+
+            if not already_registered:
+                entries.append((handler, kwargs))
+
+    def get_event_handlers(self):
+        self._self_check()
+        return self._event_handlers

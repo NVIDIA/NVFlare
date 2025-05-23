@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-DOCKER_IMAGE="nvcr.io/nvidia/clara/bionemo-framework:1.0"
-
-GPU="all"
+DOCKER_IMAGE="nvcr.io/nvidia/clara/bionemo-framework:2.5"
+#DOCKER_IMAGE="nvcr.io/nvidia/clara/bionemo-framework:nightly"   # use nightly version for latest features
 
 NB_DIR="/bionemo_nvflare_examples"
 
-echo "Starting ${DOCKER_IMAGE} with GPU=${GPU}"
+echo "Starting ${DOCKER_IMAGE} with all GPUs"
 echo ""
 echo "${COMMAND}"
 docker run \
---gpus="device=${GPU}" --network=host --ipc=host -it --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 \
+--gpus='"device=all"' --network=host --ipc=host -it --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 \
 -v ".":/${NB_DIR} \
 -w ${NB_DIR} \
 ${DOCKER_IMAGE} "./start_jupyter.sh"

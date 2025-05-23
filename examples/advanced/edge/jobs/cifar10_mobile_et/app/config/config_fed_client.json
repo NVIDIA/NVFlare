@@ -1,0 +1,26 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "train"
+            ],
+            "executor": {
+                "id": "Executor",
+                "path": "nvflare.edge.executors.edge_torch_executor.EdgeTorchExecutor",
+                "args": {
+                    "aggregator_id": "aggregator"
+                }
+             }
+        }
+    ],
+    "components": [
+        {
+            "id": "aggregator",
+            "path": "nvflare.edge.aggregators.edge_json_accumulator.EdgeJsonAccumulator",
+            "args": {
+                "aggr_key": "data"
+            }
+        }
+    ]
+}

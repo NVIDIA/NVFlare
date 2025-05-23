@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.lighter.spec import Participant
+from nvflare.lighter.entity import Participant
 
 
 class TestParticipant:
@@ -45,7 +45,7 @@ class TestParticipant:
 
     @pytest.mark.parametrize(
         "invalid_type",
-        [("type1"), ("type@"), ("type!"), ("type~"), ("gateway"), ("firewall")],
+        [("type@"), ("type!"), ("type~")],
     )
     def test_invalid_type(self, invalid_type):
         with pytest.raises(ValueError):

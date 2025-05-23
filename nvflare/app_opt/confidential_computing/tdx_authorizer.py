@@ -17,7 +17,7 @@ import subprocess
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
-TDX_NAMESPACE = "tdx_"
+TDX_NAMESPACE = "x-tdx"
 TDX_CLI_CONFIG = "config.json"
 TOKEN_FILE = "token.txt"
 VERIFY_FILE = "verify.txt"
@@ -25,7 +25,15 @@ ERROR_FILE = "error.txt"
 
 
 class TDXAuthorizer(CCAuthorizer):
+    """Intel TDX Authorizer"""
+
     def __init__(self, tdx_cli_command: str, config_dir: str) -> None:
+        """Initialize the TDXAuthorizer
+
+        Args:
+            tdx_cli_command (str): The command to run the TDX CLI
+            config_dir (str): The directory to store the TDX CLI configuration and token
+        """
         super().__init__()
         self.tdx_cli_command = tdx_cli_command
         self.config_dir = config_dir

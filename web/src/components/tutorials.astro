@@ -1,42 +1,9 @@
 ---
 import GoogleColab from '../images/google_colab.svg.png'
+import ClickTracker from './clickTracker.astro';
 
 const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
 const base_url = import.meta.env.BASE_URL;
-
-const highlights = [
-  {
-    title: "LLM Tuning via HuggingFace SFT Trainer",
-    tags: ["adv.", "algorithm", "huggingface", "llm"],
-    description: "Example for using NVIDIA FLARE with a HuggingFace trainer for LLM tuning tasks.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/llm_hf`
-  },
-  {
-    title: "Survival Analysis with Federated Kaplan-Meier",
-    tags: ["int.", "algorithm", "healthcare", "client-api", "model-controller", "he", "analytics"],
-    description:
-      "Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/kaplan-meier-he`,
-  },
-  {
-    title: "Real-world Federated Learning with CIFAR-10",
-    tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he"],
-    description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-real-world/README.md`
-  },
-  {
-    title: "Financial Application with Federated XGBoost Methods",
-    tags: ["adv.", "algorithm", "xgboost", "finance"],
-    description: "Example using XGBoost in vertical and horizontal approaches to train a federated model to perform fraud detection with a finance dataset.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/finance`
-  },
-  {
-    title: "Parameter Efficient Fine Turning",
-    tags: ["adv.", "algorithm", "nemo", "llm"],
-    description: "Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/nemo/examples/peft`
-  },
-]
 
 const tutorials = [
   {
@@ -191,7 +158,7 @@ const tutorials = [
   {
     title: "Hello FedAvg",
     tags: ["beg.", "algorithm", "pytorch", "model-controller"],
-    description: "Example using the FedAvg workflow to implement Federated Averaging.",
+    description: "Example using the FedAvg workflow to implement Federated Averaging with early stopping, model selection, and saving and loading to show flexibility of Model Controller API.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-fedavg/README.md`
   },
   {
@@ -232,7 +199,7 @@ const tutorials = [
   },
   {
     title: "Real-world Federated Learning with CIFAR-10",
-    tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he"],
+    tags: ["int.", "algorithm", "poc", "pytorch", "learner", "dl", "he", "highlight"],
     description: "Provisioning secure workspace and running FedAvg with streaming of TensorBoard metrics to the server during training and homomorphic encryption.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/cifar10/cifar10-real-world/README.md`
   },
@@ -245,7 +212,7 @@ const tutorials = [
   },
   {
     title: "Survival Analysis with Federated Kaplan-Meier",
-    tags: ["int.", "algorithm", "healthcare", "client-api", "model-controller", "he", "analytics"],
+    tags: ["int.", "algorithm", "healthcare", "client-api", "model-controller", "he", "analytics", "highlight"],
     description:
       "Kaplan-Meier survival analysis in federated setting without and with secure features via time-binning and Homomorphic Encryption (HE).",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/kaplan-meier-he`,
@@ -349,7 +316,7 @@ const tutorials = [
   },
   {
     title: "Parameter Efficient Fine Turning",
-    tags: ["adv.", "algorithm", "nemo", "llm"],
+    tags: ["adv.", "algorithm", "nemo", "llm", "highlight"],
     description: "Example utilizing NeMo's PEFT methods to adapt a LLM to a downstream task.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/integration/nemo/examples/peft`
   },
@@ -367,7 +334,7 @@ const tutorials = [
   },
   {
     title: "LLM Tuning via HuggingFace SFT Trainer",
-    tags: ["adv.", "algorithm", "huggingface", "llm"],
+    tags: ["adv.", "algorithm", "huggingface", "llm", "highlight"],
     description: "Example for using NVIDIA FLARE with a HuggingFace trainer for LLM tuning tasks.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/llm_hf`
   },
@@ -400,12 +367,6 @@ const tutorials = [
     tags: ["adv.", "algorithm", "analytics"],
     description: "Show to generate hierarchical statistics for data that can be represented as Pandas Data Frame.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/federated-statistics/hierarchical_stats`
-  },
-  {
-    title: "FedAvg Early Stopping",
-    tags: ["int.", "algorithm", "model-controller", "pytorch"],
-    description: "Demonstrate flexibility of the ModelController API, and show how to write a Federated Averaging workflow with early stopping, model selection, and saving and loading.",
-    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/hello-world/hello-fedavg`
   },
   {
     title: "TensorFlow Algorithms and Examples",
@@ -467,10 +428,46 @@ const tutorials = [
     description: "Present new ways to measure and visualize potential data leakage in FL.",
     link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research/quantifying-data-leakage`
   },
+  {
+    title: "Secure Federated XGBoost with Homomorphic Encryption",
+    tags: ["adv.", "algorithm", "xgboost", "he", "highlight"],
+    description:
+      "Federated secure training with XGBoost using homomorphic encryption.",
+    link: `https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/examples/advanced/xgboost_secure`,
+  },
+   {
+      title: "Federated Embedding Model Training",
+      tags: ["adv.", "algorithm", "rag", "embedding"],
+      description:
+        "Embedding tuning tasks, illustrates how to adapt a local training script with SentenceTransformers trainer to NVFlare.",
+      link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/rag/README.md`,
+    },
+    {
+      title: "Object Streaming",
+      tags: ["adv.", "streaming"],
+      description:
+        "Demonstrate how to use object streamers to send large objects in a memory-efficient manner.",
+      link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/streaming/README.md`,
+    },
+    {
+      title: "System Monitoring",
+      tags: ["adv.", "monitoring"],
+      description:
+        "An initial solution for tracking system metrics of your federated learning jobs; describes how to set up NVFLARE metrics publishing to StatsD Exporter, combined with Prometheus and visualized with Grafana.",
+      link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/monitoring/README.md`,
+    },
+    {
+      title: "distributed optimization",
+      tags: ["adv.", "p2p"],
+      description:
+        "P2P Distributed Optimization algorithms with NVFlare. In this example we show how to exploit the lower-level NVFlare APIs to implement and run P2P distributed optimization algorithms. The aim here is twofold: on one hand we provide a few examples showing how to directly use the nvflare.app_opt.p2p API to run distributed optimization algorithms, on the other hand we provide a walkthrough of the actual implementation of the APIs in nvflare.app_opt.p2p to show how to exploit lower-level NVFlare APIs for advanced use-cases.",
+      link: `https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/advanced/distributed_optimization/README.md`,
+    },
+
 ]
 
 const level = ["beg.", "int.", "adv."];
-const tutorial_category = ["algorithm", "tools", "deployment", "research"]
+const tutorial_category = ["algorithm", "tools", "deployment", "research", "highlight"]
 const flare_api = ["client-api", "model-controller", "learner"];
 const framework = ["pytorch", "tensorflow", "lightning", "xgboost", "sklearn", "numpy", "nemo", "monai", "huggingface"];
 const application_type = ["ml", "dl", "llm", "analytics"];
@@ -517,7 +514,8 @@ const tag_list = [
 
 ---
 
-<div class="bg-white py-16 sm:py-16">
+<ClickTracker div_id="tutorials_div" eventLabel="Tutorial Catalog"/>
+<div id="tutorials_div" class="bg-white py-16 sm:py-16">
   <div class="mx-auto max-w-[1600px] px-6 lg:px-8">
     <div class="mx-auto max-w-5xl mt-10 flex justify-left">
       <a href={base_url} class="text-sm font-semibold leading-6 text-nvidia">
@@ -532,8 +530,7 @@ const tag_list = [
       </h2>
       <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
         Explore our extensive catalog of tutorials of NVIDIA FLARE features and examples for various applications.
-        Use the tags to filter by categories such as level, applications, frameworks, etc.
-        or search for keywords.
+        Use the tags to filter by categories or search for keywords.
 
         To read more, visit our
         <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/index.html">documentation</a> and
@@ -543,175 +540,56 @@ const tag_list = [
 
     <div class="mx-auto max-w-[1600px] py-4 text-left inline-flex">
 
-      <div class="flex-column h-fit border-r border-transparent w-52 mr-12">
-        <!-- Search Bar -->
-        <form class="flex mb-4">
-          <label for="search-bar" class="sr-only">Search</label>
-            <div class="relative w-full">
-              <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 stroke-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/>
-              </svg>
-              <input type="text" id="search-bar" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-nvidia focus:border-nvidia block w-full ps-10 p-2.5  dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="Search keyword..." />
-          </div>
-        </form>
-        <!-- Filter Categories -->
-        <div id="filter-categories" class="ml-2 place-content-center" data-accordion="open" data-active-classes="bg-white dark:bg-gray-500 text-gray-500 dark:text-white" data-inactive-classes="text-gray-500 dark:text-gray-400">
-            {
-              tag_list.map((category) => (
-                <div>
-                  <h2 id={category.name} class="">
-                    <button type="button" class="flex items-center justify-between mr-4 py-2 font-medium rtl:text-right text-gray-900 border-gray-200 dark:border-gray-700 dark:text-gray-400 gap-3" data-accordion-target={"#" + category.id} aria-expanded="true" aria-controls={category.id}>
-                      <span>{category.name}</span>
-                      <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
-                        <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/>
-                      </svg>
-                    </button>
-                  </h2>
-                  <div id={category.id} class="hidden flex flex-wrap gap-x-1 w-40" aria-labelledby={category.name}>
-                    {category.list.map((tag) => (
-                      <ul>
-                        <input type="checkbox" id={tag} value="" class="check hidden peer" required=""/>
-                        <label for={tag} class="inline-flex rounded-full peer-checked:bg-green-50 px-2.5 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-inset ring-gray-600/20 peer-checked:ring-green-600/20 text-gray-500 bg-white border-1 border-transparent rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-nvidia hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-green-700 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                          {tag}
-                        </label>
-                      </ul>
-                    ))}
+      <div class="flex flex-col md:flex-row justify-center">
+        <div class="w-52 min-w-52 border-r border-transparent mr-12">
+
+          <!-- Search Bar -->
+          <form class="mb-4">
+            <label for="search-bar" class="sr-only">Search</label>
+              <div class="relative w-full">
+                <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 stroke-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/>
+                </svg>
+                <input type="text" id="search-bar" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-nvidia focus:border-nvidia block w-full ps-10 p-2.5" placeholder="Search keyword..." />
+            </div>
+          </form>
+          <!-- Filter Categories -->
+          <div id="filter-categories" class="ml-2 place-content-center" data-accordion="open" data-active-classes="bg-white text-gray-500" data-inactive-classes="text-gray-500">
+              {
+                tag_list.map((category) => (
+                  <div class="">
+                    <h2 id={category.name} class="">
+                      <button type="button" class="flex items-center justify-between mr-4 py-2 font-medium rtl:text-right text-gray-900 border-gray-200 gap-3" data-accordion-target={"#" + category.id} aria-expanded="true" aria-controls={category.id}>
+                        <span>{category.name}</span>
+                        <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
+                          <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/>
+                        </svg>
+                      </button>
+                    </h2>
+                    <div id={category.id} class="hidden flex flex-wrap gap-x-1 w-40" aria-labelledby={category.name}>
+                      {category.list.map((tag) => (
+                        <ul>
+                          <input type="checkbox" id={tag} value="" class="check hidden peer" required=""/>
+                          <label for={tag} class="inline-flex rounded-full peer-checked:bg-green-50 px-2.5 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-inset ring-gray-600/20 peer-checked:ring-green-600/20 text-gray-500 bg-white border-1 border-transparent rounded-lg cursor-pointer peer-checked:border-nvidia hover:text-gray-600 peer-checked:text-green-700 hover:bg-gray-50">
+                            {tag}
+                          </label>
+                        </ul>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))
-            }
-        </div>
-      </div>
-
-      <!-- Tutorial Cards -->
-      <div class="bg-white">
-
-        <!-- Highlights -->
-        <div class="bg-gray-50 max-w-5xl mx-auto mt-4 rounded-md">
-
-          <!-- Highlights Accordion -->
-          <div id="highlights-accordion" data-accordion="open" data-active-classes="dark:bg-gray-500 text-gray-500 dark:text-white" data-inactive-classes="text-gray-500 dark:text-gray-400">
-            <h2 class="">
-              <button type="button" class="flex items-center justify-between mr-4 py-2 font-medium rtl:text-right text-gray-900 border-gray-200 dark:border-gray-700 dark:text-gray-400 gap-3" data-accordion-target="#highlights-glide" aria-expanded="false" aria-controls="highlights-glide">
-                <span class="ms-4 mt-1">Highlights</span>
-                <svg class="w-6 h-6 text-gray-800 dark:text-white stroke-nvidia" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
-                  <path stroke-width="2" d="M11.083 5.104c.35-.8 1.485-.8 1.834 0l1.752 4.022a1 1 0 0 0 .84.597l4.463.342c.9.069 1.255 1.2.556 1.771l-3.33 2.723a1 1 0 0 0-.337 1.016l1.03 4.119c.214.858-.71 1.552-1.474 1.106l-3.913-2.281a1 1 0 0 0-1.008 0L7.583 20.8c-.764.446-1.688-.248-1.474-1.106l1.03-4.119A1 1 0 0 0 6.8 14.56l-3.33-2.723c-.698-.571-.342-1.702.557-1.771l4.462-.342a1 1 0 0 0 .84-.597l1.753-4.022Z"/>
-                </svg>
-                <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
-                  <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/>
-                </svg>
-              </button>
-            </h2>
-          </div>
-
-          <!-- Highlights Carousel -->
-          <div id="highlights-glide" class="glide ps-12 pr-12 px-2 pb-8 bg-gray-50 rounded-3xl">
-            <div class="glide__track" data-glide-el="track">
-              <ul id="highlights-slides" class="glide__slides">
-                {
-                  highlights.map((tutorial) => (
-                    <li class="slider__frame glide__slide w- mb-4 p-4 transition-shadow ease-in-out" role="presentation">
-                      <div class="flex flex-col gap-1 divide-gray-200 rounded-lg bg-white shadow-md h-80">
-                        <div>
-                          <h3 class="font-semibold text-md px-4 pt-2 text-lg">
-                            {tutorial.title}
-                          </h3>
-                          <div class="px-4 gap-x-2 flex-wrap items-center">
-                            {tutorial.tags.map((tag) => (
-                              <div class="inline-flex rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
-                                {tag}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div class="flex-grow overflow-y-auto px-4">
-                          <p class="text-slate-500 mt-2 leading-relaxed">
-                            {tutorial.description}
-                          </p>
-                        </div>
-                        <div class="h-14 flex-shrink-0 flex justify-center items-center border-t border-gray-200">
-                          <a href={tutorial.link} target="_blank" rel="noopener noreferrer" class="rounded-bl-lg border border-transparent py-2 px-4 text-sm font-semibold text-gray-900">
-                            Go to Tutorial
-                          </a>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-            <div class="glide__arrows" data-glide-el="controls">
-              <!-- Left Carousel Arrow -->
-              <button class="glide__arrow glide__arrow--left left-0 shadow-none border-none" data-glide-dir="<">
-                <svg class="stroke-gray-400 hover:stroke-nvidia w-12 h-12 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="m15 19-7-7 7-7"/>
-                </svg>
-              </button>
-              <!-- Carousel Bullets -->
-              <div id="highlights-bullets" class="glide__bullets" data-glide-el="controls[nav]">
-                {
-                  highlights.map((item, index) => (
-                    <button class="glide__bullet h-3 w-3 bg-gray-200 ring-1 ring-gray-200 shadow-none" data-glide-dir={"="+index}></button>
-                  ))
-                }
-              </div>
-              <!-- Right Carousel Arrow -->
-              <button class="glide__arrow glide__arrow--right right-0 shadow-none border-none" data-glide-dir=">">
-                <div class="h-14 w-14 flex justify-center items-center">
-                  <svg class="stroke-gray-400 hover:stroke-nvidia w-12 h-12 text-gray-800 dark:text-white" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="m9 5 7 7-7 7"/>
-                  </svg>
-                </div>
-              </button>
-            </div>
+                ))
+              }
           </div>
         </div>
-        <!-- Tutorials wrapper -->
-        <div id="tutorials-wrapper" class="max-w-5xl mx-auto grid sm:grid-cols-2 md:grid-cols-3 mt-16 gap-16"></div>
+        <!-- Tutorial Cards -->
+        <div id="tutorials-wrapper" class="lg:max-w-5xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-16 mt-4"></div>
+
       </div>
     </div>
   </div>
 </div>
 
-<script src="@glidejs/glide/dist/glide.min.js"></script>
-
-<script>
-  import Glide from '@glidejs/glide';
-
-  const config = {
-    type: 'carousel',
-    animationDuration: 1500,
-    autoplay: 7000,
-    perView: 3,
-    gap: 32,
-    dragThreshold: false,
-    breakpoints: {
-      1280: {
-        perView: 2,
-      },
-      1024: {
-        perView: 1,
-      },
-    },
-  };
-  var glide = new Glide(document.getElementById('highlights-glide'), config).mount();
-
-  glide.on('move.after', function(event) {
-    var bullets = document.getElementById('highlights-bullets');
-    for (const bullet of bullets!.children) {
-      if (bullet.classList.contains('glide__bullet--active')) {
-        bullet.classList.replace("bg-gray-200", "bg-white");
-      } else {
-        bullet.classList.replace("bg-white", "bg-gray-200");
-      }
-    };
-  });
-
-  const highlightsGlide = document.getElementById('highlights-glide');
-  highlightsGlide?.classList.add('hidden');
-</script>
-
-
-<script define:vars={{highlights, tutorials, tag_list, GoogleColab}} is:inline>
+<script define:vars={{tutorials, tag_list, GoogleColab}} is:inline>
 
   const checkboxes = document.querySelectorAll('.check');
   const filtersContainer = document.getElementById('filter-categories');

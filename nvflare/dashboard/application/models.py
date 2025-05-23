@@ -38,14 +38,12 @@ class Role(CommonMixin, db.Model):
     pass
 
 
-class Capacity(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    capacity = db.Column(db.String(1024), default="")
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    def asdict(self):
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+def _fix_props(obj, table_dict: dict, column: str):
+    value = getattr(obj, column)
+    if value:
+        table_dict[column] = json.loads(value)
+    else:
+        table_dict.pop(column, None)
 
 
 class Project(db.Model):
@@ -55,7 +53,6 @@ class Project(db.Model):
     short_name = db.Column(db.String(128), default="")
     title = db.Column(db.String(512), default="")
     description = db.Column(db.String(2048), default="")
-    # scheme = db.Column(db.String(16), default="grpc")
     app_location = db.Column(db.String(2048), default="")
     ha_mode = db.Column(db.Boolean, default=False)
     starting_date = db.Column(db.String(128), default="")
@@ -65,6 +62,9 @@ class Project(db.Model):
     server2 = db.Column(db.String(128), default="")
     root_cert = db.Column(db.String(4096), default="")
     root_key = db.Column(db.String(4096), default="")
+    cc_mode = db.Column(db.Boolean, default=False)
+    project_props = db.Column(db.String(2048), default="")  # additional project properties - JSON string
+    server_props = db.Column(db.String(2048), default="")  # additional server properties - JSON string
 
     def asdict(self):
         table_dict = {
@@ -72,22 +72,31 @@ class Project(db.Model):
             for c in self.__table__.columns
             if c.name not in ["id", "root_cert", "root_key"]
         }
+        _fix_props(self, table_dict, "project_props")
+        _fix_props(self, table_dict, "server_props")
+
         return table_dict
 
 
 class Client(CommonMixin, db.Model):
-    capacity_id = db.Column(db.Integer, db.ForeignKey("capacity.id"), nullable=False)
     name = db.Column(db.String(512), unique=True)
     organization_id = db.Column(db.Integer, db.ForeignKey("organization.id"), nullable=False)
-    capacity = db.relationship("Capacity", backref="clients")
     organization = db.relationship("Organization", backref="clients")
     creator_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     approval_state = db.Column(db.Integer, default=0)
     download_count = db.Column(db.Integer, default=0)
+    capacity = db.Column(db.String(2048), default="")  # JSON string
+    props = db.Column(db.String(2048), default="")  # additional properties - JSON string
 
     def asdict(self):
         table_dict = {c.name: getattr(self, c.name) for c in self.__table__.columns if "_id" not in c.name}
-        table_dict.update({"organization": self.organization.name, "capacity": json.loads(self.capacity.capacity)})
+        table_dict.update(
+            {
+                "organization": self.organization.name,
+            }
+        )
+        _fix_props(self, table_dict, "props")
+        _fix_props(self, table_dict, "capacity")
         return table_dict
 
 
@@ -98,11 +107,13 @@ class User(CommonMixin, db.Model):
     role = db.relationship("Role", backref="users")
     organization_id = db.Column(db.Integer, db.ForeignKey("organization.id"), nullable=False)
     organization = db.relationship("Organization", backref="users")
+    props = db.Column(db.String(1048), default="")  # additional properties - JSON string
     approval_state = db.Column(db.Integer, default=0)
     download_count = db.Column(db.Integer, default=0)
 
     def asdict(self):
         table_dict = {c.name: getattr(self, c.name) for c in self.__table__.columns if "_id" not in c.name}
         table_dict.update({"organization": self.organization.name, "role": self.role.name})
+        _fix_props(self, table_dict, "props")
         table_dict.pop("password_hash")
         return table_dict

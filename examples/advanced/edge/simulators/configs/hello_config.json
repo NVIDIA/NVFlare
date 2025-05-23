@@ -1,0 +1,18 @@
+{
+  "endpoint": "http://localhost:8000",
+  "num_devices": 16,
+  "device_id_prefix": "sim-device-",
+  "processor": {
+    "path": "processors.hello_task_processor.HelloTaskProcessor",
+    "args": {
+      "data_file": "{device_id}/data/data-{user_id}.csv",
+      "parameters": {
+        "a": 123,
+        "b": 456
+      }
+    }
+  },
+  "capabilities": {
+    "methods": ["cnn"]
+  }
+}

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,7 +26,7 @@ def args_parser():
     parser.add_argument(
         "--output_curve_path",
         type=str,
-        default="/tmp/km_curve_baseline.png",
+        default="/tmp/nvflare/baseline/km_curve_baseline.png",
         help="save path for the output curve",
     )
     return parser
@@ -69,6 +70,8 @@ def main():
     kmf.fit(time, event)
     # Plot and save the Kaplan-Meier survival curve
     kmf.plot_survival_function(label="No binning - Daily")
+
+    os.makedirs(os.path.dirname(output_curve_path), exist_ok=True)
 
     plt.ylim(0, 1)
     plt.ylabel("prob")

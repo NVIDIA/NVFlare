@@ -9,8 +9,10 @@ NVIDIA FLARE
 
    fl_introduction
    flare_overview
-   whats_new
+   Installation <installation>
+   Quickstart <quickstart>
    getting_started
+   whats_new
 
 .. toctree::
    :maxdepth: -1
@@ -52,17 +54,20 @@ Learn more about FLARE features in the :ref:`FLARE Overview <flare_overview>` an
 
 Getting Started
 ===============
+To get started with NVIDIA FLARE:
+
+1. Follow the :ref:`installation` guide to set up your environment
+2. Run through the :ref:`quickstart` guide to try your first example
+3. Explore more examples in the :ref:`Example Applications <example_applications>` section
+
 For first-time users and FL researchers, FLARE provides the :ref:`FL Simulator <fl_simulator>` that allows you to build, test, and deploy applications locally.
-The :ref:`Getting Started <getting_started>` guide covers installation and walks through an example application using the FL Simulator.
-Additional examples can be found at the :ref:`Examples Applications <example_applications>`, which showcase different federated learning workflows and algorithms on various machine learning and deep learning tasks.
 
 FLARE for Users
 ===============
 If you want to learn how to interact with the FLARE system, please refer to the :ref:`User Guide <user_guide>`.
-When you are ready to for a secure, distributed deployment, the :ref:`Real World Federated Learning <real_world_fl>` section covers the tools and process
-required to deploy and operate a secure, real-world FLARE project.
+When you are ready for a secure, distributed deployment, the :ref:`Real World Federated Learning <real_world_fl>` section covers the tools and processes required to deploy and operate a secure, real-world FLARE project.
 
 FLARE for Developers
 ====================
-When you're ready to build your own application, the :ref:`Programming Guide <programming_guide>`, :ref:`Programming Best Practices <best_practices>`, :ref:`FAQ<faq>`, and :ref:`API Reference <apidocs/modules>`
-give an in depth look at the FLARE platform and APIs.
+When you're ready to build your own application, the :ref:`Programming Guide <programming_guide>`, :ref:`Programming Best Practices <best_practices>`, :ref:`FAQ <faq>`, and :ref:`API Reference <apidocs/modules>`
+provide an in-depth look at the FLARE platform and APIs.

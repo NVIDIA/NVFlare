@@ -13,12 +13,12 @@
 # limitations under the License.
 import argparse
 import json
-import logging
 import os
 from typing import Dict, List, Optional, Union
 
 from nvflare.fuel.utils.config import Config, ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.log_utils import get_module_logger
 
 ENV_VAR_PREFIX = "NVFLARE_"
 
@@ -69,7 +69,7 @@ class ConfigService:
     Only JSON file loading is supported.
     """
 
-    logger = logging.getLogger(__name__)
+    logger = get_module_logger(__module__, __qualname__)
     _sections = {}
     _config_path = []
     _cmd_args = None
@@ -116,7 +116,9 @@ class ConfigService:
             if not os.path.isdir(d):
                 raise ValueError(f"'{d}' is not a valid directory")
 
-        cls._config_path = config_path
+        for d in config_path:
+            if d not in cls._config_path:
+                cls._config_path.append(d)
 
         for section, file_basename in section_files.items():
             cls._sections[section] = cls.load_config_dict(file_basename, cls._config_path)
@@ -185,7 +187,8 @@ class ConfigService:
         Returns: config data loaded, or None if the config file is not found.
 
         """
-        return ConfigFactory.load_config(file_basename, cls._config_path)
+        result = ConfigFactory.load_config(file_basename, cls._config_path)
+        return result
 
     @classmethod
     def load_config_dict(

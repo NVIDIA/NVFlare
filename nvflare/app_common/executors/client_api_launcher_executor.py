@@ -15,10 +15,10 @@
 import os
 from typing import Optional
 
-from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
+from nvflare.app_common.utils.export_utils import update_export_props
 from nvflare.client.config import ConfigKey, ExchangeFormat, TransferType, write_config_to_file
 from nvflare.client.constants import CLIENT_API_CONFIG
 from nvflare.fuel.utils.attributes_exportable import ExportMode
@@ -39,7 +39,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 60.0,
         workers: int = 4,
-        train_with_evaluation: bool = True,
+        train_with_evaluation: bool = False,
         train_task_name: str = AppConstants.TASK_TRAIN,
         evaluate_task_name: str = AppConstants.TASK_VALIDATION,
         submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
@@ -48,6 +48,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
         params_exchange_format: str = ExchangeFormat.NUMPY,
         params_transfer_type: str = TransferType.FULL,
         config_file_name: str = CLIENT_API_CONFIG,
+        server_expected_format: str = ExchangeFormat.NUMPY,
     ) -> None:
         """Initializes the ClientAPILauncherExecutor.
 
@@ -73,7 +74,8 @@ class ClientAPILauncherExecutor(LauncherExecutor):
                 This ParamsConverter will be called when model is sent from nvflare controller side to executor side.
             to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This ParamsConverter will be called when model is sent from nvflare executor side to controller side.
-            params_exchange_format (str): What format to exchange the parameters.
+            server_expected_format (str): What format to exchange the parameters between server and client.
+            params_exchange_format (str): What format to exchange the parameters between client and script.
             params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
                 DIFF means that only the difference is sent.
             config_file_name (str): The config file name to write attributes into, the client api will read in this file.
@@ -100,6 +102,7 @@ class ClientAPILauncherExecutor(LauncherExecutor):
             to_nvflare_converter_id=to_nvflare_converter_id,
         )
 
+        self._server_expected_format = server_expected_format
         self._params_exchange_format = params_exchange_format
         self._params_transfer_type = params_transfer_type
         self._config_file_name = config_file_name
@@ -127,10 +130,9 @@ class ClientAPILauncherExecutor(LauncherExecutor):
 
         config_data = {
             ConfigKey.TASK_EXCHANGE: task_exchange_attributes,
-            FLMetaKey.SITE_NAME: fl_ctx.get_identity_name(),
-            FLMetaKey.JOB_ID: fl_ctx.get_job_id(),
         }
 
+        update_export_props(config_data, fl_ctx)
         config_file_path = self._get_external_config_file_path(fl_ctx)
         write_config_to_file(config_data=config_data, config_file_path=config_file_path)
 

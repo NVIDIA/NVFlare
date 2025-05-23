@@ -60,10 +60,13 @@ learnt by the central aggregation server.
 With our encryption plugins working with XGBoost, NVFlare now supports all secure federated schemes for XGBoost model training, with
 both CPU and GPU.
 
+Please check `federated xgboost with nvflare user guide <https://nvflare.readthedocs.io/en/2.5/user_guide/federated_xgboost.html>`
+and the :github_nvflare_link:`example <examples/advanced/xgboost_secure>`
+
 Tensorflow support
 ==================
-With community contributions, we add FedOpt, FedProx and Scaffold algorithms using Tensorflow to create parity with Pytorch. You
-can them :github_nvflare_link:`here <nvflare/app_opt/tf>`.
+With community contributions, we add FedOpt, FedProx and Scaffold algorithms using Tensorflow.
+You can check the code :github_nvflare_link:`here <nvflare/app_opt/tf>` and the :github_nvflare_link:`example <examples/getting_started/tf>`
 
 FOBS Auto Registration
 ======================
@@ -121,7 +124,7 @@ FedOpt, FedProx, Scaffold implementation for Tensorflow.
 
 FedBN: Federated Learning on Non-IID Features via Local Batch Normalization
 ---------------------------------------------------------------------------
-The `FedBN example <https://github.com/NVIDIA/NVFlare/tree/main/research/fed-bn>`_ showcases a federated learning algorithm designed
+The :github_nvflare_link:`FedBN example <research/fed-bn>` showcases a federated learning algorithm designed
 to address the feature shift problem when aggregating models across different data distributions.
 
 In this work, we propose an effective method that uses local batch normalization to alleviate the feature shift before averaging models.
@@ -131,7 +134,7 @@ are supported by a convergence analysis that shows in a simplified setting that 
 
 End-to-end Federated XGBoost examples
 -------------------------------------
-In `this example <https://github.com/NVIDIA/NVFlare/blob/5fc5ff31f35be63330dec38e1c4e80a6f84586ed/examples/advanced/finance-end-to-end/xgboost.ipynb>`__,
+In :github_nvflare_link:`this example <examples/advanced/finance-end-to-end/xgboost.ipynb>`,
 we try to show that end-to-end process of feature engineering, pre-processing and training in federated settings. You
 can use FLARE to perform federated ETL and then training. 
 

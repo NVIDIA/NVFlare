@@ -163,6 +163,7 @@ class StatisticsConstants(AppConstants):
     STATS_VAR = "var"
     STATS_STDDEV = "stddev"
     STATS_HISTOGRAM = "histogram"
+    STATS_QUANTILE = "quantile"
     STATS_MAX = "max"
     STATS_MIN = "min"
     STATS_FEATURES = "stats_features"
@@ -172,6 +173,8 @@ class StatisticsConstants(AppConstants):
     STATS_BINS = "bins"
     STATS_BIN_RANGE = "range"
     STATS_TARGET_STATISTICS = "statistics"
+
+    STATS_DIGEST_COORD = "digest_coord"
 
     FED_STATS_PRE_RUN = "fed_stats_pre_run"
     FED_STATS_TASK = "fed_stats"
@@ -184,7 +187,16 @@ class StatisticsConstants(AppConstants):
     NAME = "Name"
 
     ordered_statistics = {
-        STATS_1st_STATISTICS: [STATS_COUNT, STATS_FAILURE_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],
+        # statistics can only require one/two-round of calculations
+        STATS_1st_STATISTICS: [
+            STATS_COUNT,
+            STATS_FAILURE_COUNT,
+            STATS_SUM,
+            STATS_MEAN,
+            STATS_MIN,
+            STATS_MAX,
+            STATS_QUANTILE,
+        ],
         STATS_2nd_STATISTICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
     }
 

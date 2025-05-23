@@ -19,14 +19,16 @@ import re
 import sys
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FilterKey, SiteType, SystemConfigs
+from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, FilterKey, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.data_event.utils import set_scope_property
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
+from nvflare.fuel.utils.url_utils import make_url
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
-from nvflare.private.fed.utils.fed_utils import configure_logging
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
 
@@ -63,16 +65,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         else:
             self.cmd_vars = {}
 
-        configure_logging(workspace)
-
-        server_startup_file_path = workspace.get_server_startup_file_path()
-        resource_config_path = workspace.get_resources_file_path()
-        config_files = [server_startup_file_path, resource_config_path]
-        if args.job_id:
-            # this is for job process
-            job_resources_file_path = workspace.get_job_resources_file_path()
-            if os.path.exists(job_resources_file_path):
-                config_files.append(job_resources_file_path)
+        config_files = workspace.get_config_files_for_startup(is_server=True, for_job=True if args.job_id else False)
 
         JsonConfigurator.__init__(
             self,
@@ -233,17 +226,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         else:
             self.cmd_vars = {}
 
-        configure_logging(workspace)
-
-        client_startup_file_path = workspace.get_client_startup_file_path()
-        resources_file_path = workspace.get_resources_file_path()
-        config_files = [client_startup_file_path, resources_file_path]
-
-        if args.job_id:
-            # this is for job process
-            job_resources_file_path = workspace.get_job_resources_file_path()
-            if os.path.exists(job_resources_file_path):
-                config_files.append(job_resources_file_path)
+        config_files = workspace.get_config_files_for_startup(is_server=False, for_job=True if args.job_id else False)
 
         JsonConfigurator.__init__(
             self,
@@ -303,6 +286,69 @@ class FLClientStarterConfiger(JsonConfigurator):
                 self.handlers.append(t)
         return t
 
+    def _determine_conn_props(self, client_name, config_data: dict):
+        relay_fqcn = None
+        relay_url = None
+        relay_conn_security = None
+
+        # relay info is set in the client's relay__resources.json.
+        # If relay is used, then connect via the specified relay; if not, try to connect the Server directly
+        relay_config = config_data.get(ConnPropKey.RELAY_CONFIG)
+        self.logger.debug(f"got relay config: {relay_config}")
+        if relay_config:
+            if relay_config:
+                relay_fqcn = relay_config.get(ConnPropKey.FQCN)
+                scheme = relay_config.get(ConnPropKey.SCHEME)
+                addr = relay_config.get(ConnPropKey.ADDRESS)
+                relay_conn_security = relay_config.get(ConnPropKey.CONNECTION_SECURITY)
+                secure = True
+                if relay_conn_security == ConnectionSecurity.CLEAR:
+                    secure = False
+                relay_url = make_url(scheme, addr, secure)
+            else:
+                self.logger.debug("no relay defined: connect to server directly")
+        else:
+            self.logger.debug("no relay_config: connect to server directly")
+
+        if relay_fqcn:
+            cp_fqcn = FQCN.join([relay_fqcn, client_name])
+        else:
+            cp_fqcn = client_name
+
+        if relay_fqcn:
+            relay_conn_props = {
+                ConnPropKey.FQCN: relay_fqcn,
+                ConnPropKey.URL: relay_url,
+                ConnPropKey.CONNECTION_SECURITY: relay_conn_security,
+            }
+            set_scope_property(client_name, ConnPropKey.RELAY_CONN_PROPS, relay_conn_props)
+
+        client = self.config_data["client"]
+
+        if hasattr(self.args, "job_id") and self.args.job_id:
+            # this is CJ
+            sp_scheme = self.args.sp_scheme
+            sp_target = self.args.sp_target
+            root_url = f"{sp_scheme}://{sp_target}"
+            root_conn_props = {
+                ConnPropKey.FQCN: FQCN.ROOT_SERVER,
+                ConnPropKey.URL: root_url,
+                ConnPropKey.CONNECTION_SECURITY: client.get(ConnPropKey.CONNECTION_SECURITY),
+            }
+            set_scope_property(client_name, ConnPropKey.ROOT_CONN_PROPS, root_conn_props)
+
+            cp_conn_props = {
+                ConnPropKey.FQCN: cp_fqcn,
+                ConnPropKey.URL: self.args.parent_url,
+                ConnPropKey.CONNECTION_SECURITY: self.args.parent_conn_sec,
+            }
+        else:
+            # this is CP
+            cp_conn_props = {
+                ConnPropKey.FQCN: cp_fqcn,
+            }
+        set_scope_property(client_name, ConnPropKey.CP_CONN_PROPS, cp_conn_props)
+
     def start_config(self, config_ctx: ConfigContext):
         """Start the config process.
 
@@ -321,6 +367,17 @@ class FLClientStarterConfiger(JsonConfigurator):
                 client[SSLConstants.CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.CERT])
             if client.get(SSLConstants.ROOT_CERT):
                 client[SSLConstants.ROOT_CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.ROOT_CERT])
+
+            client_name = self.cmd_vars.get("uid", None)
+            if not client_name:
+                raise ConfigError("missing 'uid' from command args")
+
+            conn_sec = client.get(ConnPropKey.CONNECTION_SECURITY)
+            if conn_sec:
+                set_scope_property(client_name, ConnPropKey.CONNECTION_SECURITY, conn_sec)
+
+            self._determine_conn_props(client_name, self.config_data)
+
         except Exception:
             raise ValueError(f"Client config error: '{self.client_config_file_names}'")
 

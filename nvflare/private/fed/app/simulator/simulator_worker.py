@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import argparse
-import logging.config
 import os
 import sys
 import threading
@@ -30,6 +29,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils.log_utils import dynamic_log_config
 from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
 from nvflare.private.fed.app.utils import check_parent_alive, init_security_content_service
 from nvflare.private.fed.client.client_engine import ClientEngine
@@ -38,12 +38,7 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import (
-    add_logfile_handler,
-    fobs_initialize,
-    get_simulator_app_root,
-    register_ext_decomposers,
-)
+from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_simulator_app_root, register_ext_decomposers
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer
 
@@ -214,7 +209,13 @@ class ClientTaskWorker(FLComponent):
         cell.start()
         mpm.add_cleanup_cb(cell.stop)
         federated_client.cell = cell
-        federated_client.communicator.cell = cell
+        federated_client.communicator.set_cell(cell)
+        federated_client.communicator.set_auth(
+            client_name=federated_client.client_name,
+            token=federated_client.token,
+            token_signature="NA",
+            ssid="NA",
+        )
 
         start = time.time()
         while not cell.is_cell_connected(FQCN.ROOT_SERVER):
@@ -238,16 +239,16 @@ def main(args):
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
-    logging.config.fileConfig(fname=args.logging_config, disable_existing_loggers=False)
-    log_file = os.path.join(args.workspace, WorkspaceConstants.LOG_FILE_NAME)
-    add_logfile_handler(log_file)
-
     os.chdir(args.workspace)
     startup = os.path.join(args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
     os.makedirs(startup, exist_ok=True)
     local = os.path.join(args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
     os.makedirs(local, exist_ok=True)
     workspace = Workspace(root_dir=args.workspace, site_name=args.client)
+
+    dynamic_log_config(
+        config=args.logging_config, dir_path=args.workspace, reload_path=workspace.get_log_config_file_path()
+    )
 
     fobs_initialize(workspace, job_id=SimulatorConstants.JOB_NAME)
     register_ext_decomposers(args.decomposer_module)

@@ -19,7 +19,6 @@ from nvflare.app_common.tie.defs import Constant
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.api import FedJob
@@ -36,7 +35,6 @@ class FlowerJob(FedJob):
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
         database: str = "",
-        server_app_args: list = None,
         superlink_ready_timeout: float = 10.0,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
         start_task_timeout=Constant.START_TASK_TIMEOUT,
@@ -58,7 +56,6 @@ class FlowerJob(FedJob):
             min_clients (int, optional): The minimum number of clients for the job. Defaults to 1.
             mandatory_clients (List[str], optional): List of mandatory clients for the job. Defaults to None.
             database (str, optional): Database string. Defaults to "".
-            server_app_args (list, optional): List of arguments to pass to the server application. Defaults to None.
             superlink_ready_timeout (float, optional): Timeout for the superlink to be ready. Defaults to 10.0 seconds.
             configure_task_timeout (float, optional): Timeout for configuring the task. Defaults to Constant.CONFIG_TASK_TIMEOUT.
             start_task_timeout (float, optional): Timeout for starting the task. Defaults to Constant.START_TASK_TIMEOUT.
@@ -78,7 +75,6 @@ class FlowerJob(FedJob):
 
         controller = FlowerController(
             database=database,
-            server_app_args=server_app_args,
             superlink_ready_timeout=superlink_ready_timeout,
             configure_task_timeout=configure_task_timeout,
             start_task_timeout=start_task_timeout,
@@ -98,16 +94,17 @@ class FlowerJob(FedJob):
         self.to_clients(obj=flower_content)
 
         if not stream_metrics:
+            conf = ExternalConfigurator(component_ids=[])
+            self.to_clients(conf, "client_api_config_preparer")
             return
 
         # add required components for metrics streaming
         # server side - need analytics_receiver
         if analytics_receiver:
             check_object_type("analytics_receiver", analytics_receiver, AnalyticsReceiver)
+            self.to_server(analytics_receiver, "analytics_receiver")
         else:
-            analytics_receiver = TBAnalyticsReceiver(events=["fed.analytix_log_stats"])
-
-        self.to_server(analytics_receiver, "analytics_receiver")
+            raise ValueError("Missing analytics receiver on the server side.")
 
         # client side
         # cell pipe
@@ -115,7 +112,7 @@ class FlowerJob(FedJob):
             mode="PASSIVE",
             site_name="{SITE_NAME}",
             token="{JOB_ID}",
-            root_url="{ROOT_URL}",
+            root_url="{CP_URL}",
             secure_mode="{SECURE_MODE}",
             workspace_dir="{WORKSPACE}",
         )

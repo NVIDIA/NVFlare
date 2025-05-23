@@ -1,4 +1,8 @@
-FROM python:3.8
+# For Running NVIDIA FLARE in a Docker container, see
+# https://nvflare.readthedocs.io/en/main/quickstart.html#containerized-deployment-with-docker
+# This Dockerfile is primarily for building Docker images to publish for dashboard.
+
+FROM python:3.10
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install zip
 COPY nvflare /opt/NVFlare/nvflare
 COPY setup.py /opt/NVFlare/setup.py

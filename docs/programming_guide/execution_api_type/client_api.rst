@@ -248,20 +248,37 @@ that use Client API to write the
 
 Selection of Job Templates
 ==========================
-To help user quickly setup job configurations, we create many job templates. You can pick one job template that close to your use cases
-and adapt to your needs by modify the needed variables.
+To help users quickly set up job configurations, we have created numerous job templates. You can select a job template that closely matches
+your use case and adapt it to your needs by modifying the necessary variables.
 
-use command ``nvflare job list_templates`` you can find all job templates nvflare provided.
+Using the command ``nvflare job list_templates``, you can find all the job templates provided by NVFlare.
 
 .. image:: ../../resources/list_templates_results.png
     :height: 300px
 
-looking at the ``Execution API Type``, you will find ``client_api``. That's indicates the specified job template will use
-Client API configuration.  You can further nail down the selection by choice of machine learning framework: pytorch or sklearn or xgboost,
+looking at the ``Execution API Type``, you will find ``client_api``. This indicates that the specified job template will use the Client API
+configuration.  You can further nail down the selection by choice of machine learning framework: pytorch or sklearn or xgboost,
 in-process or not, type of models ( GNN, NeMo LLM), workflow patterns ( Swarm learning or standard fedavg with scatter and gather (sag)) etc.
 
 
+Custom Data Class Serialization/Deserialization
+===============================================
 
+To pass data in the form of a custom class, you can leverage the serialization tool inside NVFlare.
 
+For example:
 
+.. code-block:: python
 
+    class CustomClass:
+    def __init__(self, x, y):
+        self.x = 1
+        self.y = 2
+
+If your code uses classes derived from ``Enum`` or dataclasses, they will be handled by the default decomposers.
+For other custom classes, you will need to write a dedicated custom decomposer and ensure it is registered
+using fobs.register on both the server side and client side, as well as in train.py.
+
+Please note that for the custom data class to work, it must be placed in a separate file from train.py.
+
+For more details on serialization, please refer to :ref:`serialization`.

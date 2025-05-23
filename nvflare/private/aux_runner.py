@@ -14,10 +14,11 @@
 
 import time
 from threading import Lock
-from typing import Dict, List
+from typing import List, Tuple
 
+from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, ReturnCode, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, ProcessType, ReturnCode, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.fuel.f3.cellnet.core_cell import Message, MessageHeaderKey
@@ -26,8 +27,24 @@ from nvflare.fuel.f3.cellnet.core_cell import TargetMessage
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import CellChannel
-from nvflare.private.fed.utils.fed_utils import get_target_names
-from nvflare.security.logging import secure_format_traceback
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
+
+
+class AuxMsgTarget:
+    def __init__(self, name: str, fqcn: str):
+        self.name = name
+        self.fqcn = fqcn
+
+    @staticmethod
+    def server_target():
+        return AuxMsgTarget(FQCN.ROOT_SERVER, FQCN.ROOT_SERVER)
+
+    @staticmethod
+    def client_target(client: Client):
+        return AuxMsgTarget(client.name, client.get_fqcn())
+
+    def __str__(self):
+        return f"AuxMsgTarget[name={self.name} fqcn={self.fqcn}]"
 
 
 class AuxRunner(FLComponent):
@@ -42,7 +59,7 @@ class AuxRunner(FLComponent):
     def register_aux_message_handler(self, topic: str, message_handle_func):
         """Register aux message handling function with specified topics.
 
-        This method should be called by ServerEngine's register_aux_message_handler method.
+        This method should be called by Engine's register_aux_message_handler method.
 
         Args:
             topic: the topic to be handled by the func
@@ -173,13 +190,14 @@ class AuxRunner(FLComponent):
         cell_replies: dict,
         topic: str,
         channel: str,
+        fqcn_to_name: dict,
     ):
         replies = {}
         if cell_replies:
-            for k, v in cell_replies.items():
+            for reply_cell_fqcn, v in cell_replies.items():
                 assert isinstance(v, Message)
-                rc = v.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
-                target_name = FQCN.get_root(k)
+                rc = v.get_header(MessageHeaderKey.RETURN_CODE, CellReturnCode.OK)
+                target_name = fqcn_to_name[reply_cell_fqcn]
                 if rc == CellReturnCode.OK:
                     result = v.payload
                     if not isinstance(result, Shareable):
@@ -194,7 +212,7 @@ class AuxRunner(FLComponent):
     def multicast_aux_requests(
         self,
         topic: str,
-        target_requests: Dict[str, Shareable],
+        target_requests: List[Tuple[AuxMsgTarget, Shareable]],
         timeout: float,
         fl_ctx: FLContext,
         optional: bool = False,
@@ -203,11 +221,10 @@ class AuxRunner(FLComponent):
         if not target_requests:
             return {}
 
-        # validate target names
-        target_names = [n for n in target_requests.keys()]
-        _, invalid_names = self.engine.validate_targets(target_names)
-        if invalid_names:
-            raise ValueError(f"invalid target(s): {invalid_names}")
+        targets = []
+        for t in target_requests:
+            amt, _ = t
+            targets.append(amt)
 
         try:
             return self._send_multi_requests(
@@ -220,17 +237,17 @@ class AuxRunner(FLComponent):
             )
         except Exception:
             if optional:
-                self.logger.debug(f"Failed to send multi requests {topic} to targets: {target_names}")
+                self.logger.debug(f"Failed to send multi requests {topic} to targets: {targets}")
                 self.logger.debug(secure_format_traceback())
             else:
-                self.logger.error(f"Failed to send multi requests {topic} to targets: {target_names}")
+                self.logger.error(f"Failed to send multi requests {topic} to targets: {targets}")
                 self.logger.error(secure_format_traceback())
             return {}
 
     def _send_multi_requests(
         self,
         topic: str,
-        target_requests: Dict[str, Shareable],
+        target_requests: List[Tuple[AuxMsgTarget, Shareable]],
         timeout: float,
         fl_ctx: FLContext,
         optional: bool = False,
@@ -241,23 +258,30 @@ class AuxRunner(FLComponent):
         if not cell:
             return {}
 
-        job_id = fl_ctx.get_job_id()
         public_props = fl_ctx.get_all_public_props()
         target_messages = {}
-        for target_name, req in target_requests.items():
+        fqcn_to_name = {}
+        for t in target_requests:
+            msg_target, req = t
+            assert isinstance(msg_target, AuxMsgTarget)
+            target_name = msg_target.name
             if not isinstance(req, Shareable):
                 raise ValueError(f"request of {target_name} should be Shareable but got {type(req)}")
 
             req.set_header(ReservedHeaderKey.TOPIC, topic)
             req.set_peer_props(public_props)
-            target_fqcn = FQCN.join([target_name, job_id])
-            self.log_info(fl_ctx, f"sending multicast aux: {target_fqcn=}")
-            target_messages[target_fqcn] = TargetMessage(
-                topic=topic, channel=channel, target=target_fqcn, message=Message(payload=req)
+            cell_fqcn = self._get_target_fqcn(msg_target, fl_ctx)
+            self.log_debug(fl_ctx, f"sending multicast aux: {cell_fqcn=}")
+            fqcn_to_name[cell_fqcn] = target_name
+            target_messages[cell_fqcn] = TargetMessage(
+                topic=topic, channel=channel, target=cell_fqcn, message=Message(payload=req)
             )
+
         if timeout > 0:
-            cell_replies = cell.broadcast_multi_requests(target_messages, timeout, optional=optional, secure=secure)
-            return self._process_cell_replies(cell_replies, topic, channel)
+            cell_replies = cell.broadcast_multi_requests(
+                target_messages, timeout, optional=optional, secure=secure, abort_signal=fl_ctx.get_run_abort_signal()
+            )
+            return self._process_cell_replies(cell_replies, topic, channel, fqcn_to_name)
         else:
             cell.fire_multi_requests_and_forget(
                 target_messages,
@@ -267,7 +291,7 @@ class AuxRunner(FLComponent):
 
     def send_aux_request(
         self,
-        targets: list,
+        targets: List[AuxMsgTarget],
         topic: str,
         request: Shareable,
         timeout: float,
@@ -276,15 +300,24 @@ class AuxRunner(FLComponent):
         optional: bool = False,
         secure: bool = False,
     ) -> dict:
-        target_names = get_target_names(targets)
+        """Send aux request to specified targets.
 
-        if not target_names:
-            return {}
+        Args:
+            targets: a list of AuxMsgTarget(s)
+            topic: topic of the message
+            request: the request to be sent
+            timeout: timeout of the request
+            fl_ctx: FL context data
+            bulk_send: whether to bulk send
+            optional: whether the request is optional
+            secure: whether to use P2P message encryption
 
-        _, invalid_names = self.engine.validate_targets(target_names)
-        if invalid_names:
-            raise ValueError(f"invalid target(s): {invalid_names}")
+        Returns: a dict of target_name => reply
 
+        Note: each AuxMsgTarget in "targets" has the target's name and FQCN.
+        The returned dict is keyed on the client Name, not client FQCN (which can be multiple levels).
+
+        """
         try:
             return self._send_to_cell(
                 targets=targets,
@@ -297,9 +330,11 @@ class AuxRunner(FLComponent):
                 optional=optional,
                 secure=secure,
             )
-        except Exception:
+        except Exception as ex:
             if optional:
-                self.logger.debug(f"Failed to send aux message {topic} to targets: {targets}")
+                self.logger.debug(
+                    f"Failed to send aux message {topic} to targets: {targets}: {secure_format_exception(ex)}"
+                )
                 self.logger.debug(secure_format_traceback())
             else:
                 self.logger.error(f"Failed to send aux message {topic} to targets: {targets}")
@@ -308,7 +343,7 @@ class AuxRunner(FLComponent):
 
     def _send_to_cell(
         self,
-        targets: List[str],
+        targets: List[AuxMsgTarget],
         channel: str,
         topic: str,
         request: Shareable,
@@ -321,7 +356,7 @@ class AuxRunner(FLComponent):
         """Send request to the job cells of other target sites.
 
         Args:
-            targets (list): list of client names that the request will be sent to
+            targets (list): list of AuxMsgTarget that the request will be sent to
             channel (str): channel of the request
             topic (str): topic of the request
             request (Shareable): request
@@ -337,21 +372,17 @@ class AuxRunner(FLComponent):
         request.set_header(ReservedHeaderKey.TOPIC, topic)
         request.set_peer_props(fl_ctx.get_all_public_props())
 
-        job_id = fl_ctx.get_job_id()
         cell = self._wait_for_cell()
         if not cell:
             return {}
 
-        target_names = []
-        for t in targets:
-            if not isinstance(t, str):
-                raise ValueError(f"invalid target name {t}: expect str but got {type(t)}")
-            if t not in target_names:
-                target_names.append(t)
-
         target_fqcns = []
-        for name in target_names:
-            target_fqcns.append(FQCN.join([name, job_id]))
+        fqcn_to_name = {}
+        for t in targets:
+            # targeting job cells!
+            cell_fqcn = self._get_target_fqcn(t, fl_ctx)
+            target_fqcns.append(cell_fqcn)
+            fqcn_to_name[cell_fqcn] = t.name
 
         cell_msg = Message(payload=request)
         if timeout > 0:
@@ -363,8 +394,9 @@ class AuxRunner(FLComponent):
                 timeout=timeout,
                 optional=optional,
                 secure=secure,
+                abort_signal=fl_ctx.get_run_abort_signal(),
             )
-            return self._process_cell_replies(cell_replies, topic, channel)
+            return self._process_cell_replies(cell_replies, topic, channel, fqcn_to_name)
         else:
             if bulk_send:
                 cell.queue_message(channel=channel, topic=topic, message=cell_msg, targets=target_fqcns)
@@ -375,9 +407,24 @@ class AuxRunner(FLComponent):
             return {}
 
     @staticmethod
+    def _get_target_fqcn(target: AuxMsgTarget, fl_ctx: FLContext):
+        process_type = fl_ctx.get_process_type()
+        if process_type in [ProcessType.CLIENT_PARENT, ProcessType.SERVER_PARENT]:
+            # parent process
+            return target.fqcn
+        elif process_type in [ProcessType.CLIENT_JOB, ProcessType.SERVER_JOB]:
+            # job process
+            job_id = fl_ctx.get_job_id()
+            if not job_id:
+                raise RuntimeError("no job ID in fl_ctx in Job Process!")
+            return FQCN.join([target.fqcn, job_id])
+        else:
+            raise RuntimeError(f"invalid process_type {process_type}")
+
+    @staticmethod
     def _convert_return_code(rc):
         rc_table = {
-            CellReturnCode.TIMEOUT: ReturnCode.COMMUNICATION_ERROR,
+            CellReturnCode.TIMEOUT: ReturnCode.TIMEOUT,
             CellReturnCode.COMM_ERROR: ReturnCode.COMMUNICATION_ERROR,
             CellReturnCode.PROCESS_EXCEPTION: ReturnCode.EXECUTION_EXCEPTION,
             CellReturnCode.ABORT_RUN: CellReturnCode.ABORT_RUN,

@@ -224,10 +224,6 @@ class TieController(Controller, ABC):
         if error:
             self.system_panic(reason=error, fl_ctx=fl_ctx)
 
-    def _is_stopped(self):
-        # check whether the abort signal is triggered
-        return self.abort_signal and self.abort_signal.triggered
-
     def _update_client_status(self, fl_ctx: FLContext, op=None, client_done=False):
         """Update the status of the requesting client.
 
@@ -303,7 +299,7 @@ class TieController(Controller, ABC):
         """
         self.log_debug(fl_ctx, f"_handle_app_request {topic}")
         op = request.get_header(Constant.MSG_KEY_OP)
-        if self._is_stopped():
+        if self.abort_signal and self.abort_signal.triggered:
             self.log_warning(fl_ctx, f"dropped app request ({op=}) since server is already stopped")
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
@@ -317,7 +313,7 @@ class TieController(Controller, ABC):
             self._trigger_stop(fl_ctx, process_error)
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        self.log_info(fl_ctx, f"received reply for app request '{op=}'")
+        self.log_debug(fl_ctx, f"received reply for app request '{op=}'")
         reply.set_header(Constant.MSG_KEY_OP, op)
         return reply
 
@@ -434,6 +430,7 @@ class TieController(Controller, ABC):
         # configure all clients
         if not self._configure_clients(abort_signal, fl_ctx):
             self.system_panic("failed to configure all clients", fl_ctx)
+            abort_signal.trigger(True)
             return
 
         # configure and start the connector
@@ -446,6 +443,7 @@ class TieController(Controller, ABC):
             error = f"failed to start connector: {secure_format_exception(ex)}"
             self.log_error(fl_ctx, error)
             self.system_panic(error, fl_ctx)
+            abort_signal.trigger(True)
             return
 
         self.connector.monitor(fl_ctx, self._app_stopped)
@@ -453,23 +451,25 @@ class TieController(Controller, ABC):
         # start all clients
         if not self._start_clients(abort_signal, fl_ctx):
             self.system_panic("failed to start all clients", fl_ctx)
+            abort_signal.trigger(True)
             return
 
         # monitor client health
         # we periodically check job status until all clients are done or the system is stopped
         self.log_info(fl_ctx, "Waiting for clients to finish ...")
-        while not self._is_stopped():
+        while not abort_signal.triggered:
             done = self._check_job_status(fl_ctx)
             if done:
-                break
+                self.connector.stop(fl_ctx)
+                return
             time.sleep(self.job_status_check_interval)
 
     def _app_stopped(self, rc, fl_ctx: FLContext):
         # This CB is called when app server is stopped
         error = None
         if rc != 0:
-            self.log_error(fl_ctx, f"App Server stopped abnormally with code {rc}")
-            error = "App server abnormal stop"
+            error = f"App server abnormally stopped: {rc=}"
+            self.log_error(fl_ctx, error)
 
         # the app server could stop at any moment, we trigger the abort_signal in case it is checked by any
         # other components

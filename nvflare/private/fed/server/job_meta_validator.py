@@ -24,6 +24,7 @@ from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
 
 CONFIG_FOLDER = "/config/"
@@ -101,7 +102,11 @@ class JobMetaValidator(JobMetaValidatorSpec):
         if not deploy_map:
             raise ValueError(f"deploy_map is empty for job {job_name}")
 
-        site_list = [site for deployments in deploy_map.values() for site in deployments]
+        site_list = []
+        for deployments in deploy_map.values():
+            deployments = extract_participants(deployments)
+            for site in deployments:
+                site_list.append(site)
         if not site_list:
             raise ValueError(f"No site is specified in deploy_map for job {job_name}")
 
@@ -126,6 +131,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
         has_byoc = False
         for app, deployments in deploy_map.items():
+            deployments = extract_participants(deployments)
 
             config_folder = job_name + "/" + app + CONFIG_FOLDER
             if not self._entry_exists(zip_file, config_folder):

@@ -25,6 +25,7 @@ from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, Job, JobMetaKey, R
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
+from nvflare.private.fed.utils.fed_utils import extract_participants
 
 SCHEDULE_RESULT_OK = 0  # the job is scheduled
 SCHEDULE_RESULT_NO_RESOURCE = 1  # job is not scheduled due to lack of resources
@@ -109,7 +110,9 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         applicable_sites = []
         sites_to_app = {}
         for app_name in job.deploy_map:
-            for site_name in job.deploy_map[app_name]:
+            deployments = job.deploy_map[app_name]
+            deployments = extract_participants(deployments)
+            for site_name in deployments:
                 if site_name.upper() == ALL_SITES:
                     # deploy_map: {"app_name": ["ALL_SITES"]} will be treated as deploying to all online clients
                     applicable_sites = online_site_names

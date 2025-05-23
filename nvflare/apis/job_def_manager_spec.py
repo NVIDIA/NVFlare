@@ -123,6 +123,50 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def set_client_data(self, jid: str, data: Union[bytes, str], client_name: str, data_type: str, fl_ctx: FLContext):
+        """Save the provided data content for the specified job, client name and data type.
+
+        Args:
+            jid (str): Job ID
+            data: data content, either as bytes or a string representing the file name that contains the data
+            client_name (str): client name
+            data_type (str): data type
+            fl_ctx (FLContext): FLContext information
+
+        """
+        pass
+
+    @abstractmethod
+    def get_client_data(self, jid: str, client_name: str, data_type: str, fl_ctx: FLContext) -> Optional[bytes]:
+        """Get data content for the specified job, client name and data type.
+
+        Args:
+            jid (str): Job ID
+            client_name (str): client name
+            data_type (str): data type
+            fl_ctx (FLContext): FLContext information
+
+        Returns:
+            data content
+
+        """
+        pass
+
+    @abstractmethod
+    def list_components(self, jid: str, fl_ctx: FLContext) -> List[str]:
+        """Get list of all the components for the specified job.
+
+        Args:
+            jid (str): Job ID
+            fl_ctx (FLContext): FLContext information
+
+        Returns:
+            list of components
+
+        """
+        pass
+
+    @abstractmethod
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         """Set status of an existing Job.
 
@@ -214,13 +258,15 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def save_workspace(self, jid: str, data: Union[bytes, str], fl_ctx: FLContext):
+    def save_workspace(self, jid: str, data: Union[bytes, str, List[str]], fl_ctx: FLContext) -> str:
         """Save the job workspace to the job storage.
 
         Args:
             jid (str): Job ID
-            data: Job workspace data or name of data file
+            data: Job workspace data; or name of data file; or list of file/dir names
             fl_ctx (FLContext): FLContext information
+
+        Returns: location where the workspace is saved at
 
         """
         pass

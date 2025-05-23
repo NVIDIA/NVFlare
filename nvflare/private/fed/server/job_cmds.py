@@ -14,15 +14,13 @@
 
 import datetime
 import json
-import logging
 import shutil
 import uuid
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, RunProcessKey, ServerCommandKey
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode, ServerCommandKey
 from nvflare.apis.job_def import Job, JobMetaKey, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.shareable import Shareable
@@ -34,6 +32,7 @@ from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -77,7 +76,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def __init__(self):
         super().__init__()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -93,11 +92,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     confirm=ConfirmMethod.AUTH,
                 ),
                 CommandSpec(
-                    name=AdminCommandNames.START_APP,
-                    description="start the FL app",
-                    usage=f"{AdminCommandNames.START_APP} job_id server|client|all",
-                    handler_func=self.start_app,
-                    authz_func=self.authorize_job,
+                    name=AdminCommandNames.CONFIGURE_JOB_LOG,
+                    description="configure logging of a running job",
+                    usage=f"{AdminCommandNames.CONFIGURE_JOB_LOG} job_id server|client <client-name>... config",
+                    handler_func=self.configure_job_log,
+                    authz_func=self.authorize_configure_job_log,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.LIST_JOBS,
@@ -111,6 +110,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     description="get meta info of specified job",
                     usage=f"{AdminCommandNames.GET_JOB_META} job_id",
                     handler_func=self.get_job_meta,
+                    authz_func=self.authorize_job,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.LIST_JOB,
+                    description="list additional components of specified job",
+                    usage=f"{AdminCommandNames.LIST_JOB} job_id",
+                    handler_func=self.list_job_components,
                     authz_func=self.authorize_job,
                 ),
                 CommandSpec(
@@ -163,6 +169,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     authz_func=self.authorize_job_file,
                     client_cmd=ftd.PULL_BINARY_FQN,
                     visible=False,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.DOWNLOAD_JOB_COMPONENTS,
+                    description="download additional components for a specified job",
+                    usage=f"{AdminCommandNames.DOWNLOAD_JOB_COMPONENTS} job_id",
+                    handler_func=self.download_job_components,
+                    client_cmd=ftd.PULL_FOLDER_FQN,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.APP_COMMAND,
@@ -230,70 +243,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
-    def _start_app_on_clients(self, conn: Connection, job_id: str) -> bool:
-        engine = conn.app_ctx
-        client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
-        run_process = engine.run_processes.get(job_id, {})
-        if not run_process:
-            conn.append_error(f"Job {job_id} is not running.")
-            return False
-
-        participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS, {})
-        wrong_clients = []
-        for client in client_names:
-            client_valid = False
-            for _, p in participants.items():
-                if client == p.name:
-                    client_valid = True
-                    break
-            if not client_valid:
-                wrong_clients.append(client)
-
-        if wrong_clients:
-            display_clients = ",".join(wrong_clients)
-            conn.append_error(f"{display_clients} are not in the job running list.")
-            return False
-
-        err = engine.check_app_start_readiness(job_id)
-        if err:
-            conn.append_error(err)
-            return False
-
-        message = new_message(conn, topic=TrainingTopic.START, body="", require_authz=False)
-        message.set_header(RequestHeader.JOB_ID, job_id)
-        replies = self.send_request_to_clients(conn, message)
-        self.process_replies_to_table(conn, replies)
-        return True
-
-    def start_app(self, conn: Connection, args: List[str]):
-        engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-
-        job_id = conn.get_prop(self.JOB_ID)
-        if len(args) < 3:
-            conn.append_error("Please provide the target name (client / all) for start_app command.")
-            return
-
-        target_type = args[2]
-        if target_type == self.TARGET_TYPE_SERVER:
-            # if not self._start_app_on_server(conn, job_id):
-            #     return
-            conn.append_error("start_app command only supports client app start.")
-            return
-        elif target_type == self.TARGET_TYPE_CLIENT:
-            if not self._start_app_on_clients(conn, job_id):
-                return
-        else:
-            # # all
-            # success = self._start_app_on_server(conn, job_id)
-            #
-            # if success:
-            client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
-            if client_names:
-                if not self._start_app_on_clients(conn, job_id):
-                    return
-        conn.append_success("")
+    def authorize_configure_job_log(self, conn: Connection, args: List[str]):
+        if len(args) < 4:
+            conn.append_error("syntax error: please provide job_id, target_type, and config")
+            return PreAuthzReturnCode.ERROR
+        return self.authorize_job(conn, args[:-1])
 
     def delete_job_id(self, conn: Connection, args: List[str]):
         job_id = args[1]
@@ -320,6 +274,55 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             self.process_replies_to_table(conn, replies)
 
         conn.append_success("")
+
+    def configure_job_log(self, conn: Connection, args: List[str]):
+        if len(args) < 4:
+            conn.append_error("syntax error: please provide job_id, target_type, and config")
+            return
+
+        job_id = args[1]
+        target_type = args[2]
+        config = args[-1]
+
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngine):
+            raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
+
+        try:
+            with engine.new_context() as fl_ctx:
+                job_manager = engine.job_def_manager
+                job = job_manager.get_job(job_id, fl_ctx)
+                job_status = job.meta.get(JobMetaKey.STATUS)
+                if not job_status == RunStatus.RUNNING:
+                    conn.append_error(f"Job {job_id} must be running but is {job_status}")
+                    return
+        except Exception as e:
+            conn.append_error(
+                f"Exception occurred trying to check job status {job_id} for configure_job_log: {secure_format_exception(e)}",
+                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
+            )
+            return
+
+        if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
+            err = engine.configure_job_log(str(job_id), config)
+            if err:
+                conn.append_error(err)
+                return
+
+            conn.append_string(f"successfully configured server job {job_id} log")
+
+        if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
+            message = new_message(conn, topic=TrainingTopic.CONFIGURE_JOB_LOG, body=config, require_authz=False)
+            message.set_header(RequestHeader.JOB_ID, str(job_id))
+            replies = self.send_request_to_clients(conn, message)
+            self.process_replies_to_table(conn, replies)
+
+        if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
+            conn.append_error(
+                "invalid target type {}. Usage: configure_job_log job_id server|client <client-name>...|all config".format(
+                    target_type
+                )
+            )
 
     def list_jobs(self, conn: Connection, args: List[str]):
         try:
@@ -417,6 +420,39 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             job = job_def_manager.get_job(jid=job_id, fl_ctx=fl_ctx)
             if job:
                 conn.append_dict(job.meta, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_META: job.meta}))
+            else:
+                conn.append_error(
+                    f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
+                )
+
+    def list_job_components(self, conn: Connection, args: List[str]):
+        if len(args) < 2:
+            conn.append_error("Usage: list_job_components job_id", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
+            return
+
+        job_id = conn.get_prop(self.JOB_ID)
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            raise TypeError(
+                f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+            )
+        with engine.new_context() as fl_ctx:
+            list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
+            if list_of_data:
+                system_components = {"workspace", "meta", "scheduled", "data"}
+                filtered_data = [item for item in list_of_data if item not in system_components]
+                if filtered_data:
+                    data_str = ", ".join(filtered_data)
+                    conn.append_string(data_str)
+                    conn.append_success(
+                        "", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_COMPONENTS: filtered_data})
+                    )
+                else:
+                    conn.append_error(
+                        "No additional job components found.",
+                        meta=make_meta(MetaStatusValue.NO_JOB_COMPONENTS, "No additional job components found."),
+                    )
             else:
                 conn.append_error(
                     f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
@@ -648,6 +684,51 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     conn,
                     tx_id=tx_id,
                     folder_name=job_id,
+                    download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE,
+                )
+            except Exception as e:
+                secure_log_traceback()
+                self.logger.error(f"exception downloading job {job_id}: {secure_format_exception(e)}")
+                self._clean_up_download(conn, tx_id)
+                conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+
+    def download_job_components(self, conn: Connection, args: List[str]):
+        """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
+
+        Based on job download but downloads the additional components for a job that job download does
+        not download.
+        """
+        job_id = args[1]
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            self.logger.error(
+                f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+            )
+            conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+            return
+
+        # It is possible that the same job is downloaded in multiple sessions at the same time.
+        # To allow this, we use a separate sub-folder in the download_dir for each download.
+        # This sub-folder is named with a transaction ID (tx_id), which is a UUID.
+        # The folder path for download the job is: <download_dir>/<tx_id>/<job_id>.
+        tx_id = str(uuid.uuid4())  # generate a new tx_id
+        job_download_dir = self.tx_path(conn, tx_id)  # absolute path of the job download dir.
+        with engine.new_context() as fl_ctx:
+            try:
+                list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
+                if list_of_data:
+                    job_components = [
+                        item for item in list_of_data if item not in {"workspace", "meta", "scheduled", "data"}
+                    ]
+                for job_component in job_components:
+                    job_def_manager.get_storage_for_download(
+                        job_id + "_components", job_download_dir, job_component, job_component, fl_ctx
+                    )
+                self.download_folder(
+                    conn,
+                    tx_id=tx_id,
+                    folder_name=job_id + "_components",
                     download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE,
                 )
             except Exception as e:

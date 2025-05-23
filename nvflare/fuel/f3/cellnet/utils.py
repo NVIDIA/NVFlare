@@ -35,6 +35,13 @@ msg_mapping = {
 }
 
 
+def new_cell_message(headers: dict, payload=None):
+    msg_headers = {}
+    if headers:
+        msg_headers.update(headers)
+    return Message(msg_headers, payload)
+
+
 def make_reply(rc: str, error: str = "", body=None) -> Message:
     headers = {MessageHeaderKey.RETURN_CODE: rc}
     if error:
@@ -83,7 +90,22 @@ def format_log_message(fqcn: str, message: Message, log: str) -> str:
     return " ".join(context) + f"] {log}"
 
 
-def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING):
+def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING) -> int:
+    """Encode the payload of the specified message.
+
+    Args:
+        message: the message to be encoded
+        encoding_key: the key name of the encoding property in the message header. If the encoding property is not
+        set in the message header, then it means that the message payload has not been encoded. If the property is
+        already set, then the message payload is already encoded, and no processing is done.
+        If encoding is needed, we will determine the encoding scheme based on the data type of the payload:
+        - If the payload is None, encoding scheme is NONE
+        - If the payload data type is like bytes, encoding scheme is BYTES
+        - Otherwise, encoding scheme is FOBS, and the payload is serialized with FOBS.
+
+    Returns: the encoded payload size.
+
+    """
     encoding = message.get_header(encoding_key)
     if not encoding:
         if message.payload is None:
@@ -97,6 +119,7 @@ def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
 
     size = buffer_len(message.payload)
     message.set_header(MessageHeaderKey.PAYLOAD_LEN, size)
+    return size
 
 
 def decode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING):

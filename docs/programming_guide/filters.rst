@@ -48,9 +48,9 @@ For an example application using SVTPrivacy, see :github_nvflare_link:`Different
 
 DXO - Data Exchange Object
 ===========================
-The message object passed between the server and clients are of Shareable class. Shareable is a general structure for all kinds of communication (task interaction, aux messages, fed events, etc.) that in addition to the message payload, also carries contextual information (such as peer FL context). NVFLARE's DXO object is a general-purpose structure that is meant to be used to carry message payload in a self-descriptive manner. As an analogy, think of Shareable as an HTTP message, whereas a DXO as a JPEG image that is carried by the HTTP message.
+The message object passed between the server and clients is of the Shareable class. Shareable is a general structure for all kinds of communication (task interaction, aux messages, fed events, etc.) that in addition to the message payload, also carries contextual information (such as peer FL context). NVFLARE's DXO object is a general-purpose structure that is meant to be used to carry message payload in a self-descriptive manner. As an analogy, think of Shareable as an HTTP message, whereas a DXO as a JPEG image that is carried by the HTTP message.
 
-An DXO object has the following properties:
+A DXO object has the following properties:
 
     - Data Kind - the kind of data the DXO object carries (e.g. WEIGHTS, WEIGHT_DIFF, COLLECTION of DXOs, etc.)
     - Meta - meta properties that describe the data (e.g. whether processed/encrypted and processing algorithm). This is a dict.
@@ -70,6 +70,19 @@ Your subclass of DXOFilter benefits from the features of DXOFilter:
     - Data Kind checking. Your process_dxo method is called to process a DXO only when the DXO node is a data kind that your filter is configured to handle.
     - Filtering history recording. If a DXO node is processed by your filter, your filter's class name will be appended to the DXO's "filter_history"
     - Auditing. If your filter is applied, a job audit event will be created to record the fact that the filter is applied to data.
+
+Filter Behavior in 1-N Communication
+==========
+Based on the design, when a filter is applied to a object, for memory efficiency without making local deep copies, it can modify the object in place.
+This is fine when the object is expected to be sent to only one recipient, as in the case of 1-1 communication, e.g. client to server.
+However, in the case of 1-N communication, e.g. server to clients, the object will be expected by multiple recipients.
+Assuming a common filter is being used, if the object is modified in place, then the object sent to the second and other recipients should not be filtered again,
+otherwise they might be different from the one sent to the first recipient.
+
+Therefore, when designing and implementing filters, such behavior needs to be considered with care:
+
+    - If the object is modified in place, then the filter should be applied only once to the object.
+    - If different filters are expected to be applied to the same object, then the object should not be modified in place. Instead, a deep copy should be created and used by the filter.
 
 Creating a DXO Filter
 ---------------------

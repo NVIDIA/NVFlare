@@ -16,10 +16,13 @@ from flask import current_app as app
 from flask import jsonify, make_response, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
+from nvflare.dashboard.application.constants import FLARE_DASHBOARD_NAMESPACE
+
+from .blob import gen_client_blob
 from .store import Store, check_role
 
 
-@app.route("/api/v1/clients", methods=["POST"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients", methods=["POST"])
 @jwt_required()
 def create_one_client():
     creator = get_jwt_identity()
@@ -31,21 +34,21 @@ def create_one_client():
         return jsonify({"status": "conflicting"}), 409
 
 
-@app.route("/api/v1/clients", methods=["GET"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients", methods=["GET"])
 @jwt_required()
 def get_all_clients():
     result = Store.get_clients()
     return jsonify(result)
 
 
-@app.route("/api/v1/clients/<id>", methods=["GET"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/<id>", methods=["GET"])
 @jwt_required()
 def get_one_client(id):
     result = Store.get_client(id)
     return jsonify(result)
 
 
-@app.route("/api/v1/clients/<id>", methods=["PATCH", "DELETE"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/<id>", methods=["PATCH", "DELETE"])
 @jwt_required()
 def update_client(id):
     creator_id = Store.get_creator_id_by_client_id(id)
@@ -71,7 +74,7 @@ def update_client(id):
         return jsonify({"status": "conflicting"}), 409
 
 
-@app.route("/api/v1/clients/<int:id>/blob", methods=["POST"])
+@app.route(FLARE_DASHBOARD_NAMESPACE + "/api/v1/clients/<int:id>/blob", methods=["POST"])
 @jwt_required()
 def client_blob(id):
     if not Store._is_approved_by_client_id(id):
@@ -80,7 +83,7 @@ def client_blob(id):
     c, p = check_role(creator_id, get_jwt(), get_jwt_identity())
     if p or c:
         pin = request.json.get("pin")
-        fileobj, filename = Store.get_client_blob(pin, id)
+        fileobj, filename = gen_client_blob(pin, id)
         response = make_response(fileobj.read())
         response.headers.set("Content-Type", "zip")
         response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')

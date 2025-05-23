@@ -90,8 +90,7 @@ class TestCommunicator:
         [
             ("tcp", "2000-3000"),
             ("grpc", "3000-4000"),
-            # ("http", "3000-4000"), # TODO: HTTP is not working properly
-            # ("atcp", "3000-4000"), # TODO: This test is hanging with Python 3.12
+            ("http", "4000-5000"),
         ],
     )
     def test_sfm_message(self, scheme, port_range):
@@ -99,7 +98,7 @@ class TestCommunicator:
         comm_a = get_comm_a(comm_state)
         comm_b = get_comm_b(comm_state)
 
-        _, url = comm_a.start_listener(scheme, {"ports": port_range})
+        _, url, _ = comm_a.start_listener(scheme, {"ports": port_range})
         comm_a.start()
 
         # Check port is in the range

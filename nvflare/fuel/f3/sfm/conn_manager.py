@@ -82,6 +82,7 @@ class ConnManager(ConnMonitor):
         self.receivers: Dict[int, MessageReceiver] = {}
 
         self.started = False
+        self.stopped = False
         self.conn_mgr_executor = ThreadPoolExecutor(CONN_THREAD_POOL_SIZE, "conn_mgr")
         self.frame_mgr_executor = ThreadPoolExecutor(FRAME_THREAD_POOL_SIZE, "frame_mgr")
         self.lock = threading.Lock()
@@ -153,6 +154,8 @@ class ConnManager(ConnMonitor):
 
         self.conn_mgr_executor.shutdown(True)
         self.frame_mgr_executor.shutdown(True)
+
+        self.stopped = True
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
 
@@ -369,6 +372,10 @@ class ConnManager(ConnMonitor):
             log.debug(secure_format_traceback())
 
     def process_frame(self, sfm_conn: SfmConnection, frame: BytesAlike):
+        if self.stopped:
+            log.debug(f"Frame received after shutdown for connection {sfm_conn.get_name()}")
+            return
+
         self.frame_mgr_executor.submit(self.process_frame_task, sfm_conn, frame)
 
     def update_endpoint(self, sfm_conn: SfmConnection, data: dict):

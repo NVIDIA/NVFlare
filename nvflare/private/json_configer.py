@@ -15,12 +15,14 @@ import copy
 from typing import List, Union
 
 from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
-from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
+from nvflare.fuel.utils.class_loader import load_class
+from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.dict_utils import augment
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.wfconf import resolve_var_refs
 from nvflare.security.logging import secure_format_exception
 
@@ -53,6 +55,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
             sys_vars: system vars
         """
         JsonObjectProcessor.__init__(self)
+        self.logger = get_obj_logger(self)
 
         if not isinstance(num_passes, int):
             raise TypeError(f"num_passes must be int but got {num_passes}")
@@ -150,7 +153,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         self.process_config_element(self.config_ctx, node)
 
     def is_configured_subclass(self, config_dict, base_class):
-        return issubclass(get_class(self.get_class_path(config_dict)), base_class)
+        return issubclass(load_class(self.get_class_path(config_dict)), base_class)
 
     def start_config(self, config_ctx: ConfigContext):
         pass

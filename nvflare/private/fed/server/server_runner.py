@@ -26,6 +26,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.fuel.utils.job_utils import build_client_hierarchy
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.tbi import TBI
 from nvflare.private.privacy_manager import Scope
@@ -183,6 +184,12 @@ class ServerRunner(TBI):
             self.fire_event(EventType.START_RUN, fl_ctx)
             self.engine.persist_components(fl_ctx, completed=False)
 
+            # get children clients
+            client_dict = self.engine.get_participating_clients()
+            assert isinstance(client_dict, dict)
+            forest = build_client_hierarchy(list(client_dict.values()))
+            fl_ctx.set_prop(FLContextKey.CLIENT_HIERARCHY, forest, private=True, sticky=True)
+
         self.status = "started"
         try:
             self._execute_run()
@@ -218,6 +225,7 @@ class ServerRunner(TBI):
                     self.log_info(fl_ctx, "END_RUN fired")
 
             ReliableMessage.shutdown()
+            self.engine.shutdown_streamer()
             self.log_info(fl_ctx, "Server runner finished.")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

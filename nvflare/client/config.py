@@ -16,6 +16,7 @@ import json
 import os
 from typing import Dict, Optional
 
+from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
@@ -23,6 +24,7 @@ class ExchangeFormat:
     RAW = "raw"
     PYTORCH = "pytorch"
     NUMPY = "numpy"
+    KERAS_LAYER_WEIGHTS = "keras_layer_weights"
 
 
 class TransferType:
@@ -154,6 +156,27 @@ class ClientConfig:
             ConfigKey.HEARTBEAT_TIMEOUT,
             self.config.get(ConfigKey.METRICS_EXCHANGE, {}).get(ConfigKey.HEARTBEAT_TIMEOUT, 60),
         )
+
+    def get_connection_security(self):
+        return self.config.get(ConnPropKey.CONNECTION_SECURITY)
+
+    def get_root_conn_props(self):
+        return self.config.get(ConnPropKey.ROOT_CONN_PROPS)
+
+    def get_cp_conn_props(self):
+        return self.config.get(ConnPropKey.CP_CONN_PROPS)
+
+    def get_relay_conn_props(self):
+        return self.config.get(ConnPropKey.RELAY_CONN_PROPS)
+
+    def get_site_name(self):
+        return self.config.get(FLMetaKey.SITE_NAME)
+
+    def get_auth_token(self):
+        return self.config.get(FLMetaKey.AUTH_TOKEN)
+
+    def get_auth_token_signature(self):
+        return self.config.get(FLMetaKey.AUTH_TOKEN_SIGNATURE)
 
     def to_json(self, config_file: str):
         with open(config_file, "w") as f:

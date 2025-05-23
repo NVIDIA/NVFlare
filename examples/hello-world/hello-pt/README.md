@@ -41,3 +41,11 @@ You can find the running logs and results inside the simulator's workspace:
 ```bash
 $ ls /tmp/nvflare/jobs/workdir/
 ```
+
+By default, the Tensorboard event logs can be found in the directory for each client on the server job's tb_events folder,
+for example:
+
+```bash
+$ ls /tmp/nvflare/jobs/workdir/server/simulate_job/tb_events/site-1
+events.out.tfevents.1728070846.machinename.15928.1
+```

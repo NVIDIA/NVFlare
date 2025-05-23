@@ -14,7 +14,7 @@
 import copy
 
 from ..fuel.utils import fobs
-from .fl_constant import ReservedKey, ReturnCode
+from .fl_constant import ReservedKey, ReturnCode, ServerCommandKey
 
 
 class ReservedHeaderKey(object):
@@ -32,6 +32,7 @@ class ReservedHeaderKey(object):
     CONTENT_TYPE = "__content_type__"
     TASK_OPERATOR = "__task_operator__"
     ERROR = "__error__"
+    PEER_CTX = ServerCommandKey.PEER_FL_CONTEXT
 
 
 class Shareable(dict):
@@ -41,9 +42,11 @@ class Shareable(dict):
     It is recommended that keys are strings. Values must be serializable.
     """
 
-    def __init__(self):
+    def __init__(self, data: dict = None):
         """Init the Shareable."""
         super().__init__()
+        if data:
+            self.update(data)
         self[ReservedHeaderKey.HEADERS] = {}
 
     def set_header(self, key: str, value):
@@ -109,6 +112,12 @@ class Shareable(dict):
             return default
         return props.get(key, default)
 
+    def set_peer_context(self, peer_ctx):
+        self.set_header(ReservedHeaderKey.PEER_CTX, peer_ctx)
+
+    def get_peer_context(self):
+        return self.get_header(ReservedHeaderKey.PEER_CTX)
+
     def to_bytes(self) -> bytes:
         """Serialize the Model object into bytes.
 
@@ -142,16 +151,19 @@ def make_reply(rc, headers=None) -> Shareable:
     return reply
 
 
-def make_copy(source: Shareable) -> Shareable:
+def make_copy(source: Shareable, exclude_headers: list = None) -> Shareable:
     """
     Make a copy from the source.
     The content (non-headers) will be kept intact. Headers will be deep-copied into the new instance.
     """
     assert isinstance(source, Shareable)
     c = copy.copy(source)
-    headers = source.get(ReservedHeaderKey.HEADERS, None)
+    headers = source.get(ReservedHeaderKey.HEADERS)
     if headers:
         new_headers = copy.deepcopy(headers)
+        if exclude_headers:
+            for k in exclude_headers:
+                new_headers.pop(k, None)
     else:
         new_headers = {}
     c[ReservedHeaderKey.HEADERS] = new_headers

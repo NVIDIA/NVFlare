@@ -20,16 +20,17 @@ import os
 import sys
 import time
 
-from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.log_utils import configure_logging
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
 from nvflare.private.fed.app.utils import create_admin_server, version_check
 from nvflare.private.fed.server.server_status import ServerStatus
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
+from nvflare.private.fed.utils.fed_utils import fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
 
@@ -51,7 +52,7 @@ def main(args):
     args.log_config = None
     args.job_id = None
 
-    workspace = Workspace(root_dir=args.workspace, site_name="server")
+    workspace = Workspace(root_dir=args.workspace, site_name=SiteType.SERVER)
     for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
         try:
             f = workspace.get_file_path_in_root(name)
@@ -83,8 +84,7 @@ def main(args):
             logger.critical("loglevel critical enabled")
         conf.configure()
 
-        log_file = workspace.get_log_file_path()
-        add_logfile_handler(log_file)
+        configure_logging(workspace)
 
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)
@@ -101,7 +101,6 @@ def main(args):
         privacy_manager = create_privacy_manager(workspace, names_only=True, is_server=True)
         PrivacyService.initialize(privacy_manager)
 
-        admin_server = None
         try:
             # Deploy the FL server
             services = deployer.deploy(args)
@@ -119,7 +118,20 @@ def main(args):
             admin_server.start()
             services.set_admin_server(admin_server)
 
-            # mpm.add_cleanup_cb(admin_server.stop)
+            with services.engine.new_context() as fl_ctx:
+                fl_ctx.set_prop(
+                    key=FLContextKey.SERVER_CONFIG,
+                    value=deployer.server_config,
+                    private=True,
+                    sticky=True,
+                )
+
+                fl_ctx.set_prop(
+                    key=FLContextKey.SECURE_MODE,
+                    value=deployer.secure_train,
+                    private=True,
+                    sticky=True,
+                )
 
         finally:
             deployer.close()

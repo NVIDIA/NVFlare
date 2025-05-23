@@ -14,7 +14,6 @@
 
 import os
 import shutil
-import tempfile
 import threading
 import time
 from typing import Dict, List, Tuple
@@ -22,20 +21,19 @@ from typing import Dict, List, Tuple
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemComponents
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SiteType, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.fuel.utils.zip_utils import zip_directory_to_file
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
 from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
-from nvflare.private.fed.utils.fed_utils import set_message_security_data
+from nvflare.private.fed.utils.fed_utils import extract_participants, set_message_security_data
 from nvflare.security.logging import secure_format_exception
 
 
@@ -121,7 +119,7 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         run_number = job.job_id
         fl_ctx.set_prop(FLContextKey.JOB_RUN_NUMBER, run_number)
-        workspace = Workspace(root_dir=self.workspace_root, site_name="server")
+        workspace = Workspace(root_dir=self.workspace_root, site_name=SiteType.SERVER)
 
         client_deploy_requests = {}
         client_token_to_name = {}
@@ -131,14 +129,15 @@ class JobRunner(FLComponent):
 
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
+            participants = extract_participants(participants)
 
             if len(participants) == 1 and participants[0].upper() == ALL_SITES:
-                participants = ["server"]
+                participants = [SiteType.SERVER]
                 participants.extend([client.name for client in engine.get_clients()])
 
             client_sites = []
             for p in participants:
-                if p == "server":
+                if p == SiteType.SERVER:
                     self.fire_event(EventType.DEPLOY_JOB_TO_SERVER, fl_ctx)
                     app_deployer = AppDeployer()
                     err = app_deployer.deploy(
@@ -245,11 +244,16 @@ class JobRunner(FLComponent):
         """
         engine = fl_ctx.get_engine()
         job_clients = engine.get_job_clients(client_sites)
-        err = engine.start_app_on_server(job_id, job=job, job_clients=job_clients)
+
+        # job_clients is a dict of: token => Client
+        assert isinstance(job_clients, dict)
+        participating_clients = [c.to_dict() for c in job_clients.values()]
+        job.meta[JobMetaKey.JOB_CLIENTS] = participating_clients
+        err = engine.start_app_on_server(fl_ctx, job=job, job_clients=job_clients)
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
-        replies = engine.start_client_job(job_id, client_sites, fl_ctx)
+        replies = engine.start_client_job(job, client_sites, fl_ctx)
         client_sites_names = list(client_sites.keys())
         check_client_replies(replies=replies, client_sites=client_sites_names, command=f"start job ({job_id})")
         display_sites = ",".join(client_sites_names)
@@ -376,16 +380,30 @@ class JobRunner(FLComponent):
 
     def _save_workspace(self, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-        workspace = Workspace(root_dir=self.workspace_root)
+        workspace = fl_ctx.get_workspace()
         run_dir = workspace.get_run_dir(job_id)
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-        with tempfile.TemporaryDirectory() as td:
-            output_file = os.path.join(td, "workspace")
-            zip_directory_to_file(run_dir, "", output_file)
-            job_manager.save_workspace(job_id, output_file, fl_ctx)
-            self.log_debug(fl_ctx, f"Workspace zipped to {output_file}")
-        shutil.rmtree(run_dir)
+        ws_dirs = [run_dir]
+
+        result_root = workspace.get_result_root(job_id)
+        if result_root not in ws_dirs:
+            ws_dirs.append(result_root)
+
+        log_root = workspace.get_log_root(job_id)
+        if log_root not in ws_dirs:
+            ws_dirs.append(log_root)
+
+        audit_root = workspace.get_audit_root(job_id)
+        if audit_root not in ws_dirs:
+            ws_dirs.append(audit_root)
+
+        location = job_manager.save_workspace(job_id, ws_dirs, fl_ctx)
+        self.log_debug(fl_ctx, f"Workspace {ws_dirs} saved to {location}")
+
+        # remove all ws dirs
+        for d in ws_dirs:
+            shutil.rmtree(d)
 
     def run(self, fl_ctx: FLContext):
         """Starts job runner."""
@@ -418,7 +436,7 @@ class JobRunner(FLComponent):
                         if self._check_job_status(job_manager, ready_job.job_id, RunStatus.SUBMITTED, fl_ctx):
                             self.log_info(fl_ctx, f"Job: {ready_job.job_id} is not in SUBMITTED. It won't be deployed.")
                             continue
-                        client_sites = {k: v for k, v in sites.items() if k != "server"}
+                        client_sites = {k: v for k, v in sites.items() if k != SiteType.SERVER}
                         job_id = None
                         try:
                             self.log_info(fl_ctx, f"Got the job: {ready_job.job_id} from the scheduler to run")
@@ -497,13 +515,13 @@ class JobRunner(FLComponent):
     def stop(self):
         self.ask_to_stop = True
 
-    def restore_running_job(self, run_number: str, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
+    def restore_running_job(self, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
 
         try:
             job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
             job = job_manager.get_job(jid=job_id, fl_ctx=fl_ctx)
-            err = engine.start_app_on_server(run_number, job=job, job_clients=job_clients, snapshot=snapshot)
+            err = engine.start_app_on_server(fl_ctx, job=job, job_clients=job_clients, snapshot=snapshot)
             if err:
                 raise RuntimeError(f"Could not restore the server App for job: {job_id}.")
             with self.lock:

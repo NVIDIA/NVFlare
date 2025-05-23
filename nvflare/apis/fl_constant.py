@@ -23,6 +23,7 @@ class ReturnCode(object):
     BAD_REQUEST_DATA = "BAD_REQUEST_DATA"
     BAD_TASK_DATA = "BAD_TASK_DATA"
     COMMUNICATION_ERROR = "COMMUNICATION_ERROR"
+    TIMEOUT = "TIMEOUT"
     ERROR = "ERROR"
     EXECUTION_EXCEPTION = "EXECUTION_EXCEPTION"
     EXECUTION_RESULT_ERROR = "EXECUTION_RESULT_ERROR"
@@ -64,6 +65,8 @@ class ReservedKey(object):
     AUX_RUNNER = "__aux_runner__"
     RUN_NUM = "__run_num__"
     IDENTITY_NAME = "__identity_name__"  # identity of the endpoint (e.g. client name)
+    FQSN = "__fqsn__"
+    IS_LEAF = "__is_leaf__"
     PEER_CTX = "__peer_ctx__"
     RC = "__rc__"
     COOKIE_JAR = "__cookie_jar__"
@@ -104,6 +107,9 @@ class ReservedKey(object):
     JOB_IS_UNSAFE = "__job_is_unsafe__"
     CUSTOM_PROPS = "__custom_props__"
     EXCEPTIONS = "__exceptions__"
+    PROCESS_TYPE = "__process_type__"  # type of the current process (SP, CP, SJ, CJ)
+    JOB_PROCESS_ARGS = "__job_process_args__"
+    TASK_IS_READY = "__task_is_ready__"
 
 
 class FLContextKey(object):
@@ -160,6 +166,9 @@ class FLContextKey(object):
     AUTHORIZATION_REASON = "_authorization_reason"
     DISCONNECTED_CLIENT_NAME = "_disconnected_client_name"
     RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
+    SITE_OBJ = "_site_obj_"
+    JOB_LAUNCHER = "_job_launcher"
+    SNAPSHOT = "job_snapshot"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
     SECURITY_ITEMS = "_security_items"
@@ -178,6 +187,21 @@ class FLContextKey(object):
     FILTER_DIRECTION = "__filter_dir__"
     ROOT_URL = "__root_url__"  # the URL for accessing the FL Server
     NOT_READY_TO_END_RUN = "not_ready_to_end_run__"  # component sets this to indicate it's not ready to end run yet
+    CLIENT_CONFIG = "__client_config__"
+    SERVER_CONFIG = "__server_config__"
+    SERVER_HOST_NAME = "__server_host_name__"
+    PROCESS_TYPE = ReservedKey.PROCESS_TYPE
+    JOB_PROCESS_ARGS = ReservedKey.JOB_PROCESS_ARGS
+    EVENT_PROCESSED = "__event_processed__"
+    CELL_MESSAGE = "__cell_message__"
+    CLIENT_HIERARCHY = "__client_hierarchy__"
+
+
+class ProcessType:
+    SERVER_PARENT = "SP"
+    SERVER_JOB = "SJ"
+    CLIENT_PARENT = "CP"
+    CLIENT_JOB = "CJ"
 
 
 class ReservedTopic(object):
@@ -189,6 +213,7 @@ class ReservedTopic(object):
     SYNC_RUNNER = "__sync_runner__"
     JOB_HEART_BEAT = "__job_heartbeat__"
     TASK_CHECK = "__task_check__"
+    APP_METRICS = "__app_metrics__"
 
 
 class AdminCommandNames(object):
@@ -196,7 +221,9 @@ class AdminCommandNames(object):
     SUBMIT_JOB = "submit_job"
     LIST_JOBS = "list_jobs"
     GET_JOB_META = "get_job_meta"
+    LIST_JOB = "list_job"
     DOWNLOAD_JOB = "download_job"
+    DOWNLOAD_JOB_COMPONENTS = "download_job_components"
     DOWNLOAD_JOB_FILE = "download_job_file"
     ABORT_JOB = "abort_job"
     DELETE_JOB = "delete_job"
@@ -204,7 +231,6 @@ class AdminCommandNames(object):
     DELETE_WORKSPACE = "delete_workspace"
     CHECK_RESOURCES = "check_resources"
     DEPLOY_APP = "deploy_app"
-    START_APP = "start_app"
     CHECK_STATUS = "check_status"
     ADMIN_CHECK_STATUS = "admin_check_status"
     ABORT = "abort"
@@ -229,6 +255,8 @@ class AdminCommandNames(object):
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
     APP_COMMAND = "app_command"
+    CONFIGURE_JOB_LOG = "configure_job_log"
+    CONFIGURE_SITE_LOG = "configure_site_log"
 
 
 class ServerCommandNames(object):
@@ -254,10 +282,11 @@ class ServerCommandKey(object):
     COMMAND = "command"
     DATA = "data"
     FL_CONTEXT = "fl_context"
-    PEER_FL_CONTEXT = "peer_fl_ctx"
+    PEER_FL_CONTEXT = FLContextKey.PEER_CONTEXT
     SHAREABLE = "shareable"
     TASK_NAME = "task_name"
     TASK_ID = "task_id"
+    LAST_TASK_ID = "last_task_id"
     FL_CLIENT = "fl_client"
     TOPIC = "topic"
     AUX_REPLY = "aux_reply"
@@ -321,7 +350,7 @@ class SnapshotKey(object):
 class RunProcessKey(object):
     LISTEN_PORT = "_listen_port"
     CONNECTION = "_conn"
-    CHILD_PROCESS = "_child_process"
+    JOB_HANDLE = "_job_launcher"
     STATUS = "_status"
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"
@@ -353,6 +382,10 @@ class JobConstants:
     CLIENT_JOB_CONFIG = "config_fed_client.json"
     META_FILE = "meta.json"
     META = "meta"
+    SITES = "sites"
+    JOB_IMAGE = "image"
+    JOB_ID = "job_id"
+    JOB_LAUNCHER = "job_launcher"
 
 
 class WorkspaceConstants:
@@ -362,10 +395,11 @@ class WorkspaceConstants:
     SITE_FOLDER_NAME = "local"
     CUSTOM_FOLDER_NAME = "custom"
 
-    LOGGING_CONFIG = "log.config"
+    LOGGING_CONFIG = "log_config.json"
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
     AUDIT_LOG = "audit.log"
     LOG_FILE_NAME = "log.txt"
+    ERROR_LOG_FILE_NAME = "error_log.txt"
     STATS_POOL_SUMMARY_FILE_NAME = "stats_pool_summary.json"
     STATS_POOL_RECORDS_FILE_NAME = "stats_pool_records.csv"
 
@@ -393,6 +427,14 @@ class WorkspaceConstants:
     JOB_RESOURCES_CONFIG = "job_resources.json"
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
+
+    RESOURCE_FILE_NAME_PATTERN = "*__resources.json"  # for both parent and job processes
+    JOB_RESOURCE_FILE_NAME_PATTERN = "*__j_resources.json"  # for job process only
+    PARENT_RESOURCE_FILE_NAME_PATTERN = "*__p_resources.json"  # for parent process only
+
+    ENV_VAR_RESULT_ROOT = "NVFL_RESULT_ROOT"
+    ENV_VAR_LOG_ROOT = "NVFL_LOG_ROOT"
+    ENV_VAR_AUDIT_ROOT = "NVFL_AUDIT_ROOT"
 
 
 class SiteType:
@@ -428,6 +470,21 @@ class FLMetaKey:
     SITE_NAME = "site_name"
     PROCESS_RC_FILE = "_process_rc.txt"
     SUBMIT_MODEL_NAME = "submit_model_name"
+    AUTH_TOKEN = "auth_token"
+    AUTH_TOKEN_SIGNATURE = "auth_token_signature"
+
+
+class CellMessageAuthHeaderKey:
+    CLIENT_NAME = "client_name"
+    SSID = "ssid"
+    TOKEN = "__token__"
+    TOKEN_SIGNATURE = "__token_signature__"
+
+
+class StreamCtxKey:
+    JOB_ID = "job_id"
+    CLIENT_NAME = "client_name"
+    LOG_TYPE = "log_type"
 
 
 class FilterKey:
@@ -479,6 +536,15 @@ class ConfigVarName:
     # client and server: max amount of time to wait for communication cell to be created
     CELL_WAIT_TIMEOUT = "cell_wait_timeout"
 
+    # these vars are set in Server's startup config (fed_server.json)
+    MAX_REG_DURATION = "max_reg_duration"
+
+    # CJ: timeout for status notification message from CJ to CP
+    NOTIFY_CP_MSG_TIMEOUT = "notify_cp_msg_timeout"
+
+    # CJ: timeout for retrying status notification message from CJ to CP
+    NOTIFY_CP_RETRY_TIMEOUT = "notify_cp_retry_timeout"
+
 
 class SystemVarName:
     """
@@ -492,8 +558,11 @@ class SystemVarName:
     WORKSPACE = "WORKSPACE"  # directory of the workspace
     JOB_ID = "JOB_ID"  # Job ID
     ROOT_URL = "ROOT_URL"  # the URL of the Service Provider (server)
+    CP_URL = "CP_URL"  # URL to CP
+    RELAY_URL = "RELAY_URL"  # URL to relay that the CP is connected to
     SECURE_MODE = "SECURE_MODE"  # whether the system is running in secure mode
     JOB_CUSTOM_DIR = "JOB_CUSTOM_DIR"  # custom dir of the job
+    JOB_CONFIG_DIR = "JOB_CONFIG_DIR"  # custom dir of the job
     PYTHONPATH = "PYTHONPATH"
 
 
@@ -502,3 +571,22 @@ class RunnerTask:
     INIT = "init"
     TASK_EXEC = "task_exec"
     END_RUN = "end_run"
+
+
+class ConnPropKey:
+    FQCN = "fqcn"
+    URL = "url"
+    SCHEME = "scheme"
+    ADDRESS = "address"
+    CONNECTION_SECURITY = "connection_security"
+
+    RELAY_CONFIG = "relay_config"
+    CP_CONN_PROPS = "cp_conn_props"
+    RELAY_CONN_PROPS = "relay_conn_props"
+    ROOT_CONN_PROPS = "root_conn_props"
+
+
+class ConnectionSecurity:
+    CLEAR = "clear"
+    TLS = "tls"
+    MTLS = "mtls"

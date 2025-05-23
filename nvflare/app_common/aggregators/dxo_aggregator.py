@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 from typing import Any, Dict, Optional
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
@@ -20,6 +19,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.fuel.utils.log_utils import get_module_logger
 
 
 class DXOAggregator(FLComponent):
@@ -61,7 +61,7 @@ class DXOAggregator(FLComponent):
 
         if name_postfix:
             self._name += name_postfix
-            self.logger = logging.getLogger(self._name)
+            self.logger = get_module_logger(self.__module__, f"{self.__class__.__qualname__}{name_postfix}")
 
     def reset_aggregation_helper(self):
         if self.aggregation_helper:

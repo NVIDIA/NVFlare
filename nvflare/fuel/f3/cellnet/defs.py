@@ -57,6 +57,7 @@ class MessagePropKey:
 
     ENDPOINT = CELLNET_PREFIX + "endpoint"
     COMMON_NAME = CELLNET_PREFIX + "common_name"
+    FUTURES = CELLNET_PREFIX + "futures"
 
 
 class Encoding:
@@ -157,10 +158,12 @@ class CellChannel:
     MULTI_PROCESS_EXECUTOR = "multi_process_executor"
     SIMULATOR_RUNNER = "simulator_runner"
     RETURN_ONLY = "return_only"
+    EDGE_REQUEST = "edge_request"
 
 
 class CellChannelTopic:
 
+    Challenge = "challenge"
     Register = "register"
     Quit = "quit"
     GET_TASK = "get_task"
@@ -171,3 +174,11 @@ class CellChannelTopic:
     REPORT_JOB_FAILURE = "report_job_failure"
 
     SIMULATOR_WORKER_INIT = "simulator_worker_init"
+
+
+class IdentityChallengeKey:
+
+    NONCE = "nonce"
+    CERT = "cert"
+    SIGNATURE = "signature"
+    COMMON_NAME = "cn"

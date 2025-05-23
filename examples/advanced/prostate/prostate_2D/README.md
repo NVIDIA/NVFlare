@@ -8,7 +8,7 @@ The [U-Net](https://arxiv.org/abs/1505.04597) model is trained to segment the wh
 ## Run automated experiments
 We use the NVFlare simulator to run FL training automatically, the 6 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx`
 ### Prepare local configs
-First, we copy the custom code to job folders, and add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
+First, we copy the custom code to job folders, and add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, which can be any arbitrary path where the data is located.  
 ```
 for job in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
 do
@@ -36,7 +36,7 @@ For federated training, we use
 Note that since the current experiments are performed on a light 2D dataset, we used [`CacheDataset`](https://docs.monai.io/en/stable/data.html#cachedataset) and set cache rate to 1.0 to accelerate the training process. Please adjust the cache rate if memory resource is limited on your system.
 
 ### Experiment list
-In this example, we perform the following examples:
+In this example, we perform the following experiments:
 1. Centralized training, using the combination of training and validation data from all clients
 2. Standard [FedAvg](https://arxiv.org/abs/1602.05629)
 3. [FedProx](https://arxiv.org/abs/1812.06127), which adds a regularizer to the loss used in `SupervisedProstateLearner` (`fedproxloss_mu`)
@@ -62,7 +62,7 @@ python3 ./result_stat/plot_tensorboard_events.py
 The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 150 epochs (150 rounds, 1 local epochs per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
 
-### Testing score
+### Testing Scores
 The testing score is computed based on the best global model for Central/FedAvg/FedProx, and the six best personalized models for Ditto.
 We provide a script for performing validation on testing data split.
 

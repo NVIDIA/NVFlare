@@ -13,12 +13,9 @@
 # limitations under the License.
 
 import copy
-import logging
 import os
 import re
-import shlex
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -32,32 +29,43 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
-    ReturnCode,
     RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
+    SiteType,
     SnapshotKey,
     WorkspaceConstants,
 )
-from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
-from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.apis.job_launcher_spec import JobLauncherSpec, JobProcessArgs
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx, get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.cellnet.core_cell import FQCN, CoreCell
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
+from nvflare.private.aux_runner import AuxMsgTarget
+from nvflare.private.defs import (
+    AUTH_CLIENT_NAME_FOR_SJ,
+    CellChannel,
+    CellMessageHeaderKeys,
+    RequestHeader,
+    TrainingTopic,
+    new_cell_message,
+)
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
-from nvflare.private.fed.server.server_state import ServerState
 from nvflare.private.fed.utils.fed_utils import (
-    add_custom_dir_to_path,
+    get_job_launcher,
     get_return_code,
     security_close,
     set_message_security_data,
@@ -77,7 +85,7 @@ from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
 
 
-class ServerEngine(ServerEngineInternalSpec):
+class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def __init__(self, server, args, client_manager: ClientManager, snapshot_persistor, workers=3):
         """Server engine.
 
@@ -94,7 +102,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.exception_run_processes = {}
         self.run_manager = None
         self.conf = None
-        # TODO:: does this class need client manager?
+        self.cell = None
         self.client_manager = client_manager
 
         self.widgets = {
@@ -109,7 +117,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.lock = Lock()
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
@@ -118,14 +126,9 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.kv_list = parse_vars(args.set)
 
-    def _get_server_app_folder(self):
-        return WorkspaceConstants.APP_PREFIX + "server"
-
-    def _get_client_app_folder(self, client_name):
-        return WorkspaceConstants.APP_PREFIX + client_name
-
     def _get_run_folder(self, job_id):
-        return os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+        workspace = Workspace(self.args.workspace)
+        return workspace.get_run_dir(job_id)
 
     def get_engine_info(self) -> EngineInfo:
         self.engine_info.app_names = {}
@@ -136,7 +139,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         keys = list(self.run_processes.keys())
         for job_id in keys:
-            run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+            run_folder = self._get_run_folder(job_id)
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
                 with open(app_file, "r") as f:
@@ -153,7 +156,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return None
 
     def delete_job_id(self, num):
-        job_id_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(num))
+        job_id_folder = self._get_run_folder(str(num))
         if os.path.exists(job_id_folder):
             shutil.rmtree(job_id_folder)
         return ""
@@ -164,34 +167,21 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self.client_manager.get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_number: str, job: Job = None, job_clients=None, snapshot=None) -> str:
-        if run_number in self.run_processes.keys():
-            return f"Server run: {run_number} already started."
+    def start_app_on_server(self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None) -> str:
+        if not isinstance(job, Job):
+            return "Must provide a job object to start the server app."
+
+        if job.job_id in self.run_processes.keys():
+            return f"Server run: {job.job_id} already started."
         else:
-            workspace = Workspace(root_dir=self.args.workspace, site_name="server")
-            app_root = workspace.get_app_dir(run_number)
+            workspace = Workspace(root_dir=self.args.workspace, site_name=SiteType.SERVER)
+            app_root = workspace.get_app_dir(job.job_id)
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
 
             self.engine_info.status = MachineStatus.STARTING
-            app_custom_folder = workspace.get_app_custom_dir(run_number)
 
-            if not isinstance(job, Job):
-                return "Must provide a job object to start the server app."
-
-            open_ports = get_open_ports(2)
-            self._start_runner_process(
-                self.args,
-                app_root,
-                run_number,
-                app_custom_folder,
-                open_ports,
-                job.job_id,
-                job_clients,
-                snapshot,
-                self.server.cell,
-                self.server.server_state,
-            )
+            self._start_runner_process(job, job_clients, snapshot, fl_ctx)
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -227,77 +217,74 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
-    def _start_runner_process(
-        self,
-        args,
-        app_root,
-        run_number,
-        app_custom_folder,
-        open_ports,
-        job_id,
-        job_clients,
-        snapshot,
-        cell: CoreCell,
-        server_state: ServerState,
-    ):
-        new_env = os.environ.copy()
-        if app_custom_folder != "":
-            add_custom_dir_to_path(app_custom_folder, new_env)
-
-        listen_port = open_ports[1]
+    def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext):
+        job_launcher: JobLauncherSpec = get_job_launcher(job.meta, fl_ctx)
         if snapshot:
             restore_snapshot = True
         else:
             restore_snapshot = False
+
+        # Job process args are the same for all job launchers! Letting each job launcher compute the job
+        # args would be error-prone and would require access to internal server components (
+        # e.g. cell, server_state, self.server, etc.), which violates component layering.
+        #
+        # We prepare job process args here and save the prepared result in the fl_ctx.
+        # This way, the job launcher won't need to compute these args again.
+        # The job launcher will only need to use the args properly to launch the job process!
+        #
+        # Each arg is a tuple of (arg_option, arg_value).
+        # Note that the arg_option is fixed for each arg, and is not launcher specific!
+        workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        args = fl_ctx.get_prop(FLContextKey.ARGS)
+        server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
+        job_id = job.job_id
+        app_root = workspace_obj.get_app_dir(job_id)
+        cell = server.cell
+        server_state = server.server_state
         command_options = ""
         for t in args.set:
             command_options += " " + t
+        command_options += f" restore_snapshot={restore_snapshot} print_conf=True"
+        args.set.append("print_conf=True")
+        args.set.append(f"restore_snapshot={restore_snapshot}")
 
-        command = (
-            sys.executable
-            + " -m nvflare.private.fed.app.server.runner_process -m "
-            + args.workspace
-            + " -s fed_server.json -r "
-            + app_root
-            + " -n "
-            + str(run_number)
-            + " -p "
-            + str(cell.get_internal_listener_url())
-            + " -u "
-            + str(cell.get_root_url_for_child())
-            + " --host "
-            + str(server_state.host)
-            + " --port "
-            + str(server_state.service_port)
-            + " --ssid "
-            + str(server_state.ssid)
-            + " --ha_mode "
-            + str(self.server.ha_mode)
-            + " --set"
-            + command_options
-            + " print_conf=True restore_snapshot="
-            + str(restore_snapshot)
-        )
-        # use os.setsid to create new process group ID
+        # create token and signature for SJ
+        token = job_id  # use the run_number as the auth token
+        client_name = AUTH_CLIENT_NAME_FOR_SJ
+        signature = self.server.sign_auth_token(client_name, token)
 
-        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
+        job_args = {
+            JobProcessArgs.JOB_ID: ("-n", job_id),
+            JobProcessArgs.EXE_MODULE: ("-m", "nvflare.private.fed.app.server.runner_process"),
+            JobProcessArgs.WORKSPACE: ("-m", args.workspace),
+            JobProcessArgs.STARTUP_CONFIG_FILE: ("-s", "fed_server.json"),
+            JobProcessArgs.APP_ROOT: ("-r", app_root),
+            JobProcessArgs.HA_MODE: ("--ha_mode", server.ha_mode),
+            JobProcessArgs.AUTH_TOKEN: ("-t", token),
+            JobProcessArgs.TOKEN_SIGNATURE: ("-ts", signature),
+            JobProcessArgs.PARENT_URL: ("-p", str(cell.get_internal_listener_url())),
+            JobProcessArgs.ROOT_URL: ("-u", str(cell.get_root_url_for_child())),
+            JobProcessArgs.SERVICE_HOST: ("--host", str(server_state.host)),
+            JobProcessArgs.SERVICE_PORT: ("--port", str(server_state.service_port)),
+            JobProcessArgs.SSID: ("--ssid", str(server_state.ssid)),
+            JobProcessArgs.OPTIONS: ("--set", command_options),
+        }
+        fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
+        job_handle = job_launcher.launch_job(job.meta, fl_ctx)
+        self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")
 
-        if not job_id:
-            job_id = ""
         if not job_clients:
             job_clients = self.client_manager.clients
 
         with self.lock:
-            self.run_processes[run_number] = {
-                RunProcessKey.LISTEN_PORT: listen_port,
-                RunProcessKey.CONNECTION: None,
-                RunProcessKey.CHILD_PROCESS: process,
-                RunProcessKey.JOB_ID: job_id,
+            self.run_processes[job.job_id] = {
+                RunProcessKey.JOB_HANDLE: job_handle,
+                RunProcessKey.JOB_ID: job.job_id,
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
 
-        threading.Thread(target=self.wait_for_complete, args=[args.workspace, run_number, process]).start()
-        return process
+        threading.Thread(target=self.wait_for_complete, args=[args.workspace, job.job_id, job_handle]).start()
+        return job_handle
 
     def get_job_clients(self, client_sites):
         job_clients = {}
@@ -339,7 +326,7 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.info(f"Abort server status: {status_message}")
         except Exception:
             with self.lock:
-                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS, None)
+                child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.JOB_HANDLE, None)
                 if child_process:
                     child_process.terminate()
         finally:
@@ -442,9 +429,60 @@ class ServerEngine(ServerEngineInternalSpec):
         return result
 
     def set_run_manager(self, run_manager: RunManager):
+        self.logger.debug("set_run_manager is called")
         self.run_manager = run_manager
+
+        # we set the run_manager's cell if we have the cell.
+        if self.cell:
+            self.run_manager.cell = self.cell
+
         for _, widget in self.widgets.items():
             self.run_manager.add_handler(widget)
+
+    def get_cell(self):
+        return self.cell
+
+    def initialize_comm(self, cell: Cell):
+        """This is called when the communication cell has been created.
+        We will set up aux message handler here.
+
+        Args:
+            cell:
+
+        Returns:
+
+        """
+        self.logger.debug("initialize_comm called!")
+        self.cell = cell
+        if self.run_manager:
+            # Note that the aux_runner is created with the self.run_manager as the "engine".
+            # We must set the cell in it; otherwise it won't be able to send messages.
+            # The timing of the creation of the run_manager and the cell is not deterministic, we set the cell here
+            # only if the run_manager has been created.
+            self.run_manager.cell = cell
+
+        cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self._handle_aux_message,
+        )
+
+    def _handle_aux_message(self, request: CellMessage) -> CellMessage:
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        data = request.payload
+
+        topic = request.get_header(MessageHeaderKey.TOPIC)
+        with self.new_context() as fl_ctx:
+            reply = self.run_manager.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
+            shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+            reply.set_peer_context(shared_fl_ctx)
+
+            if reply is not None:
+                return_message = new_cell_message({}, reply)
+                return_message.set_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
+            else:
+                return_message = new_cell_message({}, None)
+            return return_message
 
     def set_job_runner(self, job_runner: JobRunner, job_manager: JobDefManagerSpec):
         self.job_runner = job_runner
@@ -462,10 +500,9 @@ class ServerEngine(ServerEngineInternalSpec):
         if self.run_manager:
             return self.run_manager.new_context()
         else:
-            # return FLContext()
-            return FLContextManager(
-                engine=self, identity_name=self.server.project_name, job_id="", public_stickers={}, private_stickers={}
-            ).new_context()
+            # this call should never be made before the run_manager is created!
+            self.logger.warning("no run_manager in Server Engine.")
+            return FLContext()
 
     def add_component(self, component_id: str, component):
         self.server.runner_config.add_component(component_id, component)
@@ -480,7 +517,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return os.path.join(self.server.admin_server.file_upload_dir, app_name)
 
     def deploy_app_to_server(self, run_destination: str, app_name: str, app_staging_path: str) -> str:
-        return self.deploy_app(run_destination, app_name, WorkspaceConstants.APP_PREFIX + "server")
+        return self.deploy_app(run_destination, app_name, WorkspaceConstants.APP_PREFIX + SiteType.SERVER)
 
     def get_workspace(self) -> Workspace:
         return self.run_manager.get_workspace()
@@ -543,23 +580,66 @@ class ServerEngine(ServerEngineInternalSpec):
         optional: bool = False,
         secure: bool = False,
     ) -> dict:
+        if not target_requests:
+            return {}
+
+        aux_target_reqs = []
+        for name, req in target_requests.items():
+            amt = self._get_aux_msg_target(name)
+            if not amt:
+                self.logger.error(f"unknown AuxMessage target {name}")
+            else:
+                aux_target_reqs.append((amt, req))
+
+        if not aux_target_reqs:
+            return {}
+
         return self.run_manager.aux_runner.multicast_aux_requests(
             topic=topic,
-            target_requests=target_requests,
+            target_requests=aux_target_reqs,
             timeout=timeout,
             fl_ctx=fl_ctx,
             optional=optional,
             secure=secure,
         )
 
+    def _get_aux_msg_target(self, name: str):
+        if name.lower() == SiteType.SERVER:
+            return AuxMsgTarget.server_target()
+
+        c = self.get_client_from_name(name)
+        if c:
+            return AuxMsgTarget.client_target(c)
+        else:
+            return None
+
+    def _to_aux_msg_targets(self, target_names: List[str]):
+        msg_targets = []
+        if not target_names:
+            # all clients
+            for c in self.get_clients():
+                msg_targets.append(AuxMsgTarget.client_target(c))
+        elif not isinstance(target_names, list):
+            raise TypeError(f"invalid target_names {type(target_names)}")
+        else:
+            # this is a list of targets: check targets
+            for t in target_names:
+                if not isinstance(t, str):
+                    raise TypeError(f"target name must be str but got {type(t)}")
+
+                amt = self._get_aux_msg_target(t)
+                if not amt:
+                    self.logger.error(f"invalid target {t}")
+                    return {}
+                else:
+                    msg_targets.append(amt)
+        return msg_targets
+
     def send_aux_to_targets(self, targets, topic, request, timeout, fl_ctx, optional, secure):
-        if not targets:
-            targets = []
-            for t in self.get_clients():
-                targets.append(t.name)
-        if targets:
+        msg_targets = self._to_aux_msg_targets(targets)
+        if msg_targets:
             return self.run_manager.aux_runner.send_aux_request(
-                targets=targets,
+                targets=msg_targets,
                 topic=topic,
                 request=request,
                 timeout=timeout,
@@ -570,6 +650,56 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return {}
 
+    def stream_objects(
+        self,
+        channel: str,
+        topic: str,
+        stream_ctx: StreamContext,
+        targets: List[str],
+        producer: ObjectProducer,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ):
+        if not self.run_manager:
+            raise RuntimeError("run_manager has not been created")
+
+        if not self.run_manager.object_streamer:
+            raise RuntimeError("object_streamer has not been created")
+
+        return self.run_manager.object_streamer.stream(
+            channel=channel,
+            topic=topic,
+            stream_ctx=stream_ctx,
+            targets=self._to_aux_msg_targets(targets),
+            producer=producer,
+            fl_ctx=fl_ctx,
+            secure=secure,
+            optional=optional,
+        )
+
+    def register_stream_processing(
+        self,
+        channel: str,
+        topic: str,
+        factory: ConsumerFactory,
+        stream_done_cb=None,
+        **cb_kwargs,
+    ):
+        if not self.run_manager:
+            raise RuntimeError("run_manager has not been created")
+
+        if not self.run_manager.object_streamer:
+            raise RuntimeError("object_streamer has not been created")
+
+        self.run_manager.object_streamer.register_stream_processing(
+            channel=channel, topic=topic, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
+        )
+
+    def shutdown_streamer(self):
+        if self.run_manager and self.run_manager.object_streamer:
+            self.run_manager.object_streamer.shutdown()
+
     def sync_clients_from_main_process(self):
         # repeatedly ask the parent process to get participating clients until we receive the result
         # or timed out after 30 secs (already tried 30 times).
@@ -579,18 +709,18 @@ class ServerEngine(ServerEngineInternalSpec):
         while True:
             clients = self._retrieve_clients_data(job_id)
             if clients:
-                self.client_manager.clients = clients
+                self.client_manager.set_clients(clients)
                 self.logger.debug(f"received participating clients {clients}")
                 return
 
             if time.time() - start >= max_wait:
                 self.logger.critical(f"Cannot get participating clients for job {job_id} after {max_wait} seconds")
-                raise RuntimeError("Exiting job process: Cannot get participating clients for job {job_id}")
+                raise RuntimeError(f"Exiting job process: Cannot get participating clients for job {job_id}")
 
             self.logger.debug("didn't receive clients info - retry in 1 second")
             time.sleep(1.0)
 
-    def _get_participating_clients(self):
+    def get_participating_clients(self):
         # called from server's job cell
         return self.client_manager.clients
 
@@ -702,7 +832,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
             job_info = fl_ctx.get_prop(FLContextKey.JOB_INFO)
             if not job_info:
-                job_clients = self._get_participating_clients()
+                job_clients = self.get_participating_clients()
                 fl_ctx.set_prop(FLContextKey.JOB_INFO, (job_id, job_clients))
             else:
                 (job_id, job_clients) = job_info
@@ -743,8 +873,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.SHOW_STATS,
                 command_data={},
             )
-        except Exception:
-            self.logger.error(f"Failed to show_stats for JOB: {job_id}")
+        except Exception as ex:
+            self.logger.error(f"Failed to show_stats for JOB: {job_id}: {secure_format_exception(ex)}")
 
         if stats is None:
             stats = {}
@@ -758,8 +888,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.GET_ERRORS,
                 command_data={},
             )
-        except Exception:
-            self.logger.error(f"Failed to get_errors for JOB: {job_id}")
+        except Exception as ex:
+            self.logger.error(f"Failed to get_errors for JOB: {job_id}: {secure_format_exception(ex)}")
 
         if errors is None:
             errors = {}
@@ -773,10 +903,25 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.RESET_ERRORS,
                 command_data={},
             )
-        except Exception:
-            self.logger.error(f"Failed to reset_errors for JOB: {job_id}")
+        except Exception as ex:
+            self.logger.error(f"Failed to reset_errors for JOB: {job_id}: {secure_format_exception(ex)}")
 
         return f"reset the server error stats for job: {job_id}"
+
+    def configure_job_log(self, job_id, data) -> str:
+        error = None
+        try:
+            error = self.send_command_to_child_runner_process(
+                job_id=job_id,
+                command_name=AdminCommandNames.CONFIGURE_JOB_LOG,
+                command_data=data,
+            )
+        except Exception as ex:
+            err = f"Failed to configure_job_log for JOB: {job_id}: {secure_format_exception(ex)}"
+            self.logger.error(err)
+            return err
+
+        return error
 
     def _send_admin_requests(self, requests, fl_ctx: FLContext, timeout_secs=10) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, fl_ctx, timeout_secs=timeout_secs)
@@ -785,7 +930,7 @@ class ServerEngine(ServerEngineInternalSpec):
         requests = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
-            if site_name == "server":
+            if site_name == SiteType.SERVER:
                 continue
             request = self._make_message_for_check_resource(job, resource_requirements, fl_ctx)
 
@@ -839,13 +984,14 @@ class ServerEngine(ServerEngineInternalSpec):
         if requests:
             _ = self._send_admin_requests(requests, fl_ctx)
 
-    def start_client_job(self, job_id, client_sites, fl_ctx: FLContext):
+    def start_client_job(self, job, client_sites, fl_ctx: FLContext):
         requests = {}
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
             token = dispatch_info.token
             request = Message(topic=TrainingTopic.START_JOB, body=resource_requirement)
-            request.set_header(RequestHeader.JOB_ID, job_id)
+            request.set_header(RequestHeader.JOB_ID, job.job_id)
+            request.set_header(RequestHeader.JOB_META, job.meta)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
             client = self.get_client_from_name(site)
             if client:
@@ -871,6 +1017,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def close(self):
         self.executor.shutdown()
+        self.shutdown_streamer()
 
 
 def server_shutdown(server, touch_file):

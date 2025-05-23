@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Union
 import grpc
 
 from nvflare.fuel.f3.comm_config import CommConfigurator
+from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo
@@ -28,7 +29,7 @@ from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
     StreamerStub,
     add_StreamerServicer_to_server,
 )
-from nvflare.fuel.utils.obj_utils import get_logger
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
 from .base_driver import BaseDriver
@@ -57,7 +58,7 @@ class StreamConnection(Connection):
         self.context = context  # for server side
         self.channel = channel  # for client side
         self.lock = threading.Lock()
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def get_conn_properties(self) -> dict:
         return self.conn_props
@@ -124,7 +125,7 @@ class StreamConnection(Connection):
 class Servicer(StreamerServicer):
     def __init__(self, server):
         self.server = server
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
 
     def Stream(self, request_iterator, context):
         connection = None
@@ -145,7 +146,7 @@ class Servicer(StreamerServicer):
             self.logger.debug(f"SERVER created connection in thread {ct.name}")
             self.server.driver.add_connection(connection)
             self.logger.debug(f"SERVER created read_loop thread in thread {ct.name}")
-            t = threading.Thread(target=connection.read_loop, args=(request_iterator,), daemon=True)
+            t = threading.Thread(target=connection.read_loop, args=(request_iterator,), name="grpc_reader", daemon=True)
             t.start()
             yield from connection.generate_output()
         except Exception as ex:
@@ -169,7 +170,7 @@ class Server:
         options,
     ):
         self.driver = driver
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         self.connector = connector
         self.grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers), options=options)
         servicer = Servicer(self)
@@ -209,7 +210,7 @@ class GrpcDriver(BaseDriver):
         self.closing = False
         self.max_workers = 100
         self.options = GRPC_DEFAULT_OPTIONS
-        self.logger = get_logger(self)
+        self.logger = get_obj_logger(self)
         configurator = CommConfigurator()
         config = configurator.get_config()
         if config:
@@ -274,7 +275,7 @@ class GrpcDriver(BaseDriver):
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
-        secure = resources.get(DriverParams.SECURE)
+        secure = requires_secure_connection(resources)
         if secure:
             if use_aio_grpc():
                 scheme = "nagrpcs"

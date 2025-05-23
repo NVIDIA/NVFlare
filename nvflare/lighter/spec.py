@@ -12,178 +12,74 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import shutil
-import traceback
-from abc import ABC
-from typing import List
+from abc import ABC, abstractmethod
 
-from nvflare.apis.utils.format_check import name_check
-
-
-class Participant(object):
-    def __init__(self, type: str, name: str, org: str, enable_byoc: bool = False, *args, **kwargs):
-        """Class to represent a participant.
-
-        Each participant communicates to other participant.  Therefore, each participant has its
-        own name, type, organization it belongs to, rules and other information.
-
-        Args:
-            type (str): server, client, admin or other string that builders can handle
-            name (str): system-wide unique name
-            org (str): system-wide unique organization
-            enable_byoc (bool, optional): whether this participant allows byoc codes to be loaded. Defaults to False.
-
-        Raises:
-            ValueError: if name or org is not compliant with characters or format specification.
-        """
-        err, reason = name_check(name, type)
-        if err:
-            raise ValueError(reason)
-        err, reason = name_check(org, "org")
-        if err:
-            raise ValueError(reason)
-        self.type = type
-        self.name = name
-        self.org = org
-        self.subject = name
-        self.enable_byoc = enable_byoc
-        self.props = kwargs
-
-
-class Project(object):
-    def __init__(self, name: str, description: str, participants: List[Participant]):
-        """A container class to hold information about this FL project.
-
-        This class only holds information.  It does not drive the workflow.
-
-        Args:
-            name (str): the project name
-            description (str): brief description on this name
-            participants (List[Participant]): All the participants that will join this project
-
-        Raises:
-            ValueError: when duplicate name found in participants list
-        """
-        self.name = name
-        all_names = list()
-        for p in participants:
-            if p.name in all_names:
-                raise ValueError(f"Unable to add a duplicate name {p.name} into this project.")
-            else:
-                all_names.append(p.name)
-        self.description = description
-        self.participants = participants
-
-    def get_participants_by_type(self, type, first_only=True):
-        found = list()
-        for p in self.participants:
-            if p.type == type:
-                if first_only:
-                    return p
-                else:
-                    found.append(p)
-        return found
+from .ctx import ProvisionContext
+from .entity import Project
 
 
 class Builder(ABC):
-    def initialize(self, ctx: dict):
-        pass
+    """Abstract base class for FL startup kit builders.
 
-    def build(self, project: Project, ctx: dict):
-        pass
+    A Builder is responsible for generating configuration or content
+    used during federated learning provisioning. Builders participate in
+    a three-phase lifecycle:
 
-    def finalize(self, ctx: dict):
-        pass
+    1. `initialize(project, ctx)` – Prepare any resources or context needed for the build.
+    2. `build(project, ctx)` – Perform the core build logic, modifying the context.
+    3. `finalize(project, ctx)` – Clean up, validate, or finalize build outputs.
 
-    def get_wip_dir(self, ctx: dict):
-        return ctx.get("wip_dir")
+    All builders registered in a provision workflow are executed in sequence.
 
-    def get_ws_dir(self, participate: Participant, ctx: dict):
-        return os.path.join(self.get_wip_dir(ctx), participate.name)
+    The `finalize` phase is executed **in reverse order** from the other phases. This
+    allows builders to finalize or clean up in a specific sequence when multiple builders
+    are involved.
+    """
 
-    def get_kit_dir(self, participant: Participant, ctx: dict):
-        return os.path.join(self.get_ws_dir(participant, ctx), "startup")
-
-    def get_transfer_dir(self, participant: Participant, ctx: dict):
-        return os.path.join(self.get_ws_dir(participant, ctx), "transfer")
-
-    def get_local_dir(self, participant: Participant, ctx: dict):
-        return os.path.join(self.get_ws_dir(participant, ctx), "local")
-
-    def get_state_dir(self, ctx: dict):
-        return ctx.get("state_dir")
-
-    def get_resources_dir(self, ctx: dict):
-        return ctx.get("resources_dir")
-
-
-class Provisioner(object):
-    def __init__(self, root_dir: str, builders: List[Builder]):
-        """Workflow class that drive the provision process.
-
-        Provisioner's tasks:
-
-            - Maintain the provision workspace folder structure;
-            - Invoke Builders to generate the content of each startup kit
-
-        ROOT_WORKSPACE Folder Structure::
-
-            root_workspace_dir_name: this is the root of the workspace
-                project_dir_name: the root dir of the project, could be named after the project
-                    resources: stores resource files (templates, configs, etc.) of the Provisioner and Builders
-                    prod: stores the current set of startup kits (production)
-                        participate_dir: stores content files generated by builders
-                    wip: stores the set of startup kits to be created (WIP)
-                        participate_dir: stores content files generated by builders
-                    state: stores the persistent state of the Builders
+    def initialize(self, project: Project, ctx: ProvisionContext):
+        """Prepare the builder with any necessary pre-processing.
 
         Args:
-            root_dir (str): the directory path to hold all generated or intermediate folders
-            builders (List[Builder]): all builders that will be called to build the content
+            project (Project): The project to be provisioned.
+            ctx (ProvisionContext): Context shared across builders.
         """
-        self.root_dir = root_dir
-        self.builders = builders
-        self.ctx = None
+        pass
 
-    def _make_dir(self, dirs):
-        for dir in dirs:
-            if not os.path.exists(dir):
-                os.makedirs(dir)
+    def build(self, project: Project, ctx: ProvisionContext):
+        """Execute the main build logic for this builder.
 
-    def _prepare_workspace(self, ctx):
-        workspace = ctx.get("workspace")
-        wip_dir = os.path.join(workspace, "wip")
-        state_dir = os.path.join(workspace, "state")
-        resources_dir = os.path.join(workspace, "resources")
-        ctx.update(dict(wip_dir=wip_dir, state_dir=state_dir, resources_dir=resources_dir))
-        dirs = [workspace, resources_dir, wip_dir, state_dir]
-        self._make_dir(dirs)
+        Args:
+            project (Project): The project to be provisioned.
+            ctx (ProvisionContext): Context shared across builders.
+        """
+        pass
 
-    def provision(self, project: Project):
-        # ctx = {"workspace": os.path.join(self.root_dir, project.name), "project": project}
-        workspace = os.path.join(self.root_dir, project.name)
-        ctx = {"workspace": workspace}  # project is more static information while ctx is dynamic
-        self._prepare_workspace(ctx)
-        try:
-            for b in self.builders:
-                b.initialize(ctx)
+    def finalize(self, project: Project, ctx: ProvisionContext):
+        """Finalize the build process and perform any cleanup.
 
-            # call builders!
-            for b in self.builders:
-                b.build(project, ctx)
+        Args:
+            project (Project): The project to be provisioned.
+            ctx (ProvisionContext): Context shared across builders.
+        """
+        pass
 
-            for b in self.builders[::-1]:
-                b.finalize(ctx)
 
-        except Exception as ex:
-            prod_dir = ctx.get("current_prod_dir")
-            if prod_dir:
-                shutil.rmtree(prod_dir)
-            print("Exception raised during provision.  Incomplete prod_n folder removed.")
-            traceback.print_exc()
-        finally:
-            wip_dir = ctx.get("wip_dir")
-            if wip_dir:
-                shutil.rmtree(wip_dir)
-        return ctx
+class Packager(ABC):
+    """Packager is responsible for packaging the generated startup kits for each participant after the kits have
+    been generated by the builders.
+
+    The packager, if specified, is called as the last step of the provision process.
+    """
+
+    @abstractmethod
+    def package(self, project: Project, ctx: ProvisionContext):
+        """Package the generated startup kits for release.
+
+        Args:
+            project: the project being provisioned
+            ctx: the provision context object
+
+        Returns: None
+
+        """
+        pass

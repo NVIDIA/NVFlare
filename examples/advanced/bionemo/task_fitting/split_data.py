@@ -59,8 +59,18 @@ def partition_data(train_labels, label_names, num_sites, alpha, seed):
             proportions = dirichlet.rvs(np.repeat(alpha, num_sites), random_state=seed)
             # Balance
             proportions = np.array([p * (len(idx_j) < N / num_sites) for p, idx_j in zip(proportions, idx_batch)])
-            proportions = proportions / proportions.sum()
-            proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
+
+            # Fix for "invalid value encountered in divide"
+            proportions_sum = proportions.sum()
+            if proportions_sum > 0:
+                proportions = proportions / proportions_sum
+            else:
+                proportions = np.ones_like(proportions) / len(proportions)
+
+            # Fix for "invalid value encountered in cast"
+            cumsum = np.cumsum(proportions) * len(idx_k)
+            proportions = np.where(np.isnan(cumsum), 0, cumsum.astype(int))[:-1]
+
             idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
             min_size = min([len(idx_j) for idx_j in idx_batch])
 
@@ -82,7 +92,7 @@ def split(proteins, num_sites, split_dir=".", alpha=1.0, seed=0, concat=False):
     for idx, entry in enumerate(proteins):
         if entry["SET"] == "train":
             train_proteins.append(entry)
-            train_labels.append(entry["TARGET"])
+            train_labels.append(entry["labels"])
         elif entry["SET"] == "test":
             test_proteins.append(entry)
     assert len(train_labels) > 0
@@ -119,7 +129,7 @@ def split(proteins, num_sites, split_dir=".", alpha=1.0, seed=0, concat=False):
             split_df.to_csv(
                 os.path.join(split_dir, f"data_{client_name}.csv"),
                 index=False,
-                columns=["id", "sequence", "TARGET", "SET"],
+                columns=["id", "sequences", "labels", "SET"],
             )
         else:
             _split_dir = os.path.join(split_dir, "train")
@@ -128,7 +138,7 @@ def split(proteins, num_sites, split_dir=".", alpha=1.0, seed=0, concat=False):
             df_split_train_proteins.to_csv(
                 os.path.join(_split_dir, f"data_train_{client_name}.csv"),
                 index=False,
-                columns=["id", "sequence", "TARGET", "SET"],
+                columns=["id", "sequences", "labels", "SET"],
             )
             _split_dir = os.path.join(split_dir, "val")
             if not os.path.isdir(_split_dir):
@@ -136,7 +146,7 @@ def split(proteins, num_sites, split_dir=".", alpha=1.0, seed=0, concat=False):
             df_test_proteins.to_csv(
                 os.path.join(_split_dir, f"data_val_{client_name}.csv"),
                 index=False,
-                columns=["id", "sequence", "TARGET", "SET"],
+                columns=["id", "sequences", "labels", "SET"],
             )
             # validation & test are the same here!
             _split_dir = os.path.join(split_dir, "test")
@@ -145,10 +155,10 @@ def split(proteins, num_sites, split_dir=".", alpha=1.0, seed=0, concat=False):
             df_test_proteins.to_csv(
                 os.path.join(_split_dir, f"data_test_{client_name}.csv"),
                 index=False,
-                columns=["id", "sequence", "TARGET", "SET"],
+                columns=["id", "sequences", "labels", "SET"],
             )
 
         print(
-            f"Saved {len(df_split_train_proteins)} training and {len(test_proteins)} testing proteins for {client_name}, "
-            f"({len(set(df_split_train_proteins['TARGET']))}/{len(set(df_test_proteins['TARGET']))}) unique train/test classes."
+            f"Saved {len(df_split_train_proteins)} training and {len(df_test_proteins)} testing proteins for {client_name}, "
+            f"({len(set(df_split_train_proteins['labels']))}/{len(set(df_test_proteins['labels']))}) unique train/test classes."
         )

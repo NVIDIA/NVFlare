@@ -27,12 +27,18 @@ from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
-from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
+from nvflare.lighter.constants import ProvisionMode
+from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provision import gen_default_project_config, prepare_project
-from nvflare.lighter.spec import Provisioner
-from nvflare.lighter.utils import load_yaml, update_project_server_name_config, update_storage_locations
+from nvflare.lighter.provisioner import Provisioner
+from nvflare.lighter.utils import (
+    load_yaml,
+    update_project_server_name_config,
+    update_server_default_host,
+    update_storage_locations,
+)
 from nvflare.tool.api_utils import shutdown_system
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 from nvflare.utils.cli_utils import get_hidden_nvflare_config_path, get_or_create_hidden_nvflare_dir, hocon_to_string
@@ -249,40 +255,6 @@ def get_fl_client_names(project_config: OrderedDict) -> List[str]:
     return client_names
 
 
-def replace_server_with_localhost(sp_end_point: str) -> str:
-    """
-    :param sp_end_point:(str) example: server1:8002:8003
-    :return: localhost:<port1>:<port2>
-    """
-    parts = sp_end_point.split(":")
-    if len(parts) != 3:
-        raise ValueError("Input must be in the format 'server:port1:port2'")
-    for p in parts:
-        if not p:
-            raise ValueError("Input must be in the format 'server:port1:port2', each part can not be empty")
-
-    parts[0] = "localhost"
-    return ":".join(parts)
-
-
-def prepare_builders(project_dict: OrderedDict) -> List:
-    builders = list()
-    for b in project_dict.get("builders"):
-        path = b.get("path")
-        args = b.get("args")
-
-        if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
-            path = "nvflare.lighter.impl.local_static_file.LocalStaticFileBuilder"
-            sp_end_point = args["overseer_agent"]["args"]["sp_end_point"]
-            args["overseer_agent"]["args"]["sp_end_point"] = replace_server_with_localhost(sp_end_point)
-
-        elif b.get("path") == "nvflare.lighter.impl.cert.CertBuilder":
-            path = "nvflare.lighter.impl.local_cert.LocalCertBuilder"
-
-        builders.append(instantiate_class(path, args))
-    return builders
-
-
 def local_provision(
     clients: List[str],
     number_of_clients: int,
@@ -311,12 +283,14 @@ def local_provision(
         project_config = add_he_builder(use_he, project_config)
         if docker_image:
             project_config = update_static_file_builder(docker_image, project_config)
+    project_config = update_server_default_host(project_config, "localhost")
     save_project_config(project_config, dst_project_file)
     service_config = get_service_config(project_config)
     project = prepare_project(project_config)
     builders = prepare_builders(project_config)
-    provisioner = Provisioner(workspace, builders)
-    provisioner.provision(project)
+    packager = prepare_packager(project_config)
+    provisioner = Provisioner(workspace, builders, packager)
+    provisioner.provision(project, mode=ProvisionMode.POC)
 
     return project_config, service_config
 

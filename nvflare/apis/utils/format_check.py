@@ -18,12 +18,15 @@ from functools import wraps
 
 type_pattern_mapping = {
     "server": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
+    "host_name": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
     "overseer": r"^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$",
     "sp_end_point": r"^((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9]):[0-9]*:[0-9]*)$",
     "client": r"^[A-Za-z0-9-_]+$",
+    "relay": r"^[A-Za-z0-9-_]+$",
     "admin": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
     "email": r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$",
     "org": r"^[A-Za-z0-9_]+$",
+    "simple_name": r"^[A-Za-z0-9_]+$",
 }
 
 
@@ -34,7 +37,9 @@ def name_check(name: str, entity_type: str):
     if re.match(regex_pattern, name):
         return False, "name={} passed on regex_pattern={} check".format(name, regex_pattern)
     else:
-        return True, "name={} is ill-formatted based on regex_pattern={}".format(name, regex_pattern)
+        return True, "name={} is ill-formatted for entity_type={} based on regex_pattern={}".format(
+            name, entity_type, regex_pattern
+        )
 
 
 def validate_class_methods_args(cls):

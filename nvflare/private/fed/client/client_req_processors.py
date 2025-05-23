@@ -15,24 +15,23 @@
 from .info_coll_cmd import ClientInfoProcessor
 from .scheduler_cmds import CancelResourceProcessor, CheckResourceProcessor, ReportResourcesProcessor, StartJobProcessor
 from .shell_cmd import ShellCommandProcessor
-from .sys_cmd import ReportEnvProcessor, SysInfoProcessor
+from .sys_cmd import ConfigureSiteLogProcessor, ReportEnvProcessor, SysInfoProcessor
 from .training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor,
     AbortAppProcessor,
     AbortTaskProcessor,
     ClientStatusProcessor,
+    ConfigureJobLogProcessor,
     DeleteRunNumberProcessor,
     DeployProcessor,
     NotifyJobStatusProcessor,
     RestartClientProcessor,
     ScopeInfoProcessor,
     ShutdownClientProcessor,
-    StartAppProcessor,
 )
 
 
 class ClientRequestProcessors:
     request_processors = [
-        StartAppProcessor(),
         ClientStatusProcessor(),
         ScopeInfoProcessor(),
         AbortAppProcessor(),
@@ -52,6 +51,8 @@ class ClientRequestProcessors:
         ReportResourcesProcessor(),
         ReportEnvProcessor(),
         NotifyJobStatusProcessor(),
+        ConfigureJobLogProcessor(),
+        ConfigureSiteLogProcessor(),
     ]
 
     @staticmethod

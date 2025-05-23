@@ -1,0 +1,83 @@
+{
+    "format_version": 2,
+    "num_rounds": 10,
+    "workflows": [
+        {
+            "id": "sage_controller",
+            "path": "nvflare.edge.controllers.sage.ScatterAndGatherForEdge",
+            "args": {
+                "num_rounds": "{num_rounds}",
+                "aggregator_id": "aggregator",
+                "persistor_id": "persistor",
+                "shareable_generator_id": "shareable_generator",
+                "assessor_id": "assessor"
+            }
+        }
+    ],
+    "components": [
+        {
+            "id": "aggregator",
+            "path": "nvflare.edge.aggregators.edge_dict_accumulator.EdgeDictAccumulator",
+            "args": {
+                "mode": "diff"
+            }
+        },
+        {
+            "id": "persistor",
+            "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+            "args": {
+               "model": {
+                  "path": "nvflare.edge.models.model.XorNet",
+                  "args": {}
+               }
+            }
+        },
+        {
+            "id": "shareable_generator",
+            "path": "nvflare.edge.shareablegenerators.pytorch_shareable_generator.PytorchShareableGenerator",
+            "args": {}
+        },
+        {
+            "id": "assessor",
+            "path": "nvflare.edge.assessors.count.CountAssessor",
+            "args": {
+                "min_count": 16,
+                "max_count": 100,
+                "timeout": 3600.0
+            }
+        },
+        {
+            "id": "evaluator",
+            "path": "nvflare.edge.widgets.evaluator.GlobalEvaluator",
+            "args": {
+                "model_path": "nvflare.edge.models.model.XorNet",
+                "custom_dataset": {
+                    "data": [
+                        [
+                            0,
+                            0
+                        ],
+                        [
+                            0,
+                            1
+                        ],
+                        [
+                            1,
+                            0
+                        ],
+                        [
+                            1,
+                            1
+                        ]
+                    ],
+                    "label": [
+                        0,
+                        1,
+                        1,
+                        0
+                    ]
+                }
+            }
+        }
+    ]
+}

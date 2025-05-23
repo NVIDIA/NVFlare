@@ -25,7 +25,7 @@ from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.app_common.tie.applet import Applet
 from nvflare.app_common.tie.defs import Constant
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.utils.validation_utils import check_object_type
+from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number
 
 
 class Connector(ABC, FLComponent):
@@ -35,9 +35,11 @@ class Connector(ABC, FLComponent):
     The Connector class defines commonly required methods for all Connector implementations.
     """
 
-    def __init__(self):
+    def __init__(self, monitor_interval: float = 0.5):
         """Constructor of Connector"""
         FLComponent.__init__(self)
+        check_positive_number("monitor_interval", monitor_interval)
+        self.monitor_interval = monitor_interval
         self.abort_signal = None
         self.applet = None
         self.engine = None
@@ -138,8 +140,7 @@ class Connector(ABC, FLComponent):
         while True:
             if self.abort_signal.triggered:
                 # asked to abort
-                self.stop(fl_ctx)
-                return
+                break
 
             stopped, rc = self._is_stopped()
             if stopped:
@@ -147,7 +148,7 @@ class Connector(ABC, FLComponent):
                 connector_stopped_cb(rc, fl_ctx)
                 return
 
-            time.sleep(0.1)
+            time.sleep(self.monitor_interval)
 
     def monitor(self, fl_ctx: FLContext, connector_stopped_cb):
         """Called by Controller/Executor to monitor the health of the connector.

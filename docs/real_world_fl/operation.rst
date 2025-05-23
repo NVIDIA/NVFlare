@@ -19,7 +19,7 @@ commands shown as examples of how they may be run with a description.
 
 .. csv-table::
     :header: Command,Example,Description
-    :widths: 15, 10, 30
+    :widths: 15, 20, 30
 
     bye,``bye``,Exit from the client
     help,``help``,Get command help information
@@ -30,6 +30,8 @@ commands shown as examples of how they may be run with a description.
     ,``check_status client clientname``,"The name, token, and status of the specified client with *clientname* are displayed."
     submit_job,``submit_job job_folder_name``,Submits the job to the server.
     list_jobs,``list_jobs``,Lists the jobs on the server. (Options: [-n name_prefix] [-d] [job_id_prefix])
+    configure_job_log,``configure_job_log job_id server config``,"Configure the job log on the server. (*config* can be a path to a json config file, a levelname/levelnumber, or 'reload')"
+    ,``configure_job_log job_id client <client-name>... config``,Configure the job log on the target client(s).
     abort_job,``abort_job job_id``,Aborts the job of the specified job_id if it is running or dispatched
     clone_job,``clone_job job_id``,Creates a copy of the specified job with a new job_id
     abort,``abort job_id client``,Aborts the job for the specified job_id for all clients. Individual client jobs can be aborted by specifying *clientname*.
@@ -47,6 +49,8 @@ commands shown as examples of how they may be run with a description.
     ,``ls clientname -SR``,List files in workspace root directory (-S: sort by file size; -R: list subdirectories recursively)
     pwd,``pwd server``,Print the name of workspace root directory
     ,``pwd clientname``,Print the name of workspace root directory
+    configure_site_log,``configure_job_log server config``,"Configure the site log on the server. (*config* can be a path to a json config file, a levelname/levelnumber, or 'reload')"
+    ,``configure_site_log client <client-name>... config``,Configure the site log on the target client(s).
     sys_info,``sys_info server``,Get system information
     ,``sys_info client *clientname*``,Get system information. Individual clients can be shutdown by specifying *clientname*.
     remove_client,``remove_client clientname``,Issue command for server to release client before the 10 minute timeout to allow client to rejoin after manual restart.

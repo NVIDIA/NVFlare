@@ -27,7 +27,7 @@ Due to the simplified weights, you will be able to clearly see and understand
 the results of the FL aggregation and the model persistor process.
 
 The setup of this exercise consists of one **server** and two **clients**.
-The server side model starting with weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
+The server-side model starts with weights ``[[1, 2, 3], [4, 5, 6], [7, 8, 9]]``.
 
 The following steps compose one cycle of weight updates, called a **round**:
 
@@ -40,7 +40,7 @@ Custom FL applications can contain the folders:
 
  #. **custom**: contains any custom components (custom Python code)
  #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
- #. **resources**: contains the logger config (``log.config``)
+ #. **resources**: contains the logger config (``log_config.json``)
 
 Let's get started. First clone the repo, if you haven't already:
 

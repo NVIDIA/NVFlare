@@ -14,7 +14,6 @@
 
 """FL Admin commands."""
 
-import logging
 import time
 from abc import ABC, abstractmethod
 from typing import List
@@ -30,6 +29,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
+from nvflare.fuel.utils.log_utils import dynamic_log_config, get_obj_logger
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 from nvflare.widgets.widget import WidgetID
@@ -41,7 +41,7 @@ class CommandProcessor(ABC):
     """The CommandProcessor is responsible for processing a command from parent process."""
 
     def __init__(self) -> None:
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     @abstractmethod
     def get_command_name(self) -> str:
@@ -144,7 +144,7 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         return ServerCommandNames.GET_TASK
 
     def process(self, data: Shareable, fl_ctx: FLContext):
-        """Called to process the abort command.
+        """Called to process the GetTask command.
 
         Args:
             data: process data
@@ -155,8 +155,8 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         """
 
         start_time = time.time()
-        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
-        data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
+        shared_fl_ctx = data.get_peer_context()
+        data.set_peer_context(FLContext())
         client = data.get_header(ServerCommandKey.FL_CLIENT)
         self.logger.debug(f"Got the GET_TASK request from client: {client.name}")
         fl_ctx.set_peer_context(shared_fl_ctx)
@@ -183,7 +183,7 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         shareable.set_header(key=ServerCommandKey.TASK_NAME, value=taskname)
 
         shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
-        shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+        shareable.set_peer_context(shared_fl_ctx)
 
         if taskname != SpecialTaskName.TRY_AGAIN:
             self.logger.info(
@@ -222,8 +222,8 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         """
 
         start_time = time.time()
-        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
-        data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
+        shared_fl_ctx = data.get_peer_context()
+        data.set_peer_context(FLContext())
         shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
 
         client = data.get_header(ServerCommandKey.FL_CLIENT)
@@ -423,6 +423,37 @@ class ServerStateCommand(CommandProcessor):
         return "Success"
 
 
+class ConfigureJobLogCommand(CommandProcessor):
+    """To implement the configure_job_log command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.CONFIGURE_JOB_LOG
+
+        """
+        return AdminCommandNames.CONFIGURE_JOB_LOG
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the configure_job_log command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        """
+        engine = fl_ctx.get_engine()
+        workspace = engine.get_workspace()
+        try:
+            dynamic_log_config(
+                config=data,
+                dir_path=workspace.get_run_dir(fl_ctx.get_job_id()),
+                reload_path=workspace.get_log_config_file_path(),
+            )
+        except Exception as e:
+            return secure_format_exception(e)
+
+
 class AppCommandProcessor(CommandProcessor):
     def get_command_name(self) -> str:
         """To get the command name.
@@ -480,6 +511,7 @@ class ServerCommands(object):
         ResetErrorsCommand(),
         HeartbeatCommand(),
         ServerStateCommand(),
+        ConfigureJobLogCommand(),
         AppCommandProcessor(),
     ]
 

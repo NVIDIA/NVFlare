@@ -1,0 +1,7 @@
+numpy
+pandas
+matplotlib
+jupyterlab
+tdigest
+wget
+kagglehub

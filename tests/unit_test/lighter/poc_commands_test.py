@@ -16,7 +16,6 @@ import collections
 import pytest
 
 from nvflare.cli_exception import CLIException
-from nvflare.lighter.spec import Participant
 from nvflare.lighter.utils import update_project_server_name_config
 from nvflare.tool.poc.poc_commands import (
     client_gpu_assignments,
@@ -24,7 +23,6 @@ from nvflare.tool.poc.poc_commands import (
     get_service_command,
     get_service_config,
     prepare_builders,
-    replace_server_with_localhost,
     update_clients,
 )
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
@@ -140,13 +138,6 @@ class TestPOCCommands:
         assert len(servers) == 1
         assert servers[0]["name"] == server_name
 
-        overseer_agent_builder = {"args": {"overseer_agent": {"args": {"sp_end_point": "server1: 8002: 8003"}}}}
-        project_config["builders"] = [overseer_agent_builder]
-
-        update_project_server_name_config(project_config, old_server_name, server_name)
-
-        assert project_config["builders"][0]["args"]["overseer_agent"]["args"]["sp_end_point"] == "server: 8002: 8003"
-
     def test_update_clients(self):
         project_config = {
             "participants": [
@@ -190,19 +181,6 @@ class TestPOCCommands:
         project_config = collections.OrderedDict(project_config)
         builders = prepare_builders(project_config)
         assert len(builders) == 2
-        for c in builders:
-            assert c.__class__.__name__ == "LocalStaticFileBuilder" or c.__class__.__name__ == "LocalCertBuilder"
-            if c.__class__.__name__ == "LocalStaticFileBuilder":
-                assert c.get_server_name(None) == "localhost"
-                assert c.get_overseer_name(None) == "localhost"
-
-            if c.__class__.__name__ == "LocalCertBuilder":
-                participants = project_config["participants"]
-                for p in participants:
-                    if p["type"] == "server":
-                        assert c.get_subject(Participant(**p)) == "localhost"
-                    else:
-                        assert c.get_subject(Participant(**p)) == p["name"]
 
     def test_get_packages_config(self):
         project_config = {
@@ -227,15 +205,3 @@ class TestPOCCommands:
         assert "server1" == global_config[SC.FLARE_SERVER]
         assert "admin@nvidia.com" == global_config[SC.FLARE_PROJ_ADMIN]
         assert ["client-1", "client-2"] == global_config[SC.FLARE_CLIENTS]
-
-    def test_replace_server_with_localhost(self):
-
-        assert "localhost:8002:8003" == replace_server_with_localhost("server:8002:8003")
-
-        with pytest.raises(ValueError):
-            assert "localhost:8002:8003" == replace_server_with_localhost("server:8002")
-
-        with pytest.raises(
-            ValueError, match="Input must be in the format 'server:port1:port2', each part can not be empty"
-        ):
-            assert "localhost:8002:8003" == replace_server_with_localhost("server:8002:")

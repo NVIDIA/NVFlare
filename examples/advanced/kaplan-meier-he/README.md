@@ -62,7 +62,7 @@ To run the baseline script, simply execute:
 ```commandline
 python utils/baseline_kaplan_meier.py
 ```
-By default, this will generate a KM curve image `km_curve_baseline.png` under `/tmp` directory. The resutling KM curve is shown below:
+By default, this will generate a KM curve image `km_curve_baseline.png` under `/tmp` directory. The resulting KM curve is shown below:
 ![KM survival baseline](figs/km_curve_baseline.png)
 Here, we show the survival curve for both daily (without binning) and weekly binning. The two curves aligns well with each other, while the weekly-binned curve has lower resolution.
 
@@ -72,7 +72,7 @@ We make use of FLARE ModelController API to implement the federated Kaplan-Meier
 
 The Flare ModelController API (`ModelController`) provides the functionality of flexible FLModel payloads for each round of federated analysis. This gives us the flexibility of transmitting various information needed by our scheme at different stages of federated learning.
 
-Our [existing HE examples](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/cifar10-real-world) uses data filter mechanism for HE, provisioning the HE context information (specs and keys) for both client and server of the federated job under [CKKS](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/app_opt/he/model_encryptor.py) scheme. In this example, we would like to illustrate ModelController's capability in supporting customized needs beyond the existing HE functionalities (designed mainly for encrypting deep learning models).
+Our [existing HE examples](../cifar10/cifar10-real-world) uses data filter mechanism for HE, provisioning the HE context information (specs and keys) for both client and server of the federated job under [CKKS](../../../nvflare/app_opt/he/model_encryptor.py) scheme. In this example, we would like to illustrate ModelController's capability in supporting customized needs beyond the existing HE functionalities (designed mainly for encrypting deep learning models).
 - different HE schemes (BFV) rather than CKKS
 - different content at different rounds of federated learning, and only specific payload needs to be encrypted
 
@@ -92,43 +92,20 @@ After these rounds, the federated work is completed. Then at each client, the ag
 ## Run the job
 First, we prepared data for a 5-client federated job. We split and generate the data files for each client with binning interval of 7 days. 
 ```commandline
-python utils/prepare_data.py --site_num 5 --bin_days 7 --out_path "/tmp/flare/dataset/km_data"
+python utils/prepare_data.py --site_num 5 --bin_days 7 --out_path "/tmp/nvflare/dataset/km_data"
 ```
 
 Then we prepare HE context for clients and server, note that this step is done by secure provisioning for real-life applications, but in this study experimenting with BFV scheme, we use this step to distribute the HE context. 
 ```commandline
-python utils/prepare_he_context.py --out_path "/tmp/flare/he_context"
+python utils/prepare_he_context.py --out_path "/tmp/nvflare/he_context"
 ```
 
-Next, we set the location of the job templates directory.
+Next, we run the federated training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html), both without and with HE:
 ```commandline
-nvflare config -jt ./job_templates
+python km_job.py 
+python km_job.py --encryption
 ```
 
-Then we can generate the job configurations from the `kaplan_meier` template:
-
-Both for the federated job without HE:
-```commandline
-N_CLIENTS=5
-nvflare job create -force -j "/tmp/flare/jobs/kaplan-meier" -w "kaplan_meier" -sd "./src" \
--f config_fed_client.conf app_script="kaplan_meier_train.py" app_config="--data_root /tmp/flare/dataset/km_data" \
--f config_fed_server.conf min_clients=${N_CLIENTS}
-```
-and for the federated job with HE:
-```commandline
-N_CLIENTS=5
-nvflare job create -force -j "/tmp/flare/jobs/kaplan-meier-he" -w "kaplan_meier_he" -sd "./src" \
--f config_fed_client.conf app_script="kaplan_meier_train_he.py" app_config="--data_root /tmp/flare/dataset/km_data --he_context_path /tmp/flare/he_context/he_context_client.txt" \
--f config_fed_server.conf min_clients=${N_CLIENTS} he_context_path="/tmp/flare/he_context/he_context_server.txt"
-```
-
-And we can run the federated job:
-```commandline
-nvflare simulator -w /tmp/flare/workspace_km -n 5 -t 5 /tmp/flare/jobs/kaplan-meier
-```
-```commandline
-nvflare simulator -w /tmp/flare/workspace_km_he -n 5 -t 5 /tmp/flare/jobs/kaplan-meier-he
-```
 By default, this will generate a KM curve image `km_curve_fl.png` and `km_curve_fl_he.png` under each client's directory.
 
 ## Display Result

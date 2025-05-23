@@ -1,18 +1,21 @@
-# LLM Tuning via HuggingFace SFT Trainer
+# LLM Tuning via HuggingFace SFT/PEFT APIs
 This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) for Large Language Models (LLMs) tuning tasks. It illustrates how to adapt a local training script with [HuggingFace](https://huggingface.co/) trainer to NVFlare.
 
 ## Introduction 
 This example illustrates both supervised fine-tuning (SFT) and parameter-efficient fine-tuning (PEFT) using the [SFT Trainer](https://huggingface.co/docs/trl/sft_trainer) from [HuggingFace](https://huggingface.co/) with [PEFT library](https://github.com/huggingface/peft).
 
-We used the [Llama-2-7b-hf model](https://huggingface.co/meta-llama/Llama-2-7b-hf) to showcase the functionality of federated SFT and PEFT, allowing HuggingFace models to be trained and adapted with NVFlare. 
+We used the [Llama-3.2-1B model](https://huggingface.co/meta-llama/Llama-3.2-1B) to showcase the functionality of federated SFT and PEFT, allowing HuggingFace models to be trained and adapted with NVFlare. All other models from HuggingFace can be easily adapted following the same steps.
 
 For PEFT, we used LoRA method, other PEFT methods (e.g. p-tuning, prompt-tuning) can be easily adapted as well by modifying the configs following [PEFT](https://github.com/huggingface/peft) examples.
 
-Mainly on two fronts:
-- Adapt local HuggingFace training scripts to federated application
-- Handling large model weights (~26 GB for Llama-2-7b-hf model), this is supported by NVFlare infrastructure, and does not need any code change.
+We would like to showcase three key points in this example:
+- Adapt local HuggingFace training scripts, both SFT and PEFT, to federated application
+- Handling large model weights (~6 GB for Llama-3.2-1B model with float32 precision for communication), which is beyond protobuf's 2 GB hard limit. It is supported by NVFlare infrastructure via streaming, and does not need any code change.
+- Use NVFlare's filter functionality to enable model quantization and precision conversion for communication, which can significantly reduce the message size and is thus important for communicating LLM updates.  
 
-We conducted these experiments on two 80GB A100 GPUs, PEFT only needs 1 GPU, while SFT needs both GPUs. Less computation resources will be needed if smaller models are used, simply replace Llama-2-7b-hf with other options from HuggingFace.
+We conducted these experiments on a single 48GB RTX 6000 Ada GPU. 
+
+To use Llama-3.2-1B model, please request access to the model here https://huggingface.co/meta-llama/Llama-3.2-1B and login with an access token using huggingface-cli.
 
 ## Setup
 Please make sure you set up virtual environment following [example root readme](../../README.md).
@@ -20,134 +23,181 @@ Install additional requirements (if you already have a specific version of nvfla
 ```
 python3 -m pip install -r requirements.txt
 ```
+Git LFS is also necessary for downloads, please follow the steps in this [link](https://github.com/git-lfs/git-lfs/blob/main/INSTALLING.md).
 
-## Model and Data Preparation
-We first download the model and save it to the `model` folder, note that approved access to the model is required
-```
-mkdir model
-cd model
-git clone https://huggingface.co/meta-llama/Llama-2-7b-hf
-cd ..
-```
-
-We then download and preprocess (to be consistent with our [NeMo example](../../../integration/nemo/examples/supervised_fine_tuning), we follow the same preprocessing steps) the dataset [databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k) for this example. 
+## Data Preparation
+We download and preprocess (consistent with our [NeMo example](../../../integration/nemo/examples/supervised_fine_tuning/README.md), we follow the same preprocessing steps).
 ```
 mkdir dataset
 cd dataset
+git clone https://huggingface.co/datasets/tatsu-lab/alpaca
 git clone https://huggingface.co/datasets/databricks/databricks-dolly-15k
+git clone https://huggingface.co/datasets/OpenAssistant/oasst1
 cd ..
 mkdir dataset/dolly
 python ./utils/preprocess_dolly.py --training_file dataset/databricks-dolly-15k/databricks-dolly-15k.jsonl --output_dir dataset/dolly
+python ./utils/preprocess_alpaca.py --training_file dataset/alpaca/data/train-00000-of-00001-a09b74b3ef9c3b56.parquet --output_dir dataset/alpaca
+python ./utils/preprocess_oasst1.py --training_file dataset/oasst1/data/train-00000-of-00001-b42a775f407cee45.parquet --validation_file dataset/oasst1/data/validation-00000-of-00001-134b8fd0c89408b6.parquet --output_dir dataset/oasst1
 ```
 
-## Centralized Training
-### One-call training
-Centralized trainings, as the baseline for comparison with FL results, are done with the following command:
-```
-python3 ./utils/hf_sft_peft.py --output_path ./workspace_centralized/llama2-7b-dolly-sft --mode 0
-python3 ./utils/hf_sft_peft.py --output_path ./workspace_centralized/llama2-7b-dolly-peft --mode 1
-```
-### Pre: Launch Modes
-Before we start adapting the local training script to federated application, we first need to understand the launch modes of NVFlare client API.
-In our [client settings](../../../job_templates/sag_pt/config_fed_client.conf), we have two launch modes by switching the `--launch_once` flag:
-* If launch_once is true, the SubprocessLauncher will launch an external process once for the whole job
-* If launch_once is false, the SubprocessLauncher will launch an external process everytime it receives a task from server
-So if it is false, the SubprocessLauncher will create new processes every round.
-If it is true, the SubprocessLauncher will reuse the same process for all rounds.
+## Adaptation of Centralized Training Script to Federated
+Below, we illustrate how to adapt a standard HuggingFace SFT/PEFT training script to a federated paradigm with NVFlare. 
 
-Turning `launch_once` to `false` can be useful in some scenarios like quick prototyping, but for the application of LLM where setup stage can take significant resources, we would want to only setup once. Hence, the below steps are for `launch_once = true` scenario.
+The original HuggingFace training script is located at `utils/hf_sft_peft.py`, which is a modified version of [HuggingFace SFT Trainer](https://huggingface.co/docs/trl/sft_trainer).
+To illustrate the adaptation process, we use a single dataset [databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k).
 
-See [Client API](../../hello-world/ml-to-fl/pt/README.md) for more details.
+Unlike a basic iterative pytorch-based training script, HuggingFace training is usually a single call to `trainer.train()`, which is not suitable for federated training.
+
+Therefore, we will perform the adaptation process in two steps:
+1. Adapt the one-call training script to iterative training by breaking the single `.train()` call to several iterations, which is a prerequisite for federated training.
+2. Adapt the iterative training script to federated training with NVFlare.
+
+During the process, we will examine three training modes:
+1. Centralized one-call training (baseline) without NVFlare
+2. Centralized iterative training (adapted) without NVFlare
+3. Federated training (adapted) with NVFlare
+
+> Note: all training runs are logged with TensorBoard, and the training loss curves can be visualized with TensorBoard via `tensorboard --logdir=./workspace`. 
+> Curves related to each experiment will be associated with the corresponding workspace folder, e.g. `./workspace/dolly_cen_sft`, `./workspace/dolly_cen_peft`, etc.
+
+### Baseline: One-call training
+The original HuggingFace training script is a single call to `trainer.train()`, which is not suitable for federated training.
+Centralized trainings, as the baseline for comparison with other results, are done with the following command:
+```
+python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_sft --train_mode SFT
+python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_peft --train_mode PEFT
+```
 
 ### Adaptation Step 1: iterative training
-To adapt the centralized training script to federated application, under `launch_once = true` setting, we first need to "break" the single call to `trainer.train()` into iterative calls, one for each round of training.
+To adapt the centralized training script to federated application, we first need to "break" the single call to `trainer.train()` into iterative calls, one for each round of training.
 For this purpose, we provided `utils/hf_sft_peft_iter.py` as an example, which is a modified version of `utils/hf_sft_peft.py`.
 Their differences are highlighted below:
 
-![diff](./figs/diff_1.png)
-![diff](./figs/diff_2.png)
+![diff](./figs/diff.png)
 
 Note that the `trainer.train()` call is replaced by a `for` loop, and the three training epochs becomes three rounds, one epoch per round. 
 
-This setting (1 epoch per round) is for simplicity of this example. In practice, we can set the number of rounds and local epoch per round according to the needs: e.g. 2 rounds with 2 epochs per round will result in 4 training epochs in total.
+In this example, we use one epoch per round for simplicity. In practice, the number of rounds and local epochs per round can be adjusted as needed. For example, two rounds with two epochs per round would result in a total of four training epochs.
 
-At the beginning of each round, we intentionally load a fixed model weights saved at the beginning, over-writing the previous round's saved model weights, then call `trainer.train(resume_from_checkpoint=True)` with `trainer.args.num_train_epochs` incremented by 1 so that previous logging results are not overwritten. 
+A key requirement in federated learning is that local model weights need to be synced to the "global model" at the beginning of each round.
+Therefore, the iterative training needs to explicitly reflect this behavior - at the beginning of each round, we intentionally load a fixed model weights, over-writing the previous round's saved model weights. Then we call `trainer.train(resume_from_checkpoint=True)` with `trainer.args.num_train_epochs` incremented by 1 to ensure that logging results from previous rounds are preserved.
 
-The purpose of doing so is to tell if the intended weights are succesfully loaded at each round. Without using a fixed starting model, even if the model weights are not properly loaded, the training loss curve will still follow the one-call result, which is not what we want to see. 
+This approach helps verify that the correct weights are being loaded at the start of each round. 
+Without resetting to a fixed starting model, the training loss curve may continue to show 
+improvement - even if the weights weren’t properly reloaded - making it hard to tell whether training resumed from the correct model or simply continued from the last round.
 
-If the intended model weights (serving as the starting point for each round, the "global model" for FL use case) is properly loaded, then we shall observe a "zig-zag" pattern in the training loss curve. This is because the model weights are reset to the same starting point at the beginning of each round, in contrast to the one-shot centralized training, where the model weights are updated continuously, and the training loss curve should follow an overall decreasing trend.
+If the correct "global model" is successfully reloaded each round, the training loss curve will show a characteristic "zig-zag" pattern. This occurs because the model is reset to the same initial weights at the start of each round, unlike in centralized training where weights are updated continuously and the loss typically follows a decreasing trend.
 
 To run iterative training, we use the following command:
 ``` 
-python3 ./utils/hf_sft_peft_iter.py --output_path /workspace_centralized/llama2-7b-dolly-sft-iter --mode 0
-python3 ./utils/hf_sft_peft_iter.py --output_path /workspace_centralized/llama2-7b-dolly-peft-iter --mode 1
+python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/dolly_cen_sft_iter --train_mode SFT
+python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/dolly_cen_peft_iter --train_mode PEFT
 ```
 
-The PEFT curves are shown below, blue for single call, black for iterative. We can see the "zig-zag" pattern in the iterative training loss curve.
-
-![peft](./figs/cen_peft.png)
-
-Similar patterns can be observed from the SFT curves
-
+The SFT curves are shown below, black for single call, blue for iterative. We can see the "zig-zag" pattern in the iterative training loss curve.
 ![sft](./figs/cen_sft.png)
+
+Similar patterns can be observed from the PEFT curves, purple for single call, green for iterative.
+![peft](./figs/cen_peft.png)
 
 ### Adaptation Step 2: federated with NVFlare
 Once we have the iterative training script ready with "starting model" loading capability, it can be easily adapted to a NVFlare trainer by using [Client API](../../hello-world/ml-to-fl/pt/README.md).
 
-The major code modifications are for receiving and returning the global model (replacing the constant one used by iterative training), as shown below:
+The major code modifications are for replacing the fixed model reloading processing with 
+receiving and returning the global model, as shown below:
 
 ![diff](./figs/diff_fl_1.png)
 ![diff](./figs/diff_fl_2.png)
 
-## Job for NVFlare FL Training
-With the local training script ready, we can go ahead to generate the NVFlare job configs by reusing the job templates from [sag_pt](../../../job_templates/sag_pt/).
-
-Let's set the job template path with the following command.
-```bash
-nvflare config -jt ../../../job_templates/
+We run the federated training on a single client using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
 ```
-Then we can check the available templates with the following command.
-```bash
-nvflare job list_templates
+python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft --job_dir ${PWD}/workspace/jobs/hf_sft --train_mode SFT 
+python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft --job_dir ${PWD}/workspace/jobs/hf_peft --train_mode PEFT 
 ```
-We can see the "sag_pt" template is available, with which we further generate job configs for SFT and PEFT as:
-```
-nvflare job create -force -j "./jobs/hf_peft" -w "sag_pt" -sd "code" \
-  -f meta.conf min_clients=1 \
-  -f config_fed_client.conf app_script="hf_sft_peft_fl.py" app_config="--model_path ${PWD}/model/Llama-2-7b-hf --data_path_train ${PWD}/dataset/dolly/training.jsonl --data_path_valid ${PWD}/dataset/dolly/validation.jsonl --output_path llama2-7b-dolly-peft --mode 1" \
-  -f config_fed_server.conf model_class_path="hf_peft_model.CausalLMPEFTModel" components[0].args.model.args.model_path="${PWD}/model/Llama-2-7b-hf" min_clients=1 num_rounds=3 key_metric="eval_loss" negate_key_metric=True
-```
-and
-```
-nvflare job create -force -j "./jobs/hf_sft" -w "sag_pt" -sd "code" \
-  -f meta.conf min_clients=1 \
-  -f config_fed_client.conf app_script="hf_sft_peft_fl.py" app_config="--model_path ${PWD}/model/Llama-2-7b-hf --data_path_train ${PWD}/dataset/dolly/training.jsonl --data_path_valid ${PWD}/dataset/dolly/validation.jsonl --output_path llama2-7b-dolly-sft --mode 0" \
-  -f config_fed_server.conf model_class_path="hf_sft_model.CausalLMModel" components[0].args.model.args.model_path="${PWD}/model/Llama-2-7b-hf" min_clients=1 num_rounds=3 key_metric="eval_loss" negate_key_metric=True  
-```
-
-For both client and server configs, we only set the necessary parameters for the SFT and PEFT tasks, and leave the rest to the default values.
-
-## Federated Training
-With the produced job, we run the federated training on a single client using NVFlare Simulator.
-```
-nvflare simulator -w ./workspace_fl/hf_peft -n 1 -t 1 ./jobs/hf_peft
-```
-and
-```
-nvflare simulator -w ./workspace_fl/hf_sft -n 1 -t 1 ./jobs/hf_sft
-``` 
-
-## Results
-In this example, our purpose is to showcase the adaptation process and FL functionality. Hence, we used 1-client setting, with which the training results should relatively align with centralized training.
-
-The PEFT curves are shown below, blue for centralized results from `./utils/hf_sft_peft.py`, black for FL training. 
-
-We can see with some training randomness, the two PEFT training loss curves align with each other.
-
-![peft](./figs/fl_peft.png)
-
-Similar patterns can be observed from the SFT curves
-
+The SFT curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two SFT training loss curves align with each other. 
 ![sft](./figs/fl_sft.png)
 
+Similar patterns can be observed from the PEFT curves, purple for centralized results, orange for FL training. Alignment better than SFT can be observed.
+![peft](./figs/fl_peft.png)
 
+## Model Quantization for Communication
+In the above example, we used numpy in float32 for communication. To reduce the message size, we can use model precision conversion and quantization 
+from float32 to 16-bit, 8-bit, and 4-bit for communication. Quantization is enabled by NVFlare's [filter mechanism](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html). We can use the following command to run the federated training with model quantization.
+16-bit is a direct precision conversion, while 8-bit, 4-bit quantization is performed by [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/main).
+Note that 4-bit quantizations (`fp4` or `nf4`) need device support.
+```
+python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_16 --job_dir ${PWD}/workspace/jobs/hf_sft_16 --train_mode SFT --quantize_mode float16
+python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_8 --job_dir ${PWD}/workspace/jobs/hf_sft_8 --train_mode SFT --quantize_mode blockwise8
+python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_fp4 --train_mode SFT --quantize_mode float4
+python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_nf4 --job_dir ${PWD}/workspace/jobs/hf_sft_nf4 --train_mode SFT --quantize_mode normfloat4
+```
+The SFT curves are shown below, magenta for centralized results, others for FL training with quantization. We can see it achieves similar alignment comparing to centralized result with training randomness (similar to previous figure).
+![sft](./figs/fl_sft_comp.png)
+
+These results show that model precision conversion / quantization does not significantly impact the training while reducing the message size to 1/2, 1/4, and even 1/8, which can significantly reduce the message size, making it crucial for transmitting LLM updates.
+
+For message reduce, from float32 to 16-/8-/4-bit, the message size (in MB) of Llama-3.2-1B model are reduced to: 
+
+| Quantization      | Raw Model Size | Quantized Model Size | Quantization Meta Size |
+|-------------------|----------------|----------------------|------------------------|
+| float16           | 5716.26        | 2858.13              | 0.00                   |
+| blockwise8        | 5716.26        | 1429.06              | 1.54                   |
+| float4            | 5716.26        | 714.53               | 89.33                  |
+| normalized float4 | 5716.26        | 714.53               | 89.33                  |
+
+Note that quantization will generate additional meta data, which can be significant for 4-bit cases.
+
+## Model Communication with Tensor
+In addition, since the model is trained with bf16, instead of first converting to numpy in float32, we can directly communicate with tensor in bf16 to avoid the message size inflation due to the conversion. 
+We can use the following command to run the federated training with direct tensor communication.
+```
+python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor --job_dir ${PWD}/workspace/jobs/hf_sft_tensor --train_mode SFT --message_mode tensor
+```
+Similarly, quantization can be applied to tensor communication as well.
+```
+python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
+```
+In this case, since the tensor is in bf16, and the quantization reduces it to float4, the message size change is thus:
+```
+Before quantization: 2858.13 MB. After quantization: 714.53 MB with meta: 89.33 MB.
+```
+
+## Federated Training with Multiple Clients
+With the above example, we can easily extend the federated training to multiple clients. We can use the following command to run the federated training with multiple clients:
+```
+python3 llm_hf_fl_job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_multi --job_dir ${PWD}/workspace/jobs/hf_sft_multi --train_mode SFT --threads 1
+```
+
+For comparison, we run the other two sites in centralized training mode:
+```
+python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/alpaca/training.jsonl --data_path_valid ./dataset/alpaca/validation.jsonl --output_path ./workspace/alpaca_cen_sft --train_mode SFT
+python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/oasst1/training.jsonl --data_path_valid ./dataset/oasst1/validation.jsonl --output_path ./workspace/oasst1_cen_sft --train_mode SFT
+```
+
+The training loss curves are shown below:
+
+Dolly:
+![sft](./figs/fl_sft_dolly.png)
+Alpaca:
+![sft](./figs/fl_sft_alpaca.png)
+Oasst1:
+![sft](./figs/fl_sft_oasst1.png)
+
+As shown, federated training with multiple clients (lines with three sections) can achieve comparable or better results w.r.t. training loss to individual site's centralized trainings (continuous curves), demonstrating the effectiveness of federated learning.
+
+Similarly for PEFT, we can run the following command:
+```
+python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_peft --train_mode PEFT
+python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/alpaca/training.jsonl --data_path_valid ./dataset/alpaca/validation.jsonl --output_path ./workspace/alpaca_cen_peft --train_mode PEFT
+python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/oasst1/training.jsonl --data_path_valid ./dataset/oasst1/validation.jsonl --output_path ./workspace/oasst1_cen_peft --train_mode PEFT
+python3 llm_hf_fl_job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_multi --job_dir ${PWD}/workspace/jobs/hf_peft_multi --train_mode PEFT --threads 1
+```
+
+The training loss curves are shown below:
+
+Dolly:
+![peft](./figs/peft_dolly.png)
+Alpaca:
+![peft](./figs/peft_alpaca.png)
+Oasst1:
+![peft](./figs/peft_oasst1.png)

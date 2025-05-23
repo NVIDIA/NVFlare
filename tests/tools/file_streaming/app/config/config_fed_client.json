@@ -1,0 +1,26 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "path": "executor.MockExecutor",
+        "args": {}
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "sender",
+      "path": "file_streaming.FileSender",
+      "args": {
+        "file_name": "/tmp/data/test.data",
+        "timeout": 10.0
+      }
+    }
+  ]
+}

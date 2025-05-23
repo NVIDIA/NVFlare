@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import threading
 from typing import Any, Dict, List
+
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .fl_constant import ReservedKey
 
@@ -72,7 +73,7 @@ class FLContext(object):
         """
         self.model = None
         self.props = {}
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
 
     def get_prop_keys(self) -> List[str]:
         return list(self.props.keys())
@@ -215,6 +216,15 @@ class FLContext(object):
 
     def get_engine(self, default=None):
         return self._simple_get(ReservedKey.ENGINE, default)
+
+    def get_workspace(self):
+        engine = self.get_engine()
+        if not engine:
+            raise RuntimeError("missing engine from context")
+        return engine.get_workspace()
+
+    def get_process_type(self, default=None):
+        return self._simple_get(ReservedKey.PROCESS_TYPE, default)
 
     def get_job_id(self, default=None):
         return self._simple_get(ReservedKey.RUN_NUM, default)

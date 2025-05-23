@@ -29,7 +29,7 @@ The ``pyproject.toml`` file exists in the job's ``custom`` folder. It is an impo
 client app definition and configuration information. Such information is used by the Flower system to find the
 server app and the client app, and to pass app-specific configuration to the apps.
 
-Here is an example of ``pyproject.toml``, taken from https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-world/hello-flower/jobs/hello-flwr-pt/app/custom/pyproject.toml.
+Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this example <examples/hello-world/hello-flower/jobs/hello-flwr-pt/app/custom/pyproject.toml>`.
 
 .. code-block:: toml
 
@@ -74,7 +74,7 @@ Here is an example of ``pyproject.toml``, taken from https://github.com/NVIDIA/N
 Project Name
 ------------
 The project name should match the name of the project folder, though not a requirement. In this example, it is ``flwr_pt``. 
-Serverapp Specification
+Server App Specification
 
 This value is specified following this format:
 
@@ -92,7 +92,7 @@ where:
     app = ServerApp(server_fn=server_fn)
 
 
-Clientapp Specification
+Client App Specification
 ------------------------
 This value is specified following this format:
 

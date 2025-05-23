@@ -2,16 +2,23 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Tested with:
+#   flwr==1.16.0
+#   nvflare==2.6.0
+#   torch==2.7.0
+#   torchvision==0.22.0
+#   tensorboard==2.19.0
+
 [project]
 name = "flwr_pt_tb"
 version = "1.0.0"
 description = ""
 license = "Apache-2.0"
 dependencies = [
-    "flwr[simulation]>=1.11.0,<2.0",
-    "nvflare~=2.5.0rc",
-    "torch==2.2.1",
-    "torchvision==0.17.1",
+    "flwr>=1.16,<2.0",
+    "nvflare~=2.6.0rc",
+    "torch",
+    "torchvision",
     "tensorboard"
 ]
 
@@ -33,3 +40,5 @@ default = "local-simulation"
 
 [tool.flwr.federations.local-simulation]
 options.num-supernodes = 2
+address = "127.0.0.1:9093"
+insecure = true

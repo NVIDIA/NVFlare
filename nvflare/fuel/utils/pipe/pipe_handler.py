@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import threading
 import time
 from collections import deque
 from typing import Optional
 
 from nvflare.apis.signal import Signal
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
 from nvflare.fuel.utils.validation_utils import (
     check_callable,
@@ -91,7 +91,7 @@ class PipeHandler(object):
         if 0 < heartbeat_timeout <= heartbeat_interval:
             raise ValueError(f"heartbeat_interval {heartbeat_interval} must < heartbeat_timeout {heartbeat_timeout}")
 
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_obj_logger(self)
         self.pipe = pipe
         self.read_interval = read_interval
         self.heartbeat_interval = heartbeat_interval
@@ -178,6 +178,10 @@ class PipeHandler(object):
         self.msg_cb_kwargs = kwargs
 
     def _send_to_pipe(self, msg: Message, timeout=None, abort_signal: Signal = None):
+        if self._is_stopped_or_aborted(abort_signal):
+            self.logger.debug("cannot send message to pipe since PipeHandler is asked to stop")
+            return False
+
         pipe = self.pipe
         if not pipe:
             self.logger.error("cannot send message to pipe since it's already closed")
@@ -199,25 +203,28 @@ class PipeHandler(object):
                 self.logger.error(f"abort sending after {num_sends} tries")
                 return False
 
-            if self.asked_to_stop:
-                return False
-
-            if abort_signal and abort_signal.triggered:
+            if self._is_stopped_or_aborted(abort_signal):
                 return False
 
             # wait for resend_interval before resend, but return if asked_to_stop is set during the wait
             self.logger.info(f"will resend '{msg.topic}' in {self.resend_interval} secs")
             start_wait = time.time()
             while True:
-                if self.asked_to_stop:
-                    return False
-
-                if abort_signal and abort_signal.triggered:
+                if self._is_stopped_or_aborted(abort_signal):
                     return False
 
                 if time.time() - start_wait > self.resend_interval:
                     break
                 time.sleep(0.1)
+        return False
+
+    def _is_stopped_or_aborted(self, abort_signal: Optional[Signal] = None):
+        if self.asked_to_stop:
+            return True
+
+        if abort_signal and abort_signal.triggered:
+            return True
+
         return False
 
     def start(self):

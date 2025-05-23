@@ -11,16 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
 import os
 import time
 from typing import Union
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.cellnet.defs import ConnectorRequirementKey
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import CommError, Communicator, Mode
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 _KEY_RESOURCES = "resources"
@@ -39,13 +41,17 @@ class _Defaults:
 
 
 class ConnectorData:
-    def __init__(self, handle, connect_url: str, active: bool):
+    def __init__(self, handle, connect_url: str, active: bool, params: dict):
         self.handle = handle
         self.connect_url = connect_url
         self.active = active
+        self.params = params
 
     def get_connection_url(self):
         return self.connect_url
+
+    def get_connection_params(self):
+        return self.params
 
 
 class ConnectorManager:
@@ -55,7 +61,7 @@ class ConnectorManager:
 
     def __init__(self, communicator: Communicator, secure: bool, comm_configurator: CommConfigurator):
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = get_obj_logger(self)
 
         self.communicator = communicator
         self.secure = secure
@@ -83,6 +89,11 @@ class ConnectorManager:
             if adhoc_conf:
                 self.adhoc_scheme = adhoc_conf.get(_KEY_SCHEME)
                 self.adhoc_resources = adhoc_conf.get(_KEY_RESOURCES)
+
+        # default conn sec
+        conn_sec = self.int_resources.get(DriverParams.CONNECTION_SECURITY)
+        if not conn_sec:
+            self.int_resources[DriverParams.CONNECTION_SECURITY] = ConnectionSecurity.CLEAR
 
         self.logger.debug(f"internal scheme={self.int_scheme}, resources={self.int_resources}")
         self.logger.debug(f"adhoc scheme={self.adhoc_scheme}, resources={self.adhoc_resources}")
@@ -151,7 +162,7 @@ class ConnectorManager:
         return conn_config
 
     def _get_connector(
-        self, url: str, active: bool, internal: bool, adhoc: bool, secure: bool
+        self, url: str, active: bool, internal: bool, adhoc: bool, secure: bool, conn_resources=None
     ) -> Union[None, ConnectorData]:
         if active and not url:
             raise RuntimeError("url is required by not provided for active connector!")
@@ -192,19 +203,19 @@ class ConnectorManager:
 
         try:
             if active:
-                handle = self.communicator.add_connector(url, Mode.ACTIVE, ssl_required)
+                handle, conn_params = self.communicator.add_connector(url, Mode.ACTIVE, ssl_required, conn_resources)
                 connect_url = url
             elif url:
-                handle = self.communicator.add_connector(url, Mode.PASSIVE, ssl_required)
+                handle, conn_params = self.communicator.add_connector(url, Mode.PASSIVE, ssl_required, conn_resources)
                 connect_url = url
             else:
-                self.logger.info(f"{os.getpid()}: Try start_listener Listener resources: {reqs}")
-                handle, connect_url = self.communicator.start_listener(scheme, reqs)
+                self.logger.debug(f"{os.getpid()}: Try start_listener Listener resources: {reqs}")
+                handle, connect_url, conn_params = self.communicator.start_listener(scheme, reqs)
                 self.logger.debug(f"{os.getpid()}: ############ dynamic listener at {connect_url}")
                 # Kludge: to wait for listener ready and avoid race
                 time.sleep(0.5)
 
-            return ConnectorData(handle, connect_url, active)
+            return ConnectorData(handle, connect_url, active, conn_params)
         except CommError as ex:
             self.logger.error(f"Failed to get connector: {secure_format_exception(ex)}")
             return None
@@ -239,11 +250,13 @@ class ConnectorManager:
         """
         return self._get_connector(url="", active=False, internal=True, adhoc=False, secure=False)
 
-    def get_internal_connector(self, url: str) -> Union[None, ConnectorData]:
+    def get_internal_connector(self, url: str, conn_resources=None) -> Union[None, ConnectorData]:
         """
         Try to get an internal listener.
 
         Args:
             url:
         """
-        return self._get_connector(url=url, active=True, internal=True, adhoc=False, secure=False)
+        return self._get_connector(
+            url=url, active=True, internal=True, adhoc=False, secure=False, conn_resources=conn_resources
+        )

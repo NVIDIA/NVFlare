@@ -14,14 +14,14 @@
 import os.path
 import re
 import uuid
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
-from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int
+from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_str
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
 
@@ -103,6 +103,9 @@ class FedApp:
         """
         self.app_config.add_ext_dir(ext_dir)
 
+    def add_file_source(self, src_path: str, dest_dir=None, app_folder_type=None):
+        self.app_config.add_file_source(src_path, dest_dir, app_folder_type)
+
     def _add_resource(self, resource: str):
         if not isinstance(resource, str):
             raise ValueError(f"cannot add resource: resource must be a str but got {type(resource)}")
@@ -162,6 +165,7 @@ class FedJob:
         name: str = "fed_job",
         min_clients: int = 1,
         mandatory_clients: Optional[List[str]] = None,
+        meta_props: Optional[Dict[str, Any]] = None,
     ) -> None:
         """FedJob allows users to generate job configurations in a Pythonic way.
         The `to()` routine allows users to send different components to either the server or clients.
@@ -172,10 +176,20 @@ class FedJob:
             mandatory_clients: mandatory clients to run the job (optional)
 
         """
+        check_str("name", name)
+        check_positive_int("min_clients", min_clients)
+        if mandatory_clients:
+            check_object_type("mandatory_clients", mandatory_clients, list)
+        if meta_props:
+            check_object_type("meta_props", meta_props, dict)
+
         self.name = name
         self.clients = []
         self.job: FedJobConfig = FedJobConfig(
-            job_name=self.name, min_clients=min_clients, mandatory_clients=mandatory_clients
+            job_name=self.name,
+            min_clients=min_clients,
+            mandatory_clients=mandatory_clients,
+            meta_props=meta_props,
         )
         self._deploy_map = {}
         self._deployed = False
@@ -395,6 +409,21 @@ class FedJob:
         app = self._get_app(ctx)
         app.add_resources(resources)
 
+    def add_file_source(self, src_path: str, dest_dir, app_folder_type, ctx: JobCtx):
+        """Add a file source to the job. To be used by job component programmer.
+
+        Args:
+            src_path: path to the source to be added to job.
+            dest_dir: destination path for the source
+            app_folder_type: type of app folder to place the files
+            ctx: JobCtx for contextual information.
+
+        Returns:
+
+        """
+        app = self._get_app(ctx)
+        app.add_file_source(src_path, dest_dir, app_folder_type)
+
     def to_server(
         self,
         obj: Any,
@@ -505,7 +534,9 @@ class FedJob:
         self._set_all_apps()
         self.job.generate_job_config(job_root)
 
-    def simulator_run(self, workspace: str, n_clients: int = None, threads: int = None, gpu: str = None):
+    def simulator_run(
+        self, workspace: str, n_clients: int = None, threads: int = None, gpu: str = None, log_config: str = None
+    ):
         """Run the job with the simulator with the `workspace` using `clients` and `threads`.
         For end users.
 
@@ -514,6 +545,7 @@ class FedJob:
             n_clients: number of clients.
             threads: number of threads.
             gpu: gpu assignments for simulating clients, comma separated
+            log_config: log config mode ('concise', 'default', 'verbose'), filepath, or level
 
         Returns:
 
@@ -539,6 +571,7 @@ class FedJob:
             n_clients=n_clients,
             threads=threads,
             gpu=gpu,
+            log_config=log_config,
         )
 
     def as_id(self, obj: Any) -> str:

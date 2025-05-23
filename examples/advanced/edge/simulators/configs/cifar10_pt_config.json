@@ -1,0 +1,15 @@
+{
+  "endpoint": "http://localhost:8000",
+  "num_devices": 16,
+  "device_id_prefix": "sim-device-",
+  "processor": {
+    "path": "processors.pt_cifar10_task_processor.PTCifar10TaskProcessor",
+    "args": {
+      "data_root": "/tmp/nvflare/datasets/cifar10",
+      "subset_size": 3125
+    }
+  },
+  "capabilities": {
+    "methods": ["cifar10"]
+  }
+}

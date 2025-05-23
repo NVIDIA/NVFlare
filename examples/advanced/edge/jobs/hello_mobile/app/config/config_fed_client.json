@@ -1,0 +1,31 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "train"
+            ],
+            "executor": {
+                "id": "Executor",
+                "path": "nvflare.edge.executors.simple_edge_executor.SimpleEdgeExecutor",
+                "args": {
+                    "updater_id": "updater"
+                }
+             }
+        }
+    ],
+    "components": [
+        {
+            "id": "aggregator",
+            "path": "nvflare.edge.aggregators.edge_result_accumulator.EdgeResultAccumulator",
+            "args": {}
+        },
+        {
+            "id": "updater",
+            "path": "nvflare.edge.updaters.aggr.AggrUpdater",
+            "args": {
+                "aggregator_id": "aggregator"
+            }
+        }
+    ]
+}
