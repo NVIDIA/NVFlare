@@ -112,7 +112,10 @@ class Simulator:
                 # ignore since it's not our device
                 continue
 
-            # Busy devices do not need to be excluded at this point. Only when they become "used" devices, they will be excluded.
+            if did in self.busy_devices:
+                # This device is working a task already
+                continue
+
             if did in self.used_devices and self.used_devices[did] == sid:
                 # we already reported result, but it has not been processed by server
                 continue
@@ -396,6 +399,15 @@ class Simulator:
 
         """
         if not self.used_devices:
+            # check the number of devices and print warning if it exceeds the limit
+            # print warning for at most 10 times
+            if (len(self.all_devices) > self.num_devices) and (self.num_devices <= self.num_devices + 10):
+                self.logger.warning(
+                    f"Warning: number of devices ({len(self.all_devices)}) exceeds the preset limit: {self.num_devices}"
+                )
+                self.logger.warning(
+                    "Make sure this is expected and proper logic at the server side is in place. This message will be printed at most 10 times."
+                )
             # no used devices - make a new device
             return self._make_new_device()
 

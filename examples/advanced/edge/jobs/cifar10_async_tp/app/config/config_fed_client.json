@@ -8,7 +8,7 @@
         "args": {
           "aggr_factory_id": "aggr_factory",
           "max_model_versions": 3,
-          "update_timeout": 5.0
+          "update_timeout": 300.0
         }
       }
     }

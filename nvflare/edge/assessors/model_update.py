@@ -55,6 +55,7 @@ class ModelUpdateAssessor(Assessor):
         device_selection_size,
         min_hole_to_fill=1,
         device_reuse=True,
+        const_selection=False,
     ):
         Assessor.__init__(self)
         self.persistor_id = persistor_id
@@ -72,6 +73,7 @@ class ModelUpdateAssessor(Assessor):
         self.device_selection_size = device_selection_size
         self.min_hole_to_fill = min_hole_to_fill
         self.device_reuse = device_reuse
+        self.const_selection = const_selection
         self.update_lock = threading.Lock()
         self.start_time = None
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
@@ -241,7 +243,13 @@ class ModelUpdateAssessor(Assessor):
             # recompute selection
             num_holes = self.device_selection_size - len(self.current_selection)
             if num_holes >= self.min_hole_to_fill:
-                self._fill_selection(fl_ctx)
+                if not self.const_selection:
+                    self._fill_selection(fl_ctx)
+                else:
+                    # print constant selection message
+                    self.log_info(fl_ctx, "constant selection enabled, use the same original set.")
+                    self._repeat_selection(fl_ctx)
+
         else:
             self.log_debug(fl_ctx, "no model updates")
 
@@ -279,6 +287,26 @@ class ModelUpdateAssessor(Assessor):
                     k for k, v in self.used_devices.items() if v == self.current_model_version
                 )
 
+            if usable_devices:
+                for _ in range(num_holes):
+                    device_id = random.choice(list(usable_devices))
+                    usable_devices.remove(device_id)
+                    self.current_selection[device_id] = self.current_selection_version
+                    self.used_devices[device_id] = self.current_model_version
+                    if not usable_devices:
+                        break
+        self.log_info(
+            fl_ctx,
+            f"current selection: V{self.current_selection_version}; {dict(sorted(self.current_selection.items()))}",
+        )
+
+    def _repeat_selection(self, fl_ctx: FLContext):
+        num_holes = self.device_selection_size - len(self.current_selection)
+        self.log_info(fl_ctx, f"filling {num_holes} holes in selection list")
+        if num_holes > 0:
+            self.current_selection_version += 1
+            # fill the holes with the same devices
+            usable_devices = set(self.used_devices.keys())
             if usable_devices:
                 for _ in range(num_holes):
                     device_id = random.choice(list(usable_devices))
