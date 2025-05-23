@@ -115,6 +115,8 @@ def generate_keys():
 
 
 def x509_name(cn_name, org_name=None, role=None):
+    if cn_name and isinstance(cn_name, str) and len(cn_name) > 64:
+        cn_name = cn_name[:64]
     name = [x509.NameAttribute(NameOID.COMMON_NAME, cn_name)]
     if org_name is not None:
         name.append(x509.NameAttribute(NameOID.ORGANIZATION_NAME, org_name))
