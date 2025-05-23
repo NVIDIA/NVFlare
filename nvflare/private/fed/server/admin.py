@@ -11,13 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import threading
 import time
 from typing import List, Optional
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.shareable import ReservedHeaderKey
+from nvflare.apis.fl_constant import ServerCommandKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
@@ -229,11 +230,12 @@ class FedAdminServer(AdminServer):
         if not isinstance(req, Message):
             raise TypeError("request must be Message but got {}".format(type(req)))
         reqs = {client_token: req}
-        replies = self.send_requests(reqs, timeout_secs=timeout_secs)
-        if replies is None or len(replies) <= 0:
-            return None
-        else:
-            return replies[0]
+        with self.sai.new_context() as fl_ctx:
+            replies = self.send_requests(reqs, fl_ctx, timeout_secs=timeout_secs)
+            if replies is None or len(replies) <= 0:
+                return None
+            else:
+                return replies[0]
 
     def send_requests_and_get_reply_dict(self, requests: dict, timeout_secs=2.0) -> dict:
         """Send requests to clients
@@ -250,12 +252,13 @@ class FedAdminServer(AdminServer):
             for token, _ in requests.items():
                 result[token] = None
 
-            replies = self.send_requests(requests, timeout_secs=timeout_secs)
-            for r in replies:
-                result[r.client_token] = r.reply
+            with self.sai.new_context() as fl_ctx:
+                replies = self.send_requests(requests, fl_ctx, timeout_secs=timeout_secs)
+                for r in replies:
+                    result[r.client_token] = r.reply
         return result
 
-    def send_requests(self, requests: dict, timeout_secs=2.0, optional=False) -> [ClientReply]:
+    def send_requests(self, requests: dict, fl_ctx: FLContext, timeout_secs=2.0, optional=False) -> [ClientReply]:
         """Send requests to clients.
 
         NOTE::
@@ -266,6 +269,7 @@ class FedAdminServer(AdminServer):
 
         Args:
             requests: A dict of requests: {client token: request or list of requests}
+            fl_ctx: FLContext
             timeout_secs: how long to wait for reply before timeout
             optional: whether the requests are optional
 
@@ -274,9 +278,10 @@ class FedAdminServer(AdminServer):
         """
 
         for _, request in requests.items():
-            with self.sai.new_context() as fl_ctx:
-                self.sai.fire_event(EventType.BEFORE_SEND_ADMIN_COMMAND, fl_ctx)
-                request.set_header(ReservedHeaderKey.PEER_PROPS, copy.deepcopy(fl_ctx.get_all_public_props()))
+            # with self.sai.new_context() as fl_ctx:
+            self.sai.fire_event(EventType.BEFORE_SEND_ADMIN_COMMAND, fl_ctx)
+            shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
+            request.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
 
         return send_requests(
             cell=self.cell,

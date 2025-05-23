@@ -93,7 +93,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if not isinstance(engine, ServerEngineSpec):
             raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
 
-        engine.cancel_client_resources(resource_check_results, resource_reqs)
+        engine.cancel_client_resources(resource_check_results, resource_reqs, fl_ctx)
         self.log_debug(fl_ctx, f"cancel client resources using check results: {resource_check_results}")
         return False, None
 
@@ -165,6 +165,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             return SCHEDULE_RESULT_NO_RESOURCE, None, block_reason
 
         resource_check_results = self._check_client_resources(job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx)
+        fl_ctx.set_prop(FLContextKey.RESOURCE_CHECK_RESULT, resource_check_results, private=True, sticky=False)
         self.fire_event(EventType.AFTER_CHECK_CLIENT_RESOURCES, fl_ctx)
 
         if not resource_check_results:

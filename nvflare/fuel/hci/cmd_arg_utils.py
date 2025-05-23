@@ -30,6 +30,26 @@ def split_to_args(line: str) -> List[str]:
         return line.split(" ")
 
 
+def parse_command_line(line: str) -> (str, List[str], str):
+    """Parse the command line and extract command args and command props, if any
+
+    Args:
+        line:
+
+    Returns:
+
+    """
+    if '"' in line:
+        return line, shlex.split(line), None
+    else:
+        # cmd props are after "#"
+        parts = line.split("#", maxsplit=1)
+        line = parts[0].strip()
+        props = parts[1] if len(parts) > 1 else None
+        line = re.sub(" +", " ", line)
+        return line, line.split(" "), props
+
+
 def join_args(segs: List[str]) -> str:
     result = ""
     sep = ""
@@ -121,15 +141,50 @@ def validate_path_string(path: str) -> str:
     return path
 
 
+def get_file_extension(file: str) -> str:
+    """Get extension part of the specified file name.
+    If the file's name is ended with number, then the extension is before it.
+
+    Args:
+        file: the file name
+
+    Returns: extension part of the file name
+
+    """
+    parts = file.split(".")
+    last_part = parts[-1]
+    if last_part.isnumeric():
+        parts.pop(-1)
+        file = ".".join(parts)
+    _, ex = os.path.splitext(file)
+    return ex
+
+
+def validate_text_file_name(file_name: str) -> str:
+    """Check the specified file name whether it is acceptable.
+
+    Args:
+        file_name: file name to be checked.
+
+    Returns: error string if invalid; or empty string if valid
+
+    """
+    file_extension = get_file_extension(file_name)
+    if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
+        return (
+            f"this command cannot be applied to file {file_name}. Only files with the following extensions are "
+            "permitted: .txt, .log, .json, .csv, .sh, .config, .py"
+        )
+    else:
+        return ""
+
+
 def validate_file_string(file: str) -> str:
     """Returns the file string if it is valid."""
     validate_path_string(file)
-    basename, file_extension = os.path.splitext(file)
-    if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
-        raise SyntaxError(
-            "this command cannot be applied to file {}. Only files with the following extensions are "
-            "permitted: .txt, .log, .json, .csv, .sh, .config, .py".format(file)
-        )
+    err = validate_text_file_name(file)
+    if err:
+        raise SyntaxError(err)
     return file
 
 

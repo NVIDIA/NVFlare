@@ -11,7 +11,7 @@ which is an optimized distributed gradient boosting library covering random fore
 Follow along in this [notebook](./random_forest.ipynb) for an interactive experience.
 
 ### Dataset
-This example illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs).
+This example illustrate a binary classification task based on [HIGGS dataset](https://mlphysics.ics.uci.edu/data/higgs/).
 This dataset contains 11 million instances, each with 28 attributes.
 
 Please note that the UCI's website may experience occasional downtime.
@@ -75,7 +75,7 @@ If you want to customize for your experiments, please check `utils/prepare_data_
 
 ## HIGGS jobs preparation under various training settings
 
-Please follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
+Please follow the [Installation](../../getting_started/README.md) instructions to install NVFlare.
 
 We then prepare the NVFlare jobs for different settings by running
 ```
@@ -97,21 +97,10 @@ By default, CPU based training is used.
 If the CUDA is installed on the site, tree construction and prediction can be
 accelerated using GPUs.
 
-GPUs are enabled by using :code:`gpu_hist` as :code:`tree_method` parameter.
-For example,
-::
-              "xgboost_params": {
-                "max_depth": 8,
-                "eta": 0.1,
-                "objective": "binary:logistic",
-                "eval_metric": "auc",
-                "tree_method": "gpu_hist",
-                "gpu_id": 0,
-                "nthread": 16
-              }
-
-For GPU based training, edit `job_config_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
-Then run the `job_config_gen.sh` again to generates new job configs for GPU-based training.
+In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least one GPU.
+In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"`.
+Then, in `FedXGBTreeExecutor` we use the `device` parameter to map each rank to a GPU device ordinal.
+If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
 
 ## Run experiments 
 After you run the two scripts `data_split_gen.sh` and `jobs_gen.sh`, the experiments can be run with the NVFlare simulator.

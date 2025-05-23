@@ -30,7 +30,7 @@ from nvflare.client.tracking import MLflowWriter
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
-DEVICE = "cuda:0"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 def define_parser():
@@ -139,7 +139,7 @@ def main():
                     running_loss += loss.item()
                     if i % 2000 == 1999:  # print every 2000 mini-batches
                         print(f"({client_id}) [{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
-                        global_step = input_model.current_round * local_epochs * batch_size + epoch * batch_size + i
+                        global_step = input_model.current_round * steps + epoch * len(trainloader) + i
                         mlflow.log_metric("loss", running_loss / 2000, global_step)
                         running_loss = 0.0
 

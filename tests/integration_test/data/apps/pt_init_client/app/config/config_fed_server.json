@@ -42,7 +42,7 @@
   "workflows": [
       {
         "id": "pre_train",
-        "name": "InitializeGlobalWeights",
+        "path": "nvflare.app_common.workflows.initialize_global_weights.InitializeGlobalWeights",
         "args": {
           "task_name": "get_weights",
           "weight_method": "client",
@@ -51,7 +51,7 @@
       },
       {
         "id": "scatter_and_gather",
-        "name": "ScatterAndGather",
+        "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
         "args": {
             "min_clients" : 2,
             "num_rounds" : 2,
@@ -66,7 +66,7 @@
       },
       {
         "id": "cross_site_validate",
-        "name": "CrossSiteModelEval",
+        "path": "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
         "args": {
           "model_locator_id": "model_locator"
         }

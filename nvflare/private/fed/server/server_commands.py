@@ -23,13 +23,15 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
+    ReturnCode,
     ServerCommandKey,
     ServerCommandNames,
 )
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 from nvflare.widgets.widget import WidgetID
 
 NO_OP_REPLY = "__no_op_reply"
@@ -188,7 +190,7 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
                 f"return task to client.  client_name: {client.name}  task_name: {taskname}   task_id: {task_id}  "
                 f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
             )
-        self.logger.debug(f"Get_task processing time: {time.time()-start_time} for client: {client.name}")
+        self.logger.debug(f"Get_task processing time: {time.time() - start_time} for client: {client.name}")
         return shareable
 
     def get_state_check(self, fl_ctx: FLContext) -> dict:
@@ -232,7 +234,7 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
         self.logger.info(f"submit_update process. client_name:{client.name}   task_id:{task_id}")
 
-        self.logger.debug(f"Submit_result processing time: {time.time()-start_time} for client: {client.name}")
+        self.logger.debug(f"Submit_result processing time: {time.time() - start_time} for client: {client.name}")
         return ""
 
     def get_state_check(self, fl_ctx: FLContext) -> dict:
@@ -263,6 +265,8 @@ class HandleDeadJobCommand(CommandProcessor):
 
         """
         client_name = data.get_header(ServerCommandKey.FL_CLIENT)
+        reason = data.get_header(ServerCommandKey.REASON)
+        self.logger.warning(f"received dead job notification: {reason=}")
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         if server_runner:
             server_runner.handle_dead_job(client_name, fl_ctx)
@@ -419,6 +423,48 @@ class ServerStateCommand(CommandProcessor):
         return "Success"
 
 
+class AppCommandProcessor(CommandProcessor):
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.SERVER_STATE
+
+        """
+        return ServerCommandNames.APP_COMMAND
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        topic = data.get(ServerCommandKey.TOPIC)
+        if not topic:
+            return make_reply(ReturnCode.BAD_REQUEST_DATA, headers={ServerCommandKey.REASON: "no topic"})
+
+        reg = ServerCommands.get_app_command(topic)
+        if reg is None:
+            self.logger.error(f"no app command func for topic {topic}")
+            return make_reply(
+                ReturnCode.BAD_REQUEST_DATA, headers={ServerCommandKey.REASON: f"no app command func for topic {topic}"}
+            )
+
+        cmd_func, cmd_args, cmd_kwargs = reg
+        cmd_data = data.get(ServerCommandKey.DATA)
+        try:
+            result = cmd_func(topic, cmd_data, fl_ctx, *cmd_args, **cmd_kwargs)
+        except Exception as ex:
+            self.logger.error(f"exception processing app command '{topic}': {secure_format_traceback()}")
+            return make_reply(
+                ReturnCode.EXECUTION_EXCEPTION, headers={ServerCommandKey.REASON: {secure_format_exception(ex)}}
+            )
+
+        if not isinstance(result, dict):
+            self.logger.error(f"bad result from app command '{topic}': expect dict but got {type(result)}")
+            return make_reply(
+                ReturnCode.EXECUTION_EXCEPTION, headers={ServerCommandKey.REASON: f"bad result type {type(result)}"}
+            )
+
+        reply = Shareable()
+        reply[ServerCommandKey.DATA] = result
+        return reply
+
+
 class ServerCommands(object):
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
@@ -434,16 +480,18 @@ class ServerCommands(object):
         ResetErrorsCommand(),
         HeartbeatCommand(),
         ServerStateCommand(),
+        AppCommandProcessor(),
     ]
 
     client_request_commands_names = [
         ServerCommandNames.GET_TASK,
         ServerCommandNames.SUBMIT_UPDATE,
-        # ServerCommandNames.AUX_COMMUNICATE,
     ]
 
-    @staticmethod
-    def get_command(command_name):
+    app_cmd_registry = {}
+
+    @classmethod
+    def get_command(cls, command_name):
         """Call to return the AdminCommand object.
 
         Args:
@@ -452,22 +500,35 @@ class ServerCommands(object):
         Returns: AdminCommand object
 
         """
-        for command in ServerCommands.commands:
+        for command in cls.commands:
             if command_name == command.get_command_name():
                 return command
         return None
 
-    @staticmethod
-    def register_command(command_processor: CommandProcessor):
-        """Call to register the AdminCommand processor.
+    @classmethod
+    def register_app_command(cls, topic: str, cmd_func, *args, **kwargs):
+        """Called to register an app command.
 
         Args:
-            command_processor: AdminCommand processor
-
+            topic: topic that the command will process
+            cmd_func: the function to process the command
         """
-        if not isinstance(command_processor, CommandProcessor):
-            raise TypeError(
-                "command_processor must be an instance of CommandProcessor, but got {}".format(type(command_processor))
-            )
+        if not isinstance(topic, str):
+            raise RuntimeError(f"invalid topic: expect str but got {type(topic)}")
 
-        ServerCommands.commands.append(command_processor)
+        if not callable(cmd_func):
+            raise RuntimeError(f"command func is not callable for topic {topic}")
+
+        if topic in cls.app_cmd_registry:
+            raise RuntimeError(f"duplicate app command topic {topic}")
+
+        cls.app_cmd_registry[topic] = (cmd_func, args, kwargs)
+
+    @classmethod
+    def get_app_command(cls, topic: str):
+        reg = cls.app_cmd_registry.get(topic)
+        if reg is not None:
+            return reg
+
+        # see whether a default func is registered
+        return cls.app_cmd_registry.get("*")

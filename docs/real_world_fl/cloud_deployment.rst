@@ -44,11 +44,11 @@ To run NVFlare dashboard on Azure, run:
 
 .. note::
 
-    The script also requires sshpass and jq.  Both can be installed on Ubuntu, with:
+    The script also requires sshpass, dig and jq.  All can be installed on Ubuntu, with:
 
         .. code-block:: shell
 
-           sudo apt install sshpass jq
+           sudo apt install sshpass bind9-dnsutils jq
 
 Users only need to enter an email address and press Enter. This user needs to remember this email and the temporary password that will be provided, as
 this is the login credentials for the NVFLARE Dashboard once the Dashboard is up and running. 
@@ -101,11 +101,11 @@ To run NVFlare dashboard on AWS, run:
 
 .. note::
 
-    The script also requires sshpass and jq.  They can be installed on Ubuntu, with:
+    The script also requires sshpass, dig and jq.  They can be installed on Ubuntu, with:
 
         .. code-block:: shell
 
-           sudo apt install sshpass jq
+           sudo apt install sshpass bind9-dnsutils jq
 
 AWS manages authentications via AWS access_key and access_secret, you will need to have these credentials before you can start creating AWS infrastructure.
 
@@ -128,9 +128,10 @@ You can accept all default values by pressing ENTER.
 
 .. code-block:: none
 
-    This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed.
+    This script requires az (Azure CLI), sshpass dig and jq.  Now checking if they are installed.
     Checking if az exists. => found
     Checking if sshpass exists. => found
+    Checking if dig exists. => found
     Checking if jq exists. => found
     Cloud VM image, press ENTER to accept default Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest: 
     Cloud VM size, press ENTER to accept default Standard_B2ms: 
@@ -190,9 +191,10 @@ You can accept all default values by pressing ENTER.
 
 .. code-block::
 
-    This script requires aws (AWS CLI), sshpass and jq.  Now checking if they are installed.
+    This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed.
     Checking if aws exists. => found
     Checking if sshpass exists. => found
+    Checking if dig exists. => found
     Checking if jq exists. => found
     If the server requires additional dependencies, please copy the requirements.txt to /home/nvflare/workspace/aws/nvflareserver/startup.
     Press ENTER when it's done or no additional dependencies. 
@@ -213,9 +215,14 @@ The configuration file provided is formatted as follows:
 
 .. code-block:: shell
 
-    AMI_IMAGE=ami-04bad3c587fe60d89
+    AMI_IMAGE=ami-03c983f9003cb9cd1
     EC2_TYPE=t2.small
     REGION=us-west-2
+
+.. note::
+
+    For the AWS AMIs, we recommend the following images for each version of Ubuntu:
+    20.04:ami-04bad3c587fe60d89, 22.04:ami-03c983f9003cb9cd1, 24.04:ami-0406d1fdd021121cd
 
 Deploy FL Client in the Cloud
 =============================
@@ -267,7 +274,7 @@ eg. ``--config my_config.txt``.  The configuration file is formatted as follows:
 
 .. code-block:: shell
 
-    AMI_IMAGE=ami-04bad3c587fe60d89
+    AMI_IMAGE=ami-03c983f9003cb9cd1
     EC2_TYPE=t2.small
     REGION=us-west-2
 

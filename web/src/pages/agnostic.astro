@@ -1,0 +1,75 @@
+---
+import Layout from "@layouts/Layout.astro";
+import FrameworkAgnostic from '../images/framework_agnostic.png'
+
+const base_url = import.meta.env.BASE_URL;
+---
+
+<Layout title="">
+  <div>
+
+
+    <div class="bg-white py-16 sm:py-16">
+      <div class="mx-auto max-w-[1600px] px-6 lg:px-8">
+        <div class="mx-auto max-w-5xl mt-10 flex justify-left">
+          <a href={base_url} class="text-sm font-semibold leading-6 text-nvidia">
+            <span aria-hidden="true">&larr;</span>
+            Back to home
+          </a>
+        </div>
+        <div class="mx-auto max-w-5xl mt-16 md:mt-0 text-center">
+          <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight">
+            Framework Agnostic
+          </h2>
+          <p class="text-lg mt-4 text-slate-600 w-3/4 m-auto">
+            NVIDIA FLARE is designed as a federated computing platform that is agnostic to frameworks, workloads, datasets, and domains.
+            View the <a class="text-nvidia" href=`${base_url}/catalog`>Tutorial Catalog</a> to see different examples in these categories.
+          </p>
+
+          <img class="mt-10 flex items-center w-full" src={FrameworkAgnostic.src} alt="framework agnostic">
+
+          <div class="mx-auto lg:mx-0 text-left py-20 text-slate-600">
+            <h2 class="text-4xl lg:text-xl font-bold lg:tracking-tight text-gray-900">
+              Framework Agnostic
+            </h2>
+
+              <p class="text-lg mt-4 text-slate-600 m-auto">
+                NVIDIA FLARE is compatible with any machine learning or deep learning framework.
+                This versatility is demonstrated through various example repositories, including those for PyTorch, TensorFlow, PyTorch Lightning, XGBoost, Scikit-learn, GraphSAGE, Hugging Face, NeMo, Bio-Nemo, and MONAI.
+                Most machine learning problems can easily be converted from centralized algorithms to federated algorithms using NVIDIA FLARE.
+              </p>
+
+            <h2 class="text-xl lg:text-xl font-bold lg:tracking-tight text-gray-900 mt-8">
+              Domain Agnostic
+            </h2>
+
+              <p class="text-lg mt-4 text-slate-600 m-auto">
+                NVIDIA FLARE is also domain agnostic, making it suitable for applications in medical imaging, drug discovery, self-driving cars, financial services, medical devices, energy, and more.
+                This broad applicability is reflected in the diverse industries of our customers.
+              </p>
+
+            <h2 class="text-xl lg:text-xl font-bold lg:tracking-tight text-gray-900 mt-8">
+              Model Agnostic
+            </h2>
+
+              <p class="text-lg mt-4 text-slate-600 m-auto">
+                NVIDIA FLARE supports a wide variety of models, including decision trees, classification, regression, various types of LLM fine-tuning, and XGBoost.
+                Regardless of the model type, NVIDIA FLARE can work with them all.
+              </p>
+
+            <h2 class="text-xl lg:text-xl font-bold lg:tracking-tight text-gray-900 mt-8">
+              Task Agnostic
+            </h2>
+
+              <p class="text-lg mt-4 text-slate-600 m-auto">
+                Thanks to its generic design, NVIDIA FLARE is task agnostic.
+                It can handle any type of task or payload, without mandating a specific type of computation.
+                NVIDIA FLARE provides coordination and communication, allowing users to leverage its capabilities for tasks such as Federated Statistics, Multi-Party Private Set Intersection (PSI), and Federated Retrieval-Augmented Generation (RAG) tasks.
+              </p>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>

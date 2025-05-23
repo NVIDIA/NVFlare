@@ -159,6 +159,12 @@ See how to deploy to Azure and AWS clouds can be found in :ref:`cloud_deployment
 
 Deploy to Google Cloud will be made available in a future release.
 
+Kubernetes Deployment
+=====================
+As mentioned above, you can run NVIDIA FLARE in the public cloud.  If you prefer to deploy NVIDIA FLARE in Amazon Elastic Kubernetes Service (EKS),
+you can find the deployment guide in :ref:`eks_deployment`.
+
+
 Starting Federated Learning Servers
 =============================================
 The FL Server will coordinate the federated learning training and be the main hub all clients and admin

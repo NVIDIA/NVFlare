@@ -61,8 +61,8 @@ class CyclicClientController(ClientSideController):
         clients = self.get_config_prop(Constant.CLIENTS)
         # make sure the starting client is the 1st
         rotate_to_front(self.me, clients)
-        rr_order = self.get_config_prop(Constant.ORDER)
-        self.log_info(fl_ctx, f"Starting cyclic workflow on clients {clients} with order {rr_order} ")
+        cyclic_order = self.get_config_prop(Constant.ORDER)
+        self.log_info(fl_ctx, f"Starting cyclic workflow on clients {clients} with order {cyclic_order} ")
         self._set_task_headers(
             task_data=shareable,
             num_rounds=self.get_config_prop(AppConstants.NUM_ROUNDS),

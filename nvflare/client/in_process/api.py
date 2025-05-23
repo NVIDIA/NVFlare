@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import logging
+import os
 import time
 from typing import Any, Dict, Optional
 
@@ -21,7 +23,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import APISpec
-from nvflare.client.config import ClientConfig, ConfigKey
+from nvflare.client.config import ClientConfig, ConfigKey, TransferType
 from nvflare.client.constants import SYS_ATTRS
 from nvflare.client.utils import DIFF_FUNCS
 from nvflare.fuel.data_event.data_bus import DataBus
@@ -40,7 +42,7 @@ class InProcessClientAPI(APISpec):
 
         Args:
             task_metadata (dict): task metadata, added to client_config.
-            result_check_interval (float): how often to check if result is availabe.
+            result_check_interval (float): how often to check if result is available.
         """
         self.data_bus = DataBus()
         self.data_bus.subscribe([TOPIC_GLOBAL_RESULT], self.__receive_callback)
@@ -49,20 +51,19 @@ class InProcessClientAPI(APISpec):
         self.meta = task_metadata
         self.result_check_interval = result_check_interval
 
-        self.start_round = None
         self.fl_model = None
         self.sys_info = {}
         self.client_config: Optional[ClientConfig] = None
-        self.current_round = None
-        self.total_rounds = None
         self.logger = logging.getLogger(self.__class__.__name__)
         self.event_manager = EventManager(self.data_bus)
         self.abort_reason = ""
         self.stop_reason = ""
         self.abort = False
         self.stop = False
+        self.rank = None
+        self.receive_called = False  # to check if users have call received for a new model
 
-    def init(self, config: Optional[Dict] = None, rank: Optional[str] = None):
+    def init(self, rank: Optional[str] = None, config: Optional[Dict] = None):
         """Initializes NVFlare Client API environment.
 
         Args:
@@ -70,6 +71,11 @@ class InProcessClientAPI(APISpec):
             rank (str): local rank of the process.
                 It is only useful when the training script has multiple worker processes. (for example multi GPU)
         """
+
+        self.rank = rank
+        if rank is None:
+            self.rank = os.environ.get("RANK", "0")
+
         config = {} if config is None else config
         self.prepare_client_config(config)
 
@@ -81,7 +87,7 @@ class InProcessClientAPI(APISpec):
         if isinstance(config, dict):
             client_config = ClientConfig(config=config)
         else:
-            raise ValueError("config should be a dictionary.")
+            raise ValueError(f"config should be a dictionary, but got {type(config)}")
 
         if client_config.config:
             client_config.config.update(self.meta)
@@ -89,7 +95,15 @@ class InProcessClientAPI(APISpec):
             client_config.config = self.meta
         self.client_config = client_config
 
+    def set_meta(self, meta: dict):
+        self.meta = meta
+
     def receive(self, timeout: Optional[float] = None) -> Optional[FLModel]:
+        result = self.__receive()
+        self.receive_called = True
+        return result
+
+    def __receive(self) -> Optional[FLModel]:
         if self.fl_model:
             return self.fl_model
 
@@ -107,16 +121,23 @@ class InProcessClientAPI(APISpec):
 
     def send(self, model: FLModel, clear_cache: bool = True) -> None:
         if self.__continue_job():
-            self.logger.info("send local model back to peer ")
+            self.logger.info("Try to send local model back to peer ")
 
-        if self.client_config.get_transfer_type() == "DIFF":
+        if not self.receive_called:
+            raise RuntimeError('"receive" needs to be called before sending model!')
+
+        if self.client_config.get_transfer_type() == TransferType.DIFF:
             model = self._prepare_param_diff(model)
+
+        if model.params is None and model.metrics is None:
+            raise RuntimeError("the model to send does not have either params or metrics")
 
         shareable = FLModelUtils.to_shareable(model)
         self.event_manager.fire_event(TOPIC_LOCAL_RESULT, shareable)
 
         if clear_cache:
             self.fl_model = None
+            self.receive_called = False
 
     def system_info(self) -> Dict:
         return self.sys_info
@@ -131,33 +152,37 @@ class InProcessClientAPI(APISpec):
         return self.meta[FLMetaKey.SITE_NAME]
 
     def get_task_name(self) -> str:
+        if self.rank != "0":
+            raise RuntimeError("only rank 0 can call get_task_name!")
+
         return self.meta[ConfigKey.TASK_NAME]
 
     def is_running(self) -> bool:
         if not self.__continue_job():
             return False
         else:
-            self.receive()
+            self.__receive()
 
-        if self.fl_model:
-            self.current_round = self.fl_model.current_round
-            self.total_rounds = self.fl_model.total_rounds
-            self.start_round = self.fl_model.meta.get(FLMetaKey.START_ROUND, 0)
-        else:
-            return False
-
-        return self.current_round < self.start_round + self.total_rounds
+        return self.fl_model is not None
 
     def is_train(self) -> bool:
+        if self.rank != "0":
+            raise RuntimeError("only rank 0 can call is_train!")
         return self.meta.get(ConfigKey.TASK_NAME) == self.client_config.get_train_task()
 
     def is_evaluate(self) -> bool:
+        if self.rank != "0":
+            raise RuntimeError("only rank 0 can call is_evaluate!")
         return self.meta.get(ConfigKey.TASK_NAME) == self.client_config.get_eval_task()
 
     def is_submit_model(self) -> bool:
+        if self.rank != "0":
+            raise RuntimeError("only rank 0 can call is_submit_model!")
         return self.meta.get(ConfigKey.TASK_NAME) == self.client_config.get_submit_model_task()
 
     def log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
+        if self.rank != "0":
+            raise RuntimeError("only rank 0 can call log!")
         msg = dict(key=key, value=value, data_type=data_type, **kwargs)
         self.event_manager.fire_event(TOPIC_LOG_DATA, msg)
 
@@ -179,9 +204,6 @@ class InProcessClientAPI(APISpec):
                     model.params_type = ParamsType.DIFF
                 except Exception as e:
                     raise RuntimeError(f"params diff function failed: {e}")
-
-        if model.params is None and model.metrics is None:
-            raise RuntimeError("the model to send does not have either params or metrics")
 
         return model
 

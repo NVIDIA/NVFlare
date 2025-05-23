@@ -29,6 +29,20 @@ log = logging.getLogger(__name__)
 
 
 def _write(path: str, content, mv_file=True):
+    """Create a file at the specified 'path' with the specified 'content'.
+
+    Args:
+        path: the path of the file to be created
+        content: content for the file to be created. It could be either bytes, or path (str) to the source file that
+            contains the content.
+        mv_file: whether the destination file should be created simply by moving the source file. This is applicable
+            only when the 'content' is the path of the source file. If mv_file is False, the destination is created
+            by copying from the source file, and the source file will remain intact; If mv_file is True, the
+            destination file is created by "move" the source file, and the original source file will no longer exist.
+
+    Returns:
+
+    """
     tmp_path = path + "_" + str(uuid.uuid4())
     try:
         Path(os.path.dirname(path)).mkdir(parents=True, exist_ok=True)
@@ -162,7 +176,7 @@ class FilesystemStorage(StorageSpec):
 
         from_full_uri = self._object_path(from_uri)
         from_data_path = os.path.join(from_full_uri, DATA)
-        _write(data_path, from_data_path)
+        _write(data_path, from_data_path, mv_file=False)
 
         meta_path = os.path.join(full_uri, META)
         try:
@@ -188,7 +202,7 @@ class FilesystemStorage(StorageSpec):
             raise StorageException(f"path {full_dir_path} is not a valid directory.")
 
         if not StorageSpec.is_valid_component(component_name):
-            raise StorageException(f"{component_name } is not a valid component for storage object.")
+            raise StorageException(f"{component_name} is not a valid component for storage object.")
 
         component_path = os.path.join(full_dir_path, component_name)
         _write(component_path, data)
@@ -291,7 +305,7 @@ class FilesystemStorage(StorageSpec):
         full_uri = self._object_path(uri)
 
         if not StorageSpec.is_valid_component(component_name):
-            raise StorageException(f"{component_name } is not a valid component for storage object.")
+            raise StorageException(f"{component_name} is not a valid component for storage object.")
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))
@@ -302,7 +316,7 @@ class FilesystemStorage(StorageSpec):
         full_uri = self._object_path(uri)
 
         if not StorageSpec.is_valid_component(component_name):
-            raise StorageException(f"{component_name } is not a valid component for storage object.")
+            raise StorageException(f"{component_name} is not a valid component for storage object.")
 
         if not _object_exists(full_uri):
             raise StorageException("object {} does not exist".format(uri))

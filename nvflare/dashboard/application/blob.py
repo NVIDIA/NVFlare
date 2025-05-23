@@ -180,6 +180,11 @@ def gen_client(key, id):
         "type": "client",
         "cln_uid": f"uid={entity.name}",
     }
+    for k in ["client_name", "org_name", "cln_uid"]:
+        value = replacement_dict[k]
+        escaped_value = value.replace("'", "\\'")
+        replacement_dict[k] = escaped_value
+
     if project.ha_mode:
         overseer_agent = {"path": "nvflare.ha.overseer_agent.HttpOverseerAgent"}
         overseer_agent["args"] = {

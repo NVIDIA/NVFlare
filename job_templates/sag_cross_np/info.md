@@ -2,7 +2,7 @@
 
 ## sag_cross_np
     name = "sag_cross_np"
-    description = "Scatter & Gather and cross-site validation workflow using numpy" 
+    description = "FedAvg with Scatter & Gather and cross-site validation workflow using numpy" 
     controller_type = "server"
     executor_type = "client executor"
     contributor = "NVIDIA"

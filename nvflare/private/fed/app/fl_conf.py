@@ -35,7 +35,7 @@ from .deployer.server_deployer import ServerDeployer
 from .fl_app_validator import FLAppValidator
 
 FL_PACKAGES = ["nvflare"]
-FL_MODULES = ["server", "client", "app_common", "private", "app_opt"]
+FL_MODULES = ["server", "client", "app_common", "private"]
 
 
 class FLServerStarterConfiger(JsonConfigurator):
@@ -49,7 +49,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             kv_list: key value pair list
         """
         site_custom_folder = workspace.get_site_custom_dir()
-        if os.path.isdir(site_custom_folder):
+        if os.path.isdir(site_custom_folder) and site_custom_folder not in sys.path:
             sys.path.append(site_custom_folder)
 
         self.args = args
@@ -219,7 +219,7 @@ class FLClientStarterConfiger(JsonConfigurator):
             kv_list: key value pair list
         """
         site_custom_folder = workspace.get_site_custom_dir()
-        if os.path.isdir(site_custom_folder):
+        if os.path.isdir(site_custom_folder) and site_custom_folder not in sys.path:
             sys.path.append(site_custom_folder)
 
         self.args = args

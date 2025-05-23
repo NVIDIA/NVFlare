@@ -46,18 +46,18 @@ you can run the job in CLI command, since we have 4 clients, we will set `-n 4` 
 
 ```
 cd NVFlare/examples/advanced/federated-statistics
-nvflare simulator image_stats/jobs/image_stats -w /tmp/nvflare/image_stats -n 4 -t 4
+nvflare simulator image_stats/jobs/image_stats -w /tmp/nvflare/image_stats/workspace -n 4 -t 4
 ```
 
-The results are stored in workspace "/tmp/nvflare/image_stats"
+The results are stored in workspace "/tmp/nvflare/image_stats/workspace"
 ```
-/tmp/nvflare/image_stats/simulate_job/statistics/image_histogram.json
+/tmp/nvflare/image_stats/workspace/server/simulate_job/statistics/image_histogram.json
 ```
 
 ## 2.2 Visualization
 
 ```bash
-    cp /tmp/nvflare/image_stats/simulate_job/statistics/image_histogram.json NVFlare/examples/advanced/federated-statistics/image_stats/demo/.
+    cp /tmp/nvflare/image_stats/workspace/server/simulate_job/statistics/image_histogram.json NVFlare/examples/advanced/federated-statistics/image_stats/demo/.
     
     cd NVFlare/examples/advanced/federated-statistics/image_stats/demo
     

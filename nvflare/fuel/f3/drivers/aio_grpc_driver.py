@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import asyncio
+import os
 import random
 import threading
 import time
@@ -278,6 +280,9 @@ class AioGrpcDriver(BaseDriver):
 
     def __init__(self):
         super().__init__()
+        # GRPC with fork issue: https://github.com/grpc/grpc/issues/28557
+        os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "False"
+
         self.server = None
         self.options = GRPC_DEFAULT_OPTIONS
         self.logger = get_logger(self)

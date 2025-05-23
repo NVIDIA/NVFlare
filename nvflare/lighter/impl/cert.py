@@ -87,6 +87,17 @@ class CertBuilder(Builder):
             pri_key = serialization.load_pem_private_key(
                 self.persistent_state[subject]["pri_key"].encode("ascii"), password=None, backend=default_backend()
             )
+            if participant.type == "admin":
+                cn_list = cert.subject.get_attributes_for_oid(NameOID.UNSTRUCTURED_NAME)
+                for cn in cn_list:
+                    role = cn.value
+                    new_role = participant.props.get("role")
+                    if role != new_role:
+                        err_msg = (
+                            f"{participant.name}'s previous role is {role} but is now {new_role}.\n"
+                            + "Please delete existing workspace and provision from scratch."
+                        )
+                        raise RuntimeError(err_msg)
         else:
             pri_key, cert = self.get_pri_key_cert(participant)
             self.persistent_state[subject] = dict(
@@ -105,11 +116,6 @@ class CertBuilder(Builder):
             with open(os.path.join(dest_dir, "server.key"), "wb") as f:
                 f.write(serialize_pri_key(tmp_pri_key))
 
-        pkcs12 = serialization.pkcs12.serialize_key_and_certificates(
-            subject.encode("ascii"), pri_key, cert, None, serialization.BestAvailableEncryption(subject.encode("ascii"))
-        )
-        with open(os.path.join(dest_dir, f"{base_name}.pfx"), "wb") as f:
-            f.write(pkcs12)
         with open(os.path.join(dest_dir, "rootCA.pem"), "wb") as f:
             f.write(self.serialized_cert)
 

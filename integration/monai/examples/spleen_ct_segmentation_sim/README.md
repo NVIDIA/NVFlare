@@ -54,6 +54,7 @@ The final folder structure under `JOB_NAME` will be:
 └── meta.json
 ```
 
+
 ### 2. Download the data
 Download the spleen CT data from the [MSD challenge](http://medicaldecathlon.com/) and update data path.
 

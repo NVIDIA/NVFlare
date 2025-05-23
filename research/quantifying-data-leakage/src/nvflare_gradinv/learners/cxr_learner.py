@@ -602,7 +602,7 @@ class CXRLearner(Learner):
         elif validate_type == ValidateType.MODEL_VALIDATE:
             if self.test_loader is None:
                 self.log_warning(fl_ctx, "No test data available. Skipping validation.")
-                val_results = {}
+                val_results = {"info": "Not validating on this client!"}
             else:
                 # perform valid
                 train_acc, train_auc = self.local_valid(self.train_loader, abort_signal)
@@ -639,7 +639,6 @@ class CXRLearner(Learner):
                     "val_auc": val_auc,
                     "test_auc": test_auc,
                 }
-
             metric_dxo = DXO(data_kind=DataKind.METRICS, data=val_results)
             return metric_dxo.to_shareable()
 

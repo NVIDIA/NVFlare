@@ -135,3 +135,39 @@ class AbortRun(Exception):
 
 class InvalidRequest(Exception):
     pass
+
+
+class SSLConstants:
+    """hard coded names related to SSL."""
+
+    CERT = "ssl_cert"
+    PRIVATE_KEY = "ssl_private_key"
+    ROOT_CERT = "ssl_root_cert"
+
+
+class CellChannel:
+
+    CLIENT_MAIN = "admin"
+    AUX_COMMUNICATION = "aux_communication"
+    SERVER_MAIN = "task"
+    SERVER_COMMAND = "server_command"
+    SERVER_PARENT_LISTENER = "server_parent_listener"
+    CLIENT_COMMAND = "client_command"
+    CLIENT_SUB_WORKER_COMMAND = "client_sub_worker_command"
+    MULTI_PROCESS_EXECUTOR = "multi_process_executor"
+    SIMULATOR_RUNNER = "simulator_runner"
+    RETURN_ONLY = "return_only"
+
+
+class CellChannelTopic:
+
+    Register = "register"
+    Quit = "quit"
+    GET_TASK = "get_task"
+    SUBMIT_RESULT = "submit_result"
+    HEART_BEAT = "heart_beat"
+    EXECUTE_RESULT = "execute_result"
+    FIRE_EVENT = "fire_event"
+    REPORT_JOB_FAILURE = "report_job_failure"
+
+    SIMULATOR_WORKER_INIT = "simulator_worker_init"

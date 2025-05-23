@@ -44,7 +44,7 @@ class MLflowReceiver(AnalyticsReceiver):
     def __init__(
         self,
         tracking_uri: Optional[str] = None,
-        kwargs: Optional[dict] = None,
+        kw_args: Optional[dict] = None,
         artifact_location: Optional[str] = None,
         events=None,
         buffer_flush_time=1,
@@ -78,7 +78,7 @@ class MLflowReceiver(AnalyticsReceiver):
         self.artifact_location = artifact_location if artifact_location is not None else "artifacts"
         self.fl_ctx = None
 
-        self.kwargs = kwargs if kwargs else {}
+        self.kw_args = kw_args if kw_args else {}
         self.tracking_uri = tracking_uri
         self.mlflow = mlflow
         self.mlflow_clients: Dict[str, MlflowClient] = {}
@@ -107,8 +107,8 @@ class MLflowReceiver(AnalyticsReceiver):
         self.time_start = 0
 
         art_full_path = self.get_artifact_location(self.artifact_location)
-        experiment_name = self.kwargs.get(TrackConst.EXPERIMENT_NAME, "FLARE FL Experiment")
-        experiment_tags = self._get_tags(TrackConst.EXPERIMENT_TAGS, kwargs=self.kwargs)
+        experiment_name = self.kw_args.get(TrackConst.EXPERIMENT_NAME, "FLARE FL Experiment")
+        experiment_tags = self._get_tags(TrackConst.EXPERIMENT_TAGS, kwargs=self.kw_args)
 
         sites = fl_ctx.get_engine().get_clients()
         self._init_buffer(sites)
@@ -134,8 +134,8 @@ class MLflowReceiver(AnalyticsReceiver):
                 run_group_id = str(int(time.time()))
 
                 default_run_name = "FLARE FL Run"
-                run_name = self.get_run_name(self.kwargs, default_run_name, site.name, run_group_id)
-                tags = self.get_run_tags(self.kwargs, run_group_id, run_name)
+                run_name = self.get_run_name(self.kw_args, default_run_name, site.name, run_group_id)
+                tags = self.get_run_tags(self.kw_args, run_group_id, run_name)
                 run = mlflow_client.create_run(experiment_id=self.experiment_id, run_name=run_name, tags=tags)
                 self.run_ids[site.name] = run.info.run_id
 

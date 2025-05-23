@@ -110,20 +110,6 @@ Below is a table overview of key Client APIs.
      - Returns whether the current task is a submit_model task.
      - :func:`is_submit_model<nvflare.client.api.is_submit_model>`
 
-.. list-table:: Decorator APIs
-   :widths: 25 25 50
-   :header-rows: 1
-
-   * - API
-     - Description
-     - API Doc Link
-   * - train
-     - A decorator to wraps the training logic.
-     - :func:`train<nvflare.client.decorator.train>`
-   * - evaluate
-     - A decorator to wraps the evaluate logic.
-     - :func:`evaluate<nvflare.client.decorator.evaluate>`
-
 .. list-table:: Lightning APIs
    :widths: 25 25 50
    :header-rows: 1
@@ -158,17 +144,82 @@ information about all of the Client API functionalities.
 If you are using PyTorch Lightning in your training code, you can check the
 Lightning API Module :mod:`nvflare.app_opt.lightning.api`.
 
+.. note::
+  The decorator API has been deprecated since release 2.5.0.
+  Please use the Client API instead.
+
+
+Client API communication patterns
+=================================
+
+.. image:: ../../resources/client_api.png
+    :height: 300px
+
+We offer various implementations of Client APIs tailored to different scenarios, each linked with distinct communication patterns.
+
+In-process Client API
+---------------------
+
+The in-process executor entails both the training script and client executor operating within the same process.
+The training script will be launched once at the event of START_RUN and will keep on running till the END_RUN event.
+Communication between them occurs through an efficient in-memory databus.
+
+When the training process involves either a single GPU or no GPUs, and the training script doesn't integrate third-party
+training systems, the in-process executor is preferable (when available).
+
+Sub-process Client API
+----------------------
+
+On the other hand, the LauncherExecutor employs the SubprocessLauncher to use a sub-process to execute the training script. This results in the client executor
+and training script residing in separate processes. The "launch_once" option is provided to the SubprocessLauncher to control
+whether to launch the external script everytime when getting the task from server, or just launch the script once at the event
+of START_RUN and keeps running till the END_RUN event. Communication between them is facilitated by either CellPipe
+(default) or FilePipe.
+
+For scenarios involving multi-GPU training or the utilization of external training infrastructure, opting for the Launcher executor might be more suitable.
+
+
+Choice of different Pipes
+=========================
+In the 2.5.x release, for most users, we recommend utilizing the default setting with the in-process executor
+(defaulting to memory-based data exchanges).
+Conversely, in the 2.4.x release, we suggest using the default setting with CellPipe for most users.
+
+CellPipe facilitates TCP-based cell-to-cell connections between the Executor and training script processes on
+the local host. The term cell represents logical endpoints. This communication enables the exchange of models, metrics,
+and metadata between the two processes.
+
+In contrast, FilePipe offers file-based communication between the Executor and training script processes,
+utilizing a job-specific file directory for exchanging models and metadata via files. While FilePipe is easier to set up
+than CellPipe, it's not suitable for high-frequency metrics exchange.
+
 
 Configuration
 =============
 
-In the config_fed_client in the FLARE app, in order to launch the training
-script we use the
+Different configurations are available for each type of executor.
+
+in-process executor configuration
+---------------------------------
+This configuration specifically caters to PyTorch applications, providing serialization and deserialization
+(aka Decomposers) for commonly used PyTorch objects. For non-PyTorch applications, the generic
+:class:`InProcessClientAPIExecutor<nvflare.app_common.executors.in_process_client_api_executor.InProcessClientAPIExecutor>` can be employed.
+
+.. literalinclude:: ../../../job_templates/sag_pt_in_proc/config_fed_client.conf
+
+
+subprocess launcher Executor configuration
+------------------------------------------
+In the config_fed_client in the FLARE app, in order to launch the training script we use the
 :class:`SubprocessLauncher<nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher>` component.
 The defined ``script`` is invoked, and ``launch_once`` can be set to either
-launch once for the whole job, or launch a process for each task received from the server.
+launch once for the whole job (launch_once = True), or launch a process for each task received from the server (launch_once = False)
 
-A corresponding :class:`LauncherExecutor<nvflare.app_common.executors.launcher_executor.LauncherExecutor>`
+``launch_once`` dictates how many times the training scripts are invoked during the overall training process.
+When set to False, the executor essentially invokes ``python <training scripts>.py`` every round of training.
+Typically, launch_once is set to True.
+
+A corresponding :class:`ClientAPILauncherExecutor<nvflare.app_common.executors.client_api_launcher_executor.ClientAPILauncherExecutor>`
 is used as the executor to handle the tasks and perform the data exchange using the pipe.
 For the Pipe component we provide implementations of :class:`FilePipe<nvflare.fuel.utils.pipe.file_pipe>`
 and :class:`CellPipe<nvflare.fuel.utils.pipe.cell_pipe>`.
@@ -193,3 +244,24 @@ For additional examples, also take a look at the
 :github_nvflare_link:`step-by-step series <examples/hello-world/step-by-step>`
 that use Client API to write the
 :github_nvflare_link:`train script <examples/hello-world/step-by-step/cifar10/code/fl/train.py>`.
+
+
+Selection of Job Templates
+==========================
+To help user quickly setup job configurations, we create many job templates. You can pick one job template that close to your use cases
+and adapt to your needs by modify the needed variables.
+
+use command ``nvflare job list_templates`` you can find all job templates nvflare provided.
+
+.. image:: ../../resources/list_templates_results.png
+    :height: 300px
+
+looking at the ``Execution API Type``, you will find ``client_api``. That's indicates the specified job template will use
+Client API configuration.  You can further nail down the selection by choice of machine learning framework: pytorch or sklearn or xgboost,
+in-process or not, type of models ( GNN, NeMo LLM), workflow patterns ( Swarm learning or standard fedavg with scatter and gather (sag)) etc.
+
+
+
+
+
+

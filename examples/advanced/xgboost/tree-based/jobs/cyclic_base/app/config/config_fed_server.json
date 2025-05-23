@@ -1,12 +1,6 @@
 {
   "format_version": 2,
   "num_rounds": 20,
-
-  "server": {
-    "heart_beat_timeout": 600,
-    "task_request_interval": 0.05
-  },
-
   "task_data_filters": [],
   "task_result_filters": [],
 
@@ -28,7 +22,7 @@
   "workflows": [
     {
       "id": "cyclic_ctl",
-      "name": "CyclicController",
+      "path": "nvflare.app_common.workflows.cyclic_ctl.CyclicController",
       "args": {
         "num_rounds": "{num_rounds}",
         "task_assignment_timeout": 60,

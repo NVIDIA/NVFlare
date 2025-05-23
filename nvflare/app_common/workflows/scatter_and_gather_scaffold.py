@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import gc
 
 import numpy as np
 
@@ -221,6 +222,8 @@ class ScatterAndGatherScaffold(ScatterAndGather):
                 # the last finished round's result
                 if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
                     self._engine.persist_components(fl_ctx, completed=False)
+
+                gc.collect()
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGatherScaffold Training.")

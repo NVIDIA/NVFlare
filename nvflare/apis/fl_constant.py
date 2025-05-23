@@ -39,6 +39,7 @@ class ReturnCode(object):
     VALIDATE_TYPE_UNKNOWN = "VALIDATE_TYPE_UNKNOWN"
     EMPTY_RESULT = "EMPTY_RESULT"
     UNSAFE_JOB = "UNSAFE_JOB"
+    EARLY_TERMINATION = "EARLY_TERMINATION"
     SERVER_NOT_READY = "SERVER_NOT_READY"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
@@ -150,12 +151,15 @@ class FLContextKey(object):
     COMMUNICATION_ERROR = "Flare_communication_error__"
     UNAUTHENTICATED = "Flare_unauthenticated__"
     CLIENT_RESOURCE_SPECS = "__client_resource_specs"
+    RESOURCE_CHECK_RESULT = "__resource_check_result"
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
     CLIENT_TOKEN = "__client_token"
     AUTHORIZATION_RESULT = "_authorization_result"
     AUTHORIZATION_REASON = "_authorization_reason"
+    DISCONNECTED_CLIENT_NAME = "_disconnected_client_name"
+    RECONNECTED_CLIENT_NAME = "_reconnected_client_name"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
     SECURITY_ITEMS = "_security_items"
@@ -224,6 +228,7 @@ class AdminCommandNames(object):
     SHELL_HEAD = "head"
     SHELL_TAIL = "tail"
     SHELL_GREP = "grep"
+    APP_COMMAND = "app_command"
 
 
 class ServerCommandNames(object):
@@ -241,6 +246,7 @@ class ServerCommandNames(object):
     UPDATE_RUN_STATUS = "update_run_status"
     HANDLE_DEAD_JOB = "handle_dead_job"
     SERVER_STATE = "server_state"
+    APP_COMMAND = "app_command"
 
 
 class ServerCommandKey(object):
@@ -259,6 +265,7 @@ class ServerCommandKey(object):
     CLIENTS = "clients"
     COLLECTOR = "collector"
     TURN_TO_COLD = "__turn_to_cold__"
+    REASON = "reason"
 
 
 class FedEventHeader(object):
@@ -433,7 +440,7 @@ class FilterKey:
 class ConfigVarName:
     # These variables can be set in job config files (config_fed_server or config_fed_client)
     RUNNER_SYNC_TIMEOUT = "runner_sync_timeout"  # client: runner sync message timeout
-    MAX_RUNNER_SYNC_TRIES = "max_runner_sync_tries"  # client: max number of runner sync attempts
+    MAX_RUNNER_SYNC_TIMEOUT = "max_runner_sync_timeout"  # client: max timeout of runner sync attempts
     TASK_CHECK_TIMEOUT = "task_check_timeout"  # client: timeout for task_check message (before submitting task)
 
     # client: how long to wait before sending task_check again (if previous task_check fails)
@@ -454,6 +461,24 @@ class ConfigVarName:
     # client: timeout for submitTaskResult requests
     SUBMIT_TASK_RESULT_TIMEOUT = "submit_task_result_timeout"
 
+    # client and server: max number of request workers for reliable message
+    RM_MAX_REQUEST_WORKERS = "rm_max_request_workers"
+
+    # client and server: query interval for reliable message
+    RM_QUERY_INTERVAL = "rm_query_interval"
+
+    # server: wait this long since client death report before treating the client as dead/disconnected
+    DEAD_CLIENT_GRACE_PERIOD = "dead_client_grace_period"
+
+    # server: wait this long since job schedule time before starting to check dead/disconnected clients
+    DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
+
+    # customized nvflare decomposers module name
+    DECOMPOSER_MODULE = "nvflare_decomposers"
+
+    # client and server: max amount of time to wait for communication cell to be created
+    CELL_WAIT_TIMEOUT = "cell_wait_timeout"
+
 
 class SystemVarName:
     """
@@ -468,6 +493,8 @@ class SystemVarName:
     JOB_ID = "JOB_ID"  # Job ID
     ROOT_URL = "ROOT_URL"  # the URL of the Service Provider (server)
     SECURE_MODE = "SECURE_MODE"  # whether the system is running in secure mode
+    JOB_CUSTOM_DIR = "JOB_CUSTOM_DIR"  # custom dir of the job
+    PYTHONPATH = "PYTHONPATH"
 
 
 class RunnerTask:

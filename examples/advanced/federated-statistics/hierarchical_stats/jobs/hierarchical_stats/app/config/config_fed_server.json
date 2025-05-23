@@ -1,0 +1,38 @@
+{
+  "format_version": 2,
+  "workflows": [
+    {
+      "id": "fed_stats_controller",
+      "path": "nvflare.app_common.workflows.hierarchical_statistics_controller.HierarchicalStatisticsController",
+      "args": {
+        "statistic_configs": {
+          "count": {},
+          "sum": {},
+          "max": {},
+          "min": {},
+          "mean": {},
+          "var": {},
+          "stddev": {},
+          "histogram": {
+            "*": { "bins": 2, "range": [0, 1] },
+            "Percentage": {"bins": 4, "range": [0.0, 100.00] }
+          }
+        },
+        "writer_id": "stats_writer",
+        "enable_pre_run_task": false,
+        "precision": 4,
+        "hierarchy_config": "hierarchy_config.json"
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "stats_writer",
+      "path": "nvflare.app_common.statistics.json_stats_file_persistor.JsonStatsFileWriter",
+      "args": {
+        "output_path": "statistics/hierarchical_stats.json",
+        "json_encoder_path": "nvflare.app_common.utils.json_utils.ObjectEncoder"
+      }
+    }
+  ]
+}

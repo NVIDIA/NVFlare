@@ -13,7 +13,7 @@
   "components": [
     {
       "id": "persistor",
-      "name": "PTFileModelPersistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
       "args": {
         "model": "model",
         "source_ckpt_file_full_name": null
@@ -35,7 +35,7 @@
     },
     {
       "id": "shareable_generator",
-      "name": "PTFedOptModelShareableGenerator",
+      "path": "nvflare.app_opt.pt.fedopt.PTFedOptModelShareableGenerator",
       "args": {
         "device": "cpu",
         "source_model": "model",
@@ -59,7 +59,7 @@
     },
     {
       "id": "aggregator",
-      "name": "InTimeAccumulateWeightedAggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
       "args": {
         "exclude_vars": null,
         "aggregation_weights": {
@@ -87,7 +87,7 @@
     },
     {
       "id": "model_selector",
-      "name": "IntimeModelSelector",
+      "path": "nvflare.app_common.widgets.intime_model_selector.IntimeModelSelector",
       "args": {
         "weigh_by_local_iter": false,
         "aggregation_weights": {
@@ -118,7 +118,7 @@
   "workflows": [
     {
       "id": "scatter_and_gather",
-      "name": "ScatterAndGather",
+      "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
       "args": {
         "min_clients": "{min_clients}",
         "num_rounds": "{num_rounds}",
@@ -134,7 +134,7 @@
     },
     {
       "id": "cross_site_model_eval",
-      "name": "CrossSiteModelEval",
+      "path": "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
       "args": {
         "model_locator_id": "model_locator",
         "formatter_id": "formatter",

@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Any, Dict, Optional, Union
 
 from nvflare.apis.fl_constant import FLMetaKey
-from nvflare.fuel.utils.validation_utils import check_object_type
+from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_object_type
 
 
 class ParamsType(str, Enum):
@@ -30,6 +30,7 @@ class FLModelConst:
     OPTIMIZER_PARAMS = "optimizer_params"
     METRICS = "metrics"
     CURRENT_ROUND = "current_round"
+    START_ROUND = "start_round"
     TOTAL_ROUNDS = "total_rounds"
     META = "meta"
 
@@ -45,6 +46,7 @@ class FLModel:
         params: Any = None,
         optimizer_params: Any = None,
         metrics: Optional[Dict] = None,
+        start_round: Optional[int] = 0,
         current_round: Optional[int] = None,
         total_rounds: Optional[int] = None,
         meta: Optional[Dict] = None,
@@ -75,10 +77,20 @@ class FLModel:
             if params is None:
                 raise ValueError(f"params must be provided when params_type is {params_type}")
 
+        if metrics is not None:
+            check_object_type("metrics", metrics, dict)
+        if start_round is not None:
+            check_non_negative_int("start_round", start_round)
+        if current_round is not None:
+            check_non_negative_int("current_round", current_round)
+        if total_rounds is not None:
+            check_non_negative_int("total_rounds", total_rounds)
+
         self.params_type = params_type
         self.params = params
         self.optimizer_params = optimizer_params
         self.metrics = metrics
+        self.start_round = start_round
         self.current_round = current_round
         self.total_rounds = total_rounds
 
@@ -87,10 +99,36 @@ class FLModel:
         else:
             meta = {}
         self.meta = meta
+        self._summary: dict = {}
+
+    def _add_to_summary(self, kvs: Dict):
+        for key, value in kvs.items():
+            if value:
+                if isinstance(value, dict):
+                    self._summary[key] = len(value)
+                elif isinstance(value, ParamsType):
+                    self._summary[key] = value
+                elif isinstance(value, int):
+                    self._summary[key] = value
+                else:
+                    self._summary[key] = type(value)
+
+    def summary(self):
+        kvs = dict(
+            params=self.params,
+            optimizer_params=self.optimizer_params,
+            metrics=self.metrics,
+            meta=self.meta,
+            params_type=self.params_type,
+            start_round=self.start_round,
+            current_round=self.current_round,
+            total_rounds=self.total_rounds,
+        )
+        self._add_to_summary(kvs)
+        return self._summary
+
+    def __repr__(self):
+        return str(self.summary())
 
     def __str__(self):
-        return (
-            f"FLModel(params:{self.params}, params_type: {self.params_type},"
-            f" optimizer_params: {self.optimizer_params}, metrics: {self.metrics},"
-            f" current_round: {self.current_round}, meta: {self.meta})"
-        )
+        return str(self.summary())

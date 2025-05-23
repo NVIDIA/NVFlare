@@ -18,6 +18,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SystemConfigs, SystemVarName
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.impl.wf_comm_server import WFCommServer
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
@@ -27,7 +28,7 @@ from nvflare.private.json_configer import ConfigContext, ConfigError
 from .server_runner import ServerRunnerConfig
 
 FL_PACKAGES = ["nvflare"]
-FL_MODULES = ["apis", "app_common", "widgets", "app_opt"]
+FL_MODULES = ["apis", "app_common", "widgets"]
 
 
 class WorkFlow:
@@ -42,11 +43,12 @@ class WorkFlow:
         """
         self.id = id
         self.controller = controller
-        self.controller.set_communicator(WFCommServer())
 
 
 class ServerJsonConfigurator(FedJsonConfigurator):
-    def __init__(self, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True):
+    def __init__(
+        self, workspace_obj: Workspace, config_file_name: str, args, app_root: str, kv_list=None, exclude_libs=True
+    ):
         """This class parses server config from json file.
 
         Args:
@@ -71,6 +73,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             SystemVarName.SITE_NAME: "server",
             SystemVarName.WORKSPACE: args.workspace,
             SystemVarName.SECURE_MODE: self.cmd_vars.get("secure_train", True),
+            SystemVarName.JOB_CUSTOM_DIR: workspace_obj.get_app_custom_dir(args.job_id),
         }
 
         FedJsonConfigurator.__init__(
@@ -128,13 +131,13 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             return
 
         if re.search(r"^workflows\.#[0-9]+$", path):
-            workflow = self.authorize_and_build_component(element, config_ctx, node)
-            if not isinstance(workflow, Controller):
-                raise ConfigError('"workflow" must be a Controller object, but got {}'.format(type(workflow)))
+            controller = self.authorize_and_build_component(element, config_ctx, node)
+            if not isinstance(controller, Controller):
+                raise ConfigError('"controller" must be a Controller object, but got {}'.format(type(controller)))
 
             cid = element.get("id", None)
             if not cid:
-                cid = type(workflow).__name__
+                cid = type(controller).__name__
 
             if not isinstance(cid, str):
                 raise ConfigError('"id" must be str but got {}'.format(type(cid)))
@@ -145,8 +148,12 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             if cid in self.components:
                 raise ConfigError('duplicate component id "{}"'.format(cid))
 
-            self.workflows.append(WorkFlow(cid, workflow))
-            self.components[cid] = workflow
+            communicator = WFCommServer()
+            self.handlers.append(communicator)
+            controller.set_communicator(communicator)
+
+            self.workflows.append(WorkFlow(cid, controller))
+            self.components[cid] = controller
             return
 
     def _get_all_workflows_ids(self):

@@ -34,7 +34,7 @@ commands shown as examples of how they may be run with a description.
     clone_job,``clone_job job_id``,Creates a copy of the specified job with a new job_id
     abort,``abort job_id client``,Aborts the job for the specified job_id for all clients. Individual client jobs can be aborted by specifying *clientname*.
     ,``abort job_id server``,Aborts the server job for the specified job_id.
-    download_job,``download_job job_id``,Download folder from the job store containing the job and workspace
+    download_job,``download_job job_id``,Download folder from the job store containing the job and workspace. Please note that for larger jobs there may be extra delay for workspace creation in the job store (If you try to download the job before that you may not be able to get the workspace data)
     delete_job,``delete_job job_id``,Delete the job from the job store
     cat,``cat server startup/fed_server.json -ns``,Show content of a file (-n: number all output lines; -s: suppress repeated empty output lines)
     ,``cat clientname startup/docker.sh -bT``,Show content of a file (-b: number nonempty output lines; -T: display TAB characters as ^I)

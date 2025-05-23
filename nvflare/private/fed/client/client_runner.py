@@ -24,6 +24,7 @@ from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
+from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import SpecialTaskName, TaskConstant
@@ -144,7 +145,7 @@ class ClientRunner(TBI):
 
         self.task_check_timeout = self.get_positive_float_var(ConfigVarName.TASK_CHECK_TIMEOUT, 5.0)
         self.task_check_interval = self.get_positive_float_var(ConfigVarName.TASK_CHECK_INTERVAL, 5.0)
-        self.job_heartbeat_interval = self.get_positive_float_var(ConfigVarName.JOB_HEARTBEAT_INTERVAL, 30.0)
+        self.job_heartbeat_interval = self.get_positive_float_var(ConfigVarName.JOB_HEARTBEAT_INTERVAL, 10.0)
         self.get_task_timeout = self.get_positive_float_var(ConfigVarName.GET_TASK_TIMEOUT, None)
         self.submit_task_result_timeout = self.get_positive_float_var(ConfigVarName.SUBMIT_TASK_RESULT_TIMEOUT, None)
         self._register_aux_message_handlers(engine)
@@ -581,6 +582,7 @@ class ClientRunner(TBI):
                 self.log_exception(fl_ctx, f"processing error in RUN execution: {secure_format_exception(e)}")
         finally:
             self.end_run_events_sequence()
+            ReliableMessage.shutdown()
             with self.task_lock:
                 self.running_tasks = {}
 
@@ -589,15 +591,15 @@ class ClientRunner(TBI):
             var_name=ConfigVarName.RUNNER_SYNC_TIMEOUT,
             default=2.0,
         )
-        max_sync_tries = self.get_positive_int_var(
-            var_name=ConfigVarName.MAX_RUNNER_SYNC_TRIES,
-            default=30,
+        max_sync_timeout = self.get_positive_float_var(
+            var_name=ConfigVarName.MAX_RUNNER_SYNC_TIMEOUT,
+            default=60.0,
         )
         target = "server"
         synced = False
         sync_start = time.time()
         with self.engine.new_context() as fl_ctx:
-            for i in range(max_sync_tries):
+            while True:
                 # sync with server runner before starting
                 time.sleep(0.5)
                 resp = self.engine.send_aux_request(
@@ -609,6 +611,8 @@ class ClientRunner(TBI):
                     optional=True,
                     secure=False,
                 )
+                if time.time() - sync_start > max_sync_timeout:
+                    break
 
                 if not resp:
                     continue
@@ -624,10 +628,10 @@ class ClientRunner(TBI):
                     break
 
             if not synced:
-                raise RuntimeError(f"cannot sync with Server Runner after {max_sync_tries} tries")
+                raise RuntimeError(f"cannot sync with Server Runner after {max_sync_timeout} seconds")
 
-            self.log_info(fl_ctx, f"synced to Server Runner in {time.time()-sync_start} seconds")
-
+            self.log_info(fl_ctx, f"synced to Server Runner in {time.time() - sync_start} seconds")
+            ReliableMessage.enable(fl_ctx)
             self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)

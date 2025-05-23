@@ -41,7 +41,7 @@ class DataLoader(XGBDataLoader):
         """
         self.data_split_filename = data_split_filename
 
-    def load_data(self, client_id: str):
+    def load_data(self):
         with open(self.data_split_filename, "r") as file:
             data_split = json.load(file)
 
@@ -49,9 +49,9 @@ class DataLoader(XGBDataLoader):
         data_index = data_split["data_index"]
 
         # check if site_id and "valid" in the mapping dict
-        if client_id not in data_index.keys():
+        if self.client_id not in data_index.keys():
             raise ValueError(
-                f"Data does not contain Client {client_id} split",
+                f"Data does not contain Client {self.client_id} split",
             )
 
         if "valid" not in data_index.keys():
@@ -59,7 +59,7 @@ class DataLoader(XGBDataLoader):
                 "Data does not contain Validation split",
             )
 
-        site_index = data_index[client_id]
+        site_index = data_index[self.client_id]
         valid_index = data_index["valid"]
 
         # training

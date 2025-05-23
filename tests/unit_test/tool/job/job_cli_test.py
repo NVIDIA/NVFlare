@@ -14,6 +14,7 @@
 
 import pytest
 
+from nvflare.tool.job import job_cli
 from nvflare.tool.job.job_cli import convert_args_list_to_dict
 
 
@@ -22,3 +23,11 @@ class TestJobCLI:
     def test_convert_args_list_to_dict(self, inputs, result):
         r = convert_args_list_to_dict(inputs)
         assert r == result
+
+    @pytest.mark.parametrize(
+        "directory, path, expected",
+        [("/home/user/project", "/home/user/project/subdir", True), (".", ".", True), ("./code", ".", False)],
+    )
+    def test_is_sub_dir(self, path, directory, expected):
+        print(f"{input=}, {directory=}, {expected=}")
+        assert expected == job_cli.is_subdir(path, directory)

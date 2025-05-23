@@ -1,0 +1,208 @@
+---
+import Layout from "@layouts/Layout.astro";
+import NvflareResearch from '../images/nvflare_research.png'
+import ExamFL from '../images/research/exam.jpg'
+import Mammography from '../images/research/mammography.jpg'
+import MammographyGraphs from '../images/research/mammography_graphs.jpg'
+import Pancreas from '../images/research/pancreas.jpg'
+import Sun from '../images/research/sun.jpg'
+
+const gh_branch = import.meta.env.PUBLIC_GH_BRANCH;
+const base_url = import.meta.env.BASE_URL;
+
+const case_studies = [
+  {
+    id: "exam_ai",
+    title: "EXAM AI Model for Predicting Oxygen Requirements in COVID Patients",
+    subheader: "AI model to predict oxygen requirements",
+    team: "NVIDIA researchers, Massachusetts General Brigham Hospital",
+    problem: "During COVID-19, it was challenging to determine which patients would need a higher level of care in the near future, despite perhaps presenting with minimal symptoms. Therefore the goal of this study was to train a previously developed AI model that determines whether a person with COVID-19 symptoms will need supplemental oxygen hours or even days after an initial exam.",
+    approach: "The approach included a separate server hosted on AWS, which held the global deep neural network. Each client-site received a copy of the model to train on its own dataset and FLARE was used to aggregate to form a global model.",
+    result: "Training was completed in two weeks and produced a global model with .94 Area Under the Curve (AUC), resulting in excellent prediction for the level of oxygen required by incoming patients.",
+    reference: "Federated learning for predicting clinical outcomes in patients with COVID-19",
+    link: "https://doi.org/10.1038/s41591-021-01506-3",
+    image: ExamFL.src,
+  },
+  {
+    id: "adops",
+    title: "ADOPS (ACR DASA OSU Partners HealthCare Stanford)",
+    subheader: "Breast Mammography AI Model. Early detection: breast density classification Improvement",
+    team: "The American College of Radiology (ACR), Diagnosticos da America (DASA), Ohio State University (OSU), Partners HealthCare (PHS), and Stanford University",
+    problem: "Breast Mammography AI Model Early detection through mammography is critical when it comes to reducing breast cancer deaths, but breast density can make it harder to detect the disease.",
+    approach: "The team used a 2D mammography classification model provided by PHS, which was trained using NVIDIA Clara Train on NVIDIA GPUs. The model was then retrained using NVIDIA Clara Federated Learning at PHS, as well as the client-sites, without any data being transferred.",
+    result: "Each institution obtained a better performing model that had an overall superior predictive power on their own local dataset. In doing so, Federated Learning enabled improved breast density classification from mammograms, which could lead to better breast cancer risk assessment.",
+    image: Mammography.src,
+    image2: MammographyGraphs.src,
+    reference: "Federated Learning for Breast Density Classification: A Real-World Implementation",
+    link: "https://arxiv.org/pdf/2009.01871.pdf",
+  },
+  {
+    id: "um_fairview",
+    title: "University of Minnesota and Fairview X-Ray COVID AI Model",
+    subheader: "Improve AI models for COVID-19 diagnosis based on chest X-rays",
+    team: "University of Minnesota and Fairview Mhealth, Indiana University (Indiana, USA), and Emory University (Georgia, USA)",
+    problem: "The goal of this study was to improve real-world AI models for COVID-19 diagnosis based on chest X-rays.",
+    approach: "This study leveraged a three-phase pipeline composed of U-Net lung segmentation, a conditional Generative Adversarial Network (cGAN) for outlier detection, and a DenseNet121 COVID-19 Classification model. The aggregate multi-institutional dataset consisted of approximately 80,000 labeled images with a 30/70% positive/negative COVID classification. This classification model was trained with a federation of Federated Learning server and Federated Learning clients at University of Minnesota and Fairview (Minnesota, USA), with additional participant clients at Indiana University (Indiana, USA) and Emory University (Georgia, USA) using a mix of cloud (AWS/Azure) and local servers.",
+    result: "Initial results showed an improvement in performance of the global model of 5% AUROC and 8% AUPRC on the UMN local dataset as compared to the UMN local model.",
+    image: "",
+  },
+  {
+    id: "sun_prostate",
+    title: "SUN Initiative Prostate Cancer AI Model",
+    subheader: "Federated segmentation model",
+    team: "SUNY, UCLA, NIH",
+    problem: "Prostate cancer is a common cancer of the prostate gland in men. Accurate segmentation of the prostate gland is useful for developing AI models to help in detection of Prostate cancer.",
+    approach: "In this initiative, we tested the hypothesis that Federated Learning can be used to train a segmentation model comparable to one trained from a pooled data (PD) set.",
+    result: "The results showed equivalent performance from both the experimental Federated Learning and benchmark PD models, showing the feasibility of training an AI model in a Federated Learning approach.",
+    image: Sun.src,
+  },
+  {
+    id: "ct_pancreas",
+    title: "CT Pancreas Segmentation AI Model",
+    subheader: "Automated segmentation model of the pancreas and pancreatic tumors in abdominal CT",
+    team: "National Taiwan University, Taiwan, and Nagoya University, Japan",
+    problem: "The aim of this experiment was to build models for the automated segmentation of the pancreas and pancreatic tumors in abdominal CT.",
+    approach: "A 3D segmentation model based on neural architecture search developed by NVIDIA's Applied Research team was collaboratively trained using Federated Learning.",
+    result: "The global Federated Learning model achieved a segmentation performance of 82.3% Dice score on healthy pancreatic patients on average.",
+    image: Pancreas.src,
+  },
+];
+
+---
+
+<Layout title="">
+  <div class="bg-white py-16 sm:py-16">
+    <div class="mx-auto max-w-[1600px] px-6 lg:px-8">
+      <div class="mx-auto max-w-5xl mt-10 flex justify-left">
+        <a href={base_url} class="text-sm font-semibold leading-6 text-nvidia">
+          <span aria-hidden="true">&larr;</span>
+          Back to home
+        </a>
+      </div>
+      <div class="mx-auto max-w-5xl mt-16 md:mt-0 text-center">
+        <h2 class="text-4xl lg:text-5xl font-bold lg:tracking-tight">
+          Research with NVIDIA FLARE
+        </h2>
+        <p class="text-lg mt-4 text-slate-600 m-auto">
+          Learn how NVIDIA FLARE faciliates research from simulation tools to real-world case studies.
+        </p>
+
+        <div class="mx-auto lg:mx-0 text-left py-20 text-slate-600">
+          <h2 class="text-4xl lg:text-3xl font-bold lg:tracking-tight text-gray-900">
+            Research Tools
+          </h2>
+
+            <p class="text-lg mt-4 text-slate-600 m-auto">
+              NVIDIA FLARE is an excellent research tool, offering robust simulation capabilities and extensive support for experimentation in federated learning.
+              Many researchers need to simulate federated learning scenarios without setting up an actual federated learning system.
+              NVIDIA FLARE allows for repeated experimentation with different parameters, facilitating quick evaluations and monitoring of results.
+            </p>
+
+          <h2 class="text-xl lg:text-xl font-bold lg:tracking-tight text-gray-900 mt-8">
+            NVIDIA FLARE Simulation Tools
+          </h2>
+
+            <p class="text-lg mt-4 text-slate-600 m-auto">
+              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html#fl-simulator">Simulator</a>:
+              The Simulator is a multi-threaded/process simulation tool that offers both a Command Line Interface (CLI) and a Python API.
+              It enables the simulation of different numbers of clients and the execution of various federated learning jobs.
+              Once a simulation is complete, users can deploy the same code in production without any changes.
+              Additionally, users can utilize an Integrated Development Environment (IDE) debugger to step through the code for easier debugging.
+            </p>
+
+            <p class="text-lg mt-4 text-slate-600 m-auto">
+              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/poc_command.html">Proof of Concept (POC) Mode</a>:
+              POC mode simulates real-world deployment on a local host.
+              Clients and servers can be deployed in different directories and launched using separate terminals, each representing a different client or server startup.
+              This mode allows for job submissions to the server as would occur in a real production environment.
+            </p>
+
+          <h2 class="text-xl lg:text-xl font-bold lg:tracking-tight text-gray-900 mt-8">
+            Interaction Methods with FL Server
+          </h2>
+            <p class="text-lg mt-4 text-slate-600 m-auto">
+              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html">Admin Console</a>:
+              Issue interactive commands such as submitting jobs, listing jobs, and aborting jobs.
+            </p>
+            <p class="text-lg mt-4 text-slate-600 m-auto">
+              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/job_cli.html">Job CLI</a>:
+              Command-line interface is used for job submission.
+            </p>
+            <p class="text-lg mt-4 text-slate-600 m-auto">
+              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/real_world_fl/flare_api.html">FLARE API</a>:
+              Allows submission and listing of jobs through Python code.
+            </p>
+          <h2 class="text-xl lg:text-xl font-bold lg:tracking-tight text-gray-900 mt-8">
+            Experiment Tracking Tools Integration
+          </h2>
+
+            <p class="text-lg mt-4 text-slate-600 m-auto">
+              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html">Experiment tracking</a>:
+              FLARE supports logging metrics using FLARE's metrics tracking log writers. Users can choose from TensorBoard, MLflow, or W&B syntax.
+              Metrics can be streamed to either the FL server or FL client, and changing the metric system does not require any code changes.
+            </p>
+
+        </div>
+
+        <div class="mx-auto lg:mx-0 text-left py-20">
+          <h2 class="text-4xl lg:text-3xl font-bold lg:tracking-tight text-gray-900">
+            Research Works
+          </h2>
+
+          <p class="text-lg mt-4 text-slate-600 m-auto">
+            NVIDIA FLARE offers a lot of state of art research work, here is a quick view of the recent work.
+            Learn more in the research directory in our <a class="text-nvidia" href=`https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research`>GitHub</a> and view our list of <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/publications_and_talks.html">Publications</a>.
+          </p>
+
+          <img class="mt-10 flex items-center w-full" src={NvflareResearch.src} alt="NVFLARE research">
+
+        </div>
+
+        <div class="mx-auto lg:mx-0 text-left py-20">
+          <h2 class="text-4xl lg:text-3xl font-bold lg:tracking-tight text-gray-900">
+            Case Studies
+          </h2>
+
+          <p class="text-lg mt-4 text-slate-600 m-auto">
+            NVIDIA has worked with several institutions to test and validate the utility of federated learning.  We hope this will help to inspire or relate to your research cases.
+            <br><br>
+            Here are five real life implementations in healthcare, pushing the envelope for training robust, generalizable AI models:
+          </p>
+
+          <ul class="ml-12 list-disc text-lg mt-4 text-slate-600 m-auto">
+            {
+              case_studies.map((item) => (
+                <li>{item.title}</li>
+              ))
+            }
+          </ul>
+
+          <div
+            class="">
+            {
+              case_studies.map((item) => (
+                <div class="mt-20">
+                  <h3 class="mt-3 text-2xl font-semibold leading-6 text-gray-900 group-hover:text-gray-600">
+                    {item.title}
+                  </h3>
+                  <p class="mt-5 text-lg leading-6 text-slate-600">
+                    {item.subheader} <br>
+                    {item.team} <br>
+                    <div class="flex justify-left">
+                      <img class="mt-6 items-center w-2/3 mb-6" src={item.image} alt="">
+                    </div>
+                    {item.problem}{" "+item.approach}
+                    <br><br>
+                    {item.result}
+                    <br><br>
+                    <a class="text-nvidia" href={item.link}>{item.reference}</a>
+                  </p>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>

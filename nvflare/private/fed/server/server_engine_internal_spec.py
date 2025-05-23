@@ -21,6 +21,7 @@ from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.job_def import Job
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
+from nvflare.apis.shareable import Shareable
 
 from .job_runner import JobRunner
 from .run_info import RunInfo
@@ -271,4 +272,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
             Server components errors.
 
         """
+        pass
+
+    def send_app_command(self, job_id: str, topic: str, cmd_data, timeout: float) -> Shareable:
         pass

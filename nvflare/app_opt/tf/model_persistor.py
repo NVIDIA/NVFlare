@@ -24,7 +24,7 @@ from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weigh
 
 
 class TFModelPersistor(ModelPersistor):
-    def __init__(self, model: tf.keras.Model, save_name="tf_model.ckpt"):
+    def __init__(self, model: tf.keras.Model, save_name="tf_model.weights.h5"):
         super().__init__()
         self.save_name = save_name
         self.model = model
@@ -47,6 +47,13 @@ class TFModelPersistor(ModelPersistor):
         if os.path.exists(self._model_save_path):
             self.logger.info("Loading server model and weights")
             self.model.load_weights(self._model_save_path)
+
+        # build model if not built yet
+        if not self.model.built:
+            if hasattr(self.model, "_input_shape"):
+                self.model.build(input_shape=self.model._input_shape)
+            else:
+                raise AttributeError("To use delayed model build, you need to set model._input_shape")
 
         # get flat model parameters
         layer_weights_dict = {layer.name: layer.get_weights() for layer in self.model.layers}

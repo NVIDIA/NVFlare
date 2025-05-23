@@ -24,12 +24,16 @@ import versioneer
 # read the contents of your README file
 
 versions = versioneer.get_versions()
+base_version = os.environ.get("NVFL_BASE_VERSION")
 if versions["error"]:
     today = datetime.date.today().timetuple()
     year = today[0] % 1000
     month = today[1]
     day = today[2]
-    version = f"2.3.0.dev{year:02d}{month:02d}{day:02d}"
+    if base_version:
+        version = f"{base_version}.dev{year:02d}{month:02d}{day:02d}"
+    else:
+        version = f"2.5.0.dev{year:02d}{month:02d}{day:02d}"
 else:
     version = versions["version"]
 

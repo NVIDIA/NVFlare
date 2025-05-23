@@ -9,7 +9,7 @@ You can follow the [hello_world notebook](../hello_world.ipynb) or the following
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+Follow the [Installation](../../getting_started/README.md) instructions.
 
 ### 2. Run the experiment
 

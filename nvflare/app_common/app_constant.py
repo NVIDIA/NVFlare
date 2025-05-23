@@ -109,6 +109,7 @@ class AppConstants(object):
     TASK_END_RUN = "_end_run_"
     TASK_TRAIN = "train"
     TASK_GET_WEIGHTS = "get_weights"
+    TASK_PROP_CALLBACK = "_task_callback_"
 
     DEFAULT_AGGREGATOR_ID = "aggregator"
     DEFAULT_PERSISTOR_ID = "persistor"
@@ -179,6 +180,8 @@ class StatisticsConstants(AppConstants):
     STATS_2nd_STATISTICS = "fed_stats_2nd_statistics"
 
     GLOBAL = "Global"
+    LOCAL = "Local"
+    NAME = "Name"
 
     ordered_statistics = {
         STATS_1st_STATISTICS: [STATS_COUNT, STATS_FAILURE_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],

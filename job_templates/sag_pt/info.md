@@ -2,7 +2,7 @@
 
 ## sag_pt
     name = "sag_pt"
-    description = "Scatter and Gather Workflow using pytorch" 
+    description = "FedAvg with Scatter and Gather Workflow using pytorch" 
     class_name  =  "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"

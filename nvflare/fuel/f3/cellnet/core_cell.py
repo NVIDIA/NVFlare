@@ -334,10 +334,13 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         self.secure = secure
         self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")
 
-        if not root_url:
-            raise ValueError(f"{self.my_info.fqcn}: root_url not provided")
+        if not root_url and not parent_url:
+            raise ValueError(f"{self.my_info.fqcn}: neither root_url nor parent_url is provided")
 
         if self.my_info.is_root and self.my_info.is_on_server:
+            if not root_url:
+                raise ValueError(f"{self.my_info.fqcn}: root_url is required for server-side cells but not provided")
+
             if isinstance(root_url, list):
                 for url in root_url:
                     if not _validate_url(url):
@@ -346,7 +349,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 if not _validate_url(root_url):
                     raise ValueError(f"{self.my_info.fqcn}: invalid Root URL '{root_url}'")
                 root_url = [root_url]
-        else:
+        elif root_url:
             if isinstance(root_url, list):
                 # multiple urls are available - randomly pick one
                 root_url = random.choice(root_url)
@@ -939,6 +942,10 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         if message.payload is None:
             message.payload = bytes(0)
+        elif isinstance(message.payload, memoryview) or isinstance(message.payload, bytearray):
+            message.payload = bytes(message.payload)
+        elif not isinstance(message.payload, bytes):
+            raise RuntimeError(f"Payload type of {type(message.payload)} is not supported.")
 
         payload_len = len(message.payload)
         message.add_headers(
@@ -1489,10 +1496,18 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             self.logger.debug(f"{self.get_fqcn()}: bulk item: {req.headers}")
             self._process_request(origin=origin, message=req)
 
-    def fire_multi_requests_and_forget(self, target_msgs: Dict[str, TargetMessage], optional=False) -> Dict[str, str]:
+    def fire_multi_requests_and_forget(
+        self, target_msgs: Dict[str, TargetMessage], optional=False, secure=False
+    ) -> Dict[str, str]:
         for _, tm in target_msgs.items():
             request = tm.message
-            request.add_headers({MessageHeaderKey.REPLY_EXPECTED: False, MessageHeaderKey.OPTIONAL: optional})
+            request.add_headers(
+                {
+                    MessageHeaderKey.REPLY_EXPECTED: False,
+                    MessageHeaderKey.OPTIONAL: optional,
+                    MessageHeaderKey.SECURE: secure,
+                }
+            )
         return self._send_target_messages(target_msgs)
 
     def send_reply(self, reply: Message, to_cell: str, for_req_ids: List[str], secure=False, optional=False) -> str:

@@ -10,7 +10,7 @@ This example also highlights the MLflow streaming capability from the clients to
 
 ### 1. Install requirements and configure PYTHONPATH
 
-Install additional requirements:
+Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
 
 ```
 python -m pip install -r requirements.txt
@@ -42,7 +42,7 @@ app_server  app_site-1  app_site-2  log.txt tb_events
 By default, MLflow will create an experiment log directory under a directory named "mlruns" in the simulator's workspace. If you ran the simulator with "/tmp/nvflare" as the workspace, then you can launch the MLflow UI with:
 
 ```
-mlflow ui --backend-store-uri /tmp/nvflare/mlruns/
+mlflow ui --backend-store-uri /tmp/nvflare/server/simulate_job/mlruns/
 ```
 
 ### 4. MLflow Streaming

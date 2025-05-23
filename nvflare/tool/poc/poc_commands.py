@@ -13,7 +13,6 @@
 # limitations under the License.
 import json
 import os
-import pathlib
 import random
 import shutil
 import socket
@@ -36,7 +35,7 @@ from nvflare.lighter.spec import Provisioner
 from nvflare.lighter.utils import load_yaml, update_project_server_name_config, update_storage_locations
 from nvflare.tool.api_utils import shutdown_system
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
-from nvflare.utils.cli_utils import hocon_to_string
+from nvflare.utils.cli_utils import get_hidden_nvflare_config_path, get_or_create_hidden_nvflare_dir, hocon_to_string
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 DEFAULT_PROJECT_NAME = "example_project"
@@ -250,6 +249,22 @@ def get_fl_client_names(project_config: OrderedDict) -> List[str]:
     return client_names
 
 
+def replace_server_with_localhost(sp_end_point: str) -> str:
+    """
+    :param sp_end_point:(str) example: server1:8002:8003
+    :return: localhost:<port1>:<port2>
+    """
+    parts = sp_end_point.split(":")
+    if len(parts) != 3:
+        raise ValueError("Input must be in the format 'server:port1:port2'")
+    for p in parts:
+        if not p:
+            raise ValueError("Input must be in the format 'server:port1:port2', each part can not be empty")
+
+    parts[0] = "localhost"
+    return ":".join(parts)
+
+
 def prepare_builders(project_dict: OrderedDict) -> List:
     builders = list()
     for b in project_dict.get("builders"):
@@ -258,7 +273,8 @@ def prepare_builders(project_dict: OrderedDict) -> List:
 
         if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
             path = "nvflare.lighter.impl.local_static_file.LocalStaticFileBuilder"
-            args["overseer_agent"]["args"]["sp_end_point"] = "localhost:8002:8003"
+            sp_end_point = args["overseer_agent"]["args"]["sp_end_point"]
+            args["overseer_agent"]["args"]["sp_end_point"] = replace_server_with_localhost(sp_end_point)
 
         elif b.get("path") == "nvflare.lighter.impl.cert.CertBuilder":
             path = "nvflare.lighter.impl.local_cert.LocalCertBuilder"
@@ -396,7 +412,7 @@ def prepare_clients(clients, number_of_clients):
 
 
 def save_startup_kit_dir_config(workspace, project_name):
-    dst = get_hidden_nvflare_config_path()
+    dst = get_or_create_hidden_nvflare_config_path()
     config = None
     if os.path.isfile(dst):
         try:
@@ -485,27 +501,17 @@ def _prepare_poc(
     return True
 
 
-def get_home_dir():
-    return Path.home()
-
-
-def get_hidden_nvflare_config_path() -> str:
+def get_or_create_hidden_nvflare_config_path() -> str:
     """
     Get the path for the hidden nvflare configuration file.
 
     Returns:
         str: The path to the hidden nvflare configuration file.
     """
-    home_dir = get_home_dir()
-    hidden_nvflare_dir = pathlib.Path(home_dir) / ".nvflare"
+    hidden_nvflare_dir = get_or_create_hidden_nvflare_dir()
 
-    try:
-        hidden_nvflare_dir.mkdir(exist_ok=True)
-    except OSError as e:
-        raise RuntimeError(f"Error creating the hidden nvflare directory: {e}")
-
-    hidden_nvflare_config_file = hidden_nvflare_dir / "config.conf"
-    return str(hidden_nvflare_config_file)
+    hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_nvflare_dir))
+    return hidden_nvflare_config_file
 
 
 def prepare_poc_provision(
@@ -1077,7 +1083,7 @@ def get_poc_workspace():
     poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
 
     if not poc_workspace:
-        src_path = get_hidden_nvflare_config_path()
+        src_path = get_or_create_hidden_nvflare_config_path()
         if os.path.isfile(src_path):
             from pyhocon import ConfigFactory as CF
 

@@ -24,6 +24,7 @@ from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
+from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.tbi import TBI
@@ -115,6 +116,7 @@ class ServerRunner(TBI):
 
     def _handle_sync_runner(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         # simply ack
+        self._report_client_active("syncRunner", fl_ctx)
         return make_reply(ReturnCode.OK)
 
     def _execute_run(self):
@@ -126,9 +128,8 @@ class ServerRunner(TBI):
 
                     fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
 
-                    wf.controller.initialize(fl_ctx)
                     wf.controller.communicator.initialize_run(fl_ctx)
-                    wf.controller.start_controller(fl_ctx)
+                    wf.controller.initialize(fl_ctx)
 
                     self.log_info(fl_ctx, "Workflow {} ({}) started".format(wf.id, type(wf.controller)))
                     self.log_debug(fl_ctx, "firing event EventType.START_WORKFLOW")
@@ -175,6 +176,7 @@ class ServerRunner(TBI):
 
     def run(self):
         with self.engine.new_context() as fl_ctx:
+            ReliableMessage.enable(fl_ctx)
             self.log_info(fl_ctx, "Server runner starting ...")
             self.log_debug(fl_ctx, "firing event EventType.START_RUN")
             fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.abort_signal, private=True, sticky=True)
@@ -215,6 +217,7 @@ class ServerRunner(TBI):
                     self.fire_event(EventType.END_RUN, fl_ctx)
                     self.log_info(fl_ctx, "END_RUN fired")
 
+            ReliableMessage.shutdown()
             self.log_info(fl_ctx, "Server runner finished.")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -275,6 +278,8 @@ class ServerRunner(TBI):
         if not isinstance(peer_ctx, FLContext):
             self.log_debug(fl_ctx, "invalid task request: no peer context - asked client to try again later")
             return self._task_try_again()
+
+        self._report_client_active("getTask", fl_ctx)
 
         peer_job_id = peer_ctx.get_job_id()
         if not peer_job_id or peer_job_id != self.job_id:
@@ -381,7 +386,9 @@ class ServerRunner(TBI):
                 if self.current_wf is None:
                     return
 
-                self.current_wf.controller.communicator.handle_dead_job(client_name=client_name, fl_ctx=fl_ctx)
+                if self.current_wf.controller:
+                    self.current_wf.controller.communicator.process_dead_client_report(client_name, fl_ctx)
+
             except Exception as e:
                 self.log_exception(
                     fl_ctx, f"Error processing dead job by workflow {self.current_wf.id}: {secure_format_exception(e)}"
@@ -403,6 +410,7 @@ class ServerRunner(TBI):
             fl_ctx: FLContext
         """
         self.log_info(fl_ctx, f"got result from client {client.name} for task: name={task_name}, id={task_id}")
+        self._report_client_active("submitTaskResult", fl_ctx)
 
         if not isinstance(result, Shareable):
             self.log_error(fl_ctx, "invalid result submission: must be Shareable but got {}".format(type(result)))
@@ -498,11 +506,21 @@ class ServerRunner(TBI):
                     "Error processing client result by {}: {}".format(self.current_wf.id, secure_format_exception(e)),
                 )
 
+    def _report_client_active(self, reason: str, fl_ctx: FLContext):
+        with self.wf_lock:
+            if self.current_wf and self.current_wf.controller:
+                peer_ctx = fl_ctx.get_peer_context()
+                assert isinstance(peer_ctx, FLContext)
+                client_name = peer_ctx.get_identity_name()
+                self.current_wf.controller.communicator.client_is_active(client_name, reason, fl_ctx)
+
     def _handle_job_heartbeat(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.log_debug(fl_ctx, "received client job_heartbeat")
+        self._report_client_active("jobHeartbeat", fl_ctx)
         return make_reply(ReturnCode.OK)
 
     def _handle_task_check(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        self._report_client_active("taskCheck", fl_ctx)
         task_id = request.get_header(ReservedHeaderKey.TASK_ID)
         if not task_id:
             self.log_error(fl_ctx, f"missing {ReservedHeaderKey.TASK_ID} in task_check request")

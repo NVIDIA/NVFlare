@@ -2,7 +2,7 @@
 
 ## sag_nemo
     name = "sag_nemo"
-    description = "Scatter and Gather Workflow for NeMo" 
+    description = "FedAvg with Scatter and Gather Workflow for NeMo" 
     class_name  =  "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"

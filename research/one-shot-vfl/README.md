@@ -1,7 +1,7 @@
 # One-shot Vertical Federated Learning with CIFAR-10
 
 This example includes instructions on how to run [one-shot vertical federated learning](https://arxiv.org/abs/2303.16270) using the 
-CIFAR-10 dataset and the [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html).
+CIFAR-10 dataset and the [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html).
 
 We assume one client holds the images, and the other client holds the labels to compute losses and accuracy metrics. 
 Activations and corresponding gradients are being exchanged between the clients using NVFlare.
@@ -20,7 +20,10 @@ The code in this directory is released under Apache v2 License.
 ## 1. Setup
 This examples uses [JupyterLab](https://jupyter.org).
 
-We recommend creating a [virtual environment](../../examples/README.md#set-up-a-virtual-environment).
+We recommend creating a [virtual environment](../../examples/README.md#set-up-a-virtual-environment) and installing the requirements.
+```
+pip install -r requirements.txt
+```
 
 ## 2. Start JupyterLab
 To run the example, we recommend a GPU with at least 16 GB of memory.
@@ -40,3 +43,18 @@ An example local training curve with an overlap of 10,000 samples is shown below
 One-shot VFL only requires the client to conduct two uploads and one download, which reduces the communication cost significantly. This CIFAR10 example can achieve a test accuracy of 79.0%, which is nearly the same as the results of vanilla [single-client VFL (split learning)](https://github.com/jeremy313/NVFlare/tree/dev/examples/advanced/vertical_federated_learning/cifar10-splitnn).
 
 <img src="./figs/oneshotVFL_results.png" alt="One-shot VFL results" width="600"/>
+
+## Citation
+
+> Sun, Jingwei, et al. "Communication-efficient vertical federated learning with limited overlapping samples." Proceedings of the IEEE/CVF International Conference on Computer Vision. 2023.
+
+BibTeX
+```
+@inproceedings{sun2023communication,
+  title={Communication-efficient vertical federated learning with limited overlapping samples},
+  author={Sun, Jingwei and Xu, Ziyue and Yang, Dong and Nath, Vishwesh and Li, Wenqi and Zhao, Can and Xu, Daguang and Chen, Yiran and Roth, Holger R},
+  booktitle={Proceedings of the IEEE/CVF International Conference on Computer Vision},
+  pages={5203--5212},
+  year={2023}
+}
+```

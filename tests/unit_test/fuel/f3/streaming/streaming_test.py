@@ -48,7 +48,8 @@ class TestStreamCell:
         stream_cell.register_blob_cb(TEST_CHANNEL, TEST_TOPIC, self.blob_cb, state=state)
         cell.start()
 
-        return stream_cell
+        yield stream_cell
+        cell.stop()
 
     @pytest.fixture(scope="module")
     def client_cell(self, port, state):
@@ -57,7 +58,8 @@ class TestStreamCell:
         stream_cell = StreamCell(cell)
         cell.start()
 
-        return stream_cell
+        yield stream_cell
+        cell.stop()
 
     def test_streaming_blob(self, server_cell, client_cell, state):
 

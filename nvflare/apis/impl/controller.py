@@ -42,6 +42,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
             return
 
         self._engine = engine
+        self.start_controller(fl_ctx)
 
     def set_communicator(self, communicator: WFCommSpec):
         if not isinstance(communicator, WFCommSpec):
@@ -59,7 +60,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         min_responses: int = 1,
         wait_time_after_min_received: int = 0,
     ):
-        self.communicator.broadcast(task, fl_ctx, targets, min_responses, wait_time_after_min_received)
+        return self.communicator.broadcast(task, fl_ctx, targets, min_responses, wait_time_after_min_received)
 
     def broadcast_and_wait(
         self,
@@ -70,12 +71,12 @@ class Controller(FLComponent, ControllerSpec, ABC):
         wait_time_after_min_received: int = 0,
         abort_signal: Optional[Signal] = None,
     ):
-        self.communicator.broadcast_and_wait(
+        return self.communicator.broadcast_and_wait(
             task, fl_ctx, targets, min_responses, wait_time_after_min_received, abort_signal
         )
 
     def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None):
-        self.communicator.broadcast_forever(task, fl_ctx, targets)
+        return self.communicator.broadcast_forever(task, fl_ctx, targets)
 
     def send(
         self,
@@ -85,7 +86,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         send_order: SendOrder = SendOrder.SEQUENTIAL,
         task_assignment_timeout: int = 0,
     ):
-        self.communicator.send(task, fl_ctx, targets, send_order, task_assignment_timeout)
+        return self.communicator.send(task, fl_ctx, targets, send_order, task_assignment_timeout)
 
     def send_and_wait(
         self,
@@ -96,7 +97,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         task_assignment_timeout: int = 0,
         abort_signal: Signal = None,
     ):
-        self.communicator.send_and_wait(task, fl_ctx, targets, send_order, task_assignment_timeout, abort_signal)
+        return self.communicator.send_and_wait(task, fl_ctx, targets, send_order, task_assignment_timeout, abort_signal)
 
     def relay(
         self,
@@ -108,7 +109,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         task_result_timeout: int = 0,
         dynamic_targets: bool = True,
     ):
-        self.communicator.relay(
+        return self.communicator.relay(
             task, fl_ctx, targets, send_order, task_assignment_timeout, task_result_timeout, dynamic_targets
         )
 
@@ -123,7 +124,7 @@ class Controller(FLComponent, ControllerSpec, ABC):
         dynamic_targets: bool = True,
         abort_signal: Optional[Signal] = None,
     ):
-        self.communicator.relay_and_wait(
+        return self.communicator.relay_and_wait(
             task,
             fl_ctx,
             targets,
@@ -135,7 +136,11 @@ class Controller(FLComponent, ControllerSpec, ABC):
         )
 
     def get_num_standing_tasks(self) -> int:
-        return self.communicator.get_num_standing_tasks()
+        try:
+            return self.communicator.get_num_standing_tasks()
+        except Exception as e:
+            self.logger.warning(f"get_num_standing_tasks() is not supported by {self.communicator}: {e}")
+            return None
 
     def cancel_task(
         self, task: Task, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None
@@ -143,4 +148,38 @@ class Controller(FLComponent, ControllerSpec, ABC):
         self.communicator.cancel_task(task, completion_status, fl_ctx)
 
     def cancel_all_tasks(self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None):
-        self.communicator.cancel_all_tasks(completion_status, fl_ctx)
+        try:
+            self.communicator.cancel_all_tasks(completion_status, fl_ctx)
+        except Exception as e:
+            self.log_warning(fl_ctx, f"cancel_all_tasks() is not supported by {self.communicator}: {e}")
+
+    def get_client_disconnect_time(self, client_name):
+        """Get the time when the client is deemed disconnected.
+
+        Args:
+            client_name: the name of the client
+
+        Returns: time at which the client was deemed disconnected; or None if the client is not disconnected.
+
+        """
+        if not self.communicator:
+            return None
+
+        try:
+            return self.communicator.get_client_disconnect_time(client_name)
+        except Exception as e:
+            self.logger.warning(f"get_client_disconnect_time() is not supported by {self.communicator}: {e}")
+            return None
+
+    def add_to_fed_job(self, job, ctx, **kwargs):
+        """This method is used by Job API.
+
+        Args:
+            job: the Job object to add to
+            ctx: Job Context
+
+        Returns:
+
+        """
+        job.check_kwargs(args_to_check=kwargs, args_expected={})
+        job.add_controller(obj=self, ctx=ctx)

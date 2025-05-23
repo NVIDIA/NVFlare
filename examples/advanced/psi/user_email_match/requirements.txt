@@ -1,3 +1,2 @@
-nvflare~=2.4.0rc
-openmined.psi==1.1.1
+openmined-psi==2.0.4
 pandas
