@@ -15,12 +15,16 @@ from urllib.parse import urlencode, urljoin
 
 import requests
 
+from nvflare.edge.constants import HttpHeaderKey
 from nvflare.edge.web.models.api_error import ApiError
+from nvflare.edge.web.models.base_model import EdgeProtoKey
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.result_response import ResultResponse
+from nvflare.edge.web.models.selection_request import SelectionRequest
+from nvflare.edge.web.models.selection_response import SelectionResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.edge.web.models.user_info import UserInfo
@@ -37,51 +41,58 @@ class FegApi:
         user_qs = urlencode(user_info)
 
         self.common_headers = {
-            "X-Flare-Device-ID": device_info.device_id,
-            "X-Flare-Device-Info": device_qs,
-            "X-Flare-User-Info": user_qs,
+            "Content-Type": "application/json",
+            HttpHeaderKey.DEVICE_ID: device_info.device_id,
+            HttpHeaderKey.DEVICE_INFO: device_qs,
+            HttpHeaderKey.USER_INFO: user_qs,
         }
 
     def get_job(self, request: JobRequest) -> JobResponse:
-        url = urljoin(self.endpoint, "job")
-        body = {"capabilities": request.capabilities}
-        headers = {"Content-Type": "application/json"}
-        headers.update(self.common_headers)
-        response = requests.post(url, json=body, headers=headers)
-
-        code = response.status_code
-        if code == 200:
-            return JobResponse(**response.json())
-
-        raise ApiError(code, "ERROR", f"API Call failed with status code {code}", response.json())
+        return self._do_post(
+            clazz=JobResponse,
+            url=urljoin(self.endpoint, "job"),
+            params={},
+            body={EdgeProtoKey.CAPABILITIES: request.capabilities},
+        )
 
     def get_task(self, request: TaskRequest) -> TaskResponse:
-        url = urljoin(self.endpoint, "task")
-        params = {
-            "job_id": request.job_id,
-        }
-        response = requests.get(url, params=params, headers=self.common_headers)
-        code = response.status_code
-        if code == 200:
-            return TaskResponse(**response.json())
-
-        raise ApiError(code, "ERROR", f"API Call failed with status code {code}", response.json())
+        return self._do_post(
+            clazz=TaskResponse,
+            url=urljoin(self.endpoint, "task"),
+            params={EdgeProtoKey.JOB_ID: request.job_id},
+            body={EdgeProtoKey.COOKIE: request.cookie} if request.cookie else {},
+        )
 
     def report_result(self, report: ResultReport) -> ResultResponse:
-        url = urljoin(self.endpoint, "result")
-        body = {"result": report.result}
-        headers = {"Content-Type": "application/json"}
-        headers.update(self.common_headers)
-        params = {
-            "job_id": report.job_id,
-            "task_name": report.task_name,
-            "task_id": report.task_id,
+        body = {
+            EdgeProtoKey.STATUS: report.status,
+            EdgeProtoKey.TASK_NAME: report.task_name,
+            EdgeProtoKey.RESULT: report.result,
         }
-        response = requests.post(url, json=body, params=params, headers=headers)
+        if report.cookie:
+            body[EdgeProtoKey.COOKIE] = report.cookie
 
+        return self._do_post(
+            clazz=ResultResponse,
+            url=urljoin(self.endpoint, "result"),
+            params={
+                EdgeProtoKey.JOB_ID: report.job_id,
+                EdgeProtoKey.TASK_ID: report.task_id,
+            },
+            body=body,
+        )
+
+    def get_selection(self, request: SelectionRequest) -> SelectionResponse:
+        return self._do_post(
+            clazz=SelectionResponse,
+            url=urljoin(self.endpoint, "selection"),
+            params={EdgeProtoKey.JOB_ID: request.job_id},
+            body={},
+        )
+
+    def _do_post(self, clazz, url, params, body):
+        response = requests.post(url, params=params, json=body, headers=self.common_headers)
         code = response.status_code
         if code == 200:
-            return ResultResponse(**response.json())
-
-        details = {"response": response.text}
-        raise ApiError(code, "ERROR", f"API Call failed with status code {code}", details)
+            return clazz(**response.json())
+        raise ApiError(code, "ERROR", f"API Call failed with status code {code}", response.json())

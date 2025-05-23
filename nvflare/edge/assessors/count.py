@@ -51,6 +51,8 @@ class CountAssessor(SGAPAssessor):
         if count < self.min_count:
             return Assessment.CONTINUE
         elif count >= self.max_count:
+            self.logger.info(f"Got {count} items (>= max {self.max_count}) - WF Done!")
             return Assessment.WORKFLOW_DONE
         else:
+            self.logger.info(f"Got {count} items (>= min {self.min_count}) - TASK Done!")
             return Assessment.TASK_DONE

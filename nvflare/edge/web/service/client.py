@@ -11,30 +11,31 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import threading
-
 import grpc
+
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .edge_api_pb2 import Reply, Request
 from .edge_api_pb2_grpc import EdgeApiStub
 
 
-class Client:
+class EdgeApiClient:
 
-    def __init__(self, grpc_options=None):
+    def __init__(self, ssl_credentials=None, grpc_options=None):
         self.grpc_options = grpc_options
-        self.stubs = {}  # address => Stub
-        self._stub_lock = threading.Lock()
-
-    def _get_stub(self, address):
-        with self._stub_lock:
-            stub = self.stubs.get(address)
-            if not stub:
-                channel = grpc.insecure_channel(address, options=self.grpc_options)
-                stub = EdgeApiStub(channel)
-                self.stubs[address] = stub
-            return stub
+        self.ssl_credentials = ssl_credentials
+        self.logger = get_obj_logger(self)
+        if ssl_credentials:
+            self.logger.info("SSL Credentials provided - will connect via secure channel")
+        else:
+            self.logger.info("SSL Credentials not provided - will connect via insecure channel")
 
     def query(self, address: str, request: Request) -> Reply:
-        stub = self._get_stub(address)
+        if self.ssl_credentials:
+            # SSL
+            channel = grpc.secure_channel(address, options=self.grpc_options, credentials=self.ssl_credentials)
+        else:
+            channel = grpc.insecure_channel(address, options=self.grpc_options)
+
+        stub = EdgeApiStub(channel)
         return stub.Query(request)

@@ -11,22 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
-from typing import Optional
-
-from .constants import NONE_DATA
-from .edge_api_pb2 import Reply
-
-
-def to_bytes(data: Optional[dict]) -> bytes:
-    if not data:
-        return NONE_DATA
-    str_data = json.dumps(data)
-    return str_data.encode("utf-8")
-
-
-def make_reply(status: str, payload: Optional[dict] = None):
-    return Reply(
-        status=status,
-        payload=to_bytes(payload),
-    )
