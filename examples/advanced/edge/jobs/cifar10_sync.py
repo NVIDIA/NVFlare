@@ -29,7 +29,7 @@ job.to_server(persistor, id="persistor")
 
 assessor = ModelUpdateAssessor(
     persistor_id="persistor",
-    max_model_version=5,
+    max_model_version=10,
     max_model_history=1,
     num_updates_for_model=16,
     device_selection_size=16,
