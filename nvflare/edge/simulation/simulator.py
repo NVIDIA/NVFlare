@@ -168,7 +168,7 @@ class Simulator:
 
         while not self.done:
             cycle_num += 1
-            self.logger.info(f"Starting query cycle: {cycle_num}")
+            self.logger.debug(f"Starting query cycle: {cycle_num}")
 
             # Get selections from Flare for two reasons:
             # 1. Proactively place selected devices in active_devices can make task assignment happen quickly;
@@ -185,7 +185,7 @@ class Simulator:
                         selected_devices = resp.selection
 
             if selected_devices:
-                self.logger.debug(f"got selected devices: {selected_devices}")
+                self.logger.debug(f"got selected devices: {dict(sorted(selected_devices.items()))}")
 
             with self.update_lock:
                 # determine active devices for query
@@ -289,7 +289,6 @@ class Simulator:
             if job_id and num_activities == 0:
                 self.logger.info(f"Job {job_id} is done - stopping simulation")
                 break
-
             time.sleep(interval)
 
         # Stop all tasks if any
@@ -400,6 +399,15 @@ class Simulator:
 
         """
         if not self.used_devices:
+            # check the number of devices and print warning if it exceeds the limit
+            # print warning for at most 10 times
+            if (len(self.all_devices) > self.num_devices) and (self.num_devices <= self.num_devices + 10):
+                self.logger.warning(
+                    f"Warning: number of devices ({len(self.all_devices)}) exceeds the preset limit: {self.num_devices}"
+                )
+                self.logger.warning(
+                    "Make sure this is expected and proper logic at the server side is in place. This message will be printed at most 10 times."
+                )
             # no used devices - make a new device
             return self._make_new_device()
 
@@ -454,7 +462,7 @@ class Simulator:
         )
 
         # report the result to Flare
-        self.logger.info(f"Device {device.device_id} result: {report}")
+        self.logger.debug(f"Device {device.device_id} result: {report}")
         resp = self._send_request(report, device, ResultResponse(EdgeApiStatus.RETRY), **self.send_kwargs)
         self.logger.info(f"got result response: {resp}")
 

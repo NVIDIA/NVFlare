@@ -59,7 +59,7 @@ class GlobalEvaluator(Widget):
         self.tb_writer = None
 
         self.register_event_handler(EventType.START_RUN, self._initialize)
-        self.register_event_handler(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, self.evaluate)
+        self.register_event_handler(AppEventType.GLOBAL_WEIGHTS_UPDATED, self.evaluate)
 
     def _load_model(self, model_path: str, fl_ctx: FLContext) -> Any:
         """Load model from model path.
