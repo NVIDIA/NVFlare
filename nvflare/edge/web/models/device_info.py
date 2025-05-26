@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.edge.web.models.base_model import BaseModel
+from nvflare.edge.web.models.base_model import BaseModel, EdgeProtoKey
 
 
 class DeviceInfo(BaseModel):
@@ -35,3 +35,17 @@ class DeviceInfo(BaseModel):
 
         if kwargs:
             self.update(kwargs)
+
+    @staticmethod
+    def extract_from_dict(d: dict):
+        device_info_dict = d.pop(EdgeProtoKey.DEVICE_INFO, None)
+        if not device_info_dict:
+            return "missing device_info", None
+
+        device_id = device_info_dict.pop(EdgeProtoKey.DEVICE_ID, None)
+        if not device_id:
+            return "missing device_id", None
+
+        device_info = DeviceInfo(device_id)
+        device_info.update(device_info_dict)
+        return "", device_info
