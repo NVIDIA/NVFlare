@@ -26,7 +26,6 @@
 # limitations under the License.
 
 import logging
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -57,7 +56,7 @@ def main():
     flare.init()
 
     # Setup data directory
-    root_dir = tempfile.mkdtemp() 
+    root_dir = tempfile.mkdtemp()
     print(root_dir)
 
     # Use MONAI transforms to preprocess data
