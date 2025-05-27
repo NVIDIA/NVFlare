@@ -39,10 +39,10 @@ evaluator = GlobalEvaluator(
 job.to_server(evaluator, id="evaluator")
 
 persistor = PTFileModelPersistor(model=Cifar10ConvNet())
-job.to_server(persistor, id="persistor")
+persistor_id = job.to_server(persistor, id="persistor")
 
 assessor = ModelUpdateAssessor(
-    persistor_id="persistor",
+    persistor_id=persistor_id,
     max_model_version=10,
     max_model_history=1,
     num_updates_for_model=16,

@@ -20,7 +20,7 @@ from nvflare.edge.models.model import Cifar10ConvNet
 from nvflare.edge.widgets.evaluator import GlobalEvaluator
 
 job = EdgeJob(
-    name="cifar10_sync_job",
+    name="cifar10_async_job",
     edge_method="cnn",
 )
 
@@ -29,7 +29,7 @@ job.configure_client(
     aggregator_factory=factory,
     max_model_versions=3,
     update_timeout=300.0,
-    simulation_config_file="configs/cifar10_sync_config.json",
+    simulation_config_file="configs/cifar10_async_config.json",
 )
 
 evaluator = GlobalEvaluator(
@@ -39,10 +39,10 @@ evaluator = GlobalEvaluator(
 job.to_server(evaluator, id="evaluator")
 
 persistor = PTFileModelPersistor(model=Cifar10ConvNet())
-job.to_server(persistor, id="persistor")
+persistor_id = job.to_server(persistor, id="persistor")
 
 assessor = ModelUpdateAssessor(
-    persistor_id="persistor",
+    persistor_id=persistor_id,
     max_model_version=10,
     max_model_history=5,
     num_updates_for_model=20,
