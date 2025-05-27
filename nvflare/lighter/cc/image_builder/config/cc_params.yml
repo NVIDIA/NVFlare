@@ -1,4 +1,3 @@
-
 computer_env: onprem_cvm
 cc_cpu_mechanism: amd_sev_snp
 cc_gpu_mechanism: nvidia_cc

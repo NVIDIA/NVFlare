@@ -7,7 +7,7 @@
     - "{{ yaml_config }}"
 
   vars:
-    ansible_become_password: "{{ ansible_password }}"
+    ansible_become_password: "{{ ansible_ssh_pass }}"
 
   tasks:
 
@@ -77,16 +77,11 @@
             creates: "{{ vault_file }}"
 
         - name: Format the file as LUKS device using keyfile
-          command: >
-            echo YES | cryptsetup luksFormat {{ vault_file }} {{ vault_key_file }}
-          args:
-            creates: "/dev/mapper/{{ encrypted_drive_name }}"
+          shell: "echo YES | cryptsetup luksFormat {{ vault_file }} {{ vault_key_file }}"
 
         - name: Open the LUKS device using keyfile
           command: >
             cryptsetup open {{ vault_file }} {{ encrypted_drive_name }} --key-file {{ vault_key_file }} --type luks2
-          args:
-            creates: "/dev/mapper/{{ encrypted_drive_name }}"
 
         - name: Create ext4 filesystem on the mapped device
           filesystem:
@@ -214,3 +209,8 @@
       loop:
         - 22
         - 8002
+
+# Shutdwon CVM
+
+    - name: Shutdown CVM
+      shell: shutdown -h now

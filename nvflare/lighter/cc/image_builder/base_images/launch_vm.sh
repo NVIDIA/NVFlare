@@ -10,7 +10,7 @@ UEFI_BIOS=/shared/OVMF.fd
 
 #Hardware Settings
 MEM=64 #in GBs
-FWDPORT=9899
+FWDPORT=2222
 
 doecho=false
 docc=true
@@ -58,7 +58,6 @@ qemu-system-x86_64 \
                 -initrd /localhome/local-zhihongz/boot/initrd.img \
                 -drive file=$VDD_IMAGE,if=none,id=disk0,format=qcow2 \
                 -drive file=$APPLOG_IMAGE,if=virtio,id=disk1,format=qcow2 \
-		-netdev user,id=vmnic,hostfwd=tcp::2222-:22 \
                 -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=true,romfile= \
                 -device scsi-hd,drive=disk0 \
                 -netdev user,id=vmnic,hostfwd=tcp::$FWDPORT-:22 \

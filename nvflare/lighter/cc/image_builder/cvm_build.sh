@@ -27,8 +27,20 @@ mkdir -p "${BASE_DIR}/target"
 cp $BASE_IMAGE $TARGET_IMAGE
 cp $APPLOG_BASE $APPLOG_IMAGE
 
-# Start VM, This step can be done in playbook on Linux
-#./start_vm.sh $TARGET_IMAGE
+echo "Start VM ..."
+
+nohup sudo base_images/launch_vm.sh $TARGET_IMAGE $APPLOG_IMAGE > cvm.log 2>&1 &
+
+# Wait for SSH to be ready
+echo "Waiting for CVM to become reachable..."
+while ! nc -z -w 1 localhost 2222; do
+  sleep 1
+done
+
+echo "Wait a few minutes for ssh to come up ..."
+sleep 60 
+
+echo "Starting playbook ..."
 
 echo "Playbook: $BASE_DIR/playbooks/cvm_build.yml"
 # Run ansible playbook to configure the VM

@@ -1,4 +1,4 @@
-vault_file: ~/vault.img
+vault_file: /root/vault.img
 vault_folder: /vault
 vault_key_file: /run/vault_key.txt
 nvflare_folder: /vault/nvflare
