@@ -1,0 +1,21 @@
+vault_file: ~/vault.img
+vault_folder: /vault
+vault_key_file: /run/vault_key.txt
+nvflare_folder: /vault/nvflare
+workspace_folder: /vault/workspace
+venv_folder: /vault/venv
+service_folder: /vault/service
+encrypted_drive_name: vault
+logging_folder: /applogs
+
+required_system_packages:
+    - cryptsetup
+    - lvm2
+    - parted
+    - iptables
+    - systemd
+    - dmsetup
+
+required_python_packages:
+    - ansible
+    - pyyaml

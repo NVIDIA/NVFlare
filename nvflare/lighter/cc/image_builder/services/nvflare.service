@@ -1,0 +1,12 @@
+[Unit]
+Description=Start NVFlare
+Requires=mount_vault.service
+After=mount_vault.service
+
+[Service]
+Type=simple
+ExecStart=/vault/nvflare/startup/start.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

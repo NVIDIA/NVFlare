@@ -1,0 +1,216 @@
+# cvm_build.yml
+- name: Provision CVM for NVFlare
+  hosts: cvm
+  become: true
+  vars_files:
+    - ../config/cc_build.yml
+    - "{{ yaml_config }}"
+
+  vars:
+    ansible_become_password: "{{ ansible_password }}"
+
+  tasks:
+
+# Collecting variables
+
+    - name: Covnert variables to string
+      ansible.builtin.set_fact:
+        secure_size: "{{ secure_drive_size | string }}"
+        root_size: "{{ root_drive_size | string }}"
+
+    - name: Normalize variables
+      ansible.builtin.set_fact:
+        secure_drive_size: "{{ secure_size ~ ('g' if not secure_size[-1:] | lower == 'g' else '') }}"
+        root_drive_size: "{{ root_size ~ ('g' if not root_size[-1:] | lower == 'g' else '') }}"
+
+    - name: Print variables
+      ansible.builtin.debug:
+        msg:
+          - "cvm_id: {{ cvm_id }}"
+          - "target_image: {{ target_image }}"
+          - "vault_file: {{ vault_file }}"
+          - "yaml_config: {{ yaml_config }}"
+          - "site_name: {{ site_name }}"
+          - "startup_folder: {{ startup_folder }}"
+          - "secure_drive_size: {{ secure_drive_size }}"
+          - "root_drive_size: {{ root_drive_size }}"
+          - "data_source: {{ data_source }}"
+          - "nfs_mount: {{ nfs_mount }}"
+          - "custom_code: {{ custom_code }}"
+
+# Install required system packages
+
+    - name: Install required system packages
+      ansible.builtin.apt:
+        name: "{{ item | replace(':', '=') }}"
+        state: present
+      loop: "{{ required_system_packages }}"
+
+    - name: Check if vault file exists
+      stat:
+        path: "{{ vault_file }}"
+      register: vault_check
+
+# Encrypt drive
+
+    - name: Encrypt drive
+      block:
+        - name: Generate vault key
+          ansible.builtin.set_fact:
+            vaule_key: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters') }}"
+          when: false
+
+        - name: Display vault key
+          ansible.builtin.debug:
+            msg: "Vault Key: {{ vault_key }}"
+
+        - name: Save key to file
+          ansible.builtin.copy:
+            content: "{{ vault_key }}"
+            dest: "{{ vault_key_file}}"
+            mode: '0400'
+
+        - name: Create vault file
+          command: >
+            fallocate -l {{ secure_drive_size }} {{ vault_file }}
+          args:
+            creates: "{{ vault_file }}"
+
+        - name: Format the file as LUKS device using keyfile
+          command: >
+            echo YES | cryptsetup luksFormat {{ vault_file }} {{ vault_key_file }}
+          args:
+            creates: "/dev/mapper/{{ encrypted_drive_name }}"
+
+        - name: Open the LUKS device using keyfile
+          command: >
+            cryptsetup open {{ vault_file }} {{ encrypted_drive_name }} --key-file {{ vault_key_file }} --type luks2
+          args:
+            creates: "/dev/mapper/{{ encrypted_drive_name }}"
+
+        - name: Create ext4 filesystem on the mapped device
+          filesystem:
+            fstype: ext4
+            dev: "/dev/mapper/{{ encrypted_drive_name }}"
+
+        - name: Create mount point
+          ansible.builtin.file:
+            path: "{{ vault_folder }}"
+            state: directory
+            mode: '0777'
+
+        - name: Mount the encrypted volume
+          mount:
+            path: "{{ vault_folder }}"
+            src: "/dev/mapper/{{ encrypted_drive_name }}"
+            fstype: ext4
+            state: mounted
+
+        - name: Create encryted folders
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: '0777'
+          loop:
+            - "{{ nvflare_folder }}"
+            - "{{ venv_folder }}"
+            - "{{ workspace_folder }}"
+            - "{{ service_folder }}"
+
+      rescue:
+        - name: Encrypt drive failed
+          fail:
+            msg: "Can't encrypt drive"
+
+      tags:
+        - encrypt_drive
+
+# Create systemd services 
+
+    - name: Copy Systemd unit files
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: /etc/systemd/system
+        owner: root
+        group: root
+        mode: '0644'
+      with_fileglob:
+        - "../services/*.service"
+
+    - name: Enable systemd unit
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+      loop:
+        - "mount_vault.service"
+        - "nvflare.service"
+
+# Install Python dependencies
+
+    - name: Install PIP
+      apt:
+        name: python3-pip
+        state: present
+
+    - name: Ensure virtualenv is installed
+      apt:
+        name: python3-venv
+        state: present
+
+    - name: Install virtualenv in encrypted folder
+      ansible.builtin.pip:
+        name: virtualenv
+        state: present
+        virtualenv: "{{ venv_folder }}"
+        virtualenv_command: python3 -m venv
+
+    - name: Install Python dependencies
+      ansible.builtin.pip:
+        name: "{{ item }}"
+        state: present
+        virtualenv: "{{ venv_folder }}"
+      loop: "{{ required_python_packages }}"
+
+    - name: Install site Python dependencies
+      ansible.builtin.pip:
+        name: "{{ item }}"
+        state: present
+        virtualenv: "{{ venv_folder }}"
+      loop: "{{ site_required_python_packages }}"
+
+# Install NVFlare
+
+    - name: Install NVFlare
+      ansible.builtin.pip:
+        name: "nvflare=={{ nvflare_version }}"
+        state: present
+        virtualenv: "{{ venv_folder}}"
+
+    - name: Copy startup kit
+      ansible.builtin.copy:
+        src: "{{ startup_folder }}"
+        dest: "{{ nvflare_folder }}"
+        mode: '0755'
+
+# Secure the system
+
+    - name: Ensure UFW is installed
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+        update_cache: true
+
+    - name: Enable UFW and set default policy to deny
+      community.general.ufw:
+        state: enabled
+        policy: deny
+        logging: on
+
+    - name: Allow SSH/Flare ports only
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - 22
+        - 8002

@@ -1,0 +1,15 @@
+[Unit]
+Description=Mount vault
+Requires=local-fs.target
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/cryptsetup luksOpen /root/vault.img vault --key-file /run/vault_key.txt
+ExecStart=/bin/mount /dev/mappper/vault /vault
+ExecStop=/bin/umount //vault
+ExecStop=/usr/bin/cryptsetup luksClose vault
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

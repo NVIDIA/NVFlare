@@ -1,0 +1,20 @@
+
+computer_env: onprem_cvm
+cc_cpu_mechanism: amd_sev_snp
+cc_gpu_mechanism: nvidia_cc
+role: client
+root_drive_size: 8
+secure_drive_size: 2
+nvflare_version: 2.6.0
+data_source: /tmp/data
+nfs_mount: nfs-server.local:/data
+custom_code: /tmp/custom
+
+# For test and non-CC build
+vault_key: yioBiusIrhwkXbHxxIVwELBTlqtEWvgl
+
+site_required_python_packages:
+  - "numpy"
+  - "pandas"
+
+
