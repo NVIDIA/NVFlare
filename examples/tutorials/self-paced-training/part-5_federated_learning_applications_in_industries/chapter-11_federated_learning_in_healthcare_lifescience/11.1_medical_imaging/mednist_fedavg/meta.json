@@ -1,5 +1,5 @@
 {
-    "name": "prostate_fedavg",
+    "name": "mednist_fedavg",
     "resource_spec": {},
     "min_clients": 1,
     "deploy_map": {
