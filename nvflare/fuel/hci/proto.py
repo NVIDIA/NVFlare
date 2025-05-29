@@ -70,6 +70,7 @@ class MetaKey(object):
     CMD_TIMEOUT = "cmd_timeout"
     CUSTOM_PROPS = "custom_props"
     CMD_PROPS = "cmd_props"
+    CMD_HEADERS = "cmd_headers"
     FILES = "files"
     CMD_NAME = "cmd_name"
     TX_ID = "tx_id"
@@ -97,8 +98,7 @@ class MetaStatusValue(object):
     NO_CLIENTS = "no_clients"
 
 
-class CredentialType(str, Enum):
-
+class CredentialType:
     PASSWORD = "password"
     CERT = "cert"
     LOCAL_CERT = "local_cert"
@@ -126,6 +126,20 @@ class ConfirmMethod(object):
     PASSWORD = "pwd"
     YESNO = "yesno"
     USER_NAME = "username"
+
+
+class StreamChannel:
+    UPLOAD = "hci.upload"
+    DOWNLOAD = "hci.download"
+
+
+class StreamTopic:
+    FOLDER = "folder"
+    FILE = "file"
+
+
+class StreamCtxKey:
+    TX_ID = "transaction_id"
 
 
 class Buffer(object):

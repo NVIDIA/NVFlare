@@ -276,6 +276,11 @@ fed_admin: |
   {
     "format_version": 1,
     "admin": {
+      "project_name": "{~~project_name~~}",
+      "identity": "{~~identity~~}",
+      "server_identity": "{~~server_identity~~}",
+      "scheme": "{~~scheme~~}",
+      "connection_security": "{~~conn_sec~~}",
       "with_file_transfer": true,
       "upload_dir": "transfer",
       "download_dir": "transfer",

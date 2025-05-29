@@ -16,6 +16,8 @@ import threading
 import time
 from typing import List
 
+from nvflare.fuel.f3.cellnet.defs import CellChannel
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -32,6 +34,7 @@ class Session(object):
         self.user_name = None
         self.user_org = None
         self.user_role = None
+        self.origin_fqcn = None
         self.start_time = None
         self.last_active_time = None
         self.token = None
@@ -41,7 +44,7 @@ class Session(object):
 
 
 class SessionManager(CommandModule):
-    def __init__(self, idle_timeout=3600, monitor_interval=5):
+    def __init__(self, cell, idle_timeout=600, monitor_interval=5):
         """Session manager.
 
         Args:
@@ -51,6 +54,7 @@ class SessionManager(CommandModule):
         if monitor_interval <= 0:
             monitor_interval = 5
 
+        self.cell = cell
         self.sess_update_lock = threading.Lock()
         self.sessions = {}  # token => Session
         self.idle_timeout = idle_timeout
@@ -77,7 +81,7 @@ class SessionManager(CommandModule):
 
             if dead_sess:
                 # print('ending dead session {}'.format(dead_sess.token))
-                self.end_session(dead_sess.token)
+                self.end_session(dead_sess.token, "Your session is closed due to inactivity.")
             else:
                 # print('no dead sessions found')
                 pass
@@ -88,19 +92,21 @@ class SessionManager(CommandModule):
         self.asked_to_stop = True
         # self.monitor.join(timeout=10)
 
-    def create_session(self, user_name, user_org, user_role):
+    def create_session(self, user_name, user_org, user_role, origin_fqcn):
         """Creates new session with a new session token.
 
         Args:
-            user_name: user name for session
+            user_name: username for session
             user_org: org of the user
             user_role: user's role
+            origin_fqcn: request origin FQCN
 
         Returns: Session
 
         """
         token = make_session_token()
         sess = Session()
+        sess.origin_fqcn = origin_fqcn
         sess.user_name = user_name
         sess.user_role = user_role
         sess.user_org = user_org
@@ -122,9 +128,17 @@ class SessionManager(CommandModule):
                 result.append(s)
         return result
 
-    def end_session(self, token):
+    def end_session(self, token, reason=None):
         with self.sess_update_lock:
-            self.sessions.pop(token, None)
+            sess = self.sessions.pop(token, None)
+            if sess and reason:
+                self.cell.fire_and_forget(
+                    channel=CellChannel.HCI,
+                    topic="SESSION_EXPIRED",
+                    targets=sess.origin_fqcn,
+                    message=CellMessage(payload=reason),
+                    optional=True,
+                )
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -136,7 +150,7 @@ class SessionManager(CommandModule):
                     usage=LIST_SESSIONS_CMD_NAME,
                     handler_func=self.handle_list_sessions,
                     visible=False,
-                    enabled=False,
+                    enabled=True,
                 ),
                 CommandSpec(
                     name=CHECK_SESSION_CMD_NAME,

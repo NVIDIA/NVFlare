@@ -22,8 +22,8 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
+from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.client.config import FLAdminClientStarterConfigurator
-from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
 from nvflare.fuel.hci.cmd_arg_utils import (
     process_targets_into_str,
     validate_file_string,
@@ -62,18 +62,16 @@ _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 
 
 class Session(SessionSpec):
-    def __init__(self, username: str = None, startup_path: str = None, secure_mode: bool = True, debug: bool = False):
+    def __init__(self, username: str = None, startup_path: str = None, debug: bool = False):
         """Initializes a session with the NVFLARE system.
 
         Args:
             username (str): string of username to log in with
             startup_path (str): path to the provisioned startup kit, which contains endpoint of the system
-            secure_mode (bool): whether to run in secure mode or not
         """
         assert isinstance(username, str), "username must be str"
         self.username = username
         assert isinstance(startup_path, str), "startup_path must be str"
-        self.secure_mode = secure_mode
 
         assert os.path.isdir(startup_path), f"startup kit does not exist at {startup_path}"
 
@@ -85,56 +83,19 @@ class Session(SessionSpec):
         if not admin_config:
             raise ConfigError("Missing admin section in fed_admin configuration.")
 
-        ca_cert = admin_config.get("ca_cert", "")
-        client_cert = admin_config.get("client_cert", "")
-        client_key = admin_config.get("client_key", "")
-
-        if admin_config.get("with_ssl"):
-            if len(ca_cert) <= 0:
-                raise ConfigError("missing CA Cert file name field ca_cert in fed_admin configuration")
-
-            if len(client_cert) <= 0:
-                raise ConfigError("missing Client Cert file name field client_cert in fed_admin configuration")
-
-            if len(client_key) <= 0:
-                raise ConfigError("missing Client Key file name field client_key in fed_admin configuration")
-        else:
-            ca_cert = None
-            client_key = None
-            client_cert = None
-
-        upload_dir = admin_config.get("upload_dir")
-        download_dir = admin_config.get("download_dir")
+        upload_dir = admin_config.get(AdminConfigKey.UPLOAD_DIR)
+        download_dir = admin_config.get(AdminConfigKey.DOWNLOAD_DIR)
         if not os.path.isdir(download_dir):
             os.makedirs(download_dir)
 
-        if self.secure_mode:
-            if not os.path.isfile(ca_cert):
-                raise ConfigError(f"rootCA.pem does not exist at {ca_cert}")
-
-            if not os.path.isfile(client_cert):
-                raise ConfigError(f"client.crt does not exist at {client_cert}")
-
-            if not os.path.isfile(client_key):
-                raise ConfigError(f"client.key does not exist at {client_key}")
-
-        service_finder = ServiceFinderByOverseer(conf.overseer_agent)
-
         self.api = AdminAPI(
-            ca_cert=ca_cert,
-            client_cert=client_cert,
-            client_key=client_key,
-            upload_dir=upload_dir,
-            download_dir=download_dir,
-            service_finder=service_finder,
+            admin_config=admin_config,
             user_name=username,
-            insecure=(not self.secure_mode),
             debug=debug,
             event_handlers=conf.handlers,
         )
         self.upload_dir = upload_dir
         self.download_dir = download_dir
-        self.overseer_agent = conf.overseer_agent
 
     def close(self):
         """Close the session."""
@@ -144,12 +105,8 @@ class Session(SessionSpec):
         if self.api.closed:
             raise SessionClosed("session closed")
 
-        start_time = time.time()
-        while not self.api.is_ready():
-            if time.time() - start_time > timeout:
-                self.api.close()
-                raise NoConnection(f"cannot connect to FLARE in {timeout} seconds")
-            time.sleep(0.5)
+        self.api.connect()
+        self.api.login()
 
     def _do_command(self, command: str, enforce_meta=True, props=None):
         if self.api.closed:
@@ -957,6 +914,12 @@ def basic_cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_
     return True
 
 
+def new_session(username: str, startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
+    session = Session(username=username, startup_path=startup_kit_location, debug=debug)
+    session.try_connect(timeout)
+    return session
+
+
 def new_secure_session(username: str, startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
     """Create a new secure FLARE API session with the NVFLARE system.
 
@@ -969,10 +932,7 @@ def new_secure_session(username: str, startup_kit_location: str, debug: bool = F
     Returns: a Session object
 
     """
-    session = Session(username=username, startup_path=startup_kit_location, secure_mode=True, debug=debug)
-
-    session.try_connect(timeout)
-    return session
+    return new_session(username, startup_kit_location, debug, timeout)
 
 
 def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
@@ -988,7 +948,4 @@ def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout
     The username for insecure session is always "admin".
 
     """
-    session = Session(username="admin", startup_path=startup_kit_location, secure_mode=False, debug=debug)
-
-    session.try_connect(timeout)
-    return session
+    return new_session("admin", startup_kit_location, debug, timeout)

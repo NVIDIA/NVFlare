@@ -18,6 +18,7 @@ import json
 import os
 import signal
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -35,7 +36,7 @@ from nvflare.fuel.hci.table import Table
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api import AdminAPI, CommandInfo
-from .api_spec import ServiceFinder
+from .api_spec import AdminConfigKey
 from .api_status import APIStatus
 from .event import EventContext, EventHandler, EventPropKey, EventType
 
@@ -61,29 +62,15 @@ class AdminClient(cmd.Cmd, EventHandler):
     """Admin command prompt for submitting admin commands to the server through the CLI.
 
     Args:
-        prompt: prompt to use for the command prompt
-        ca_cert: path to CA Cert file, by default provisioned rootCA.pem
-        client_cert: path to admin client Cert file, by default provisioned as client.crt
-        client_key: path to admin client Key file, by default provisioned as client.key
-        credential_type: what type of credential to use
         cmd_modules: command modules to load and register
-        service_finder: used to obtain the primary service provider to set the host and port of the active server
         debug: whether to print debug messages. False by default.
         cli_history_size: the maximum number of commands to save in the cli history file. Defaults to 1000.
     """
 
     def __init__(
         self,
-        prompt: str = "> ",
-        credential_type: CredentialType = CredentialType.PASSWORD,
-        ca_cert=None,
-        client_cert=None,
-        client_key=None,
-        upload_dir="",
-        download_dir="",
+        admin_config: dict,
         cmd_modules: Optional[List] = None,
-        service_finder: ServiceFinder = None,
-        session_timeout_interval=900,  # close the client after 15 minutes of inactivity
         debug: bool = False,
         username: str = "",
         handlers=None,
@@ -92,23 +79,16 @@ class AdminClient(cmd.Cmd, EventHandler):
     ):
         super().__init__()
         self.intro = "Type help or ? to list commands.\n"
-        self.prompt = prompt
+        self.prompt = admin_config.get(AdminConfigKey.PROMPT, "> ")
         self.user_name = "admin"
         self.pwd = None
-        self.credential_type = credential_type
+        self.credential_type = admin_config.get(AdminConfigKey.CRED_TYPE, CredentialType.CERT)
 
-        self.service_finder = service_finder
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
         self.stopped = False  # use this flag to prevent unnecessary signal exception
         self.username = username
-
-        if not isinstance(service_finder, ServiceFinder):
-            raise TypeError("service_finder must be ServiceProvider but got {}.".format(type(service_finder)))
-
-        if not isinstance(credential_type, CredentialType):
-            raise TypeError("invalid credential_type {}".format(credential_type))
 
         if not cli_history_dir:
             raise Exception("missing cli_history_dir")
@@ -122,8 +102,6 @@ class AdminClient(cmd.Cmd, EventHandler):
                     raise TypeError("cmd_modules must be a list of CommandModule")
                 modules.append(m)
 
-        insecure = True if self.credential_type == CredentialType.PASSWORD else False
-
         self._get_login_creds()
 
         event_handlers = [self]
@@ -131,18 +109,10 @@ class AdminClient(cmd.Cmd, EventHandler):
             event_handlers.extend(handlers)
 
         self.api = AdminAPI(
-            ca_cert=ca_cert,
-            client_cert=client_cert,
-            client_key=client_key,
-            upload_dir=upload_dir,
-            download_dir=download_dir,
+            admin_config=admin_config,
             cmd_modules=modules,
-            service_finder=self.service_finder,
             user_name=self.user_name,
             debug=self.debug,
-            insecure=insecure,
-            session_timeout_interval=session_timeout_interval,
-            session_status_check_interval=1800,  # check server for session status every 30 minutes
             event_handlers=event_handlers,
         )
 
@@ -164,7 +134,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         if msg:
             self.write_string(msg)
 
-        if event_type == EventType.SESSION_CLOSED:
+        if event_type in [EventType.SESSION_CLOSED, EventType.SESSION_TIMEOUT]:
             os.kill(os.getpid(), signal.SIGUSR1)
 
     def session_signal_handler(self, signum, frame):
@@ -299,6 +269,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         except KeyboardInterrupt:
             self.write_stdout("\n")
         except Exception as e:
+            traceback.print_exc()
             if self.debug:
                 secure_log_traceback()
             self.write_stdout(f"exception occurred: {secure_format_exception(e)}")
@@ -468,11 +439,8 @@ class AdminClient(cmd.Cmd, EventHandler):
 
     def run(self):
         try:
-            while not self.api.is_ready():
-                time.sleep(1.0)
-                if self.api.shutdown_received:
-                    return False
-
+            self.api.connect()
+            self.api.login()
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
         except RuntimeError as e:
             if self.debug:

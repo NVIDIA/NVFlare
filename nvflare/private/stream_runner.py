@@ -41,6 +41,7 @@ class HeaderKey:
     TOPIC = PREFIX + "TOPIC"
     CHANNEL = PREFIX + "CHANNEL"
     CTX = PREFIX + "CTX"
+    END_RESULT = PREFIX + "END_RESULT"
 
 
 class _ConsumerInfo:
@@ -51,14 +52,16 @@ class _ConsumerInfo:
         factory: ConsumerFactory,
         consumer: ObjectConsumer,
         stream_done_cb,
+        consumed_cb,
         cb_kwargs,
     ):
         self.logger = logger
         self.factory = factory
         self.stream_ctx = stream_ctx
         self.consumer = consumer
+        self.consumed_cb = consumed_cb
         self.stream_done_cb = stream_done_cb
-        self.stream_done_cb_kwargs = cb_kwargs
+        self.cb_kwargs = cb_kwargs
         self.stream_start_time = time.time()
         self.last_msg_start_time = None
         self.last_msg_end_time = None
@@ -71,9 +74,12 @@ class _ConsumerInfo:
         self.last_msg_start_time = time.time()
         reply = self.consumer.consume(msg, self.stream_ctx, fl_ctx)
         self.last_msg_end_time = time.time()
+        if self.consumed_cb:
+            self.consumed_cb(reply, self.stream_ctx, fl_ctx, **self.cb_kwargs)
         return reply
 
     def stream_done(self, rc: str, fl_ctx: FLContext):
+        end_result = None
         self.stream_ctx[StreamContextKey.RC] = rc
         try:
             self.consumer.finalize(self.stream_ctx, fl_ctx)
@@ -85,7 +91,7 @@ class _ConsumerInfo:
 
         if self.stream_done_cb:
             try:
-                self.stream_done_cb(self.stream_ctx, fl_ctx, **self.stream_done_cb_kwargs)
+                end_result = self.stream_done_cb(self.stream_ctx, fl_ctx, **self.cb_kwargs)
             except Exception as ex:
                 self.logger.error(
                     f"exception from stream_done_cb {self.stream_done_cb.__name__}: {secure_format_exception(ex)}"
@@ -102,6 +108,7 @@ class _ConsumerInfo:
                 f"exception returning processor to factory {self.factory.__class__.__name__}: "
                 f"{secure_format_exception(ex)}"
             )
+        return end_result
 
 
 class ObjectStreamer(FLComponent):
@@ -139,6 +146,7 @@ class ObjectStreamer(FLComponent):
         topic: str,
         factory: ConsumerFactory,
         stream_done_cb=None,
+        consumed_cb=None,
         **cb_kwargs,
     ):
         """Register a ConsumerFactory for specified app channel and topic.
@@ -153,6 +161,7 @@ class ObjectStreamer(FLComponent):
             channel: app channel
             topic: app topic
             factory: the factory to be registered
+            consumed_cb: the CB is called after a chunk is consumed
             stream_done_cb: the CB to be called when a stream is done
 
         Returns: None
@@ -163,7 +172,9 @@ class ObjectStreamer(FLComponent):
         check_object_type("factory", factory, ConsumerFactory)
         if stream_done_cb is not None:
             check_callable("stream_done_cb", stream_done_cb)
-        self.registry.set(channel, topic, (factory, stream_done_cb, cb_kwargs))
+        if consumed_cb is not None:
+            check_callable("consumed_cb", consumed_cb)
+        self.registry.set(channel, topic, (factory, consumed_cb, stream_done_cb, cb_kwargs))
         self.logger.info(f"registered processor_factory: {channel=} {topic=} {factory.__class__.__name__}")
 
     @staticmethod
@@ -188,7 +199,9 @@ class ObjectStreamer(FLComponent):
             info = self.tx_table.pop(tx_id, None)
 
         if info:
-            info.stream_done(rc, fl_ctx)
+            return info.stream_done(rc, fl_ctx)
+        else:
+            return None
 
     def _handle_abort(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.logger.debug("abort received")
@@ -234,7 +247,7 @@ class ObjectStreamer(FLComponent):
             self.error(request, f"no stream processing info registered for {channel}:{topic}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        factory, stream_done_db, cb_kwargs = factory_info
+        factory, consumed_cb, stream_done_db, cb_kwargs = factory_info
 
         self.debug(request, "received stream request")
         with self.tx_lock:
@@ -275,6 +288,7 @@ class ObjectStreamer(FLComponent):
                         factory=factory,
                         consumer=consumer,
                         stream_ctx=stream_ctx,
+                        consumed_cb=consumed_cb,
                         stream_done_cb=stream_done_db,
                         cb_kwargs=cb_kwargs,
                     )
@@ -300,9 +314,16 @@ class ObjectStreamer(FLComponent):
             continue_streaming = False
             reply = make_reply(ReturnCode.TASK_ABORTED)
 
-        if not continue_streaming:
+        if continue_streaming:
+            end_result = None
+        else:
             # remove the tx
-            self._end_tx(tx_id, rc=reply.get_return_code(), fl_ctx=fl_ctx)
+            end_result = self._end_tx(tx_id, rc=reply.get_return_code(), fl_ctx=fl_ctx)
+            self.logger.info(f"got end result: {end_result}")
+
+        if end_result:
+            # add the end_result to the reply
+            reply.set_header(HeaderKey.END_RESULT, end_result)
 
         self.debug(request, f"send reply: {reply}")
         return reply
@@ -432,11 +453,13 @@ class ObjectStreamer(FLComponent):
                 fl_ctx=fl_ctx,
             )
 
-            self.logger.debug("got replies from receivers")
+            self.logger.info("got replies from receivers")
             result = producer.process_replies(replies, stream_ctx, fl_ctx)
-            self.logger.debug(f"got processed result from producer: {result}")
+            self.logger.info(f"got processed result from producer: {result}")
             if result is not None:
                 # this is end of the streaming
+                # As a convention, the 'result' should be non-empty when succeeded.
+                # An empty result (0, False, empty dict/list, etc) means failure, and the rc is set to ERROR.
                 if abort_signal and abort_signal.triggered:
                     rc = ReturnCode.TASK_ABORTED
                 elif result:

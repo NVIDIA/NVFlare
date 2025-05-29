@@ -593,8 +593,26 @@ class StaticFileBuilder(Builder):
 
         ctx.build_from_template(dest_dir, TemplateSectionKey.ADMIN_README, ProvFileName.README_TXT)
 
+    @staticmethod
+    def _normalize_name(name):
+        return "".join(e for e in name if e.isalnum())
+
     def prepare_admin_config(self, admin, ctx: ProvisionContext):
-        config = ctx.json_load_template_section(TemplateSectionKey.FED_ADMIN)
+        project = ctx.get_project()
+        server = project.get_server()
+        conn_sec = server.get_prop_fb(PropKey.CONN_SECURITY)
+        if not conn_sec:
+            conn_sec = ConnSecurity.MTLS
+
+        replacement_dict = {
+            "project_name": project.name,
+            "identity": self._normalize_name(admin.name),
+            "server_identity": server.name,
+            "scheme": self.scheme,
+            "conn_sec": conn_sec,
+        }
+
+        config = ctx.json_load_template_section(TemplateSectionKey.FED_ADMIN, replacement_dict)
         agent_config = dict()
         self._prepare_overseer_agent(admin, agent_config, OverseerRole.ADMIN, ctx)
         config["admin"].update(agent_config)

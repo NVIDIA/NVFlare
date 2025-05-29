@@ -11,15 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import traceback
 from abc import ABC, abstractmethod
 from typing import List
 
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import CredentialType, InternalCommands
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.security import IdentityKey, verify_password
+from nvflare.fuel.hci.security import IdentityKey, get_identity_info, verify_password
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.lighter.utils import cert_to_dict, load_crt_bytes
+from nvflare.private.fed.server.cred_keeper import CredKeeper
 
 from .reg import CommandFilter
 from .sess import Session, SessionManager
@@ -59,14 +64,12 @@ class SimpleAuthenticator(Authenticator):
 
         return verify_password(pwd_hash, pwd)
 
-    def authenticate_cn(self, user_name: str, cn):
-        return user_name == cn
-
     def authenticate(self, user_name: str, credential, credential_type):
         if credential_type == CredentialType.PASSWORD:
             return self.authenticate_password(user_name, credential)
         elif credential_type == CredentialType.CERT:
-            return self.authenticate_cn(user_name, credential)
+            # cell connection is already authenticated with SSL credentials
+            return True
         else:
             return False
 
@@ -91,6 +94,8 @@ class LoginModule(CommandModule, CommandFilter):
 
         self.authenticator = authenticator
         self.session_mgr = sess_mgr
+        self.cred_keeper = CredKeeper()
+        self.logger = get_obj_logger(self)
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -137,7 +142,12 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_string("REJECT")
             return
 
-        session = self.session_mgr.create_session(user_name=user_name, user_org="global", user_role="project_admin")
+        request = conn.get_prop(ConnProps.REQUEST)
+        assert isinstance(request, CellMessage)
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        session = self.session_mgr.create_session(
+            user_name=user_name, user_org="global", user_role="project_admin", origin_fqcn=origin
+        )
         conn.append_string("OK")
         conn.append_token(session.token)
 
@@ -150,23 +160,51 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_string("REJECT")
             return
 
-        identity = conn.get_prop(ConnProps.CLIENT_IDENTITY, None)
-        if identity is None:
-            conn.append_string("REJECT")
-            return
-
         user_name = args[1]
+        headers = conn.get_prop(ConnProps.CMD_HEADERS)
+        cert_data = headers.get("cert")
+        signature = headers.get("signature")
 
-        ok = self.authenticator.authenticate(user_name, identity[IdentityKey.NAME], CredentialType.CERT)
+        self.logger.info(f"got cert login headers: {headers=}")
+        engine = conn.get_prop(ConnProps.ENGINE)
+        with engine.new_context() as fl_ctx:
+            identity_verifier = self.cred_keeper.get_id_verifier(fl_ctx)
+            self.logger.info(f"got identity_verifier: {identity_verifier}")
+
+        cert = load_crt_bytes(cert_data)
+        try:
+
+            ok = identity_verifier.verify_common_name(
+                asserter_cert=cert,
+                asserted_cn=user_name,
+                signature=signature,
+                nonce="",
+            )
+            self.logger.info(f"verify common name: {ok=}")
+        except Exception as ex:
+            self.logger.error(f"identity_verifier.verify_common_name got exception: {ex}")
+            traceback.print_exc()
+            ok = False
+
         if not ok:
             conn.append_string("REJECT")
             return
 
+        cert_dict = cert_to_dict(cert)
+        self.logger.info(f"got cert dict: {cert_dict}")
+        identity = get_identity_info(cert_dict)
+
+        request = conn.get_prop(ConnProps.REQUEST)
+        assert isinstance(request, CellMessage)
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+
         session = self.session_mgr.create_session(
-            user_name=identity[IdentityKey.NAME],
+            user_name=user_name,
             user_org=identity.get(IdentityKey.ORG, ""),
             user_role=identity.get(IdentityKey.ROLE, ""),
+            origin_fqcn=origin,
         )
+        self.logger.info(f"created user session for {user_name}")
         conn.append_string("OK")
         conn.append_token(session.token)
 

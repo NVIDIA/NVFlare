@@ -16,6 +16,9 @@
 class ConnProps(object):
     """Constants for connection properties."""
 
+    ADMIN_SERVER = "_adminServer"
+    ENGINE = "_engine"
+    REQUEST = "_request"
     EVENT_ID = "_eventId"
     USER_NAME = "_userName"
     USER_ORG = "_userOrg"
@@ -37,3 +40,5 @@ class ConnProps(object):
     CMD_TIMEOUT = "_cmdTimeout"
     CUSTOM_PROPS = "_customProps"
     CMD_PROPS = "_cmdProps"
+    CMD_HEADERS = "_cmdHeaders"
+    FILE_LOCATION = "_fileLocation"

@@ -36,6 +36,7 @@ class CommandCtxKey(object):
     BYTES_RECEIVER = "bytes_receiver"
     BYTES_SENDER = "bytes_sender"
     CMD_PROPS = "cmd_props"
+    CMD_HEADERS = "cmd_headers"
 
 
 class SendBytesToServer(ABC):
@@ -128,6 +129,12 @@ class CommandContext(SimpleContext):
 
     def get_command_props(self):
         return self.get_prop(CommandCtxKey.CMD_PROPS)
+
+    def set_command_headers(self, value):
+        self.set_prop(CommandCtxKey.CMD_HEADERS, value)
+
+    def get_command_headers(self):
+        return self.get_prop(CommandCtxKey.CMD_HEADERS)
 
 
 class ApiPocValue(object):
@@ -241,3 +248,22 @@ class ServiceFinder(ABC):
 
     def get_command_module(self) -> CommandModule:
         pass
+
+
+class AdminConfigKey:
+    PROJECT_NAME = "project_name"
+    IDENTITY = "identity"
+    SERVER_IDENTITY = "server_identity"
+    CONNECTION_SCHEME = "scheme"
+    CONNECTION_SECURITY = "connection_security"
+    CLIENT_KEY = "client_key"
+    CLIENT_CERT = "client_cert"
+    CA_CERT = "ca_cert"
+    HOST = "host"
+    PORT = "port"
+    PROMPT = "prompt"
+    WITH_FILE_TRANSFER = "with_file_transfer"
+    UPLOAD_DIR = "upload_dir"
+    DOWNLOAD_DIR = "download_dir"
+    CRED_TYPE = "cred_type"
+    USERNAME = "username"

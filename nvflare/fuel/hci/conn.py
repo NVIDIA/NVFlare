@@ -83,16 +83,9 @@ def receive_and_process(sock, process_json_func):
 
 
 class Connection(BaseContext):
-    def __init__(self, sock, server):
-        """Object containing connection information and buffer to build and send a line with socket passed in at init.
-
-        Args:
-            sock: sock for the connection
-            server: server for the connection
-        """
+    def __init__(self):
+        """Object containing connection information and buffer to build and send a line with socket passed in at init."""
         BaseContext.__init__(self)
-        self.sock = sock
-        self.server = server
         self.app_ctx = None
         self.ended = False
         self.request = None
@@ -104,90 +97,45 @@ class Connection(BaseContext):
         self.content_type = None
         self.extra = None
 
-    def _send_line(self, line: str, all_end=False):
-        """If not ``self.ended``, send line with sock."""
-        if self.ended:
-            return
-
-        if all_end:
-            end = ALL_END
-            self.ended = True
-        else:
-            end = LINE_END
-
-        self.sock.sendall(bytes(line + end, "utf-8"))
-
-    def flush_bytes(self, data):
-        self.sock.sendall(data)
-
     def append_table(self, headers: List[str], name=None) -> Table:
         return self.buffer.append_table(headers, name=name)
 
-    def append_string(self, data: str, flush=False, meta: dict = None):
+    def append_string(self, data: str, meta: dict = None):
         self.buffer.append_string(data, meta=meta)
-        if flush:
-            self.flush()
 
-    def append_success(self, data: str, flush=False, meta: dict = None):
+    def append_success(self, data: str, meta: dict = None):
         self.buffer.append_success(data, meta=meta)
-        if flush:
-            self.flush()
 
-    def append_dict(self, data: dict, flush=False, meta: dict = None):
+    def append_dict(self, data: dict, meta: dict = None):
         self.buffer.append_dict(data, meta=meta)
-        if flush:
-            self.flush()
 
-    def append_error(self, data: str, flush=False, meta: dict = None):
+    def append_error(self, data: str, meta: dict = None):
         self.buffer.append_error(data, meta=meta)
-        if flush:
-            self.flush()
 
-    def append_command(self, cmd: str, flush=False):
+    def append_command(self, cmd: str):
         self.buffer.append_command(cmd)
-        if flush:
-            self.flush()
 
-    def append_token(self, token: str, flush=False):
+    def append_token(self, token: str):
         self.buffer.append_token(token)
-        if flush:
-            self.flush()
 
-    def append_shutdown(self, msg: str, flush=False):
+    def append_shutdown(self, msg: str):
         self.buffer.append_shutdown(msg)
-        if flush:
-            self.flush()
 
-    def append_any(self, data, flush=False, meta: dict = None):
+    def append_any(self, data, meta: dict = None):
         if data is None:
             return
 
         if isinstance(data, str):
-            self.append_string(data, flush, meta=meta)
+            self.append_string(data, meta=meta)
         elif isinstance(data, dict):
-            self.append_dict(data, flush, meta)
+            self.append_dict(data, meta)
         else:
             self.append_error("unsupported data type {}".format(type(data)))
 
     def update_meta(self, meta: dict):
         self.buffer.update_meta(meta)
 
-    def flush(self):
-        line = self.buffer.encode()
-        if line is None or len(line) <= 0:
-            return
-
-        self.buffer.reset()
-        self._send_line(line, all_end=False)
-
     def close(self):
-        if self.bytes_sender:
-            # This is for Client side
-            meta = self.buffer.encode()
-            self.bytes_sender.send(self.sock, meta)
-            return
-
-        if not self.binary_mode:
-            # Note: binary_mode is used on Server side
-            self.flush()
-            self._send_line("", all_end=True)
+        line = self.buffer.encode()
+        self.buffer.reset()
+        return line

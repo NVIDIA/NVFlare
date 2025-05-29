@@ -117,11 +117,13 @@ class ProvisionContext(dict):
     def get_workspace(self):
         return self.get(CtxKey.WORKSPACE)
 
-    def yaml_load_template_section(self, section_key: str):
-        return yaml.safe_load(self.get_template_section(section_key))
+    def yaml_load_template_section(self, section_key: str, replacement=None):
+        section = self.build_section_from_template(section_key, replacement)
+        return yaml.safe_load(section)
 
-    def json_load_template_section(self, section_key: str):
-        return json.loads(self.get_template_section(section_key))
+    def json_load_template_section(self, section_key: str, replacement=None):
+        section = self.build_section_from_template(section_key, replacement)
+        return json.loads(section)
 
     def build_from_template(
         self,

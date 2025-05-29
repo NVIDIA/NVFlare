@@ -75,9 +75,6 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None,
     if not secure_train:
         users = {"admin": hash_password("admin")}
 
-    root_cert = server_conf[SSLConstants.ROOT_CERT] if secure_train else None
-    server_cert = server_conf[SSLConstants.CERT] if secure_train else None
-    server_key = server_conf[SSLConstants.PRIVATE_KEY] if secure_train else None
     admin_server = FedAdminServer(
         cell=fl_server.cell,
         fed_admin_interface=fl_server.engine,
@@ -85,12 +82,6 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None,
         cmd_modules=fl_server.cmd_modules,
         file_upload_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
         file_download_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
-        host=server_conf.get("admin_host", "localhost"),
-        port=server_conf.get("admin_port", 5005),
-        ca_cert_file_name=root_cert,
-        server_cert_file_name=server_cert,
-        server_key_file_name=server_key,
-        accepted_client_cns=None,
         download_job_url=server_conf.get("download_job_url", "http://"),
     )
     return admin_server

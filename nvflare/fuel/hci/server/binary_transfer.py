@@ -14,9 +14,12 @@
 
 import os
 
-from nvflare.fuel.hci.binary_proto import send_binary_file
+from nvflare.apis.fl_constant import ReturnCode
+from nvflare.app_common.streamers.file_streamer import FileStreamer
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, StreamChannel, StreamCtxKey, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -37,9 +40,27 @@ class BinaryTransfer:
             self.logger.error(f"not a file: {full_path}")
             return
 
-        self.logger.debug(f"called to send {full_path} ...")
-        bytes_sent = send_binary_file(conn.sock, full_path, "")
-        self.logger.debug(f"finished sending {full_path}: {bytes_sent} bytes sent")
+        request = conn.get_prop(ConnProps.REQUEST)
+        assert isinstance(request, CellMessage)
+        target = request.get_header(MessageHeaderKey.ORIGIN)
+
+        self.logger.info(f"streaming {full_path} to {target} ...")
+        engine = conn.get_prop(ConnProps.ENGINE)
+        stream_ctx = {StreamCtxKey.TX_ID: tx_id}
+        with engine.new_context() as fl_ctx:
+            rc, _ = FileStreamer.stream_file(
+                channel=StreamChannel.DOWNLOAD,
+                topic="file",
+                stream_ctx=stream_ctx,
+                targets=[target],
+                file_name=full_path,
+                fl_ctx=fl_ctx,
+            )
+            if rc != ReturnCode.OK:
+                self.logger.error(f"Failed to stream file {full_path} to {target}")
+                return
+        bytes_sent = FileStreamer.get_file_size(stream_ctx)
+        self.logger.info(f"sent {full_path} to {target}: {bytes_sent} bytes")
 
     @staticmethod
     def tx_path(conn: Connection, tx_id: str, folder_name=None):

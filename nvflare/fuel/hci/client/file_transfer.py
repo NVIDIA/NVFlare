@@ -20,19 +20,13 @@ import uuid
 from pathlib import Path
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.fuel.hci.base64_utils import (
-    b64str_to_binary_file,
-    b64str_to_bytes,
-    b64str_to_text_file,
-    binary_file_to_b64str,
-    text_file_to_b64str,
-)
-from nvflare.fuel.hci.binary_proto import CT_BINARY, receive_all, send_binary_file
+from nvflare.app_common.streamers.file_streamer import FileStreamer
+from nvflare.fuel.hci.base64_utils import b64str_to_bytes
+from nvflare.fuel.hci.client.api import FileWaiter
 from nvflare.fuel.hci.client.event import EventType
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, unzip_all_from_file, zip_directory_to_file
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -41,106 +35,35 @@ from .api_spec import CommandContext, ReceiveBytesFromServer, ReplyProcessor, Se
 from .api_status import APIStatus
 
 
-def _server_cmd_name(name: str):
-    return ftd.SERVER_MODULE_NAME + "." + name
-
-
 class _SendFileToServer(SendBytesToServer):
     def __init__(self, file_name: str):
         self.file_name = file_name
 
     def send(self, sock, meta: str):
-        send_binary_file(sock, self.file_name, meta)
+        result = sock.stream_file(self.file_name, meta)
         os.remove(self.file_name)
+        return result
 
 
 class _ReceiveFileFromServer(ReceiveBytesFromServer):
-    def __init__(self, file_name: str):
+    def __init__(self, file_name: str, tx_id: str):
         self.file_name = file_name
+        self.tx_id = tx_id
         self.num_bytes_received = 0
 
     def receive(self, sock):
-        ct, _, tmp_file_name = receive_all(sock)
-        if ct != CT_BINARY:
-            raise RuntimeError(f"expecting BINARY type {CT_BINARY} but got {ct}")
-        if not tmp_file_name:
-            raise RuntimeError("nothing received from the server")
+        waiter = sock.get_download_waiter(self.tx_id, pop=True)
+        if not waiter:
+            raise RuntimeError("no file waiter!")
+        assert isinstance(waiter, FileWaiter)
+        waiter.wait()
+        stream_ctx = waiter.stream_ctx
+        tmp_file_name = FileStreamer.get_file_location(stream_ctx)
         file_stats = os.stat(tmp_file_name)
         self.num_bytes_received = file_stats.st_size
         Path(os.path.dirname(self.file_name)).mkdir(parents=True, exist_ok=True)
         shutil.move(tmp_file_name, self.file_name)
-
-
-class _DownloadProcessor(ReplyProcessor):
-    """Reply processor to handle downloads."""
-
-    def __init__(self, download_dir: str, str_to_file_func):
-        self.download_dir = download_dir
-        self.str_to_file_func = str_to_file_func
-        self.data_received = False
-        self.table = None
-
-    def reply_start(self, ctx: CommandContext, reply_json):
-        self.data_received = False
-        self.table = Table(["file", "size"])
-
-    def reply_done(self, ctx: CommandContext):
-        if not self.data_received:
-            ctx.set_command_result({"status": APIStatus.ERROR_PROTOCOL, "details": "protocol error - no data received"})
-        else:
-            command_result = ctx.get_command_result()
-            if command_result is None:
-                command_result = {}
-            command_result["status"] = APIStatus.SUCCESS
-            command_result["details"] = self.table
-            ctx.set_command_result(command_result)
-
-    def process_table(self, ctx: CommandContext, table: Table):
-        try:
-            rows = table.rows
-            if len(rows) < 1:
-                # no data
-                ctx.set_command_result({"status": APIStatus.ERROR_PROTOCOL, "details": "protocol error - no file data"})
-                return
-
-            for i in range(len(rows)):
-                if i == 0:
-                    # this is header
-                    continue
-
-                row = rows[i]
-                if len(row) < 1:
-                    ctx.set_command_result(
-                        {
-                            "status": APIStatus.ERROR_PROTOCOL,
-                            "details": "protocol error - missing file name",
-                        }
-                    )
-                    return
-
-                if len(row) < 2:
-                    ctx.set_command_result(
-                        {
-                            "status": APIStatus.ERROR_PROTOCOL,
-                            "details": "protocol error - missing file data",
-                        }
-                    )
-                    return
-
-                file_name = row[0]
-                encoded_str = row[1]
-                full_path = os.path.join(self.download_dir, file_name)
-                num_bytes = self.str_to_file_func(encoded_str, full_path)
-                self.table.add_row([file_name, str(num_bytes)])
-                self.data_received = True
-        except Exception as e:
-            secure_log_traceback()
-            ctx.set_command_result(
-                {
-                    "status": APIStatus.ERROR_RUNTIME,
-                    "details": f"exception processing file: {secure_format_exception(e)}",
-                }
-            )
+        return True
 
 
 class _DownloadFolderProcessor(ReplyProcessor):
@@ -215,34 +138,6 @@ class FileTransferModule(CommandModule):
             name="file_transfer",
             cmd_specs=[
                 CommandSpec(
-                    name="upload_text",
-                    description="upload one or more text files in the upload_dir",
-                    usage="upload_text file_name ...",
-                    handler_func=self.upload_text_file,
-                    visible=False,
-                ),
-                CommandSpec(
-                    name="download_text",
-                    description="download one or more text files in the download_dir",
-                    usage="download_text file_name ...",
-                    handler_func=self.download_text_file,
-                    visible=False,
-                ),
-                CommandSpec(
-                    name="upload_binary",
-                    description="upload one or more binary files in the upload_dir",
-                    usage="upload_binary file_name ...",
-                    handler_func=self.upload_binary_file,
-                    visible=False,
-                ),
-                CommandSpec(
-                    name="download_binary",
-                    description="download one or more binary files in the download_dir",
-                    usage="download_binary file_name ...",
-                    handler_func=self.download_binary_file,
-                    visible=False,
-                ),
-                CommandSpec(
                     name="pull_binary",
                     description="download one binary files in the download_dir",
                     usage="pull_binary control_id file_name",
@@ -304,53 +199,6 @@ class FileTransferModule(CommandModule):
             ],
         )
 
-    def upload_file(self, args, ctx: CommandContext, cmd_name, file_to_str_func):
-        full_cmd_name = _server_cmd_name(cmd_name)
-        if len(args) < 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "syntax error: missing file names"}
-
-        parts = [full_cmd_name]
-        for i in range(1, len(args)):
-            file_name = args[i]
-            full_path = os.path.join(self.upload_dir, file_name)
-            if not os.path.isfile(full_path):
-                return {"status": APIStatus.ERROR_RUNTIME, "details": f"no such file: {full_path}"}
-
-            encoded_string = file_to_str_func(full_path)
-            parts.append(file_name)
-            parts.append(encoded_string)
-
-        command = join_args(parts)
-        api = ctx.get_api()
-        return api.server_execute(command)
-
-    def upload_text_file(self, args, ctx: CommandContext):
-        return self.upload_file(args, ctx, ftd.SERVER_CMD_UPLOAD_TEXT, text_file_to_b64str)
-
-    def upload_binary_file(self, args, ctx: CommandContext):
-        return self.upload_file(args, ctx, ftd.SERVER_CMD_UPLOAD_BINARY, binary_file_to_b64str)
-
-    def download_file(self, args, ctx: CommandContext, cmd_name, str_to_file_func):
-        full_cmd_name = _server_cmd_name(cmd_name)
-        if len(args) < 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "syntax error: missing file names"}
-
-        parts = [full_cmd_name]
-        for i in range(1, len(args)):
-            file_name = args[i]
-            parts.append(file_name)
-
-        command = join_args(parts)
-        reply_processor = _DownloadProcessor(self.download_dir, str_to_file_func)
-        api = ctx.get_api()
-        return api.server_execute(command, reply_processor)
-
-    def download_text_file(self, args, ctx: CommandContext):
-        return self.download_file(args, ctx, ftd.SERVER_CMD_DOWNLOAD_TEXT, b64str_to_text_file)
-
-    def download_binary_file(self, args, ctx: CommandContext):
-        return self.download_file(args, ctx, ftd.SERVER_CMD_DOWNLOAD_BINARY, b64str_to_binary_file)
-
     def _tx_path(self, tx_id: str, folder_name: str):
         return os.path.join(self.download_dir, f"{folder_name}__{tx_id}")
 
@@ -367,7 +215,7 @@ class FileTransferModule(CommandModule):
         # is_end = len(args) > 4
         tx_path = self._tx_path(tx_id, folder_name)
         file_path = os.path.join(tx_path, file_name)
-        receiver = _ReceiveFileFromServer(file_path)
+        receiver = _ReceiveFileFromServer(file_path, tx_id)
         api = ctx.get_api()
         api.fire_session_event(EventType.BEFORE_DOWNLOAD_FILE, f"downloading {file_name} ...")
         api = ctx.get_api()
@@ -422,6 +270,7 @@ class FileTransferModule(CommandModule):
 
         error = None
         for i, file_name in enumerate(file_names):
+            api.set_download_waiter(tx_id)
             parts = [cmd_name, tx_id, folder_name, file_name]
             if i == len(file_names) - 1:
                 # this is the last file
@@ -499,11 +348,9 @@ class FileTransferModule(CommandModule):
 
         # sign folders and files
         api = ctx.get_api()
-        if not api.insecure:
-            # we are not in POC mode
-            client_key_file_path = api.client_key
-            private_key = load_private_key_file(client_key_file_path)
-            sign_folders(full_path, private_key, api.client_cert)
+        client_key_file_path = api.client_key
+        private_key = load_private_key_file(client_key_file_path)
+        sign_folders(full_path, private_key, api.client_cert)
 
         # zip the data
         out_file = os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))
@@ -514,4 +361,5 @@ class FileTransferModule(CommandModule):
         command = join_args(parts)
         sender = _SendFileToServer(out_file)
         ctx.set_bytes_sender(sender)
+        print(f"full command: {command}")
         return api.server_execute(command, cmd_ctx=ctx)
