@@ -410,20 +410,20 @@ class Simulator:
                 )
             # no used devices - make a new device
             return self._make_new_device()
-        else:
-            if len(self.all_devices) > self.num_devices:
-                # We've got max allowed devices - have to pick a used one
-                return self._pick_a_used_device()
 
-            # Should we use a used device or make a new one?
-            # This is decided by device reuse rate.
-            odd = random.uniform(0.0, 1.0)
-            if odd < self.device_reuse_rate:
-                # use a used device
-                return self._pick_a_used_device()
-            else:
-                # use a new device
-                return self._make_new_device()
+        if len(self.all_devices) > self.num_devices:
+            # We've got max allowed devices - have to pick a used one
+            return self._pick_a_used_device()
+
+        # Should we use a used device or make a new one?
+        # This is decided by device reuse rate.
+        odd = random.uniform(0.0, 1.0)
+        if odd < self.device_reuse_rate:
+            # use a used device
+            return self._pick_a_used_device()
+        else:
+            # use a new device
+            return self._make_new_device()
 
     def _do_learn(self, task_data: TaskResponse, device: SimulatedDevice, selection_id):
         """Do the task.
