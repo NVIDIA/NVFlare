@@ -43,6 +43,11 @@ class ModelUpdateDXOAggregator(Aggregator):
 
         # get weights and add to base
         weight_to_add = dxo.data.get("dict")
+        # convert to numpy arrays if they are lists
+        if weight_to_add is not None:
+            for key, value in weight_to_add.items():
+                if isinstance(value, list):
+                    weight_to_add[key] = np.array(value)
         if weight_to_add is None:
             raise ValueError("Model dict is empty, please check the message")
         if self.dict is None:

@@ -151,8 +151,8 @@ class GlobalEvaluator(Widget):
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         # Load the model weights
         global_weights = global_model[ModelLearnableKey.WEIGHTS]
-        # Convert numpy weights to torch weights
-        global_weights = {k: torch.from_numpy(v) for k, v in global_weights.items()}
+        # Convert weights from list to torch tensors
+        global_weights = {k: torch.tensor(v) for k, v in global_weights.items()}
         self.model.load_state_dict(global_weights)
         # Evaluate the model
         metrics = self._eval_model()

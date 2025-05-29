@@ -167,6 +167,8 @@ class ModelUpdateAssessor(Assessor):
             self.log_info(fl_ctx, f"removed old model versions {old_model_versions}")
 
         # update the current model
+        # convert new_model items from numpy arrays to lists for serialization
+        new_model = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in new_model.items()}
         self.current_model = DXO(data_kind=DataKind.WEIGHTS, data=new_model)
 
         # set fl_ctx and fire the event

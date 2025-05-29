@@ -120,7 +120,9 @@ class PTCifar10Processor(DeviceTaskProcessor):
         # Calculate the model param diff
         diff_dict = {}
         for key, param in net.state_dict().items():
-            diff_dict[key] = param.cpu().numpy() - global_model[key].numpy()
+            numpy_param = param.cpu().numpy() - global_model[key].numpy()
+            # Convert numpy array to list for serialization
+            diff_dict[key] = numpy_param.tolist()
         return diff_dict
 
     def process_task(self, task: TaskResponse) -> dict:
