@@ -401,7 +401,7 @@ class Simulator:
         if not self.used_devices:
             # check the number of devices and print warning if it exceeds the limit
             # print warning for at most 10 times
-            if (len(self.all_devices) > self.num_devices) and (self.num_devices <= self.num_devices + 10):
+            if (len(self.all_devices) > self.num_devices) and (len(self.all_devices) <= self.num_devices + 10):
                 self.logger.warning(
                     f"Warning: number of devices ({len(self.all_devices)}) exceeds the preset limit: {self.num_devices}"
                 )
