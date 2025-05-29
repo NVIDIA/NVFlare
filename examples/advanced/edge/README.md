@@ -119,7 +119,10 @@ Next, let's generate job configs for cifar10 via EdgeJob API.
 
 ```commandline
 cd jobs
-python cifar10_sync.py
+python cifar10_job.py --job_name cifar10_sync_job --simulation_config_file configs/cifar10_sync_config.json --device_reuse --const_selection
+python cifar10_job.py --job_name cifar10_sync_lcp_job --device_reuse --const_selection
+python cifar10_job.py --job_name cifar10_async_job --simulation_config_file configs/cifar10_async_config.json --min_hole_to_fill 1 --max_model_history 5 --num_updates_for_model 20 --device_selection_size 20 --device_reuse
+python cifar10_job.py --job_name cifar10_async_lcp_job --min_hole_to_fill 1 --max_model_history 5 --num_updates_for_model 20 --device_selection_size 20 --device_reuse
 cd ..
 ```
 
@@ -134,7 +137,7 @@ Start the admin console to interact with the NVFlare system:
 /tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/startup/fl_admin.sh
 ```
 
-Submit the job:
+For simulations performed directly at leaf nodes, simply submit the job:
 ```
 submit_job cifar10_sync_job
 ```
