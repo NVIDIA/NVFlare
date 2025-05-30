@@ -216,6 +216,9 @@ class SupervisedLearner(Learner):
         dxo = from_shareable(shareable)
         global_weights = dxo.data
 
+        # remove model. from the keys
+        global_weights = {k.replace("model.", "", 1): v for k, v in global_weights.items()}
+
         # Before loading weights, tensors might need to be reshaped to support HE for secure aggregation.
         local_var_dict = self.model.state_dict()
         model_keys = global_weights.keys()
@@ -264,6 +267,8 @@ class SupervisedLearner(Learner):
             if np.any(np.isnan(model_diff[name])):
                 self.system_panic(f"{name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        # add model. to the keys
+        model_diff = {f"model.{k}": v for k, v in model_diff.items()}
 
         # flush the tb writer
         self.writer.flush()
@@ -290,6 +295,9 @@ class SupervisedLearner(Learner):
         # update local model weights with received weights
         dxo = from_shareable(shareable)
         global_weights = dxo.data
+
+        # remove only the first "model." from the keys
+        global_weights = {k.replace("model.", "", 1): v for k, v in global_weights.items()}
 
         # Before loading weights, tensors might need to be reshaped to support HE for secure aggregation.
         local_var_dict = self.model.state_dict()
@@ -325,7 +333,7 @@ class SupervisedLearner(Learner):
             # validation metrics will be averaged with weights at server end for best model record
             metric_dxo = DXO(
                 data_kind=DataKind.METRICS,
-                data={MetaKey.INITIAL_METRICS: global_metric},
+                data={MetaKey.INITIAL_METRICS: {"accuracy": global_metric}},
                 meta={},
             )
             metric_dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, len(self.valid_loader))

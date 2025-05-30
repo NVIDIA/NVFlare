@@ -77,7 +77,7 @@ def partition_data(data_path, site_num, train, valid, out_path):
             new_item["label"] = mask_files[idx].replace(data_path + "/", "")
             json_data["validation"].append(new_item)
         # save json data for each site
-        with open(out_path + f"/client_{site_id}.json", "w") as f:
+        with open(out_path + f"/site-{site_id + 1}.json", "w") as f:
             json.dump(json_data, f, indent=4)
 
 

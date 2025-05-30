@@ -106,9 +106,11 @@ def main():
         # (3) receives FLModel from NVFlare
         input_model = flare.receive()
         print(f"current_round={input_model.current_round}")
+        # remove the "model." from param dict
+        input_model_params = {k.replace("model.", ""): v for k, v in input_model.params.items()}
 
         # (4) loads model from NVFlare and sends it to GPU
-        trainer.network.load_state_dict(input_model.params)
+        trainer.network.load_state_dict(input_model_params)
         trainer.network.to(DEVICE)
 
         trainer.run()
@@ -150,12 +152,13 @@ def main():
             return correct / total
 
         # (6) evaluate on received model for model selection
-        accuracy = evaluate(input_model.params)
+        accuracy = evaluate(input_model_params)
         summary_writer.add_scalar(tag="global_model_accuracy", scalar=accuracy, global_step=input_model.current_round)
 
         # (7) construct trained FL model
+        # add model. to the keys
         output_model = flare.FLModel(
-            params=trainer.network.cpu().state_dict(),
+            params={f"model.{k}": v for k, v in trainer.network.cpu().state_dict().items()},
             metrics={"accuracy": accuracy},
             meta={"NUM_STEPS_CURRENT_ROUND": steps},
         )
