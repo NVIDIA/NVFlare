@@ -82,10 +82,11 @@ AUTO_LOGIN_INTERVAL = 1.5
 
 class FileWaiter(threading.Event):
 
-    def __init__(self):
+    def __init__(self, tx_id):
         super().__init__()
+        self.tx_id = tx_id
         self.stream_ctx = None
-        self.last_progress_time = None
+        self.last_progress_time = time.time()
 
     def get_stream_ctx(self):
         return self.stream_ctx
@@ -277,6 +278,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.client_key = admin_config.get(AdminConfigKey.CLIENT_KEY)
         self.host = admin_config.get(AdminConfigKey.HOST, "localhost")
         self.port = admin_config.get(AdminConfigKey.PORT, 8002)
+        self.file_download_progress_timeout = admin_config.get(AdminConfigKey.FILE_DOWNLOAD_PROGRESS_TIMEOUT, 5.0)
         self.user_name = user_name
         self.event_handlers = event_handlers
 
@@ -478,14 +480,16 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         waiter.stream_ctx = stream_ctx
         waiter.set()
 
-    def get_download_waiter(self, tx_id: str, pop=False):
-        if pop:
-            return self.file_download_waiters.pop(tx_id, None)
-        else:
-            return self.file_download_waiters.get(tx_id)
+    def get_download_waiter(self, tx_id: str):
+        return self.file_download_waiters.get(tx_id)
+
+    def pop_download_waiter(self, tx_id: str):
+        return self.file_download_waiters.pop(tx_id, None)
 
     def set_download_waiter(self, tx_id: str):
-        self.file_download_waiters[tx_id] = FileWaiter()
+        w = FileWaiter(tx_id)
+        self.file_download_waiters[tx_id] = w
+        return w
 
     def get_cell(self):
         return self.cell
@@ -702,9 +706,19 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             req_headers = None
 
         bytes_sender = ctx.get_bytes_sender()
+        receiver = ctx.get_bytes_receiver()
         if bytes_sender:
-            print("sending binary")
             reply = bytes_sender.send(self, conn.close())
+        elif receiver:
+            # fire and forget so we don't wait
+            request = CellMessage(payload=conn.close(), headers=req_headers)
+            self.cell.fire_and_forget(
+                channel=CellChannel.HCI,
+                topic="command",
+                targets=FQCN.ROOT_SERVER,
+                message=request,
+            )
+            reply = None
         else:
             request = CellMessage(payload=conn.close(), headers=req_headers)
             cell_reply = self.cell.send_request(
@@ -716,7 +730,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             )
             reply = cell_reply.payload
 
-        receiver = ctx.get_bytes_receiver()
         if not receiver:
             try:
                 json_data = validate_proto(reply)

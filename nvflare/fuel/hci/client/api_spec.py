@@ -267,3 +267,4 @@ class AdminConfigKey:
     DOWNLOAD_DIR = "download_dir"
     CRED_TYPE = "cred_type"
     USERNAME = "username"
+    FILE_DOWNLOAD_PROGRESS_TIMEOUT = "file_download_progress_timeout"

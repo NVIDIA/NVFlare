@@ -21,17 +21,15 @@ from pathlib import Path
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.app_common.streamers.file_streamer import FileStreamer
-from nvflare.fuel.hci.base64_utils import b64str_to_bytes
 from nvflare.fuel.hci.client.api import FileWaiter
 from nvflare.fuel.hci.client.event import EventType
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, unzip_all_from_file, zip_directory_to_file
+from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_file, zip_directory_to_file
 from nvflare.lighter.utils import load_private_key_file, sign_folders
-from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api_spec import CommandContext, ReceiveBytesFromServer, ReplyProcessor, SendBytesToServer
+from .api_spec import CommandContext, ReceiveBytesFromServer, SendBytesToServer
 from .api_status import APIStatus
 
 
@@ -46,71 +44,38 @@ class _SendFileToServer(SendBytesToServer):
 
 
 class _ReceiveFileFromServer(ReceiveBytesFromServer):
-    def __init__(self, file_name: str, tx_id: str):
+    def __init__(self, api, file_name: str, waiter: FileWaiter, progress_timeout=5.0):
+        self.api = api
         self.file_name = file_name
-        self.tx_id = tx_id
+        self.waiter = waiter
+        self.progress_timeout = progress_timeout
         self.num_bytes_received = 0
 
     def receive(self, sock):
-        waiter = sock.get_download_waiter(self.tx_id, pop=True)
-        if not waiter:
-            raise RuntimeError("no file waiter!")
-        assert isinstance(waiter, FileWaiter)
-        waiter.wait()
-        stream_ctx = waiter.stream_ctx
+        result_received = False
+        while True:
+            if self.waiter.wait(timeout=0.5):
+                # wait ended normally
+                result_received = True
+                break
+
+            # is there any progress?
+            if time.time() - self.waiter.last_progress_time > self.progress_timeout:
+                # no progress for too long
+                break
+
+        self.api.pop_download_waiter(self.waiter.tx_id)
+        if not result_received:
+            print(f"failed to receive file {self.file_name}: no progress for {self.progress_timeout} seconds")
+            return False
+
+        stream_ctx = self.waiter.stream_ctx
         tmp_file_name = FileStreamer.get_file_location(stream_ctx)
         file_stats = os.stat(tmp_file_name)
         self.num_bytes_received = file_stats.st_size
         Path(os.path.dirname(self.file_name)).mkdir(parents=True, exist_ok=True)
         shutil.move(tmp_file_name, self.file_name)
         return True
-
-
-class _DownloadFolderProcessor(ReplyProcessor):
-    """Reply processor for handling downloading directories."""
-
-    def __init__(self, download_dir: str):
-        self.download_dir = download_dir
-        self.data_received = False
-
-    def reply_start(self, ctx: CommandContext, reply_json):
-        self.data_received = False
-
-    def reply_done(self, ctx: CommandContext):
-        if not self.data_received:
-            ctx.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": "protocol error - no data received"})
-
-    def process_error(self, ctx: CommandContext, err: str):
-        self.data_received = True
-        ctx.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": err})
-
-    def process_string(self, ctx: CommandContext, item: str):
-        try:
-            self.data_received = True
-            if item.startswith(ftd.DOWNLOAD_URL_MARKER):
-                ctx.set_command_result(
-                    {
-                        "status": APIStatus.SUCCESS,
-                        "details": item,
-                    }
-                )
-            else:
-                data_bytes = b64str_to_bytes(item)
-                unzip_all_from_bytes(data_bytes, self.download_dir)
-                ctx.set_command_result(
-                    {
-                        "status": APIStatus.SUCCESS,
-                        "details": "Downloaded to dir {}".format(self.download_dir),
-                    }
-                )
-        except Exception as e:
-            secure_log_traceback()
-            ctx.set_command_result(
-                {
-                    "status": APIStatus.ERROR_RUNTIME,
-                    "details": f"exception processing reply: {secure_format_exception(e)}",
-                }
-            )
 
 
 class FileTransferModule(CommandModule):
@@ -128,7 +93,6 @@ class FileTransferModule(CommandModule):
 
         self.cmd_handlers = {
             ftd.PUSH_FOLDER_FQN: self.push_folder,
-            ftd.DOWNLOAD_FOLDER_FQN: self.download_folder,
             ftd.PULL_BINARY_FQN: self.pull_binary_file,
             ftd.PULL_FOLDER_FQN: self.pull_folder,
         }
@@ -149,13 +113,6 @@ class FileTransferModule(CommandModule):
                     description="Submit application to the server",
                     usage="submit_job job_folder",
                     handler_func=self.push_folder,
-                    visible=False,
-                ),
-                CommandSpec(
-                    name="download_folder",
-                    description="download job contents from the server",
-                    usage="download_job job_id",
-                    handler_func=self.download_folder,
                     visible=False,
                 ),
                 CommandSpec(
@@ -212,13 +169,12 @@ class FileTransferModule(CommandModule):
         tx_id = args[1]
         folder_name = args[2]
         file_name = args[3]
-        # is_end = len(args) > 4
         tx_path = self._tx_path(tx_id, folder_name)
         file_path = os.path.join(tx_path, file_name)
-        receiver = _ReceiveFileFromServer(file_path, tx_id)
         api = ctx.get_api()
+        waiter = api.set_download_waiter(tx_id)
+        receiver = _ReceiveFileFromServer(api, file_path, waiter, api.file_download_progress_timeout)
         api.fire_session_event(EventType.BEFORE_DOWNLOAD_FILE, f"downloading {file_name} ...")
-        api = ctx.get_api()
         ctx.set_bytes_receiver(receiver)
         download_start = time.time()
         result = api.server_execute(ctx.get_command(), cmd_ctx=ctx)
@@ -270,7 +226,6 @@ class FileTransferModule(CommandModule):
 
         error = None
         for i, file_name in enumerate(file_names):
-            api.set_download_waiter(tx_id)
             parts = [cmd_name, tx_id, folder_name, file_name]
             if i == len(file_names) - 1:
                 # this is the last file
@@ -313,19 +268,6 @@ class FileTransferModule(CommandModule):
         # all rename attempts have failed - keep the original destination name
         return destination
 
-    def download_folder(self, args, ctx: CommandContext):
-        cmd_entry = ctx.get_command_entry()
-        assert isinstance(cmd_entry, CommandEntry)
-
-        if len(args) != 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: {}".format(cmd_entry.usage)}
-        job_id = args[1]
-        parts = [cmd_entry.full_command_name(), job_id]
-        command = join_args(parts)
-        reply_processor = _DownloadFolderProcessor(self.download_dir)
-        api = ctx.get_api()
-        return api.server_execute(command, reply_processor)
-
     def info(self, args, ctx: CommandContext):
         msg = f"Local Upload Source: {self.upload_dir}\n"
         msg += f"Local Download Destination: {self.download_dir}\n"
@@ -361,5 +303,4 @@ class FileTransferModule(CommandModule):
         command = join_args(parts)
         sender = _SendFileToServer(out_file)
         ctx.set_bytes_sender(sender)
-        print(f"full command: {command}")
         return api.server_execute(command, cmd_ctx=ctx)
