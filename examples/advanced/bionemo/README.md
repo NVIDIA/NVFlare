@@ -21,6 +21,6 @@ To set up your environment, simply run (outside this notebook):
 ./start_bionemo.sh
 ```
 
-This script will automatically pull the [BioNeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara/containers/bionemo-framework) (tested with version nvcr.io/nvidia/clara/bionemo-framework:2.5) and launch Jupyter Lab at http://hostname:8888. Open that URL in your browser and access this notebook.
+This script will automatically pull the [BioNeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara/containers/bionemo-framework) (tested with version nvcr.io/nvidia/clara/bionemo-framework:2.5) and launch Jupyter Lab at "http://hostname:8888". Open that URL in your browser and access this notebook.
 
 For detailed setup guidance, refer to the [BioNeMo User Guide](https://docs.nvidia.com/bionemo-framework/latest/user-guide/).
