@@ -13,16 +13,14 @@ In this repo you will find two notebooks under the `task_fitting` and `downstrea
 
 ## Requirements
 
-Download and run the [BioNeMo docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara/containers/bionemo-framework).
-> **Note:** The examples here were tested with `nvcr.io/nvidia/clara/bionemo-framework:2.5`
+<div class="alert alert-block alert-info"> <b>NOTE:</b> This notebook is designed to run inside the BioNeMo Framework Docker container. Follow these [instructions](https://docs.nvidia.com/ai-enterprise/deployment/vmware/latest/docker.html) to set up your Docker environment and execute the following bash script before opening this notebook.</div>
 
-We recommend following the [User Guide](https://docs.nvidia.com/bionemo-framework/latest/user-guide/)
-on how to get started with BioNeMo 2.
+To set up your environment, simply run (outside this notebook):
 
-Start the container and Jupyter Lab to run the NVFlare experiments with NVFlare using
-```commandline
+```bash
 ./start_bionemo.sh
 ```
-It will start Jupyter Lab at `http://hostname:8888`.
 
-For information about how to get started with BioNeMo refer to the [documentation](https://docs.nvidia.com/bionemo-framework/latest).
+This script will automatically pull the [BioNeMo Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/clara/containers/bionemo-framework) (tested with version nvcr.io/nvidia/clara/bionemo-framework:2.5) and launch Jupyter Lab at http://hostname:8888. Open that URL in your browser and access this notebook.
+
+For detailed setup guidance, refer to the [BioNeMo User Guide](https://docs.nvidia.com/bionemo-framework/latest/user-guide/).
