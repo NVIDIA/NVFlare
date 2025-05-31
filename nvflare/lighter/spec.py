@@ -19,14 +19,48 @@ from .entity import Project
 
 
 class Builder(ABC):
+    """Abstract base class for FL startup kit builders.
+
+    A Builder is responsible for generating configuration or content
+    used during federated learning provisioning. Builders participate in
+    a three-phase lifecycle:
+
+    1. `initialize(project, ctx)` – Prepare any resources or context needed for the build.
+    2. `build(project, ctx)` – Perform the core build logic, modifying the context.
+    3. `finalize(project, ctx)` – Clean up, validate, or finalize build outputs.
+
+    All builders registered in a provision workflow are executed in sequence.
+
+    The `finalize` phase is executed **in reverse order** from the other phases. This
+    allows builders to finalize or clean up in a specific sequence when multiple builders
+    are involved.
+    """
+
     def initialize(self, project: Project, ctx: ProvisionContext):
+        """Prepare the builder with any necessary pre-processing.
+
+        Args:
+            project (Project): The project to be provisioned.
+            ctx (ProvisionContext): Context shared across builders.
+        """
         pass
 
-    @abstractmethod
     def build(self, project: Project, ctx: ProvisionContext):
+        """Execute the main build logic for this builder.
+
+        Args:
+            project (Project): The project to be provisioned.
+            ctx (ProvisionContext): Context shared across builders.
+        """
         pass
 
     def finalize(self, project: Project, ctx: ProvisionContext):
+        """Finalize the build process and perform any cleanup.
+
+        Args:
+            project (Project): The project to be provisioned.
+            ctx (ProvisionContext): Context shared across builders.
+        """
         pass
 
 
