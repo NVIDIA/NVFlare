@@ -168,3 +168,6 @@ audit.log
 # python
 __pycache__
 .pyc
+
+# Ignore VM images
+.qcow2
