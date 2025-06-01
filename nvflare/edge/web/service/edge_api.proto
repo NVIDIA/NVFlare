@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option objc_class_prefix = "EDGE";
+
+package edgeapi;
+
+// Interface exported by the server.
+service EdgeApi {
+
+  rpc Query(Request) returns (Reply) {}
+
+}
+
+message Request {
+  string type = 1;
+  string method = 2;
+  bytes header = 3;  // JSON string
+  bytes payload = 4;  // JSON string
+}
+
+message Reply {
+  string status = 1;
+  bytes payload = 2;  // JSON string
+}

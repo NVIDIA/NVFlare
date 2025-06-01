@@ -1,5 +1,7 @@
-nvflare~=2.6.0rc
+nvflare~=2.6.0
 torch
 torchvision
-tensorboard
 mlflow
+jsonargparse[signatures]>=4.17.0
+pytorch_lightning
+

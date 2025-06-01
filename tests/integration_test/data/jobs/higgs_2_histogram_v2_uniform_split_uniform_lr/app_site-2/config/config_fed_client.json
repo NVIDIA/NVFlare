@@ -1,0 +1,42 @@
+{
+    "format_version": 2,
+    "executors": [
+        {
+            "tasks": [
+                "*"
+            ],
+            "executor": {
+                "path": "nvflare.app_opt.xgboost.histogram_based_v2.fed_executor.FedXGBHistogramExecutor",
+                "args": {
+                    "data_loader_id": "dataloader",
+                    "metrics_writer_id": "metrics_writer"
+                }
+            }
+        }
+    ],
+    "components": [
+        {
+            "id": "dataloader",
+            "path": "higgs_data_loader.HIGGSDataLoader",
+            "args": {
+                "data_split_filename": "/tmp/nvflare/dataset/xgboost_higgs_horizontal/2_uniform/data_site-2.json"
+            }
+        },
+        {
+            "id": "metrics_writer",
+            "path": "nvflare.app_opt.tracking.tb.tb_writer.TBWriter",
+            "args": {}
+        },
+        {
+            "id": "event_to_fed",
+            "path": "nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent",
+            "args": {
+                "events_to_convert": [
+                    "analytix_log_stats"
+                ]
+            }
+        }
+    ],
+    "task_data_filters": [],
+    "task_result_filters": []
+}

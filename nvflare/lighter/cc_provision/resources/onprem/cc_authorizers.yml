@@ -1,0 +1,13 @@
+cc_authorizers:
+  - id: "gpu_authorizer"
+    path: "nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer"
+    args: {}
+  - id: "aci_authorizer"
+    path: "nvflare.app_opt.confidential_computing.aci_authorizer.ACIAuthorizer"
+    args: {}
+  - id: "tdx_authorizer"
+    path: "nvflare.app_opt.confidential_computing.tdx_authorizer.TDXAuthorizer"
+    args: {}
+  - id: "snp_authorizer"
+    path: "nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer"
+    args: {}

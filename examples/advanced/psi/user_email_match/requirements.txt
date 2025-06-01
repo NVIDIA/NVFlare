@@ -1,2 +1,2 @@
-openmined-psi==2.0.5
+openmined-psi>=2.0.5
 pandas

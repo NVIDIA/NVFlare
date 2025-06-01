@@ -44,14 +44,17 @@ To install the [current release](https://pypi.org/project/nvflare/):
 ```
 $ python3 -m pip install nvflare
 ```
+
+For detailed installation please refer to [NVIDIA FLARE installation](https://nvflare.readthedocs.io/en/main/installation.html).
+
 ## Getting Started
 
 * To get started, visit our NVFLARE [website](https://nvidia.github.io/NVFlare/), which includes:
   * Comprehensive documentation, technical blogs, tutorials, and videos
   * Slides and recordings of real-world federated learning use cases from past NVFLARE Day Events. 
   * Tools, API guides, CLI tutorials, training materials, and extensive examples
-* For hands-on learning, try our [step-by-step walkthroughs](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/hello-world/step-by-step) using consistent datasets.
-* Learn how to adapt your centralized training code with our guide on [converting to federated learning](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/hello-world/ml-to-fl).
+* For hands-on learning, try our [step-by-step walkthroughs](https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step) using consistent datasets.
+* Learn how to adapt your centralized training code with our guide on [converting to federated learning](https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/ml-to-fl).
 
 * Structured, self-paced learning is available through curated tutorials and training paths on the website.
   * DLI courses:
@@ -64,7 +67,7 @@ $ python3 -m pip install nvflare
 
 ## Community
 
-We welcome community contributions! Please refer to the [contributing guidelines](https://github.com/NVIDIA/NVFlare/blob/main/CONTRIBUTING.md) for more details.
+We welcome community contributions! Please refer to the [contributing guidelines](./CONTRIBUTING.md) for more details.
 
 Ask and answer questions, share ideas, and engage with other community members at [NVFlare Discussions](https://github.com/NVIDIA/NVFlare/discussions).
 
@@ -75,4 +78,4 @@ Take a look at our growing list of [talks and publications](https://nvflare.read
 
 ## License
 
-NVIDIA FLARE is released under an [Apache 2.0 license](https://github.com/NVIDIA/NVFlare/blob/main/LICENSE).
+NVIDIA FLARE is released under an [Apache 2.0 license](./LICENSE).

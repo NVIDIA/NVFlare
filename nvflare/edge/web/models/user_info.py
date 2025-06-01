@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.edge.web.models.base_model import BaseModel
+from nvflare.edge.web.models.base_model import BaseModel, EdgeProtoKey
 
 
 class UserInfo(BaseModel):
@@ -33,3 +33,15 @@ class UserInfo(BaseModel):
 
         if kwargs:
             self.update(kwargs)
+
+    @staticmethod
+    def extract_from_dict(d: dict):
+        error = ""
+        user_info_dict = d.pop(EdgeProtoKey.USER_INFO, None)
+        if user_info_dict:
+            user_info = UserInfo()
+            user_info.update(user_info_dict)
+        else:
+            error = "missing user_info"
+            user_info = None
+        return error, user_info

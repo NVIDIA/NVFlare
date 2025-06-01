@@ -25,6 +25,17 @@ In this setup:
 
 ---
 
+## Example 3: Lightning logger with MLflow Tracking
+
+In this setup:
+
+- The client uses the lightning specific flare.logger to collect training metrics.
+- Metrics are streamed to the server-side receiver.
+- The server receiver then sends the metrics to an MLflow server (either remote or local).
+- The same metrics can optionally be concurrently sent to TensorBoard for visualization.
+
+---
+
 ## Configuration Flexibility
 
 FLARE allows seamless switching between centralized and decentralized experiment tracking by modifying only the configuration:
