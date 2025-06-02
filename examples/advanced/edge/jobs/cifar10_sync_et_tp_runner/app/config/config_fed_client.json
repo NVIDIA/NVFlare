@@ -1,0 +1,40 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": ["train"],
+      "executor": {
+        "path": "et_edge_model_executor.ETEdgeModelExecutor",
+        "args": {
+          "aggr_factory_id": "aggr_factory",
+          "max_model_versions": 3,
+          "update_timeout": 100.0,
+          "input_shape": [4, 3, 32, 32],
+          "output_shape": [4],
+          "et_model": {
+            "path": "model.TrainingNet",
+            "args": {}
+          }
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
+  "components": [
+    {
+      "id": "aggr_factory",
+      "path": "nvflare.edge.aggregators.model_update_dxo_factory.ModelUpdateDXOAggrFactory",
+      "args": {}
+    },
+    {
+      "id": "tp_runner",
+      "path": "nvflare.edge.widgets.tp_runner.TPRunner",
+      "args": {
+        "config_file": "{JOB_CONFIG_DIR}/tp_config.json"
+      }
+    }
+  ]
+}

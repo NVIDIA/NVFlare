@@ -28,6 +28,7 @@ public class Connection: ObservableObject {
     private let resultEndpoint = "result"
     private let scheme = "http"
     private var capabilities: [String: Any] = ["methods": []]
+    private var currentCookie: JSONValue?
 
     public var isValid: Bool {
         return !hostname.isEmpty && port > 0 && port <= 65535
@@ -44,6 +45,10 @@ public class Connection: ObservableObject {
     
     func setCapabilities(_ capabilities: [String: Any]) {
         self.capabilities = capabilities
+    }
+    
+    public func resetCookie() {
+        currentCookie = nil
     }
     
     private func getURL(for endpoint: String) -> URL? {
@@ -88,9 +93,20 @@ public class Connection: ObservableObject {
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
+            print("Error: Response is not HTTPURLResponse")
             throw NVFlareError.jobFetchFailed
         }
-        
+        print("Response Status Code: \(httpResponse.statusCode)")
+        print("Response Headers: \(httpResponse.allHeaderFields)")
+        // Print raw data as JSON for easy structure inspection
+        if let jsonObject = try? JSONSerialization.jsonObject(with: data),
+           let prettyData = try? JSONSerialization.data(withJSONObject: jsonObject, options: .prettyPrinted),
+           let prettyString = String(data: prettyData, encoding: .utf8) {
+            print("Response JSON Structure:")
+            print(prettyString)
+        } else {
+            print("Raw Data (hex): \(data.map { String(format: "%02x", $0) }.joined())")
+        }
         // First decode the response to get potential error messages
         let jobResponse = try JSONDecoder().decode(JobResponse.self, from: data)
         
@@ -138,7 +154,8 @@ public class Connection: ObservableObject {
         }
         
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(deviceId, forHTTPHeaderField: "X-Flare-Device-ID")
         
         // Convert deviceInfo to JSON string
@@ -149,6 +166,16 @@ public class Connection: ObservableObject {
         
         // Empty user info for now
         request.setValue("{}", forHTTPHeaderField: "X-Flare-User-Info")
+        
+        let requestBody: [String: Any]
+
+        if let cookie = currentCookie {
+            requestBody = ["cookie": cookie.jsonObject]
+        } else {
+            requestBody = [:]  // empty dictionary means empty JSON object
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
         print("Sending request: \(request.httpMethod!) \(request.url!)")
         print("Headers: \(request.allHTTPHeaderFields ?? [:])")
@@ -168,8 +195,10 @@ public class Connection: ObservableObject {
         case 200:
             switch taskResponse.status {
             case "OK":
+                // TODO:: check taskResponse cookie somehow regardless of status
+                currentCookie = taskResponse.cookie
                 return taskResponse
-            case "FINISHED":
+            case "DONE":
                 return taskResponse
             case "RETRY":
                 if let retryWait = taskResponse.retryWait {
@@ -217,9 +246,6 @@ public class Connection: ObservableObject {
             throw NVFlareError.trainingFailed("Invalid URL")
         }
         
-        // Prepare request body
-        let body = try JSONSerialization.data(withJSONObject: ["result": weightDiff])
-        
         // Create request
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -234,7 +260,19 @@ public class Connection: ObservableObject {
         
         // Empty user info for now
         request.setValue("{}", forHTTPHeaderField: "X-Flare-User-Info")
-        request.httpBody = body
+        
+        guard let cookie = currentCookie else {
+            throw NVFlareError.authError("No cookie found")
+        }
+        
+        // Prepare request body
+        let requestBody: [String: Any] = [
+            "result": weightDiff,
+            "cookie": cookie.jsonObject
+        ]
+        
+        // Serialize to JSON
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
         print("Sending request: \(request.httpMethod!) \(request.url!)")
         print("Headers: \(request.allHTTPHeaderFields ?? [:])")

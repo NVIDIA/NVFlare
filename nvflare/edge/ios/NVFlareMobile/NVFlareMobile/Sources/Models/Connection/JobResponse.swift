@@ -10,7 +10,7 @@ struct JobResponse: Decodable {
     let status: String
     let jobId: String?
     let jobName: String?
-    let jobMeta: [String: AnyDecodable]?  // Use AnyDecodable wrapper
+    let jobData: [String: AnyDecodable]?  // Use AnyDecodable wrapper
     let method: String?
     let retryWait: Int?
     let message: String?
@@ -20,7 +20,7 @@ struct JobResponse: Decodable {
         case status
         case jobId = "job_id"
         case jobName = "job_name"
-        case jobMeta = "job_meta"
+        case jobData = "job_data"
         case method
         case retryWait = "retry_wait"
         case message
@@ -56,19 +56,18 @@ struct AnyDecodable: Decodable {
 
 extension JobResponse {
     func toJob() throws -> Job {
-        guard let jobId = self.jobId,
-              let jobMeta = self.jobMeta else {
-            throw NVFlareError.invalidMetadata("Can't parse job metadata")
+        guard let jobId = self.jobId else {
+            throw NVFlareError.invalidRequest("Can't convert JobResponse to Job")
         }
         
-        // Convert AnyDecodable dictionary to [String: Any]
-        let metaDict = Dictionary(uniqueKeysWithValues:
-            jobMeta.map { (key, value) in (key, value.value) }
-        )
+//        // Convert AnyDecodable dictionary to [String: Any]
+//        let configDict = Dictionary(uniqueKeysWithValues:
+//            jobData.map { (key, value) in (key, value.value) }
+//        )
+//        
+//        // Create JobMeta with defaults if values missing
+//        let trainingConfig = TrainingConfig(from: configDict)
         
-        // Create JobMeta with defaults if values missing
-        let meta = JobMeta(from: metaDict)
-        
-        return Job(id: jobId, meta: meta, status: "running")
+        return Job(id: jobId, status: "running")
     }
 }

@@ -14,31 +14,7 @@
 
 import torch
 import torch.nn as nn
-from executorch.exir import to_edge
-from torch.export import export
-from torch.export.experimental import _export_forward_backward
 from torch.nn import functional as F
-import base64
-
-def export_model_to_bytes(net: nn.Module, input_shape, output_shape):
-    input_tensor = torch.randn(input_shape)
-    label_tensor = torch.ones(output_shape, dtype=torch.int64)
-    model_buffer = export_model(net, input_tensor, label_tensor).buffer
-    base64_encoded = base64.b64encode(model_buffer).decode("utf-8")
-    return base64_encoded
-
-
-def export_model(net: nn.Module, input_tensor_example, label_tensor_example):
-    # Captures the forward graph. The graph will look similar to the model definition now.
-    # Will move to export_for_training soon which is the api planned to be supported in the long term.
-    ep = export(net, (input_tensor_example, label_tensor_example), strict=True)
-    # Captures the backward graph. The exported_program now contains the joint forward and backward graph.
-    ep = _export_forward_backward(ep)
-    # Lower the graph to edge dialect.
-    ep = to_edge(ep)
-    # Lower the graph to executorch.
-    ep = ep.to_executorch()
-    return ep
 
 
 class Cifar10ConvNet(nn.Module):
@@ -61,26 +37,12 @@ class Cifar10ConvNet(nn.Module):
         return x
 
 
-class XorNet(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear1 = nn.Linear(2, 4)
-        self.sigmoid_1 = nn.Sigmoid()
-        self.linear2 = nn.Linear(4, 2)
-
-    def forward(self, x):
-        x = self.linear1(x)
-        x = self.sigmoid_1(x)
-        x = self.linear2(x)
-        return x
-
-
 # On device training requires the loss to be embedded in the model (and be the first output).
 # We wrap the original model here and add the loss calculation. This will be the model we export.
 class TrainingNet(nn.Module):
-    def __init__(self, net):
+    def __init__(self):
         super().__init__()
-        self.net = net
+        self.net = Cifar10ConvNet()
         self.loss = nn.CrossEntropyLoss()
 
     def forward(self, input, label):

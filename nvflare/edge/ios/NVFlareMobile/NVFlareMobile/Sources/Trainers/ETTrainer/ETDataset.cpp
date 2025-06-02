@@ -8,7 +8,7 @@
 using namespace executorch::extension;
 
 // Helper function to load CIFAR-10 batch and normalize pixel values to [0,1]
-static std::vector<CIFARImage> load_cifar10_batch(std::istream& dataStream) {
+static std::vector<CIFARImage> load_cifar10_batch(std::istream& dataStream, size_t maxImages) {
     std::vector<CIFARImage> dataset;
     
     // Calculate number of images from file size
@@ -26,6 +26,8 @@ static std::vector<CIFARImage> load_cifar10_batch(std::istream& dataStream) {
     if (numImages == 0) {
         return dataset;
     }
+    
+    numImages = std::min(numImages, maxImages);
     
     dataset.reserve(numImages);
     
@@ -58,7 +60,7 @@ static std::vector<CIFARImage> load_cifar10_batch(std::istream& dataStream) {
 // CIFAR10Dataset implementation
 CIFAR10Dataset::CIFAR10Dataset(std::istream& dataStream, bool shuffle) 
     : shouldShuffle(shuffle) {
-    images = load_cifar10_batch(dataStream);
+    images = load_cifar10_batch(dataStream, maxImages);
     indices.resize(images.size());
     std::iota(indices.begin(), indices.end(), 0);
     reset();

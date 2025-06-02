@@ -1,0 +1,40 @@
+{
+  "format_version": 2,
+  "workflows": [
+    {
+      "id": "scatter_and_gather",
+      "path": "nvflare.edge.controllers.sage.ScatterAndGatherForEdge",
+      "args": {
+        "num_rounds": 1,
+        "assessor_id": "assessor"
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "assessor",
+      "path": "nvflare.edge.assessors.model_update.ModelUpdateAssessor",
+      "args": {
+        "persistor_id": "persistor",
+        "max_model_version": 3,
+        "max_model_history": 1,
+        "num_updates_for_model": 50,
+        "device_selection_size": 50,
+        "min_hole_to_fill": 50,
+        "device_reuse": true
+      }
+    },
+    {
+      "id": "persistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+      "args": {
+        "model": {
+          "path": "model.Cifar10ConvNet",
+          "args": {}
+        }
+      }
+    }
+  ],
+  "task_data_filters": [],
+  "task_result_filters": []
+}

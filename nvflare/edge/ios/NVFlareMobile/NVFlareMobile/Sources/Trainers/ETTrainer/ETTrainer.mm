@@ -84,23 +84,31 @@ using namespace ::executorch::extension;
 
 - (instancetype)initWithModelBase64:(NSString *)modelBase64
                              meta:(NSDictionary<NSString *, id> *)meta {
+    NSLog(@"ETTrainer: Initializing with model and meta");
     self = [super init];
     if (self) {
         _meta = meta;
         
         // Load dataset
         NSString *datasetType = _meta[kMetaKeyDatasetType];
+        NSLog(@"ETTrainer: Loading dataset of type: %@", datasetType);
         _dataset = [self loadDataset:datasetType];
         if (!_dataset) {
+            NSLog(@"ETTrainer: Failed to load dataset");
             return nil;
         }
+        NSLog(@"ETTrainer: Dataset loaded successfully");
         
         // Load model
+        NSLog(@"ETTrainer: Loading model");
         _training_module = [self loadModel:modelBase64];
         if (!_training_module) {
+            NSLog(@"ETTrainer: Failed to load model");
             return nil;
         }
+        NSLog(@"ETTrainer: Model loaded successfully");
     }
+    NSLog(@"ETTrainer: Initialization complete");
     return self;
 }
 
@@ -184,27 +192,29 @@ using namespace ::executorch::extension;
 
 
 - (NSDictionary<NSString *, id> *)train {
+    NSLog(@"ETTrainer: Starting train()");
     if (!_training_module) {
-        NSLog(@"Training module not initialized");
+        NSLog(@"ETTrainer: Training module not initialized");
         return @{};
     }
 
     @try {
         int batchSize = [_meta[kMetaKeyBatchSize] intValue];
+        NSLog(@"ETTrainer: Using batch size: %d", batchSize);
         
         // Get initial parameters
         auto param_res = _training_module->named_parameters("forward");
         if (param_res.error() != executorch::runtime::Error::Ok) {
-            NSLog(@"Failed to get named parameters");
+            NSLog(@"ETTrainer: Failed to get named parameters");
             return @{};
         }
         
         auto initial_params = param_res.get();
         NSDictionary<NSString *, id>* old_params = [ETTrainer toTensorDictionary:initial_params];
+        NSLog(@"ETTrainer: Got initial parameters");
         
-        #ifdef DEBUG
         printTensorDictionary(old_params, @"Initial Params");
-        #endif
+        
 
         // Configure optimizer
         float learningRate = [_meta[kMetaKeyLearningRate] floatValue];
@@ -253,16 +263,15 @@ using namespace ::executorch::extension;
         
         NSDictionary<NSString *, id>* final_params = [ETTrainer toTensorDictionary:param_res.get()];
         
-        #ifdef DEBUG
+        
         printTensorDictionary(final_params, @"Final Params");
-        #endif
+       
         
         auto tensor_diff = [ETTrainer calculateTensorDifference:old_params newDict:final_params];
         
-        #ifdef DEBUG
+       
         printTensorDictionary(tensor_diff, @"Tensor Diff");
-        #endif
-        
+
         return tensor_diff;
         
     } @catch (NSException *exception) {

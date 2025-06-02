@@ -13,7 +13,8 @@ struct ContentView: View {
     @StateObject private var connection: Connection
     
     init() {
-        let connection = Connection(hostname: "192.168.6.101", port: 5000)
+        //let connection = Connection(hostname: "192.168.6.101", port: 4321)
+        let connection = Connection(hostname: "169.254.39.153", port: 4321)
         _connection = StateObject(wrappedValue: connection)
         _trainerController = StateObject(wrappedValue: TrainerController(connection: connection))
     }

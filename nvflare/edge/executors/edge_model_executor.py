@@ -28,7 +28,7 @@ from nvflare.edge.web.models.selection_request import SelectionRequest
 from nvflare.edge.web.models.selection_response import SelectionResponse
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
-from nvflare.security.logging import secure_format_exception
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 class EdgeModelExecutor(EdgeTaskExecutor):
@@ -151,7 +151,6 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         self, request: TaskRequest, current_task: TaskInfo, fl_ctx: FLContext
     ) -> TaskResponse:
         """Handle task request from device"""
-
         device_id = request.get_device_id()
         job_id = fl_ctx.get_job_id()
 
@@ -161,6 +160,9 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         assert isinstance(task_state, BaseState)
 
         if not task_state.model_version:
+            self.log_info(
+                fl_ctx, "no model version, skipping task"
+            )
             # nothing to train
             return self._make_retry(job_id, "Model not ready")
 
@@ -172,11 +174,16 @@ class EdgeModelExecutor(EdgeTaskExecutor):
 
         selected, new_selection_id = task_state.is_device_selected(device_id, device_selection_id)
         if not selected:
+            self.log_info(
+                fl_ctx, f"device {device_id} not selected, skipping task"
+            )
             return self._make_retry(job_id, "Device not selected")
 
-        self.log_debug(
+        self.log_info(
             fl_ctx, f"task for model V{task_state.model_version} sent to device {device_id}: {new_selection_id=}"
         )
+        # TODO: we should pass the whole request here so convert_task can be an interface
+        #   for all the different model executors
         task_data = self._convert_task(task_state, current_task, fl_ctx)
         return TaskResponse(
             status=EdgeApiStatus.OK,
@@ -213,6 +220,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
                 return ResultResponse(EdgeApiStatus.OK, task_id=request.task_id, task_name=request.task_name)
         except Exception as ex:
             msg = f"Error accepting contribution: {secure_format_exception(ex)}"
+            secure_log_traceback(self.logger)
             self.log_error(fl_ctx, msg)
             return ResultResponse(
                 EdgeApiStatus.ERROR, task_id=request.task_id, task_name=request.task_name, message=msg

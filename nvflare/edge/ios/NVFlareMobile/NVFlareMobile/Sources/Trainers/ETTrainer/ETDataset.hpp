@@ -36,6 +36,7 @@ private:
     std::vector<size_t> indices;
     bool shouldShuffle;
     size_t currentIndex;
+    size_t maxImages = 16;
     
 public:
     explicit CIFAR10Dataset(std::istream& dataStream, bool shuffle = false);

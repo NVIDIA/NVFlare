@@ -18,19 +18,22 @@ enum TrainerType: String, CaseIterable {
 }
 
 enum MethodType: String, CaseIterable {
-    case cifar10 = "cifar10"
+    case cnn = "cnn"
     case xor = "xor"
     
     var displayName: String {
         switch self {
-        case .cifar10: return "CIFAR-10"
-        case .xor: return "XOR"
+        case .cnn: return "cnn"
+        case .xor: return "xor"
         }
     }
     
     // The dataset type required for this method
     var requiredDataset: String {
-        return self.rawValue // For now, they match 1:1
+        switch self {
+        case .cnn: return "cifar10" // NSString * const kDatasetTypeCIFAR10 = @"cifar10";
+        case .xor: return "xor" // NSString * const kDatasetTypeXOR = @"xor";
+        }
     }
 }
 
@@ -38,7 +41,7 @@ enum MethodType: String, CaseIterable {
 class TrainerController: ObservableObject {
     @Published var status: TrainingStatus = .idle
     @Published var trainerType: TrainerType = .executorch
-    @Published var supportedMethods: Set<MethodType> = [.cifar10, .xor]  // Track supported methods
+    @Published var supportedMethods: Set<MethodType> = [.cnn, .xor]  // Track supported methods
     
     private var currentTask: Task<Void, Error>?
     
@@ -89,6 +92,7 @@ class TrainerController: ObservableObject {
         currentTask?.cancel()
         currentTask = nil
         status = .idle
+        connection.resetCookie()
     }
     
     private func runTrainingLoop() async throws {
@@ -102,9 +106,8 @@ class TrainerController: ObservableObject {
                 }
                 
                 let job = try jobResponse.toJob()
-                
                 // Verify that we support this job's method
-                let methodString = job.meta.method ?? ""  // Use empty string as fallback
+                let methodString = jobResponse.method ?? ""  // Use empty string as fallback
                 if let method = MethodType(rawValue: methodString),
                    supportedMethods.contains(method) {
                     currentJob = job
@@ -137,12 +140,14 @@ class TrainerController: ObservableObject {
                 print("task response:    \(taskResponse)")
                 let task = try taskResponse.toTrainingTask(jobId: job.id)
                 
-                let trainer = try createTrainer(withModelData: task.modelData, meta: job.meta)
+                let trainer = try createTrainer(withModelData: task.modelData, meta: task.trainingConfig)
                 
-                // Check device state before heavy computation
+//                // Check device state before heavy computation
 //                guard deviceStateMonitor.isReadyForTraining else {
 //                    throw NVFlareError.trainingFailed("Device not ready")
 //                }
+                
+                print("before calling trainer.train")
                 
                 // Train and get weight differences
                 let weightDiff = try await Task.detached(priority: .background) {
@@ -177,7 +182,7 @@ class TrainerController: ObservableObject {
         }
     }
     
-    private func createTrainer(withModelData modelData: [String: String], meta: JobMeta) throws -> Trainer {
+    private func createTrainer(withModelData modelData: String, meta: TrainingConfig) throws -> Trainer {
         // Get the method from the job metadata
         let methodString = meta.method ?? ""  // Use empty string as fallback
         guard let method = MethodType(rawValue: methodString) else {
@@ -191,11 +196,8 @@ class TrainerController: ObservableObject {
 
         switch trainerType {
         case .executorch:
-            print("model data is\(modelData)")
-            guard let modelString = modelData["model_buffer"] else {
-                throw NVFlareError.invalidModelData("Missing model_buffer in model data")
-            }
-            return ETTrainerWrapper(modelBase64: modelString, meta: meta)
+            print("before calling ETTrainerWrapper")
+            return ETTrainerWrapper(modelBase64: modelData, meta: meta)
         default:
             fatalError("trainer not implemented yet")
         }

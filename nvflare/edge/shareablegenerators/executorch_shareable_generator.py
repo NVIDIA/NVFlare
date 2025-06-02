@@ -27,7 +27,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.edge.constants import MsgKey
 from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelExchangeFormat, ModelNativeFormat
-from nvflare.edge.models.model import export_model
+from nvflare.edge.models.model import export_model_to_bytes
 
 
 class ExecutorchShareableGenerator(ShareableGenerator):
@@ -63,11 +63,7 @@ class ExecutorchShareableGenerator(ShareableGenerator):
 
     def _export_current_model(self) -> bytes:
         """Export current model in ExecutorTorch format."""
-        input_tensor = torch.randn(self.input_shape)
-        label_tensor = torch.ones(self.output_shape, dtype=torch.int64)
-        model_buffer = export_model(self.model, input_tensor, label_tensor).buffer
-        base64_encoded = base64.b64encode(model_buffer).decode("utf-8")
-        return base64_encoded
+        return export_model_to_bytes(self.model, self.input_shape, self.output_shape)
 
     def handle_event(self, event: str, fl_ctx: FLContext):
         if event == EventType.START_RUN:
