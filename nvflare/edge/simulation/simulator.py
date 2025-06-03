@@ -376,9 +376,8 @@ class Simulator:
 
         """
         # pick the first
-        first_key = next(iter(self.used_devices))
-        device_id = self.used_devices[first_key]
-        self.used_devices.pop(first_key)
+        device_id = next(iter(self.used_devices))
+        self.used_devices.pop(device_id)
         return self.all_devices[device_id]
 
     def _make_new_device(self):

@@ -57,6 +57,11 @@ class ModelUpdateAssessor(Assessor):
         device_reuse=True,
         const_selection=False,
     ):
+        """
+        Enable both asynchronous and synchronous model updates from clients.
+        For asynchronous updates, the staleness is calculated based on the current model version.
+        And the aggregation weights are calculated following FedBuff paper "Federated Learning with Buffered Asynchronous Aggregation".
+        """
         Assessor.__init__(self)
         self.persistor_id = persistor_id
         self.persistor = None

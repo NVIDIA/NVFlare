@@ -86,6 +86,7 @@ class ApiService(Widget, QueryHandler):
             ssl_credentials = get_grpc_server_credentials(params)
 
         self.engine = fl_ctx.get_engine()
+        # TODO: add ssl support
         self.server = EdgeApiServer(
             handler=self,
             address=self.address,

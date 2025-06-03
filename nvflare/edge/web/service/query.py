@@ -58,6 +58,7 @@ class Query:
             ssl_credentials = get_grpc_client_credentials(params)
 
         self.lcp_list = []
+        # TODO: add ssl support
         # self.client = EdgeApiClient(ssl_credentials=ssl_credentials)
         self.client = EdgeApiClient()
         self.logger = get_obj_logger(self)
