@@ -16,7 +16,7 @@ from typing import List
 
 from nvflare.fuel.common.ctx import BaseContext
 
-from .proto import ALL_END, LINE_END, MAX_BLOCK_SIZE, Buffer, validate_proto
+from .proto import ALL_END, LINE_END, MAX_BLOCK_SIZE, Buffer, ProtoKey, validate_proto
 from .table import Table
 
 # ASCII Message Format:
@@ -139,3 +139,15 @@ class Connection(BaseContext):
         line = self.buffer.encode()
         self.buffer.reset()
         return line
+
+    def get_token(self):
+        if not self.request:
+            return None
+        data = self.request.get(ProtoKey.DATA)
+        if not data:
+            return None
+        for item in data:
+            it = item.get(ProtoKey.TYPE)
+            if it == ProtoKey.TOKEN:
+                return item.get(ProtoKey.DATA)
+        return None

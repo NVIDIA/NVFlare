@@ -259,12 +259,19 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                         "cmd_modules must be a list of CommandModule, but got element of type {}".format(type(m))
                     )
 
+        if not event_handlers:
+            event_handlers = []
+
         if event_handlers:
             if not isinstance(event_handlers, list):
                 raise TypeError(f"event_handlers must be a list but got {type(event_handlers)}")
             for h in event_handlers:
                 if not isinstance(h, EventHandler):
                     raise TypeError(f"item in event_handlers must be EventHandler but got {type(h)}")
+
+        for m in cmd_modules:
+            if isinstance(m, EventHandler):
+                event_handlers.append(m)
 
         self.logger = get_obj_logger(self)
         self.user_cred_type = admin_config.get(AdminConfigKey.CRED_TYPE, CredentialType.CERT)
@@ -343,7 +350,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if self.cell:
             return
 
-        my_fqcn = f"admin_{self.user_identity}_{uuid.uuid4()}"
+        my_fqcn = f"admin_{uuid.uuid4()}"
         credentials = {
             DriverParams.CA_CERT.value: self.ca_cert,
             DriverParams.CLIENT_CERT.value: self.client_cert,
@@ -418,7 +425,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             logger=self.logger,
         )
         self.debug(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
-        print(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
 
         self.aux_runner = AuxRunner(self)
         self.object_streamer = ObjectStreamer(self.aux_runner)
@@ -524,6 +530,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def _new_event_context(self):
         ctx = EventContext()
         ctx.set_prop(EventPropKey.USER_NAME, self.user_name)
+        ctx.set_prop(EventPropKey.API, self)
         return ctx
 
     def fire_session_event(self, event_type: str, msg: str = ""):
@@ -545,9 +552,13 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 }
 
             resp = self._user_login()
-            print(f"login resp: {resp}")
 
-            if resp[ResultKey.STATUS] in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
+            status = resp.get(ResultKey.STATUS)
+            if status in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
+                if status == APIStatus.SUCCESS:
+                    self.fire_session_event(EventType.LOGIN_SUCCESS)
+                else:
+                    self.fire_session_event(EventType.LOGIN_FAILURE)
                 return resp
             time.sleep(AUTO_LOGIN_INTERVAL)
         if resp is None:
@@ -555,10 +566,12 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                 ResultKey.DETAILS: f"Auto login failed after {self.auto_login_max_tries} tries",
             }
+            self.fire_session_event(EventType.LOGIN_FAILURE)
         return resp
 
     def login(self):
         try:
+            self.fire_session_event(EventType.BEFORE_LOGIN)
             result = self._try_login()
             self.debug(f"login result is {result}")
         except Exception as e:
@@ -584,7 +597,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def logout(self):
         """Send logout command to server."""
         self.in_logout = True
+        print("sending logout command")
         resp = self.server_execute(InternalCommands.LOGOUT)
+        print(f"got logout resp {resp}")
         self.close()
         return resp
 
@@ -916,7 +931,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         return self.server_execute(command, cmd_entry=ent, props=props)
 
     def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None, props=None, headers=None):
-        if self.in_logout:
+        if self.in_logout and command != InternalCommands.LOGOUT:
             return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "session is logging out"}
 
         args = split_to_args(command)

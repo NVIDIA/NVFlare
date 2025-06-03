@@ -134,7 +134,8 @@ class AdminClient(cmd.Cmd, EventHandler):
         if msg:
             self.write_string(msg)
 
-        if event_type in [EventType.SESSION_CLOSED, EventType.SESSION_TIMEOUT]:
+        if event_type in [EventType.SESSION_TIMEOUT]:
+            self.api.close()
             os.kill(os.getpid(), signal.SIGUSR1)
 
     def session_signal_handler(self, signum, frame):
@@ -163,12 +164,6 @@ class AdminClient(cmd.Cmd, EventHandler):
         self.no_stdout = False
 
     def do_bye(self, arg):
-        """Exit from the client.
-
-        If the arg is not logout, in other words, the user is issuing the bye command to shut down the client, or it is
-        called by inputting the EOF character, a message will display that the admin client is shutting down."""
-        if arg != "logout":
-            print("Shutting down admin client, please wait...")
         self.api.logout()
         return True
 

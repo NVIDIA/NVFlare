@@ -18,7 +18,6 @@ import enum
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.ctx import SimpleContext
-from nvflare.fuel.hci.reg import CommandModule
 from nvflare.fuel.hci.table import Table
 
 
@@ -227,26 +226,6 @@ class AdminAPISpec(ABC):
         Returns: command processing info
 
         """
-        pass
-
-
-def service_address_changed_cb_signature(host: str, port: int, ssid: str):
-    pass
-
-
-class ServiceFinder(ABC):
-    @abstractmethod
-    def start(self, service_address_changed_cb):
-        pass
-
-    @abstractmethod
-    def stop(self):
-        pass
-
-    def set_secure_context(self, ca_cert_path: str, cert_path: str, private_key_path: str):
-        pass
-
-    def get_command_module(self) -> CommandModule:
         pass
 
 

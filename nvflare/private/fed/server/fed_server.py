@@ -72,7 +72,7 @@ from nvflare.private.fed.authenticator import validate_auth_headers
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
+from nvflare.private.fed.utils.identity_utils import TokenVerifier
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 

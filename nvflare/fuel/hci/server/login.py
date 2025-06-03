@@ -25,6 +25,7 @@ from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import cert_to_dict, load_crt_bytes
 from nvflare.private.fed.server.cred_keeper import CredKeeper
+from nvflare.security.logging import secure_format_exception
 
 from .reg import CommandFilter
 from .sess import Session, SessionManager
@@ -116,7 +117,7 @@ class LoginModule(CommandModule, CommandFilter):
                     visible=False,
                 ),
                 CommandSpec(
-                    name="_logout",
+                    name=InternalCommands.LOGOUT,
                     description="logout from server",
                     usage="logout",
                     handler_func=self.handle_logout,
@@ -145,11 +146,19 @@ class LoginModule(CommandModule, CommandFilter):
         request = conn.get_prop(ConnProps.REQUEST)
         assert isinstance(request, CellMessage)
         origin = request.get_header(MessageHeaderKey.ORIGIN)
-        session = self.session_mgr.create_session(
-            user_name=user_name, user_org="global", user_role="project_admin", origin_fqcn=origin
-        )
+
+        engine = conn.get_prop(ConnProps.ENGINE)
+        with engine.new_context() as fl_ctx:
+            id_asserter = self.cred_keeper.get_id_asserter(fl_ctx)
+            session = self.session_mgr.create_session(
+                user_name=user_name,
+                user_org="global",
+                user_role="project_admin",
+                origin_fqcn=origin,
+            )
+            token = session.make_token(id_asserter)
         conn.append_string("OK")
-        conn.append_token(session.token)
+        conn.append_token(token)
 
     def handle_cert_login(self, conn: Connection, args: List[str]):
         if not self.authenticator:
@@ -169,7 +178,7 @@ class LoginModule(CommandModule, CommandFilter):
         engine = conn.get_prop(ConnProps.ENGINE)
         with engine.new_context() as fl_ctx:
             identity_verifier = self.cred_keeper.get_id_verifier(fl_ctx)
-            self.logger.info(f"got identity_verifier: {identity_verifier}")
+            id_asserter = self.cred_keeper.get_id_asserter(fl_ctx)
 
         cert = load_crt_bytes(cert_data)
         try:
@@ -204,15 +213,16 @@ class LoginModule(CommandModule, CommandFilter):
             user_role=identity.get(IdentityKey.ROLE, ""),
             origin_fqcn=origin,
         )
+        token = session.make_token(id_asserter)
         self.logger.info(f"created user session for {user_name}")
         conn.append_string("OK")
-        conn.append_token(session.token)
+        conn.append_token(token)
 
     def handle_logout(self, conn: Connection, args: List[str]):
         if self.authenticator and self.session_mgr:
             token = conn.get_prop(ConnProps.TOKEN)
             if token:
-                self.session_mgr.end_session(token)
+                self.session_mgr.end_session_by_token(token)
         conn.append_string("OK")
 
     def pre_command(self, conn: Connection, args: List[str]):
@@ -221,37 +231,43 @@ class LoginModule(CommandModule, CommandFilter):
             return True
 
         # validate token
-        req_json = conn.request
-        token = None
-        data = req_json["data"]
-        for item in data:
-            it = item["type"]
-            if it == "token":
-                token = item["data"]
-                break
-
+        token = conn.get_token()
         if token is None:
             conn.append_error("not authenticated - no token")
             return False
 
         sess = self.session_mgr.get_session(token)
-        if sess:
-            assert isinstance(sess, Session)
-            sess.mark_active()
-            conn.set_prop(ConnProps.SESSION, sess)
-            conn.set_prop(ConnProps.USER_NAME, sess.user_name)
-            conn.set_prop(ConnProps.USER_ORG, sess.user_org)
-            conn.set_prop(ConnProps.USER_ROLE, sess.user_role)
-            conn.set_prop(ConnProps.TOKEN, token)
-            return True
-        else:
-            conn.append_error("session_inactive")
-            conn.append_string(
-                "user not authenticated or session timed out after {} seconds of inactivity - logged out".format(
-                    self.session_mgr.idle_timeout
+        if not sess:
+            # try to recreate the session
+            request = conn.get_prop(ConnProps.REQUEST)
+            assert isinstance(request, CellMessage)
+            origin = request.get_header(MessageHeaderKey.ORIGIN)
+
+            engine = conn.get_prop(ConnProps.ENGINE)
+            with engine.new_context() as fl_ctx:
+                id_asserter = self.cred_keeper.get_id_asserter(fl_ctx)
+
+            try:
+                sess = self.session_mgr.recreate_session(token, origin, id_asserter)
+                self.logger.info(f"recreated admin session for {sess.user_name}")
+            except Exception as ex:
+                self.logger.error(f"cannot recreate admin session: {secure_format_exception(ex)}")
+                conn.append_error("session_inactive")
+                conn.append_string(
+                    "user not authenticated or session timed out after {} seconds of inactivity - logged out".format(
+                        self.session_mgr.idle_timeout
+                    )
                 )
-            )
-            return False
+                return False
+
+        assert isinstance(sess, Session)
+        sess.mark_active()
+        conn.set_prop(ConnProps.SESSION, sess)
+        conn.set_prop(ConnProps.USER_NAME, sess.user_name)
+        conn.set_prop(ConnProps.USER_ORG, sess.user_org)
+        conn.set_prop(ConnProps.USER_ROLE, sess.user_role)
+        conn.set_prop(ConnProps.TOKEN, token)
+        return True
 
     def close(self):
         self.session_mgr.shutdown()
