@@ -10,6 +10,7 @@
 [![pypi](https://badge.fury.io/py/nvflare.svg)](https://badge.fury.io/py/nvflare)
 [![pyversion](https://img.shields.io/pypi/pyversions/nvflare.svg)](https://badge.fury.io/py/nvflare)
 [![downloads](https://static.pepy.tech/badge/nvflare)](https://pepy.tech/project/nvflare)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NVIDIA/NVFlare)
 
 [NVIDIA FLARE](https://nvidia.github.io/NVFlare/) (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment)
 is a domain-agnostic, open-source, extensible Python SDK that allows researchers and data scientists to adapt existing ML/DL workflows to a federated paradigm.
