@@ -178,7 +178,6 @@ class LoginModule(CommandModule, CommandFilter):
 
         cert = load_crt_bytes(cert_data)
         try:
-
             ok = identity_verifier.verify_common_name(
                 asserter_cert=cert,
                 asserted_cn=user_name,

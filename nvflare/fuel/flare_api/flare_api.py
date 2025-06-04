@@ -33,6 +33,7 @@ from nvflare.fuel.hci.cmd_arg_utils import (
     validate_sp_string,
 )
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
+from nvflare.private.fed.utils.identity_utils import get_cn_from_cert, load_cert_file
 
 from .api_spec import (
     AuthenticationError,
@@ -61,17 +62,23 @@ _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 
 
 class Session(SessionSpec):
-    def __init__(self, username: str = None, startup_path: str = None, debug: bool = False):
+    def __init__(
+        self,
+        username: str = None,
+        startup_path: str = None,
+        secure_mode: bool = True,
+        debug: bool = False,
+    ):
         """Initializes a session with the NVFLARE system.
 
         Args:
             username (str): string of username to log in with
             startup_path (str): path to the provisioned startup kit, which contains endpoint of the system
+            secure_mode (bool): whether to log in with secure mode
+            debug (bool): turn on debug or not
         """
         assert isinstance(username, str), "username must be str"
-        self.username = username
         assert isinstance(startup_path, str), "startup_path must be str"
-
         assert os.path.isdir(startup_path), f"startup kit does not exist at {startup_path}"
 
         workspace = Workspace(root_dir=startup_path)
@@ -82,6 +89,17 @@ class Session(SessionSpec):
         if not admin_config:
             raise ConfigError("Missing admin section in fed_admin configuration.")
 
+        if not secure_mode:
+            # In insecure mode, the username does not need to be provided
+            # Instead, we'll find the username from the client cert
+            cert_file = admin_config.get(AdminConfigKey.CLIENT_CERT)
+            if not cert_file:
+                raise ConfigError("Missing client cert file")
+
+            cert = load_cert_file(cert_file)
+            username = get_cn_from_cert(cert)
+
+        self.username = username
         upload_dir = admin_config.get(AdminConfigKey.UPLOAD_DIR)
         download_dir = admin_config.get(AdminConfigKey.DOWNLOAD_DIR)
         if not os.path.isdir(download_dir):
@@ -104,7 +122,7 @@ class Session(SessionSpec):
         if self.api.closed:
             raise SessionClosed("session closed")
 
-        self.api.connect()
+        self.api.connect(timeout)
         self.api.login()
 
     def _do_command(self, command: str, enforce_meta=True, props=None):
@@ -913,8 +931,14 @@ def basic_cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_
     return True
 
 
-def new_session(username: str, startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
-    session = Session(username=username, startup_path=startup_kit_location, debug=debug)
+def new_session(
+    username: str,
+    startup_kit_location: str,
+    secure_mode: bool = True,
+    debug: bool = False,
+    timeout: float = 10.0,
+) -> Session:
+    session = Session(username=username, startup_path=startup_kit_location, debug=debug, secure_mode=secure_mode)
     session.try_connect(timeout)
     return session
 
@@ -931,7 +955,7 @@ def new_secure_session(username: str, startup_kit_location: str, debug: bool = F
     Returns: a Session object
 
     """
-    return new_session(username, startup_kit_location, debug, timeout)
+    return new_session(username, startup_kit_location, True, debug, timeout)
 
 
 def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
@@ -947,4 +971,10 @@ def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout
     The username for insecure session is always "admin".
 
     """
-    return new_session("admin", startup_kit_location, debug, timeout)
+    return new_session(
+        username="",
+        startup_kit_location=startup_kit_location,
+        secure_mode=False,
+        debug=debug,
+        timeout=timeout
+    )

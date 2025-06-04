@@ -345,7 +345,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def new_context(self):
         return self.fl_ctx_mgr.new_context()
 
-    def connect(self):
+    def connect(self, timeout=None):
         print("Connecting to FLARE ...")
         if self.cell:
             return
@@ -400,6 +400,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             cert_file=self.client_cert,
             msg_timeout=2.0,
             retry_interval=1.0,
+            timeout=timeout,
         )
 
         abort_signal = Signal()
@@ -714,28 +715,16 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if not timeout:
             timeout = 5.0
 
-        cmd_headers = ctx.get_command_headers()
-        if cmd_headers:
-            req_headers = cmd_headers
+        requester = ctx.get_requester()
+        if requester:
+            try:
+                reply = requester.send_request(self, conn, ctx)
+            except:
+                traceback.print_exc()
+                process_json_func(make_error(f"{type(requester)} failed to send request to Admin Server"))
+                return
         else:
-            req_headers = None
-
-        bytes_sender = ctx.get_bytes_sender()
-        receiver = ctx.get_bytes_receiver()
-        if bytes_sender:
-            reply = bytes_sender.send(self, conn.close())
-        elif receiver:
-            # fire and forget so we don't wait
-            request = CellMessage(payload=conn.close(), headers=req_headers)
-            self.cell.fire_and_forget(
-                channel=CellChannel.HCI,
-                topic="command",
-                targets=FQCN.ROOT_SERVER,
-                message=request,
-            )
-            reply = None
-        else:
-            request = CellMessage(payload=conn.close(), headers=req_headers)
+            request = CellMessage(payload=conn.close(), headers=ctx.get_command_headers())
             cell_reply = self.cell.send_request(
                 channel=CellChannel.HCI,
                 topic="command",
@@ -745,26 +734,13 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             )
             reply = cell_reply.payload
 
-        if not receiver:
+        if reply:
             try:
                 json_data = validate_proto(reply)
                 process_json_func(json_data)
             except:
                 traceback.print_exc()
                 process_json_func(make_error("Failed to communicate with Admin Server"))
-            return
-        else:
-            try:
-                ok = receiver.receive(self)
-            except:
-                traceback.print_exc()
-                ok = False
-
-            if ok:
-                ctx.set_command_result({"status": APIStatus.SUCCESS, "details": "OK"})
-            else:
-                ctx.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": "error receive_bytes"})
-            return
 
     def _try_command(self, cmd_ctx: CommandContext):
         """Try to execute a command on server side.
@@ -875,8 +851,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             return {ResultKey.STATUS: APIStatus.ERROR_RUNTIME, ResultKey.DETAILS: "Client did not respond"}
         return result
 
-    def stream_file(self, file_name: str, conn_data: str):
-        stream_ctx = {"conn_data": conn_data}
+    def upload_file(self, file_name: str, conn: Connection):
+        stream_ctx = {"conn_data": conn.close()}
         with self.new_context() as fl_ctx:
             rc, replies = FileStreamer.stream_file(
                 channel=StreamChannel.UPLOAD,
@@ -893,6 +869,15 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             assert isinstance(reply, Shareable)
             end_result = reply.get_header(HeaderKey.END_RESULT)
             return end_result
+
+    def fire_and_forget(self, conn: Connection, ctx: CommandContext):
+        request = CellMessage(payload=conn.close(), headers=ctx.get_command_headers())
+        self.cell.fire_and_forget(
+            channel=CellChannel.HCI,
+            topic="command",
+            targets=FQCN.ROOT_SERVER,
+            message=request,
+        )
 
     def do_command(self, command: str, props=None):
         """A convenient method to call commands using string.

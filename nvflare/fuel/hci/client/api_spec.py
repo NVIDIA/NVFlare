@@ -32,8 +32,7 @@ class CommandCtxKey(object):
     JSON_PROCESSOR = "json_processor"
     META = "meta"
     CUSTOM_PROPS = "custom_props"
-    BYTES_RECEIVER = "bytes_receiver"
-    BYTES_SENDER = "bytes_sender"
+    REQUESTER = "requester"
     CMD_PROPS = "cmd_props"
     CMD_HEADERS = "cmd_headers"
 
@@ -51,17 +50,11 @@ class ReceiveBytesFromServer(ABC):
 
 
 class CommandContext(SimpleContext):
-    def set_bytes_receiver(self, r):
-        self.set_prop(CommandCtxKey.BYTES_RECEIVER, r)
+    def set_requester(self, r):
+        self.set_prop(CommandCtxKey.REQUESTER, r)
 
-    def get_bytes_receiver(self):
-        return self.get_prop(CommandCtxKey.BYTES_RECEIVER)
-
-    def set_bytes_sender(self, s):
-        self.set_prop(CommandCtxKey.BYTES_SENDER, s)
-
-    def get_bytes_sender(self):
-        return self.get_prop(CommandCtxKey.BYTES_SENDER)
+    def get_requester(self):
+        return self.get_prop(CommandCtxKey.REQUESTER)
 
     def set_command_result(self, result):
         self.set_prop(CommandCtxKey.RESULT, result)
@@ -247,3 +240,10 @@ class AdminConfigKey:
     CRED_TYPE = "cred_type"
     USERNAME = "username"
     FILE_DOWNLOAD_PROGRESS_TIMEOUT = "file_download_progress_timeout"
+
+
+class HCIRequester(ABC):
+
+    @abstractmethod
+    def send_request(self, api, conn, cmd_ctx):
+        pass

@@ -21,7 +21,6 @@ from pathlib import Path
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.app_common.streamers.file_streamer import FileStreamer
-from nvflare.fuel.hci.client.api import FileWaiter
 from nvflare.fuel.hci.client.event import EventType
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.proto import MetaKey, ProtoKey
@@ -29,53 +28,66 @@ from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec,
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_file, zip_directory_to_file
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 
-from .api_spec import CommandContext, ReceiveBytesFromServer, SendBytesToServer
+from .api_spec import CommandContext, HCIRequester
 from .api_status import APIStatus
 
 
-class _SendFileToServer(SendBytesToServer):
+class _SendFileToServer(HCIRequester):
     def __init__(self, file_name: str):
         self.file_name = file_name
 
-    def send(self, sock, meta: str):
-        result = sock.stream_file(self.file_name, meta)
+    def send_request(self, api, conn, cmd_ctx):
+        result = api.upload_file(self.file_name, conn)
         os.remove(self.file_name)
         return result
 
 
-class _ReceiveFileFromServer(ReceiveBytesFromServer):
-    def __init__(self, api, file_name: str, waiter: FileWaiter, progress_timeout=5.0):
-        self.api = api
+class _FileReceiver(HCIRequester):
+    def __init__(self, tx_id, file_name: str):
+        self.tx_id = tx_id
         self.file_name = file_name
-        self.waiter = waiter
-        self.progress_timeout = progress_timeout
         self.num_bytes_received = 0
 
-    def receive(self, sock):
+    def _receive(self, api, waiter):
+        progress_timeout = api.file_download_progress_timeout
         result_received = False
         while True:
-            if self.waiter.wait(timeout=0.5):
+            if waiter.wait(timeout=0.5):
                 # wait ended normally
                 result_received = True
                 break
 
             # is there any progress?
-            if time.time() - self.waiter.last_progress_time > self.progress_timeout:
+            if time.time() - waiter.last_progress_time > progress_timeout:
                 # no progress for too long
                 break
 
-        self.api.pop_download_waiter(self.waiter.tx_id)
+        api.pop_download_waiter(waiter.tx_id)
         if not result_received:
-            print(f"failed to receive file {self.file_name}: no progress for {self.progress_timeout} seconds")
+            print(f"failed to receive file {self.file_name}: no progress for {progress_timeout} seconds")
             return False
 
-        stream_ctx = self.waiter.stream_ctx
+        stream_ctx = waiter.stream_ctx
         tmp_file_name = FileStreamer.get_file_location(stream_ctx)
         file_stats = os.stat(tmp_file_name)
         self.num_bytes_received = file_stats.st_size
         Path(os.path.dirname(self.file_name)).mkdir(parents=True, exist_ok=True)
         shutil.move(tmp_file_name, self.file_name)
         return True
+
+    def send_request(self, api, conn, cmd_ctx):
+        waiter = api.set_download_waiter(self.tx_id)
+        api.fire_and_forget(conn, cmd_ctx)
+        ok = self._receive(api, waiter)
+        if ok:
+            cmd_ctx.set_command_result(
+                {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: "OK"}
+            )
+        else:
+            cmd_ctx.set_command_result(
+                {ProtoKey.STATUS: APIStatus.ERROR_RUNTIME, ProtoKey.DETAILS: "error receive_bytes"}
+            )
+        return None
 
 
 class FileTransferModule(CommandModule):
@@ -172,10 +184,9 @@ class FileTransferModule(CommandModule):
         tx_path = self._tx_path(tx_id, folder_name)
         file_path = os.path.join(tx_path, file_name)
         api = ctx.get_api()
-        waiter = api.set_download_waiter(tx_id)
-        receiver = _ReceiveFileFromServer(api, file_path, waiter, api.file_download_progress_timeout)
+        receiver = _FileReceiver(tx_id, file_path)
         api.fire_session_event(EventType.BEFORE_DOWNLOAD_FILE, f"downloading {file_name} ...")
-        ctx.set_bytes_receiver(receiver)
+        ctx.set_requester(receiver)
         download_start = time.time()
         result = api.server_execute(ctx.get_command(), cmd_ctx=ctx)
         if result.get(ProtoKey.STATUS) != APIStatus.SUCCESS:
@@ -302,5 +313,5 @@ class FileTransferModule(CommandModule):
         parts = [cmd_entry.full_command_name(), folder_name]
         command = join_args(parts)
         sender = _SendFileToServer(out_file)
-        ctx.set_bytes_sender(sender)
+        ctx.set_requester(sender)
         return api.server_execute(command, cmd_ctx=ctx)
