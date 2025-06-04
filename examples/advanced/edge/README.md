@@ -121,7 +121,7 @@ Next, let's generate job configs for cifar10 via EdgeJob API.
 cd jobs
 python cifar10_job.py --job_name cifar10_sync_job --simulation_config_file configs/cifar10_sync_config.json --device_reuse --const_selection
 python cifar10_job.py --job_name cifar10_sync_lcp_job --device_reuse --const_selection
-python cifar10_job.py --job_name cifar10_async_job --simulation_config_file configs/cifar10_async_config.json --min_hole_to_fill 1 --max_model_history 5 --num_updates_for_model 20 --device_selection_size 20 --device_reuse
+python cifar10_job.py --job_name cifar10_async_job --simulation_config_file configs/cifar10_async_config.json --min_hole_to_fill 1 --global_lr 0.1 --max_model_history 5 --num_updates_for_model 20 --device_selection_size 20 --device_reuse
 python cifar10_job.py --job_name cifar10_async_lcp_job --min_hole_to_fill 1 --max_model_history 5 --num_updates_for_model 20 --device_selection_size 20 --device_reuse
 cd ..
 ```

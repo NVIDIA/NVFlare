@@ -59,6 +59,7 @@ def export_job(args):
         num_updates_for_model=args.num_updates_for_model,
         device_selection_size=args.device_selection_size,
         min_hole_to_fill=args.min_hole_to_fill,
+        global_lr=args.global_lr,
         device_reuse=args.device_reuse,
         const_selection=args.const_selection,
     )
@@ -82,6 +83,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--device_selection_size", type=int, default=16, help="Number of devices to select for each update"
     )
+    parser.add_argument("--global_lr", type=float, default=1.0, help="Global learning rate for model updates")
     parser.add_argument("--min_hole_to_fill", type=int, default=16, help="Minimum hole to fill in the model")
     parser.add_argument("--device_reuse", action="store_true", help="Enable device reuse")
     parser.add_argument("--const_selection", action="store_true", help="Enable constant selection for device updates")
