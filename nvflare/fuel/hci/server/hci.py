@@ -56,6 +56,7 @@ class AdminServer:
 
         self.cell = cell
         self.engine = engine
+        self.fl_ctx = engine.new_context()
         self.extra_conn_props = extra_conn_props
         self.cmd_reg = cmd_reg
         self.cred_keeper = CredKeeper()
@@ -75,9 +76,16 @@ class AdminServer:
         )
         cmd_reg.finalize()
 
+    def get_id_asserter(self):
+        return self.cred_keeper.get_id_asserter(self.fl_ctx)
+
+    def get_id_verifier(self):
+        return self.cred_keeper.get_id_verifier(self.fl_ctx)
+
     def _create_conn(self, conn_data: str, cmd_headers=None) -> (bool, str, Connection):
         conn = Connection()
         conn.set_prop(ConnProps.ENGINE, self.engine)
+        conn.set_prop(ConnProps.HCI_SERVER, self)
         if self.extra_conn_props:
             conn.set_props(self.extra_conn_props)
         if self.cmd_reg.conn_props:
@@ -160,7 +168,7 @@ class AdminServer:
 
     def stop(self):
         self.cmd_reg.close()
-        logger.info(f"Admin Server is stopped!")
+        logger.info("Admin Server is stopped!")
 
     def set_command_registry(self, cmd_reg: ServerCommandRegister):
         if cmd_reg:
@@ -172,4 +180,4 @@ class AdminServer:
             self.cmd_reg = cmd_reg
 
     def start(self):
-        logger.info(f"Started Admin Server")
+        logger.info("Admin Server is started")

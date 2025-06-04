@@ -18,14 +18,14 @@ import uuid
 from typing import Optional
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, SecureTrainConst
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
 from nvflare.private.fed.server.cred_keeper import CredKeeper
-from nvflare.private.fed.utils.identity_utils import IdentityVerifier, load_crt_bytes
+from nvflare.private.fed.utils.identity_utils import load_crt_bytes
 from nvflare.security.logging import secure_format_exception
 
 

@@ -17,6 +17,7 @@ class ConnProps(object):
     """Constants for connection properties."""
 
     ADMIN_SERVER = "_adminServer"
+    HCI_SERVER = "_hciServer"
     ENGINE = "_engine"
     REQUEST = "_request"
     EVENT_ID = "_eventId"

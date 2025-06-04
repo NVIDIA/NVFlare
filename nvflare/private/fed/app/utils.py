@@ -24,7 +24,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.sec.security_content_service import SecurityContentService
-from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer

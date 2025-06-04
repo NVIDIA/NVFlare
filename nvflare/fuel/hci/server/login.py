@@ -24,7 +24,6 @@ from nvflare.fuel.hci.security import IdentityKey, get_identity_info, verify_pas
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.lighter.utils import cert_to_dict, load_crt_bytes
-from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.security.logging import secure_format_exception
 
 from .reg import CommandFilter
@@ -95,7 +94,6 @@ class LoginModule(CommandModule, CommandFilter):
 
         self.authenticator = authenticator
         self.session_mgr = sess_mgr
-        self.cred_keeper = CredKeeper()
         self.logger = get_obj_logger(self)
 
     def get_spec(self):
@@ -147,16 +145,15 @@ class LoginModule(CommandModule, CommandFilter):
         assert isinstance(request, CellMessage)
         origin = request.get_header(MessageHeaderKey.ORIGIN)
 
-        engine = conn.get_prop(ConnProps.ENGINE)
-        with engine.new_context() as fl_ctx:
-            id_asserter = self.cred_keeper.get_id_asserter(fl_ctx)
-            session = self.session_mgr.create_session(
-                user_name=user_name,
-                user_org="global",
-                user_role="project_admin",
-                origin_fqcn=origin,
-            )
-            token = session.make_token(id_asserter)
+        hci = conn.get_prop(ConnProps.HCI_SERVER)
+        id_asserter = hci.get_id_asserter()
+        session = self.session_mgr.create_session(
+            user_name=user_name,
+            user_org="global",
+            user_role="project_admin",
+            origin_fqcn=origin,
+        )
+        token = session.make_token(id_asserter)
         conn.append_string("OK")
         conn.append_token(token)
 
@@ -175,10 +172,9 @@ class LoginModule(CommandModule, CommandFilter):
         signature = headers.get("signature")
 
         self.logger.info(f"got cert login headers: {headers=}")
-        engine = conn.get_prop(ConnProps.ENGINE)
-        with engine.new_context() as fl_ctx:
-            identity_verifier = self.cred_keeper.get_id_verifier(fl_ctx)
-            id_asserter = self.cred_keeper.get_id_asserter(fl_ctx)
+        hci = conn.get_prop(ConnProps.HCI_SERVER)
+        identity_verifier = hci.get_id_verifier()
+        id_asserter = hci.get_id_asserter()
 
         cert = load_crt_bytes(cert_data)
         try:
@@ -243,9 +239,8 @@ class LoginModule(CommandModule, CommandFilter):
             assert isinstance(request, CellMessage)
             origin = request.get_header(MessageHeaderKey.ORIGIN)
 
-            engine = conn.get_prop(ConnProps.ENGINE)
-            with engine.new_context() as fl_ctx:
-                id_asserter = self.cred_keeper.get_id_asserter(fl_ctx)
+            hci = conn.get_prop(ConnProps.HCI_SERVER)
+            id_asserter = hci.get_id_asserter()
 
             try:
                 sess = self.session_mgr.recreate_session(token, origin, id_asserter)

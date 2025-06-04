@@ -612,7 +612,6 @@ class FederatedServer(BaseServer):
 
                 secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
                 if not secure_mode:
-                    self.logger.info(f"server is not in secure mode")
                     return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error="server is not in secure mode")
 
             reg_origin = request.get_header(MessageHeaderKey.ORIGIN)
