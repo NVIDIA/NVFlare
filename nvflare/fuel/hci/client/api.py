@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import tempfile
 import threading
 import time
 import traceback
