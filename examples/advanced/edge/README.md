@@ -161,4 +161,4 @@ generating a new global model, we let the async scheme run for 40 model versions
 <img src="./figs/async.png" alt="Cifar10 Async Results" width="800" >
 
 Blue curve is sync training, and black curve is async training. As shown, the final model reached similar global accuracy, while the time cost of async scheme
-is around 2/3 of that of sync scheme under our simulated settings.
+is around 2/3 of that of sync scheme under our simulated settings, even considering it performs 4x more global evaluations.
