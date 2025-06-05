@@ -53,6 +53,7 @@ class ModelManager(FLComponent):
         self.current_model_version = 0
         self.updates = {}  # model_version => _ModelState
         self.num_updates_for_model = num_updates_for_model
+        self.num_updates_counter = 0
         self.max_model_version = max_model_version
         self.max_model_history = max_model_history
         self.global_lr = global_lr
@@ -68,6 +69,9 @@ class ModelManager(FLComponent):
         self.current_model_version += 1
         old_model_versions = []
 
+        # counter to confirm the number of updates
+        num_updates = 0
+
         if self.current_model_version == 1:
             # Initial global weights
             new_model = self.current_model.data
@@ -82,6 +86,7 @@ class ModelManager(FLComponent):
                 # Add the dict to new_model by multiplying the weight and dividing by the count
                 update_dict = aggr.dict
                 count = aggr.count
+
                 if count > 0:
                     # aggregate updates
                     for key, value in update_dict.items():
@@ -96,6 +101,10 @@ class ModelManager(FLComponent):
                 if self.current_model_version - v >= self.max_model_history:
                     old_model_versions.append(v)
 
+                # Reset aggr after counting its contribution
+                ms.aggregator.reset(fl_ctx)
+                num_updates += count
+
             # Add the aggregated updates to the current global weights
             global_weights = self.current_model.data
             for key, value in new_model.items():
@@ -106,7 +115,7 @@ class ModelManager(FLComponent):
 
         # create the ModelState for the new model version
         self.updates[self.current_model_version] = _ModelState(ModelUpdateDXOAggregator())
-        self.log_info(fl_ctx, f"generated new model version {self.current_model_version}")
+        self.log_info(fl_ctx, f"generated new model version {self.current_model_version} with {num_updates} updates")
 
         if old_model_versions:
             self.log_info(fl_ctx, f"removed old model versions {old_model_versions}")
@@ -118,6 +127,9 @@ class ModelManager(FLComponent):
         # convert new_model items from numpy arrays to lists for serialization
         new_model = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in new_model.items()}
         self.current_model = DXO(data_kind=DataKind.WEIGHTS, data=new_model)
+
+        # reset the num_updates_counter
+        self.num_updates_counter = 0
 
         # set fl_ctx and fire the event
         # wrap new_model to a learnable
@@ -155,13 +167,15 @@ class ModelManager(FLComponent):
                 f"processed child update V{model_version} with {len(model_update.devices)} devices: {accepted=}",
             )
 
+            # update the global num_updates_counter
+            self.num_updates_counter += len(model_update.devices)
+
         current_model_state = self.updates.get(self.current_model_version)
         if isinstance(current_model_state, _ModelState):
-            num_updates = len(current_model_state.devices)
-            if num_updates >= self.num_updates_for_model:
+            if self.num_updates_counter >= self.num_updates_for_model:
                 self.log_info(
                     fl_ctx,
-                    f"model V{self.current_model_version} got {num_updates} updates: generate new model version",
+                    f"Globally got {self.num_updates_counter} updates: generate new model version",
                 )
                 self.generate_new_model(fl_ctx)
 

@@ -42,7 +42,22 @@ class ModelUpdateAssessor(Assessor):
         device_reuse=True,
         const_selection=False,
     ):
+        """Initialize the ModelUpdateAssessor.
+
+        Args:
+            persistor_id (str): ID of the persistor component used to load and save models.
+            num_updates_for_model (int): Number of updates required before generating a new model version.
+            max_model_version (int): Maximum number of model versions allowed in the workflow.
+            max_model_history (int): Maximum number of historical model versions to keep in memory.
+            device_selection_size (int): Number of devices to select for each model update round.
+            min_hole_to_fill (int, optional): Minimum number of empty slots in device selection before refilling. Defaults to 1 - once received an update, immediately sample a new device and send the current task to it.
+            global_lr (float, optional): Global learning rate for model aggregation. Defaults to 1.0.
+            staleness_weight (bool, optional): Whether to apply staleness weighting to model updates. Defaults to False - no staleness weighting.
+            device_reuse (bool, optional): Whether to allow reusing devices across different model versions. Defaults to True.
+            const_selection (bool, optional): Whether to use constant device selection across rounds. Defaults to False.
+        """
         Assessor.__init__(self)
+        # Claim as self attributes for JobAPI
         self.persistor_id = persistor_id
         self.persistor = None
         self.num_updates_for_model = num_updates_for_model
