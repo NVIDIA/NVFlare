@@ -33,7 +33,7 @@ class DockerLauncherBuilder(Builder):
     """
 
     def __init__(
-        self, docker_image="nvflare-docker:0.0.1", base_image="python:3.8", requirements_file="requirements.txt"
+        self, docker_image="nvflare-docker:0.0.1", base_image="python:3.10", requirements_file="requirements.txt"
     ):
         """Build docker compose file."""
         self.docker_image = docker_image

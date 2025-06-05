@@ -59,7 +59,7 @@ class GlobalEvaluator(Widget):
         self.tb_writer = None
 
         self.register_event_handler(EventType.START_RUN, self._initialize)
-        self.register_event_handler(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, self.evaluate)
+        self.register_event_handler(AppEventType.GLOBAL_WEIGHTS_UPDATED, self.evaluate)
 
     def _load_model(self, model_path: str, fl_ctx: FLContext) -> Any:
         """Load model from model path.
@@ -151,8 +151,8 @@ class GlobalEvaluator(Widget):
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         # Load the model weights
         global_weights = global_model[ModelLearnableKey.WEIGHTS]
-        # Convert numpy weights to torch weights
-        global_weights = {k: torch.from_numpy(v) for k, v in global_weights.items()}
+        # Convert weights from list to torch tensors
+        global_weights = {k: torch.tensor(v) for k, v in global_weights.items()}
         self.model.load_state_dict(global_weights)
         # Evaluate the model
         metrics = self._eval_model()

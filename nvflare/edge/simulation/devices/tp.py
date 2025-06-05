@@ -88,7 +88,7 @@ class TPDeviceFactory(DeviceFactory):
 
         prefix = parser.get_device_id_prefix()
         if not prefix:
-            prefix = "device-"
+            prefix = "device"
         self._id_prefix = prefix
 
     def _make_device_id(self):
