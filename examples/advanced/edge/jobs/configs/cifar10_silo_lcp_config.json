@@ -10,8 +10,8 @@
     "args": {
       "data_root": "/tmp/nvflare/datasets/cifar10",
       "subset_size": 3125,
-      "communication_delay": {"mean": 1.0, "std": 0.5},
-      "device_speed": {"mean": [5.0, 10.0, 15.0], "std": [1.0, 1.0, 1.0]}
+      "communication_delay": {"mean": 5.0, "std": 1.0},
+      "device_speed": {"mean": [10.0, 20.0, 40.0], "std": [1.0, 2.0, 4.0]}
     }
   },
   "capabilities": {
