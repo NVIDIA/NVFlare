@@ -14,11 +14,15 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
 import threading
 import time
 import traceback
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
 from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, ProcessType, ReservedKey, ReturnCode
@@ -487,16 +491,39 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         waiter.stream_ctx = stream_ctx
         waiter.set()
 
-    def get_download_waiter(self, tx_id: str):
-        return self.file_download_waiters.get(tx_id)
+    def _wait_for_file(self, waiter, file_name):
+        progress_timeout = self.file_download_progress_timeout
+        result_received = False
+        while True:
+            if waiter.wait(timeout=0.5):
+                # wait ended normally
+                result_received = True
+                break
 
-    def pop_download_waiter(self, tx_id: str):
-        return self.file_download_waiters.pop(tx_id, None)
+            # is there any progress?
+            if time.time() - waiter.last_progress_time > progress_timeout:
+                # no progress for too long
+                break
 
-    def set_download_waiter(self, tx_id: str):
-        w = FileWaiter(tx_id)
-        self.file_download_waiters[tx_id] = w
-        return w
+        self.file_download_waiters.pop(waiter.tx_id, None)
+        if not result_received:
+            # Note: the file could be empty - do not return 0.
+            print(f"failed to receive file {file_name}: no progress for {progress_timeout} seconds")
+            return None
+
+        stream_ctx = waiter.stream_ctx
+        tmp_file_name = FileStreamer.get_file_location(stream_ctx)
+        file_stats = os.stat(tmp_file_name)
+        num_bytes_received = file_stats.st_size
+        Path(os.path.dirname(file_name)).mkdir(parents=True, exist_ok=True)
+        shutil.move(tmp_file_name, file_name)
+        return num_bytes_received
+
+    def receive_file(self, tx_id: str, file_name: str, conn: Connection, ctx: CommandContext):
+        waiter = FileWaiter(tx_id)
+        self.file_download_waiters[tx_id] = waiter
+        self.fire_and_forget(conn, ctx)
+        return self._wait_for_file(waiter, file_name)
 
     def get_cell(self):
         return self.cell

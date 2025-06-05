@@ -972,9 +972,5 @@ def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout
 
     """
     return new_session(
-        username="",
-        startup_kit_location=startup_kit_location,
-        secure_mode=False,
-        debug=debug,
-        timeout=timeout
+        username="", startup_kit_location=startup_kit_location, secure_mode=False, debug=debug, timeout=timeout
     )

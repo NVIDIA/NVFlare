@@ -37,18 +37,6 @@ class CommandCtxKey(object):
     CMD_HEADERS = "cmd_headers"
 
 
-class SendBytesToServer(ABC):
-    @abstractmethod
-    def send(self, sock, meta: str):
-        pass
-
-
-class ReceiveBytesFromServer(ABC):
-    @abstractmethod
-    def receive(self, sock):
-        pass
-
-
 class CommandContext(SimpleContext):
     def set_requester(self, r):
         self.set_prop(CommandCtxKey.REQUESTER, r)

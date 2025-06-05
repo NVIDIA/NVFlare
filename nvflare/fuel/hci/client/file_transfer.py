@@ -13,14 +13,11 @@
 # limitations under the License.
 
 import os
-import shutil
 import tempfile
 import time
 import uuid
-from pathlib import Path
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.app_common.streamers.file_streamer import FileStreamer
 from nvflare.fuel.hci.client.event import EventType
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.proto import MetaKey, ProtoKey
@@ -32,7 +29,7 @@ from .api_spec import CommandContext, HCIRequester
 from .api_status import APIStatus
 
 
-class _SendFileToServer(HCIRequester):
+class _FileSender(HCIRequester):
     def __init__(self, file_name: str):
         self.file_name = file_name
 
@@ -48,44 +45,13 @@ class _FileReceiver(HCIRequester):
         self.file_name = file_name
         self.num_bytes_received = 0
 
-    def _receive(self, api, waiter):
-        progress_timeout = api.file_download_progress_timeout
-        result_received = False
-        while True:
-            if waiter.wait(timeout=0.5):
-                # wait ended normally
-                result_received = True
-                break
-
-            # is there any progress?
-            if time.time() - waiter.last_progress_time > progress_timeout:
-                # no progress for too long
-                break
-
-        api.pop_download_waiter(waiter.tx_id)
-        if not result_received:
-            print(f"failed to receive file {self.file_name}: no progress for {progress_timeout} seconds")
-            return False
-
-        stream_ctx = waiter.stream_ctx
-        tmp_file_name = FileStreamer.get_file_location(stream_ctx)
-        file_stats = os.stat(tmp_file_name)
-        self.num_bytes_received = file_stats.st_size
-        Path(os.path.dirname(self.file_name)).mkdir(parents=True, exist_ok=True)
-        shutil.move(tmp_file_name, self.file_name)
-        return True
-
     def send_request(self, api, conn, cmd_ctx):
-        waiter = api.set_download_waiter(self.tx_id)
-        api.fire_and_forget(conn, cmd_ctx)
-        ok = self._receive(api, waiter)
-        if ok:
-            cmd_ctx.set_command_result(
-                {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: "OK"}
-            )
+        self.num_bytes_received = api.receive_file(self.tx_id, self.file_name, conn, cmd_ctx)
+        if self.num_bytes_received is not None:
+            cmd_ctx.set_command_result({ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: "OK"})
         else:
             cmd_ctx.set_command_result(
-                {ProtoKey.STATUS: APIStatus.ERROR_RUNTIME, ProtoKey.DETAILS: "error receive_bytes"}
+                {ProtoKey.STATUS: APIStatus.ERROR_RUNTIME, ProtoKey.DETAILS: "error receiving file"}
             )
         return None
 
@@ -312,6 +278,6 @@ class FileTransferModule(CommandModule):
         folder_name = split_path(full_path)[1]
         parts = [cmd_entry.full_command_name(), folder_name]
         command = join_args(parts)
-        sender = _SendFileToServer(out_file)
+        sender = _FileSender(out_file)
         ctx.set_requester(sender)
         return api.server_execute(command, cmd_ctx=ctx)
