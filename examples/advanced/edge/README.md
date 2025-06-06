@@ -163,5 +163,5 @@ Note that here we set the global learning rate to 0.05 for the async scheme, and
 The global accuracy curves are shown below, with x-axis representing the relative time of the training process, and y-axis representing the global accuracy:
 <img src="./figs/async_comp .png" alt="Cifar10 Async Results" width="800" >
 
-The blue curve represents sync training, and the orange curve represents async training. Under iid data-split with 16 concurrent devices, async scheme 
+The blue curve represents async training, and the orange curve represents sync training. Under iid data-split with 16 concurrent devices, async scheme 
 achieved comparable global accuracy while taking ~60% the time as compared with sync scheme. 
