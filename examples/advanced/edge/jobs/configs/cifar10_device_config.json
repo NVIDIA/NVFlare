@@ -1,17 +1,17 @@
 {
  "endpoint": "http://localhost:4321",
-  "num_devices": 4,
-  "num_active_devices": 4,
-  "num_workers": 4,
-  "device_reuse_rate": 1.0,
+  "num_devices": 1000,
+  "num_active_devices": 50,
+  "num_workers": 5,
+  "device_reuse_rate": 0.0,
   "device_id_prefix": "sim-device",
   "processor": {
     "path": "nvflare.edge.simulation.devices.pt_cifar10.PTCifar10Processor",
     "args": {
       "data_root": "/tmp/nvflare/datasets/cifar10",
-      "subset_size": 3125,
-      "min_train_time": 0.2,
-      "max_train_time": 1.0
+      "subset_size": 100,
+      "communication_delay": {"mean": 5.0, "std": 1.0},
+      "device_speed": {"mean": [10.0, 20.0, 40.0], "std": [1.0, 2.0, 4.0]}
     }
   },
   "capabilities": {

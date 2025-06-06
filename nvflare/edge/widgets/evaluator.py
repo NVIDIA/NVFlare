@@ -34,6 +34,7 @@ class GlobalEvaluator(Widget):
     def __init__(
         self,
         model_path: str,
+        eval_frequency: int = 1,
         torchvision_dataset: Optional[Dict] = None,
         custom_dataset: Optional[Dict] = None,
     ):
@@ -51,6 +52,7 @@ class GlobalEvaluator(Widget):
             raise ValueError("Cannot provide both torchvision_dataset and custom_dataset")
 
         self.model_path = model_path
+        self.eval_frequency = eval_frequency
         self.torchvision_dataset = torchvision_dataset
         self.custom_dataset = custom_dataset
         self.batch_size = 4
@@ -154,7 +156,8 @@ class GlobalEvaluator(Widget):
         # Convert weights from list to torch tensors
         global_weights = {k: torch.tensor(v) for k, v in global_weights.items()}
         self.model.load_state_dict(global_weights)
-        # Evaluate the model
-        metrics = self._eval_model()
-        for key, value in metrics.items():
-            self.tb_writer.add_scalar(key, value, current_round)
+        # Evaluate the model according to the evaluation frequency
+        if current_round % self.eval_frequency == 0:
+            metrics = self._eval_model()
+            for key, value in metrics.items():
+                self.tb_writer.add_scalar(key, value, current_round)
