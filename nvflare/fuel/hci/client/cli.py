@@ -333,7 +333,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         elif info == CommandInfo.CONFIRM_USER_NAME:
             answer = self._user_input("Confirm with User Name: ")
             if answer != self.user_name:
-                self.write_string(f"user name mismatch")
+                self.write_string("user name mismatch")
                 return
 
         # execute the command!

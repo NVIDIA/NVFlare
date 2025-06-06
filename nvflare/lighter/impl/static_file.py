@@ -17,8 +17,6 @@ import json
 import os
 import shutil
 
-import yaml
-
 from nvflare.lighter import utils
 from nvflare.lighter.constants import (
     CommConfigArg,

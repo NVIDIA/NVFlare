@@ -30,7 +30,6 @@ from nvflare.fuel.hci.cmd_arg_utils import (
     validate_options_string,
     validate_path_string,
     validate_required_target_string,
-    validate_sp_string,
 )
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
 

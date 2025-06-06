@@ -22,7 +22,6 @@ import psutil
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
-from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.admin import FedAdminServer

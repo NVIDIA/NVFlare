@@ -15,24 +15,18 @@
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
 from nvflare.fuel.f3.mpm import MainProcessMonitor
-from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
 from nvflare.fuel.hci.server.hci import AdminServer
-from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
+from nvflare.fuel.hci.server.login import LoginModule, SessionManager
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-from .cell_runner import CellRunner, NetConfig
+from .cell_runner import CellRunner
 
 
 class Server(CellRunner):
     def __init__(self, config_path: str, config_file: str, log_level: str):
         self._name = self.__class__.__name__
         self.logger = get_obj_logger(self)
-
-        net_config = NetConfig(config_file)
-        admin_host, admin_port = net_config.get_admin()
-        if not admin_host or not admin_port:
-            raise RuntimeError("missing admin host/port in net config")
 
         CellRunner.__init__(
             self, config_path=config_path, config_file=config_file, my_name=FQCN.ROOT_SERVER, log_level=log_level
@@ -42,14 +36,14 @@ class Server(CellRunner):
 
         # set up admin server
         cmd_reg = new_command_register_with_builtin_module(app_ctx=self)
-        sess_mgr = SessionManager()
+        sess_mgr = SessionManager(self.cell)
         login_module = LoginModule(sess_mgr)
         cmd_reg.register_module(login_module)
         cmd_reg.register_module(sess_mgr)
         cmd_reg.register_module(net_mgr)
         self.sess_mgr = sess_mgr
 
-        self.admin = AdminServer(cmd_reg=cmd_reg, host=admin_host, port=int(admin_port))
+        self.admin = AdminServer(cmd_reg=cmd_reg, cell=self.cell, engine=None)
 
         MainProcessMonitor.add_cleanup_cb(self._clean_up)
 

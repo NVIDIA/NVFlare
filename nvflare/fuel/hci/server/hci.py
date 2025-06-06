@@ -56,25 +56,28 @@ class AdminServer:
 
         self.cell = cell
         self.engine = engine
-        self.fl_ctx = engine.new_context()
+        self.fl_ctx = None
         self.extra_conn_props = extra_conn_props
         self.cmd_reg = cmd_reg
         self.cred_keeper = CredKeeper()
         self.logger = get_obj_logger(self)
 
-        FileStreamer.register_stream_processing(
-            fl_ctx=engine,
-            channel=StreamChannel.UPLOAD,
-            topic="*",
-            stream_done_cb=self._process_upload,
-        )
+        cmd_reg.finalize()
 
         cell.register_request_cb(
             channel=CellChannel.HCI,
             topic="*",
             cb=self._process_admin_request,
         )
-        cmd_reg.finalize()
+
+        if engine:
+            self.fl_ctx = engine.new_context()
+            FileStreamer.register_stream_processing(
+                fl_ctx=engine,
+                channel=StreamChannel.UPLOAD,
+                topic="*",
+                stream_done_cb=self._process_upload,
+            )
 
     def get_id_asserter(self):
         return self.cred_keeper.get_id_asserter(self.fl_ctx)

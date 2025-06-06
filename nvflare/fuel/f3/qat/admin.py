@@ -14,10 +14,8 @@
 
 import argparse
 
-from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.qat.net_config import NetConfig
-from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
-from nvflare.fuel.hci.client.static_service_finder import StaticServiceFinder
+from nvflare.fuel.hci.client.cli import AdminClient
 from nvflare.fuel.utils.config_service import ConfigService
 
 
@@ -34,15 +32,11 @@ def main():
 
     ConfigService.initialize(section_files={}, config_path=[args.config_dir])
     net_config = NetConfig(args.config_file)
-    admin_host, admin_port = net_config.get_admin()
-    if not admin_host or not admin_port:
-        raise ConfigError("missing admin host or port in net_config")
 
-    service_finder = StaticServiceFinder(host=admin_host, port=int(admin_port))
-
+    # TBD: make net_config compatible with AdminClient's admin_config!
+    admin_config = net_config.get_admin()
     client = AdminClient(
-        credential_type=CredentialType.PASSWORD,
-        service_finder=service_finder,
+        admin_config=admin_config,
     )
     client.run()
 
