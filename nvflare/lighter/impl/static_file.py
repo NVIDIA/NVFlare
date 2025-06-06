@@ -520,6 +520,8 @@ class StaticFileBuilder(Builder):
         return conn_host, port
 
     def _build_admin(self, admin: Participant, ctx: ProvisionContext):
+        self.prepare_admin_config(admin, ctx)
+
         dest_dir = ctx.get_kit_dir(admin)
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         server_name = ctx.get(CtxKey.SERVER_NAME)
@@ -530,10 +532,6 @@ class StaticFileBuilder(Builder):
             "admin_port": f"{admin_port}",
             "docker_image": self.docker_image,
         }
-
-        config = self.prepare_admin_config(admin, ctx)
-
-        utils.write(os.path.join(dest_dir, ProvFileName.FED_ADMIN_JSON), json.dumps(config, indent=2), "t")
 
         if self.docker_image:
             ctx.build_from_template(
@@ -582,8 +580,19 @@ class StaticFileBuilder(Builder):
             "port": conn_port,
             "secure_login": secure_login,
         }
-        config = ctx.json_load_template_section(TemplateSectionKey.FED_ADMIN, replacement_dict)
-        return config
+        ctx.build_from_template(
+            dest_dir=ctx.get_kit_dir(admin),
+            temp_section=TemplateSectionKey.FED_ADMIN,
+            file_name=ProvFileName.FED_ADMIN_JSON,
+            replacement=replacement_dict,
+        )
+
+        # create default resources in local
+        ctx.build_from_template(
+            dest_dir=ctx.get_local_dir(admin),
+            temp_section=TemplateSectionKey.DEFAULT_ADMIN_RESOURCES,
+            file_name=ProvFileName.RESOURCES_JSON_DEFAULT,
+        )
 
     def _build_relay(self, relay: Participant, ctx: ProvisionContext):
         lh = relay.get_listening_host()

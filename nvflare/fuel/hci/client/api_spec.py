@@ -221,6 +221,7 @@ class AdminConfigKey:
     HOST = "host"
     PORT = "port"
     PROMPT = "prompt"
+    LOGIN_TIMEOUT = "login_timeout"
     WITH_FILE_TRANSFER = "with_file_transfer"
     SECURE_LOGIN = "secure_login"
     UPLOAD_DIR = "upload_dir"

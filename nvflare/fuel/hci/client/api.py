@@ -404,8 +404,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         abort_signal = Signal()
         shared_fl_ctx = FLContext()
         shared_fl_ctx.set_public_props({ReservedKey.IDENTITY_NAME: self.user_name})
-
-        self.debug("Starting to authenticate")
         token, token_signature, ssid, token_verifier = authenticator.authenticate(
             shared_fl_ctx=shared_fl_ctx,
             abort_signal=abort_signal,

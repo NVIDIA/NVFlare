@@ -23,7 +23,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
-from nvflare.fuel.hci.client.config import FLAdminClientStarterConfigurator
+from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.cmd_arg_utils import (
     process_targets_into_str,
     validate_file_string,
@@ -80,7 +80,7 @@ class Session(SessionSpec):
         assert os.path.isdir(startup_path), f"startup kit does not exist at {startup_path}"
 
         workspace = Workspace(root_dir=startup_path)
-        conf = FLAdminClientStarterConfigurator(workspace)
+        conf = secure_load_admin_config(workspace)
         conf.configure()
 
         admin_config = conf.config_data.get("admin", None)

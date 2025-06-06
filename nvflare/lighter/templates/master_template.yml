@@ -286,7 +286,15 @@ fed_admin: |
       "download_dir": "transfer",
       "client_key": "client.key",
       "client_cert": "client.crt",
-      "ca_cert": "rootCA.pem",
+      "ca_cert": "rootCA.pem"
+    }
+  }
+
+default_admin_resources: |
+  {
+    "format_version": 1,
+    "admin": {
+      "login_timeout": 10.0,
       "with_debug": false,
       "prompt": "> "
     }

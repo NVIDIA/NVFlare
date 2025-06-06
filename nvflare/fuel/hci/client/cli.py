@@ -84,6 +84,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         self.no_stdout = False
         self.stopped = False  # use this flag to prevent unnecessary signal exception
         self.username = username
+        self.login_timeout = admin_config.get(AdminConfigKey.LOGIN_TIMEOUT)
 
         if not cli_history_dir:
             raise Exception("missing cli_history_dir")
@@ -97,7 +98,9 @@ class AdminClient(cmd.Cmd, EventHandler):
                     raise TypeError("cmd_modules must be a list of CommandModule")
                 modules.append(m)
 
-        self._get_login_creds()
+        secure_login = admin_config.get(AdminConfigKey.SECURE_LOGIN, True)
+        if secure_login:
+            self._get_login_creds()
 
         event_handlers = [self]
         if handlers:
@@ -422,12 +425,11 @@ class AdminClient(cmd.Cmd, EventHandler):
 
     def run(self):
         try:
-            self.api.connect()
+            self.api.connect(self.login_timeout)
             self.api.login()
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
-        except RuntimeError as e:
-            if self.debug:
-                print(f"DEBUG: Exception {secure_format_exception(e)}")
+        except Exception as e:
+            print(f"Exception {secure_format_exception(e)}")
         finally:
             self.stopped = True
             self.api.close()

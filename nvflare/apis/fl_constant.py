@@ -412,6 +412,7 @@ class WorkspaceConstants:
 
     SERVER_STARTUP_CONFIG = "fed_server.json"
     CLIENT_STARTUP_CONFIG = "fed_client.json"
+    ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
     SERVER_APP_CONFIG = JobConstants.SERVER_JOB_CONFIG
     CLIENT_APP_CONFIG = JobConstants.CLIENT_JOB_CONFIG

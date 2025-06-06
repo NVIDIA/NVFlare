@@ -148,6 +148,7 @@ class TemplateSectionKey:
     ADMIN_README = "readme_am"
     FL_ADMIN_SH = "fl_admin_sh"
     FED_ADMIN = "fed_admin"
+    DEFAULT_ADMIN_RESOURCES = "default_admin_resources"
     COMPOSE_YAML = "compose_yaml"
     DOCKERFILE = "dockerfile"
     LAUNCHER_DOCKERFILE = "launcher_dockerfile"

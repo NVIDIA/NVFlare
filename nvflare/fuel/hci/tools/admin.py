@@ -19,7 +19,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.client.cli import AdminClient
-from nvflare.fuel.hci.client.config import FLAdminClientStarterConfigurator
+from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
 from nvflare.security.logging import secure_format_exception
 
@@ -42,10 +42,10 @@ def main():
     try:
         os.chdir(args.workspace)
         workspace = Workspace(root_dir=args.workspace)
-        conf = FLAdminClientStarterConfigurator(workspace=workspace)
+        conf = secure_load_admin_config(workspace)
         conf.configure()
     except ConfigError as e:
-        print(f"ConfigError: {secure_format_exception(e)}")
+        print(f"{secure_format_exception(e)}")
         return
 
     try:
