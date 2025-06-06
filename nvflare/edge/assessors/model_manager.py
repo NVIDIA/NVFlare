@@ -48,6 +48,17 @@ class ModelManager(FLComponent):
         global_lr: float,
         staleness_weight: bool,
     ):
+        """Initialize the ModelManager.
+        The aggregation scheme and weights are calculated following FedBuff paper "Federated Learning with Buffered Asynchronous Aggregation".
+        The staleness_weight can be enabled to apply staleness weighting to model updates.
+        Args:
+            num_updates_for_model (int): Number of updates required before generating a new model version.
+            max_model_version (int): Maximum number of model versions allowed in the workflow.
+            max_model_history (int): Maximum number of historical model versions to keep in memory.
+            global_lr (float): Global learning rate for model aggregation.
+            staleness_weight (bool): Whether to apply staleness weighting to model updates.
+        """
+
         FLComponent.__init__(self)
         self.current_model = None
         self.current_model_version = 0

@@ -43,6 +43,9 @@ class ModelUpdateAssessor(Assessor):
         const_selection=False,
     ):
         """Initialize the ModelUpdateAssessor.
+        Enable both asynchronous and synchronous model updates from clients.
+        For asynchronous updates, the staleness is calculated based on the starting and current model version.
+        And the aggregation scheme and weights are calculated following FedBuff paper "Federated Learning with Buffered Asynchronous Aggregation".
 
         Args:
             persistor_id (str): ID of the persistor component used to load and save models.
@@ -131,12 +134,7 @@ class ModelUpdateAssessor(Assessor):
 
         # Update available devices
         if report.available_devices:
-            self.device_manager.update_available_devices(report.available_devices)
-            self.log_debug(
-                fl_ctx,
-                f"assessor got reported {len(report.available_devices)} available devices from child. "
-                f"total num available devices: {len(self.device_manager.available_devices)}",
-            )
+            self.device_manager.update_available_devices(report.available_devices, fl_ctx)
 
         accepted = True
         if report.model_updates:
@@ -153,11 +151,7 @@ class ModelUpdateAssessor(Assessor):
             # Handle device selection
             num_holes = self.device_manager.device_selection_size - len(self.device_manager.current_selection)
             if num_holes >= self.device_manager.min_hole_to_fill:
-                if not self.device_manager.const_selection:
-                    self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
-                else:
-                    self.log_info(fl_ctx, "constant selection enabled, use the same original set.")
-                    self.device_manager.repeat_selection(self.model_manager.current_model_version, fl_ctx)
+                self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
 
         else:
             self.log_debug(fl_ctx, "no model updates")

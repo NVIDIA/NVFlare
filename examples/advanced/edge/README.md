@@ -156,9 +156,12 @@ With the centralized training of 10 epochs, and the federated training of 10 rou
 Red curve is the centralized training, blue is the baseline federated training with regular single-layer setting, and green is the simulated cross-device federated training.
 The three learning will converge to similar accuracy, note that in this case each client holds partial data that is 1/16 of the whole training set sequentially split.
 
-Comparing sync v.s. async, we tested an async scheme with producing a new model upon receiving 4 model updates, so comparing with sync scheme requiring 16 model updates for 
-generating a new global model, we let the async scheme run for 40 model versions. The global accuracy curves are shown below:
+Comparing synchronous (sync) vs. asynchronous (async) training, we tested an async scheme that produces a new global model after receiving 4 model updates, compared to the sync scheme which requires 16 model updates to generate a new global model.
+
+In this comparison, the sync scheme generates 10 model versions (i.e., 10 global evaluations). To match the total number of model updates processed, we let the async scheme run for 40 model versions, because
+16×10/4=40
+
+The global accuracy curves are shown below:
 <img src="./figs/async.png" alt="Cifar10 Async Results" width="800" >
 
-Blue curve is sync training, and black curve is async training. As shown, the final model reached similar global accuracy, while the time cost of async scheme
-is around 2/3 of that of sync scheme under our simulated settings, even considering it performs 4x more global evaluations.
+The blue curve represents sync training, and the black curve represents async training. Both approaches reach similar final global accuracy. However, the async scheme completes in approximately 2/3 of the time of the sync scheme under our simulated settings, despite performing 4 times more global evaluations.
