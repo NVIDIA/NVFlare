@@ -30,7 +30,7 @@ from nvflare.fuel.hci.server.authz import AuthzFilter
 from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.hci import AdminServer
-from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
+from nvflare.fuel.hci.server.login import LoginModule, SessionManager
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader
@@ -97,7 +97,6 @@ class FedAdminServer(AdminServer):
         self,
         cell: Cell,
         fed_admin_interface,
-        users,
         cmd_modules,
         file_upload_dir,
         file_download_dir,
@@ -107,7 +106,6 @@ class FedAdminServer(AdminServer):
 
         Args:
             fed_admin_interface: the server's federated admin interface
-            users: a dict of {username: pwd hash}
             cmd_modules: a list of CommandModules
             file_upload_dir: the directory for uploaded files
             file_download_dir: the directory for files to be downloaded
@@ -118,9 +116,8 @@ class FedAdminServer(AdminServer):
         self.cell = cell
         self.client_lock = threading.Lock()
 
-        authenticator = SimpleAuthenticator(users)
         sess_mgr = SessionManager(cell)
-        login_module = LoginModule(authenticator, sess_mgr)
+        login_module = LoginModule(sess_mgr)
         cmd_reg.register_module(login_module)
 
         # register filters - order is important!

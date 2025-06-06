@@ -126,10 +126,9 @@ class CommandInfo(enum.Enum):
     OK = 0
     UNKNOWN = 1
     AMBIGUOUS = 2
-    CONFIRM_PWD = 3
-    CONFIRM_YN = 4
+    CONFIRM_YN = 3
+    CONFIRM_AUTH = 4
     CONFIRM_USER_NAME = 5
-    CONFIRM_AUTH = 6
 
 
 class ReplyProcessor:
@@ -223,9 +222,9 @@ class AdminConfigKey:
     PORT = "port"
     PROMPT = "prompt"
     WITH_FILE_TRANSFER = "with_file_transfer"
+    SECURE_LOGIN = "secure_login"
     UPLOAD_DIR = "upload_dir"
     DOWNLOAD_DIR = "download_dir"
-    CRED_TYPE = "cred_type"
     USERNAME = "username"
     FILE_DOWNLOAD_PROGRESS_TIMEOUT = "file_download_progress_timeout"
 

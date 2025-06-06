@@ -57,27 +57,20 @@ def kill_child_processes(parent_pid):
         process.kill()
 
 
-def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):
+def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None):
     """To create the admin server.
 
     Args:
         fl_server: fl_server
         server_conf: server config
         args: command args
-        secure_train: True/False
 
     Returns:
         A FedAdminServer.
     """
-    users = {}
-    # Create a default user admin:admin for the POC insecure use case.
-    if not secure_train:
-        users = {"admin": hash_password("admin")}
-
     admin_server = FedAdminServer(
         cell=fl_server.cell,
         fed_admin_interface=fl_server.engine,
-        users=users,
         cmd_modules=fl_server.cmd_modules,
         file_upload_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
         file_download_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),

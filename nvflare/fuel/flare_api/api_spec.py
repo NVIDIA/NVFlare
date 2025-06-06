@@ -328,36 +328,6 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def list_sp(self) -> dict:
-        """List available service providers
-
-        Returns: a dict that contains information about the primary SP and others
-
-        """
-        pass
-
-    @abstractmethod
-    def get_active_sp(self) -> dict:
-        """Get the current active service provider (SP).
-
-        Returns: a dict that describes the current active SP. If no SP is available currently, the 'name' attribute of
-        the result is empty.
-        """
-        pass
-
-    @abstractmethod
-    def promote_sp(self, sp_end_point: str):
-        """Promote the specified endpoint to become the active SP.
-
-        Args:
-            sp_end_point: the endpoint of the SP. It's string in this format: <url>:<server_port>:<admin_port>
-
-        Returns: None
-
-        """
-        pass
-
-    @abstractmethod
     def get_available_apps_to_upload(self):
         """Get defined FLARE app folders from the upload folder on the machine the FLARE API is running
 

@@ -28,8 +28,6 @@ from nvflare.fuel.hci.client.fl_admin_api_spec import APISyntaxError, FLAdminAPI
 from nvflare.fuel.hci.cmd_arg_utils import validate_text_file_name
 from nvflare.security.logging import secure_format_exception
 
-from .overseer_service_finder import ServiceFinderByOverseer
-
 
 def wrap_with_return_exception_responses(func):
     """Decorator on all FLAdminAPI calls to handle any raised exceptions and return the fitting error status."""
@@ -98,18 +96,12 @@ def default_stats_handling_cb(reply: FLAdminAPIResponse) -> bool:
 class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     def __init__(
         self,
-        overseer_agent: OverseerAgent,
-        ca_cert: str = "",
-        client_cert: str = "",
-        client_key: str = "",
+        user_name: str,
+        admin_config: dict,
         upload_dir: str = "",
         download_dir: str = "",
         cmd_modules: Optional[List] = None,
-        user_name: str = None,
-        insecure=False,
         debug=False,
-        session_timeout_interval=None,
-        session_status_check_interval=None,
         auto_login_max_tries: int = 5,
     ):
         """FLAdminAPI serves as foundation for communications to FL server through the AdminAPI.
@@ -118,36 +110,19 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         This happens in a thread, so code that executes after should check that the FLAdminAPI is successfully logged in.
 
         Args:
-            ca_cert: path to CA Cert file, by default provisioned rootCA.pem
-            client_cert: path to admin client Cert file, by default provisioned as client.crt
-            client_key: path to admin client Key file, by default provisioned as client.key
             upload_dir: File transfer upload directory. Folders uploaded to the server to be deployed must be here. Folder must already exist and be accessible.
             download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
-            overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
             user_name: Username to authenticate with FL server
-            insecure: Whether or not to use secure communication, poc was the name of this arg before version 2.4.
             debug: Whether to print debug messages. False by default.
-            session_timeout_interval: if specified, automatically close the session after inactive for this long
-            session_status_check_interval: how often to check session status with server
             auto_login_max_tries: maximum number of tries to auto-login.
         """
-        service_finder = ServiceFinderByOverseer(overseer_agent)
-
         AdminAPI.__init__(
             self,
-            ca_cert=ca_cert,
-            client_cert=client_cert,
-            client_key=client_key,
-            upload_dir=upload_dir,
-            download_dir=download_dir,
-            cmd_modules=cmd_modules,
-            service_finder=service_finder,
             user_name=user_name,
-            insecure=insecure,
+            admin_config=admin_config,
+            cmd_modules=cmd_modules,
             debug=debug,
-            session_timeout_interval=session_timeout_interval,
-            session_status_check_interval=session_status_check_interval,
             auto_login_max_tries=auto_login_max_tries,
         )
         self.upload_dir = upload_dir
@@ -215,15 +190,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if err:
             raise APISyntaxError(err)
         return file
-
-    def _validate_sp_string(self, sp_string) -> str:
-        if re.match(
-            type_pattern_mapping.get("sp_end_point"),
-            sp_string,
-        ):
-            return sp_string
-        else:
-            raise APISyntaxError("sp_string must be of the format example.com:8002:8003")
 
     def _get_processed_cmd_reply_data(self, command) -> Tuple[bool, str, Dict[str, Any]]:
         """Executes the specified command through the underlying AdminAPI's do_command() and checks the response to
@@ -592,41 +558,8 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def list_sp(self) -> FLAdminAPIResponse:
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("list_sp")
-        if reply.get("data"):
-            return FLAdminAPIResponse(APIStatus.SUCCESS, reply.get("data"), reply)
-        return FLAdminAPIResponse(
-            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
-        )
-
-    @wrap_with_return_exception_responses
-    def get_active_sp(self) -> FLAdminAPIResponse:
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("get_active_sp")
-        if reply.get("details"):
-            return FLAdminAPIResponse(APIStatus.SUCCESS, reply.get("details"), reply)
-        return FLAdminAPIResponse(
-            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
-        )
-
-    @wrap_with_return_exception_responses
-    def promote_sp(self, sp_end_point: str) -> FLAdminAPIResponse:
-        sp_end_point = self._validate_sp_string(sp_end_point)
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("promote_sp " + sp_end_point)
-        if success:
-            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply.get("details")}, reply)
-        return FLAdminAPIResponse(
-            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
-        )
-
-    @wrap_with_return_exception_responses
     def shutdown_system(self) -> FLAdminAPIResponse:
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data("shutdown_system")
-        if success:
-            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply.get("details")}, reply)
-        return FLAdminAPIResponse(
-            APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
-        )
+        return self.shutdown(TargetType.ALL)
 
     @wrap_with_return_exception_responses
     def get_available_apps_to_upload(self):

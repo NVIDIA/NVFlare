@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import cmd
-import getpass
 import json
 import os
 import signal
@@ -29,9 +28,8 @@ except ImportError:
     readline = None
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args, parse_command_line
-from nvflare.fuel.hci.proto import CredentialType, ProtoKey
+from nvflare.fuel.hci.proto import ProtoKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
-from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -81,9 +79,6 @@ class AdminClient(cmd.Cmd, EventHandler):
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = admin_config.get(AdminConfigKey.PROMPT, "> ")
         self.user_name = "admin"
-        self.pwd = None
-        self.credential_type = admin_config.get(AdminConfigKey.CRED_TYPE, CredentialType.CERT)
-
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
@@ -325,9 +320,7 @@ class AdminClient(cmd.Cmd, EventHandler):
             self.write_string("Ambiguous command {} - qualify with scope".format(cmd_name))
             return
         elif info == CommandInfo.CONFIRM_AUTH:
-            if self.credential_type == CredentialType.PASSWORD:
-                info = CommandInfo.CONFIRM_PWD
-            elif self.user_name:
+            if self.user_name:
                 info = CommandInfo.CONFIRM_USER_NAME
             else:
                 info = CommandInfo.CONFIRM_YN
@@ -340,12 +333,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         elif info == CommandInfo.CONFIRM_USER_NAME:
             answer = self._user_input("Confirm with User Name: ")
             if answer != self.user_name:
-                self.write_string(f"user name mismatch: {answer} != {self.user_name}")
-                return
-        elif info == CommandInfo.CONFIRM_PWD:
-            pwd = getpass.getpass("Enter password to confirm: ")
-            if not verify_password(self.pwd, pwd):
-                self.write_string("Not authenticated")
+                self.write_string(f"user name mismatch")
                 return
 
         # execute the command!
@@ -445,13 +433,7 @@ class AdminClient(cmd.Cmd, EventHandler):
             self.api.close()
 
     def _get_login_creds(self):
-        if self.credential_type == CredentialType.PASSWORD:
-            self.user_name = "admin"
-            self.pwd = hash_password("admin")
-        elif self.credential_type == CredentialType.LOCAL_CERT:
-            self.user_name = self.username
-        else:
-            self.user_name = self._user_input("User Name: ")
+        self.user_name = self._user_input("User Name: ")
 
     def print_resp(self, resp: dict):
         """Prints the server response

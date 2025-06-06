@@ -40,9 +40,9 @@ class ProvisionContext(dict):
         self[CtxKey.PROJECT] = project
 
         server = project.get_server()
-        admin_port = server.get_prop(PropKey.ADMIN_PORT, 8003)
-        self[CtxKey.ADMIN_PORT] = admin_port
         fed_learn_port = server.get_prop(PropKey.FED_LEARN_PORT, 8002)
+        admin_port = server.get_prop(PropKey.ADMIN_PORT, fed_learn_port)
+        self[CtxKey.ADMIN_PORT] = admin_port
         self[CtxKey.FED_LEARN_PORT] = fed_learn_port
         self[CtxKey.SERVER_NAME] = server.name
         self[CtxKey.TEMP_FILES_LOADED] = []

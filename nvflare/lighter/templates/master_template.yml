@@ -263,8 +263,6 @@ fed_server: |
             "service": {
                 "target": "localhost:8002"
             },
-            "admin_host": "localhost",
-            "admin_port": 5005,
             "ssl_private_key": "server.key",
             "ssl_cert": "server.crt",
             "ssl_root_cert": "rootCA.pem"
@@ -277,19 +275,19 @@ fed_admin: |
     "format_version": 1,
     "admin": {
       "project_name": "{~~project_name~~}",
-      "identity": "{~~identity~~}",
       "server_identity": "{~~server_identity~~}",
       "scheme": "{~~scheme~~}",
+      "host": "{~~host~~}",
+      "port": {~~port~~},
       "connection_security": "{~~conn_sec~~}",
+      "secure_login": {~~secure_login~~},
       "with_file_transfer": true,
       "upload_dir": "transfer",
       "download_dir": "transfer",
-      "with_login": true,
-      "with_ssl": true,
-      "cred_type": "cert",
       "client_key": "client.key",
       "client_cert": "client.crt",
       "ca_cert": "rootCA.pem",
+      "with_debug": false,
       "prompt": "> "
     }
   }

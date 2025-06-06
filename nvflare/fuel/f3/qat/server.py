@@ -41,11 +41,9 @@ class Server(CellRunner):
         net_mgr = NetManager(self.agent, diagnose=True)
 
         # set up admin server
-        users = {"admin": hash_password("admin")}
         cmd_reg = new_command_register_with_builtin_module(app_ctx=self)
-        authenticator = SimpleAuthenticator(users)
         sess_mgr = SessionManager()
-        login_module = LoginModule(authenticator, sess_mgr)
+        login_module = LoginModule(sess_mgr)
         cmd_reg.register_module(login_module)
         cmd_reg.register_module(sess_mgr)
         cmd_reg.register_module(net_mgr)

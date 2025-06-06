@@ -31,6 +31,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.streamers.file_streamer import FileStreamer
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
@@ -43,7 +44,6 @@ from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import (
     ConfirmMethod,
-    CredentialType,
     InternalCommands,
     MetaKey,
     ProtoKey,
@@ -60,19 +60,11 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import ClientType
 from nvflare.private.fed.authenticator import Authenticator, validate_auth_headers
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
+from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier, get_cn_from_cert, load_cert_file
 from nvflare.private.stream_runner import HeaderKey, ObjectStreamer
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api_spec import (
-    AdminAPISpec,
-    AdminConfigKey,
-    ApiPocValue,
-    CommandContext,
-    CommandCtxKey,
-    CommandInfo,
-    ReplyProcessor,
-)
+from .api_spec import AdminAPISpec, AdminConfigKey, CommandContext, CommandCtxKey, CommandInfo, ReplyProcessor
 from .api_status import APIStatus
 
 _CMD_TYPE_UNKNOWN = 0
@@ -234,7 +226,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         admin_config: dict,
         cmd_modules: Optional[List] = None,
         debug: bool = False,
-        auto_login_delay: int = 5,
         auto_login_max_tries: int = 15,
         event_handlers=None,
     ):
@@ -277,7 +268,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 event_handlers.append(m)
 
         self.logger = get_obj_logger(self)
-        self.user_cred_type = admin_config.get(AdminConfigKey.CRED_TYPE, CredentialType.CERT)
         self.user_identity = admin_config.get(AdminConfigKey.IDENTITY)
         self.conn_sec = admin_config.get(AdminConfigKey.CONNECTION_SECURITY)
         self.project_name = admin_config.get(AdminConfigKey.PROJECT_NAME)
@@ -286,21 +276,28 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.ca_cert = admin_config.get(AdminConfigKey.CA_CERT)
         self.client_cert = admin_config.get(AdminConfigKey.CLIENT_CERT)
         self.client_key = admin_config.get(AdminConfigKey.CLIENT_KEY)
+        self.secure_login = admin_config.get(AdminConfigKey.SECURE_LOGIN, True)
         self.host = admin_config.get(AdminConfigKey.HOST, "localhost")
         self.port = admin_config.get(AdminConfigKey.PORT, 8002)
         self.file_download_progress_timeout = admin_config.get(AdminConfigKey.FILE_DOWNLOAD_PROGRESS_TIMEOUT, 5.0)
         self.user_name = user_name
         self.event_handlers = event_handlers
 
-        if not user_name:
-            raise Exception("user_name is required.")
-
         if not self.ca_cert:
-            raise Exception("missing CA Cert file name")
+            raise ConfigError("missing CA Cert file name")
         if not self.client_cert:
-            raise Exception("missing Client Cert file name")
+            raise ConfigError("missing Client Cert file name")
         if not self.client_key:
-            raise Exception("missing Client Key file name")
+            raise ConfigError("missing Client Key file name")
+
+        if not self.secure_login:
+            # In insecure mode, the username does not need to be provided
+            # Instead, we'll find the username from the client cert
+            cert = load_cert_file(self.client_cert)
+            self.user_name = get_cn_from_cert(cert)
+
+        if not self.user_name:
+            raise Exception("user_name is required.")
 
         self._debug = debug
         self.cmd_timeout = None
@@ -329,8 +326,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         # create the FSM for session monitoring
         if auto_login_max_tries < 0 or auto_login_max_tries > MAX_AUTO_LOGIN_TRIES:
             raise ValueError(f"auto_login_max_tries is out of range: [0, {MAX_AUTO_LOGIN_TRIES}]")
-        if auto_login_delay < 5.0:
-            raise ValueError(f"auto_login_delay must be more than 5.0. Got value: {auto_login_delay}]")
         self.auto_login_max_tries = auto_login_max_tries
 
         self.closed = False
@@ -685,22 +680,16 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         Returns:
             A dict of login status and details
         """
-        headers = None
-        if self.user_cred_type == CredentialType.PASSWORD:
-            pwd = ApiPocValue.ADMIN
-            command = f"{InternalCommands.PWD_LOGIN} {self.user_name} {pwd}"
-        else:
-            # use cert
-            command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"
+        command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"
 
-            id_asserter = IdentityAsserter(private_key_file=self.client_key, cert_file=self.client_cert)
-            cn_signature = id_asserter.sign_common_name(nonce="")
+        id_asserter = IdentityAsserter(private_key_file=self.client_key, cert_file=self.client_cert)
+        cn_signature = id_asserter.sign_common_name(nonce="")
 
-            headers = {
-                "user_name": self.user_name,
-                "cert": id_asserter.cert_data,
-                "signature": cn_signature,
-            }
+        headers = {
+            "user_name": self.user_name,
+            "cert": id_asserter.cert_data,
+            "signature": cn_signature,
+        }
 
         self.login_result = None
         self.server_execute(command, _LoginReplyProcessor(), headers=headers)
@@ -850,10 +839,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         assert isinstance(ent, CommandEntry)
         if ent.confirm == ConfirmMethod.AUTH:
             return CommandInfo.CONFIRM_AUTH
-        elif ent.confirm == ConfirmMethod.PASSWORD:
-            return CommandInfo.CONFIRM_PWD
-        elif ent.confirm == ConfirmMethod.USER_NAME:
-            return CommandInfo.CONFIRM_USER_NAME
         elif ent.confirm == ConfirmMethod.YESNO:
             return CommandInfo.CONFIRM_YN
         else:

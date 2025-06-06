@@ -180,16 +180,16 @@ class BaseServer(ABC):
         parent_url = None
 
         parts = target.split(":")
-        if len(parts) > 1:
-            # "0" means all interfaces for all protocols (ipv4 and ipv6)
-            listen_target = "0:" + parts[1]
-        else:
-            listen_target = target
+        if len(parts) != 2:
+            raise RuntimeError(f"bad service target: {target}")
+
+        ports = parts[1].split(",")
+        root_url = [f"{scheme}://0:{p}" for p in ports]
 
         my_fqcn = FQCN.ROOT_SERVER
         self.cell = Cell(
             fqcn=my_fqcn,
-            root_url=scheme + "://" + listen_target,
+            root_url=root_url,
             secure=secure_train,
             credentials=credentials,
             create_internal_listener=True,

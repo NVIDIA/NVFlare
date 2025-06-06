@@ -33,7 +33,6 @@ from nvflare.fuel.hci.cmd_arg_utils import (
     validate_sp_string,
 )
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
-from nvflare.private.fed.utils.identity_utils import get_cn_from_cert, load_cert_file
 
 from .api_spec import (
     AuthenticationError,
@@ -89,15 +88,7 @@ class Session(SessionSpec):
         if not admin_config:
             raise ConfigError("Missing admin section in fed_admin configuration.")
 
-        if not secure_mode:
-            # In insecure mode, the username does not need to be provided
-            # Instead, we'll find the username from the client cert
-            cert_file = admin_config.get(AdminConfigKey.CLIENT_CERT)
-            if not cert_file:
-                raise ConfigError("Missing client cert file")
-
-            cert = load_cert_file(cert_file)
-            username = get_cn_from_cert(cert)
+        admin_config[AdminConfigKey.SECURE_LOGIN] = secure_mode
 
         self.username = username
         upload_dir = admin_config.get(AdminConfigKey.UPLOAD_DIR)
@@ -529,36 +520,6 @@ class Session(SessionSpec):
         """
         self.api.unset_command_timeout()
 
-    def list_sp(self) -> dict:
-        """List available service providers.
-
-        Returns: a dict that contains information about the primary SP and others
-
-        """
-        reply = self._do_command("list_sp", enforce_meta=False)
-        return reply.get(ResultKey.DETAILS)
-
-    def get_active_sp(self) -> dict:
-        """Get the current active service provider (SP).
-
-        Returns: a dict that describes the current active SP. If no SP is available currently, the 'name' attribute of
-        the result is empty.
-        """
-        reply = self._do_command("get_active_sp", enforce_meta=False)
-        return reply.get(ResultKey.META)
-
-    def promote_sp(self, sp_end_point: str):
-        """Promote the specified endpoint to become the active SP.
-
-        Args:
-            sp_end_point: the endpoint of the SP. It's string in this format: <url>:<server_port>:<admin_port>
-
-        Returns: None
-
-        """
-        sp_end_point = validate_sp_string(sp_end_point)
-        self._do_command("promote_sp " + sp_end_point)
-
     def get_available_apps_to_upload(self):
         """Get defined FLARE app folders from the upload folder on the machine the FLARE API is running.
 
@@ -572,21 +533,17 @@ class Session(SessionSpec):
         return dir_list
 
     def shutdown_system(self):
-        """Shutdown the whole NVFLARE system including the overseer, FL server(s), and all FL clients.
+        """Shutdown the whole NVFLARE system including FL server, and all FL clients.
 
         Returns: None
 
         Note: the user must be a Project Admin to use this method; otherwise the NOT_AUTHORIZED exception will be raised.
 
         """
+        self.shutdown(target_type=TargetType.ALL)
         sys_info = self._do_get_system_info(AdminCommandNames.ADMIN_CHECK_STATUS)
         if sys_info.server_info.status != "stopped":
             raise JobNotDone("there are still running jobs")
-
-        resp = self.overseer_agent.set_state("shutdown")
-        err = json.loads(resp.text).get("Error")
-        if err:
-            raise RuntimeError(err)
 
     def ls_target(self, target: str, options: str = None, path: str = None) -> str:
         """Run the "ls" command on the specified target and return the result.

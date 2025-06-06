@@ -36,7 +36,7 @@ class SiteSecurity:
     def authorization_check(self, engine, command, fl_ctx: FLContext):
         authorized = True
         reasons = ""
-        if not InternalCommands.contains_commmand(command):
+        if not InternalCommands.contains_command(command):
             fl_ctx.set_prop(FLContextKey.COMMAND_NAME, command, sticky=False)
             engine.fire_event(EventType.AUTHORIZE_COMMAND_CHECK, fl_ctx)
 
