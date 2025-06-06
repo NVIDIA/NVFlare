@@ -40,4 +40,3 @@ class NetConfig:
 
     def get_admin(self) -> (str, str):
         return self.config.get("admin")
-
