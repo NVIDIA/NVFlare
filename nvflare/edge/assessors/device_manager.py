@@ -30,7 +30,6 @@ class DeviceManager(FLComponent):
             - To fill a slot, a new device is selected from the available device pool.
         The device_reuse flag indicates whether devices can be reused across different model versions, if False, we will always select new devices when filling holes.
         The const_selection flag indicates whether the same devices should be selected across different model versions, if True, we will always select the same concurrent devices.
-        
         Args:
             device_selection_size (int): Number of devices to select for each model update round.
             min_hole_to_fill (int): Minimum number of empty slots in device selection before refilling.
