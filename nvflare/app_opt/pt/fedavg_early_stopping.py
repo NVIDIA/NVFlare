@@ -54,9 +54,11 @@ class PTFedAvgEarlyStopping(BaseFedAvg):
         self.patience = patience
         self.task_to_optimize = task_to_optimize
         self.num_fl_rounds_without_improvement: int = 0
-        self.stop_condition = stop_cond
-        if self.stop_condition:
-            self.stop_condition = parse_compare_criteria(self.stop_condition)
+        self.stop_cond = stop_cond
+        if self.stop_cond:
+            self.stop_condition = parse_compare_criteria(stop_cond)
+        else:
+            self.stop_condition = None
         self.save_filename = save_filename
         self.initial_model: FLModel = initial_model
         self.best_target_metric_value: Any = None
