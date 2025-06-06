@@ -120,10 +120,10 @@ Next, let's generate job configs for cifar10 via EdgeJob API.
 ```commandline
 cd jobs
 python cifar10_job.py --job_name cifar10_sync_job --simulation_config_file configs/cifar10_silo_config.json --device_reuse --const_selection
-python cifar10_job.py --job_name cifar10_async_job --simulation_config_file configs/cifar10_silo_config.json --min_hole_to_fill 1 --global_lr 0.05 --max_model_aggr 40 --max_model_history 40 --num_updates_for_model 1 --max_model_version 160 --device_reuse --const_selection
+python cifar10_job.py --job_name cifar10_async_job --simulation_config_file configs/cifar10_silo_config.json --min_hole_to_fill 1 --global_lr 0.05 --max_model_aggr 40 --max_model_history 40 --num_updates_for_model 1 --max_model_version 160 --eval_frequency 16 --device_reuse --const_selection
 
 python cifar10_job.py --job_name cifar10_sync_lcp_job --device_reuse --const_selection
-python cifar10_job.py --job_name cifar10_async_lcp_job --min_hole_to_fill 1 --global_lr 0.05 --max_model_aggr 40 --max_model_history 40 --num_updates_for_model 1 --max_model_version 160 --device_reuse --const_selection
+python cifar10_job.py --job_name cifar10_async_lcp_job --min_hole_to_fill 1 --global_lr 0.05 --max_model_aggr 40 --max_model_history 40 --num_updates_for_model 1 --max_model_version 160 --eval_frequency 16 --device_reuse --const_selection
 cd ..
 ```
 
@@ -156,12 +156,12 @@ With the centralized training of 10 epochs, and the federated training of 10 rou
 Red curve is the centralized training, blue is the baseline federated training with regular single-layer setting, and green is the simulated cross-device federated training.
 The three learning will converge to similar accuracy, note that in this case each client holds partial data that is 1/16 of the whole training set sequentially split.
 
-Comparing synchronous (sync) vs. asynchronous (async) training, as comfigured above, we tested an async scheme that produces a new global model after receiving 1 model update, compared to the sync scheme which requires 16 model updates to generate a new global model. 
+Comparing synchronous (sync) vs. asynchronous (async) training, as configured above, we tested an async scheme that produces a new global model after receiving 1 model update, compared to the sync scheme which requires 16 model updates to generate a new global model. 
 
-Note that in we set the global learning rate to 0.05 for the async scheme, and 1 for the sync scheme. To match the total number of model updates processed, we let the async scheme run for 160 model versions.
+Note that here we set the global learning rate to 0.05 for the async scheme, and 1.0 for the sync scheme. To match the total number of model updates processed, we let the async scheme run for 160 model versions.
 
 The global accuracy curves are shown below, with x-axis representing the relative time of the training process, and y-axis representing the global accuracy:
-<img src="./figs/async_comp.png" alt="Cifar10 Async Results" width="800" >
+<img src="./figs/async_comp .png" alt="Cifar10 Async Results" width="800" >
 
 The blue curve represents sync training, and the orange curve represents async training. Under iid data-split with 16 concurrent devices, async scheme 
-performs 16 times more global evaluations, and achieved better convergence. 
+achieved comparable global accuracy while taking ~60% the time as compared with sync scheme. 
