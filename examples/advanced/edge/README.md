@@ -170,7 +170,8 @@ So if we omit other time costs, async scheme should be about 60% of the sync sch
 
 Now let's take a look at the results of the two schemes. Note that here we set the global learning rate to 0.05 for the async scheme, and 1.0 for the sync scheme. To match the total number of model updates processed, we let the async scheme run for 160 model versions as compared with 10 rounds of sync training.
 
-The global accuracy curves are shown below, with x-axis representing the relative time of the training process, and y-axis representing the global accuracy:
+The global accuracy curves are shown below, with x-axis representing the relative time (in hours) of the training process, and y-axis representing the global accuracy:
+
 <img src="./figs/async_comp.png" alt="Cifar10 Async Results" width="800" >
 
 The blue curve represents async training, and the orange curve represents sync training. Under iid data-split with 16 concurrent devices, async scheme 
