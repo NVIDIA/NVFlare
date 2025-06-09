@@ -23,8 +23,6 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.model import ModelLearnable, model_learnable_to_dxo
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.edge.assessor import Assessment, Assessor
-from nvflare.edge.assessors.device_manager import DeviceManager
-from nvflare.edge.assessors.model_manager import ModelManager
 from nvflare.edge.mud import BaseState, StateUpdateReply, StateUpdateReport
 
 
@@ -32,15 +30,8 @@ class ModelUpdateAssessor(Assessor):
     def __init__(
         self,
         persistor_id,
-        num_updates_for_model,
-        max_model_version,
-        max_model_history,
-        device_selection_size,
-        min_hole_to_fill=1,
-        global_lr=1.0,
-        staleness_weight=False,
-        device_reuse=True,
-        const_selection=False,
+        model_manager_id,
+        device_manager_id,
     ):
         """Initialize the ModelUpdateAssessor.
         Enable both asynchronous and synchronous model updates from clients.
@@ -49,52 +40,41 @@ class ModelUpdateAssessor(Assessor):
 
         Args:
             persistor_id (str): ID of the persistor component used to load and save models.
-            num_updates_for_model (int): Number of updates required before generating a new model version.
-            max_model_version (int): Maximum number of model versions allowed in the workflow.
-            max_model_history (int): Maximum number of historical model versions to keep in memory.
-            device_selection_size (int): Number of devices to select for each model update round.
-            min_hole_to_fill (int, optional): Minimum number of empty slots in device selection before refilling. Defaults to 1 - once received an update, immediately sample a new device and send the current task to it.
-            global_lr (float, optional): Global learning rate for model aggregation. Defaults to 1.0.
-            staleness_weight (bool, optional): Whether to apply staleness weighting to model updates. Defaults to False - no staleness weighting.
-            device_reuse (bool, optional): Whether to allow reusing devices across different model versions. Defaults to True.
-            const_selection (bool, optional): Whether to use constant device selection across rounds. Defaults to False.
+            model_manager_id (str): ID of the model manager component.
+            device_manager_id (str): ID of the device manager component.
         """
         Assessor.__init__(self)
         # Claim as self attributes for JobAPI
         self.persistor_id = persistor_id
+        self.model_manager_id = model_manager_id
+        self.device_manager_id = device_manager_id
         self.persistor = None
-        self.num_updates_for_model = num_updates_for_model
-        self.max_model_version = max_model_version
-        self.max_model_history = max_model_history
-        self.device_selection_size = device_selection_size
-        self.min_hole_to_fill = min_hole_to_fill
-        self.device_reuse = device_reuse
-        self.const_selection = const_selection
-        self.global_lr = global_lr
-        self.staleness_weight = staleness_weight
+        self.model_manager = None
+        self.device_manager = None
 
         self.update_lock = threading.Lock()
         self.start_time = None
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
-        self.model_manager = ModelManager(
-            num_updates_for_model=num_updates_for_model,
-            max_model_version=max_model_version,
-            max_model_history=max_model_history,
-            global_lr=global_lr,
-            staleness_weight=staleness_weight,
-        )
-        self.device_manager = DeviceManager(
-            device_selection_size=device_selection_size,
-            min_hole_to_fill=min_hole_to_fill,
-            device_reuse=device_reuse,
-            const_selection=const_selection,
-        )
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
+
+        # Get persistor component
         self.persistor = engine.get_component(self.persistor_id)
         if not isinstance(self.persistor, LearnablePersistor):
             self.system_panic(reason="persistor must be a Persistor type object", fl_ctx=fl_ctx)
+            return
+
+        # Get model manager component
+        self.model_manager = engine.get_component(self.model_manager_id)
+        if not self.model_manager:
+            self.system_panic(reason=f"cannot find model manager component '{self.model_manager_id}'", fl_ctx=fl_ctx)
+            return
+
+        # Get device manager component
+        self.device_manager = engine.get_component(self.device_manager_id)
+        if not self.device_manager:
+            self.system_panic(reason=f"cannot find device manager component '{self.device_manager_id}'", fl_ctx=fl_ctx)
             return
 
         if self.persistor:

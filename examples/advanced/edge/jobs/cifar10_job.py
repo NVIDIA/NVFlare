@@ -16,6 +16,8 @@ import argparse
 
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.edge.aggregators.model_update_dxo_factory import ModelUpdateDXOAggrFactory
+from nvflare.edge.assessors.buff_device_manager import BuffDeviceManager
+from nvflare.edge.assessors.buff_model_manager import BuffModelManager
 from nvflare.edge.assessors.model_update import ModelUpdateAssessor
 from nvflare.edge.edge_job import EdgeJob
 from nvflare.edge.models.model import Cifar10ConvNet
@@ -50,19 +52,32 @@ def export_job(args):
     )
     job.to_server(evaluator, id="evaluator")
 
+    # add persistor, model_manager, and device_manager
     persistor = PTFileModelPersistor(model=Cifar10ConvNet())
     persistor_id = job.to_server(persistor, id="persistor")
 
-    assessor = ModelUpdateAssessor(
-        persistor_id=persistor_id,
+    model_manager = BuffModelManager(
+        num_updates_for_model=args.num_updates_for_model,
         max_model_version=args.max_model_version,
         max_model_history=args.max_model_history,
-        num_updates_for_model=args.num_updates_for_model,
+        global_lr=args.global_lr,
+        staleness_weight=args.staleness_weight,
+    )
+    model_manager_id = job.to_server(model_manager, id="model_manager")
+
+    device_manager = BuffDeviceManager(
         device_selection_size=args.device_selection_size,
         min_hole_to_fill=args.min_hole_to_fill,
-        global_lr=args.global_lr,
         device_reuse=args.device_reuse,
         const_selection=args.const_selection,
+    )
+    device_manager_id = job.to_server(device_manager, id="device_manager")
+
+    # add model_update_assessor
+    assessor = ModelUpdateAssessor(
+        persistor_id=persistor_id,
+        model_manager_id=model_manager_id,
+        device_manager_id=device_manager_id,
     )
     job.configure_server(
         assessor=assessor,

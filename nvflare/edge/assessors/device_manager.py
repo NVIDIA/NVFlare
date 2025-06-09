@@ -12,82 +12,76 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import random
-from typing import Dict, Set
+from abc import ABC, abstractmethod
+from typing import Any, Dict
 
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_context import FLContext
 
 
-class DeviceManager(FLComponent):
-    def __init__(self, device_selection_size: int, min_hole_to_fill: int, device_reuse: bool, const_selection: bool):
+class DeviceManager(FLComponent, ABC):
+    """Abstract base class for device managers in federated learning.
+
+    This class defines the interface that all device managers must implement.
+    Device managers are responsible for handling the selection of devices for model training.
+    """
+
+    def __init__(self):
         FLComponent.__init__(self)
         """Initialize the DeviceManager.
-        DeviceManager is responsible for managing the selection of devices for model training.
-        It maintains a list of available devices, tracks the current selection, and refills the selection as needed.
-        The device_selection_size determines how many "concurrent" devices can be selected for the training session.
-        The min_hole_to_fill determines how many empty slots should be created before refilling.
-            - An empty slot is created when any device reports its update back.
-            - To fill a slot, a new device is selected from the available device pool.
-        The device_reuse flag indicates whether devices can be reused across different model versions, if False, we will always select new devices when filling holes.
-        The const_selection flag indicates whether the same devices should be selected across different model versions, if True, we will always select the same concurrent devices.
-        Args:
-            device_selection_size (int): Number of devices to select for each model update round.
-            min_hole_to_fill (int): Minimum number of empty slots in device selection before refilling.
-            device_reuse (bool): Whether to allow reusing devices across different model versions.
-            const_selection (bool): Whether to use constant device selection across rounds.
+        DeviceManager keeps track of two dicts: 
+        - current_selection for devices of current task distribution
+        - available_devices containing all devices that are available for selection
         """
         self.current_selection = {}
-        self.current_selection_version = 0
         self.available_devices = {}
-        self.used_devices = {}
-        self.device_selection_size = device_selection_size
-        self.min_hole_to_fill = min_hole_to_fill
-        self.device_reuse = device_reuse
-        self.const_selection = const_selection
 
-    def update_available_devices(self, devices: Dict, fl_ctx) -> None:
-        self.available_devices.update(devices)
-        self.log_debug(
-            fl_ctx,
-            f"assessor got reported {len(devices)} available devices from child. "
-            f"total num available devices: {len(self.available_devices)}",
-        )
+    @abstractmethod
+    def update_available_devices(self, devices: Dict, fl_ctx: FLContext) -> None:
+        """Update the list of available devices.
+        modify self.available_devices with devices input
 
-    def fill_selection(self, current_model_version: int, fl_ctx) -> None:
-        num_holes = self.device_selection_size - len(self.current_selection)
-        self.log_info(fl_ctx, f"filling {num_holes} holes in selection list")
-        if num_holes > 0:
-            self.current_selection_version += 1
-            if self.const_selection:
-                # if const_selection is True, we will always select the same devices
-                usable_devices = set(self.available_devices.keys())
-                self.log_info(fl_ctx, "constant selection enabled, use the same original set.")
-            else:
-                if not self.device_reuse:
-                    # remove all used devices from available devices
-                    usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
-                else:
-                    # remove only the devices that are associated with the current model version
-                    usable_devices = set(self.available_devices.keys()) - set(
-                        k for k, v in self.used_devices.items() if v == current_model_version
-                    )
+        Args:
+            devices (Dict): Dictionary of available devices to add
+            fl_ctx: FLContext object
 
-            if usable_devices:
-                for _ in range(num_holes):
-                    device_id = random.choice(list(usable_devices))
-                    usable_devices.remove(device_id)
-                    self.current_selection[device_id] = self.current_selection_version
-                    self.used_devices[device_id] = current_model_version
-                    if not usable_devices:
-                        break
-        self.log_info(
-            fl_ctx,
-            f"current selection: V{self.current_selection_version}; {dict(sorted(self.current_selection.items()))}",
-        )
+            Returns: none
+        """
+        pass
 
-    def remove_devices_from_selection(self, devices: Set[str]) -> None:
-        for device_id in devices:
-            self.current_selection.pop(device_id, None)
+    @abstractmethod
+    def fill_selection(self, fl_ctx: FLContext) -> None:
+        """Fill the device selection sampled from available devices.
+        update self.current_selection
 
-    def get_selection(self) -> Dict:
+        Args:
+            current_model_version (int): Current version of the model
+            fl_ctx: FLContext object
+
+            Returns: none
+        """
+        pass
+
+    @abstractmethod
+    def remove_devices_from_selection(self, devices: Any, fl_ctx: FLContext) -> None:
+        """Remove devices from the current selection.
+        update self.current_selection
+
+        Args:
+            devices: Set of devices to remove
+            fl_ctx: FLContext object
+
+            Returns: none
+        """
+        pass
+
+    def get_selection(self, fl_ctx: FLContext) -> Any:
+        """Get the current device selection.
+
+        Args:
+            fl_ctx: FLContext object
+
+        Returns:
+            Current device selection
+        """
         return self.current_selection
