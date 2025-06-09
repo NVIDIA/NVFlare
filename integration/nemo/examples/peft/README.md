@@ -10,7 +10,7 @@ that condition the model to produce the desired output for the downstream task.
 For more details, see the [PEFT script](https://github.com/NVIDIA/NeMo/blob/v1.22.0/examples/nlp/language_modeling/tuning/megatron_gpt_peft_tuning.py) in NeMo, which we adapt using NVFlare's Lightning client API to run in a federated scenario.
 
 ## Dependencies
-The example was tested with the [NeMo 23.10 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
+The example was tested with the [NeMo 25.04.01 container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo).
 In the following, we assume this example folder of the container is mounted to `/workspace` and all downloading, etc. operations are based on this root path.
 
 > Note in the following, mount both the [current directory](./) and the [job_templates](../../../../job_templates) 
@@ -19,14 +19,14 @@ In the following, we assume this example folder of the container is mounted to `
 Start the docker container from **this directory** using
 ```
 # cd NVFlare/integration/nemo/examples/peft
-DOCKER_IMAGE="nvcr.io/nvidia/nemo:23.10"
+DOCKER_IMAGE="nvcr.io/nvidia/nemo:25.04.01"
 docker run --runtime=nvidia -it --rm --shm-size=16g -p 8888:8888 -p 6006:6006 --ulimit memlock=-1 --ulimit stack=67108864 \
 -v ${PWD}/../../../../job_templates:/job_templates -v ${PWD}:/workspace -w /workspace ${DOCKER_IMAGE}
 ```
 
 Next, install NVFlare.
 ```
-pip install nvflare~=2.5.0rc
+pip install "nvflare>2.6"
 ```
 
 ## Examples
