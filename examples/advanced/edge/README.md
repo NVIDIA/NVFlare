@@ -146,6 +146,7 @@ submit_job cifar10_sync_job
 You will then see the simulated devices start receiving the model from the server and complete local trainings.
 
 ### Results
+#### Federated Training v.s. Centralized Training
 After the configured rounds have finished, the training is complete, now let's check the training results.
 ```commandline
 tensorboard --logdir=/tmp/nvflare/workspaces
@@ -156,12 +157,21 @@ With the centralized training of 10 epochs, and the federated training of 10 rou
 Red curve is the centralized training, blue is the baseline federated training with regular single-layer setting, and green is the simulated cross-device federated training.
 The three learning will converge to similar accuracy, note that in this case each client holds partial data that is 1/16 of the whole training set sequentially split.
 
+#### Synchronous v.s. Asynchronous Federated Training
 Comparing synchronous (sync) vs. asynchronous (async) training, as configured above, we tested an async scheme that produces a new global model after receiving 1 model update, compared to the sync scheme which requires 16 model updates to generate a new global model. 
 
-Note that here we set the global learning rate to 0.05 for the async scheme, and 1.0 for the sync scheme. To match the total number of model updates processed, we let the async scheme run for 160 model versions.
+Theoretically, the async scheme has a latency of the communication time plus the **average time** of all devices to complete a local training. In comparison, the sync scheme has a latency of the **slowest** device to complete a local training.
+
+Under our current setting where each device is uniformly sampled from three different device types, each modeled as an independent Gaussian distribution, we have the expectation of one-round FL approximately:
+- Sync scheme: expectation of the max of the three Gaussian plus the communication mean $40 + (3/2)\pi^{-1/2} \times 4 + 5 = 48.4$
+- Async scheme: the average of the three means plus the communication mean $(10+20+40)/3 + 5 = 28.3$
+
+So if we omit other time costs, async scheme should be about 60% of the sync scheme.
+
+Now let's take a look at the results of the two schemes. Note that here we set the global learning rate to 0.05 for the async scheme, and 1.0 for the sync scheme. To match the total number of model updates processed, we let the async scheme run for 160 model versions as compared with 10 rounds of sync training.
 
 The global accuracy curves are shown below, with x-axis representing the relative time of the training process, and y-axis representing the global accuracy:
-<img src="./figs/async_comp .png" alt="Cifar10 Async Results" width="800" >
+<img src="./figs/async_comp.png" alt="Cifar10 Async Results" width="800" >
 
 The blue curve represents async training, and the orange curve represents sync training. Under iid data-split with 16 concurrent devices, async scheme 
-achieved comparable global accuracy while taking ~60% the time as compared with sync scheme. 
+achieved comparable global accuracy while taking ~60% the time as compared with sync scheme as expected. 
