@@ -73,7 +73,6 @@ class ModelManager(FLComponent, ABC):
         """
         pass
 
-    @abstractmethod
     def get_current_model(self, fl_ctx: FLContext) -> Any:
         """Get the current model.
 

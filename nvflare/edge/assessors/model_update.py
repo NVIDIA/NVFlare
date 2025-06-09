@@ -88,7 +88,7 @@ class ModelUpdateAssessor(Assessor):
 
             # Wrap learnable model into a DXO
             dxo_model = model_learnable_to_dxo(model)
-            self.model_manager.initialize_model(dxo_model)
+            self.model_manager.initialize_model(dxo_model, fl_ctx)
             self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
         else:
             self.system_panic(reason="cannot find persistor component '{}'".format(self.persistor_id), fl_ctx=fl_ctx)
@@ -126,7 +126,7 @@ class ModelUpdateAssessor(Assessor):
             # Remove reported devices from selection
             for model_update in report.model_updates.values():
                 if model_update:
-                    self.device_manager.remove_devices_from_selection(set(model_update.devices.keys()))
+                    self.device_manager.remove_devices_from_selection(set(model_update.devices.keys()), fl_ctx)
 
             # Handle device selection
             num_holes = self.device_manager.device_selection_size - len(self.device_manager.current_selection)
@@ -148,13 +148,13 @@ class ModelUpdateAssessor(Assessor):
         # Prepare reply
         model = None
         if self.model_manager.current_model_version != report.current_model_version:
-            model = self.model_manager.get_current_model()
+            model = self.model_manager.get_current_model(fl_ctx)
 
         reply = StateUpdateReply(
             model_version=self.model_manager.current_model_version,
             model=model,
             device_selection_version=self.device_manager.current_selection_version,
-            device_selection=self.device_manager.get_selection(),
+            device_selection=self.device_manager.get_selection(fl_ctx),
         )
         return accepted, reply.to_shareable()
 

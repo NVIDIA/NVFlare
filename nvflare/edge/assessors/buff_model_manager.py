@@ -18,7 +18,6 @@ from typing import Dict
 import numpy as np
 
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
@@ -40,7 +39,7 @@ class _ModelState:
         return self.aggregator.accept(model_update.update, fl_ctx)
 
 
-class BuffModelManager(FLComponent, ModelManager):
+class BuffModelManager(ModelManager):
     def __init__(
         self,
         num_updates_for_model: int,
@@ -60,7 +59,7 @@ class BuffModelManager(FLComponent, ModelManager):
             staleness_weight (bool): Whether to apply staleness weighting to model updates, default is False.
         """
 
-        FLComponent.__init__(self)
+        super().__init__()
         self.current_model_version = 0
         self.num_updates_for_model = num_updates_for_model
         self.num_updates_counter = 0
