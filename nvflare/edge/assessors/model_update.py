@@ -32,6 +32,7 @@ class ModelUpdateAssessor(Assessor):
         persistor_id,
         model_manager_id,
         device_manager_id,
+        max_model_version,
     ):
         """Initialize the ModelUpdateAssessor.
         Enable both asynchronous and synchronous model updates from clients.
@@ -42,16 +43,16 @@ class ModelUpdateAssessor(Assessor):
             persistor_id (str): ID of the persistor component used to load and save models.
             model_manager_id (str): ID of the model manager component.
             device_manager_id (str): ID of the device manager component.
+            max_model_version (int): Maximum model version to stop the workflow.
         """
         Assessor.__init__(self)
-        # Claim as self attributes for JobAPI
         self.persistor_id = persistor_id
         self.model_manager_id = model_manager_id
         self.device_manager_id = device_manager_id
         self.persistor = None
         self.model_manager = None
         self.device_manager = None
-
+        self.max_model_version = max_model_version
         self.update_lock = threading.Lock()
         self.start_time = None
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
@@ -129,8 +130,7 @@ class ModelUpdateAssessor(Assessor):
                     self.device_manager.remove_devices_from_selection(set(model_update.devices.keys()), fl_ctx)
 
             # Handle device selection
-            num_holes = self.device_manager.device_selection_size - len(self.device_manager.current_selection)
-            if num_holes >= self.device_manager.min_hole_to_fill:
+            if self.device_manager.should_fill_selection(fl_ctx):
                 self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
 
         else:
@@ -138,7 +138,7 @@ class ModelUpdateAssessor(Assessor):
 
         # Handle initial model generation
         if self.model_manager.current_model_version == 0:
-            if len(self.device_manager.available_devices) >= self.device_manager.device_selection_size:
+            if self.device_manager.has_enough_devices(fl_ctx):
                 self.log_info(
                     fl_ctx, f"got {len(self.device_manager.available_devices)} devices - generate initial model"
                 )
@@ -159,14 +159,9 @@ class ModelUpdateAssessor(Assessor):
         return accepted, reply.to_shareable()
 
     def assess(self, fl_ctx: FLContext) -> Assessment:
-        if self.model_manager.current_model_version >= self.model_manager.max_model_version:
+        if self.model_manager.current_model_version >= self.max_model_version:
             model_version = self.model_manager.current_model_version
-            selection_version = self.device_manager.current_selection_version
-            self.log_info(
-                fl_ctx,
-                f"Max model version {self.model_manager.max_model_version} reached: {model_version=} {selection_version=} "
-                f"num of devices used: {len(self.device_manager.used_devices)}",
-            )
+            self.log_info(fl_ctx, f"Max model version {self.max_model_version} reached: {model_version=}")
             return Assessment.WORKFLOW_DONE
         else:
             return Assessment.CONTINUE

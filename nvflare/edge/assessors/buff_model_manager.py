@@ -43,7 +43,6 @@ class BuffModelManager(ModelManager):
     def __init__(
         self,
         num_updates_for_model: int,
-        max_model_version: int,
         max_model_history: int,
         global_lr: float = 1.0,
         staleness_weight: bool = False,
@@ -53,17 +52,14 @@ class BuffModelManager(ModelManager):
         The staleness_weight can be enabled to apply staleness weighting to model updates.
         Args:
             num_updates_for_model (int): Number of updates required before generating a new model version.
-            max_model_version (int): Maximum number of model versions allowed in the workflow.
             max_model_history (int): Maximum number of historical model versions to keep in memory.
             global_lr (float): Global learning rate for model aggregation, default is 1.0.
             staleness_weight (bool): Whether to apply staleness weighting to model updates, default is False.
         """
 
         super().__init__()
-        self.current_model_version = 0
         self.num_updates_for_model = num_updates_for_model
         self.num_updates_counter = 0
-        self.max_model_version = max_model_version
         self.max_model_history = max_model_history
         self.global_lr = global_lr
         self.staleness_weight = staleness_weight

@@ -58,7 +58,6 @@ def export_job(args):
 
     model_manager = BuffModelManager(
         num_updates_for_model=args.num_updates_for_model,
-        max_model_version=args.max_model_version,
         max_model_history=args.max_model_history,
         global_lr=args.global_lr,
         staleness_weight=args.staleness_weight,
@@ -78,6 +77,7 @@ def export_job(args):
         persistor_id=persistor_id,
         model_manager_id=model_manager_id,
         device_manager_id=device_manager_id,
+        max_model_version=args.max_model_version,
     )
     job.configure_server(
         assessor=assessor,

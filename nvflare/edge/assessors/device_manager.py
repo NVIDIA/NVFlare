@@ -75,6 +75,31 @@ class DeviceManager(FLComponent, ABC):
         """
         pass
 
+    @abstractmethod
+    def should_fill_selection(self, fl_ctx: FLContext) -> bool:
+        """Determine if it is time to fill the device selection.
+
+        Args:
+            fl_ctx: FLContext object
+
+        Returns:
+            bool: True if it's time to fill the selection, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def has_enough_devices(self, fl_ctx: FLContext) -> bool:
+        """Check if there are enough devices available to start task distribution.
+
+        Args:
+            fl_ctx: FLContext object
+
+        Returns:
+            bool: True if there are enough devices to start task distribution, False otherwise
+        """
+        pass
+
+    @abstractmethod
     def get_selection(self, fl_ctx: FLContext) -> Any:
         """Get the current device selection.
 
