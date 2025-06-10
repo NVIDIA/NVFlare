@@ -99,4 +99,4 @@ class BuffDeviceManager(DeviceManager):
 
     def should_fill_selection(self, fl_ctx) -> bool:
         num_holes = self.device_selection_size - len(self.current_selection)
-        return num_holes >= self.device_manager.min_hole_to_fill
+        return num_holes >= self.min_hole_to_fill
