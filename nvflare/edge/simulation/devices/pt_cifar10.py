@@ -165,12 +165,16 @@ class PTCifar10Processor(DeviceTaskProcessor):
             raise ValueError("bad device speed data")
         # sample the value from the normal distribution
         delay_speed = random.gauss(mean_speed[self.device_speed_type], std_speed[self.device_speed_type])
+        if delay_speed < 0:
+            delay_speed = 0
 
         # get mean and std from communication_delay
         mean_comm = self.communication_delay.get("mean")
         std_comm = self.communication_delay.get("std")
         # sample the communication delay from the normal distribution
         delay_comm = random.gauss(mean_comm, std_comm)
+        if delay_comm < 0:
+            delay_comm = 0
 
         delay = delay_speed + delay_comm
 
