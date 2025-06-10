@@ -62,7 +62,7 @@ def main():
     # Indices according to client_id number
     # find the number in client_id string
     client_id = int(client_id.split("-")[-1]) - 1
-    increment = 1000
+    increment = 3125
     indices = list(range(client_id * increment, (client_id + 1) * increment))
     train_subset = Subset(train_set, indices)
     train_loader = torch.utils.data.DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
