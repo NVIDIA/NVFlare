@@ -26,9 +26,7 @@ def main():
 
     assert os.path.isdir(args.admin_dir), f"admin directory does not exist at {args.admin_dir}"
 
-    sess = new_insecure_session(
-        startup_kit_location=args.admin_dir
-    )
+    sess = new_insecure_session(startup_kit_location=args.admin_dir)
 
     # Submit job
     job_id = sess.submit_job(args.job)

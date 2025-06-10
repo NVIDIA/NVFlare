@@ -55,9 +55,7 @@ def main():
     assert os.path.isdir(args.admin_dir), f"admin directory does not exist at {args.admin_dir}"
 
     # Initialize the runner
-    sess = new_insecure_session(
-        startup_kit_location=args.admin_dir
-    )
+    sess = new_insecure_session(startup_kit_location=args.admin_dir)
 
     # update alpha and split data dir
     job_name = os.path.basename(args.job)
