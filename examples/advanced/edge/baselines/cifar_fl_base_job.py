@@ -23,8 +23,8 @@ from nvflare.edge.models.model import Cifar10ConvNet
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
-    n_clients = 16
-    num_rounds = 10
+    n_clients = 20
+    num_rounds = 20
     train_script = "cifar_fl_base.py"
 
     job = FedJob(name="cifar10_fl_base")

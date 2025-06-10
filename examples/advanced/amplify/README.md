@@ -80,7 +80,7 @@ The following experiments use the [120M AMPLIFY](https://huggingface.co/chandar-
 With the 120M AMPLIFY model, we can run two clients on each GPU as specified by the ``--sim_gpus`` argument to `run_fl_*.py`.
 
 ### 1.2.1 Local Training
-First we run the local training. Here, Each data owner/client trains only on their local data. As we only run 1 round, the clients will never get the benefit of the updated global model and can only learn from their own data.
+First we run the local training. Here, each data owner/client trains only on their local data. As we only run 1 round, the clients will never get the benefit of the updated global model and can only learn from their own data.
 ```bash
 python run_fl_multitask.py \
     --num_rounds 1 \
