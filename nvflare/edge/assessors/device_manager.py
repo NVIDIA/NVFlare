@@ -99,7 +99,6 @@ class DeviceManager(FLComponent, ABC):
         """
         pass
 
-    @abstractmethod
     def get_selection(self, fl_ctx: FLContext) -> Any:
         """Get the current device selection.
 
