@@ -17,7 +17,7 @@ import json
 import os
 import uuid
 
-from nvflare.fuel.hci.client.fl_admin_api_runner import FLAdminAPIRunner, api_command_wrapper
+from nvflare.fuel.flare_api.flare_api import new_insecure_session
 
 
 def read_json(filename):
@@ -35,7 +35,6 @@ def write_json(data, filename):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--admin_dir", type=str, default="./admin/", help="Path to admin directory.")
-    parser.add_argument("--username", type=str, default="admin@nvidia.com", help="Admin username.")
     parser.add_argument("--job", type=str, default="cifar10_fedavg", help="Path to job")
     parser.add_argument("--poc", action="store_true", help="Whether admin does not use SSL.")
     parser.add_argument("--central", action="store_true", help="Whether we assume all data is centralized.")
@@ -56,11 +55,8 @@ def main():
     assert os.path.isdir(args.admin_dir), f"admin directory does not exist at {args.admin_dir}"
 
     # Initialize the runner
-    runner = FLAdminAPIRunner(
-        username=args.username,
-        admin_dir=args.admin_dir,
-        poc=args.poc,
-        debug=False,
+    sess = new_insecure_session(
+        startup_kit_location=args.admin_dir
     )
 
     # update alpha and split data dir
@@ -89,10 +85,11 @@ def main():
         print("Assuming centralized training.")
 
     # Submit job
-    api_command_wrapper(runner.api.submit_job(args.job))
+    job_id = sess.submit_job(args.job)
+    sess.monitor_job(job_id)
 
     # finish
-    runner.api.logout()
+    sess.close()
 
 
 if __name__ == "__main__":
