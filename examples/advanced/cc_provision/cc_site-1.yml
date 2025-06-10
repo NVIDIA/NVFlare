@@ -1,0 +1,15 @@
+compute_env: onprem_cvm
+
+cc_issuers:
+  - id: snp_authorizer
+    token_expiration: 3600
+    path: "nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer"
+  - id: gpu_authorizer
+    token_expiration: 3600
+    path: "nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer"
+
+cc_attestation:
+  check_frequency: 1800
+  failure_action: stop_job
+
+cvm_image_name: nvflare_cvm

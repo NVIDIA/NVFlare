@@ -175,7 +175,7 @@ class CCManager(FLComponent):
         for v_id in self.cc_verifier_ids:
             verifier = engine.get_component(v_id)
             if not isinstance(verifier, CCAuthorizer):
-                raise RuntimeError(f"cc_authorizer_id {v_id} must be a CCAuthorizer, but got {verifier.__class__}")
+                raise RuntimeError(f"cc_verifier_id {v_id} must be a CCAuthorizer, but got {verifier.__class__}")
             namespace = verifier.get_namespace()
             if namespace in self.cc_verifiers.keys():
                 raise RuntimeError(f"Authorizer with namespace: {namespace} already exist.")
