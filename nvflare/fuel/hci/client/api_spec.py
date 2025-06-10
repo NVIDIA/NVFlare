@@ -222,12 +222,19 @@ class AdminConfigKey:
     PORT = "port"
     PROMPT = "prompt"
     LOGIN_TIMEOUT = "login_timeout"
+    IDLE_TIMEOUT = "idle_timeout"
     WITH_FILE_TRANSFER = "with_file_transfer"
-    SECURE_LOGIN = "secure_login"
+    UID_SOURCE = "uid_source"  # where does user id come from
     UPLOAD_DIR = "upload_dir"
     DOWNLOAD_DIR = "download_dir"
     USERNAME = "username"
     FILE_DOWNLOAD_PROGRESS_TIMEOUT = "file_download_progress_timeout"
+
+
+class UidSource:
+    USER_INPUT = "user_input"  # user must provide
+    CERT = "cert"  # CN of the identity certificate
+    GUEST = "guest"  # anonymous - for testing purpose
 
 
 class HCIRequester(ABC):

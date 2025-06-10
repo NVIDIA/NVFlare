@@ -22,6 +22,7 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.shell_cmd_val import (
     CatValidator,
     GrepValidator,
@@ -107,7 +108,7 @@ class _CommandExecutor(object):
             valid_tokens.append(c.token)
 
         req = new_message(conn=conn, topic=SysCommandTopic.SHELL, body=shell_cmd, require_authz=True)
-        server = conn.server
+        server = conn.get_prop(ConnProps.ADMIN_SERVER)
         reply = server.send_request_to_client(req, valid_tokens[0], timeout_secs=server.timeout)
         if reply is None:
             conn.append_error(

@@ -16,86 +16,22 @@ from typing import List
 
 from nvflare.fuel.common.ctx import BaseContext
 
-from .proto import ALL_END, LINE_END, MAX_BLOCK_SIZE, Buffer, ProtoKey, validate_proto
+from .proto import Buffer, ProtoKey
 from .table import Table
-
-# ASCII Message Format:
-#
-# Only ASCII chars can be used in message;
-# A message consists of multiple lines, each ended with the LINE_END char;
-# The message is ended with the ALL_END char.
-# Returns:
-# seg1 - the text before the end
-# seg2 - the text after the end
-# if end is not found, seg2 is None
-# if end is found, seg2 is a string
-
-
-def _split_data(data: str):
-    # first determine whether the data contains ALL_END
-    # anything after ALL_END is dropped
-    all_done = False
-    idx = data.find(ALL_END)
-    if idx >= 0:
-        data = data[:idx]
-        all_done = True
-
-    # find lines separated by LINE_END
-    parts = data.split(LINE_END)
-    return parts, all_done
-
-
-def _process_one_line(line: str, process_json_func):
-    """Validate and process one line, which should be a str containing a JSON document."""
-    json_data = validate_proto(line)
-    process_json_func(json_data)
-
-
-def receive_bytes_and_process(sock, receiver):
-    receiver.receive(sock)
-    return True
-
-
-def receive_and_process(sock, process_json_func):
-    """Receives and sends lines to process with process_json_func."""
-    leftover = ""
-    while True:
-        data = str(sock.recv(MAX_BLOCK_SIZE), "utf-8")
-        if len(data) <= 0:
-            return False
-
-        segs, all_done = _split_data(data)
-        if all_done:
-            for seg in segs:
-                line = leftover + seg
-                if len(line) > 0:
-                    _process_one_line(line, process_json_func)
-                leftover = ""
-            return True
-
-        for i in range(len(segs) - 1):
-            line = leftover + segs[i]
-            if len(line) > 0:
-                _process_one_line(line, process_json_func)
-            leftover = ""
-
-        leftover += segs[len(segs) - 1]
 
 
 class Connection(BaseContext):
-    def __init__(self):
+    def __init__(self, app_ctx=None, props=None):
         """Object containing connection information and buffer to build and send a line with socket passed in at init."""
         BaseContext.__init__(self)
-        self.app_ctx = None
+        self.app_ctx = app_ctx
         self.ended = False
         self.request = None
         self.command = None
         self.args = None
         self.buffer = Buffer()
-        self.binary_mode = False
-        self.bytes_sender = None
-        self.content_type = None
-        self.extra = None
+        if props:
+            self.set_props(props)
 
     def append_table(self, headers: List[str], name=None) -> Table:
         return self.buffer.append_table(headers, name=name)

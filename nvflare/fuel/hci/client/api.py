@@ -64,7 +64,15 @@ from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVeri
 from nvflare.private.stream_runner import HeaderKey, ObjectStreamer
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api_spec import AdminAPISpec, AdminConfigKey, CommandContext, CommandCtxKey, CommandInfo, ReplyProcessor
+from .api_spec import (
+    AdminAPISpec,
+    AdminConfigKey,
+    CommandContext,
+    CommandCtxKey,
+    CommandInfo,
+    ReplyProcessor,
+    UidSource,
+)
 from .api_status import APIStatus
 
 _CMD_TYPE_UNKNOWN = 0
@@ -276,7 +284,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.ca_cert = admin_config.get(AdminConfigKey.CA_CERT)
         self.client_cert = admin_config.get(AdminConfigKey.CLIENT_CERT)
         self.client_key = admin_config.get(AdminConfigKey.CLIENT_KEY)
-        self.secure_login = admin_config.get(AdminConfigKey.SECURE_LOGIN, True)
+        self.uid_source = admin_config.get(AdminConfigKey.UID_SOURCE, UidSource.USER_INPUT)
         self.host = admin_config.get(AdminConfigKey.HOST, "localhost")
         self.port = admin_config.get(AdminConfigKey.PORT, 8002)
         self.file_download_progress_timeout = admin_config.get(AdminConfigKey.FILE_DOWNLOAD_PROGRESS_TIMEOUT, 5.0)
@@ -290,9 +298,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if not self.client_key:
             raise ConfigError("missing Client Key file name")
 
-        if not self.secure_login:
-            # In insecure mode, the username does not need to be provided
-            # Instead, we'll find the username from the client cert
+        if self.uid_source == UidSource.CERT:
+            # We'll find the username from the client cert
             cert = load_cert_file(self.client_cert)
             self.user_name = get_cn_from_cert(cert)
 
@@ -617,9 +624,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def logout(self):
         """Send logout command to server."""
         self.in_logout = True
-        print("sending logout command")
         resp = self.server_execute(InternalCommands.LOGOUT)
-        print(f"got logout resp {resp}")
         self.close()
         return resp
 

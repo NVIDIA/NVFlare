@@ -191,7 +191,7 @@ class ClientManager:
                 self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")
                 return None
 
-            self.logger.info(f"identity verified for client '{client_name}'")
+            self.logger.debug(f"identity verified for client '{client_name}'")
 
         with self.lock:
             clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
@@ -204,7 +204,7 @@ class ClientManager:
         client = Client(client_name, str(uuid.uuid4()))
         client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
         self._set_client_props(client, client_fqcn, fl_ctx)
-        self.logger.info(f"authenticated client {client_name}: {client_fqcn=}")
+        self.logger.debug(f"authenticated client {client_name}: {client_fqcn=}")
 
         if len(self.clients) >= self.max_num_clients:
             fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Maximum number of clients reached", sticky=False)

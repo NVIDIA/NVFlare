@@ -22,7 +22,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
-from nvflare.fuel.hci.client.api_spec import AdminConfigKey
+from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.cmd_arg_utils import (
     process_targets_into_str,
@@ -87,7 +87,8 @@ class Session(SessionSpec):
         if not admin_config:
             raise ConfigError("Missing admin section in fed_admin configuration.")
 
-        admin_config[AdminConfigKey.SECURE_LOGIN] = secure_mode
+        if not secure_mode:
+            admin_config[AdminConfigKey.UID_SOURCE] = UidSource.CERT
 
         self.username = username
         upload_dir = admin_config.get(AdminConfigKey.UPLOAD_DIR)

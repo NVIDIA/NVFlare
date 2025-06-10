@@ -603,11 +603,11 @@ class FederatedServer(BaseServer):
 
     def client_challenge(self, request: Message) -> Message:
         with self.reg_lock:
-            self.logger.info(f"received challenge request from {request.headers}")
+            self.logger.debug(f"received challenge request from {request.headers}")
             with self.engine.new_context() as fl_ctx:
                 error = self._ready_for_registration(fl_ctx)
                 if error is not None:
-                    self.logger.info(f"not ready for reg: {error}")
+                    self.logger.debug(f"not ready for reg: {error}")
                     return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
                 secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
@@ -615,7 +615,7 @@ class FederatedServer(BaseServer):
                     return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error="server is not in secure mode")
 
             reg_origin = request.get_header(MessageHeaderKey.ORIGIN)
-            self.logger.info(f"received challenge request from {reg_origin}: me={id(self)}")
+            self.logger.debug(f"received challenge request from {reg_origin}: me={id(self)}")
             reg = self.name_to_reg.pop(reg_origin, None)
             if reg:
                 self.logger.warning(f"received duplicate challenge from client {reg_origin} without register")
@@ -629,7 +629,7 @@ class FederatedServer(BaseServer):
             reply[IdentityChallengeKey.SIGNATURE] = signature
             reply[IdentityChallengeKey.COMMON_NAME] = id_asserter.cn
             reply[IdentityChallengeKey.CERT] = id_asserter.cert_data
-            self.logger.info(f"challeneg ok: {reply=}")
+            self.logger.debug(f"challenge ok: {reply=}")
             return make_cellnet_reply(rc=F3ReturnCode.OK, body=reply)
 
     def register_client(self, request: Message) -> Message:

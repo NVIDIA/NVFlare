@@ -16,6 +16,7 @@ import cmd
 import json
 import os
 import signal
+import threading
 import time
 import traceback
 from datetime import datetime
@@ -34,9 +35,13 @@ from nvflare.fuel.hci.table import Table
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api import AdminAPI, CommandInfo
-from .api_spec import AdminConfigKey
+from .api_spec import AdminConfigKey, UidSource
 from .api_status import APIStatus
 from .event import EventContext, EventHandler, EventPropKey, EventType
+
+
+class _SessionClosed(Exception):
+    pass
 
 
 class _BuiltInCmdModule(CommandModule):
@@ -85,6 +90,8 @@ class AdminClient(cmd.Cmd, EventHandler):
         self.stopped = False  # use this flag to prevent unnecessary signal exception
         self.username = username
         self.login_timeout = admin_config.get(AdminConfigKey.LOGIN_TIMEOUT)
+        self.idle_timeout = admin_config.get(AdminConfigKey.IDLE_TIMEOUT, 900.0)
+        self.last_active_time = time.time()
 
         if not cli_history_dir:
             raise Exception("missing cli_history_dir")
@@ -98,9 +105,9 @@ class AdminClient(cmd.Cmd, EventHandler):
                     raise TypeError("cmd_modules must be a list of CommandModule")
                 modules.append(m)
 
-        secure_login = admin_config.get(AdminConfigKey.SECURE_LOGIN, True)
-        if secure_login:
-            self._get_login_creds()
+        uid_source = admin_config.get(AdminConfigKey.UID_SOURCE, UidSource.USER_INPUT)
+        if uid_source != UidSource.CERT:
+            self.user_name = self._user_input("User Name: ")
 
         event_handlers = [self]
         if handlers:
@@ -124,6 +131,21 @@ class AdminClient(cmd.Cmd, EventHandler):
         # signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
         signal.signal(signal.SIGUSR1, self.session_signal_handler)
 
+    def _monitor_user(self):
+        while True:
+            if time.time() - self.last_active_time > self.idle_timeout:
+                # user has been idle for too long
+                print(f"Logging out due to inactivity for {self.idle_timeout} seconds")
+                self.api.logout()
+                # We force to stop by killing the process because there is no way to interrupt the
+                # command thread that is waiting for user input.
+                # This "kill" will cause self.session_signal_handler to be executed in the thread that
+                # runs the cmdloop!
+                os.kill(os.getpid(), signal.SIGUSR1)
+                return
+            else:
+                time.sleep(1.0)
+
     def handle_event(self, event_type: str, ctx: EventContext):
         if self.debug:
             print(f"DEBUG: received session event: {event_type}")
@@ -133,7 +155,6 @@ class AdminClient(cmd.Cmd, EventHandler):
             self.write_string(msg)
 
         if event_type in [EventType.SESSION_TIMEOUT]:
-            self.api.close()
             os.kill(os.getpid(), signal.SIGUSR1)
 
     def session_signal_handler(self, signum, frame):
@@ -148,7 +169,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         self.api.close()
 
         # use exception to interrupt the main cmd loop
-        raise RuntimeError("Session Closed")
+        raise _SessionClosed("Session Closed")
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -268,10 +289,9 @@ class AdminClient(cmd.Cmd, EventHandler):
             self.write_stdout(f"exception occurred: {secure_format_exception(e)}")
         self._close_output_file()
 
-    @staticmethod
-    def _user_input(prompt: str) -> str:
+    def _user_input(self, prompt: str) -> str:
         answer = input(prompt)
-
+        self.last_active_time = time.time()
         # remove leading and trailing spaces
         return answer.strip()
 
@@ -427,15 +447,19 @@ class AdminClient(cmd.Cmd, EventHandler):
         try:
             self.api.connect(self.login_timeout)
             self.api.login()
+            self.last_active_time = time.time()
+            monitor = threading.Thread(target=self._monitor_user, daemon=True)
+            monitor.start()
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
+        except _SessionClosed as e:
+            # this is intentional session closing (by server or client)
+            if self.debug:
+                print(f"Session closed: {secure_format_exception(e)}")
         except Exception as e:
             print(f"Exception {secure_format_exception(e)}")
         finally:
             self.stopped = True
             self.api.close()
-
-    def _get_login_creds(self):
-        self.user_name = self._user_input("User Name: ")
 
     def print_resp(self, resp: dict):
         """Prints the server response

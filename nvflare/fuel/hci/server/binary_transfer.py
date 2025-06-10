@@ -29,7 +29,6 @@ class BinaryTransfer:
         self.logger = get_obj_logger(self)
 
     def download_file(self, conn: Connection, tx_id: str, folder_name: str, file_name: str):
-        conn.binary_mode = True
         tx_path = self.tx_path(conn, tx_id, folder_name)
         full_path = os.path.join(tx_path, file_name)
         if not os.path.exists(full_path):
@@ -44,7 +43,7 @@ class BinaryTransfer:
         assert isinstance(request, CellMessage)
         target = request.get_header(MessageHeaderKey.ORIGIN)
 
-        self.logger.info(f"streaming {full_path} to {target} ...")
+        self.logger.debug(f"streaming {full_path} to {target} ...")
         engine = conn.get_prop(ConnProps.ENGINE)
         stream_ctx = {StreamCtxKey.TX_ID: tx_id}
         with engine.new_context() as fl_ctx:
@@ -60,7 +59,7 @@ class BinaryTransfer:
                 self.logger.error(f"Failed to stream file {full_path} to {target}")
                 return
         bytes_sent = FileStreamer.get_file_size(stream_ctx)
-        self.logger.info(f"sent {full_path} to {target}: {bytes_sent} bytes")
+        self.logger.debug(f"sent {full_path} to {target}: {bytes_sent} bytes")
 
     @staticmethod
     def tx_path(conn: Connection, tx_id: str, folder_name=None):

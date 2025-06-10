@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import json
 import os
 import shutil
@@ -22,7 +21,7 @@ from nvflare.lighter.constants import (
     CommConfigArg,
     ConnSecurity,
     CtxKey,
-    OverseerRole,
+    ParticipantType,
     PropKey,
     ProvFileName,
     ProvisionMode,
@@ -40,7 +39,7 @@ class StaticFileBuilder(Builder):
         app_validator="",
         download_job_url="",
         docker_image="",
-        overseer_agent: dict = None,
+        **kwargs,
     ):
         """Build all static files from template.
 
@@ -58,15 +57,28 @@ class StaticFileBuilder(Builder):
             docker_image: when docker_image is set to a docker image name, docker.sh will be generated on
             server/client/admin
         """
+        if not isinstance(scheme, str):
+            raise ValueError(f"invalid scheme: must be str but got {type(scheme)}")
+        scheme = scheme.lower().strip()
+        if not scheme:
+            raise ValueError("scheme is not specified")
+
+        builtin_schemes = ["grpc", "tcp", "http"]
+        if scheme not in builtin_schemes:
+            # we only issue warning since it could be a custom scheme
+            print(f"WARNING: {scheme} is not a builtin scheme {builtin_schemes}")
         self.config_folder = config_folder
         self.scheme = scheme
         self.docker_image = docker_image
         self.download_job_url = download_job_url
         self.app_validator = app_validator
-        self.overseer_agent = overseer_agent
+        self.aio_schemes = {
+            "tcp": "atcp",
+            "grpc": "agrpc",
+        }
 
     @staticmethod
-    def _build_conn_properties(site: Participant, ctx: ProvisionContext, site_config: dict):
+    def _build_conn_properties(site: Participant, ctx: ProvisionContext):
         valid_values = [ConnSecurity.CLEAR, ConnSecurity.TLS, ConnSecurity.MTLS]
         conn_security = site.get_prop_fb(PropKey.CONN_SECURITY)
         if conn_security:
@@ -75,34 +87,50 @@ class StaticFileBuilder(Builder):
 
             if conn_security not in valid_values:
                 raise ValueError(f"invalid connection_security '{conn_security}': must be in {valid_values}")
-
-            site_config["connection_security"] = conn_security
+        else:
+            conn_security = ConnSecurity.MTLS
 
         custom_ca_cert = site.get_prop_fb(PropKey.CUSTOM_CA_CERT)
         if custom_ca_cert:
             shutil.copyfile(custom_ca_cert, os.path.join(ctx.get_kit_dir(site), ProvFileName.CUSTOM_CA_CERT_FILE_NAME))
+        return conn_security
+
+    def _determine_scheme(self, participant: Participant) -> str:
+        # use AIO for server by default
+        use_aio = participant.get_prop(PropKey.USE_AIO, participant.type == ParticipantType.SERVER)
+        scheme = self.scheme
+        if use_aio:
+            scheme = self.aio_schemes.get(scheme)
+            if not scheme:
+                scheme = self.scheme
+        return scheme
 
     def _build_server(self, server: Participant, ctx: ProvisionContext):
         project = ctx.get_project()
-        config = ctx.json_load_template_section(TemplateSectionKey.FED_SERVER)
         dest_dir = ctx.get_kit_dir(server)
-        server_0 = config["servers"][0]
-        server_0["name"] = project.name
+
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
         if admin_port != fed_learn_port:
             ports = f"{fed_learn_port},{admin_port}"
         else:
             ports = f"{fed_learn_port}"
-        server_0["service"]["target"] = f"{server.name}:{ports}"
-        server_0["service"]["scheme"] = self.scheme
+        target = f"{server.name}:{ports}"
+        sp_end_point = f"{server.name}:{fed_learn_port}:{admin_port}"
+        conn_sec = self._build_conn_properties(server, ctx)
 
-        self._prepare_overseer_agent(server, config, OverseerRole.SERVER, ctx)
-
-        # set up connection props
-        self._build_conn_properties(server, ctx, server_0)
-
-        utils.write(os.path.join(dest_dir, ProvFileName.FED_SERVER_JSON), json.dumps(config, indent=2), "t")
+        ctx.build_from_template(
+            dest_dir,
+            TemplateSectionKey.FED_SERVER,
+            ProvFileName.FED_SERVER_JSON,
+            replacement={
+                "name": project.name,
+                "target": target,
+                "scheme": self._determine_scheme(server),
+                "conn_sec": conn_sec,
+                "sp_end_point": sp_end_point,
+            },
+        )
 
         self._build_comm_config_for_internal_listener(server)
 
@@ -200,35 +228,43 @@ class StaticFileBuilder(Builder):
         server = project.get_server()
         if not server:
             raise ValueError("missing server definition in project")
-        config = ctx.json_load_template_section(TemplateSectionKey.FED_CLIENT)
+
         dest_dir = ctx.get_kit_dir(client)
-        config["servers"][0]["service"]["scheme"] = self.scheme
-        config["servers"][0]["name"] = project.name
-        config["servers"][0]["identity"] = server.name  # the official identity of the server
-        admin_port = ctx.get(CtxKey.ADMIN_PORT)
-        fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
-
-        self._prepare_overseer_agent(client, config, OverseerRole.CLIENT, ctx)
-
-        # set connection properties
-        client_conf = config["client"]
-
-        fqsn = client.get_prop(PropKey.FQSN)
-        client_conf["fqsn"] = fqsn
 
         is_leaf = client.get_prop(PropKey.IS_LEAF, True)
-        client_conf["is_leaf"] = is_leaf
+        if is_leaf:
+            is_leaf = "true"
+        else:
+            is_leaf = "false"
 
-        self._build_conn_properties(client, ctx, client_conf)
+        admin_port = ctx.get(CtxKey.ADMIN_PORT)
+        fl_port = ctx.get(CtxKey.FED_LEARN_PORT)
+        conn_host, conn_port = self._determine_conn_target(client, ctx)
+        if conn_port:
+            fl_port = conn_port
+        sp_end_point = f"{conn_host}:{fl_port}:{admin_port}"
 
-        utils.write(os.path.join(dest_dir, ProvFileName.FED_CLIENT_JSON), json.dumps(config, indent=2), "t")
+        ctx.build_from_template(
+            dest_dir,
+            TemplateSectionKey.FED_CLIENT,
+            ProvFileName.FED_CLIENT_JSON,
+            replacement={
+                "scheme": self._determine_scheme(client),
+                "name": project.name,
+                "server_identity": server.name,
+                "fqsn": client.get_prop(PropKey.FQSN),
+                "is_leaf": is_leaf,
+                "conn_sec": self._build_conn_properties(client, ctx),
+                "sp_end_point": sp_end_point,
+            },
+        )
 
         # build internal comm
         self._build_comm_config_for_internal_listener(client)
 
         replacement_dict = {
             "admin_port": admin_port,
-            "fed_learn_port": fed_learn_port,
+            "fed_learn_port": fl_port,
             "client_name": f"{client.subject}",
             "config_folder": self.config_folder,
             "docker_image": self.docker_image,
@@ -437,58 +473,6 @@ class StaticFileBuilder(Builder):
 
         return f"host name '{host_name}' is not defined in '{listener_name}'"
 
-    def _prepare_overseer_agent(self, participant, config, role, ctx: ProvisionContext):
-        project = ctx.get_project()
-        server = project.get_server()
-        if not server:
-            raise ValueError(f"Missing server definition in project {project.name}")
-
-        # The properties CtxKey.FED_LEARN_PORT and CtxKey.ADMIN_PORT are guaranteed to exist
-        fl_port = ctx.get(CtxKey.FED_LEARN_PORT)
-        admin_port = ctx.get(CtxKey.ADMIN_PORT)
-
-        if self.overseer_agent:
-            overseer_agent = copy.deepcopy(self.overseer_agent)
-            if overseer_agent.get("overseer_exists", True):
-                if role == OverseerRole.SERVER:
-                    overseer_agent["args"] = {
-                        "role": role,
-                        "overseer_end_point": ctx.get("overseer_end_point", ""),
-                        "project": project.name,
-                        "name": server.name,
-                        "fl_port": str(fl_port),
-                        "admin_port": str(admin_port),
-                    }
-                else:
-                    overseer_agent["args"] = {
-                        "role": role,
-                        "overseer_end_point": ctx.get("overseer_end_point", ""),
-                        "project": project.name,
-                        "name": participant.subject,
-                    }
-            else:
-                # do not use overseer system
-                # Dummy overseer agent is used here
-                if role == OverseerRole.SERVER:
-                    # the server expects the "connect_to" to be the same as its name
-                    # otherwise the host name generated by the dummy agent won't be accepted!
-                    conn_host = server.name
-                else:
-                    conn_host, conn_port = self._determine_conn_target(participant, ctx)
-                    if conn_port:
-                        fl_port = conn_port
-
-                # change the sp_end_point to use conn_host
-                agent_args = overseer_agent.get("args")
-                if agent_args:
-                    sp_end_point = agent_args.get("sp_end_point")
-                    if sp_end_point:
-                        # format of the sp_end_point:  server_host_name:fl_port:admin_port
-                        agent_args["sp_end_point"] = f"{conn_host}:{fl_port}:{admin_port}"
-
-            overseer_agent.pop("overseer_exists", None)
-            config["overseer_agent"] = overseer_agent
-
     def _determine_conn_target(self, participant, ctx: ProvisionContext):
         project = ctx.get_project()
         server = project.get_server()
@@ -562,10 +546,10 @@ class StaticFileBuilder(Builder):
         if not conn_sec:
             conn_sec = ConnSecurity.MTLS
 
-        secure_login = "true"
+        uid_source = "user_input"
         provision_mode = ctx.get_provision_mode()
         if provision_mode == ProvisionMode.POC:
-            secure_login = "false"
+            uid_source = "cert"
 
         conn_host, conn_port = self._determine_conn_target(admin, ctx)
         if not conn_port:
@@ -578,7 +562,7 @@ class StaticFileBuilder(Builder):
             "conn_sec": conn_sec,
             "host": conn_host,
             "port": conn_port,
-            "secure_login": secure_login,
+            "uid_source": uid_source,
         }
         ctx.build_from_template(
             dest_dir=ctx.get_kit_dir(admin),

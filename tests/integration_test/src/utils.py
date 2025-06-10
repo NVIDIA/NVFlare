@@ -25,7 +25,7 @@ from typing import List
 import yaml
 
 from nvflare.apis.job_def import RunStatus
-from nvflare.fuel.hci.client.api_spec import AdminConfigKey
+from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
@@ -411,7 +411,7 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
     admin_json = _read_admin_json_file(admin_json_file)
     admin_config = admin_json["admin"]
     if poc:
-        admin_config[AdminConfigKey.SECURE_LOGIN] = False
+        admin_config[AdminConfigKey.UID_SOURCE] = UidSource.CERT
 
     admin_api = FLAdminAPI(
         upload_dir=upload_root_dir,

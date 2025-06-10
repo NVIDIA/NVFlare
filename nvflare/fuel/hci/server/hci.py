@@ -86,9 +86,13 @@ class AdminServer:
         return self.cred_keeper.get_id_verifier(self.fl_ctx)
 
     def _create_conn(self, conn_data: str, cmd_headers=None) -> (bool, str, Connection):
-        conn = Connection()
-        conn.set_prop(ConnProps.ENGINE, self.engine)
-        conn.set_prop(ConnProps.HCI_SERVER, self)
+        conn = Connection(
+            props={
+                ConnProps.ENGINE: self.engine,
+                ConnProps.HCI_SERVER: self,
+            }
+        )
+
         if self.extra_conn_props:
             conn.set_props(self.extra_conn_props)
         if self.cmd_reg.conn_props:
@@ -102,7 +106,6 @@ class AdminServer:
             command = None
             req_json = validate_proto(req)
             conn.request = req_json
-            conn.content_type = 0  # text
 
             if req_json is not None:
                 meta = req_json.get(ProtoKey.META, None)
@@ -148,21 +151,21 @@ class AdminServer:
     def _process_upload(self, stream_ctx: StreamContext, fl_ctx: FLContext, **kwargs):
         conn_data = stream_ctx.get("conn_data")
         file_location = FileStreamer.get_file_location(stream_ctx)
-        self.logger.info(f"got upload from hci client: {conn_data=} {file_location=}")
+        self.logger.debug(f"got upload from hci client: {conn_data=} {file_location=}")
         ok, command, conn = self._create_conn(conn_data)
         assert isinstance(conn, Connection)
         conn.set_prop(ConnProps.FILE_LOCATION, file_location)
         self.cmd_reg.process_command(conn, command)
         result = conn.close()
-        self.logger.info(f"upload result: {result}")
+        self.logger.debug(f"upload result: {result}")
         return result
 
     def _process_admin_request(self, request: CellMessage) -> Union[None, CellMessage]:
-        self.logger.info(f"got admin_request: {request.payload}")
+        self.logger.debug(f"got admin_request: {request.payload}")
         ok, command, conn = self._create_conn(request.payload, request.headers)
         conn.set_prop(ConnProps.REQUEST, request)
         if ok:
-            self.logger.info(f"processing command {command}")
+            self.logger.debug(f"processing command {command}")
             self.cmd_reg.process_command(conn, command)
         else:
             self.logger.error(f"received invalid command: {request.headers}")

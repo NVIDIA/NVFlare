@@ -17,10 +17,10 @@ import time
 
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.hci.client.api_spec import AdminConfigKey
+from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
+from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
-from nvflare.private.fed.app.fl_conf import FLAdminClientStarterConfigurator
 from nvflare.security.logging import secure_format_exception
 
 
@@ -65,7 +65,7 @@ class FLAdminAPIRunner:
         try:
             os.chdir(admin_dir)
             workspace = Workspace(root_dir=admin_dir)
-            conf = FLAdminClientStarterConfigurator(workspace)
+            conf = secure_load_admin_config(workspace)
             conf.configure()
         except ConfigError as e:
             print(f"ConfigError: {secure_format_exception(e)}")
@@ -84,7 +84,7 @@ class FLAdminAPIRunner:
 
         # Connect with admin client
         if poc:
-            admin_config[AdminConfigKey.SECURE_LOGIN] = False
+            admin_config[AdminConfigKey.UID_SOURCE] = UidSource.CERT
 
         self.api = FLAdminAPI(
             admin_config=admin_config,

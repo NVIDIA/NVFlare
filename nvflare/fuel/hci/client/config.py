@@ -74,10 +74,6 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
         element = node.element
         path = node.path()
 
-        if path == "admin.overseer_agent":
-            self.overseer_agent = self.build_component(element)
-            return
-
         if re.search(r"^handlers\.#[0-9]+$", path):
             c = self.build_component(element)
             if not isinstance(c, EventHandler):

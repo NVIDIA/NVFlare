@@ -175,7 +175,7 @@ class ObjectStreamer(FLComponent):
         if consumed_cb is not None:
             check_callable("consumed_cb", consumed_cb)
         self.registry.set(channel, topic, (factory, consumed_cb, stream_done_cb, cb_kwargs))
-        self.logger.info(f"registered processor_factory: {channel=} {topic=} {factory.__class__.__name__}")
+        self.logger.debug(f"registered processor_factory: {channel=} {topic=} {factory.__class__.__name__}")
 
     @staticmethod
     def _log_msg(req: Shareable, msg: str):
@@ -319,7 +319,7 @@ class ObjectStreamer(FLComponent):
         else:
             # remove the tx
             end_result = self._end_tx(tx_id, rc=reply.get_return_code(), fl_ctx=fl_ctx)
-            self.logger.info(f"got end result: {end_result}")
+            self.logger.debug(f"got end result: {end_result}")
 
         if end_result:
             # add the end_result to the reply
@@ -453,9 +453,9 @@ class ObjectStreamer(FLComponent):
                 fl_ctx=fl_ctx,
             )
 
-            self.logger.info("got replies from receivers")
+            self.logger.debug("got replies from receivers")
             result = producer.process_replies(replies, stream_ctx, fl_ctx)
-            self.logger.info(f"got processed result from producer: {result}")
+            self.logger.debug(f"got processed result from producer: {result}")
             if result is not None:
                 # this is end of the streaming
                 # As a convention, the 'result' should be non-empty when succeeded.

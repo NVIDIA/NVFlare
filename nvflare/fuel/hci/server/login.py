@@ -76,7 +76,7 @@ class LoginModule(CommandModule, CommandFilter):
         cert_data = headers.get("cert")
         signature = headers.get("signature")
 
-        self.logger.info(f"got cert login headers: {headers=}")
+        self.logger.debug(f"got cert login headers: {headers=}")
         hci = conn.get_prop(ConnProps.HCI_SERVER)
         identity_verifier = hci.get_id_verifier()
         id_asserter = hci.get_id_asserter()
@@ -89,7 +89,7 @@ class LoginModule(CommandModule, CommandFilter):
                 signature=signature,
                 nonce="",
             )
-            self.logger.info(f"verify common name: {ok=}")
+            self.logger.debug(f"verify common name: {ok=}")
         except Exception as ex:
             self.logger.error(f"identity_verifier.verify_common_name got exception: {ex}")
             traceback.print_exc()
@@ -100,7 +100,7 @@ class LoginModule(CommandModule, CommandFilter):
             return
 
         cert_dict = cert_to_dict(cert)
-        self.logger.info(f"got cert dict: {cert_dict}")
+        self.logger.debug(f"got cert dict: {cert_dict}")
         identity = get_identity_info(cert_dict)
 
         request = conn.get_prop(ConnProps.REQUEST)
@@ -114,7 +114,7 @@ class LoginModule(CommandModule, CommandFilter):
             origin_fqcn=origin,
         )
         token = session.make_token(id_asserter)
-        self.logger.info(f"created user session for {user_name}")
+        self.logger.info(f"Created user session for {user_name}")
         conn.append_string("OK")
         conn.append_token(token)
 
