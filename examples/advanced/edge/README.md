@@ -119,10 +119,11 @@ Next, let's generate job configs for cifar10 via EdgeJob API.
 
 ```commandline
 cd jobs
-python cifar10_job.py --job_name cifar10_sync_job --simulation_config_file configs/cifar10_sync_config.json --device_reuse --const_selection
+python cifar10_job.py --job_name cifar10_sync_job --simulation_config_file configs/cifar10_silo_config.json --device_reuse --const_selection
+python cifar10_job.py --job_name cifar10_async_job --simulation_config_file configs/cifar10_silo_config.json --min_hole_to_fill 1 --global_lr 0.05 --max_model_aggr 40 --max_model_history 40 --num_updates_for_model 1 --max_model_version 160 --eval_frequency 16 --device_reuse --const_selection
+
 python cifar10_job.py --job_name cifar10_sync_lcp_job --device_reuse --const_selection
-python cifar10_job.py --job_name cifar10_async_job --simulation_config_file configs/cifar10_async_config.json --min_hole_to_fill 1 --max_model_history 5 --num_updates_for_model 20 --device_selection_size 20 --device_reuse
-python cifar10_job.py --job_name cifar10_async_lcp_job --min_hole_to_fill 1 --max_model_history 5 --num_updates_for_model 20 --device_selection_size 20 --device_reuse
+python cifar10_job.py --job_name cifar10_async_lcp_job --min_hole_to_fill 1 --global_lr 0.05 --max_model_aggr 40 --max_model_history 40 --num_updates_for_model 1 --max_model_version 160 --eval_frequency 16 --device_reuse --const_selection
 cd ..
 ```
 
@@ -145,6 +146,7 @@ submit_job cifar10_sync_job
 You will then see the simulated devices start receiving the model from the server and complete local trainings.
 
 ### Results
+#### Federated Training v.s. Centralized Training
 After the configured rounds have finished, the training is complete, now let's check the training results.
 ```commandline
 tensorboard --logdir=/tmp/nvflare/workspaces
@@ -154,3 +156,24 @@ With the centralized training of 10 epochs, and the federated training of 10 rou
 
 Red curve is the centralized training, blue is the baseline federated training with regular single-layer setting, and green is the simulated cross-device federated training.
 The three learning will converge to similar accuracy, note that in this case each client holds partial data that is 1/16 of the whole training set sequentially split.
+
+#### Synchronous v.s. Asynchronous Federated Training
+Comparing synchronous (sync) vs. asynchronous (async) training, as configured above, we tested an async scheme that produces a new global model after receiving 1 model update, compared to the sync scheme which requires 16 model updates to generate a new global model. 
+
+Theoretically, as long as the injected latency of the async scheme is not too large, it will be "shadowed" by the concurrent device trainings as we cast a new model whenever receiving an update.
+Therefore, the additional latency will not lead to significant increase over no-delay version.  In comparison, the sync scheme has a latency of the **slowest** device to complete a local training, and in this case, the additional latency is the mean of the communication time plus the slowest device's local training time.
+
+Under our current setting where each device is uniformly sampled from three different device types, each modeled as an independent Gaussian distribution, we have the expectation of one-round FL approximately as the expectation of the max of the three Gaussian plus the communication mean 
+
+$40 + (3/2)\pi^{-1/2} \times 4 + 5 = 48.4$
+
+So running 10 rounds, the sync scheme will take $48.4 \times 10 \approx 8$ minutes more than async scheme.
+
+Now let's take a look at the results of the two schemes. Note that here we set the global learning rate to 0.05 for the async scheme, and 1.0 for the sync scheme. To match the total number of model updates processed, we let the async scheme run for 160 model versions as compared with 10 rounds of sync training.
+
+The global accuracy curves are shown below, with x-axis representing the relative time (in hours) of the training process, and y-axis representing the global accuracy:
+
+<img src="./figs/async_comp.png" alt="Cifar10 Async Results" width="800" >
+
+The blue curve represents async training, and the orange curve represents sync training. Under iid data-split with 16 concurrent devices, async scheme 
+achieved comparable global accuracy while taking 8 minutes less than the sync scheme as expected. 

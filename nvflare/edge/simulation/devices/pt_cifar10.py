@@ -35,12 +35,17 @@ DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 class PTCifar10Processor(DeviceTaskProcessor):
 
-    def __init__(self, data_root: str, subset_size: int, min_train_time=1.0, max_train_time=5.0):
+    def __init__(self, data_root: str, subset_size: int, communication_delay: dict, device_speed: dict):
         DeviceTaskProcessor.__init__(self)
         self.data_root = data_root
         self.subset_size = subset_size
-        self.min_train_time = min_train_time
-        self.max_train_time = max_train_time
+        self.communication_delay = communication_delay
+        self.device_speed = device_speed
+        # device_speed_type is the index of the device speed in the list of device speeds
+        # this is used to simulate different devices having different training speeds
+        # it is set to None initially and will be randomly assigned when the device is initialized
+        mean_speed = self.device_speed.get("mean")
+        self.device_speed_type = random.randint(0, len(mean_speed) - 1)
 
     def setup(self, job: JobResponse) -> None:
         pass
@@ -151,6 +156,31 @@ class PTCifar10Processor(DeviceTaskProcessor):
         result_dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data={"dict": diff_dict})
 
         # random delay to simulate the training time difference
-        delay = random.uniform(self.min_train_time, self.max_train_time)
+        # get mean and std from device_speed
+        mean_speed = self.device_speed.get("mean")
+        std_speed = self.device_speed.get("std")
+        # mean and std should be of same length
+        if len(mean_speed) != len(std_speed):
+            self.logger.error("mean and std speed should be of same length")
+            raise ValueError("bad device speed data")
+        # sample the value from the normal distribution
+        delay_speed = random.gauss(mean_speed[self.device_speed_type], std_speed[self.device_speed_type])
+        if delay_speed < 0:
+            delay_speed = 0
+
+        # get mean and std from communication_delay
+        mean_comm = self.communication_delay.get("mean")
+        std_comm = self.communication_delay.get("std")
+        # sample the communication delay from the normal distribution
+        delay_comm = random.gauss(mean_comm, std_comm)
+        if delay_comm < 0:
+            delay_comm = 0
+
+        delay = delay_speed + delay_comm
+
+        # Log the delay with the device id
+        device_id = self.device.device_id
+        self.logger.info(f"Device {device_id} training delay: {delay:.2f} seconds")
+
         time.sleep(delay)
         return result_dxo.to_dict()
