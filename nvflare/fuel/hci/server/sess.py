@@ -87,7 +87,7 @@ class Session(object):
 
 
 class SessionManager(CommandModule):
-    def __init__(self, cell, idle_timeout=3600, monitor_interval=5):
+    def __init__(self, cell, idle_timeout=1800, monitor_interval=5):
         """Session manager.
 
         Args:

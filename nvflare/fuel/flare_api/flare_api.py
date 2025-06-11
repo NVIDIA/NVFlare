@@ -107,7 +107,7 @@ class Session(SessionSpec):
 
     def close(self):
         """Close the session."""
-        self.api.close()
+        self.api.logout()
 
     def try_connect(self, timeout):
         if self.api.closed:
@@ -825,6 +825,33 @@ class Session(SessionSpec):
         if not client_envs:
             raise RuntimeError(f"missing {MetaKey.CLIENTS} from meta")
         return client_envs
+
+    def do_command(self, command: str, props=None):
+        """Execute an admin command.
+
+        Args:
+            command: the command to be executed
+            props: extra properties passed with the command
+
+        Returns:
+
+        """
+        return self.api.do_command(command, props)
+
+    def get_job_status(self, job_id: str) -> Optional[str]:
+        """Get the status of a job.
+
+        Args:
+            job_id: ID of the job
+
+        Returns: status of the job
+
+        """
+        job_meta = self.get_job_meta(job_id)
+        if job_meta:
+            return job_meta.get(JobMetaKey.STATUS.value)
+        else:
+            return None
 
     def monitor_job(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs

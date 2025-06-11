@@ -131,3 +131,6 @@ class FLAdminAPIRunner:
             api_command_wrapper(self.api.check_status(TargetType.CLIENT))
         except RuntimeError as e:
             print(f"There was an exception: {secure_format_exception(e)}")
+
+    def close(self):
+        self.api.logout()

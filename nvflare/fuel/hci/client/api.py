@@ -623,6 +623,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
     def logout(self):
         """Send logout command to server."""
+        if self.in_logout:
+            return None
+
         self.in_logout = True
         resp = self.server_execute(InternalCommands.LOGOUT)
         self.close()
