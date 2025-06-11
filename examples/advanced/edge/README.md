@@ -158,16 +158,17 @@ Red curve is the centralized training, blue is the baseline federated training w
 The three learning will converge to similar accuracy, note that in this case each client holds partial data that is 1/16 of the whole training set sequentially split.
 
 #### Synchronous v.s. Asynchronous Federated Training
-Comparing synchronous (sync) vs. asynchronous (async) training, as configured above, we tested an async scheme that produces a new global model after receiving 1 model update, compared to the sync scheme which requires 16 model updates to generate a new global model. 
+Comparing synchronous (sync) vs. asynchronous (async) training, as configured above, we tested an async scheme that produces a new global model once receiving 1 model update, compared to the sync scheme which requires all 16 model updates to generate a new global model. 
 
-Theoretically, as long as the injected latency of the async scheme is not too large, it will be "shadowed" by the concurrent device trainings as we cast a new model whenever receiving an update.
-Therefore, the additional latency will not lead to significant increase over no-delay version.  In comparison, the sync scheme has a latency of the **slowest** device to complete a local training, and in this case, the additional latency is the mean of the communication time plus the slowest device's local training time.
+For async scheme as we cast a new model whenever receiving an update, the overall expectation of additional latency will be the **mean** of all devices' latency
 
-Under our current setting where each device is uniformly sampled from three different device types, each modeled as an independent Gaussian distribution, we have the expectation of one-round FL approximately as the expectation of the max of the three Gaussian plus the communication mean 
+$ (40 + 20 + 10)/3 + 5 = 28.3$
 
-$40 + (3/2)\pi^{-1/2} \times 4 + 5 = 48.4$
+In comparison, the sync scheme has a latency of the **slowest** device to complete a local training, and under our current setting where each device is uniformly sampled from three different device types, each modeled as an independent Gaussian distribution, we have the expectation of the **max** of the three Gaussians plus the communication mean 
 
-So running 10 rounds, the sync scheme will take $48.4 \times 10 \approx 8$ minutes more than async scheme.
+$ 40 + (3 / 2)\pi^{-1/2} \times 4 + 5 = 48.4$
+
+So if only consider the latency, the async scheme will take approximately 60\% of the time of sync scheme.
 
 Now let's take a look at the results of the two schemes. Note that here we set the global learning rate to 0.05 for the async scheme, and 1.0 for the sync scheme. To match the total number of model updates processed, we let the async scheme run for 160 model versions as compared with 10 rounds of sync training.
 
@@ -176,4 +177,4 @@ The global accuracy curves are shown below, with x-axis representing the relativ
 <img src="./figs/async_comp.png" alt="Cifar10 Async Results" width="800" >
 
 The blue curve represents async training, and the orange curve represents sync training. Under iid data-split with 16 concurrent devices, async scheme 
-achieved comparable global accuracy while taking 8 minutes less than the sync scheme as expected. 
+achieved comparable global accuracy at around 60% time cost of the sync scheme as expected. 
