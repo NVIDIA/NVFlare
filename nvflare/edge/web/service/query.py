@@ -59,8 +59,8 @@ class Query:
 
         self.lcp_list = []
         # TODO: add ssl support
-        # self.client = EdgeApiClient(ssl_credentials=ssl_credentials)
-        self.client = EdgeApiClient()
+        self.client = EdgeApiClient(ssl_credentials=ssl_credentials)
+        # self.client = EdgeApiClient()
         self.logger = get_obj_logger(self)
         if lcp_mapping_file:
             self.load_lcp_map(lcp_mapping_file)
