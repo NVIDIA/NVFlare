@@ -510,7 +510,7 @@ class SessionSpec(ABC):
     @abstractmethod
     def monitor_job(
         self, job_id: str, timeout: int = 0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
-    ) -> MonitorReturnCode:
+    ) -> (MonitorReturnCode, Optional[dict]):
         """Monitor the job progress until one of the conditions occurs:
          - job is done
          - timeout
@@ -522,7 +522,7 @@ class SessionSpec(ABC):
             poll_interval: how often to poll job status
             cb: if provided, callback to be called after each poll
 
-        Returns: a MonitorReturnCode
+        Returns: a tuple of (MonitorReturnCode, job meta)
 
         Every time the cb is called, it must return a bool indicating whether the monitor
         should continue. If False, this method ends.

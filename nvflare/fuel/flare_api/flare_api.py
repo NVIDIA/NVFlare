@@ -828,7 +828,7 @@ class Session(SessionSpec):
 
     def monitor_job(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
-    ) -> MonitorReturnCode:
+    ) -> (MonitorReturnCode, Optional[dict]):
         """Monitor the job progress.
 
         Monitors until one of the conditions occurs:
@@ -842,7 +842,7 @@ class Session(SessionSpec):
             poll_interval (float): how often to poll job status
             cb: if provided, callback to be called after each status poll
 
-        Returns: a MonitorReturnCode
+        Returns: a tuple of (MonitorReturnCode, job meta dict)
 
         Every time the cb is called, it must return a bool indicating whether the monitor
         should continue. If False, this method ends.
@@ -851,13 +851,13 @@ class Session(SessionSpec):
         start_time = time.time()
         while True:
             if 0 < timeout < time.time() - start_time:
-                return MonitorReturnCode.TIMEOUT
+                return MonitorReturnCode.TIMEOUT, None
 
             job_meta = self.get_job_meta(job_id)
             if cb is not None:
                 should_continue = cb(self, job_id, job_meta, *cb_args, **cb_kwargs)
                 if not should_continue:
-                    return MonitorReturnCode.ENDED_BY_CB
+                    return MonitorReturnCode.ENDED_BY_CB, None
 
             # check whether the job is finished
             job_status = job_meta.get(JobMetaKey.STATUS.value, None)
@@ -865,7 +865,7 @@ class Session(SessionSpec):
                 raise InternalError(f"missing status in job {job_id}")
 
             if job_status.startswith("FINISHED"):
-                return MonitorReturnCode.JOB_FINISHED
+                return MonitorReturnCode.JOB_FINISHED, job_meta
 
             time.sleep(poll_interval)
 

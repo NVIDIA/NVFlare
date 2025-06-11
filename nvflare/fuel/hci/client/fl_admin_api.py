@@ -115,6 +115,8 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             debug: Whether to print debug messages. False by default.
             auto_login_max_tries: maximum number of tries to auto-login.
         """
+        print("WARNING: FLAdminAPI is deprecated! Please use Flare API (nvflare.fuel.flare_api.flare_api).")
+
         AdminAPI.__init__(
             self,
             user_name=user_name,
