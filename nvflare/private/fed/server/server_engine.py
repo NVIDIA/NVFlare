@@ -684,6 +684,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         topic: str,
         factory: ConsumerFactory,
         stream_done_cb=None,
+        consumed_cb=None,
         **cb_kwargs,
     ):
         if not self.run_manager:
@@ -693,7 +694,12 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             raise RuntimeError("object_streamer has not been created")
 
         self.run_manager.object_streamer.register_stream_processing(
-            channel=channel, topic=topic, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
+            channel=channel,
+            topic=topic,
+            factory=factory,
+            stream_done_cb=stream_done_cb,
+            consumed_cb=consumed_cb,
+            **cb_kwargs,
         )
 
     def shutdown_streamer(self):

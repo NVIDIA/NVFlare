@@ -226,36 +226,6 @@ class FLAdminAPISpec(ABC):
         pass
 
     @abstractmethod
-    def list_sp(self) -> FLAdminAPIResponse:
-        """Gets the information on the available servers (service providers).
-
-        Returns: FLAdminAPIResponse
-
-        """
-        pass
-
-    @abstractmethod
-    def get_active_sp(self) -> FLAdminAPIResponse:
-        """Gets the active server (service provider).
-
-        Returns: FLAdminAPIResponse
-
-        """
-        pass
-
-    @abstractmethod
-    def promote_sp(self, sp_end_point: str) -> FLAdminAPIResponse:
-        """Sends command through overseer_agent to promote the specified sp_end_point to become the active server.
-
-        Args:
-            sp_end_point: service provider end point to promote to active in the form of server:fl_port:admin_port like example.com:8002:8003
-
-        Returns: FLAdminAPIResponse
-
-        """
-        pass
-
-    @abstractmethod
     def get_available_apps_to_upload(self):
         pass
 
