@@ -46,15 +46,9 @@ participants:
 # The same methods in all builders are called in their order defined in builders section
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
-    args:
-      template_file:
-        - master_template.yml
-        - aws_template.yml
-        - azure_template.yml
-  - path: nvflare.lighter.impl.template.TemplateBuilder
   - path: nvflare.lighter.impl.docker.DockerBuilder
     args:
-      base_image: python:3.8
+      base_image: python:3.10
       requirements_file: docker_compose_requirements.txt
   - path: nvflare.lighter.impl.helm_chart.HelmChartBuilder
     args:
