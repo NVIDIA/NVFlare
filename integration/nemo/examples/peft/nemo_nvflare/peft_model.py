@@ -30,7 +30,7 @@ logging.getLogger().setLevel(logging.INFO)
 class PEFTmodel(torch.nn.Module, FLComponent):
     def __init__(
         self,
-        config_path: str = "custom/megatron_gpt_peft_tuning_config.yaml",
+        config_path: str = "custom/nemo_nvflare/megatron_gpt_peft_tuning_config.yaml",
         restore_from_path: str = "/models/megatron_gpt_345m.nemo",
         peft_restore_from_path: str = None,
     ):
