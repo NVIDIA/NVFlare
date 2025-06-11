@@ -95,10 +95,12 @@ class StaticFileBuilder(Builder):
             shutil.copyfile(custom_ca_cert, os.path.join(ctx.get_kit_dir(site), ProvFileName.CUSTOM_CA_CERT_FILE_NAME))
         return conn_security
 
-    def _determine_scheme(self, participant: Participant) -> str:
+    def _determine_scheme(self, participant: Participant, scheme=None) -> str:
         # use AIO for server by default
         use_aio = participant.get_prop(PropKey.USE_AIO, participant.type == ParticipantType.SERVER)
-        scheme = self.scheme
+        if not scheme:
+            scheme = self.scheme
+
         if use_aio:
             scheme = self.aio_schemes.get(scheme)
             if not scheme:
@@ -194,8 +196,7 @@ class StaticFileBuilder(Builder):
         dest_dir = ctx.get_ws_dir(server)
         ctx.build_from_template(dest_dir, TemplateSectionKey.SERVER_README, ProvFileName.README_TXT, exe=False)
 
-    @staticmethod
-    def _build_comm_config_for_internal_listener(participant: Participant):
+    def _build_comm_config_for_internal_listener(self, participant: Participant):
         """Build template args for comm_config, which will be used to create internal listener
 
         Args:
@@ -213,8 +214,12 @@ class StaticFileBuilder(Builder):
         if not lh:
             return
 
+        scheme = lh.scheme
+        if participant.type == ParticipantType.RELAY:
+            scheme = self._determine_scheme(participant, scheme)
+
         replacement_dict = {
-            CommConfigArg.SCHEME: lh.scheme,
+            CommConfigArg.SCHEME: scheme,
             CommConfigArg.HOST: lh.default_host,
             CommConfigArg.PORT: lh.port,
             CommConfigArg.CONN_SEC: lh.conn_sec,
