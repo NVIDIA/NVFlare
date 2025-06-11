@@ -122,8 +122,9 @@ cd jobs
 python cifar10_job.py --job_name cifar10_sync_job --simulation_config_file configs/cifar10_silo_config.json --device_reuse --const_selection
 python cifar10_job.py --job_name cifar10_async_job --simulation_config_file configs/cifar10_silo_config.json --min_hole_to_fill 1 --global_lr 0.05 --max_model_aggr 40 --max_model_history 40 --num_updates_for_model 1 --max_model_version 160 --eval_frequency 16 --device_reuse --const_selection
 
-python cifar10_job.py --job_name cifar10_sync_lcp_job --device_reuse --const_selection
-python cifar10_job.py --job_name cifar10_async_lcp_job --min_hole_to_fill 1 --global_lr 0.05 --max_model_aggr 40 --max_model_history 40 --num_updates_for_model 1 --max_model_version 160 --eval_frequency 16 --device_reuse --const_selection
+python cifar10_job.py --job_name cifar10_sync_no_delay_job --simulation_config_file configs/cifar10_silo_no_delay_config.json --device_reuse --const_selection
+python cifar10_job.py --job_name cifar10_async_no_delay_job --simulation_config_file configs/cifar10_silo_no_delay_config.json --min_hole_to_fill 1 --global_lr 0.05 --max_model_aggr 40 --max_model_history 40 --num_updates_for_model 1 --max_model_version 160 --eval_frequency 16 --device_reuse --const_selection
+
 cd ..
 ```
 
@@ -158,17 +159,24 @@ Red curve is the centralized training, blue is the baseline federated training w
 The three learning will converge to similar accuracy, note that in this case each client holds partial data that is 1/16 of the whole training set sequentially split.
 
 #### Synchronous v.s. Asynchronous Federated Training
-Comparing synchronous (sync) vs. asynchronous (async) training, as configured above, we tested an async scheme that produces a new global model once receiving 1 model update, compared to the sync scheme which requires all 16 model updates to generate a new global model. 
+Comparing synchronous (sync) vs. asynchronous (async) training, we tested an async scheme that produces a new global model once receiving 1 model update, compared to the sync scheme which requires all 16 model updates to generate a new global model. 
+
+We compare the two schemes under two settings:
+- No delay in local training by setting both **communication_delay** and **device_speed** to 0. In this case, since all devices are running in parallel and have essentially the same training data size, they are 
+expected to finish local training at almost the same time, thus async scheme will not be able to accelerate the training.
+- With delay in local training, we set **communication_delay** to 5 seconds, and **device_speed** to a Gaussian distribution with a large mean of 100.0, 200.0, or 400.0 seconds. 
+In this case, the devices will finish local training at different times, thus async scheme is expected to accelerate the training.
 
 For async scheme as we cast a new model whenever receiving an update, the overall expectation of additional latency will be the **mean** of all devices' latency
 
-$(40+20+10)/3+5=28.3$
+$(400+200+100)/3+5=238.3$
 
 In comparison, the sync scheme has a latency of the **slowest** device to complete a local training, and under our current setting where each device is uniformly sampled from three different device types, each modeled as an independent Gaussian distribution, we have the expectation of the **max** of the three Gaussians plus the communication mean 
 
-$40+(3/2)\pi^{-1/2}\times4+5=48.4$
+$400+(3/2)\pi^{-1/2}\times4+5=408.4$
 
-So if only consider the latency, the async scheme will take approximately 60\% of the time of sync scheme.
+So running for 10 rounds, comparing with training without delays, the async scheme will take approximately 2383 sec $\approx$ 39 min more, 
+while the sync scheme will take approximately 4084 sec $\approx$ 68 min more.
 
 Now let's take a look at the results of the two schemes. Note that here we set the global learning rate to 0.05 for the async scheme, and 1.0 for the sync scheme. To match the total number of model updates processed, we let the async scheme run for 160 model versions as compared with 10 rounds of sync training.
 
@@ -176,5 +184,12 @@ The global accuracy curves are shown below, with x-axis representing the relativ
 
 <img src="./figs/async_comp.png" alt="Cifar10 Async Results" width="800" >
 
-The blue curve represents async training, and the orange curve represents sync training. Under iid data-split with 16 concurrent devices, async scheme 
-achieved comparable global accuracy at around 60% time cost of the sync scheme as expected. 
+The dark blue curve represents async training without delay, orange for sync training without delay. 
+
+As expected, in this setting, the async scheme does not accelerate the training process, and both schemes converge to similar accuracy at similar time around 10 min.
+
+The light blue curve represents async training with delay, and the red curve represents sync training with delay.
+
+As expected, the async scheme accelerates the training process, taking 45 min, 35 min more than the no-delay scheme.
+While the sync scheme takes 82 min, 72 min more than the no-delay scheme. As compared with our theoretical expectation of delays of 39 min and 68 min, the
+experimental results align well with our calculation.
