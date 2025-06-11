@@ -162,7 +162,7 @@ Comparing synchronous (sync) vs. asynchronous (async) training, as configured ab
 
 For async scheme as we cast a new model whenever receiving an update, the overall expectation of additional latency will be the **mean** of all devices' latency
 
-$(40 + 20 + 10)/3 + 5 = 28.3$
+$(40+20+10)/3+5=28.3$
 
 In comparison, the sync scheme has a latency of the **slowest** device to complete a local training, and under our current setting where each device is uniformly sampled from three different device types, each modeled as an independent Gaussian distribution, we have the expectation of the **max** of the three Gaussians plus the communication mean 
 
