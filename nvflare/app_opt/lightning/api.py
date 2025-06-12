@@ -198,15 +198,21 @@ class FLCallback(Callback):
         model = self._receive_model(trainer)
         if model:
             if model.params:
-                missing_keys, unexpected_keys = pl_module.load_state_dict(
-                    model.params, strict=self._load_state_dict_strict
-                )
-                if len(missing_keys) > 0:
-                    self.logger.warning(f"There were missing keys when loading the global state_dict: {missing_keys}")
-                if len(unexpected_keys) > 0:
-                    self.logger.warning(
-                        f"There were unexpected keys when loading the global state_dict: {unexpected_keys}"
-                    )
+                try:
+                    result = pl_module.load_state_dict(model.params, strict=self._load_state_dict_strict)
+                    if result is not None:
+                        missing_keys, unexpected_keys = result
+                        if len(missing_keys) > 0:
+                            self.logger.warning(
+                                f"There were missing keys when loading the global state_dict: {missing_keys}"
+                            )
+                        if len(unexpected_keys) > 0:
+                            self.logger.warning(
+                                f"There were unexpected keys when loading the global state_dict: {unexpected_keys}"
+                            )
+                except Exception as e:
+                    self.logger.error(f"Failed to load state dict: {str(e)}")
+                    raise RuntimeError(f"Failed to load model state dict: {str(e)}")
             if model.current_round is not None:
                 self.current_round = model.current_round
 
