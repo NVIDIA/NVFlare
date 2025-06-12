@@ -203,7 +203,9 @@ class FLCallback(Callback):
                     if result is not None:
                         missing_keys, unexpected_keys = result
                         if len(missing_keys) > 0:
-                            self.logger.warning(f"There were missing keys when loading the global state_dict: {missing_keys}")
+                            self.logger.warning(
+                                f"There were missing keys when loading the global state_dict: {missing_keys}"
+                            )
                         if len(unexpected_keys) > 0:
                             self.logger.warning(
                                 f"There were unexpected keys when loading the global state_dict: {unexpected_keys}"
