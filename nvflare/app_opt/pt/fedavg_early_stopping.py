@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import torch
 
@@ -85,12 +85,13 @@ class PTFedAvgEarlyStopping(BaseFedAvg):
 
             clients = self.sample_clients(self.num_clients)
 
-            results = self.send_model_and_wait(task_name=self.task_to_optimize, targets=clients, data=model)
+            results: List[FLModel] = self.send_model_and_wait(
+                task_name=self.task_to_optimize, targets=clients, data=model
+            )
 
-            aggregate_results = self.aggregate(
-                results, aggregate_fn=self.aggregate_fn
-            )  # using default aggregate_fn with `WeightedAggregationHelper`. Can overwrite self.aggregate_fn with signature Callable[List[FLModel], FLModel]
-
+            # using default aggregate_fn with `WeightedAggregationHelper`.
+            # Can overwrite self.aggregate_fn with signature Callable[List[FLModel], FLModel]
+            aggregate_results = self.aggregate(results, aggregate_fn=self.aggregate_fn)
             model = self.update_model(model, aggregate_results)
 
             self.info(f"Round {self.current_round} global metrics: {model.metrics}")
