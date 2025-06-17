@@ -64,7 +64,7 @@ def init(rank: Optional[str | int] = None, config_file: Optional[str] = None) ->
     # subsequent logic assumes rank is a string
     if rank is not None:
         if isinstance(rank, int):
-            rank = f"{rank}"
+            rank = str(rank)
         elif isinstance(rank, str):
             pass
         else:
