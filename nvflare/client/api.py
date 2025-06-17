@@ -14,7 +14,7 @@
 
 import logging
 from threading import Lock
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -49,7 +49,7 @@ def get_context(ctx: Optional[APIContext] = None) -> APIContext:
         raise RuntimeError("APIContext is None")
 
 
-def init(rank: Optional[str | int] = None, config_file: Optional[str] = None) -> APIContext:
+def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = None) -> APIContext:
     """Initializes NVFlare Client API environment.
 
     Args:
