@@ -49,7 +49,7 @@ def get_context(ctx: Optional[APIContext] = None) -> APIContext:
         raise RuntimeError("APIContext is None")
 
 
-def init(rank: Optional[str | int] = None, config_file: Optional[str] = None) -> APIContext:
+def init(rank: Optional[Union[str, int]] = None, config_file: Optional[str] = None) -> APIContext:
     """Initializes NVFlare Client API environment.
 
     Args:
