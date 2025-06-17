@@ -14,7 +14,7 @@
 
 import logging
 from threading import Lock
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.abstract.fl_model import FLModel
