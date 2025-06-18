@@ -7,7 +7,8 @@
     - "{{ yaml_config }}"
 
   vars:
-    ansible_become_password: "{{ ansible_ssh_pass }}"
+    ansible_become_password: "{{ ansible_password }}"
+    random_pw: "{{ lookup('file', '{{scratch_folder}}/pw.txt') }}"
 
   tasks:
 
@@ -27,8 +28,8 @@
       ansible.builtin.debug:
         msg:
           - "cvm_id: {{ cvm_id }}"
-          - "target_image: {{ target_image }}"
-          - "vault_file: {{ vault_file }}"
+          - "target_folder: {{ target_folder }}"
+          - "scratch_folder: {{ scratch_folder }}"
           - "yaml_config: {{ yaml_config }}"
           - "site_name: {{ site_name }}"
           - "startup_folder: {{ startup_folder }}"
@@ -46,113 +47,28 @@
         state: present
       loop: "{{ required_system_packages }}"
 
-    - name: Check if vault file exists
-      stat:
-        path: "{{ vault_file }}"
-      register: vault_check
-
-# Encrypt drive
-
-    - name: Encrypt drive
-      block:
-        - name: Generate vault key
-          ansible.builtin.set_fact:
-            vaule_key: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters') }}"
-          when: false
-
-        - name: Display vault key
-          ansible.builtin.debug:
-            msg: "Vault Key: {{ vault_key }}"
-
-        - name: Save key to file
-          ansible.builtin.copy:
-            content: "{{ vault_key }}"
-            dest: "{{ vault_key_file}}"
-            mode: '0400'
-
-        - name: Create vault file
-          command: >
-            fallocate -l {{ secure_drive_size }} {{ vault_file }}
-          args:
-            creates: "{{ vault_file }}"
-
-        - name: Format the file as LUKS device using keyfile
-          shell: "echo YES | cryptsetup luksFormat {{ vault_file }} {{ vault_key_file }}"
-
-        - name: Open the LUKS device using keyfile
-          command: >
-            cryptsetup open {{ vault_file }} {{ encrypted_drive_name }} --key-file {{ vault_key_file }} --type luks2
-
-        - name: Create ext4 filesystem on the mapped device
-          filesystem:
-            fstype: ext4
-            dev: "/dev/mapper/{{ encrypted_drive_name }}"
-
-        - name: Create mount point
-          ansible.builtin.file:
-            path: "{{ vault_folder }}"
-            state: directory
-            mode: '0777'
-
-        - name: Mount the encrypted volume
-          mount:
-            path: "{{ vault_folder }}"
-            src: "/dev/mapper/{{ encrypted_drive_name }}"
-            fstype: ext4
-            state: mounted
-
-        - name: Create encryted folders
-          ansible.builtin.file:
-            path: "{{ item }}"
-            state: directory
-            mode: '0777'
-          loop:
-            - "{{ nvflare_folder }}"
-            - "{{ venv_folder }}"
-            - "{{ workspace_folder }}"
-            - "{{ service_folder }}"
-
-      rescue:
-        - name: Encrypt drive failed
-          fail:
-            msg: "Can't encrypt drive"
-
-      tags:
-        - encrypt_drive
-
-# Create systemd services 
-
-    - name: Copy Systemd unit files
-      ansible.builtin.copy:
-        src: "{{ item }}"
-        dest: /etc/systemd/system
-        owner: root
-        group: root
-        mode: '0644'
-      with_fileglob:
-        - "../services/*.service"
-
-    - name: Enable systemd unit
-      systemd:
-        name: "{{ item }}"
-        enabled: yes
+ 
+    - name: Create folders
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0777'
       loop:
-        - "mount_vault.service"
-        - "nvflare.service"
+        - "{{ nvflare_folder }}"
+        - "{{ venv_folder }}"
+        - "{{ workspace_folder }}"
+        - "{{ service_folder }}"
+
+# Copy startup folder to /vault/nvflare
+    - name: Copy startup folder
+      ansible.builtin.copy:
+        src: "{{ startup_folder }}/{{ site_name }}"
+        dest: "{{ nvflare_folder }}"
+        mode: preserve
 
 # Install Python dependencies
 
-    - name: Install PIP
-      apt:
-        name: python3-pip
-        state: present
-
-    - name: Ensure virtualenv is installed
-      apt:
-        name: python3-venv
-        state: present
-
-    - name: Install virtualenv in encrypted folder
+    - name: Install virtualenv
       ansible.builtin.pip:
         name: virtualenv
         state: present
@@ -181,11 +97,31 @@
         state: present
         virtualenv: "{{ venv_folder}}"
 
-    - name: Copy startup kit
+# Create systemd service
+
+    - name: Copy services
       ansible.builtin.copy:
-        src: "{{ startup_folder }}"
-        dest: "{{ nvflare_folder }}"
-        mode: '0755'
+        src: "{{ item }}"
+        dest: "{{ service_folder }}/"
+      with_fileglob:
+        - "../services/*.service"
+
+  
+    - name: Correct startup folder
+      ansible.builtin.replace:
+        path: "{{ service_folder }}/nvflare.service"
+        regexp: "ExecStart=sub_start.sh"
+        replace: "ExecStart={{ nvflare_folder }}/{{ site_name }}/startup/sub_start.sh"
+
+    - name: Copy Systemd unit files
+      command: cp "{{ service_folder }}/nvflare.service" /etc/systemd/system
+
+    - name: Enable systemd unit
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+      loop:
+        - "nvflare.service"
 
 # Secure the system
 
@@ -194,12 +130,14 @@
         name: ufw
         state: present
         update_cache: true
+      when: false
 
     - name: Enable UFW and set default policy to deny
       community.general.ufw:
         state: enabled
         policy: deny
         logging: on
+      when: false
 
     - name: Allow SSH/Flare ports only
       community.general.ufw:
@@ -209,8 +147,24 @@
       loop:
         - 22
         - 8002
+        - 8003
+      when: false 
+
+# Change user password to random
+
+    - name: Randomizepassword
+      ansible.builtin.user:
+        name: "{{ item }}"
+        password: "{{ random_pw }}"
+      loop:
+        - root
+        - nvidia
+      when: false
 
 # Shutdwon CVM
-
     - name: Shutdown CVM
-      shell: shutdown -h now
+      ansible.builtin.shell: shutdown -h now
+      async: 1
+      poll: 0
+      ignore_errors: true
+      

@@ -1,3 +1,7 @@
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <log_file>"
+    exit 1
+fi
 sudo qemu-system-x86_64 \
     -bios OVMF_AMD.fd \
     -kernel bzImage \
@@ -9,7 +13,8 @@ sudo qemu-system-x86_64 \
     -vga none \
     -enable-kvm -no-reboot \
     -cpu EPYC-v4 \
-    -machine q35 -smp cores=8,threads=2,sockets=2 -m 30G,slots=2,maxmem=512G \
+    -machine q35 -smp cores=8,threads=2,sockets=2 -m 30G,slots=8,maxmem=512G \
+    -serial file:$1 \
     -drive file=crypt_root.qcow2,if=none,id=disk0,format=qcow2 \
     -device virtio-blk-pci,drive=disk0,serial=rootfs \
     -drive file=applog.qcow2,if=none,id=disk1,format=qcow2 \

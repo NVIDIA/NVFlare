@@ -1,12 +1,15 @@
 [Unit]
-Description=Start NVFlare
-Requires=mount_vault.service
-After=mount_vault.service
+Description=NVFlare
+After=network.target
 
 [Service]
-Type=simple
-ExecStart=/vault/nvflare/startup/start.sh
-Restart=on-failure
+User=nvidia
+Group=nvidia
+WorkingDirectory=/home/nvidia/nvflare
+Environment="PATH=/vault/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=sub_start.sh
+Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target

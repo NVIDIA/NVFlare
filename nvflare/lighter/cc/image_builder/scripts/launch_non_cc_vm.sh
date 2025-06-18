@@ -1,8 +1,18 @@
+# Check exact number of arguments
+if [ $# -ne 3 ]; then
+  echo "Usage: $0 <root_drive> <applog_drive> <log_file>"
+  exit 1
+fi
+
+ROOT_DRIVE=$1
+APPLOG_DRIVE=$2
+LOG_FILE=$3
+
 sudo qemu-system-x86_64 \
     -bios OVMF_AMD.fd \
     -kernel bzImage \
-    -initrd initramfs.cpio.gz\
-    -append "console=ttyS0 root=/dev/vda1 rw net.ifnames=0 biosdevname=0 amd_iommu=on swiotlb=2097152,force vm_id=${CVM_ID}" \
+    -initrd initramfs.cpio.gz \
+    -append "console=ttyS0 root=/dev/vda1 rw net.ifnames=0 biosdevname=0 amd_iommu=on swiotlb=2097152,force" \
     -nographic \
     -machine q35,confidential-guest-support=sev0,vmport=off \
     -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1,policy=0x30000,kernel-hashes=on \
@@ -10,9 +20,10 @@ sudo qemu-system-x86_64 \
     -enable-kvm -no-reboot \
     -cpu EPYC-v4 \
     -machine q35 -smp cores=8,threads=2,sockets=2 -m 30G,slots=2,maxmem=512G \
-    -drive file=crypt_root.qcow2,if=none,id=disk0,format=qcow2 \
+    -serial file:$LOG_FILE \
+    -drive file=$ROOT_DRIVE,if=none,id=disk0,format=qcow2 \
     -device virtio-blk-pci,drive=disk0,serial=rootfs \
-    -drive file=applog.qcow2,if=none,id=disk1,format=qcow2 \
+    -drive file=$APPLOG_DRIVE,if=none,id=disk1,format=qcow2 \
     -device virtio-blk-pci,drive=disk1,serial=applog \
     -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=true,romfile= \
     -netdev user,id=vmnic,hostfwd=tcp::2222-:22,hostfwd=tcp::8002-:8002,hostfwd=tcp::8003-:8003 \

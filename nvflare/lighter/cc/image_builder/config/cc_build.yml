@@ -4,7 +4,7 @@ vault_key_file: /run/vault_key.txt
 nvflare_folder: /vault/nvflare
 workspace_folder: /vault/workspace
 venv_folder: /vault/venv
-service_folder: /vault/service
+service_folder: /vault/services
 encrypted_drive_name: vault
 logging_folder: /applogs
 
