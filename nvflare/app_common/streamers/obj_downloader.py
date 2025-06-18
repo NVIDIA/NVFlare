@@ -23,6 +23,7 @@ from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_callable, check_object_type
+from nvflare.security.logging import secure_format_exception
 
 OBJ_DOWNLOADER_CHANNEL = "obj_downloader__"
 OBJ_DOWNLOADER_TOPIC = "obj_downloader__download"
@@ -151,6 +152,9 @@ class ObjDownloader:
         obj_downloaded_cb=None,
         **cb_kwargs,
     ) -> str:
+        if obj_downloaded_cb is not None:
+            check_callable("obj_downloaded_cb", obj_downloaded_cb)
+
         tx = cls._tx_table.get(transaction_id)
         if not tx:
             raise ValueError(f"no such transaction {transaction_id}")
@@ -198,7 +202,11 @@ class ObjDownloader:
         tx = ref.tx
         assert isinstance(tx, _Transaction)
 
-        rc, chunk, new_state = tx.produce(ref.obj, current_state, requester, cls._logger)
+        try:
+            rc, data, new_state = tx.produce(ref.obj, current_state, requester, cls._logger)
+        except Exception as ex:
+            cls._logger.error(f"Producer {type(tx.producer)} encountered exception: {secure_format_exception(ex)}")
+            return make_reply(ReturnCode.PROCESS_EXCEPTION)
 
         if rc != ProduceRC.OK:
             # already done
@@ -211,7 +219,7 @@ class ObjDownloader:
                 body={
                     _PropKey.STATUS: rc,
                     _PropKey.STATE: new_state,
-                    _PropKey.DATA: chunk,
+                    _PropKey.DATA: data,
                 },
             )
 
@@ -229,7 +237,10 @@ class ObjDownloader:
                 if expired_tx:
                     for tx in expired_tx:
                         cls._delete_tx(tx)
-                        tx.timed_out()
+                        try:
+                            tx.timed_out()
+                        except Exception as ex:
+                            cls._logger.error(f"exception from timeout_cb: {secure_format_exception(ex)}")
             time.sleep(5.0)
 
 
@@ -295,9 +306,14 @@ def download_object(
         # continue
         data = payload.get(_PropKey.DATA)
         state = payload.get(_PropKey.STATE)
-        new_state = consumer.consume(state, data)
+        try:
+            new_state = consumer.consume(state, data)
+        except Exception as ex:
+            consumer.download_failed(f"exception when consuming data: {secure_format_exception(ex)}")
+            return
+
         if not isinstance(new_state, dict):
-            consumer.download_failed("consumer error")
+            consumer.download_failed(f"consumer error: new_state should be dict but got {type(new_state)}")
             return
 
         # ask for more

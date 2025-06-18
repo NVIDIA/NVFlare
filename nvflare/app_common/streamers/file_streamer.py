@@ -84,7 +84,7 @@ class _ChunkConsumer(ObjectConsumer):
         if self.file:
             file_location = stream_ctx.get(_KEY_FILE_LOCATION)
             self.file.close()
-            self.logger.info(f"closed file {file_location}")
+            self.logger.debug(f"closed file {file_location}")
 
 
 class _ChunkConsumerFactory(ConsumerFactory):
