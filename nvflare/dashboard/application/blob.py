@@ -91,7 +91,7 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
     u = Store.get_user(1)
     super_user = u.get("user")
     fl_port = 8002
-    admin_port = 8003
+    admin_port = fl_port
     with tempfile.TemporaryDirectory() as tmp_dir:
         project = Project.query.first()
         scheme = project.scheme if hasattr(project, "scheme") else "grpc"

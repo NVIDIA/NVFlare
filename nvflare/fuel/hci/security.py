@@ -78,7 +78,7 @@ def get_identity_info(cert: dict):
         cert: certificate
 
     Returns: if the cert is None, returning None.
-             if the cert is a dictinary, returning a dictionary containing three keys, common_name, organization and role.
+             if the cert is a dictionary, returning a dictionary containing three keys, common_name, organization and role.
 
     """
     if cert is None:
@@ -87,15 +87,15 @@ def get_identity_info(cert: dict):
     cn = None
     role = None
     organization = None
-    for sub in cert.get("subject", ()):
-        for key, value in sub:
-            if key == "commonName":
-                cn = value
-            elif key == "unstructuredName":
-                role = value
-            elif key == "organizationName":
-                organization = value
-    return {"common_name": cn, "organization": organization, "role": role}
+    sub = cert.get("subject", {})
+    for key, value in sub.items():
+        if key == "commonName":
+            cn = value
+        elif key == "unstructuredName":
+            role = value
+        elif key == "organizationName":
+            organization = value
+    return {IdentityKey.NAME: cn, IdentityKey.ORG: organization, IdentityKey.ROLE: role}
 
 
 def get_certificate_common_name(cert: dict):
@@ -114,28 +114,3 @@ def get_certificate_common_name(cert: dict):
         for key, value in sub:
             if key == "commonName":
                 return value
-
-
-def get_certificate_identity(cert: dict) -> dict:
-    """Gets the identity info of the provided certificate.
-
-    Args:
-        cert: certificate
-
-    Returns: identity info in a dict with following keys: name, org, role
-
-    """
-    if cert is None:
-        return None
-
-    result = {}
-
-    for sub in cert.get("subject", ()):
-        for key, value in sub:
-            if key == "commonName":
-                result[IdentityKey.NAME] = value
-            elif key == "org":
-                result[IdentityKey.ORG] = value
-            elif key == "role":
-                result[IdentityKey.ROLE] = value
-    return result

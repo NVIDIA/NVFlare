@@ -266,6 +266,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         topic: str,
         factory: ConsumerFactory,
         stream_done_cb=None,
+        consumed_cb=None,
         **cb_kwargs,
     ):
         """Register a ConsumerFactory for specified app channel and topic.
@@ -281,6 +282,7 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
             topic: app topic
             factory: the factory to be registered
             stream_done_cb: the callback to be called when streaming is done on receiving side
+            consumed_cb: the CB to be called after a chunk is consumed
 
         Returns: None
 
@@ -289,7 +291,12 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
             raise RuntimeError("object streamer has not been created")
 
         self.object_streamer.register_stream_processing(
-            topic=topic, channel=channel, factory=factory, stream_done_cb=stream_done_cb, **cb_kwargs
+            topic=topic,
+            channel=channel,
+            factory=factory,
+            stream_done_cb=stream_done_cb,
+            consumed_cb=consumed_cb,
+            **cb_kwargs,
         )
 
     def shutdown_streamer(self):

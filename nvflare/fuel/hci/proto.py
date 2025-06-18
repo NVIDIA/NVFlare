@@ -14,7 +14,6 @@
 
 import json
 from datetime import datetime
-from enum import Enum
 from typing import List
 
 from .table import Table
@@ -70,11 +69,13 @@ class MetaKey(object):
     CMD_TIMEOUT = "cmd_timeout"
     CUSTOM_PROPS = "custom_props"
     CMD_PROPS = "cmd_props"
+    CMD_HEADERS = "cmd_headers"
     FILES = "files"
     CMD_NAME = "cmd_name"
     TX_ID = "tx_id"
     FOLDER_NAME = "folder_name"
     LOCATION = "location"
+    SOURCE_FQCN = "source_fqcn"
 
 
 class MetaStatusValue(object):
@@ -97,35 +98,35 @@ class MetaStatusValue(object):
     NO_CLIENTS = "no_clients"
 
 
-class CredentialType(str, Enum):
-
-    PASSWORD = "password"
-    CERT = "cert"
-    LOCAL_CERT = "local_cert"
-
-
 class InternalCommands(object):
 
-    PWD_LOGIN = "_login"
     CERT_LOGIN = "_cert_login"
     LOGOUT = "_logout"
     GET_CMD_LIST = "_commands"
     CHECK_SESSION = "_check_session"
     LIST_SESSIONS = "list_sessions"
 
-    commands = [PWD_LOGIN, CERT_LOGIN, LOGOUT, GET_CMD_LIST, CHECK_SESSION, LIST_SESSIONS]
+    commands = [CERT_LOGIN, LOGOUT, GET_CMD_LIST, CHECK_SESSION, LIST_SESSIONS]
 
     @classmethod
-    def contains_commmand(cls, command: str):
+    def contains_command(cls, command: str):
         return command in InternalCommands.commands
 
 
 class ConfirmMethod(object):
 
     AUTH = "auth"
-    PASSWORD = "pwd"
     YESNO = "yesno"
-    USER_NAME = "username"
+
+
+class StreamChannel:
+    UPLOAD = "hci.upload"
+    DOWNLOAD = "hci.download"
+
+
+class StreamTopic:
+    FOLDER = "folder"
+    FILE = "file"
 
 
 class Buffer(object):

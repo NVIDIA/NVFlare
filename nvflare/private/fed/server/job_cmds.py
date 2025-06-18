@@ -24,7 +24,7 @@ from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReturnCode
 from nvflare.apis.job_def import Job, JobMetaKey, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP
+from nvflare.apis.storage import DATA, JOB_ZIP, META, META_JSON, WORKSPACE, WORKSPACE_ZIP, StorageSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -158,22 +158,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     authz_func=self.authorize_job,
                     client_cmd=ftd.PULL_FOLDER_FQN,
                 ),
-                # DOWNLOAD_JOB_FILE is an internal command that the client automatically issues
-                # during the download process of a job.
-                # This command is not visible to the user and cannot be issued by the user.
-                CommandSpec(
-                    name=AdminCommandNames.DOWNLOAD_JOB_FILE,
-                    description="download a specified job file",
-                    usage=f"{AdminCommandNames.DOWNLOAD_JOB_FILE} job_id file_name",
-                    handler_func=self.pull_file,
-                    authz_func=self.authorize_job_file,
-                    client_cmd=ftd.PULL_BINARY_FQN,
-                    visible=False,
-                ),
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB_COMPONENTS,
                     description="download additional components for a specified job",
                     usage=f"{AdminCommandNames.DOWNLOAD_JOB_COMPONENTS} job_id",
+                    authz_func=self.authorize_job,
                     handler_func=self.download_job_components,
                     client_cmd=ftd.PULL_FOLDER_FQN,
                 ),
@@ -574,7 +563,10 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
     def submit_job(self, conn: Connection, args: List[str]):
         folder_name = args[1]
-        zip_file_name = conn.extra
+        zip_file_name = conn.get_prop(ConnProps.FILE_LOCATION)
+        if not zip_file_name:
+            conn.append_error("missing upload file", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+            return
 
         engine = conn.app_ctx
         try:
@@ -632,22 +624,59 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_download_dir = self.tx_path(conn, tx_id)
         shutil.rmtree(job_download_dir, ignore_errors=True)
 
-    def pull_file(self, conn: Connection, args: List[str]):
+    def _download_job_comps(self, conn: Connection, args: List[str], get_comps_f):
         """
-        Args: cmd_name tx_id folder_name file_name [end]
+        Job download uses binary protocol for more efficient download.
+        - Retrieve job data from job store. This puts job files (meta, data, and workspace) in a transfer folder
+        - Returns job file names, a TX ID, and a command name for downloading files to the admin client
+        - Admin client downloads received file names one by one. It signals the end of download in the last command.
         """
-        if len(args) < 4:
-            # NOTE: this should never happen since args have been validated by authorize_job_file!
-            self.logger.error("syntax error: missing tx_id folder_name file name")
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            self.logger.error(
+                f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+            )
+            conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
             return
 
-        tx_id = args[1]
-        folder_name = args[2]
-        file_name = args[3]
-        self.download_file(conn, tx_id, folder_name, file_name)
-        if len(args) > 4:
-            # this is the end of the download - remove the download dir
-            self._clean_up_download(conn, tx_id)
+        # It is possible that the same job is downloaded in multiple sessions at the same time.
+        # To allow this, we use a separate sub-folder in the download_dir for each download.
+        # This sub-folder is named with a transaction ID (tx_id), which is a UUID.
+        # The folder path for download the job is: <download_dir>/<tx_id>/<job_id>.
+        tx_id = str(uuid.uuid4())  # generate a new tx_id
+        job_download_dir = self.tx_path(conn, tx_id)  # absolute path of the job download dir.
+        job_id = args[1]
+
+        with engine.new_context() as fl_ctx:
+            comps = get_comps_f(job_def_manager, job_id, fl_ctx)
+            if not comps:
+                conn.append_string(
+                    "No components to download",
+                    meta=make_meta(
+                        MetaStatusValue.NO_JOB_COMPONENTS,
+                        info="No components to download",
+                    ),
+                )
+                return
+
+            try:
+                for ct, file_name in comps:
+                    job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+
+                self.download_folder(
+                    conn,
+                    tx_id=tx_id,
+                    folder_name=job_id,
+                )
+            except Exception as e:
+                secure_log_traceback()
+                self.logger.error(f"exception downloading job {job_id}: {secure_format_exception(e)}")
+                self._clean_up_download(conn, tx_id)
+                conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+
+    def _get_default_job_components(self, job_def_manager, job_id, fl_ctx):
+        return [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
 
     def download_job(self, conn: Connection, args: List[str]):
         """
@@ -656,41 +685,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         - Returns job file names, a TX ID, and a command name for downloading files to the admin client
         - Admin client downloads received file names one by one. It signals the end of download in the last command.
         """
-        job_id = args[1]
-        self.logger.debug(f"pull_job called for {job_id}")
-
-        engine = conn.app_ctx
-        job_def_manager = engine.job_def_manager
-        if not isinstance(job_def_manager, JobDefManagerSpec):
-            self.logger.error(
-                f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
-            )
-            conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
-            return
-
-        # It is possible that the same job is downloaded in multiple sessions at the same time.
-        # To allow this, we use a separate sub-folder in the download_dir for each download.
-        # This sub-folder is named with a transaction ID (tx_id), which is a UUID.
-        # The folder path for download the job is: <download_dir>/<tx_id>/<job_id>.
-        tx_id = str(uuid.uuid4())  # generate a new tx_id
-        job_download_dir = self.tx_path(conn, tx_id)  # absolute path of the job download dir.
-        with engine.new_context() as fl_ctx:
-            try:
-                job_def_manager.get_storage_for_download(job_id, job_download_dir, DATA, JOB_ZIP, fl_ctx)
-                job_def_manager.get_storage_for_download(job_id, job_download_dir, META, META_JSON, fl_ctx)
-                job_def_manager.get_storage_for_download(job_id, job_download_dir, WORKSPACE, WORKSPACE_ZIP, fl_ctx)
-
-                self.download_folder(
-                    conn,
-                    tx_id=tx_id,
-                    folder_name=job_id,
-                    download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE,
-                )
-            except Exception as e:
-                secure_log_traceback()
-                self.logger.error(f"exception downloading job {job_id}: {secure_format_exception(e)}")
-                self._clean_up_download(conn, tx_id)
-                conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+        self._download_job_comps(conn, args, self._get_default_job_components)
 
     def download_job_components(self, conn: Connection, args: List[str]):
         """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
@@ -698,44 +693,18 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         Based on job download but downloads the additional components for a job that job download does
         not download.
         """
-        job_id = args[1]
-        engine = conn.app_ctx
-        job_def_manager = engine.job_def_manager
-        if not isinstance(job_def_manager, JobDefManagerSpec):
-            self.logger.error(
-                f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
-            )
-            conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
-            return
+        self._download_job_comps(conn, args, self._get_extra_job_components)
 
-        # It is possible that the same job is downloaded in multiple sessions at the same time.
-        # To allow this, we use a separate sub-folder in the download_dir for each download.
-        # This sub-folder is named with a transaction ID (tx_id), which is a UUID.
-        # The folder path for download the job is: <download_dir>/<tx_id>/<job_id>.
-        tx_id = str(uuid.uuid4())  # generate a new tx_id
-        job_download_dir = self.tx_path(conn, tx_id)  # absolute path of the job download dir.
-        with engine.new_context() as fl_ctx:
-            try:
-                list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
-                if list_of_data:
-                    job_components = [
-                        item for item in list_of_data if item not in {"workspace", "meta", "scheduled", "data"}
-                    ]
-                for job_component in job_components:
-                    job_def_manager.get_storage_for_download(
-                        job_id + "_components", job_download_dir, job_component, job_component, fl_ctx
-                    )
-                self.download_folder(
-                    conn,
-                    tx_id=tx_id,
-                    folder_name=job_id + "_components",
-                    download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE,
-                )
-            except Exception as e:
-                secure_log_traceback()
-                self.logger.error(f"exception downloading job {job_id}: {secure_format_exception(e)}")
-                self._clean_up_download(conn, tx_id)
-                conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+    def _get_extra_job_components(self, job_def_manager, job_id, fl_ctx):
+        all_components = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
+        if all_components:
+            return [
+                (item, item)
+                for item in all_components
+                if item not in {WORKSPACE, META, "scheduled", DATA} and StorageSpec.is_valid_component(item)
+            ]
+        else:
+            return None
 
     def do_app_command(self, conn: Connection, args: List[str]):
         # cmd job_id topic

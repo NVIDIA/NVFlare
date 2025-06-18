@@ -17,7 +17,6 @@ import os
 import shlex
 import shutil
 import socket
-import ssl
 import subprocess
 import tempfile
 import time
@@ -26,8 +25,6 @@ from typing import Any, Dict, Optional, Tuple
 import grpc
 from requests import Request, RequestException, Response, Session, codes
 from requests.adapters import HTTPAdapter
-
-from nvflare.fuel.hci.conn import ALL_END
 
 
 class NVFlareConfig:
@@ -190,31 +187,6 @@ def check_response(resp: Optional[Response]) -> bool:
     if not resp:
         return False
     if resp.status_code != codes.ok:
-        return False
-    return True
-
-
-def check_socket_server_running(startup: str, host: str, port: int) -> bool:
-    try:
-        # SSL communication
-        ctx = ssl.create_default_context()
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        ctx.verify_mode = ssl.CERT_REQUIRED
-        ctx.check_hostname = False
-
-        ctx.load_verify_locations(os.path.join(startup, _get_ca_cert_file_name()))
-        ctx.load_cert_chain(
-            certfile=os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT)),
-            keyfile=os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT)),
-        )
-
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            with ctx.wrap_socket(sock) as secure_sock:
-                secure_sock.connect((host, port))
-                secure_sock.sendall(bytes(f"hello{ALL_END}", "utf-8"))
-                secure_sock.recv()
-    except Exception as e:
-        print(e)
         return False
     return True
 

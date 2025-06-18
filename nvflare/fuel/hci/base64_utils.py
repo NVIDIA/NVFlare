@@ -66,8 +66,17 @@ def text_file_to_b64str(file_name) -> str:
 
     """
     data_string = open(file_name, "r").read()
-    data_bytes = data_string.encode("utf-8")
+    return str_to_b64str(data_string)
+
+
+def str_to_b64str(s: str) -> str:
+    data_bytes = s.encode("utf-8")
     return bytes_to_b64str(data_bytes)
+
+
+def b64str_to_str(b64str: str) -> str:
+    data_bytes = b64str_to_bytes(b64str)
+    return data_bytes.decode("utf-8")
 
 
 def b64str_to_text_file(b64str: str, file_name):

@@ -371,7 +371,7 @@ class FilesystemStorage(StorageSpec):
         if os.path.exists(src):
             os.symlink(src, download_file)
         else:
-            log.info(f"{src} does not exist, skipping the creation of the symlink {download_file} for download.")
+            log.debug(f"{src} does not exist, skipping the creation of the symlink {download_file} for download.")
 
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
         """Gets both data and meta of the specified object.

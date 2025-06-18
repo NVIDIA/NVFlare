@@ -98,7 +98,7 @@ class ColdState(ServerState):
             self.logger.debug("handle_sd_callback no SP!")
 
         if sp and sp.primary is True:
-            if sp.name == self.host and sp.fl_port == self.service_port:
+            if sp.name == self.host and sp.fl_port in self.service_port:
                 self.primary = True
                 self.ssid = sp.service_session_id
                 self.logger.info(
@@ -150,7 +150,7 @@ class HotState(ServerState):
 
     def handle_sd_callback(self, sp: SP, fl_ctx: FLContext) -> ServerState:
         if sp and sp.primary is True:
-            if sp.name == self.host and sp.fl_port == self.service_port:
+            if sp.name == self.host and sp.fl_port in self.service_port:
                 self.primary = True
                 if sp.service_session_id != self.ssid:
                     self.ssid = sp.service_session_id

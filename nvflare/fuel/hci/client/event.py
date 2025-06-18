@@ -19,13 +19,9 @@ from nvflare.fuel.common.ctx import SimpleContext
 
 class EventType:
 
-    WAIT_FOR_SERVER_ADDR = "wait_for_server_addr"
-    SERVER_ADDR_OBTAINED = "server_addr_obtained"
-    SESSION_CLOSED = "session_closed"  # close the current session
     LOGIN_SUCCESS = "login_success"  # logged in to server
     LOGIN_FAILURE = "login_failure"  # cannot log in to server
     TRYING_LOGIN = "trying_login"  # still try to log in
-    SP_ADDR_CHANGED = "sp_addr_changed"  # service provider address changed
     SESSION_TIMEOUT = "session_timeout"  # server timed out current session
     BEFORE_LOGIN = "before_login"
     BEFORE_EXECUTE_CMD = "before_execute_cmd"
@@ -35,6 +31,7 @@ class EventType:
 
 class EventPropKey:
 
+    API = "api"
     MSG = "msg"
     USER_NAME = "user_name"
     CMD_NAME = "cmd_name"

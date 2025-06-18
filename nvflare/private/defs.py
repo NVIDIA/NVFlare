@@ -159,6 +159,7 @@ class CellMessageHeaderKeys:
 class ClientType:
     RELAY = "relay"
     REGULAR = "regular"
+    ADMIN = "admin"
 
 
 AUTH_CLIENT_NAME_FOR_SJ = "server_job"
