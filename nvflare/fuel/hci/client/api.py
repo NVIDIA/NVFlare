@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 import threading
 import time
 import traceback
@@ -24,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+import nvflare.app_common.streamers.file_downloader as downloader
 from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, ProcessType, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
@@ -48,7 +50,6 @@ from nvflare.fuel.hci.proto import (
     MetaKey,
     ProtoKey,
     StreamChannel,
-    StreamCtxKey,
     StreamTopic,
     make_error,
     validate_proto,
@@ -439,15 +440,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             cb=self._handle_aux_message,
         )
 
-        with self.new_context() as fl_ctx:
-            FileStreamer.register_stream_processing(
-                fl_ctx=fl_ctx,
-                channel=StreamChannel.DOWNLOAD,
-                topic="*",
-                stream_done_cb=self._handle_file_download,
-                chunk_consumed_cb=self._handle_file_chunk_consumed,
-            )
-
     def _handle_aux_message(self, request: CellMessage) -> CellMessage:
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
         data = request.payload
@@ -463,66 +455,22 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 return_message = CellMessage({}, None)
             return return_message
 
-    def _handle_file_chunk_consumed(
-        self,
-        reply: Shareable,
-        stream_ctx: StreamContext,
-        fl_ctx: FLContext,
-        **kwargs,
-    ):
-        # called when a chunk of file is received.
-        # update progress status
-        tx_id = stream_ctx.get(StreamCtxKey.TX_ID)
-        waiter = self.file_download_waiters.get(tx_id, None)
-        if not waiter:
-            self.logger.error(f"cannot find waiter for file download transaction {tx_id}")
-            return
-        assert isinstance(waiter, FileWaiter)
-        waiter.last_progress_time = time.time()
-
-    def _handle_file_download(self, stream_ctx: StreamContext, fl_ctx: FLContext, **kwargs):
-        tx_id = stream_ctx.get(StreamCtxKey.TX_ID)
-        waiter = self.file_download_waiters.get(tx_id)
-        if not waiter:
-            print(f"cannot find waiter for file download transaction {tx_id}")
-            return
-        assert isinstance(waiter, FileWaiter)
-        waiter.stream_ctx = stream_ctx
-        waiter.set()
-
-    def _wait_for_file(self, waiter, file_name):
-        progress_timeout = self.file_download_progress_timeout
-        result_received = False
-        while True:
-            if waiter.wait(timeout=0.5):
-                # wait ended normally
-                result_received = True
-                break
-
-            # is there any progress?
-            if time.time() - waiter.last_progress_time > progress_timeout:
-                # no progress for too long
-                break
-
-        self.file_download_waiters.pop(waiter.tx_id, None)
-        if not result_received:
-            # Note: the file could be empty - do not return 0.
-            print(f"failed to receive file {file_name}: no progress for {progress_timeout} seconds")
+    def download_file(self, source_fqcn: str, ref_id: str, file_name: str):
+        err, file_path = downloader.download_file(
+            cell=self.cell,
+            ref_id=ref_id,
+            from_fqcn=source_fqcn,
+            per_request_timeout=self.file_download_progress_timeout,
+        )
+        if err:
+            print(f"failed to receive file {file_name}: {err}")
             return None
 
-        stream_ctx = waiter.stream_ctx
-        tmp_file_name = FileStreamer.get_file_location(stream_ctx)
-        file_stats = os.stat(tmp_file_name)
+        file_stats = os.stat(file_path)
         num_bytes_received = file_stats.st_size
         Path(os.path.dirname(file_name)).mkdir(parents=True, exist_ok=True)
-        shutil.move(tmp_file_name, file_name)
+        shutil.move(file_path, file_name)
         return num_bytes_received
-
-    def receive_file(self, tx_id: str, file_name: str, conn: Connection, ctx: CommandContext):
-        waiter = FileWaiter(tx_id)
-        self.file_download_waiters[tx_id] = waiter
-        self.fire_and_forget(conn, ctx)
-        return self._wait_for_file(waiter, file_name)
 
     def get_cell(self):
         return self.cell
@@ -611,7 +559,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def _load_client_cmds_from_modules(self, cmd_modules):
         if cmd_modules:
             for m in cmd_modules:
-                self.client_cmd_reg.register_module(m, include_invisible=False)
+                self.client_cmd_reg.register_module(m, include_invisible=True)
 
     def _load_client_cmds_from_module_specs(self, cmd_module_specs):
         if cmd_module_specs:
@@ -886,15 +834,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             assert isinstance(reply, Shareable)
             end_result = reply.get_header(HeaderKey.END_RESULT)
             return end_result
-
-    def fire_and_forget(self, conn: Connection, ctx: CommandContext):
-        request = CellMessage(payload=conn.close(), headers=ctx.get_command_headers())
-        self.cell.fire_and_forget(
-            channel=CellChannel.HCI,
-            topic="command",
-            targets=FQCN.ROOT_SERVER,
-            message=request,
-        )
 
     def do_command(self, command: str, props=None):
         """A convenient method to call commands using string.

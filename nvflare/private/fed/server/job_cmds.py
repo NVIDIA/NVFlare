@@ -158,18 +158,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     authz_func=self.authorize_job,
                     client_cmd=ftd.PULL_FOLDER_FQN,
                 ),
-                # DOWNLOAD_JOB_FILE is an internal command that the client automatically issues
-                # during the download process of a job.
-                # This command is not visible to the user and cannot be issued by the user.
-                CommandSpec(
-                    name=AdminCommandNames.DOWNLOAD_JOB_FILE,
-                    description="download a specified job file",
-                    usage=f"{AdminCommandNames.DOWNLOAD_JOB_FILE} job_id file_name",
-                    handler_func=self.pull_file,
-                    authz_func=self.authorize_job_file,
-                    client_cmd=ftd.PULL_BINARY_FQN,
-                    visible=False,
-                ),
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB_COMPONENTS,
                     description="download additional components for a specified job",
@@ -636,23 +624,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_download_dir = self.tx_path(conn, tx_id)
         shutil.rmtree(job_download_dir, ignore_errors=True)
 
-    def pull_file(self, conn: Connection, args: List[str]):
-        """
-        Args: cmd_name tx_id folder_name file_name [end]
-        """
-        if len(args) < 4:
-            # NOTE: this should never happen since args have been validated by authorize_job_file!
-            self.logger.error("syntax error: missing tx_id folder_name file name")
-            return
-
-        tx_id = args[1]
-        folder_name = args[2]
-        file_name = args[3]
-        self.download_file(conn, tx_id, folder_name, file_name)
-        if len(args) > 4:
-            # this is the end of the download - remove the download dir
-            self._clean_up_download(conn, tx_id)
-
     def _download_job_comps(self, conn: Connection, args: List[str], get_comps_f):
         """
         Job download uses binary protocol for more efficient download.
@@ -697,7 +668,6 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     conn,
                     tx_id=tx_id,
                     folder_name=job_id,
-                    download_file_cmd_name=AdminCommandNames.DOWNLOAD_JOB_FILE,
                 )
             except Exception as e:
                 secure_log_traceback()

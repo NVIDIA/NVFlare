@@ -75,6 +75,7 @@ class MetaKey(object):
     TX_ID = "tx_id"
     FOLDER_NAME = "folder_name"
     LOCATION = "location"
+    SOURCE_FQCN = "source_fqcn"
 
 
 class MetaStatusValue(object):
@@ -126,10 +127,6 @@ class StreamChannel:
 class StreamTopic:
     FOLDER = "folder"
     FILE = "file"
-
-
-class StreamCtxKey:
-    TX_ID = "transaction_id"
 
 
 class Buffer(object):

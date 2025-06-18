@@ -40,13 +40,14 @@ class _FileSender(HCIRequester):
 
 
 class _FileReceiver(HCIRequester):
-    def __init__(self, tx_id, file_name: str):
-        self.tx_id = tx_id
+    def __init__(self, source_fqcn: str, ref_id, file_name: str):
+        self.source_fqcn = source_fqcn
+        self.ref_id = ref_id
         self.file_name = file_name
         self.num_bytes_received = 0
 
     def send_request(self, api, conn, cmd_ctx):
-        self.num_bytes_received = api.receive_file(self.tx_id, self.file_name, conn, cmd_ctx)
+        self.num_bytes_received = api.download_file(self.source_fqcn, self.ref_id, self.file_name)
         if self.num_bytes_received is not None:
             cmd_ctx.set_command_result({ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: "OK"})
         else:
@@ -58,6 +59,8 @@ class _FileReceiver(HCIRequester):
 
 class FileTransferModule(CommandModule):
     """Command module with commands relevant to file transfer."""
+
+    PULL_BINARY_FILE_CMD = "pull_binary_file"
 
     def __init__(self, upload_dir: str, download_dir: str):
         if not os.path.isdir(upload_dir):
@@ -71,7 +74,6 @@ class FileTransferModule(CommandModule):
 
         self.cmd_handlers = {
             ftd.PUSH_FOLDER_FQN: self.push_folder,
-            ftd.PULL_BINARY_FQN: self.pull_binary_file,
             ftd.PULL_FOLDER_FQN: self.pull_folder,
         }
 
@@ -80,9 +82,9 @@ class FileTransferModule(CommandModule):
             name="file_transfer",
             cmd_specs=[
                 CommandSpec(
-                    name="pull_binary",
+                    name=self.PULL_BINARY_FILE_CMD,
                     description="download one binary files in the download_dir",
-                    usage="pull_binary control_id file_name",
+                    usage="pull_binary source_fqcn tx_id ref_id folder_name file_name",
                     handler_func=self.pull_binary_file,
                     visible=False,
                 ),
@@ -139,18 +141,20 @@ class FileTransferModule(CommandModule):
 
     def pull_binary_file(self, args, ctx: CommandContext):
         """
-        Args: cmd_name, ctl_id, folder_name, file_name, [end]
+        Args: cmd_name, source_fqcn, tx_id, ref_id, folder_name, file_name, [end]
         """
         cmd_entry = ctx.get_command_entry()
-        if len(args) < 4 or len(args) > 5:
+        if len(args) < 6 or len(args) > 7:
             return {ProtoKey.STATUS: APIStatus.ERROR_SYNTAX, ProtoKey.DETAILS: "usage: {}".format(cmd_entry.usage)}
-        tx_id = args[1]
-        folder_name = args[2]
-        file_name = args[3]
+        source_fqcn = args[1]
+        tx_id = args[2]
+        ref_id = args[3]
+        folder_name = args[4]
+        file_name = args[5]
         tx_path = self._tx_path(tx_id, folder_name)
         file_path = os.path.join(tx_path, file_name)
         api = ctx.get_api()
-        receiver = _FileReceiver(tx_id, file_path)
+        receiver = _FileReceiver(source_fqcn, ref_id, file_path)
         api.fire_session_event(EventType.BEFORE_DOWNLOAD_FILE, f"downloading {file_name} ...")
         ctx.set_requester(receiver)
         download_start = time.time()
@@ -193,18 +197,20 @@ class FileTransferModule(CommandModule):
         if not meta:
             return result
 
-        file_names = meta.get(MetaKey.FILES)
+        files = meta.get(MetaKey.FILES)
         tx_id = meta.get(MetaKey.TX_ID)
-        api.debug(f"received tx_id {tx_id}, file names: {file_names}")
-        if not file_names:
+        source_fqcn = meta.get(MetaKey.SOURCE_FQCN)
+        api.debug(f"received tx_id {tx_id}, file names: {files}")
+        if not files:
             return result
 
-        cmd_name = meta.get(MetaKey.CMD_NAME)
-
+        cmd_name = self.PULL_BINARY_FILE_CMD
         error = None
-        for i, file_name in enumerate(file_names):
-            parts = [cmd_name, tx_id, folder_name, file_name]
-            if i == len(file_names) - 1:
+        for i, f in enumerate(files):
+            file_name = f[0]
+            ref_id = f[1]
+            parts = [cmd_name, source_fqcn, tx_id, ref_id, folder_name, file_name]
+            if i == len(files) - 1:
                 # this is the last file
                 parts.append("end")
 

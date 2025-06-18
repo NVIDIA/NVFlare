@@ -287,7 +287,14 @@ def get_module_logger(module=None, name=None) -> logging.Logger:
 
 def get_obj_logger(obj) -> logging.Logger:
     # Get object logger name adhering to logger hierarchy.
-    return logging.getLogger(f"{obj.__module__}.{obj.__class__.__qualname__}") if obj else None
+    if isinstance(obj, type):
+        # the obj is a class
+        logger_name = f"{obj.__module__}.{obj.__name__}"
+    elif obj:
+        logger_name = f"{obj.__module__}.{obj.__class__.__qualname__}"
+    else:
+        logger_name = None
+    return logging.getLogger(logger_name) if logger_name else None
 
 
 def get_script_logger() -> logging.Logger:
