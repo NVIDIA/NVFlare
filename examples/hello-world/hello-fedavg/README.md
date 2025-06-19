@@ -19,6 +19,8 @@ The ModelController API enables the option to easily customize a workflow with P
 
 - FedAvg: We subclass the BaseFedAvg class to leverage the predefined aggregation functions.
 - Early Stopping: We add a `stop_condition` argument (eg. `"accuracy >= 80"`) and end the workflow early if the corresponding global model metric meets the condition.
+- Patience: If set to a value greater than 1, the FL experiment will stop if the defined `stop_condition` does not improve over X consecutive FL rounds.
+- Task to optimize: Allows the user to specify which task to apply the `early stopping` mechanism to (e.g., the validation phase)
 - Model Selection: As and alternative to using a `IntimeModelSelector` componenet for model selection, we instead compare the metrics of the models in the workflow to select the best model each round.
 - Saving/Loading: Rather than configuring a persistor such as `PTFileModelPersistor` component, we choose to utilize PyTorch's save and load functions and save the metadata of the FLModel separately.
 
