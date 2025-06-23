@@ -35,6 +35,10 @@ class ModelUpdateDXOAggregator(Aggregator):
             weight_base[key] = np.add(weight_base[key], weight_to_add[key])
         return weight_base
 
+    def reset(self, fl_ctx: FLContext):
+        self.dict = None
+        self.count = 0
+
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         dxo = from_shareable(shareable)
         # check data_kind
@@ -57,10 +61,15 @@ class ModelUpdateDXOAggregator(Aggregator):
 
         # get count and add to base
         count = dxo.data.get("count", 1)
+
+        # print the count
+        self.log_info(fl_ctx, f"Aggregator got {count} updates")
         self.count += count
 
         return True
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
         dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data={"dict": self.dict, "count": self.count})
+        # once returned to upper layer, reset the aggregator
+        self.reset(fl_ctx)
         return dxo.to_shareable()

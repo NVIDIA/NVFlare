@@ -16,6 +16,8 @@ import argparse
 
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.edge.aggregators.model_update_dxo_factory import ModelUpdateDXOAggrFactory
+from nvflare.edge.assessors.buff_device_manager import BuffDeviceManager
+from nvflare.edge.assessors.buff_model_manager import BuffModelManager
 from nvflare.edge.assessors.model_update import ModelUpdateAssessor
 from nvflare.edge.edge_job import EdgeJob
 from nvflare.edge.models.model import Cifar10ConvNet
@@ -46,21 +48,36 @@ def export_job(args):
     evaluator = GlobalEvaluator(
         model_path="nvflare.edge.models.model.Cifar10ConvNet",
         torchvision_dataset={"name": "CIFAR10", "path": "/tmp/nvflare/datasets/cifar10"},
+        eval_frequency=args.eval_frequency,
     )
     job.to_server(evaluator, id="evaluator")
 
+    # add persistor, model_manager, and device_manager
     persistor = PTFileModelPersistor(model=Cifar10ConvNet())
     persistor_id = job.to_server(persistor, id="persistor")
 
-    assessor = ModelUpdateAssessor(
-        persistor_id=persistor_id,
-        max_model_version=args.max_model_version,
-        max_model_history=args.max_model_history,
+    model_manager = BuffModelManager(
         num_updates_for_model=args.num_updates_for_model,
+        max_model_history=args.max_model_history,
+        global_lr=args.global_lr,
+        staleness_weight=args.staleness_weight,
+    )
+    model_manager_id = job.to_server(model_manager, id="model_manager")
+
+    device_manager = BuffDeviceManager(
         device_selection_size=args.device_selection_size,
         min_hole_to_fill=args.min_hole_to_fill,
         device_reuse=args.device_reuse,
         const_selection=args.const_selection,
+    )
+    device_manager_id = job.to_server(device_manager, id="device_manager")
+
+    # add model_update_assessor
+    assessor = ModelUpdateAssessor(
+        persistor_id=persistor_id,
+        model_manager_id=model_manager_id,
+        device_manager_id=device_manager_id,
+        max_model_version=args.max_model_version,
     )
     job.configure_server(
         assessor=assessor,
@@ -82,8 +99,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--device_selection_size", type=int, default=16, help="Number of devices to select for each update"
     )
+    parser.add_argument("--global_lr", type=float, default=1.0, help="Global learning rate for model updates")
+    parser.add_argument("--staleness_weight", action="store_true", help="Enable staleness weighting for model updates")
     parser.add_argument("--min_hole_to_fill", type=int, default=16, help="Minimum hole to fill in the model")
     parser.add_argument("--device_reuse", action="store_true", help="Enable device reuse")
     parser.add_argument("--const_selection", action="store_true", help="Enable constant selection for device updates")
+    parser.add_argument(
+        "--eval_frequency", type=int, default=1, help="Frequency of evaluation in terms of model updates"
+    )
     args = parser.parse_args()
     export_job(args)
