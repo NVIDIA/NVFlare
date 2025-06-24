@@ -43,7 +43,7 @@ class BinaryTransfer:
         source_fqcn = cell.get_fqcn()
         download_tid = FileDownloader.new_transaction(
             cell=engine.get_cell(),
-            timeout=10,
+            timeout=5,
             timeout_cb=self._cleanup_tx,
             tx_path=tx_path,
         )
@@ -85,9 +85,9 @@ class BinaryTransfer:
                 ),
             )
 
-    def _cleanup_tx(self, files, tx_path):
+    def _cleanup_tx(self, tx_id: str, files, tx_path):
         """
         Remove the job download folder
         """
         shutil.rmtree(tx_path, ignore_errors=True)
-        self.logger.debug(f"deleted download path: {tx_path=} {files=}")
+        self.logger.debug(f"deleted download path: {tx_id=} {tx_path=} {files=}")
