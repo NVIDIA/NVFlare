@@ -80,7 +80,7 @@ the transaction is considered "timed out", and the timeout callback registered w
 The transaction timeout CB must follow this signature:
 
     timeout_cb(tx_id: str, objs: List[Any], **cb_kwargs)
-    
+
 where tx_id is the ID of the transaction;
 objs is the list of large objects registered with the transaction;
 cb_kwargs are the kw args registered with the CB.
