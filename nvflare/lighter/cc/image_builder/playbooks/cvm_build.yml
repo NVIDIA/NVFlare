@@ -1,0 +1,170 @@
+# cvm_build.yml
+- name: Provision CVM for NVFlare
+  hosts: cvm
+  become: true
+  vars_files:
+    - ../config/cc_build.yml
+    - "{{ yaml_config }}"
+
+  vars:
+    ansible_become_password: "{{ ansible_password }}"
+    random_pw: "{{ lookup('file', '{{scratch_folder}}/pw.txt') }}"
+
+  tasks:
+
+# Collecting variables
+
+    - name: Covnert variables to string
+      ansible.builtin.set_fact:
+        secure_size: "{{ secure_drive_size | string }}"
+        root_size: "{{ root_drive_size | string }}"
+
+    - name: Normalize variables
+      ansible.builtin.set_fact:
+        secure_drive_size: "{{ secure_size ~ ('g' if not secure_size[-1:] | lower == 'g' else '') }}"
+        root_drive_size: "{{ root_size ~ ('g' if not root_size[-1:] | lower == 'g' else '') }}"
+
+    - name: Print variables
+      ansible.builtin.debug:
+        msg:
+          - "cvm_id: {{ cvm_id }}"
+          - "target_folder: {{ target_folder }}"
+          - "scratch_folder: {{ scratch_folder }}"
+          - "yaml_config: {{ yaml_config }}"
+          - "site_name: {{ site_name }}"
+          - "startup_folder: {{ startup_folder }}"
+          - "secure_drive_size: {{ secure_drive_size }}"
+          - "root_drive_size: {{ root_drive_size }}"
+          - "data_source: {{ data_source }}"
+          - "nfs_mount: {{ nfs_mount }}"
+          - "custom_code: {{ custom_code }}"
+
+# Install required system packages
+
+    - name: Install required system packages
+      ansible.builtin.apt:
+        name: "{{ item | replace(':', '=') }}"
+        state: present
+      loop: "{{ required_system_packages }}"
+
+ 
+    - name: Create folders
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0777'
+      loop:
+        - "{{ nvflare_folder }}"
+        - "{{ venv_folder }}"
+        - "{{ workspace_folder }}"
+        - "{{ service_folder }}"
+
+# Copy startup folder to /vault/nvflare
+    - name: Copy startup folder
+      ansible.builtin.copy:
+        src: "{{ startup_folder }}/{{ site_name }}"
+        dest: "{{ nvflare_folder }}"
+        mode: preserve
+
+# Install Python dependencies
+
+    - name: Install virtualenv
+      ansible.builtin.pip:
+        name: virtualenv
+        state: present
+        virtualenv: "{{ venv_folder }}"
+        virtualenv_command: python3 -m venv
+
+    - name: Install Python dependencies
+      ansible.builtin.pip:
+        name: "{{ item }}"
+        state: present
+        virtualenv: "{{ venv_folder }}"
+      loop: "{{ required_python_packages }}"
+
+    - name: Install site Python dependencies
+      ansible.builtin.pip:
+        name: "{{ item }}"
+        state: present
+        virtualenv: "{{ venv_folder }}"
+      loop: "{{ site_required_python_packages }}"
+
+# Install NVFlare
+
+    - name: Install NVFlare
+      ansible.builtin.pip:
+        name: "nvflare=={{ nvflare_version }}"
+        state: present
+        virtualenv: "{{ venv_folder}}"
+
+# Create systemd service
+
+    - name: Copy services
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ service_folder }}/"
+      with_fileglob:
+        - "../services/*.service"
+
+  
+    - name: Correct startup folder
+      ansible.builtin.replace:
+        path: "{{ service_folder }}/nvflare.service"
+        regexp: "ExecStart=sub_start.sh"
+        replace: "ExecStart={{ nvflare_folder }}/{{ site_name }}/startup/sub_start.sh"
+
+    - name: Copy Systemd unit files
+      command: cp "{{ service_folder }}/nvflare.service" /etc/systemd/system
+
+    - name: Enable systemd unit
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+      loop:
+        - "nvflare.service"
+
+# Secure the system
+
+    - name: Ensure UFW is installed
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+        update_cache: true
+      when: false
+
+    - name: Enable UFW and set default policy to deny
+      community.general.ufw:
+        state: enabled
+        policy: deny
+        logging: on
+      when: false
+
+    - name: Allow SSH/Flare ports only
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - 22
+        - 8002
+        - 8003
+      when: false 
+
+# Change user password to random
+
+    - name: Randomizepassword
+      ansible.builtin.user:
+        name: "{{ item }}"
+        password: "{{ random_pw }}"
+      loop:
+        - root
+        - nvidia
+      when: false
+
+# Shutdwon CVM
+    - name: Shutdown CVM
+      ansible.builtin.shell: shutdown -h now
+      async: 1
+      poll: 0
+      ignore_errors: true
+      
