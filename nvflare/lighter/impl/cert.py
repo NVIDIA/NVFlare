@@ -26,6 +26,8 @@ from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
+MAX_CN_LENGTH = 63
+
 
 class _CertState:
 
@@ -108,7 +110,48 @@ class CertBuilder(Builder):
         self.subject = None
         self.issuer = None
 
+    @staticmethod
+    def _fix_server_name(server: Participant):
+        """Server Name is used as CN of the cert. But the CN cannot exceed 63 chars. So we have to truncate it
+        to make the cert.
+
+        Server Name also serves as the identity of the server for all clients to verify, and it must match the
+        CN in the server's cert.
+
+        Server Name is also the default host name (unless default host is explicitly specified) for clients to
+        connect to. Truncated name won't be a valid host name.
+
+        We have to accommodate all these factors:
+
+        - We truncate the server name and use it for both name and subject of the server. This will satisfy CN
+        requirement of the cert, and will satisfy server identity validation by clients.
+
+        - We check whether the DEFAULT_HOST property is explicitly specified in the server. If not, we explicitly
+        set it to the original name.
+
+        Args:
+            server: the server to be fixed.
+
+        Returns:
+
+        """
+        original_name = server.name
+        if len(original_name) > MAX_CN_LENGTH:
+            truncated_name = original_name[:MAX_CN_LENGTH]
+
+            # both name and subject of the server must use the truncated name!
+            server.name = truncated_name
+            server.subject = truncated_name
+
+            # also make the original_name the default host
+            default_host = server.get_prop(PropKey.DEFAULT_HOST)
+            if not default_host:
+                # must use the original name as the default host
+                server.set_prop(PropKey.DEFAULT_HOST, original_name)
+
     def initialize(self, project: Project, ctx: ProvisionContext):
+        self._fix_server_name(project.get_server())
+
         state_dir = ctx.get_state_dir()
         self.persistent_state = _CertState(state_dir)
         state = self.persistent_state
