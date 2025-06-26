@@ -25,8 +25,10 @@ from typing import List
 import yaml
 
 from nvflare.apis.job_def import RunStatus
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.api_status import APIStatus
+from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
@@ -367,7 +369,7 @@ def _generate_test_config_for_one_job(
     setup.append(f"rm -f {new_requirements_file}")
 
     config = {
-        "ha": True,
+        "ha": False,
         "jobs_root_dir": example.jobs_root_dir,
         "cleanup": True,
         "project_yaml": project_yaml,
@@ -397,19 +399,15 @@ def _generate_test_config_for_one_job(
     return output_yaml
 
 
-def _read_admin_json_file(admin_json_file) -> dict:
-    if not os.path.exists(admin_json_file):
-        raise RuntimeError("Missing admin json file.")
-    with open(admin_json_file, "r") as f:
-        admin_json = json.load(f)
-    return admin_json
+def _read_admin_json_file(workspace: Workspace) -> dict:
+    conf = secure_load_admin_config(workspace)
+    return conf.config_data["admin"]
 
 
 def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, admin_user_name, poc: bool):
-    admin_startup_folder = os.path.join(workspace_root_dir, admin_user_name, "startup")
-    admin_json_file = os.path.join(admin_startup_folder, "fed_admin.json")
-    admin_json = _read_admin_json_file(admin_json_file)
-    admin_config = admin_json["admin"]
+    admin_dir = os.path.join(workspace_root_dir, admin_user_name)
+    workspace = Workspace(root_dir=admin_dir)
+    admin_config = _read_admin_json_file(workspace)
     if poc:
         admin_config[AdminConfigKey.UID_SOURCE] = UidSource.CERT
 
@@ -436,7 +434,7 @@ def ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 60):
             time.sleep(0.2)
 
         if not login_success:
-            print(f"Admin api failed to log in within {timeout} seconds: {admin_api.fsm.current_state}.")
+            print(f"Admin api failed to log in within {timeout} seconds.")
         else:
             print("Admin successfully logged into server.")
     except Exception as e:

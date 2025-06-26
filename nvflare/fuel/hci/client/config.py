@@ -107,7 +107,8 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
 
 
 def secure_load_admin_config(workspace: Workspace):
-    SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
+    # need to reset SecurityContentService since it might be used for a different test session!
+    SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir(), reset=True)
 
     # make sure admin startup config file is not tampered with
     _, result = SecurityContentService.load_json(WorkspaceConstants.ADMIN_STARTUP_CONFIG)

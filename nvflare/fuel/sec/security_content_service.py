@@ -102,8 +102,8 @@ class SecurityContentService(object):
     content_folder = None
 
     @classmethod
-    def initialize(cls, content_folder: str, signature_filename="signature.json", root_cert="rootCA.pem"):
-        if cls.security_content_manager is None:
+    def initialize(cls, content_folder: str, signature_filename="signature.json", root_cert="rootCA.pem", reset=False):
+        if reset or not cls.security_content_manager:
             cls.content_folder = content_folder
             cls.security_content_manager = SecurityContentManager(content_folder, signature_filename, root_cert)
 

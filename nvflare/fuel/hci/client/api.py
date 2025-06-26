@@ -276,7 +276,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 event_handlers.append(m)
 
         self.logger = get_obj_logger(self)
-        self.user_identity = admin_config.get(AdminConfigKey.IDENTITY)
         self.conn_sec = admin_config.get(AdminConfigKey.CONNECTION_SECURITY)
         self.project_name = admin_config.get(AdminConfigKey.PROJECT_NAME)
         self.server_identity = admin_config.get(AdminConfigKey.SERVER_IDENTITY, "server")

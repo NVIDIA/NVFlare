@@ -26,6 +26,8 @@ from nvflare.fuel.hci.client.fl_admin_api_spec import APISyntaxError, FLAdminAPI
 from nvflare.fuel.hci.cmd_arg_utils import validate_text_file_name
 from nvflare.security.logging import secure_format_exception
 
+from .api_spec import AdminConfigKey
+
 
 def wrap_with_return_exception_responses(func):
     """Decorator on all FLAdminAPI calls to handle any raised exceptions and return the fitting error status."""
@@ -116,6 +118,12 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             auto_login_max_tries: maximum number of tries to auto-login.
         """
         print("WARNING: FLAdminAPI is deprecated! Please use Flare API (nvflare.fuel.flare_api.flare_api).")
+
+        if upload_dir:
+            admin_config[AdminConfigKey.UPLOAD_DIR] = upload_dir
+
+        if download_dir:
+            admin_config[AdminConfigKey.DOWNLOAD_DIR] = download_dir
 
         AdminAPI.__init__(
             self,
