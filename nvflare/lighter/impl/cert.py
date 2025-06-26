@@ -26,7 +26,7 @@ from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
 
-MAX_CN_LENGTH = 63
+MAX_CN_LENGTH = 64
 
 
 class _CertState:
