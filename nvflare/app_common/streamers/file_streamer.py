@@ -183,13 +183,7 @@ class FileStreamer(StreamerBase):
         if not os.path.isdir(dest_dir):
             raise ValueError(f"dest_dir '{dest_dir}' is not a valid dir")
 
-        if isinstance(fl_ctx, StreamableEngine):
-            engine = fl_ctx
-        elif isinstance(fl_ctx, FLContext):
-            engine = fl_ctx.get_engine()
-        else:
-            raise ValueError(f"invalid fl_context ({type(fl_ctx)})")
-
+        engine = fl_ctx.get_engine()
         if not isinstance(engine, StreamableEngine):
             raise RuntimeError(f"engine must be StreamableEngine but got {type(engine)}")
 

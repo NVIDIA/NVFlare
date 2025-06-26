@@ -73,7 +73,7 @@ class AdminServer:
         if engine:
             self.fl_ctx = engine.new_context()
             FileStreamer.register_stream_processing(
-                fl_ctx=engine,
+                fl_ctx=self.fl_ctx,
                 channel=StreamChannel.UPLOAD,
                 topic="*",
                 stream_done_cb=self._process_upload,
@@ -130,7 +130,7 @@ class AdminServer:
                         break
 
                 if command is None:
-                    self.logger.error(f"no processor registered for command '{command}'")
+                    self.logger.error("protocol violation: no command specified in request")
                     conn.append_error(
                         "protocol violation",
                         meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "protocol violation"),

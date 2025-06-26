@@ -66,7 +66,6 @@ class FLAdminAPIRunner:
             os.chdir(admin_dir)
             workspace = Workspace(root_dir=admin_dir)
             conf = secure_load_admin_config(workspace)
-            conf.configure()
         except ConfigError as e:
             print(f"ConfigError: {secure_format_exception(e)}")
             return

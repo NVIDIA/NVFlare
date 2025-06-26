@@ -81,7 +81,6 @@ class Session(SessionSpec):
 
         workspace = Workspace(root_dir=startup_path)
         conf = secure_load_admin_config(workspace)
-        conf.configure()
 
         admin_config = conf.config_data.get("admin", None)
         if not admin_config:

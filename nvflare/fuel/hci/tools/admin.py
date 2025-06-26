@@ -43,7 +43,6 @@ def main():
         os.chdir(args.workspace)
         workspace = Workspace(root_dir=args.workspace)
         conf = secure_load_admin_config(workspace)
-        conf.configure()
     except ConfigError as e:
         print(f"{secure_format_exception(e)}")
         return
