@@ -144,7 +144,7 @@ class CommandUtil(object):
         for token in client_tokens:
             requests.update({token: message})
 
-        admin_server: FedAdminServer = conn.server
+        admin_server: FedAdminServer = conn.get_prop(ConnProps.ADMIN_SERVER)
         cmd_timeout = conn.get_prop(ConnProps.CMD_TIMEOUT)
         if not cmd_timeout:
             cmd_timeout = admin_server.timeout

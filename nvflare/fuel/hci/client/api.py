@@ -14,30 +14,64 @@
 
 from __future__ import annotations
 
-import socket
-import ssl
+import os
+import shutil
 import threading
 import time
+import traceback
+import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
+import nvflare.app_common.streamers.file_downloader as downloader
+from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, ProcessType, ReservedKey, ReturnCode
+from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
+from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
+from nvflare.apis.utils.decomposers import flare_decomposers
+from nvflare.app_common.streamers.file_streamer import FileStreamer
+from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.client.event import EventContext, EventHandler, EventPropKey, EventType
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
-from nvflare.fuel.hci.conn import Connection, receive_and_process, receive_bytes_and_process
-from nvflare.fuel.hci.proto import ConfirmMethod, InternalCommands, MetaKey, ProtoKey, make_error
+from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import (
+    ConfirmMethod,
+    InternalCommands,
+    MetaKey,
+    ProtoKey,
+    StreamChannel,
+    StreamTopic,
+    make_error,
+    validate_proto,
+)
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.utils.fsm import FSM, State
+from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
+from nvflare.private.defs import ClientType
+from nvflare.private.fed.authenticator import Authenticator, validate_auth_headers
+from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier, get_cn_from_cert, load_cert_file
+from nvflare.private.stream_runner import HeaderKey, ObjectStreamer
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api_spec import (
     AdminAPISpec,
-    ApiPocValue,
+    AdminConfigKey,
     CommandContext,
     CommandCtxKey,
     CommandInfo,
     ReplyProcessor,
-    ServiceFinder,
+    UidSource,
 )
 from .api_status import APIStatus
 
@@ -47,6 +81,18 @@ _CMD_TYPE_SERVER = 2
 
 MAX_AUTO_LOGIN_TRIES = 300
 AUTO_LOGIN_INTERVAL = 1.5
+
+
+class FileWaiter(threading.Event):
+
+    def __init__(self, tx_id):
+        super().__init__()
+        self.tx_id = tx_id
+        self.stream_ctx = None
+        self.last_progress_time = time.time()
+
+    def get_stream_ctx(self):
+        return self.stream_ctx
 
 
 class ResultKey(object):
@@ -181,162 +227,30 @@ class _CmdListReplyProcessor(ReplyProcessor):
         api.server_cmd_received = True
 
 
-_STATE_NAME_WAIT_FOR_SERVER_ADDR = "wait_for_server_addr"
-_STATE_NAME_LOGIN = "login"
-_STATE_NAME_OPERATE = "operate"
-
-_SESSION_LOGGING_OUT = "session is logging out"
-
-
-class _WaitForServerAddress(State):
-    def __init__(self, api):
-        State.__init__(self, _STATE_NAME_WAIT_FOR_SERVER_ADDR)
-        self.api = api
-
-    def execute(self, **kwargs):
-        api = self.api
-        api.fire_session_event(EventType.WAIT_FOR_SERVER_ADDR, "Trying to obtain server address")
-        with api.new_addr_lock:
-            if api.new_host and api.new_port and api.new_ssid:
-                api.fire_session_event(
-                    EventType.SERVER_ADDR_OBTAINED, f"Obtained server address: {api.new_host}:{api.new_port}"
-                )
-                return _STATE_NAME_LOGIN
-            else:
-                # stay here
-                return ""
-
-
-class _TryLogin(State):
-    def __init__(self, api):
-        State.__init__(self, _STATE_NAME_LOGIN)
-        self.api = api
-
-    def enter(self):
-        api = self.api
-        api.server_sess_active = False
-
-        # use lock here since the service finder (in another thread) could change the
-        # address at this moment
-        with api.new_addr_lock:
-            new_host = api.new_host
-            new_port = api.new_port
-            new_ssid = api.new_ssid
-
-        # set the address for login
-        with api.addr_lock:
-            api.host = new_host
-            api.port = new_port
-            api.ssid = new_ssid
-
-    def execute(self, **kwargs):
-        api = self.api
-        api.fire_session_event(EventType.BEFORE_LOGIN, "")
-
-        result = api.auto_login()
-        if result[ResultKey.STATUS] == APIStatus.SUCCESS:
-            api.server_sess_active = True
-            api.fire_session_event(
-                EventType.LOGIN_SUCCESS, f"Logged into server at {api.host}:{api.port} with SSID: {api.ssid}"
-            )
-            return _STATE_NAME_OPERATE
-
-        details = result.get(ResultKey.DETAILS, "")
-        if details != _SESSION_LOGGING_OUT:
-            api.fire_session_event(EventType.LOGIN_FAILURE, details)
-
-        return FSM.STATE_NAME_EXIT
-
-
-class _Operate(State):
-    def __init__(self, api, sess_check_interval, auto_login_delay):
-        State.__init__(self, _STATE_NAME_OPERATE)
-        self.api = api
-        self.last_sess_check_time = None
-        self.sess_check_interval = sess_check_interval
-        self.auto_login_delay = auto_login_delay
-
-    def enter(self):
-        self.api.server_sess_active = True
-
-    def execute(self, **kwargs):
-        # check whether server addr has changed
-        api = self.api
-        with api.new_addr_lock:
-            new_host = api.new_host
-            new_port = api.new_port
-            new_ssid = api.new_ssid
-
-        with api.addr_lock:
-            cur_host = api.host
-            cur_port = api.port
-            cur_ssid = api.ssid
-
-        if new_host != cur_host or new_port != cur_port or cur_ssid != new_ssid:
-            # need to re-login
-            time.sleep(self.auto_login_delay)
-            api.fire_session_event(EventType.SP_ADDR_CHANGED, f"Server address changed to {new_host}:{new_port}")
-            return _STATE_NAME_LOGIN
-
-        # check server session status
-        if not self.sess_check_interval:
-            return ""
-
-        if not self.last_sess_check_time or time.time() - self.last_sess_check_time >= self.sess_check_interval:
-            self.last_sess_check_time = time.time()
-            result = api.check_session_status_on_server()
-            details = result.get(ResultKey.DETAILS, "")
-            status = result[ResultKey.STATUS]
-            if status in APIStatus.ERROR_INACTIVE_SESSION:
-                if details != _SESSION_LOGGING_OUT:
-                    api.fire_session_event(EventType.SESSION_TIMEOUT, details)
-
-                # end the session
-                return FSM.STATE_NAME_EXIT
-
-        return ""
-
-
-class AdminAPI(AdminAPISpec):
+class AdminAPI(AdminAPISpec, StreamableEngine):
     def __init__(
         self,
         user_name: str,
-        service_finder: ServiceFinder,
-        ca_cert: str = "",
-        client_cert: str = "",
-        client_key: str = "",
-        upload_dir: str = "",
-        download_dir: str = "",
+        admin_config: dict,
         cmd_modules: Optional[List] = None,
-        insecure: bool = False,
         debug: bool = False,
-        session_timeout_interval=None,
-        session_status_check_interval=None,
-        auto_login_delay: int = 5,
         auto_login_max_tries: int = 15,
         event_handlers=None,
     ):
         """API to keep certs, keys and connection information and to execute admin commands through do_command.
 
         Args:
-            ca_cert: path to CA Cert file, by default provisioned rootCA.pem
-            client_cert: path to admin client Cert file, by default provisioned as client.crt
-            client_key: path to admin client Key file, by default provisioned as client.key
-            upload_dir: File transfer upload directory. Folders uploaded to the server to be deployed must be here. Folder must already exist and be accessible.
-            download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
-            service_finder: used to obtain the primary service provider to set the host and port of the active server
             user_name: Username to authenticate with FL server
-            insecure: Whether to enable secure mode with secure communication.
             debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
-            session_timeout_interval: if specified, automatically close the session after inactive for this long, unit is second
-            session_status_check_interval: how often to check session status with server, unit is second
             auto_login_max_tries: maximum number of tries to auto-login.
         """
         super().__init__()
         if cmd_modules is None:
             from .file_transfer import FileTransferModule
 
+            upload_dir = admin_config.get(AdminConfigKey.UPLOAD_DIR, "transfer")
+            download_dir = admin_config.get(AdminConfigKey.DOWNLOAD_DIR, "transfer")
             cmd_modules = [FileTransferModule(upload_dir=upload_dir, download_dir=download_dir)]
         elif not isinstance(cmd_modules, list):
             raise TypeError("cmd_modules must be a list, but got {}".format(type(cmd_modules)))
@@ -346,12 +260,9 @@ class AdminAPI(AdminAPISpec):
                     raise TypeError(
                         "cmd_modules must be a list of CommandModule, but got element of type {}".format(type(m))
                     )
-        if not isinstance(service_finder, ServiceFinder):
-            raise TypeError("service_finder should be ServiceFinder but got {}".format(type(service_finder)))
 
-        cmd_module = service_finder.get_command_module()
-        if cmd_module:
-            cmd_modules.append(cmd_module)
+        if not event_handlers:
+            event_handlers = []
 
         if event_handlers:
             if not isinstance(event_handlers, list):
@@ -360,46 +271,46 @@ class AdminAPI(AdminAPISpec):
                 if not isinstance(h, EventHandler):
                     raise TypeError(f"item in event_handlers must be EventHandler but got {type(h)}")
 
+        for m in cmd_modules:
+            if isinstance(m, EventHandler):
+                event_handlers.append(m)
+
+        self.logger = get_obj_logger(self)
+        self.conn_sec = admin_config.get(AdminConfigKey.CONNECTION_SECURITY)
+        self.project_name = admin_config.get(AdminConfigKey.PROJECT_NAME)
+        self.server_identity = admin_config.get(AdminConfigKey.SERVER_IDENTITY, "server")
+        self.scheme = admin_config.get(AdminConfigKey.CONNECTION_SCHEME, "grpc")
+        self.ca_cert = admin_config.get(AdminConfigKey.CA_CERT)
+        self.client_cert = admin_config.get(AdminConfigKey.CLIENT_CERT)
+        self.client_key = admin_config.get(AdminConfigKey.CLIENT_KEY)
+        self.uid_source = admin_config.get(AdminConfigKey.UID_SOURCE, UidSource.USER_INPUT)
+        self.host = admin_config.get(AdminConfigKey.HOST, "localhost")
+        self.port = admin_config.get(AdminConfigKey.PORT, 8002)
+        self.file_download_progress_timeout = admin_config.get(AdminConfigKey.FILE_DOWNLOAD_PROGRESS_TIMEOUT, 5.0)
+        self.user_name = user_name
         self.event_handlers = event_handlers
 
-        self.service_finder = service_finder
-        self.host = None
-        self.port = None
-        self.ssid = None
-        self.addr_lock = threading.Lock()
+        if not self.ca_cert:
+            raise ConfigError("missing CA Cert file name")
+        if not self.client_cert:
+            raise ConfigError("missing Client Cert file name")
+        if not self.client_key:
+            raise ConfigError("missing Client Key file name")
 
-        self.new_host = None
-        self.new_port = None
-        self.new_ssid = None
-        self.new_addr_lock = threading.Lock()
+        if self.uid_source == UidSource.CERT:
+            # We'll find the username from the client cert
+            cert = load_cert_file(self.client_cert)
+            self.user_name = get_cn_from_cert(cert)
 
-        self.poc_key = None
-        self.insecure = insecure
-        if self.insecure:
-            self.poc_key = ApiPocValue.ADMIN
-        else:
-            if len(ca_cert) <= 0:
-                raise Exception("missing CA Cert file name")
-            self.ca_cert = ca_cert
-            if len(client_cert) <= 0:
-                raise Exception("missing Client Cert file name")
-            self.client_cert = client_cert
-            if len(client_key) <= 0:
-                raise Exception("missing Client Key file name")
-            self.client_key = client_key
+        if not self.user_name:
+            raise Exception("user_name is required.")
 
-            self.service_finder.set_secure_context(
-                ca_cert_path=self.ca_cert, cert_path=self.client_cert, private_key_path=self.client_key
-            )
         self._debug = debug
         self.cmd_timeout = None
 
         # for login
         self.token = None
         self.login_result = None
-        if not user_name:
-            raise Exception("user_name is required.")
-        self.user_name = user_name
 
         self.server_cmd_reg = CommandRegister(app_ctx=self)
         self.client_cmd_reg = CommandRegister(app_ctx=self)
@@ -421,22 +332,151 @@ class AdminAPI(AdminAPISpec):
         # create the FSM for session monitoring
         if auto_login_max_tries < 0 or auto_login_max_tries > MAX_AUTO_LOGIN_TRIES:
             raise ValueError(f"auto_login_max_tries is out of range: [0, {MAX_AUTO_LOGIN_TRIES}]")
-        if auto_login_delay < 5.0:
-            raise ValueError(f"auto_login_delay must be more than 5.0. Got value: {auto_login_delay}]")
         self.auto_login_max_tries = auto_login_max_tries
-        fsm = FSM("session monitor")
-        fsm.add_state(_WaitForServerAddress(self))
-        fsm.add_state(_TryLogin(self))
-        fsm.add_state(_Operate(self, session_status_check_interval, auto_login_delay))
-        self.fsm = fsm
-
-        self.session_timeout_interval = session_timeout_interval
-        self.last_sess_activity_time = time.time()
 
         self.closed = False
         self.in_logout = False
-        self.service_finder.start(self._handle_sp_address_change)
-        self._start_session_monitor()
+        self.cell = None
+        self.aux_runner = None
+        self.object_streamer = None
+        self.fl_ctx_mgr = FLContextManager(
+            engine=self,
+            identity_name=self.user_name,
+            private_stickers={FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_PARENT},
+        )
+        self.file_download_waiters = {}  # tx_id => Threading.Event
+
+    def new_context(self):
+        return self.fl_ctx_mgr.new_context()
+
+    def connect(self, timeout=None):
+        print("Connecting to FLARE ...")
+        if self.cell:
+            return
+
+        my_fqcn = f"admin_{uuid.uuid4()}"
+        credentials = {
+            DriverParams.CA_CERT.value: self.ca_cert,
+            DriverParams.CLIENT_CERT.value: self.client_cert,
+            DriverParams.CLIENT_KEY.value: self.client_key,
+        }
+
+        root_url = f"{self.scheme}://{self.host}:{self.port}"
+        secure_conn = True
+        if self.conn_sec:
+            conn_sec = self.conn_sec.lower()
+            credentials[DriverParams.CONNECTION_SECURITY.value] = conn_sec
+            if conn_sec == ConnectionSecurity.CLEAR:
+                secure_conn = False
+
+        flare_decomposers.register()
+
+        self.debug(f"Creating cell: {my_fqcn=} {root_url=} {secure_conn=} {credentials=}")
+
+        self.cell = Cell(
+            fqcn=my_fqcn,
+            root_url=root_url,
+            secure=secure_conn,
+            credentials=credentials,
+            create_internal_listener=False,
+            parent_url=None,
+        )
+
+        self.cell.register_request_cb(
+            channel=CellChannel.HCI,
+            topic="SESSION_EXPIRED",
+            cb=self._handle_session_expired,
+        )
+
+        NetAgent(self.cell)
+        self.cell.start()
+
+        # authenticate
+        authenticator = Authenticator(
+            cell=self.cell,
+            project_name=self.project_name,
+            client_name=self.user_name,
+            client_type=ClientType.ADMIN,
+            expected_sp_identity=self.server_identity,
+            secure_mode=True,  # always True to authenticate the cell endpoint!
+            root_cert_file=self.ca_cert,
+            private_key_file=self.client_key,
+            cert_file=self.client_cert,
+            msg_timeout=2.0,
+            retry_interval=1.0,
+            timeout=timeout,
+        )
+
+        abort_signal = Signal()
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props({ReservedKey.IDENTITY_NAME: self.user_name})
+        token, token_signature, ssid, token_verifier = authenticator.authenticate(
+            shared_fl_ctx=shared_fl_ctx,
+            abort_signal=abort_signal,
+        )
+
+        if not isinstance(token_verifier, TokenVerifier):
+            raise RuntimeError(f"expect token_verifier to be TokenVerifier but got {type(token_verifier)}")
+
+        set_add_auth_headers_filters(self.cell, self.user_name, token, token_signature, ssid)
+
+        self.cell.core_cell.add_incoming_filter(
+            channel="*",
+            topic="*",
+            cb=validate_auth_headers,
+            token_verifier=token_verifier,
+            logger=self.logger,
+        )
+        self.debug(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
+
+        self.aux_runner = AuxRunner(self)
+        self.object_streamer = ObjectStreamer(self.aux_runner)
+
+        self.cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self._handle_aux_message,
+        )
+
+    def _handle_aux_message(self, request: CellMessage) -> CellMessage:
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        data = request.payload
+
+        topic = request.get_header(MessageHeaderKey.TOPIC)
+        with self.new_context() as fl_ctx:
+            reply = self.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
+
+            if reply is not None:
+                return_message = CellMessage({}, reply)
+                return_message.set_header(MessageHeaderKey.RETURN_CODE, CellReturnCode.OK)
+            else:
+                return_message = CellMessage({}, None)
+            return return_message
+
+    def download_file(self, source_fqcn: str, ref_id: str, file_name: str):
+        err, file_path = downloader.download_file(
+            cell=self.cell,
+            ref_id=ref_id,
+            from_fqcn=source_fqcn,
+            per_request_timeout=self.file_download_progress_timeout,
+        )
+        if err:
+            print(f"failed to receive file {file_name}: {err}")
+            return None
+
+        file_stats = os.stat(file_path)
+        num_bytes_received = file_stats.st_size
+        Path(os.path.dirname(file_name)).mkdir(parents=True, exist_ok=True)
+        shutil.move(file_path, file_name)
+        return num_bytes_received
+
+    def get_cell(self):
+        return self.cell
+
+    def _handle_session_expired(self, message: CellMessage):
+        self.debug("received session timeout from server")
+        self.close()
+        self.fire_session_event(EventType.SESSION_TIMEOUT, message.payload)
 
     def debug(self, msg):
         if self._debug:
@@ -463,6 +503,7 @@ class AdminAPI(AdminAPISpec):
     def _new_event_context(self):
         ctx = EventContext()
         ctx.set_prop(EventPropKey.USER_NAME, self.user_name)
+        ctx.set_prop(EventPropKey.API, self)
         return ctx
 
     def fire_session_event(self, event_type: str, msg: str = ""):
@@ -471,18 +512,7 @@ class AdminAPI(AdminAPISpec):
             ctx.set_prop(EventPropKey.MSG, msg)
         self.fire_event(event_type, ctx)
 
-    def _handle_sp_address_change(self, host: str, port: int, ssid: str):
-        with self.addr_lock:
-            if host == self.host and port == self.port and ssid == self.ssid:
-                # no change
-                return
-
-        with self.new_addr_lock:
-            self.new_host = host
-            self.new_port = port
-            self.new_ssid = ssid
-
-    def _try_auto_login(self):
+    def _try_login(self):
         resp = None
         for i in range(self.auto_login_max_tries):
             try:
@@ -494,12 +524,14 @@ class AdminAPI(AdminAPISpec):
                     ResultKey.DETAILS: f"exception handling event {EventType.TRYING_LOGIN}",
                 }
 
-            if self.insecure:
-                resp = self.login_with_insecure(username=self.user_name, poc_key=self.poc_key)
-            else:
-                resp = self.login(username=self.user_name)
+            resp = self._user_login()
 
-            if resp[ResultKey.STATUS] in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
+            status = resp.get(ResultKey.STATUS)
+            if status in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
+                if status == APIStatus.SUCCESS:
+                    self.fire_session_event(EventType.LOGIN_SUCCESS)
+                else:
+                    self.fire_session_event(EventType.LOGIN_FAILURE)
                 return resp
             time.sleep(AUTO_LOGIN_INTERVAL)
         if resp is None:
@@ -507,11 +539,13 @@ class AdminAPI(AdminAPISpec):
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                 ResultKey.DETAILS: f"Auto login failed after {self.auto_login_max_tries} tries",
             }
+            self.fire_session_event(EventType.LOGIN_FAILURE)
         return resp
 
-    def auto_login(self):
+    def login(self):
         try:
-            result = self._try_auto_login()
+            self.fire_session_event(EventType.BEFORE_LOGIN)
+            result = self._try_login()
             self.debug(f"login result is {result}")
         except Exception as e:
             result = {
@@ -523,7 +557,7 @@ class AdminAPI(AdminAPISpec):
     def _load_client_cmds_from_modules(self, cmd_modules):
         if cmd_modules:
             for m in cmd_modules:
-                self.client_cmd_reg.register_module(m, include_invisible=False)
+                self.client_cmd_reg.register_module(m, include_invisible=True)
 
     def _load_client_cmds_from_module_specs(self, cmd_module_specs):
         if cmd_module_specs:
@@ -533,85 +567,27 @@ class AdminAPI(AdminAPISpec):
     def register_command(self, cmd_entry):
         self.all_cmds.append(cmd_entry.name)
 
-    def _start_session_monitor(self, interval=0.2):
-        self.sess_monitor_thread = threading.Thread(target=self._monitor_session, args=(interval,), daemon=True)
-        self.sess_monitor_active = True
-        self.sess_monitor_thread.daemon = True
-        self.sess_monitor_thread.start()
-
-    def _close_session_monitor(self):
-        self.sess_monitor_active = False
-        if self.sess_monitor_thread:
-            self.sess_monitor_thread = None
-        self.debug("session monitor closed!")
-
-    def check_session_status_on_server(self):
-        return self.server_execute("_check_session")
-
-    def _do_monitor_session(self, interval):
-        self.fsm.set_current_state(_STATE_NAME_WAIT_FOR_SERVER_ADDR)
-        while True:
-            time.sleep(interval)
-
-            if not self.sess_monitor_active:
-                return ""
-
-            if self.shutdown_asked:
-                return ""
-
-            if self.shutdown_received:
-                return ""
-
-            # see whether the session should be timed out for inactivity
-            if (
-                self.last_sess_activity_time
-                and self.session_timeout_interval
-                and time.time() - self.last_sess_activity_time > self.session_timeout_interval
-            ):
-                return "Your session is ended due to inactivity"
-
-            next_state = self.fsm.execute()
-            if next_state is None:
-                if self.fsm.error:
-                    return self.fsm.error
-                else:
-                    return ""
-
-    def _monitor_session(self, interval):
-        try:
-            msg = self._do_monitor_session(interval)
-        except Exception as e:
-            msg = f"exception occurred: {secure_format_exception(e)}"
-
-        self.server_sess_active = False
-        try:
-            self.fire_session_event(EventType.SESSION_CLOSED, msg)
-        except Exception as ex:
-            self.debug(f"exception occurred handling event {EventType.SESSION_CLOSED}: {secure_format_exception(ex)}")
-            pass
-
-        # this is in the session_monitor thread - do not close the monitor, or we'll run into
-        # "cannot join current thread" error!
-        self.close(close_session_monitor=False)
-
     def logout(self):
         """Send logout command to server."""
+        if self.in_logout:
+            return None
+
         self.in_logout = True
         resp = self.server_execute(InternalCommands.LOGOUT)
         self.close()
         return resp
 
-    def close(self, close_session_monitor: bool = True):
+    def close(self):
         # this method can be called multiple times
         if self.closed:
             return
 
         self.closed = True
-        self.service_finder.stop()
         self.server_sess_active = False
         self.shutdown_asked = True
-        if close_session_monitor:
-            self._close_session_monitor()
+        self.shutdown_streamer()
+        if self.cell:
+            self.cell.stop()
 
     def _get_command_list_from_server(self) -> bool:
         self.server_cmd_received = False
@@ -621,7 +597,7 @@ class AdminAPI(AdminAPISpec):
             return False
         return True
 
-    def _login(self) -> dict:
+    def _after_login(self) -> dict:
         result = self._get_command_list_from_server()
         if not result:
             return {
@@ -650,39 +626,25 @@ class AdminAPI(AdminAPISpec):
         """Whether the API is ready for executing commands."""
         return self.server_sess_active
 
-    def login(self, username: str):
-        """Login using certification files and retrieve server side commands.
-
-        Args:
-            username: Username
-
-        Returns:
-            A dict of status and details
-        """
-        self.login_result = None
-        self.server_execute(f"{InternalCommands.CERT_LOGIN} {username}", _LoginReplyProcessor())
-        if self.login_result is None:
-            return {
-                ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
-                ResultKey.DETAILS: "Communication Error - please try later",
-            }
-        elif self.login_result == "REJECT":
-            return {ResultKey.STATUS: APIStatus.ERROR_CERT, ResultKey.DETAILS: "Incorrect user name or certificate"}
-
-        return self._login()
-
-    def login_with_insecure(self, username: str, poc_key: str):
-        """Login using key without certificates (POC has been updated so this should not be used for POC anymore).
-
-        Args:
-            username: Username
-            poc_key: key used for insecure admin login
+    def _user_login(self):
+        """Login user
 
         Returns:
             A dict of login status and details
         """
+        command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"
+
+        id_asserter = IdentityAsserter(private_key_file=self.client_key, cert_file=self.client_cert)
+        cn_signature = id_asserter.sign_common_name(nonce="")
+
+        headers = {
+            "user_name": self.user_name,
+            "cert": id_asserter.cert_data,
+            "signature": cn_signature,
+        }
+
         self.login_result = None
-        self.server_execute(f"{InternalCommands.PWD_LOGIN} {username} {poc_key}", _LoginReplyProcessor())
+        self.server_execute(command, _LoginReplyProcessor(), headers=headers)
         if self.login_result is None:
             return {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
@@ -693,15 +655,14 @@ class AdminAPI(AdminAPISpec):
                 ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
                 ResultKey.DETAILS: "Incorrect user name or password",
             }
-        return self._login()
+        return self._after_login()
 
-    def _send_to_sock(self, sock, ctx: CommandContext):
+    def _send_to_cell(self, ctx: CommandContext):
         command = ctx.get_command()
         json_processor = ctx.get_json_processor()
         process_json_func = json_processor.process_server_reply
 
-        conn = Connection(sock, self)
-        conn.bytes_sender = ctx.get_bytes_sender()
+        conn = Connection()
         conn.append_command(command)
         if self.token:
             conn.append_token(self.token)
@@ -717,26 +678,36 @@ class AdminAPI(AdminAPISpec):
         if cmd_props:
             conn.update_meta({MetaKey.CMD_PROPS: cmd_props})
 
-        conn.close()
+        timeout = self.cmd_timeout
+        if not timeout:
+            timeout = 5.0
 
-        receiver = ctx.get_bytes_receiver()
-        if receiver is not None:
-            self.debug("receive_bytes_and_process ...")
-            ok = receive_bytes_and_process(sock, receiver)
-            if ok:
-                ctx.set_command_result({"status": APIStatus.SUCCESS, "details": "OK"})
-            else:
-                ctx.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": "error receive_bytes"})
+        requester = ctx.get_requester()
+        if requester:
+            try:
+                reply = requester.send_request(self, conn, ctx)
+            except:
+                traceback.print_exc()
+                process_json_func(make_error(f"{type(requester)} failed to send request to Admin Server"))
+                return
         else:
-            self.debug("receive_and_process ...")
-            ok = receive_and_process(sock, process_json_func)
-
-        if not ok:
-            process_json_func(
-                make_error("Failed to communicate with Admin Server {} on {}".format(self.host, self.port))
+            request = CellMessage(payload=conn.close(), headers=ctx.get_command_headers())
+            cell_reply = self.cell.send_request(
+                channel=CellChannel.HCI,
+                topic="command",
+                target=FQCN.ROOT_SERVER,
+                request=request,
+                timeout=timeout,
             )
-        else:
-            self.debug("reply received!")
+            reply = cell_reply.payload
+
+        if reply:
+            try:
+                json_data = validate_proto(reply)
+                process_json_func(json_data)
+            except:
+                traceback.print_exc()
+                process_json_func(make_error("Failed to communicate with Admin Server"))
 
     def _try_command(self, cmd_ctx: CommandContext):
         """Try to execute a command on server side.
@@ -744,7 +715,6 @@ class AdminAPI(AdminAPISpec):
         Args:
             cmd_ctx: The command to execute.
         """
-        # process_json_func can't return data because how "receive_and_process" is written.
         self.debug(f"sending command '{cmd_ctx.get_command()}'")
 
         json_processor = _ServerReplyJsonProcessor(cmd_ctx)
@@ -769,43 +739,13 @@ class AdminAPI(AdminAPISpec):
         if custom_props:
             cmd_ctx.set_custom_props(custom_props)
 
-        with self.addr_lock:
-            sp_host = self.host
-            sp_port = self.port
-
-        self.debug(f"use server address {sp_host}:{sp_port}")
-
         try:
-            if not self.insecure:
-                # SSL communication
-                ssl_ctx = ssl.create_default_context()
-                ssl_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-                ssl_ctx.verify_mode = ssl.CERT_REQUIRED
-                ssl_ctx.check_hostname = False
-
-                ssl_ctx.load_verify_locations(self.ca_cert)
-                ssl_ctx.load_cert_chain(certfile=self.client_cert, keyfile=self.client_key)
-
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    with ssl_ctx.wrap_socket(sock, server_hostname=sp_host) as ssock:
-                        ssock.connect((sp_host, sp_port))
-                        self._send_to_sock(ssock, cmd_ctx)
-            else:
-                # without certs
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    sock.connect((sp_host, sp_port))
-                    self._send_to_sock(sock, cmd_ctx)
+            self._send_to_cell(cmd_ctx)
         except Exception as e:
             if self._debug:
                 secure_log_traceback()
-
-            process_json_func(
-                make_error(
-                    "Failed to communicate with Admin Server {} on {}: {}".format(
-                        sp_host, sp_port, secure_format_exception(e)
-                    )
-                )
-            )
+            traceback.print_exc()
+            process_json_func(make_error(f"Failed to communicate with Admin Server: {secure_format_exception(e)}"))
 
     def _get_command_detail(self, command):
         """Get command details
@@ -851,10 +791,6 @@ class AdminAPI(AdminAPISpec):
         assert isinstance(ent, CommandEntry)
         if ent.confirm == ConfirmMethod.AUTH:
             return CommandInfo.CONFIRM_AUTH
-        elif ent.confirm == ConfirmMethod.PASSWORD:
-            return CommandInfo.CONFIRM_PWD
-        elif ent.confirm == ConfirmMethod.USER_NAME:
-            return CommandInfo.CONFIRM_USER_NAME
         elif ent.confirm == ConfirmMethod.YESNO:
             return CommandInfo.CONFIRM_YN
         else:
@@ -878,6 +814,25 @@ class AdminAPI(AdminAPISpec):
             return {ResultKey.STATUS: APIStatus.ERROR_RUNTIME, ResultKey.DETAILS: "Client did not respond"}
         return result
 
+    def upload_file(self, file_name: str, conn: Connection):
+        stream_ctx = {"conn_data": conn.close()}
+        with self.new_context() as fl_ctx:
+            rc, replies = FileStreamer.stream_file(
+                channel=StreamChannel.UPLOAD,
+                topic=StreamTopic.FOLDER,
+                stream_ctx=stream_ctx,
+                file_name=file_name,
+                fl_ctx=fl_ctx,
+                targets=[FQCN.ROOT_SERVER],  # to server
+            )
+            if rc != ReturnCode.OK:
+                self.logger.error(f"failed to stream file to server: {rc}")
+                return None
+            reply = replies.get(FQCN.ROOT_SERVER)
+            assert isinstance(reply, Shareable)
+            end_result = reply.get_header(HeaderKey.END_RESULT)
+            return end_result
+
     def do_command(self, command: str, props=None):
         """A convenient method to call commands using string.
 
@@ -888,8 +843,6 @@ class AdminAPI(AdminAPISpec):
         Returns:
             Object containing status and details (or direct response from server, which originally was just time and data)
         """
-        self.last_sess_activity_time = time.time()
-
         cmd_type, cmd_name, args, entries = self._get_command_detail(command)
         if cmd_type == _CMD_TYPE_UNKNOWN:
             return {
@@ -916,8 +869,8 @@ class AdminAPI(AdminAPISpec):
 
         return self.server_execute(command, cmd_entry=ent, props=props)
 
-    def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None, props=None):
-        if self.in_logout:
+    def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None, props=None, headers=None):
+        if self.in_logout and command != InternalCommands.LOGOUT:
             return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "session is logging out"}
 
         args = split_to_args(command)
@@ -930,6 +883,10 @@ class AdminAPI(AdminAPISpec):
         if props:
             self.debug(f"server_execute: set cmd props to ctx {props}")
             ctx.set_command_props(props)
+
+        if headers:
+            self.debug(f"setting cmd headers: {headers}")
+            ctx.set_command_headers(headers)
 
         start = time.time()
         ctx.set_reply_processor(reply_processor)
@@ -981,3 +938,88 @@ class AdminAPI(AdminAPISpec):
         if "not authorized" in reply_data_full_response:
             return APIStatus.ERROR_AUTHORIZATION
         return APIStatus.SUCCESS
+
+    def stream_objects(
+        self,
+        channel: str,
+        topic: str,
+        stream_ctx: StreamContext,
+        targets: List[str],
+        producer: ObjectProducer,
+        fl_ctx: FLContext,
+        optional=False,
+        secure=False,
+    ):
+        """Send a stream of Shareable objects to receivers.
+
+        Args:
+            channel: the channel for this stream
+            topic: topic of the stream
+            stream_ctx: context of the stream
+            targets: receiving sites
+            producer: the ObjectProducer that can produces the stream of Shareable objects
+            fl_ctx: the FLContext object
+            optional: whether the stream is optional
+            secure: whether to use P2P security
+
+        Returns: result from the generator's reply processing
+
+        """
+        assert isinstance(self.object_streamer, ObjectStreamer)
+        return self.object_streamer.stream(
+            channel=channel,
+            topic=topic,
+            stream_ctx=stream_ctx,
+            producer=producer,
+            fl_ctx=fl_ctx,
+            optional=optional,
+            secure=secure,
+            targets=[AuxMsgTarget.server_target()],  # only stream to server!
+        )
+
+    def register_stream_processing(
+        self,
+        channel: str,
+        topic: str,
+        factory: ConsumerFactory,
+        stream_done_cb=None,
+        consumed_cb=None,
+        **cb_kwargs,
+    ):
+        """Register a ConsumerFactory for specified app channel and topic.
+        Once a new streaming request is received for the channel/topic, the registered factory will be used
+        to create an ObjectConsumer object to handle the new stream.
+
+        Note: the factory should generate a new ObjectConsumer every time get_consumer() is called. This is because
+        multiple streaming sessions could be going on at the same time. Each streaming session should have its
+        own ObjectConsumer.
+
+        Args:
+            channel: app channel
+            topic: app topic
+            factory: the factory to be registered
+            stream_done_cb: the callback to be called when streaming is done on receiving side
+            consumed_cb: the callback to be called after a chunk is processed
+
+        Returns: None
+
+        """
+        assert isinstance(self.object_streamer, ObjectStreamer)
+        self.object_streamer.register_stream_processing(
+            channel=channel,
+            topic=topic,
+            factory=factory,
+            stream_done_cb=stream_done_cb,
+            consumed_cb=consumed_cb,
+            **cb_kwargs,
+        )
+
+    def shutdown_streamer(self):
+        """Shutdown the engine's streamer.
+
+        Returns: None
+
+        """
+        if self.object_streamer:
+            assert isinstance(self.object_streamer, ObjectStreamer)
+            self.object_streamer.shutdown()

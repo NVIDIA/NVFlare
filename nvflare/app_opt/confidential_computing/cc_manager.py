@@ -24,6 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError, CCTokenVerifyError
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.fed.server.training_cmds import TrainingCommandModule
 
 PEER_CTX_CC_TOKEN = "_peer_ctx_cc_token"
@@ -415,9 +416,7 @@ class CCManager(FLComponent):
         for job_id in running_jobs:
             engine.job_runner.stop_run(job_id, fl_ctx)
 
-        conn = Connection({}, engine.server.admin_server)
-        conn.app_ctx = engine
-
+        conn = Connection(app_ctx=engine, props={ConnProps.ADMIN_SERVER: engine.server.admin_server})
         cmd = TrainingCommandModule()
         args = ["shutdown", "all"]
         cmd.validate_command_targets(conn, args[1:])

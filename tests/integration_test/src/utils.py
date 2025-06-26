@@ -25,11 +25,13 @@ from typing import List
 import yaml
 
 from nvflare.apis.job_def import RunStatus
+from nvflare.apis.workspace import Workspace
+from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.api_status import APIStatus
+from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
-from nvflare.fuel.utils.class_utils import instantiate_class
 
 from .constants import DEFAULT_RESOURCE_CONFIG, FILE_STORAGE, PROVISION_SCRIPT, RESOURCE_CONFIG
 from .example import Example
@@ -243,10 +245,6 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print("\n" + "=" * 40)
     print("\nRunning through tests of admin commands:")
     print("\n" + "=" * 40)
-    print("\nActive SP:")
-    print(admin_api.get_active_sp().get("details"))
-    print("\nList SP:")
-    print(admin_api.list_sp().get("details"))
     print("\nCommand: get_available_apps_to_upload")
     print(admin_api.get_available_apps_to_upload())
     print("\nList Jobs:")
@@ -371,7 +369,7 @@ def _generate_test_config_for_one_job(
     setup.append(f"rm -f {new_requirements_file}")
 
     config = {
-        "ha": True,
+        "ha": False,
         "jobs_root_dir": example.jobs_root_dir,
         "cleanup": True,
         "project_yaml": project_yaml,
@@ -401,38 +399,27 @@ def _generate_test_config_for_one_job(
     return output_yaml
 
 
-def _read_admin_json_file(admin_json_file) -> dict:
-    if not os.path.exists(admin_json_file):
-        raise RuntimeError("Missing admin json file.")
-    with open(admin_json_file, "r") as f:
-        admin_json = json.load(f)
-    return admin_json
+def _read_admin_json_file(workspace: Workspace) -> dict:
+    conf = secure_load_admin_config(workspace)
+    return conf.config_data["admin"]
 
 
-def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, admin_user_name, poc):
-    admin_startup_folder = os.path.join(workspace_root_dir, admin_user_name, "startup")
-    admin_json_file = os.path.join(admin_startup_folder, "fed_admin.json")
-    admin_json = _read_admin_json_file(admin_json_file)
-    overseer_agent = instantiate_class(
-        class_path=admin_json["admin"]["overseer_agent"]["path"],
-        init_params=admin_json["admin"]["overseer_agent"]["args"],
-    )
-
-    ca_cert = os.path.join(admin_startup_folder, admin_json["admin"]["ca_cert"])
-    client_key = os.path.join(admin_startup_folder, admin_json["admin"]["client_key"])
-    client_cert = os.path.join(admin_startup_folder, admin_json["admin"]["client_cert"])
+def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, admin_user_name, poc: bool):
+    admin_dir = os.path.join(workspace_root_dir, admin_user_name)
+    workspace = Workspace(root_dir=admin_dir)
+    admin_config = _read_admin_json_file(workspace)
+    if poc:
+        admin_config[AdminConfigKey.UID_SOURCE] = UidSource.CERT
 
     admin_api = FLAdminAPI(
         upload_dir=upload_root_dir,
         download_dir=download_root_dir,
-        overseer_agent=overseer_agent,
-        insecure=poc,
         user_name=admin_user_name,
-        ca_cert=ca_cert,
-        client_key=client_key,
-        client_cert=client_cert,
+        admin_config=admin_config,
         auto_login_max_tries=20,
     )
+    admin_api.connect(5.0)
+    admin_api.login()
     return admin_api
 
 
@@ -447,7 +434,7 @@ def ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 60):
             time.sleep(0.2)
 
         if not login_success:
-            print(f"Admin api failed to log in within {timeout} seconds: {admin_api.fsm.current_state}.")
+            print(f"Admin api failed to log in within {timeout} seconds.")
         else:
             print("Admin successfully logged into server.")
     except Exception as e:
