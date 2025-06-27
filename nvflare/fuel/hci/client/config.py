@@ -126,7 +126,7 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
                 for key in [AdminConfigKey.CLIENT_KEY, AdminConfigKey.CLIENT_CERT, AdminConfigKey.CA_CERT]:
                     self._update_property_path_in_startup(admin, key)
 
-                for k in [AdminConfigKey.UPLOAD_DIR, AdminConfigKey.DOWNLOAD_DIR]:
+                for key in [AdminConfigKey.UPLOAD_DIR, AdminConfigKey.DOWNLOAD_DIR]:
                     self._update_property_path_in_root(admin, key)
         except Exception:
             raise ValueError(f"Client config error: '{self.admin_config_file_path}'")
