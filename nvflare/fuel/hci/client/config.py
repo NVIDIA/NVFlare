@@ -15,8 +15,10 @@ import os
 import re
 import sys
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext
 from nvflare.private.json_configer import JsonConfigurator
@@ -72,10 +74,6 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
         element = node.element
         path = node.path()
 
-        if path == "admin.overseer_agent":
-            self.overseer_agent = self.build_component(element)
-            return
-
         if re.search(r"^handlers\.#[0-9]+$", path):
             c = self.build_component(element)
             if not isinstance(c, EventHandler):
@@ -106,3 +104,16 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
                 admin["download_dir"] = self.workspace.get_file_path_in_root(admin["download_dir"])
         except Exception:
             raise ValueError(f"Client config error: '{self.admin_config_file_path}'")
+
+
+def secure_load_admin_config(workspace: Workspace):
+    # need to reset SecurityContentService since it might be used for a different test session!
+    SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir(), reset=True)
+
+    # make sure admin startup config file is not tampered with
+    _, result = SecurityContentService.load_json(WorkspaceConstants.ADMIN_STARTUP_CONFIG)
+    if result != LoadResult.OK:
+        raise ConfigError(f"invalid {WorkspaceConstants.ADMIN_STARTUP_CONFIG}: {result}")
+    conf = FLAdminClientStarterConfigurator(workspace=workspace)
+    conf.configure()
+    return conf

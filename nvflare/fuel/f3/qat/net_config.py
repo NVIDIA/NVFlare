@@ -39,7 +39,4 @@ class NetConfig:
             return []
 
     def get_admin(self) -> (str, str):
-        admin_config = self.config.get("admin")
-        if admin_config:
-            return admin_config.get("host"), admin_config.get("port")
-        return "", ""
+        return self.config.get("admin")

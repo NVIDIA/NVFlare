@@ -55,8 +55,6 @@ class _StartHandler(_CmdHandler):
                 client_ids = list(admin_controller.site_launcher.client_properties.keys())
             for cid in client_ids:
                 admin_controller.site_launcher.start_client(cid)
-        elif command_args[0] == "overseer":
-            admin_controller.site_launcher.start_overseer()
         else:
             raise RuntimeError(f"Target {command_args[0]} is not supported.")
 
@@ -71,8 +69,6 @@ class _KillHandler(_CmdHandler):
                 # kill active server
                 server_id = admin_controller.site_launcher.get_active_server_id(admin_api.port)
             admin_controller.site_launcher.stop_server(server_id)
-        elif command_args[0] == "overseer":
-            admin_controller.site_launcher.stop_overseer()
         elif command_args[0] == "client":
             if len(command_args) == 2:
                 # if client id is provided
