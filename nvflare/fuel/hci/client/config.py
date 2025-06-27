@@ -121,21 +121,23 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
         super().start_config(config_ctx)
 
         try:
-            admin = self.config_data[AdminConfigKey.ADMIN]
-            self._update_property_path_in_startup(admin, AdminConfigKey.CLIENT_KEY)
-            self._update_property_path_in_startup(admin, AdminConfigKey.CLIENT_CERT)
-            self._update_property_path_in_startup(admin, AdminConfigKey.CA_CERT)
-            self._update_property_path_in_root(admin, AdminConfigKey.UPLOAD_DIR)
-            self._update_property_path_in_root(admin, AdminConfigKey.DOWNLOAD_DIR)
+            admin = self.get_admin_config()
+            if isinstance(admin, dict):
+                for key in [AdminConfigKey.CLIENT_KEY, AdminConfigKey.CLIENT_CERT, AdminConfigKey.CA_CERT]:
+                    self._update_property_path_in_startup(admin, key)
+
+                for k in [AdminConfigKey.UPLOAD_DIR, AdminConfigKey.DOWNLOAD_DIR]:
+                    self._update_property_path_in_root(admin, key)
         except Exception:
             raise ValueError(f"Client config error: '{self.admin_config_file_path}'")
 
     def get_admin_config(self):
-        return self.config_data[AdminConfigKey.ADMIN]
+        if not isinstance(self.config_data, dict):
+            return None
+        return self.config_data.get(AdminConfigKey.ADMIN)
 
 
 def secure_load_admin_config(workspace: Workspace):
-    # need to reset SecurityContentService since it might be used for a different test session!
     mgr = SecurityContentManager(content_folder=workspace.get_startup_kit_dir())
 
     # make sure admin startup config file is not tampered with
