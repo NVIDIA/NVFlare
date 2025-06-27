@@ -70,15 +70,14 @@ class FLAdminAPIRunner:
             print(f"ConfigError: {secure_format_exception(e)}")
             return
 
-        try:
-            admin_config = conf.config_data["admin"]
-        except KeyError:
-            print("Missing admin section in fed_admin configuration.")
+        admin_config = conf.get_admin_config()
+        if not admin_config:
+            print(f"Missing '{AdminConfigKey.ADMIN}' section in fed_admin configuration.")
             return
 
-        upload_dir = admin_config.get("upload_dir")
-        download_dir = admin_config.get("download_dir")
-        if not os.path.isdir(download_dir):
+        upload_dir = admin_config.get(AdminConfigKey.UPLOAD_DIR)
+        download_dir = admin_config.get(AdminConfigKey.DOWNLOAD_DIR)
+        if download_dir and not os.path.isdir(download_dir):
             os.makedirs(download_dir)
 
         # Connect with admin client

@@ -573,8 +573,11 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             return None
 
         self.in_logout = True
-        resp = self.server_execute(InternalCommands.LOGOUT)
-        self.close()
+        try:
+            resp = self.server_execute(InternalCommands.LOGOUT)
+        finally:
+            # make sure to close
+            self.close()
         return resp
 
     def close(self):

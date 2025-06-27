@@ -401,7 +401,7 @@ def _generate_test_config_for_one_job(
 
 def _read_admin_json_file(workspace: Workspace) -> dict:
     conf = secure_load_admin_config(workspace)
-    return conf.config_data["admin"]
+    return conf.get_admin_config()
 
 
 def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, admin_user_name, poc: bool):
