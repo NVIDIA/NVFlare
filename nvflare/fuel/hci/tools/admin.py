@@ -47,14 +47,12 @@ def main():
         print(f"{secure_format_exception(e)}")
         return
 
-    try:
-        admin_config = conf.config_data["admin"]
-    except KeyError:
-        print("Missing admin section in fed_admin configuration.")
+    admin_config = conf.get_admin_config()
+    if not admin_config:
+        print(f"Missing '{AdminConfigKey.ADMIN}' section in fed_admin configuration.")
         return
 
     modules = []
-
     if admin_config.get(AdminConfigKey.WITH_FILE_TRANSFER):
         modules.append(
             FileTransferModule(

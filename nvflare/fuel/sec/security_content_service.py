@@ -15,6 +15,7 @@
 import glob
 import json
 import os
+import threading
 from base64 import b64decode
 from enum import Enum
 
@@ -94,6 +95,19 @@ class SecurityContentManager(object):
             result = LoadResult.NOT_SIGNED
         return data, result
 
+    def load_json(self, file_under_verification):
+        json_data = None
+        data_bytes, result = self.load_content(file_under_verification)
+
+        if data_bytes:
+            try:
+                data_text = data_bytes.decode("ascii")
+                json_data = json.loads(data_text)
+            except json.JSONDecodeError:
+                return None, LoadResult.INVALID_CONTENT
+
+        return json_data, result
+
 
 class SecurityContentService(object):
     """Uses SecurityContentManager to load secure content."""
@@ -102,8 +116,8 @@ class SecurityContentService(object):
     content_folder = None
 
     @classmethod
-    def initialize(cls, content_folder: str, signature_filename="signature.json", root_cert="rootCA.pem", reset=False):
-        if reset or not cls.security_content_manager:
+    def initialize(cls, content_folder: str, signature_filename="signature.json", root_cert="rootCA.pem"):
+        if not cls.security_content_manager:
             cls.content_folder = content_folder
             cls.security_content_manager = SecurityContentManager(content_folder, signature_filename, root_cert)
 
@@ -119,18 +133,7 @@ class SecurityContentService(object):
         if not cls.security_content_manager:
             return None, LoadResult.NOT_MANAGED
 
-        json_data = None
-
-        data_bytes, result = cls.security_content_manager.load_content(file_under_verification)
-
-        if data_bytes:
-            try:
-                data_text = data_bytes.decode("ascii")
-                json_data = json.loads(data_text)
-            except json.JSONDecodeError:
-                return None, LoadResult.INVALID_CONTENT
-
-        return json_data, result
+        return cls.security_content_manager.load_json(file_under_verification)
 
     @classmethod
     def check_json_files(cls, patterns: [str]) -> [str]:
