@@ -15,7 +15,6 @@
 import glob
 import json
 import os
-import threading
 from base64 import b64decode
 from enum import Enum
 
