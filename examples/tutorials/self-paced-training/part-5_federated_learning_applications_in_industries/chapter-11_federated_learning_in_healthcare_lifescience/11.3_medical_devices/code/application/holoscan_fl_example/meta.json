@@ -1,0 +1,10 @@
+{
+  "name": "holoscan_fl_example_stats",
+  "resource_spec": {},
+  "min_clients" : 2,
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  }
+}

@@ -1,0 +1,194 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Error out if a command fails
+set -e
+
+# Set default values for variables
+IMAGE_NAME="holoscan-nvflare-service"
+CONTAINER_BASE_NAME="holoscan-nvflare"
+PRODUCTION_FOLDER_NAME="prod_00"
+PRODUCTION_FOLDER_PATH="workspace/holoscan_federated_analytics"
+CLIENT_NAME=""
+SERVER_NAME=""
+ADMIN_NAME=""
+
+# Function to display help message
+function show_help() {
+    echo ""
+    echo "Usage: $0 [options]"
+    echo ""
+    echo "Options:"
+    echo "  build                      Build the Holoscan NVFlare Docker container."
+    echo "  run                        Run the Holoscan NVFlare Docker container with network host and specified folders mounted."
+    echo "  -d, --data <folder>        Specify the input or output data folder (required for run option)."
+    echo "  --client <client name>     Specify the client name (cannot be used with --server)."
+    echo "  --server <server name>     Specify the server name (cannot be used with --client)."
+    echo "  -h, --help                 Show this help message and exit."
+    echo ""
+    echo "Examples:"
+    echo "  $0 build"
+    echo "  $0 run --client my_client --data <data_folder_path>"
+    echo "  $0 run --server my_server --data <data_folder_path>"
+    echo "  $0 run --admin my_admin"
+}
+
+# Function to print log lines in different colors -
+# R(red), G(green), Y(yellow) and B(blue)
+log() {
+    local color=$1
+    local message=$2
+    case $color in
+        R)
+            echo -e "\033[31m$message\033[0m"
+            ;;
+        G)
+            echo -e "\033[32m$message\033[0m"
+            ;;
+        Y)
+            echo -e "\033[33m$message\033[0m"
+            ;;
+        B)
+            echo -e "\033[34m$message\033[0m"
+            ;;
+        *)
+            echo $message
+            ;;
+    esac
+}
+
+# Function to print commands before running
+run_command() {
+    local status=0
+    local cmd="$*"
+
+    log G "${cmd}"
+    "$@"
+    status=$?
+    return $status
+}
+
+# Function to build the Docker container
+function build_container() {
+    run_command docker build \
+        -t $IMAGE_NAME \
+        ./docker/
+}
+
+# Function to run the Docker container
+function run_container() {
+    if [ -z "$DATA_FOLDER" ] && [ -z "$ADMIN_NAME" ]; then
+        log R "Error: Input/Output data folder name is required to run the container."
+        show_help
+        exit 1
+    fi
+
+    if [ -n "$CLIENT_NAME" ] && [ -n "$SERVER_NAME" ]; then
+        log R "Error: --client and --server options cannot be used together."
+        show_help
+        exit 1
+    fi
+
+    local CONTAINER_NAME_OPTION=""
+    local DATA_MOUNT_OPTION=""
+    if [ -n "$CLIENT_NAME" ]; then
+        CONTAINER_NAME_OPTION="${CONTAINER_BASE_NAME}-${CLIENT_NAME}"
+        DATA_MOUNT_OPTION="-v ${DATA_FOLDER}:/workspace/holoscan_data"
+    elif [ -n "$SERVER_NAME" ]; then
+        CONTAINER_NAME_OPTION="${CONTAINER_BASE_NAME}-${SERVER_NAME}"
+        DATA_MOUNT_OPTION="-v ${DATA_FOLDER}:/workspace/nvflare_data"
+    elif [ -n "$ADMIN_NAME" ]; then
+        CONTAINER_NAME_OPTION="${CONTAINER_BASE_NAME}-admin"
+    fi
+
+    local CURRENT_DIR=$(dirname "$(realpath "$0")")
+    local KIT_MOUNT_PATH="${CURRENT_DIR}/${PRODUCTION_FOLDER_PATH}/${PRODUCTION_FOLDER_NAME}"
+    if [ -n "$CLIENT_NAME" ]; then
+        KIT_MOUNT_PATH="${KIT_MOUNT_PATH}/${CLIENT_NAME}"
+    elif [ -n "$SERVER_NAME" ]; then
+        KIT_MOUNT_PATH="${KIT_MOUNT_PATH}/${SERVER_NAME}"
+    elif [ -n "$ADMIN_NAME" ]; then
+        KIT_MOUNT_PATH="${KIT_MOUNT_PATH}/${ADMIN_NAME}"
+    fi
+    local KIT_MOUNT_OPTION="-v ${KIT_MOUNT_PATH}:/workspace/nvflare"
+
+    local START_DIR=""
+    if [ -n "$ADMIN_NAME" ]; then
+        START_DIR="/workspace/nvflare/"
+    else
+        START_DIR="/workspace/nvflare/startup"
+    fi
+
+    run_command docker run \
+        --rm \
+        -it \
+        --net host \
+        --name \
+        $CONTAINER_NAME_OPTION \
+        $KIT_MOUNT_OPTION \
+        $DATA_MOUNT_OPTION \
+        -w $START_DIR \
+        $IMAGE_NAME
+}
+
+# Parse command line arguments
+case $1 in
+    build)
+        build_container
+        ;;
+    run)
+        shift
+        while [ "$1" != "" ]; do
+            case $1 in
+                -d | --data)
+                    shift
+                    DATA_FOLDER=$1
+                    ;;
+                --client)
+                    shift
+                    CLIENT_NAME=$1
+                    ;;
+                --server)
+                    shift
+                    SERVER_NAME=$1
+                    ;;
+                --admin)
+                    shift
+                    ADMIN_NAME=$1
+                    ;;
+                -h | --help)
+                    show_help
+                    exit 0
+                    ;;
+                *)
+                    log R "Error: Unknown option $1"
+                    show_help
+                    exit 1
+                    ;;
+            esac
+            shift
+        done
+        run_container
+        ;;
+    -h | --help)
+        show_help
+        ;;
+    *)
+        log R "Error: Unknown command $1"
+        show_help
+        exit 1
+        ;;
+esac

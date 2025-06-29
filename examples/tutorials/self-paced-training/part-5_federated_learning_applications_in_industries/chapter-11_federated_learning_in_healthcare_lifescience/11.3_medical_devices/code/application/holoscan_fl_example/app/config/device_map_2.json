@@ -1,0 +1,12 @@
+{
+  "Manufacturers": [
+    {
+      "Name": "Manufacturer-1",
+      "Devices": ["Holoscan-Device-1"]
+    },
+    {
+      "Name": "Manufacturer-2",
+      "Devices": ["Holoscan-Device-2"]
+    }
+  ]
+}
