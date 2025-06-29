@@ -81,8 +81,7 @@ class Session(SessionSpec):
 
         workspace = Workspace(root_dir=startup_path)
         conf = secure_load_admin_config(workspace)
-
-        admin_config = conf.config_data.get("admin", None)
+        admin_config = conf.get_admin_config()
         if not admin_config:
             raise ConfigError("Missing admin section in fed_admin configuration.")
 

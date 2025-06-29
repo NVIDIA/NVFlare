@@ -210,6 +210,7 @@ class AdminAPISpec(ABC):
 
 
 class AdminConfigKey:
+    ADMIN = "admin"
     PROJECT_NAME = "project_name"
     IDENTITY = "identity"
     SERVER_IDENTITY = "server_identity"
