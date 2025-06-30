@@ -27,6 +27,7 @@ from nvflare.private.fed.app.utils import version_check
 from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
 from nvflare.tool.poc.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
+from nvflare.tool.quick_start.quickstart import JobType, init as quickstart_init
 from nvflare.utils.cli_utils import (
     create_job_template_config,
     create_poc_workspace_config,
@@ -126,6 +127,53 @@ def handle_config_cmd(args):
     print_hidden_config(config_file_path, nvflare_config)
 
 
+def def_quick_start_parser(sub_cmd):
+    """Define the init parser for the quick start command."""
+    cmd = "init"
+    init_parser = sub_cmd.add_parser(
+        cmd,
+        help="Initialize a new NVFlare project",
+        description="Initialize a new NVFlare project with the specified name and type.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  nvflare init my-job                 # Create a new project with default type (pytorch)
+  nvflare init my-job --type pytorch  # Specify the job type
+  nvflare init --help                 # Show help message
+"""
+    )
+    
+    # Default values from quickstart.py
+    default_job_name = "flare-app"
+    default_job_type = "pytorch"
+    
+    init_parser.add_argument(
+        "job_name",
+        nargs="?",
+        default=default_job_name,
+        help=f"Name of the federated learning job (default: {default_job_name})",
+    )
+    init_parser.add_argument(
+        "-t", "--type",
+        dest="job_type",
+        type=str.lower,
+        choices=[t.value for t in JobType],
+        default=default_job_type,
+        help=f"Type of the FL job (default: {default_job_type})",
+    )
+    return {cmd: init_parser}
+
+
+def handle_quick_start(args):
+    """Handle the init command by directly calling the init function."""
+    try:
+        job_type = JobType(args.job_type)
+        quickstart_init(job_name=args.job_name, job_type=job_type)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def def_pre_install_parser(sub_cmd):
     cmd = CMD_PRE_INSTALL
     try:
@@ -153,6 +201,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_job_cli_parser(sub_cmd))
     sub_cmd_parsers.update(def_config_parser(sub_cmd))
     sub_cmd_parsers.update(def_pre_install_parser(sub_cmd))
+    sub_cmd_parsers.update(def_quick_start_parser(sub_cmd))
 
     args, argv = _parser.parse_known_args(None, None)
     cmd = args.__dict__.get("sub_command")
@@ -182,6 +231,7 @@ handlers = {
     CMD_JOB: handle_job_cli_cmd,
     CMD_CONFIG: handle_config_cmd,
     CMD_PRE_INSTALL: handle_pre_install_cmd,
+ "init": handle_quick_start,
 }
 
 
