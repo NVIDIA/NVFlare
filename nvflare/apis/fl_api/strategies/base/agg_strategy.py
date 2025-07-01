@@ -3,6 +3,7 @@ from nvflare.apis.fl_api.strategy.strategy import Strategy
 from nvflare.apis.fl_api.aggregator.aggregators import Aggregator, FuncAggregatorWrapper, DefaultAggregator
 from nvflare.apis.fl_api.communication.comm_layer import CommunicationLayer
 
+
 class AggStrategy(Strategy):
     def __init__(
             self,

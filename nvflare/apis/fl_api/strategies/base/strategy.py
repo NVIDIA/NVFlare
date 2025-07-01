@@ -1,6 +1,8 @@
 from abc import ABC
-from typing import List, Any, Optional, Callable
-from nvflare.apis.fl_api.communication.communication_layer import CommunicationLayer
+from typing import List, Any
+
+from nvflare.apis.fl_api.communication.comm_layer import CommunicationLayer
+from nvflare.apis.fl_api.registry.strategy_registry import _STRATEGY_REGISTRY
 
 class Strategy(ABC):
 
@@ -26,3 +28,10 @@ class Strategy(ABC):
         Async coordination for streaming updates.
         """
     pass
+
+    @classmethod
+    def from_preset(cls, name: str, **kwargs) -> "Strategy":
+        strategy_cls = _STRATEGY_REGISTRY.get(name)
+        if not strategy_cls:
+            raise ValueError(f"Unknown strategy preset: {name}")
+        return strategy_cls(**kwargs)
