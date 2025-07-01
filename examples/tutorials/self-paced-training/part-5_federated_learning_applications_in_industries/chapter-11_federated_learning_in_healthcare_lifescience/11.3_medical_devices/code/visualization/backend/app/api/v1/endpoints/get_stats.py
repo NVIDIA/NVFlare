@@ -96,6 +96,23 @@ async def get_stats(
         Returns the statistics JSON for the given application and timestamp.
         If no timestamp is provided, it returns the latest statistics for the given application.
     """
+
+    # Validate path inside app root
+    app_root = Path(settings.data_root).resolve()
+    app_dir = (app_root / app_name).resolve()
+    stats_dir = (app_dir / timestamp).resolve() if timestamp else app_dir
+
+    if not str(app_dir).startswith(str(app_root)):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid application name: outside allowed directory scope",
+        )
+    if not str(stats_dir).startswith(str(app_root)):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid timestamp: outside allowed directory scope",
+        )
+
     return StreamingResponse(
         get_stats_json(app_name, timestamp), media_type="application/json"
     )
