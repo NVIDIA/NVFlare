@@ -22,8 +22,19 @@ from fastapi import APIRouter, Depends, HTTPException
 
 
 def get_stats_directories(app_name: str) -> List[str]:
-    app_directory_path = settings.data_root + "/" + app_name
-    app_dir = Path(app_directory_path)
+    # Use pathlib instead of string concatenation
+    app_root = Path(settings.data_root).resolve()
+    app_dir = (app_root / app_name).resolve()
+    
+    # Validate the path is within the allowed directory
+    try:
+        app_dir.relative_to(app_root)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid application name: outside allowed directory scope",
+        )
+    
     if not app_dir.is_dir():
         raise HTTPException(
             status_code=400,
@@ -53,14 +64,4 @@ async def get_stats_list(app_name: str, dep: None = Depends(validate_user)):
     Returns:
         Returns the list of available statistics.
     """
-    # Validate path inside app root
-    app_root = Path(settings.data_root).resolve()
-    app_dir = (app_root / app_name).resolve()
-
-    if not str(app_dir).startswith(str(app_root)):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid application name: outside allowed directory scope",
-        )
-
     return get_stats_directories(app_name)

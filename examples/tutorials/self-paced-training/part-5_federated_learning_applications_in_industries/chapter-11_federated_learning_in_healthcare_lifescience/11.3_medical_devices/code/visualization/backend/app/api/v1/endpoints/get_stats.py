@@ -37,10 +37,18 @@ def json_streamer(file_path: str, chunk_size: int = 1024) -> Generator[str, None
 
 
 def get_latest_stats_dir(app_name: str) -> str:
-    app_directory_path = settings.data_root + "/" + app_name
-    app_dir = Path(app_directory_path)
+    app_root = Path(settings.data_root).resolve()
+    app_dir = (app_root / app_name).resolve()
+    
+    # Validate the path is within the allowed directory
+    try:
+        app_dir.relative_to(app_root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid app directory")
+    
     if not app_dir.is_dir():
         raise HTTPException(status_code=400, detail="Invalid app directory")
+    
     # Get the list of only immediate subdirectories
     subdirectories = [
         name.name for name in list(app_dir.iterdir()) if (app_dir / name).is_dir()
@@ -61,22 +69,34 @@ def get_stats_json(app_name: str, timestamp: str) -> dict:
     if not timestamp:
         timestamp = get_latest_stats_dir(app_name)
 
-    app_directory_path = settings.data_root + "/" + app_name
-    stats_directory_path = app_directory_path + "/" + timestamp
-    if not Path(stats_directory_path).is_dir():
+    app_root = Path(settings.data_root).resolve()
+    app_dir = (app_root / app_name).resolve()
+    stats_dir = (app_dir / timestamp).resolve()
+    stats_file_path = (stats_dir / settings.stats_file_name).resolve()
+    
+    # Validate all paths are within the allowed directory
+    try:
+        app_dir.relative_to(app_root)
+        stats_dir.relative_to(app_root)
+        stats_file_path.relative_to(app_root)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid path: outside allowed directory scope",
+        )
+    
+    if not stats_dir.is_dir():
         raise HTTPException(
             status_code=400, detail="Provided stats directory path is not a directory"
         )
 
-    stats_file_path = stats_directory_path + "/" + settings.stats_file_name
-
-    if not Path(stats_file_path).is_file():
+    if not stats_file_path.is_file():
         raise HTTPException(
             status_code=400,
             detail="Stats not available for the give application and timestamp",
         )
     else:
-        return json_streamer(stats_file_path)
+        return json_streamer(str(stats_file_path))
 
 
 router = APIRouter()
@@ -96,23 +116,6 @@ async def get_stats(
         Returns the statistics JSON for the given application and timestamp.
         If no timestamp is provided, it returns the latest statistics for the given application.
     """
-
-    # Validate path inside app root
-    app_root = Path(settings.data_root).resolve()
-    app_dir = (app_root / app_name).resolve()
-    stats_dir = (app_dir / timestamp).resolve() if timestamp else app_dir
-
-    if not str(app_dir).startswith(str(app_root)):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid application name: outside allowed directory scope",
-        )
-    if not str(stats_dir).startswith(str(app_root)):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid timestamp: outside allowed directory scope",
-        )
-
     return StreamingResponse(
         get_stats_json(app_name, timestamp), media_type="application/json"
     )

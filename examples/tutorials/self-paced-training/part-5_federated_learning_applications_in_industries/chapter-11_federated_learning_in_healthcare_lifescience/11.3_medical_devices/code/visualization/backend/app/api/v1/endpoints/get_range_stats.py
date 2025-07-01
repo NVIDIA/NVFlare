@@ -102,7 +102,7 @@ def accumulate_dicts(dst_dict: dict, src_dict: dict) -> dict:
 
 def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[str]:
     """Get the list of timestamp directories in a given dates range.
-
+    
     Args:
         app_name: Name of the application
         start: Start timestamp
@@ -111,8 +111,18 @@ def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[
     Returns:
         Returns the list of timestamp directories in a given dates range.
     """
-    app_directory_path = settings.data_root + "/" + app_name
-    app_dir = Path(app_directory_path)
+    app_root = Path(settings.data_root).resolve()
+    app_dir = (app_root / app_name).resolve()
+    
+    # Validate the path is within the allowed directory
+    try:
+        app_dir.relative_to(app_root)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid application name: outside allowed directory scope",
+        )
+    
     if not app_dir.is_dir():
         raise HTTPException(
             status_code=400,
@@ -136,7 +146,7 @@ def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[
 
 def get_stats_json(app_name: str, start: str, end: str):
     """Get the accumulated statistics for the given range.
-
+    
     Args:
         app_name: Name of the application
         start: Start timestamp
@@ -147,16 +157,21 @@ def get_stats_json(app_name: str, start: str, end: str):
     """
     stats_dirs = get_eligible_stats_directories(app_name, start, end)
     accumulated_stats = {}
+    
+    app_root = Path(settings.data_root).resolve()
+    app_dir = (app_root / app_name).resolve()
+    
     for stats in stats_dirs:
-        file_path = (
-            settings.data_root
-            + "/"
-            + app_name
-            + "/"
-            + stats
-            + "/"
-            + settings.stats_file_name
-        )
+        stats_dir = (app_dir / stats).resolve()
+        file_path = (stats_dir / settings.stats_file_name).resolve()
+        
+        # Validate paths are within the allowed directory
+        try:
+            stats_dir.relative_to(app_root)
+            file_path.relative_to(app_root)
+        except ValueError:
+            continue  # Skip invalid paths
+            
         try:
             with open(file_path, "r") as json_file:
                 data = json.load(json_file)
@@ -186,14 +201,4 @@ async def get_range_stats(
     Returns:
         Returns the accumulated statistics JSON for the given application.
     """
-    # Validate path inside app root
-    app_root = Path(settings.data_root).resolve()
-    app_dir = (app_root / app_name).resolve()
-
-    if not str(app_dir).startswith(str(app_root)):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid application name: outside allowed directory scope",
-        )
-
     return get_stats_json(app_name, start, end)
