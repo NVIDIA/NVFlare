@@ -2,6 +2,10 @@
 
 _TRAINER_REGISTRY = {}
 
+@property
+def get_trainer_registry():
+    return _TRAINER_REGISTRY
+
 
 def register_trainer(name: str):
     def decorator(factory_fn):

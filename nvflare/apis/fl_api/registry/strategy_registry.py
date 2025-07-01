@@ -4,6 +4,10 @@ from nvflare.apis.fl_api.strategies.base.strategy import Strategy
 
 _STRATEGY_REGISTRY: Dict[str, Callable[..., "Strategy"]] = {}
 
+@property
+def get_strategy_registry():
+    return _STRATEGY_REGISTRY
+
 
 def register_strategy(name: str):
     def decorator(cls_or_fn):
