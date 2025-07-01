@@ -71,7 +71,18 @@ def _determine_value(item: Any, creators: dict) -> Any:
         return c
 
 
-def _create_obj(item, obj_table):
+def _find_obj(item, obj_table):
+    """Try to find the native object(s) for the item: recursively process all ComponentCreators and replace them
+     with their native objects following the structure of the item (list or dict).
+
+    Args:
+        item: the item to be processed
+        obj_table: the object table that contains objects already created
+
+    Returns: the item itself (with referenced components replaced with objects);
+        or in case that the item is a ComponentCreator, the native object created by it
+
+    """
     if isinstance(item, ComponentCreator):
         # has this component been created?
         obj = obj_table.get(item.name)
@@ -81,11 +92,11 @@ def _create_obj(item, obj_table):
             return obj
     elif isinstance(item, list):
         for i, v in enumerate(item):
-            item[i] = _create_obj(v, obj_table)
+            item[i] = _find_obj(v, obj_table)
         return item
     elif isinstance(item, dict):
         for k, v in item.items():
-            item[k] = _create_obj(v, obj_table)
+            item[k] = _find_obj(v, obj_table)
         return item
     else:
         return item
@@ -95,7 +106,7 @@ def _try_to_create(creator: ComponentCreator, obj_table: dict) -> Any:
     # are we ready to create device-native object?
     if isinstance(creator.args, dict):
         for k, v in creator.args.items():
-            v = _create_obj(v, obj_table)
+            v = _find_obj(v, obj_table)
             creator.args[k] = v
             if isinstance(v, ComponentCreator):
                 # not ready to create this component since this referenced component has not been created
