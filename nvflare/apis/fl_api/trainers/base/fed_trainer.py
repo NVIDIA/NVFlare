@@ -1,12 +1,16 @@
+from abc import ABC
 from typing import Any, Callable, Optional, Tuple, Dict
 
 from nvflare.apis.fl_api import TrainerConfig, get_trainer_registry
-from nvflare.apis.fl_api.registry.trainer_registry import _TRAINER_REGISTRY
+from nvflare.apis.fl_api.communication.comm_layer import CommunicationLayer
 
-class FedTrainer:
+
+class FedTrainer(ABC):
     def __init__(
             self,
             local_trainer: Any,  # User's native trainer/model/pipeline (e.g., PyTorch Lightning, sklearn)
+
+            communication: CommunicationLayer = None,
 
             config: Optional[TrainerConfig] = None,
 
@@ -20,13 +24,34 @@ class FedTrainer:
             evaluate_fn: Optional[Callable[[Any], Any]] = None,
     ):
         self.local_trainer = local_trainer
-        self.get_state_fn = get_state_fn or self._default_get_state
-        self.set_state_fn = set_state_fn or self._default_set_state
-        self.evaluate_fn = evaluate_fn or self._default_evaluate
+        self.get_state_fn = get_state_fn
+        self.set_state_fn = set_state_fn
+        self.evaluate_fn = evaluate_fn
         self.config = config
+        self.communication = communication or self._load_communication()
 
-    def fit(self):
-        pass
+    def fit(self) -> Dict:
+        global_state = self.communication.receive_all_states()
+        # 1. Apply global model
+        self.set_state(global_state)
+
+        # 2. Run local training
+        local_update = self.local_trainer.fit()
+
+        # 3. Evaluate model locally
+        metrics = {}
+        if self.evaluate_fn:
+            metrics = self.evaluate_fn()
+
+        # 4. Send update to server
+        self.communication.send_update(
+            client_id=self.client_id,
+            update=local_update,
+            metrics=metrics
+        )
+
+        return metrics
+
 
     def evaluate(self):
         pass
@@ -66,3 +91,8 @@ class FedTrainer:
             return trainer_cls(**kwargs)
         else:
             raise ValueError(f"Unknown preset: {name}")
+
+    def _load_communication(self) -> CommunicationLayer:
+        # add method to communication layer to set up communication
+        # based on network configuration
+        pass

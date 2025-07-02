@@ -13,6 +13,6 @@ __all__  = [
     "AggStrategy",
     "FedTrainer",
     "TrainerConfig",
-    "get_strategy_registry",
+    "get_trainer_registry",
     "get_strategy_registry"
 ]

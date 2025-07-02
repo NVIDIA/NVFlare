@@ -4,6 +4,7 @@ from typing import List, Any
 from nvflare.apis.fl_api.communication.comm_layer import CommunicationLayer
 from nvflare.apis.fl_api.registry.strategy_registry import _STRATEGY_REGISTRY
 
+
 class Strategy(ABC):
 
     def coordinate(

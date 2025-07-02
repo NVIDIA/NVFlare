@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any, Union
-from nvflare.apis.fl_api.strategy.strategy import Strategy
-from nvflare.apis.fl_api.trainer.fed_trainer import FedTrainer
+from nvflare.apis.fl_api.strategies.base.strategy import Strategy
+from nvflare.apis.fl_api.trainers.base.fed_trainer import FedTrainer
 from nvflare.apis.fl_api.env.deployment_envs import DeploymentEnv, SimulationEnv
 
 
@@ -19,6 +19,6 @@ class FLJob:
         self.connected_clients = list(client_trainers.keys())
 
     def fit(self, env: Optional[DeploymentEnv] = None):
-        if env is None:
-            env = SimulationEnv()
-        return env.run()
+        # 1. running simulator in simulation
+        # 2. submit job to local deployment (PoC) or production
+        pass
