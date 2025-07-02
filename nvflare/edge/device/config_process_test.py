@@ -12,28 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+from typing import Any
 
-from nvflare.edge.device.config import ComponentCreator, process_train_config
-from nvflare.edge.device.sdk_spec import (
-    Batch,
-    Context,
-    DataSource,
-    EventHandler,
-    EventType,
-    Filter,
-    Model,
-    Signal,
-    Trainer,
-    Transform,
-)
+from nvflare.edge.device.config import ComponentResolver, process_train_config
+from nvflare.edge.device.defs import Batch, Context, EventHandler, EventType, Executor, Filter, Signal, Transform
 
 
-class DLTrainer(Trainer):
+class DLTrainer(Executor):
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-    def train(self, data_source: DataSource, model: Model, ctx: Context, abort_signal: Signal) -> Model:
+    def execute(self, model, ctx: Context, abort_signal: Signal):
         pass
 
 
@@ -61,7 +51,7 @@ class DPFilter(Filter):
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-    def filter(self, model: Model, ctx: Context, abort_signal: Signal) -> Model:
+    def filter(self, model: Any, ctx: Context, abort_signal: Signal) -> Any:
         pass
 
 
@@ -70,7 +60,7 @@ class StatsKeeper(Filter, EventHandler):
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-    def filter(self, model: Model, ctx: Context, abort_signal: Signal) -> Model:
+    def filter(self, model, ctx: Context, abort_signal: Signal):
         # add stats data (saved in ctx) to the "model" to be sent to host
         # do not keep stats data in self.
         pass
@@ -84,58 +74,13 @@ class StatsKeeper(Filter, EventHandler):
             ctx["train_loss"] = event_data
 
 
-class DLTrainerCreator(ComponentCreator):
+class BCELossResolver(ComponentResolver):
 
     def __init__(self, t, name, args):
         super().__init__(t, name, args)
 
-    def create(self) -> DLTrainer:
-        return DLTrainer(**self.args)
-
-
-class SGDCreator(ComponentCreator):
-
-    def __init__(self, t, name, args):
-        super().__init__(t, name, args)
-
-    def create(self) -> SGDOptimizer:
-        return SGDOptimizer(**self.args)
-
-
-class BCELossCreator(ComponentCreator):
-
-    def __init__(self, t, name, args):
-        super().__init__(t, name, args)
-
-    def create(self):
+    def resolve(self):
         return bce_loss
-
-
-class RotateCreator(ComponentCreator):
-
-    def __init__(self, t, name, args):
-        super().__init__(t, name, args)
-
-    def create(self) -> Rotate:
-        return Rotate(**self.args)
-
-
-class DPCreator(ComponentCreator):
-
-    def __init__(self, t, name, args):
-        super().__init__(t, name, args)
-
-    def create(self) -> DPFilter:
-        return DPFilter(**self.args)
-
-
-class StatsKeeperCreator(ComponentCreator):
-
-    def __init__(self, t, name, args):
-        super().__init__(t, name, args)
-
-    def create(self) -> StatsKeeper:
-        return StatsKeeper(**self.args)
 
 
 CONFIG_DATA = """
@@ -189,22 +134,25 @@ CONFIG_DATA = """
       "name": "stats"
     }
   ],
-  "filters": ["@dp", "@stats"],
-  "handlers": ["@stats"]
+  "out_filters": ["@dp", "@stats"],
+  "handlers": ["@stats"],
+  "executors": {
+    "*": "@trainer"
+  }
 }
 """
 
 
 reg = {
-    "Trainer.DLTrainer": DLTrainerCreator,
-    "Optimizer.SGD": SGDCreator,
-    "Loss.BCELoss": BCELossCreator,
-    "Transform.rotate": RotateCreator,
-    "Filter.DP": DPCreator,
-    "Handler.StatsKeeper": StatsKeeperCreator,
+    "Trainer.DLTrainer": DLTrainer,
+    "Optimizer.SGD": SGDOptimizer,
+    "Loss.BCELoss": BCELossResolver,
+    "Transform.rotate": Rotate,
+    "Filter.DP": DPFilter,
+    "Handler.StatsKeeper": StatsKeeper,
 }
 
 config = json.loads(CONFIG_DATA)
-obj_table, filters, handlers = process_train_config(config, reg)
+train_config = process_train_config(config, reg)
 
 print("DONE")
