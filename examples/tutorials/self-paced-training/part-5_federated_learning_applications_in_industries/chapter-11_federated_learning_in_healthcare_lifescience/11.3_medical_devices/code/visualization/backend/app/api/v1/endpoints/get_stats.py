@@ -14,30 +14,25 @@
 # limitations under the License.
 
 
+import os
+
 from datetime import datetime
 from pathlib import Path
 from typing import Generator, Optional
 
 from app.core.config import settings
 from app.utils.dependencies import validate_user
-from app.utils.path_security import (
-    secure_path_join,
-    validate_directory_exists,
-    validate_file_exists,
-    validate_path_component,
-    validate_timestamp_format,
-    validate_path_within_root,
-)
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 
 def json_streamer(file_path: str, chunk_size: int = 1024) -> Generator[str, None, None]:
     try:
-        # validate file path exists and is secure
-        validate_file_exists(Path(file_path), "Stats file")
-        validate_path_within_root(Path(file_path), settings.data_root)
-        
+        file_path = os.path.normpath(file_path)
+        if not file_path.startswith(settings.data_root):
+            raise Exception(f"Invalid file path: {file_path}, not allowed.")
+
         with open(file_path, "r") as file:
             while True:
                 chunk = file.read(chunk_size)
@@ -49,20 +44,23 @@ def json_streamer(file_path: str, chunk_size: int = 1024) -> Generator[str, None
 
 
 def get_latest_stats_dir(app_name: str) -> str:
-    # Validate app_name to prevent path traversal
-    validate_path_component(app_name, "app_name")
-    
+
     # Use secure path joining
-    app_dir = secure_path_join(settings.data_root, app_name)
-    validate_directory_exists(app_dir, "Application directory")
+    app_dir = os.path.join(settings.data_root, app_name)
+
+    app_dir = os.path.normpath(app_dir)
+    if not app_dir.startswith(settings.data_root):
+        raise Exception(f"Invalid app directory: {app_dir}, not allowed.")
+
+    if not os.path.isdir(app_dir):
+        raise Exception(f"Application directory: {app_dir}, not found.")
     
     # Get the list of only immediate subdirectories
-    # Use secure path joining to validate the path is within the allowed directory
-    subdirectories = [
-        name.name for name in list(app_dir.iterdir()) 
-        if secure_path_join(app_dir, name).is_dir() 
-        and validate_path_within_root(secure_path_join(app_dir, name), settings.data_root)
-    ]
+    subdirectories = []
+    for name in os.listdir(app_dir):
+        sub_path = os.path.normpath(os.path.join(app_dir, name))
+        if os.path.isdir(sub_path) and sub_path.startswith(settings.data_root):
+            subdirectories.append(name)
 
     timestamps = [
         datetime.strptime(directory, settings.timestamp_dir_format)
@@ -74,24 +72,36 @@ def get_latest_stats_dir(app_name: str) -> str:
 
 
 def get_stats_json(app_name: str, timestamp: str) -> dict:
+    if not app_name:
+        raise HTTPException(status_code=400, detail="Application name not provided")
+
     # Validate app_name to prevent path traversal
-    validate_path_component(app_name, "app_name")
-    
+    app_dir = os.path.join(settings.data_root, app_name)
+    app_dir = os.path.normpath(app_dir)
+    if not app_dir.startswith(settings.data_root):
+        raise Exception(f"Invalid app directory: {app_dir}, not allowed.")
+
+    if not os.path.isdir(app_dir):
+        raise Exception(f"Application directory: {app_dir}, not found.")
+
     if not timestamp:
         timestamp = get_latest_stats_dir(app_name)
+
+    # Validate timestamp
+    stats_directory = os.path.normpath(os.path.join(app_dir, timestamp))
+    if not stats_directory.startswith(settings.data_root):
+        raise Exception(f"Invalid stats directory: {stats_directory}, not allowed.")
+    if not os.path.isdir(stats_directory):
+        raise Exception(f"Stats directory: {stats_directory}, not found.")
+
+    stats_file_path = os.path.normpath(os.path.join(stats_directory, settings.stats_file_name))
+    if not Path(stats_file_path).is_file():
+        raise HTTPException(
+            status_code=400,
+            detail="Stats not available for the give application and timestamp",
+        )
     else:
-        # Validate timestamp format to prevent path traversal
-        validate_timestamp_format(timestamp)
-
-    # Use secure path joining
-    app_directory = secure_path_join(settings.data_root, app_name)
-    stats_directory = secure_path_join(app_directory, timestamp)
-    validate_directory_exists(stats_directory, "Stats directory")
-
-    stats_file_path = secure_path_join(stats_directory, settings.stats_file_name)
-    validate_file_exists(stats_file_path, "Stats file")
-
-    return json_streamer(str(stats_file_path))
+        return json_streamer(stats_file_path)
 
 
 router = APIRouter()
