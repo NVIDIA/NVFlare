@@ -14,6 +14,8 @@
 # limitations under the License.
 
 import json
+import os
+
 from datetime import datetime
 from math import sqrt
 from pathlib import Path
@@ -21,14 +23,7 @@ from typing import List
 
 from app.core.config import settings
 from app.utils.dependencies import validate_user
-from app.utils.path_security import (
-    secure_path_join,
-    validate_directory_exists,
-    validate_file_exists,
-    validate_path_component,
-    validate_path_within_root,
-    validate_timestamp_format,
-)
+
 from fastapi import APIRouter, Depends, HTTPException
 
 
@@ -119,28 +114,25 @@ def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[
     Returns:
         Returns the list of timestamp directories in a given dates range.
     """
-    # Validate all inputs to prevent path traversal
-    validate_path_component(app_name, "app_name")
-    validate_timestamp_format(start)
-    validate_timestamp_format(end)
-    
-    # Use secure path joining
-    app_dir = secure_path_join(settings.data_root, app_name)
-    validate_directory_exists(app_dir, "Application directory")
+    app_dir = os.path.normpath(os.path.join(settings.data_root, app_name))
+    if not app_dir.startswith(settings.data_root):
+        raise Exception(f"Invalid app directory: {app_dir}, not allowed.")
+
+    if not os.path.isdir(app_dir):
+        raise Exception(f"Application directory: {app_dir}, not found.")
 
     # Get the list of eligible immediate subdirectories
     start_timestamp = datetime.strptime(start, settings.timestamp_dir_format)
     end_timestamp = datetime.strptime(end, settings.timestamp_dir_format)
 
-    # Use secure path joining to validate the path is within the allowed directory
-    subdirectories = [
-        name.name
-        for name in list(app_dir.iterdir())
-        if secure_path_join(app_dir, name).is_dir()
-        and validate_path_within_root(secure_path_join(app_dir, name), settings.data_root)
-        and datetime.strptime(name.name, settings.timestamp_dir_format) >= start_timestamp
-        and datetime.strptime(name.name, settings.timestamp_dir_format) <= end_timestamp
-    ]
+    # Get validated subdirectories within date range.
+    subdirectories = []
+    for name in os.listdir(app_dir):
+        sub_path = os.path.normpath(os.path.join(app_dir, name))
+        if os.path.isdir(sub_path) and sub_path.startswith(settings.data_root):
+            if datetime.strptime(name, settings.timestamp_dir_format) >= start_timestamp and \
+               datetime.strptime(name, settings.timestamp_dir_format) <= end_timestamp:
+                subdirectories.append(name)
 
     return subdirectories
 
@@ -156,24 +148,26 @@ def get_stats_json(app_name: str, start: str, end: str):
     Returns:
         Returns the accumulated statistics JSON for the given application.
     """
-    # Validate app_name to prevent path traversal
-    validate_path_component(app_name, "app_name")
-
     stats_dirs = get_eligible_stats_directories(app_name, start, end)
     accumulated_stats = {}
     
     # Use secure path joining for base directories
-    app_directory = secure_path_join(settings.data_root, app_name)
+    app_directory = os.path.normpath(os.path.join(settings.data_root, app_name))
+    if not app_directory.startswith(settings.data_root):
+        raise Exception(f"Invalid app directory: {app_directory}, not allowed.")
+
+    if not os.path.isdir(app_directory):
+        raise Exception(f"Application directory: {app_directory}, not found.")
     
     for stats in stats_dirs:
         # Use secure path joining for each stats directory and file
-        stats_directory = secure_path_join(app_directory, stats)
-        file_path = secure_path_join(stats_directory, settings.stats_file_name)
+        file_path = os.path.normpath(os.path.join(app_directory, stats, settings.stats_file_name))
         
-        # Validate file exists before processing
+        # Validate file path is within the allowed directory
+        if not file_path.startswith(settings.data_root):
+            raise Exception(f"Invalid file path: {file_path}, not allowed.")
+        
         try:
-            validate_file_exists(file_path, f"Stats file for {stats}")
-            
             with open(file_path, "r") as json_file:
                 data = json.load(json_file)
                 if not isinstance(data, dict):
