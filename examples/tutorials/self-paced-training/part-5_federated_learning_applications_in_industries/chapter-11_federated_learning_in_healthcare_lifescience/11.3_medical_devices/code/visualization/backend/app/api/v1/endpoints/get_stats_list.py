@@ -35,8 +35,9 @@ def get_stats_directories(app_name: str) -> List[str]:
     validate_directory_exists(app_dir, "Application directory")
 
     # Get the list of only immediate subdirectories
+    # Use secure path joining to validate the path is within the allowed directory
     subdirectories = [
-        name.name for name in list(app_dir.iterdir()) if (app_dir / name).is_dir()
+        name.name for name in list(app_dir.iterdir()) if secure_path_join(app_dir, name).is_dir()
     ]
     return subdirectories
 

@@ -33,6 +33,10 @@ from fastapi.responses import StreamingResponse
 
 def json_streamer(file_path: str, chunk_size: int = 1024) -> Generator[str, None, None]:
     try:
+        # validate file path exists and is secure
+        validate_file_exists(file_path, "Stats file")
+        validate_path_component(file_path, "app_name")
+        
         with open(file_path, "r") as file:
             while True:
                 chunk = file.read(chunk_size)
@@ -52,8 +56,9 @@ def get_latest_stats_dir(app_name: str) -> str:
     validate_directory_exists(app_dir, "Application directory")
     
     # Get the list of only immediate subdirectories
+    # Use secure path joining to validate the path is within the allowed directory
     subdirectories = [
-        name.name for name in list(app_dir.iterdir()) if (app_dir / name).is_dir()
+        name.name for name in list(app_dir.iterdir()) if secure_path_join(app_dir, name).is_dir()
     ]
 
     timestamps = [

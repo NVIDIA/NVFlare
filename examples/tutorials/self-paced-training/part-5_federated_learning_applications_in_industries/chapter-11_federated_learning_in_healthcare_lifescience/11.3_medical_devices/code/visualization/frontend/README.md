@@ -21,7 +21,7 @@ docker compose build
 docker compose run
 ```
 
-Open [http://ip:8888](http://ip:8888) with your browser to see the result.
+Open `http://ip:8888` with your browser to see the result.
 
 Dashboard currently supports:
 - A page listing all the analytics enabled applications.

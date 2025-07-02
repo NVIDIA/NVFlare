@@ -130,12 +130,13 @@ def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[
     # Get the list of eligible immediate subdirectories
     start_timestamp = datetime.strptime(start, settings.timestamp_dir_format)
     end_timestamp = datetime.strptime(end, settings.timestamp_dir_format)
+
+    # Use secure path joining to validate the path is within the allowed directory
     subdirectories = [
         name.name
         for name in list(app_dir.iterdir())
-        if (app_dir / name).is_dir()
-        and datetime.strptime(name.name, settings.timestamp_dir_format)
-        >= start_timestamp
+        if secure_path_join(app_dir, name).is_dir()
+        and datetime.strptime(name.name, settings.timestamp_dir_format) >= start_timestamp
         and datetime.strptime(name.name, settings.timestamp_dir_format) <= end_timestamp
     ]
 
@@ -164,9 +165,11 @@ def get_stats_json(app_name: str, start: str, end: str):
         stats_directory = secure_path_join(app_directory, stats)
         file_path = secure_path_join(stats_directory, settings.stats_file_name)
         
-        # Validate file exists before processing
+        # Validate file exists and file path is secure before processing
         try:
             validate_file_exists(file_path, f"Stats file for {stats}")
+            validate_path_component(file_path, "app_name")
+            
             with open(file_path, "r") as json_file:
                 data = json.load(json_file)
                 if not isinstance(data, dict):
