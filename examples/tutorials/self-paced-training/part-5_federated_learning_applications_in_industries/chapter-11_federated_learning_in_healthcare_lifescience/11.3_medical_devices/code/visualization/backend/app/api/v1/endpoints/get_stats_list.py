@@ -13,35 +13,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+import os
+
 from pathlib import Path
 from typing import List
 
 from app.core.config import settings
 from app.utils.dependencies import validate_user
-from app.utils.path_security import (
-    secure_path_join,
-    validate_directory_exists,
-    validate_path_component,
-    validate_path_within_root,
-)
+
 from fastapi import APIRouter, Depends, HTTPException
 
 
 def get_stats_directories(app_name: str) -> List[str]:
     # Validate app_name to prevent path traversal
-    validate_path_component(app_name, "app_name")
-    
-    # Use secure path joining
-    app_dir = secure_path_join(settings.data_root, app_name)
-    validate_directory_exists(app_dir, "Application directory")
+    app_dir = os.path.normpath(os.path.join(settings.data_root, app_name))
+    if not app_dir.startswith(settings.data_root):
+        raise Exception(f"Invalid app directory: {app_dir}, not allowed.")
 
-    # Get the list of only immediate subdirectories
-    # Use secure path joining to validate the path is within the allowed directory
-    subdirectories = [
-        name.name for name in list(app_dir.iterdir()) 
-        if secure_path_join(app_dir, name).is_dir()
-        and validate_path_within_root(secure_path_join(app_dir, name), settings.data_root)
-    ]
+    if not os.path.isdir(app_dir):
+        raise Exception(f"Application directory: {app_dir}, not found.")
+
+    # Get the list of immediate & validated subdirectories
+    subdirectories = []
+    for name in os.listdir(app_dir):
+        sub_path = os.path.normpath(os.path.join(app_dir, name))
+        if os.path.isdir(sub_path) and sub_path.startswith(settings.data_root):
+            subdirectories.append(name)
+
     return subdirectories
 
 
