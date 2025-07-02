@@ -13,7 +13,7 @@
 # limitations under the License.
 from nvflare.edge.device.sdk_spec import FlareRunner
 
-from .optimizers import AdamOptimizer, SGDOptimizer
+from .optimizers import AdamOptimizerWrapper, SGDOptimizerWrapper
 from .trainer import PTTrainer
 
 
@@ -23,7 +23,7 @@ class PTRunner(FlareRunner):
         self.resolver_registry.update(
             {
                 "Trainer.DLTrainer": PTTrainer,
-                "Optimizer.SGD": SGDOptimizer,
-                "Optimizer.Adam": AdamOptimizer,
+                "Optimizer.SGD": SGDOptimizerWrapper,
+                "Optimizer.Adam": AdamOptimizerWrapper,
             }
         )
