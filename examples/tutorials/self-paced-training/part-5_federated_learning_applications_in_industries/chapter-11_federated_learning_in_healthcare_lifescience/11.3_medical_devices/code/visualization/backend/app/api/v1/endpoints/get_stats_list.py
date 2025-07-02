@@ -22,6 +22,7 @@ from app.utils.path_security import (
     secure_path_join,
     validate_directory_exists,
     validate_path_component,
+    validate_path_within_root,
 )
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -37,7 +38,9 @@ def get_stats_directories(app_name: str) -> List[str]:
     # Get the list of only immediate subdirectories
     # Use secure path joining to validate the path is within the allowed directory
     subdirectories = [
-        name.name for name in list(app_dir.iterdir()) if secure_path_join(app_dir, name).is_dir()
+        name.name for name in list(app_dir.iterdir()) 
+        if secure_path_join(app_dir, name).is_dir()
+        and validate_path_within_root(secure_path_join(app_dir, name), settings.data_root)
     ]
     return subdirectories
 

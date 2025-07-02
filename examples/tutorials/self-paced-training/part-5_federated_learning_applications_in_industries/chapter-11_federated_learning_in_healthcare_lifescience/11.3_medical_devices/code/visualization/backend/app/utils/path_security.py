@@ -181,4 +181,56 @@ def validate_directory_exists(dir_path: Path, dir_description: str = "Directory"
             detail=f"{dir_description} is not a valid directory"
         )
     
-    return dir_path 
+    return dir_path
+
+
+def validate_path_within_root(file_path: Union[str, Path], app_root: Union[str, Path], raise_exception: bool = True) -> bool:
+    """
+    Validate that a file path is within the app_root directory (subdirectory check).
+    
+    This function prevents path traversal attacks by ensuring that the resolved file_path
+    is within the boundaries of the app_root directory.
+    
+    Args:
+        file_path: The file/directory path to validate
+        app_root: The root directory that should contain the file_path
+        raise_exception: Whether to raise HTTPException on validation failure (default: True)
+        
+    Returns:
+        bool: True if the path is within app_root, False otherwise (only if raise_exception=False)
+        
+    Raises:
+        HTTPException: If the path is outside app_root and raise_exception=True
+        
+    Examples:
+        >>> validate_path_within_root("/app/data/user_file.txt", "/app/data")  # ✅ Valid
+        >>> validate_path_within_root("/app/data/../../../etc/passwd", "/app/data")  # ❌ Invalid
+        >>> validate_path_within_root("/app/data/subdir/../file.txt", "/app/data")  # ✅ Valid (resolves to /app/data/file.txt)
+    """
+    try:
+        # Convert to Path objects and resolve to handle symbolic links and relative paths
+        resolved_file_path = Path(file_path).resolve()
+        resolved_app_root = Path(app_root).resolve()
+        
+        # Check if the file path is within the app root
+        # This will raise ValueError if file_path is not relative to app_root
+        resolved_file_path.relative_to(resolved_app_root)
+        
+        return True
+        
+    except ValueError:
+        # Path is outside the app_root directory
+        if raise_exception:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid path: '{file_path}' is outside the allowed directory '{app_root}'"
+            )
+        return False
+    except Exception as e:
+        # Handle other potential errors (permission issues, non-existent paths, etc.)
+        if raise_exception:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Path validation error: {str(e)}"
+            )
+        return False

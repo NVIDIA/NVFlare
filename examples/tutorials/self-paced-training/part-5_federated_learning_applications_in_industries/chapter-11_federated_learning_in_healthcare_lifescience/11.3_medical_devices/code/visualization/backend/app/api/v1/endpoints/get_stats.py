@@ -26,6 +26,7 @@ from app.utils.path_security import (
     validate_file_exists,
     validate_path_component,
     validate_timestamp_format,
+    validate_path_within_root,
 )
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -34,8 +35,8 @@ from fastapi.responses import StreamingResponse
 def json_streamer(file_path: str, chunk_size: int = 1024) -> Generator[str, None, None]:
     try:
         # validate file path exists and is secure
-        validate_file_exists(file_path, "Stats file")
-        validate_path_component(file_path, "app_name")
+        validate_file_exists(Path(file_path), "Stats file")
+        validate_path_within_root(Path(file_path), settings.data_root)
         
         with open(file_path, "r") as file:
             while True:
@@ -58,7 +59,9 @@ def get_latest_stats_dir(app_name: str) -> str:
     # Get the list of only immediate subdirectories
     # Use secure path joining to validate the path is within the allowed directory
     subdirectories = [
-        name.name for name in list(app_dir.iterdir()) if secure_path_join(app_dir, name).is_dir()
+        name.name for name in list(app_dir.iterdir()) 
+        if secure_path_join(app_dir, name).is_dir() 
+        and validate_path_within_root(secure_path_join(app_dir, name), settings.data_root)
     ]
 
     timestamps = [

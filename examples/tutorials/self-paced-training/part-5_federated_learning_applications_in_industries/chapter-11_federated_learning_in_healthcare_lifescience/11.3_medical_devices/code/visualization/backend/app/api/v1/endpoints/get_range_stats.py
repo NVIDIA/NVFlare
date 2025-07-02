@@ -26,6 +26,7 @@ from app.utils.path_security import (
     validate_directory_exists,
     validate_file_exists,
     validate_path_component,
+    validate_path_within_root,
     validate_timestamp_format,
 )
 from fastapi import APIRouter, Depends, HTTPException
@@ -136,6 +137,7 @@ def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[
         name.name
         for name in list(app_dir.iterdir())
         if secure_path_join(app_dir, name).is_dir()
+        and validate_path_within_root(secure_path_join(app_dir, name), settings.data_root)
         and datetime.strptime(name.name, settings.timestamp_dir_format) >= start_timestamp
         and datetime.strptime(name.name, settings.timestamp_dir_format) <= end_timestamp
     ]
@@ -154,6 +156,9 @@ def get_stats_json(app_name: str, start: str, end: str):
     Returns:
         Returns the accumulated statistics JSON for the given application.
     """
+    # Validate app_name to prevent path traversal
+    validate_path_component(app_name, "app_name")
+
     stats_dirs = get_eligible_stats_directories(app_name, start, end)
     accumulated_stats = {}
     
@@ -165,10 +170,9 @@ def get_stats_json(app_name: str, start: str, end: str):
         stats_directory = secure_path_join(app_directory, stats)
         file_path = secure_path_join(stats_directory, settings.stats_file_name)
         
-        # Validate file exists and file path is secure before processing
+        # Validate file exists before processing
         try:
             validate_file_exists(file_path, f"Stats file for {stats}")
-            validate_path_component(file_path, "app_name")
             
             with open(file_path, "r") as json_file:
                 data = json.load(json_file)
