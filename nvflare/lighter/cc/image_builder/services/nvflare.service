@@ -1,0 +1,15 @@
+[Unit]
+Description=NVFlare
+After=network.target
+
+[Service]
+User=nvidia
+Group=nvidia
+WorkingDirectory=/home/nvidia/nvflare
+Environment="PATH=/vault/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=sub_start.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
