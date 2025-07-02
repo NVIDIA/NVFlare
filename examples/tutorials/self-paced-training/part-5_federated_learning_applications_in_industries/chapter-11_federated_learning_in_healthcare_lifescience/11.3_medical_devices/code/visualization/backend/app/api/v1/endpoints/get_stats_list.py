@@ -18,28 +18,21 @@ from typing import List
 
 from app.core.config import settings
 from app.utils.dependencies import validate_user
+from app.utils.path_security import (
+    secure_path_join,
+    validate_directory_exists,
+    validate_path_component,
+)
 from fastapi import APIRouter, Depends, HTTPException
 
 
 def get_stats_directories(app_name: str) -> List[str]:
-    # Use pathlib instead of string concatenation
-    app_root = Path(settings.data_root).resolve()
-    app_dir = (app_root / app_name).resolve()
+    # Validate app_name to prevent path traversal
+    validate_path_component(app_name, "app_name")
     
-    # Validate the path is within the allowed directory
-    try:
-        app_dir.relative_to(app_root)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid application name: outside allowed directory scope",
-        )
-    
-    if not app_dir.is_dir():
-        raise HTTPException(
-            status_code=400,
-            detail="Provided application directory path is not a directory",
-        )
+    # Use secure path joining
+    app_dir = secure_path_join(settings.data_root, app_name)
+    validate_directory_exists(app_dir, "Application directory")
 
     # Get the list of only immediate subdirectories
     subdirectories = [

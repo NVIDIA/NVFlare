@@ -21,6 +21,13 @@ from typing import List
 
 from app.core.config import settings
 from app.utils.dependencies import validate_user
+from app.utils.path_security import (
+    secure_path_join,
+    validate_directory_exists,
+    validate_file_exists,
+    validate_path_component,
+    validate_timestamp_format,
+)
 from fastapi import APIRouter, Depends, HTTPException
 
 
@@ -111,23 +118,14 @@ def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[
     Returns:
         Returns the list of timestamp directories in a given dates range.
     """
-    app_root = Path(settings.data_root).resolve()
-    app_dir = (app_root / app_name).resolve()
+    # Validate all inputs to prevent path traversal
+    validate_path_component(app_name, "app_name")
+    validate_timestamp_format(start)
+    validate_timestamp_format(end)
     
-    # Validate the path is within the allowed directory
-    try:
-        app_dir.relative_to(app_root)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid application name: outside allowed directory scope",
-        )
-    
-    if not app_dir.is_dir():
-        raise HTTPException(
-            status_code=400,
-            detail="Provided application directory path is not a directory",
-        )
+    # Use secure path joining
+    app_dir = secure_path_join(settings.data_root, app_name)
+    validate_directory_exists(app_dir, "Application directory")
 
     # Get the list of eligible immediate subdirectories
     start_timestamp = datetime.strptime(start, settings.timestamp_dir_format)
@@ -158,26 +156,24 @@ def get_stats_json(app_name: str, start: str, end: str):
     stats_dirs = get_eligible_stats_directories(app_name, start, end)
     accumulated_stats = {}
     
-    app_root = Path(settings.data_root).resolve()
-    app_dir = (app_root / app_name).resolve()
+    # Use secure path joining for base directories
+    app_directory = secure_path_join(settings.data_root, app_name)
     
     for stats in stats_dirs:
-        stats_dir = (app_dir / stats).resolve()
-        file_path = (stats_dir / settings.stats_file_name).resolve()
+        # Use secure path joining for each stats directory and file
+        stats_directory = secure_path_join(app_directory, stats)
+        file_path = secure_path_join(stats_directory, settings.stats_file_name)
         
-        # Validate paths are within the allowed directory
+        # Validate file exists before processing
         try:
-            stats_dir.relative_to(app_root)
-            file_path.relative_to(app_root)
-        except ValueError:
-            continue  # Skip invalid paths
-            
-        try:
+            validate_file_exists(file_path, f"Stats file for {stats}")
             with open(file_path, "r") as json_file:
                 data = json.load(json_file)
                 if not isinstance(data, dict):
                     data = json.loads(data)
                 accumulate_dicts(accumulated_stats, data)
+        except HTTPException:
+            continue  # Skip missing files
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
