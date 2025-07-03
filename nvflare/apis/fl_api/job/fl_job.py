@@ -1,7 +1,7 @@
-from typing import Optional, List, Dict, Any, Union
-from nvflare.apis.fl_api.strategies.base.strategy import Strategy
+from typing import Optional, Dict, Any
+from nvflare.apis.fl_api.interfaces.strategy import Strategy
 from nvflare.apis.fl_api.trainers.base.fed_trainer import FedTrainer
-from nvflare.apis.fl_api.env.deployment_envs import DeploymentEnv, SimulationEnv
+from nvflare.apis.fl_api.env.deployment_envs import DeploymentEnv
 
 
 class FLJob:

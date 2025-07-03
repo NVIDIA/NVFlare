@@ -1,6 +1,6 @@
 
 from typing import Callable, Dict
-from nvflare.apis.fl_api.strategies.base.strategy import Strategy
+from nvflare.apis.fl_api.interfaces.strategy import Strategy
 
 _STRATEGY_REGISTRY: Dict[str, Callable[..., "Strategy"]] = {}
 

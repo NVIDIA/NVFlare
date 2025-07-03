@@ -1,5 +1,5 @@
-from nvflare.apis.fl_api.communication.comm_layer import CommunicationLayer
-from nvflare.apis.fl_api.strategies.base.agg_strategy import AggStrategy
+from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer
+from nvflare.apis.fl_api.strategies.agg_strategy import AggStrategy
 
 
 class Swarm(AggStrategy):

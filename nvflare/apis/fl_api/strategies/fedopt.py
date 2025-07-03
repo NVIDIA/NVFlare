@@ -1,11 +1,11 @@
 from nvflare.apis.fl_api.registry.strategy_registry import register_strategy
-from nvflare.apis.fl_api.strategies.base.agg_strategy import AggStrategy
+from nvflare.apis.fl_api.strategies.agg_strategy import AggStrategy
 
 
 # 2. FedOpt (e.g., FedAdam, FedYogi)
 
 @register_strategy("fedopt")
-class FedOpt(AggStrategy):
+class FedOpt(FedAvg):
     def __init__(self, optimizer, **kwargs):
         super().__init__(**kwargs)
         self.optimizer = optimizer

@@ -1,7 +1,7 @@
 from typing import List, Any
 
-from nvflare.apis.fl_api.communication.comm_layer import CommunicationLayer
-from nvflare.apis.fl_api.strategies.base.strategy import Strategy
+from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer
+from nvflare.apis.fl_api.interfaces.strategy import Strategy
 
 
 class Split(Strategy):

@@ -1,6 +1,6 @@
 from typing import List, Any
 
-from nvflare.apis.fl_api.strategies.base.agg_strategy import AggStrategy
+from nvflare.apis.fl_api.strategies.agg_strategy import AggStrategy
 
 
 # 8. Federated Statistics (e.g., sum, count, histogram)

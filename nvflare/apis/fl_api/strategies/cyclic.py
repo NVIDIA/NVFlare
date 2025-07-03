@@ -2,9 +2,9 @@
 
 from typing import List, Any
 
-from nvflare.apis.fl_api.communication.comm_layer import CommunicationLayer
+from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer
 from nvflare.apis.fl_api.registry.strategy_registry import register_strategy
-from nvflare.apis.fl_api.strategies.base.strategy import Strategy
+from nvflare.apis.fl_api.interfaces.strategy import Strategy
 
 
 @register_strategy("cyclic")

@@ -2,7 +2,7 @@ from abc import ABC
 from typing import Any, Callable, Optional, Tuple, Dict
 
 from nvflare.apis.fl_api import TrainerConfig, get_trainer_registry
-from nvflare.apis.fl_api.communication.comm_layer import CommunicationLayer
+from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer
 
 
 class FedTrainer(ABC):
