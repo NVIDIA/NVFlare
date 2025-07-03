@@ -17,9 +17,10 @@ import time
 
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
+from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
-from nvflare.private.fed.app.fl_conf import FLAdminClientStarterConfigurator
 from nvflare.security.logging import secure_format_exception
 
 
@@ -52,87 +53,47 @@ class FLAdminAPIRunner:
         Args:
             username: string of username to log in with
             admin_dir: string of root admin dir containing the startup dir
-            poc: whether to run in poc mode without SSL certs
             debug: whether to turn on debug mode
         """
         assert isinstance(username, str), "username must be str"
         self.username = username
         assert isinstance(admin_dir, str), "admin_dir must be str"
-        if poc:
-            self.poc = True
-        else:
-            self.poc = False
+
         if debug:
             debug = True
 
         try:
             os.chdir(admin_dir)
             workspace = Workspace(root_dir=admin_dir)
-            conf = FLAdminClientStarterConfigurator(workspace)
-            conf.configure()
+            conf = secure_load_admin_config(workspace)
         except ConfigError as e:
             print(f"ConfigError: {secure_format_exception(e)}")
             return
 
-        try:
-            admin_config = conf.config_data["admin"]
-        except KeyError:
-            print("Missing admin section in fed_admin configuration.")
+        admin_config = conf.get_admin_config()
+        if not admin_config:
+            print(f"Missing '{AdminConfigKey.ADMIN}' section in fed_admin configuration.")
             return
 
-        ca_cert = admin_config.get("ca_cert", "")
-        client_cert = admin_config.get("client_cert", "")
-        client_key = admin_config.get("client_key", "")
-
-        if admin_config.get("with_ssl"):
-            if len(ca_cert) <= 0:
-                print("missing CA Cert file name field ca_cert in fed_admin configuration")
-                return
-
-            if len(client_cert) <= 0:
-                print("missing Client Cert file name field client_cert in fed_admin configuration")
-                return
-
-            if len(client_key) <= 0:
-                print("missing Client Key file name field client_key in fed_admin configuration")
-                return
-        else:
-            ca_cert = None
-            client_key = None
-            client_cert = None
-
-        upload_dir = admin_config.get("upload_dir")
-        download_dir = admin_config.get("download_dir")
-        if not os.path.isdir(download_dir):
+        upload_dir = admin_config.get(AdminConfigKey.UPLOAD_DIR)
+        download_dir = admin_config.get(AdminConfigKey.DOWNLOAD_DIR)
+        if download_dir and not os.path.isdir(download_dir):
             os.makedirs(download_dir)
 
-        assert os.path.isdir(admin_dir), f"admin directory does not exist at {admin_dir}"
-        if not self.poc:
-            assert os.path.isfile(ca_cert), f"rootCA.pem does not exist at {ca_cert}"
-            assert os.path.isfile(client_cert), f"client.crt does not exist at {client_cert}"
-            assert os.path.isfile(client_key), f"client.key does not exist at {client_key}"
-
         # Connect with admin client
+        if poc:
+            admin_config[AdminConfigKey.UID_SOURCE] = UidSource.CERT
+
         self.api = FLAdminAPI(
-            ca_cert=ca_cert,
-            client_cert=client_cert,
-            client_key=client_key,
+            admin_config=admin_config,
             upload_dir=upload_dir,
             download_dir=download_dir,
-            overseer_agent=conf.overseer_agent,
             user_name=username,
-            insecure=self.poc,
             debug=debug,
         )
 
-        # wait for admin to login
-        _t_warning_start = time.time()
-        while not self.api.server_sess_active:
-            time.sleep(0.5)
-            if time.time() - _t_warning_start > 10:
-                print("Admin is taking a long time to log in to the server...")
-                print("Make sure the server is up and available, and all configurations are correct.")
-                _t_warning_start = time.time()
+        self.api.connect(timeout=5.0)
+        self.api.login()
 
     def run(
         self,
@@ -168,3 +129,6 @@ class FLAdminAPIRunner:
             api_command_wrapper(self.api.check_status(TargetType.CLIENT))
         except RuntimeError as e:
             print(f"There was an exception: {secure_format_exception(e)}")
+
+    def close(self):
+        self.api.logout()

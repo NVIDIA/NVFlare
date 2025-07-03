@@ -57,7 +57,6 @@ class SimulatorDeployer(ServerDeployer):
             services,
             server_conf=simulator_server,
             args=args,
-            secure_train=False,
         )
         admin_server.start()
         services.set_admin_server(admin_server)

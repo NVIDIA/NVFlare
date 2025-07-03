@@ -25,7 +25,6 @@ from tests.integration_test.src import (
     NVFTestDriver,
     NVFTestError,
     POCSiteLauncher,
-    ProvisionSiteLauncher,
     cleanup_path,
     read_yaml,
     run_command_in_subprocess,
@@ -95,7 +94,7 @@ def setup_and_teardown_system(request):
     test_config = get_test_config(yaml_path)
 
     cleanup = test_config["cleanup"]
-    ha = test_config["ha"]
+    ha = False
     poll_period = test_config.get("poll_period", 5)
     additional_python_paths = test_config.get("additional_python_paths", [])
     for additional_python_path in additional_python_paths:
@@ -106,28 +105,17 @@ def setup_and_teardown_system(request):
     test_driver = None
     site_launcher = None
     try:
-        if ha:
-            project_yaml_path = test_config.get("project_yaml")
-            if not os.path.isfile(project_yaml_path):
-                raise NVFTestError(f"Missing project_yaml at {project_yaml_path}.")
-            site_launcher = ProvisionSiteLauncher(project_yaml=project_yaml_path)
-            poc = False
-            super_user_name = "super@test.org"
-        else:
-            n_servers = int(test_config["n_servers"])
-            if n_servers != 1:
-                raise NVFTestError("POC mode can only use one server. For more servers, use HA with provisioned mode.")
-            n_clients = int(test_config["n_clients"])
-            site_launcher = POCSiteLauncher(n_servers=n_servers, n_clients=n_clients)
-            poc = False  # POC now uses SSL as well so this needs to be False
-            super_user_name = "admin@nvidia.com"
+        n_servers = int(test_config["n_servers"])
+        if n_servers != 1:
+            raise NVFTestError("POC mode can only use one server. For more servers, use HA with provisioned mode.")
+        n_clients = int(test_config["n_clients"])
+        site_launcher = POCSiteLauncher(n_servers=n_servers, n_clients=n_clients)
+        poc = True  # POC now uses SSL as well so this needs to be False
+        super_user_name = "admin@nvidia.com"
 
         workspace_root = site_launcher.prepare_workspace()
         print(f"Workspace root is {workspace_root}")
         print(f"sys.path start is: {sys.path}")
-
-        if ha:
-            site_launcher.start_overseer()
         site_launcher.start_servers()
         site_launcher.start_clients()
 
@@ -154,13 +142,6 @@ def setup_and_teardown_system(request):
         test_driver.initialize_super_user(
             workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, poc=poc, super_user_name=super_user_name
         )
-        if ha:
-            test_driver.initialize_admin_users(
-                workspace_root_dir=workspace_root,
-                upload_root_dir=jobs_root_dir,
-                poc=poc,
-                admin_user_names=site_launcher.admin_user_names,
-            )
         test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()), timeout=2000)
         yield ha, test_cases, site_launcher, test_driver, yaml_path
     finally:

@@ -18,7 +18,6 @@ import enum
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.ctx import SimpleContext
-from nvflare.fuel.hci.reg import CommandModule
 from nvflare.fuel.hci.table import Table
 
 
@@ -33,35 +32,17 @@ class CommandCtxKey(object):
     JSON_PROCESSOR = "json_processor"
     META = "meta"
     CUSTOM_PROPS = "custom_props"
-    BYTES_RECEIVER = "bytes_receiver"
-    BYTES_SENDER = "bytes_sender"
+    REQUESTER = "requester"
     CMD_PROPS = "cmd_props"
-
-
-class SendBytesToServer(ABC):
-    @abstractmethod
-    def send(self, sock, meta: str):
-        pass
-
-
-class ReceiveBytesFromServer(ABC):
-    @abstractmethod
-    def receive(self, sock):
-        pass
+    CMD_HEADERS = "cmd_headers"
 
 
 class CommandContext(SimpleContext):
-    def set_bytes_receiver(self, r):
-        self.set_prop(CommandCtxKey.BYTES_RECEIVER, r)
+    def set_requester(self, r):
+        self.set_prop(CommandCtxKey.REQUESTER, r)
 
-    def get_bytes_receiver(self):
-        return self.get_prop(CommandCtxKey.BYTES_RECEIVER)
-
-    def set_bytes_sender(self, s):
-        self.set_prop(CommandCtxKey.BYTES_SENDER, s)
-
-    def get_bytes_sender(self):
-        return self.get_prop(CommandCtxKey.BYTES_SENDER)
+    def get_requester(self):
+        return self.get_prop(CommandCtxKey.REQUESTER)
 
     def set_command_result(self, result):
         self.set_prop(CommandCtxKey.RESULT, result)
@@ -129,6 +110,12 @@ class CommandContext(SimpleContext):
     def get_command_props(self):
         return self.get_prop(CommandCtxKey.CMD_PROPS)
 
+    def set_command_headers(self, value):
+        self.set_prop(CommandCtxKey.CMD_HEADERS, value)
+
+    def get_command_headers(self):
+        return self.get_prop(CommandCtxKey.CMD_HEADERS)
+
 
 class ApiPocValue(object):
     ADMIN = "admin"
@@ -139,10 +126,9 @@ class CommandInfo(enum.Enum):
     OK = 0
     UNKNOWN = 1
     AMBIGUOUS = 2
-    CONFIRM_PWD = 3
-    CONFIRM_YN = 4
+    CONFIRM_YN = 3
+    CONFIRM_AUTH = 4
     CONFIRM_USER_NAME = 5
-    CONFIRM_AUTH = 6
 
 
 class ReplyProcessor:
@@ -223,21 +209,37 @@ class AdminAPISpec(ABC):
         pass
 
 
-def service_address_changed_cb_signature(host: str, port: int, ssid: str):
-    pass
+class AdminConfigKey:
+    ADMIN = "admin"
+    PROJECT_NAME = "project_name"
+    IDENTITY = "identity"
+    SERVER_IDENTITY = "server_identity"
+    CONNECTION_SCHEME = "scheme"
+    CONNECTION_SECURITY = "connection_security"
+    CLIENT_KEY = "client_key"
+    CLIENT_CERT = "client_cert"
+    CA_CERT = "ca_cert"
+    HOST = "host"
+    PORT = "port"
+    PROMPT = "prompt"
+    LOGIN_TIMEOUT = "login_timeout"
+    IDLE_TIMEOUT = "idle_timeout"
+    WITH_FILE_TRANSFER = "with_file_transfer"
+    UID_SOURCE = "uid_source"  # where does user id come from
+    UPLOAD_DIR = "upload_dir"
+    DOWNLOAD_DIR = "download_dir"
+    USERNAME = "username"
+    FILE_DOWNLOAD_PROGRESS_TIMEOUT = "file_download_progress_timeout"
 
 
-class ServiceFinder(ABC):
+class UidSource:
+    USER_INPUT = "user_input"  # user must provide
+    CERT = "cert"  # CN of the identity certificate
+    GUEST = "guest"  # anonymous - for testing purpose
+
+
+class HCIRequester(ABC):
+
     @abstractmethod
-    def start(self, service_address_changed_cb):
-        pass
-
-    @abstractmethod
-    def stop(self):
-        pass
-
-    def set_secure_context(self, ca_cert_path: str, cert_path: str, private_key_path: str):
-        pass
-
-    def get_command_module(self) -> CommandModule:
+    def send_request(self, api, conn, cmd_ctx):
         pass

@@ -68,6 +68,7 @@ class PropKey:
     CC_CONFIG = "cc_config"
     CC_CONFIG_DICT = "cc_config_dict"
     CC_ENABLED = "cc_enabled"
+    USE_AIO = "use_aio"
 
     # the following are internal properties added by builders during provision
     PARENT = "parent"
@@ -148,6 +149,7 @@ class TemplateSectionKey:
     ADMIN_README = "readme_am"
     FL_ADMIN_SH = "fl_admin_sh"
     FED_ADMIN = "fed_admin"
+    DEFAULT_ADMIN_RESOURCES = "default_admin_resources"
     COMPOSE_YAML = "compose_yaml"
     DOCKERFILE = "dockerfile"
     LAUNCHER_DOCKERFILE = "launcher_dockerfile"

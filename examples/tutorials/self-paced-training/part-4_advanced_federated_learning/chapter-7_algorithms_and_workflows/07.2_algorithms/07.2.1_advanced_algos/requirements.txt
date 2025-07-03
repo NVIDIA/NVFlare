@@ -1,2 +1,3 @@
-nvflare~=2.6.0
+nvflare>=2.6
 tensorflow[and-cuda]
+filelock>=3.12.0

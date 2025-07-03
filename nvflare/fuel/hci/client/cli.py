@@ -13,11 +13,12 @@
 # limitations under the License.
 
 import cmd
-import getpass
 import json
 import os
 import signal
+import threading
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -28,16 +29,19 @@ except ImportError:
     readline = None
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args, parse_command_line
-from nvflare.fuel.hci.proto import CredentialType, ProtoKey
+from nvflare.fuel.hci.proto import ProtoKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
-from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api import AdminAPI, CommandInfo
-from .api_spec import ServiceFinder
+from .api_spec import AdminConfigKey, UidSource
 from .api_status import APIStatus
 from .event import EventContext, EventHandler, EventPropKey, EventType
+
+
+class _SessionClosed(Exception):
+    pass
 
 
 class _BuiltInCmdModule(CommandModule):
@@ -61,29 +65,15 @@ class AdminClient(cmd.Cmd, EventHandler):
     """Admin command prompt for submitting admin commands to the server through the CLI.
 
     Args:
-        prompt: prompt to use for the command prompt
-        ca_cert: path to CA Cert file, by default provisioned rootCA.pem
-        client_cert: path to admin client Cert file, by default provisioned as client.crt
-        client_key: path to admin client Key file, by default provisioned as client.key
-        credential_type: what type of credential to use
         cmd_modules: command modules to load and register
-        service_finder: used to obtain the primary service provider to set the host and port of the active server
         debug: whether to print debug messages. False by default.
         cli_history_size: the maximum number of commands to save in the cli history file. Defaults to 1000.
     """
 
     def __init__(
         self,
-        prompt: str = "> ",
-        credential_type: CredentialType = CredentialType.PASSWORD,
-        ca_cert=None,
-        client_cert=None,
-        client_key=None,
-        upload_dir="",
-        download_dir="",
+        admin_config: dict,
         cmd_modules: Optional[List] = None,
-        service_finder: ServiceFinder = None,
-        session_timeout_interval=900,  # close the client after 15 minutes of inactivity
         debug: bool = False,
         username: str = "",
         handlers=None,
@@ -92,23 +82,16 @@ class AdminClient(cmd.Cmd, EventHandler):
     ):
         super().__init__()
         self.intro = "Type help or ? to list commands.\n"
-        self.prompt = prompt
+        self.prompt = admin_config.get(AdminConfigKey.PROMPT, "> ")
         self.user_name = "admin"
-        self.pwd = None
-        self.credential_type = credential_type
-
-        self.service_finder = service_finder
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
         self.stopped = False  # use this flag to prevent unnecessary signal exception
         self.username = username
-
-        if not isinstance(service_finder, ServiceFinder):
-            raise TypeError("service_finder must be ServiceProvider but got {}.".format(type(service_finder)))
-
-        if not isinstance(credential_type, CredentialType):
-            raise TypeError("invalid credential_type {}".format(credential_type))
+        self.login_timeout = admin_config.get(AdminConfigKey.LOGIN_TIMEOUT)
+        self.idle_timeout = admin_config.get(AdminConfigKey.IDLE_TIMEOUT, 900.0)
+        self.last_active_time = time.time()
 
         if not cli_history_dir:
             raise Exception("missing cli_history_dir")
@@ -122,27 +105,19 @@ class AdminClient(cmd.Cmd, EventHandler):
                     raise TypeError("cmd_modules must be a list of CommandModule")
                 modules.append(m)
 
-        insecure = True if self.credential_type == CredentialType.PASSWORD else False
-
-        self._get_login_creds()
+        uid_source = admin_config.get(AdminConfigKey.UID_SOURCE, UidSource.USER_INPUT)
+        if uid_source != UidSource.CERT:
+            self.user_name = self._user_input("User Name: ")
 
         event_handlers = [self]
         if handlers:
             event_handlers.extend(handlers)
 
         self.api = AdminAPI(
-            ca_cert=ca_cert,
-            client_cert=client_cert,
-            client_key=client_key,
-            upload_dir=upload_dir,
-            download_dir=download_dir,
+            admin_config=admin_config,
             cmd_modules=modules,
-            service_finder=self.service_finder,
             user_name=self.user_name,
             debug=self.debug,
-            insecure=insecure,
-            session_timeout_interval=session_timeout_interval,
-            session_status_check_interval=1800,  # check server for session status every 30 minutes
             event_handlers=event_handlers,
         )
 
@@ -156,6 +131,21 @@ class AdminClient(cmd.Cmd, EventHandler):
         # signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
         signal.signal(signal.SIGUSR1, self.session_signal_handler)
 
+    def _monitor_user(self):
+        while True:
+            if time.time() - self.last_active_time > self.idle_timeout:
+                # user has been idle for too long
+                print(f"Logging out due to inactivity for {self.idle_timeout} seconds")
+                self.api.logout()
+                # We force to stop by killing the process because there is no way to interrupt the
+                # command thread that is waiting for user input.
+                # This "kill" will cause self.session_signal_handler to be executed in the thread that
+                # runs the cmdloop!
+                os.kill(os.getpid(), signal.SIGUSR1)
+                return
+            else:
+                time.sleep(1.0)
+
     def handle_event(self, event_type: str, ctx: EventContext):
         if self.debug:
             print(f"DEBUG: received session event: {event_type}")
@@ -164,7 +154,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         if msg:
             self.write_string(msg)
 
-        if event_type == EventType.SESSION_CLOSED:
+        if event_type in [EventType.SESSION_TIMEOUT]:
             os.kill(os.getpid(), signal.SIGUSR1)
 
     def session_signal_handler(self, signum, frame):
@@ -179,7 +169,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         self.api.close()
 
         # use exception to interrupt the main cmd loop
-        raise RuntimeError("Session Closed")
+        raise _SessionClosed("Session Closed")
 
     def _set_output_file(self, file, no_stdout):
         self._close_output_file()
@@ -193,12 +183,6 @@ class AdminClient(cmd.Cmd, EventHandler):
         self.no_stdout = False
 
     def do_bye(self, arg):
-        """Exit from the client.
-
-        If the arg is not logout, in other words, the user is issuing the bye command to shut down the client, or it is
-        called by inputting the EOF character, a message will display that the admin client is shutting down."""
-        if arg != "logout":
-            print("Shutting down admin client, please wait...")
         self.api.logout()
         return True
 
@@ -299,15 +283,15 @@ class AdminClient(cmd.Cmd, EventHandler):
         except KeyboardInterrupt:
             self.write_stdout("\n")
         except Exception as e:
+            traceback.print_exc()
             if self.debug:
                 secure_log_traceback()
             self.write_stdout(f"exception occurred: {secure_format_exception(e)}")
         self._close_output_file()
 
-    @staticmethod
-    def _user_input(prompt: str) -> str:
+    def _user_input(self, prompt: str) -> str:
         answer = input(prompt)
-
+        self.last_active_time = time.time()
         # remove leading and trailing spaces
         return answer.strip()
 
@@ -359,9 +343,7 @@ class AdminClient(cmd.Cmd, EventHandler):
             self.write_string("Ambiguous command {} - qualify with scope".format(cmd_name))
             return
         elif info == CommandInfo.CONFIRM_AUTH:
-            if self.credential_type == CredentialType.PASSWORD:
-                info = CommandInfo.CONFIRM_PWD
-            elif self.user_name:
+            if self.user_name:
                 info = CommandInfo.CONFIRM_USER_NAME
             else:
                 info = CommandInfo.CONFIRM_YN
@@ -374,12 +356,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         elif info == CommandInfo.CONFIRM_USER_NAME:
             answer = self._user_input("Confirm with User Name: ")
             if answer != self.user_name:
-                self.write_string(f"user name mismatch: {answer} != {self.user_name}")
-                return
-        elif info == CommandInfo.CONFIRM_PWD:
-            pwd = getpass.getpass("Enter password to confirm: ")
-            if not verify_password(self.pwd, pwd):
-                self.write_string("Not authenticated")
+                self.write_string("user name mismatch")
                 return
 
         # execute the command!
@@ -468,27 +445,21 @@ class AdminClient(cmd.Cmd, EventHandler):
 
     def run(self):
         try:
-            while not self.api.is_ready():
-                time.sleep(1.0)
-                if self.api.shutdown_received:
-                    return False
-
+            self.api.connect(self.login_timeout)
+            self.api.login()
+            self.last_active_time = time.time()
+            monitor = threading.Thread(target=self._monitor_user, daemon=True)
+            monitor.start()
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
-        except RuntimeError as e:
+        except _SessionClosed as e:
+            # this is intentional session closing (by server or client)
             if self.debug:
-                print(f"DEBUG: Exception {secure_format_exception(e)}")
+                print(f"Session closed: {secure_format_exception(e)}")
+        except Exception as e:
+            print(f"Exception {secure_format_exception(e)}")
         finally:
             self.stopped = True
             self.api.close()
-
-    def _get_login_creds(self):
-        if self.credential_type == CredentialType.PASSWORD:
-            self.user_name = "admin"
-            self.pwd = hash_password("admin")
-        elif self.credential_type == CredentialType.LOCAL_CERT:
-            self.user_name = self.username
-        else:
-            self.user_name = self._user_input("User Name: ")
 
     def print_resp(self, resp: dict):
         """Prints the server response

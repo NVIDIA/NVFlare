@@ -298,7 +298,7 @@ class NetManager(CommandModule):
         if not targets:
             conn.append_error("no targets to test")
 
-        conn.append_string(f"starting stress test on {targets}", flush=True)
+        conn.append_string(f"starting stress test on {targets}")
         result = self.agent.start_stress_test(targets=targets, num_rounds=num_tries, timeout=timeout)
 
         total_errors = 0
@@ -330,7 +330,7 @@ class NetManager(CommandModule):
         if not targets:
             conn.append_error("no targets to test")
 
-        conn.append_string(f"starting bulk test on {targets}", flush=True)
+        conn.append_string(f"starting bulk test on {targets}")
         result = self.agent.start_bulk_test(targets, bulk_size)
         conn.append_dict(result)
 

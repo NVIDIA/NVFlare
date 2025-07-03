@@ -71,4 +71,4 @@ def prepare_packager(project_dict: dict):
     if not packager_config:
         return None
     else:
-        return instantiate_from_config(packager_config[0])
+        return instantiate_from_config(packager_config)

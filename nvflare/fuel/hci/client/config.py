@@ -15,12 +15,15 @@ import os
 import re
 import sys
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentManager
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext
 from nvflare.private.json_configer import JsonConfigurator
 
+from .api_spec import AdminConfigKey
 from .event import EventHandler
 
 FL_PACKAGES = ["nvflare"]
@@ -72,16 +75,42 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
         element = node.element
         path = node.path()
 
-        if path == "admin.overseer_agent":
-            self.overseer_agent = self.build_component(element)
-            return
-
         if re.search(r"^handlers\.#[0-9]+$", path):
             c = self.build_component(element)
             if not isinstance(c, EventHandler):
                 raise ConfigError(f"component must be EventHandler but got {type(c)}")
             self.handlers.append(c)
             return
+
+    def _update_property_path_in_startup(self, admin_config: dict, prop_key: str):
+        """The property value in the admin config is the base name.
+        This method replaces it with absolute path in the startup kit's startup dir.
+
+        Args:
+            admin_config: the admin config data
+            prop_key: key of the property
+
+        Returns:
+
+        """
+        prop_value = admin_config.get(prop_key)
+        if prop_value:
+            admin_config[prop_key] = self.workspace.get_file_path_in_startup(prop_value)
+
+    def _update_property_path_in_root(self, admin_config: dict, prop_key: str):
+        """The property value in the admin config is the base name.
+        This method replaces it with absolute path in the startup kit's root dir.
+
+        Args:
+            admin_config: the admin config data
+            prop_key: key of the property
+
+        Returns:
+
+        """
+        prop_value = admin_config.get(prop_key)
+        if prop_value:
+            admin_config[prop_key] = self.workspace.get_file_path_in_root(prop_value)
 
     def start_config(self, config_ctx: ConfigContext):
         """Start the config process.
@@ -92,17 +121,29 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
         super().start_config(config_ctx)
 
         try:
-            admin = self.config_data["admin"]
-            if admin.get("client_key"):
-                admin["client_key"] = self.workspace.get_file_path_in_startup(admin["client_key"])
-            if admin.get("client_cert"):
-                admin["client_cert"] = self.workspace.get_file_path_in_startup(admin["client_cert"])
-            if admin.get("ca_cert"):
-                admin["ca_cert"] = self.workspace.get_file_path_in_startup(admin["ca_cert"])
+            admin = self.get_admin_config()
+            if isinstance(admin, dict):
+                for key in [AdminConfigKey.CLIENT_KEY, AdminConfigKey.CLIENT_CERT, AdminConfigKey.CA_CERT]:
+                    self._update_property_path_in_startup(admin, key)
 
-            if admin.get("upload_dir"):
-                admin["upload_dir"] = self.workspace.get_file_path_in_root(admin["upload_dir"])
-            if admin.get("download_dir"):
-                admin["download_dir"] = self.workspace.get_file_path_in_root(admin["download_dir"])
+                for key in [AdminConfigKey.UPLOAD_DIR, AdminConfigKey.DOWNLOAD_DIR]:
+                    self._update_property_path_in_root(admin, key)
         except Exception:
             raise ValueError(f"Client config error: '{self.admin_config_file_path}'")
+
+    def get_admin_config(self):
+        if not isinstance(self.config_data, dict):
+            return None
+        return self.config_data.get(AdminConfigKey.ADMIN)
+
+
+def secure_load_admin_config(workspace: Workspace):
+    mgr = SecurityContentManager(content_folder=workspace.get_startup_kit_dir())
+
+    # make sure admin startup config file is not tampered with
+    _, result = mgr.load_json(WorkspaceConstants.ADMIN_STARTUP_CONFIG)
+    if result != LoadResult.OK:
+        raise ConfigError(f"invalid {WorkspaceConstants.ADMIN_STARTUP_CONFIG}: {result}")
+    conf = FLAdminClientStarterConfigurator(workspace=workspace)
+    conf.configure()
+    return conf
