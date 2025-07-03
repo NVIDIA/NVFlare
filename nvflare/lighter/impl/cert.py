@@ -141,7 +141,6 @@ class CertBuilder(Builder):
             server.name = truncated_name
             server.subject = truncated_name
 
-            # also make the original_name the default host
             default_host = server.get_prop(PropKey.DEFAULT_HOST)
             if not default_host:
                 # must use the original name as the default host
