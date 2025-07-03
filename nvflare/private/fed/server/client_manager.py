@@ -316,7 +316,8 @@ class ClientManager:
         result = self.name_to_clients.get(client_name)
         if not result:
             # Check whether this is a valid admin client.
-            # Note that admin clients are not kept in name_to_clients!
+            # Note that since admin clients are not kept in name_to_clients, we assume that the admin client
+            # is valid and dynamically create the Client object as the result.
             if is_valid_admin_client_name(client_name):
                 result = Client(client_name, None)
                 result.set_fqcn(client_name)

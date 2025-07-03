@@ -92,7 +92,7 @@ class CommandUtil(object):
             # get all clients
             clients = engine.get_clients()
         else:
-            # make sure client names do not contain admin clients
+            # check whether client names contain admin clients.
             admin_clients = []
             for c in client_names:
                 if is_valid_admin_client_name(c):
@@ -100,6 +100,7 @@ class CommandUtil(object):
 
             clients, invalid_inputs = engine.validate_targets(client_names)
             if admin_clients:
+                # admin clients are considered invalid since admin commands do not go to admin clients!
                 invalid_inputs.extend(admin_clients)
 
             if invalid_inputs:
