@@ -30,8 +30,7 @@ def create_token():
     payload = {
         "sub": settings.test_user,  # Subject of the token (typically the user identifier)
         "iat": datetime.now(timezone.utc),  # Issued at time
-        "exp": datetime.now(timezone.utc)
-        + timedelta(days=settings.key_expiry_days),  # Expiration time
+        "exp": datetime.now(timezone.utc) + timedelta(days=settings.key_expiry_days),  # Expiration time
     }
     token = jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
     return token

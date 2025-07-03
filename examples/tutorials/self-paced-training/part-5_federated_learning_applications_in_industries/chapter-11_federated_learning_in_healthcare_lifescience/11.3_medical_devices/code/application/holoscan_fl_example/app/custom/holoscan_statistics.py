@@ -18,19 +18,11 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.statistics_spec import (
-    BinRange,
-    Feature,
-    Histogram,
-    HistogramType,
-    Statistics,
-)
-from nvflare.app_common.statistics.numpy_utils import (
-    dtype_to_data_type,
-    get_std_histogram_buckets,
-)
 from pandas.core.series import Series
+
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.abstract.statistics_spec import BinRange, Feature, Histogram, HistogramType, Statistics
+from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_std_histogram_buckets
 
 
 class HoloscanExampleStatistics(Statistics):
@@ -127,9 +119,7 @@ class HoloscanExampleStatistics(Statistics):
         feature: Series = df[feature_name]
         flattened = feature.ravel()
         flattened = flattened[flattened != np.array(None)]
-        buckets = get_std_histogram_buckets(
-            flattened, num_of_bins, BinRange(global_min_value, global_max_value)
-        )
+        buckets = get_std_histogram_buckets(flattened, num_of_bins, BinRange(global_min_value, global_max_value))
         return Histogram(HistogramType.STANDARD, buckets)
 
     def variance_with_mean(

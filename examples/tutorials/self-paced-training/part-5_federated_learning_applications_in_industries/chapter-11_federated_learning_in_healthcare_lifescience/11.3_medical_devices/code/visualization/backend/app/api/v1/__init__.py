@@ -19,10 +19,6 @@ from .endpoints import get_apps, get_range_stats, get_stats, get_stats_list
 
 api_router = APIRouter()
 api_router.include_router(get_apps.router, prefix="/get_apps", tags=["get_apps"])
-api_router.include_router(
-    get_stats_list.router, prefix="/get_stats_list", tags=["get_stats_list"]
-)
+api_router.include_router(get_stats_list.router, prefix="/get_stats_list", tags=["get_stats_list"])
 api_router.include_router(get_stats.router, prefix="/get_stats", tags=["get_stats"])
-api_router.include_router(
-    get_range_stats.router, prefix="/get_range_stats", tags=["get_range_stats"]
-)
+api_router.include_router(get_range_stats.router, prefix="/get_range_stats", tags=["get_range_stats"])

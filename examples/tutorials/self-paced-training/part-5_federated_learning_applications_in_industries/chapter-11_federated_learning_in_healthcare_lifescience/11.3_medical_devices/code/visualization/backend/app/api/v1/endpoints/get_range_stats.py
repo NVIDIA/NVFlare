@@ -15,7 +15,6 @@
 
 import json
 import os
-
 from datetime import datetime
 from math import sqrt
 from pathlib import Path
@@ -23,7 +22,6 @@ from typing import List
 
 from app.core.config import settings
 from app.utils.dependencies import validate_user
-
 from fastapi import APIRouter, Depends, HTTPException
 
 
@@ -105,7 +103,7 @@ def accumulate_dicts(dst_dict: dict, src_dict: dict) -> dict:
 
 def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[str]:
     """Get the list of timestamp directories in a given dates range.
-    
+
     Args:
         app_name: Name of the application
         start: Start timestamp
@@ -130,8 +128,10 @@ def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[
     for name in os.listdir(app_dir):
         sub_path = os.path.normpath(os.path.join(app_dir, name))
         if os.path.isdir(sub_path) and sub_path.startswith(settings.data_root):
-            if datetime.strptime(name, settings.timestamp_dir_format) >= start_timestamp and \
-               datetime.strptime(name, settings.timestamp_dir_format) <= end_timestamp:
+            if (
+                datetime.strptime(name, settings.timestamp_dir_format) >= start_timestamp
+                and datetime.strptime(name, settings.timestamp_dir_format) <= end_timestamp
+            ):
                 subdirectories.append(name)
 
     return subdirectories
@@ -139,7 +139,7 @@ def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[
 
 def get_stats_json(app_name: str, start: str, end: str):
     """Get the accumulated statistics for the given range.
-    
+
     Args:
         app_name: Name of the application
         start: Start timestamp
@@ -150,7 +150,7 @@ def get_stats_json(app_name: str, start: str, end: str):
     """
     stats_dirs = get_eligible_stats_directories(app_name, start, end)
     accumulated_stats = {}
-    
+
     # Use secure path joining for base directories
     app_directory = os.path.normpath(os.path.join(settings.data_root, app_name))
     if not app_directory.startswith(settings.data_root):
@@ -158,15 +158,15 @@ def get_stats_json(app_name: str, start: str, end: str):
 
     if not os.path.isdir(app_directory):
         raise Exception(f"Application directory: {app_directory}, not found.")
-    
+
     for stats in stats_dirs:
         # Use secure path joining for each stats directory and file
         file_path = os.path.normpath(os.path.join(app_directory, stats, settings.stats_file_name))
-        
+
         # Validate file path is within the allowed directory
         if not file_path.startswith(settings.data_root):
             raise Exception(f"Invalid file path: {file_path}, not allowed.")
-        
+
         try:
             with open(file_path, "r") as json_file:
                 data = json.load(json_file)
@@ -185,9 +185,7 @@ router = APIRouter()
 
 
 @router.get("/{app_name}/{start}/{end}/")
-async def get_range_stats(
-    app_name: str, start: str, end: str, dep: None = Depends(validate_user)
-):
+async def get_range_stats(app_name: str, start: str, end: str, dep: None = Depends(validate_user)):
     """An API to get the accumulated statistics for the given range.
 
     Args:

@@ -144,9 +144,7 @@ def mock_output_data_directory(request):
             yield mock_data_path
 
 
-@pytest.mark.parametrize(
-    "mock_output_data_directory", ["app.api.v1.endpoints.get_apps.Path"], indirect=True
-)
+@pytest.mark.parametrize("mock_output_data_directory", ["app.api.v1.endpoints.get_apps.Path"], indirect=True)
 @pytest.mark.asyncio
 async def test_get_apps(mock_output_data_directory):
     output_dir = mock_output_data_directory
@@ -163,9 +161,7 @@ async def test_get_apps(mock_output_data_directory):
 
         # Test authorized access to a protected route
         test_route = f"{settings.API_V1_STR}/get_apps/"
-        response = await ac.get(
-            test_route, headers={"Authorization": f"Bearer {test_token}"}
-        )
+        response = await ac.get(test_route, headers={"Authorization": f"Bearer {test_token}"})
         assert response.status_code == 200
         expected_response_list = ["app1", "app2", "app3"]
         assert response.json() == expected_response_list
@@ -192,9 +188,7 @@ async def test_get_stats_list(mock_output_data_directory):
 
         # Test authorized access to a protected route
         test_route = f"{settings.API_V1_STR}/get_stats_list/app1/"
-        response = await ac.get(
-            test_route, headers={"Authorization": f"Bearer {test_token}"}
-        )
+        response = await ac.get(test_route, headers={"Authorization": f"Bearer {test_token}"})
         assert response.status_code == 200
         expected_response_list = [
             "20240813_232249",
@@ -204,9 +198,7 @@ async def test_get_stats_list(mock_output_data_directory):
         assert response.json() == expected_response_list
 
 
-@pytest.mark.parametrize(
-    "mock_output_data_directory", ["app.api.v1.endpoints.get_stats.Path"], indirect=True
-)
+@pytest.mark.parametrize("mock_output_data_directory", ["app.api.v1.endpoints.get_stats.Path"], indirect=True)
 @pytest.mark.asyncio
 async def test_get_stats(mock_output_data_directory):
     output_dir = mock_output_data_directory
@@ -223,18 +215,14 @@ async def test_get_stats(mock_output_data_directory):
 
         # Test without providing a stats directory, should return the latest available stats.
         test_route = f"{settings.API_V1_STR}/get_stats/app1/"
-        response = await ac.get(
-            test_route, headers={"Authorization": f"Bearer {test_token}"}
-        )
+        response = await ac.get(test_route, headers={"Authorization": f"Bearer {test_token}"})
         assert response.status_code == 200
         expected_response_stats_json = '{"Global": {"count": {"holoscan_set": {"feature1": 5000, "feature2": 7000}}}}'
         assert response.json() == expected_response_stats_json
 
         # Test with providing a stats directory, should return the stats from the given directory.
         test_route = f"{settings.API_V1_STR}/get_stats/app1/?timestamp=20240813_202249"
-        response = await ac.get(
-            test_route, headers={"Authorization": f"Bearer {test_token}"}
-        )
+        response = await ac.get(test_route, headers={"Authorization": f"Bearer {test_token}"})
         assert response.status_code == 200
         expected_response_stats_json = '{"Global": {"count": {"holoscan_set": {"feature1": 6000, "feature2": 8000}}}}'
         assert response.json() == expected_response_stats_json
@@ -261,50 +249,28 @@ async def test_get_range_stats(mock_output_data_directory):
 
         # Test range stats, should return accumulated stats for the given dates ranges
         test_route = f"{settings.API_V1_STR}/get_range_stats/app1/20240812_232249/20240813_232249/"
-        response = await ac.get(
-            test_route, headers={"Authorization": f"Bearer {test_token}"}
-        )
+        response = await ac.get(test_route, headers={"Authorization": f"Bearer {test_token}"})
         assert response.status_code == 200
-        expected_response_stats_json = {
-            "Global": {
-                "count": {"holoscan_set": {"feature1": 18000, "feature2": 24000}}
-            }
-        }
+        expected_response_stats_json = {"Global": {"count": {"holoscan_set": {"feature1": 18000, "feature2": 24000}}}}
         assert response.json() == expected_response_stats_json
 
         # Test another range, should return accumulated stats for the given dates ranges
         test_route = f"{settings.API_V1_STR}/get_range_stats/app1/20240813_202249/20240813_232249/"
-        response = await ac.get(
-            test_route, headers={"Authorization": f"Bearer {test_token}"}
-        )
+        response = await ac.get(test_route, headers={"Authorization": f"Bearer {test_token}"})
         assert response.status_code == 200
-        expected_response_stats_json = {
-            "Global": {
-                "count": {"holoscan_set": {"feature1": 11000, "feature2": 15000}}
-            }
-        }
+        expected_response_stats_json = {"Global": {"count": {"holoscan_set": {"feature1": 11000, "feature2": 15000}}}}
         assert response.json() == expected_response_stats_json
 
         # Specifying the same start and end timestamps should return stats for the given timestamp
         test_route = f"{settings.API_V1_STR}/get_range_stats/app1/20240813_202249/20240813_202249/"
-        response = await ac.get(
-            test_route, headers={"Authorization": f"Bearer {test_token}"}
-        )
+        response = await ac.get(test_route, headers={"Authorization": f"Bearer {test_token}"})
         assert response.status_code == 200
-        expected_response_stats_json = {
-            "Global": {"count": {"holoscan_set": {"feature1": 6000, "feature2": 8000}}}
-        }
+        expected_response_stats_json = {"Global": {"count": {"holoscan_set": {"feature1": 6000, "feature2": 8000}}}}
         assert response.json() == expected_response_stats_json
 
         # Providing any random timestamps and not just from the available timestamps should also work
         test_route = f"{settings.API_V1_STR}/get_range_stats/app1/20230101_000000/20241231_000000/"
-        response = await ac.get(
-            test_route, headers={"Authorization": f"Bearer {test_token}"}
-        )
+        response = await ac.get(test_route, headers={"Authorization": f"Bearer {test_token}"})
         assert response.status_code == 200
-        expected_response_stats_json = {
-            "Global": {
-                "count": {"holoscan_set": {"feature1": 18000, "feature2": 24000}}
-            }
-        }
+        expected_response_stats_json = {"Global": {"count": {"holoscan_set": {"feature1": 18000, "feature2": 24000}}}}
         assert response.json() == expected_response_stats_json

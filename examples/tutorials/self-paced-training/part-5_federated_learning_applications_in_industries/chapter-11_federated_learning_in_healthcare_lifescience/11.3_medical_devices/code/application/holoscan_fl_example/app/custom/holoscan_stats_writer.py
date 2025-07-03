@@ -25,9 +25,7 @@ from nvflare.fuel.utils.class_loader import load_class
 
 
 class HoloscanStatsWriter(StatisticsWriter):
-    def __init__(
-        self, output_path: str, output_file_name: str, json_encoder_path: str = ""
-    ):
+    def __init__(self, output_path: str, output_file_name: str, json_encoder_path: str = ""):
         super().__init__()
         self.job_dir = None
         if len(output_path) == 0:
@@ -53,11 +51,7 @@ class HoloscanStatsWriter(StatisticsWriter):
 
         data_exists = os.path.isfile(full_uri)
         if data_exists and not overwrite_existing:
-            raise StorageException(
-                "object {} already exists and overwrite_existing is False".format(
-                    full_uri
-                )
-            )
+            raise StorageException("object {} already exists and overwrite_existing is False".format(full_uri))
 
         content = json.dumps(data, cls=self.json_encoder_class)
 

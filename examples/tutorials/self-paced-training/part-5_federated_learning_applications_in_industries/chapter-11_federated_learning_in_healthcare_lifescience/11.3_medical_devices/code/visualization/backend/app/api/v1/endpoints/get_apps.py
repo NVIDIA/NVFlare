@@ -31,11 +31,7 @@ def get_subdirectories() -> List[str]:
         )
 
     # Get the list of only immediate subdirectories
-    subdirectories = [
-        name.name
-        for name in list(root_dir.iterdir())
-        if (Path(directory_path) / name).is_dir()
-    ]
+    subdirectories = [name.name for name in list(root_dir.iterdir()) if (Path(directory_path) / name).is_dir()]
     return subdirectories
 
 

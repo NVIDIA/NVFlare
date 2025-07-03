@@ -15,14 +15,12 @@
 
 
 import os
-
 from datetime import datetime
 from pathlib import Path
 from typing import Generator, Optional
 
 from app.core.config import settings
 from app.utils.dependencies import validate_user
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -54,7 +52,7 @@ def get_latest_stats_dir(app_name: str) -> str:
 
     if not os.path.isdir(app_dir):
         raise Exception(f"Application directory: {app_dir}, not found.")
-    
+
     # Get the list of only immediate subdirectories
     subdirectories = []
     for name in os.listdir(app_dir):
@@ -62,10 +60,7 @@ def get_latest_stats_dir(app_name: str) -> str:
         if os.path.isdir(sub_path) and sub_path.startswith(settings.data_root):
             subdirectories.append(name)
 
-    timestamps = [
-        datetime.strptime(directory, settings.timestamp_dir_format)
-        for directory in subdirectories
-    ]
+    timestamps = [datetime.strptime(directory, settings.timestamp_dir_format) for directory in subdirectories]
     latest_timestamp = max(timestamps)
     latest_directory = latest_timestamp.strftime(settings.timestamp_dir_format)
     return latest_directory
@@ -108,9 +103,7 @@ router = APIRouter()
 
 
 @router.get("/{app_name}/", response_class=StreamingResponse)
-async def get_stats(
-    app_name: str, timestamp: Optional[str] = None, dep: None = Depends(validate_user)
-):
+async def get_stats(app_name: str, timestamp: Optional[str] = None, dep: None = Depends(validate_user)):
     """An API to get the statistics for the given application.
 
     Args:
@@ -121,6 +114,4 @@ async def get_stats(
         Returns the statistics JSON for the given application and timestamp.
         If no timestamp is provided, it returns the latest statistics for the given application.
     """
-    return StreamingResponse(
-        get_stats_json(app_name, timestamp), media_type="application/json"
-    )
+    return StreamingResponse(get_stats_json(app_name, timestamp), media_type="application/json")
