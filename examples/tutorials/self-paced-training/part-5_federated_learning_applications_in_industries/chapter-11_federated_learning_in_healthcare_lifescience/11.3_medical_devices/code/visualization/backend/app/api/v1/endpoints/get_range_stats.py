@@ -16,7 +16,6 @@ import json
 import os
 from datetime import datetime
 from math import sqrt
-from pathlib import Path
 from typing import List
 
 from app.core.config import settings
