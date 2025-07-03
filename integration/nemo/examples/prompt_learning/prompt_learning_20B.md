@@ -58,7 +58,7 @@ python3 megatron_change_num_partitions.py --model_file ${source_ckpt} --target_f
 ```
 
 ## Data preprocessing
-As our downstream task, we will use the [Financial PhraseBank dataset](https://huggingface.co/datasets/financial_phrasebank) for sentiment analysis.
+As our downstream task, we will use the [Financial PhraseBank dataset](https://www.researchgate.net/publication/251231364_FinancialPhraseBank-v10) for sentiment analysis.
 
 The Financial PhraseBank dataset contains the sentiments for financial news headlines from a retail investor's perspective. 
 Further details about the dataset can be found in Malo et al.'s ["Good Debt or Bad Debt: Detecting Semantic Orientations in Economic Texts"](https://arxiv.org/abs/1307.5336).
