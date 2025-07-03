@@ -56,6 +56,7 @@ from nvflare.fuel.hci.proto import (
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import ClientType
@@ -354,7 +355,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if self.cell:
             return
 
-        my_fqcn = f"admin_{uuid.uuid4()}"
+        my_fqcn = new_admin_client_name()
         credentials = {
             DriverParams.CA_CERT.value: self.ca_cert,
             DriverParams.CLIENT_CERT.value: self.client_cert,
