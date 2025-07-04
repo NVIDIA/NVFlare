@@ -851,7 +851,7 @@ class Session(SessionSpec):
         else:
             return None
 
-    def monitor_job(
+    def monitor_job_and_return_job_meta(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
     ) -> (MonitorReturnCode, Optional[dict]):
         """Monitor the job progress.
