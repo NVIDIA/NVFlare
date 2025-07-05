@@ -2,6 +2,7 @@ from typing import List, Any
 
 from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer
 from nvflare.apis.fl_api.interfaces.strategy import Strategy
+from nvflare.apis.fl_api.message.fl_message import MessageEnvelope
 
 
 class FedXGBoost(Strategy):
@@ -18,12 +19,31 @@ class FedXGBoost(Strategy):
             **kwargs,
     ) -> Any:
         for r in range(self.num_rounds):
-            communication.broadcast_state(selected_clients, global_state)
-            updates = communication.collect_updates(selected_clients)
-            global_state = self.boost(global_state, updates)
+            # Broadcast the current global booster to all clients
+            booster_msg = MessageEnvelope()
+            booster_msg.payload = {"global_booster": global_state}
+            communication.broadcast_to_queue(selected_clients, booster_msg)
+            # Collect updates (e.g., booster weights, gradients, etc.) from all clients
+            updates = communication.receive_from_peers(selected_clients)
+            # Aggregate updates (this could be tree averaging, federated gradient boosting, etc.)
+            result = self.aggregate(updates, round_number=round_number, **kwargs)
+            global_state = result.payload["global_booster"]
         return global_state
+
+    def aggregate(self, updates, round_number=0, **kwargs):
+        # Type check
+        for u in updates:
+            if not isinstance(u, MessageEnvelope):
+                raise TypeError(f"All updates must be MessageEnvelope, got {type(u)}")
+        # Example: assume each update.payload contains 'booster_update' (could be booster weights, trees, etc.)
+        booster_updates = [u.payload["booster_update"] for u in updates if u.payload and "booster_update" in u.payload]
+        # Implement your aggregation logic here (e.g., federated tree averaging, secure aggregation, etc.)
+        # For demo, just return the first booster_update
+        agg_booster = booster_updates[0] if booster_updates else None
+        result_msg = MessageEnvelope()
+        result_msg.payload = {"global_booster": agg_booster}
+        return result_msg
 
     def boost(self, model, updates):
         # Federated boosting logic
         return model  # Placeholder
-
