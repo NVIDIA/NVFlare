@@ -71,10 +71,9 @@ class CCBuilder(Builder):
         # Map of compute environment to its builder class
         self._cc_builders: Dict[str, Type[Builder]] = {}
 
-    def _load_and_validate_cc_config(self, participant):
+    def _load_and_validate_cc_config(self, config_path):
         """Load CC configuration from YAML file."""
-        config_path = participant.get_prop(PropKey.CC_CONFIG)
-        if not config_path or not os.path.exists(config_path):
+        if not os.path.exists(config_path):
             raise FileNotFoundError(f"CC config file not found: {config_path}")
         cc_config = utils.load_yaml(config_path)
         compute_env = cc_config.get(CCConfigKey.COMPUTE_ENV)
@@ -116,12 +115,14 @@ class CCBuilder(Builder):
         self.project_name = project.name
         self.project = project
         for participant in project.get_all_participants():
-            try:
-                cc_config = self._load_and_validate_cc_config(participant)
-                self._enable_participant_for_cc(participant, cc_config, ctx)
-                self._create_builder_for_env(cc_config)
-            except Exception as e:
-                print(f"CC is not enabled for {participant.name}: {e}")
+            config_path = participant.get_prop(PropKey.CC_CONFIG)
+            if config_path:
+                try:
+                    cc_config = self._load_and_validate_cc_config(config_path)
+                    self._enable_participant_for_cc(participant, cc_config, ctx)
+                    self._create_builder_for_env(cc_config)
+                except Exception as e:
+                    print(f"CC is not enabled for {participant.name}: {e}")
 
         # Initialize each builder type once
         for builder in self._cc_builders.values():

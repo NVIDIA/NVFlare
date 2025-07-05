@@ -16,7 +16,7 @@ participants:
   - name: site-1
     type: client
     org: nvidia
-    cc_config: cc_site-1.yml
+      #    cc_config: cc_site-1.yml
     # Specifying listening_host will enable the creation of one pair of
     # certificate/private key for this client, allowing the client to function
     # as a server for 3rd-party integration.
@@ -31,11 +31,6 @@ participants:
 # The same methods in all builders are called in their order defined in builders section
 builders:
   - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
-    args:
-      template_file:
-        - master_template.yml
-        - aws_template.yml
-        - azure_template.yml
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
     args:
       # config_folder can be set to inform NVIDIA FLARE where to get configuration
@@ -66,13 +61,16 @@ builders:
         args:
           sp_end_point: server1:8002:8003
 
-#      docker_image: localhost/nvflare:0.0.1
-#
-#  - path: nvflare.lighter.impl.docker.DockerBuilder
-#    args:
-#      docker_image: localhost/nvflare:0.0.1
-#      base_image: python:3.10
-#      requirements_file: docker_compose_requirements.txt
+            #docker_image: localhost/nvflare:0.0.1
+
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
   - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
+  - path: nvflare.lighter.impl.docker_image_builder.DockerImageBuilder
+    args:
+      base_dockerfile: Dockerfile
+packager:
+  path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
+  args:
+    build_image_cmd: /localhome/local-yuantingh/NVFlare/nvflare/lighter/cc_provision/build_cvm_image.sh
+    #build_image_cmd: /localhome/local-yuantingh/nvflare-github/nvflare/lighter/cc/image_builder/cvm_build.sh
