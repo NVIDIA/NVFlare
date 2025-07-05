@@ -34,6 +34,25 @@ def update_log_filenames(config, new_log_root: str = "/applog"):
     return config
 
 
+def run_command(command, cwd=None):
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=True,  # Raises CalledProcessError on non-zero return
+        )
+        print(f"Process succeeded with return code {result.returncode}")
+        print(f"STDOUT:\n{result.stdout}")
+        print(f"STDERR:\n{result.stderr}")
+
+    except subprocess.CalledProcessError as e:
+        print(f"Process failed with return code {e.returncode}")
+        print(f"STDOUT:\n{e.stdout}")
+        print(f"STDERR:\n{e.stderr}")
+
+
 class OnPremPackager(Packager):
     def __init__(self, cc_config_key="cc_config", build_image_cmd=BUILD_IMAGE_CMD):
         super().__init__()
@@ -43,21 +62,8 @@ class OnPremPackager(Packager):
     def _build_cc_image(self, cc_config_yaml: str, site_name: str, startup_folder_path: str):
         """Build CC image for the site."""
         print(f"calling {self.build_image_cmd=} {cc_config_yaml=} {site_name=} {startup_folder_path=}")
-        try:
-            result = subprocess.run(
-                [self.build_image_cmd, cc_config_yaml, site_name, startup_folder_path],
-                capture_output=True,
-                text=True,
-                check=True,  # Raises CalledProcessError on non-zero return
-            )
-            print(f"Build process succeeded with return code {result.returncode}")
-            print(f"STDOUT:\n{result.stdout}")
-            print(f"STDERR:\n{result.stderr}")
-
-        except subprocess.CalledProcessError as e:
-            print(f"Build process failed with return code {e.returncode}")
-            print(f"STDOUT:\n{e.stdout}")
-            print(f"STDERR:\n{e.stderr}")
+        command = [self.build_image_cmd, cc_config_yaml, site_name, startup_folder_path]
+        run_command(command)
 
     def _change_log_dir(self, log_config_path: str):
         with open(log_config_path, "r") as f:
@@ -68,12 +74,18 @@ class OnPremPackager(Packager):
         with open(log_config_path, "w") as f:
             json.dump(updated_config, f, indent=4)
 
+    def _build_docker_image(self, participant: Participant, dest_dir: str):
+        command = ["sudo", "/bin/bash", f"{dest_dir}/{participant.name}/docker_build.sh"]
+        run_command(command, cwd=f"{dest_dir}/{participant.name}")
+
     def _package_for_participant(self, participant: Participant, ctx: ProvisionContext):
         """Package the startup kit for the participant."""
         if not participant.get_prop(self.cc_config_key):
             return
 
         dest_dir = Path(ctx.get_result_location())
+        # Build docker image for each
+        self._build_docker_image(participant, dest_dir)
         # Build CC image
         self._build_cc_image(participant.get_prop(self.cc_config_key), participant.name, dest_dir)
 
