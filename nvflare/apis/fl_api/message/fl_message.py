@@ -19,7 +19,7 @@ class FLMessage(BaseModel):
     metrics: Optional[Dict[str, float]] = Field(default=None, description="Evaluation metrics.")
     meta: Dict[str, Any] = Field(default_factory=dict, description="Bookkeeping info (sender, timestamp, etc.).")
 
-class PeerMessage(BaseModel):
+class MessageEnvelope(BaseModel):
     type: str = Field(..., description="Type of the message, e.g. 'embedding', 'gradient', 'control', etc.")
     payload: Any = Field(..., description="Main content: embedding, gradient, model part, etc.")
     sender: str = Field(..., description="Peer ID of the sender")
@@ -27,3 +27,7 @@ class PeerMessage(BaseModel):
         None, description="Peer ID(s) of the receiver(s); can be a string, a list of strings, or None for broadcast"
     )
     meta: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata, e.g. round, timestamp, etc.")
+
+
+# Type aliases for messaging
+MessageType = Union[FLMessage, MessageEnvelope]

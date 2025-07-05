@@ -15,18 +15,23 @@ class Split(Strategy):
     ) -> Any:
         client_id = selected_clients[0]
 
-        communication.broadcast_state([client_id], global_state)
+        # Send the global state (e.g., server-side model) to the client
+        communication.broadcast_to_queue([client_id], global_state)
 
-        activation = communication.receive_state(client_id)
+        # Receive the activation from the client
+        activation = communication.collect_from_queue(client_id)
         server_output = self.forward_on_server(activation)
-        # Send server output back to client peers
-        communication.send_message_to_peers(
+
+        # Send server output back to the client
+        communication.push_to_peers(
             sender_id="server",
-            recipient_ids=[client_id],
+            recipients=[client_id],
             message_type="server_output",
             payload=server_output,
         )
-        gradients = communication.receive_state(client_id)
+
+        # Receive gradients from the client
+        gradients = communication.collect_from_queue(client_id)
         return self.backward_on_server(gradients)
 
     def forward_on_server(self, activation):
@@ -36,4 +41,3 @@ class Split(Strategy):
     def backward_on_server(self, gradients):
         # Simulated backward pass on server side
         return gradients
-

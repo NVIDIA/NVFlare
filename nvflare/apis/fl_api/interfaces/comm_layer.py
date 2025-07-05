@@ -1,9 +1,9 @@
 from abc import ABC
-from typing import List, Any, Tuple, Optional, Dict, AsyncIterable, Union
-from nvflare.apis.fl_api.message.fl_message import FLMessage
+from typing import List, Any, Tuple, Optional, Dict, Union
 
-#Todo: focus on sync communication for now. to get the correct interface
-#todo: Async will be added later
+from nvflare.apis.fl_api.message.fl_message import MessageType
+
+siteOrSiteList = Union[str, List[str]]
 
 class CommunicationLayer(ABC):
     """
@@ -17,48 +17,48 @@ class CommunicationLayer(ABC):
         """
         raise NotImplementedError
 
-    def collect_from_queue(self, sites: Union[Any, List[Any]] = None) -> List[FLMessage]:
+    def collect_from_queue(self, sites: siteOrSiteList = None) -> List[MessageType]:
         """
         Synchronously request and collect updates from one or multiple sites.
         If sites is None, collect from all.
-        Returns a list of FLMessage objects.
+        """
+        raise NotImplementedError
+
+    def send_to_queue(self, site: siteOrSiteList, message: MessageType) -> None:
+        """
+        Send a message to a specific site or list of sites.
         """
         raise NotImplementedError
 
     def broadcast_to_queue(
             self,
-            sites: Union[Any, List[Any]],
-            message: FLMessage,
-            exclude: Optional[List[Any]] = None
+            sites: List[str],
+            message: MessageType,
+            exclude: Optional[List[str]] = None
     ) -> None:
         """
-        Broadcast an FLMessage to one or multiple sites, optionally excluding some.
+        Broadcast a message to multiple sites, with optional exclusions.
         """
         raise NotImplementedError
-
 
     def push_to_peers(
             self,
             sender_id: str,
-            recipients: Union[Any, List[Any]],
+            recipients: siteOrSiteList,
             message_type: str,
             payload: Any,
             timeout: Optional[float] = None,
-    ) -> Dict[Any, Any]:
+            meta: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[List[str], List[MessageType]]:
         """
-        Send a message from sender to one or multiple recipients.
-        `recipients` can be a single recipient object or a list of recipients (IDs, objects, etc).
-        Returns a dict mapping recipient to their response or error.
+        Push a payload to recipients with a given message type.
+        Returns a tuple of (recipient list, response list).
         """
-        # Normalize to list internally if needed
         raise NotImplementedError
 
-
-    def receive_from_peers(self, recipients: Union[Any, List[Any]] = None) -> Any:
+    def receive_from_peers(self, recipients: siteOrSiteList = None) -> Any:
         """
         Receive updated state from one or multiple recipients.
         `recipients` can be a single recipient or a list. If None, receive from all.
-        Used in cyclic or split workflows.
         """
-        # Normalize to list internally if needed
         raise NotImplementedError

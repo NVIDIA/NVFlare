@@ -3,6 +3,7 @@
 from typing import List, Any
 
 from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer
+from nvflare.apis.fl_api.message.fl_message import MessageType
 from nvflare.apis.fl_api.registry.strategy_registry import register_strategy
 from nvflare.apis.fl_api.interfaces.strategy import Strategy
 
@@ -16,7 +17,7 @@ class CyclicStrategy(Strategy):
     def coordinate(
             self,
             selected_clients: List[str],
-            global_state: Any,
+            global_state: MessageType,
             round_number: int,
             communication: CommunicationLayer,
             **kwargs,
@@ -26,8 +27,9 @@ class CyclicStrategy(Strategy):
         next_client = self.schedule[next_index]
 
         # Send global_state to next client (not to current client)
-        communication.broadcast_state([next_client], global_state, exclude=[current_client])
+        #  blocking call
+        communication.broadcast_to_queue(sites=[next_client], message=global_state, exclude=[current_client])
 
         # Receive updated state from next client
-        update = communication.receive_state(next_client)
+        update = communication.collect_from_queue(next_client)
         return update

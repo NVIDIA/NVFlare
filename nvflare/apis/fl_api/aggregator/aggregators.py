@@ -1,11 +1,19 @@
-from typing import List, Any, Tuple
+from typing import List, Any, Tuple, Union, Optional
 
+from nvflare.apis.fl_api.aggregator.handlers.tensor_handler import TensorHandler
+from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.apis.fl_api.message.fl_message import FLMessage, MessageEnvelope
+from nvflare.apis.fl_api.interfaces.comm_layer import MessageType
+
+np, _ = optional_import("numpy")
+torch, _ = optional_import("torch")
+tf, _ = optional_import("tensorflow")
+
+
+#TODO: focused on sync aggregate for now, handle async incremental aggregate later.
 
 class Aggregator:
-    def aggregate(self, updates: List[Any]) -> Any:
-        raise NotImplementedError
-
-    def incremental_aggregate(self, global_state: Any, update: Any) -> Any:
+    def aggregate(self, updates: List[MessageType]) -> MessageType:
         raise NotImplementedError
 
 
@@ -13,60 +21,22 @@ class FuncAggregatorWrapper(Aggregator):
     def __init__(self, fn):
         self.fn = fn
 
-    def aggregate(self, updates: List[Any]) -> Any:
+    def aggregate(self, updates: List[MessageType]) -> MessageType:
         return self.fn(updates)
 
-    def incremental_aggregate(self, global_state: Any, update: Any) -> Any:
-        # Fallback to re-aggregating if incremental isn't supported
-        raise NotImplementedError("incremental_aggregate not supported by function-only aggregator")
-
-
-
-class DefaultAggregator:
-    def aggregate(self, updates: List[Tuple[Any, int]]) -> Any:
-        """
-        Aggregate a list of updates using weighted average.
-        Each update is a tuple: (value, weight), e.g., (model_params, num_samples)
-
-        Example:
-            updates = [(model1, 100), (model2, 200), ...]
-        """
-        total_weight = sum(weight for _, weight in updates)
+class DefaultAggregator(Aggregator):
+    def aggregate(self, updates: List[MessageType]) -> MessageType:
+        # Weighted average aggregation using TensorHandler
+        total_weight = sum(update.meta.get("weight", 1) for update in updates)
         if total_weight == 0:
             raise ValueError("Total weight is zero. Cannot aggregate.")
-
-        # Assume model weights are lists/arrays of floats or tensors
-        num_updates = len(updates)
-        averaged = None
-
-        for i, (update, weight) in enumerate(updates):
-            scale = weight / total_weight
-            if averaged is None:
-                averaged = self._scale(update, scale)
+        # Weighted scaling and summing
+        result = None
+        for update in updates:
+            scale = update.meta.get("weight", 1) / total_weight
+            scaled = TensorHandler.scale(update, scale)
+            if result is None:
+                result = scaled
             else:
-                averaged = self._add(averaged, self._scale(update, scale))
-
-        return averaged
-
-    def incremental_aggregate(self, global_state: Any, update: Tuple[Any, int]) -> Any:
-        """
-        Incrementally update global state using weighted average.
-
-        Args:
-            global_state: previous global weights
-            update: (new_client_update, weight)
-        """
-        new_update, weight = update
-        return self._average_pair(global_state, new_update, weight)
-
-    def _scale(self, model: Any, factor: float) -> Any:
-        # Assume model is a list of floats, numpy arrays, or torch tensors
-        return [param * factor for param in model]
-
-    def _add(self, a: Any, b: Any) -> Any:
-        return [x + y for x, y in zip(a, b)]
-
-    def _average_pair(self, prev: Any, new: Any, w_new: int) -> Any:
-        # Placeholder: assumes equal weight if w_prev is unknown
-        # Replace with better logic if you track running weights
-        return [(x + y) / 2 for x, y in zip(prev, new)]
+                result = TensorHandler.add(result, scaled)
+        return result
