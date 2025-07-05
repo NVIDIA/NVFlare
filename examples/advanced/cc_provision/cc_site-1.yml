@@ -1,4 +1,12 @@
 compute_env: onprem_cvm
+cc_cpu_mechanism: amd_sev_snp
+cc_gpu_mechanism: nvidia_cc
+role: client
+root_drive_size: 8
+secure_drive_size: 2
+data_source: /tmp/data
+nfs_mount: nfs-server.local:/data
+custom_code: /tmp/custom
 
 cc_issuers:
   - id: snp_authorizer
@@ -12,4 +20,3 @@ cc_attestation:
   check_frequency: 1800
   failure_action: stop_job
 
-cvm_image_name: nvflare_cvm
