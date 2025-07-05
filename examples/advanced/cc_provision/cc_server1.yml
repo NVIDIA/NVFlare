@@ -7,15 +7,8 @@ root_drive_size: 15
 secure_drive_size: 2
 data_source: /tmp/data
 
-# Can be any pip-installable version string (e.g., "2.6.0", "latest", Git URL, etc.)
-nvflare_version: "2.6.0"
-
-# NVFlare application code package to be pre-installed inside the CVM
-nvflare_package: application_code.zip
 allowed_ports:
   - 8002
-trustee_host: trustee-azsnptpm.eastus.cloudapp.azure.com
-trustee_port: 8999
 
 cc_issuers:
   - id: snp_authorizer
@@ -24,3 +17,6 @@ cc_issuers:
 
 cc_attestation:
   check_frequency: 300
+  failure_action: stop_job
+
+workload_image: nvflare_tar_server
