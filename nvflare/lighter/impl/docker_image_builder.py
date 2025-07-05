@@ -15,19 +15,17 @@
 import os
 import shutil
 
-import yaml
-
-from nvflare.lighter.constants import CtxKey, ProvFileName, TemplateSectionKey
+from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 
 class DockerImageBuilder(Builder):
     def __init__(
-            self,
-            base_dockerfile="Dockerfile",
-            nvflare="git+https://github.com/NVIDIA/NVFlare.git@main",
-            image_name="nvflare/nvflare"
-        ):
+        self,
+        base_dockerfile="Dockerfile",
+        nvflare="git+https://github.com/NVIDIA/NVFlare.git@main",
+        image_name="nvflare/nvflare",
+    ):
         """Build docker compose file."""
         self.base_dockerfile = base_dockerfile
         self.nvflare = nvflare
@@ -42,7 +40,7 @@ class DockerImageBuilder(Builder):
         to_be_copy = [ctx.get_kit_dir(entity), ctx.get_local_dir(entity), ctx.get_transfer_dir(entity)]
         relative_paths = [os.path.relpath(p, ctx.get_ws_dir(entity)) for p in to_be_copy]
         startup_script = self._determine_startup_script(entity, ctx)
-        shutil.copy(self.base_dockerfile, dockerfile_path) 
+        shutil.copy(self.base_dockerfile, dockerfile_path)
         with open(dockerfile_path, "a") as f:
             f.write(f"RUN pip install {self.nvflare}\n")
             for p in relative_paths:
@@ -66,4 +64,3 @@ class DockerImageBuilder(Builder):
         for p in project.get_all_participants():
             self._build_dockerfile(p, ctx)
             self._build_build_docker_sh(p, ctx)
-
