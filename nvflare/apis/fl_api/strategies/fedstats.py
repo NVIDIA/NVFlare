@@ -23,7 +23,7 @@ class FedStatsy(Strategy):
         # Inform peers of the target statistics for this round using MessageEnvelope.payload
         msg = MessageEnvelope()
         msg.payload = {"target_stats": stats}
-        communication.broadcast_to_queue(selected_clients, msg)
+        communication.broadcast_and_wait(selected_clients, msg)
         if round_number == 0:
             updates = communication.receive_from_peers(selected_clients)
             for stat in stats:
@@ -36,7 +36,7 @@ class FedStatsy(Strategy):
             if any(s in next_stats for s in ("variance", "std")):
                 mean_msg = MessageEnvelope()
                 mean_msg.payload = {"global_mean": self.global_mean}
-                communication.broadcast_to_queue(selected_clients, mean_msg)
+                communication.broadcast_and_wait(selected_clients, mean_msg)
             return results
         elif round_number == 1:
             # Instruct clients to use the global mean (already sent) for their local computation

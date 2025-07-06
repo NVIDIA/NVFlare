@@ -28,7 +28,7 @@ class CyclicStrategy(Strategy):
 
         # Send global_state to next client (not to current client)
         #  blocking call
-        communication.broadcast_to_queue(sites=[next_client], message=global_state, exclude=[current_client])
+        communication.broadcast_and_wait(sites=[next_client], message=global_state, exclude=[current_client])
 
         # Receive updated state from next client
         update = communication.collect_from_queue(next_client)

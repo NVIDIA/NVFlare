@@ -42,7 +42,7 @@ class FedAvg(Strategy):
         """
         # Directly broadcast the MessageType global_state
         # blocking call
-        communication.broadcast_to_queue(selected_clients, global_state)
+        updates = communication.broadcast_and_wait(selected_clients, global_state)
 
-        updates = communication.collect_from_queue(selected_clients)
+
         return self.average(updates)

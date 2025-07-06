@@ -16,7 +16,7 @@ class Split(Strategy):
         client_id = selected_clients[0]
 
         # Send the global state (e.g., server-side model) to the client
-        communication.broadcast_to_queue([client_id], global_state)
+        communication.broadcast_and_wait([client_id], global_state)
 
         # Receive the activation from the client
         activation = communication.collect_from_queue(client_id)

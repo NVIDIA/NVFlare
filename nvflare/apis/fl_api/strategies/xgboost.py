@@ -22,7 +22,7 @@ class FedXGBoost(Strategy):
             # Broadcast the current global booster to all clients
             booster_msg = MessageEnvelope()
             booster_msg.payload = {"global_booster": global_state}
-            communication.broadcast_to_queue(selected_clients, booster_msg)
+            communication.broadcast_and_wait(selected_clients, booster_msg)
             # Collect updates (e.g., booster weights, gradients, etc.) from all clients
             updates = communication.receive_from_peers(selected_clients)
             # Aggregate updates (this could be tree averaging, federated gradient boosting, etc.)
