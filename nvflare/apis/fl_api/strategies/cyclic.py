@@ -1,38 +1,77 @@
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict
 from pydantic import Field
+
+from nvflare.apis.fl_api.communication.wf_comm_client_layers import MessageType
 from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer
 from nvflare.apis.fl_api.interfaces.strategy import Strategy, StrategyConfig
+from nvflare.app_common.abstract.fl_model import FLModel
+
 
 class CyclicConfig(StrategyConfig):
     schedule: List[str] = Field(..., description="List of client names in the cyclic schedule.")
     num_rounds: int = Field(10, description="Number of rounds to run the cyclic strategy.")
     start_round: int = Field(1, description="Starting round index.")
 
+
 class Cyclic(Strategy):
     def __init__(self, strategy_config: Optional[CyclicConfig] = None, **kwargs):
         config = strategy_config or CyclicConfig(**kwargs)
         super().__init__(strategy_config=config)
         self.schedule = config.schedule
-        self.num_rounds = config.num_rounds
 
     def coordinate(
             self,
             selected_clients: List[str],
             **kwargs,
     ):
-        current_round = self.strategy_config.start_round
-        load_model = self.load_model()
+        print("Start Cyclic.")
 
-        
+        model: FLModel = self.load_model()
+        start_round = self.strategy_config.start_round
+        total_rounds = self.strategy_config.num_rounds
 
-        current_index = current_round % len(self.schedule)
-        current_client = self.schedule[current_index]
+        for r in range(start_round, start_round + total_rounds):
+            print(f"Round {r} started.")
+            model.current_round = r
 
-        next_index = (current_round + 1) % len(self.schedule)
-        next_client = self.schedule[next_index]
+            clients = self.sample_clients(selected_clients)
+            result : Optional[FLModel] = None
+            for client in clients:
+                meta = {"round": r}
+                result: FLModel = self.send_model_and_wait(targets=[client], fl_model=model, meta = meta)[0]
 
-        self.communicator.broadcast_and_wait(sites=[next_client], message=global_state)
+            if result:
+                self.save_model(result)
+            else:
+                raise RuntimeError("result model is None")
 
-        # Receive updated state from next client
-        update = communicator.collect_from_queue(next_client)
-        return update
+        print("Finished Cyclic.")
+
+    def sample_clients(self, clients: List[str]) -> List[str]:
+        if self.strategy_config.sample_clients_fn:
+            return self.strategy_config.sample_clients_fn(clients)
+        else:
+            return clients
+
+    def load_model(self) -> Any:
+        """Load initial model. Should be implemented by user or subclass."""
+        if self.strategy_config.load_model_fn:
+            return self.strategy_config.load_model_fn()
+
+    def save_model(self, model: FLModel) -> None:
+        if self.strategy_config.save_model_fn:
+            self.strategy_config.save_model_fn(model)
+
+    def send_model_and_wait(self, targets: List[str], fl_model: FLModel, meta: Dict ) -> Dict[str, FLModel]:
+        if not meta:
+            meta = {}
+        """Send model to clients and wait for responses."""
+        fl_model.context = self.strategy_config.dict()
+        fl_model.meta.update(meta)
+        message: Dict[str, MessageType] = self.communicator.broadcast_and_wait(sites=targets, message=fl_model)
+        results = {}
+        for site, response in message.items():
+            if not isinstance(response, FLModel):
+                raise RuntimeError(f"Expected FLModel, got {type(response)}")
+            results[site] = response
+        return results

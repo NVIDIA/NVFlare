@@ -3,6 +3,7 @@ from abc import ABC
 from typing import List, Any, Optional, Dict
 from pydantic import BaseModel, Field
 
+from nvflare.apis.fl_api.communication.wf_comm_client_layers import MessageType
 from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer, SimulatedCommLayer
 
 
@@ -47,9 +48,8 @@ class Strategy(ABC):
             self,
             selected_clients: List[str],
             **kwargs,
-    ):
+    ) -> Optional[MessageType]:
         pass
-
 
     def finalize(self):
         self.communicator = None

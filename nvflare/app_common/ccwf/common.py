@@ -93,6 +93,11 @@ class Constant:
     PROP_KEY_TRAIN_CLIENTS = "cwf.train_clients"
 
 
+class StrategyConstants:
+    INPUT = "strategy_ins"
+    OUTPUT = "strategy_output"
+
+
 class ModelType:
 
     LOCAL = "local"

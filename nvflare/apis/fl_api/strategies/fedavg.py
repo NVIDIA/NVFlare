@@ -24,6 +24,7 @@ class FedAvgConfig(StrategyConfig):
     save_model_fn: Optional[Callable[[Any], None]] = Field(None, description="Function to save model.")
     sample_clients_fn: Optional[Callable[[int], List[str]]] = Field(None, description="Function to sample clients.")
 
+
 class FedAvg(Strategy):
     def __init__(
             self,
@@ -59,7 +60,6 @@ class FedAvg(Strategy):
         if self.strategy_config.load_model_fn:
             return self.strategy_config.load_model_fn()
 
-
     def save_model(self, model: FLModel) -> None:
         if self.strategy_config.save_model_fn:
             self.strategy_config.save_model_fn(model)
@@ -80,7 +80,7 @@ class FedAvg(Strategy):
             self,
             selected_clients: List[str],
             **kwargs,
-    ) :
+    ) -> Any:
         """
         Main coordination loop for FedAvg.
         """

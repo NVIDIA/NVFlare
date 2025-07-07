@@ -13,31 +13,31 @@ from nvflare.apis.fl_api.message.fl_message import FLMessage, MessageEnvelope
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.controller_spec import Task, ClientTask
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.ccwf.common import StrategyConstants
+
 
 class ServerCommLayer(CommunicationLayer, FLComponent):
     """
     Communication layer for FL Server using Controller (delegates to controller.communicator).
     Implements the CommunicationLayer interface.
     """
-    def __init__(self, controller: Controller, fl_ctx: FLContext):
+
+    def __init__(self, communicator: WFCommSpec, fl_ctx: FLContext):
         super().__init__()
 
-        if controller is None:
-            raise ValueError("controller must not be None.")
+        if communicator is None:
+            raise ValueError("communicator must not be None.")
         if fl_ctx is None:
             raise ValueError("fl_ctx must not be None.")
-        if not hasattr(controller, 'communicator') or controller.communicator is None:
-            raise ValueError("controller.communicator must be set and not None.")
 
-        self.controller: Controller = controller
+        self.communicator: WFCommSpec = communicator
         self.fl_ctx: FLContext = fl_ctx
         self.response = {}
         self.errors = {}
 
-
     @property
     def comm(self) -> WFCommSpec:
-        return self.controller.communicator
+        return self.communicator
 
     def broadcast_and_wait(self, sites: List[str], message: MessageType) -> Dict[str, MessageType]:
         """
@@ -48,10 +48,10 @@ class ServerCommLayer(CommunicationLayer, FLComponent):
         """
         if isinstance(message, FLMessage):
             task_name = message.context.get("task_name")
-            min_responses=message.context.get("min_responses", len(sites))
+            min_responses = message.context.get("min_responses", len(sites))
             if not task_name:
                 raise ValueError("FLMessage.context must contain 'task_name'.")
-            shareable = Shareable(message.__dict__)
+            shareable = Shareable({"ins": message.__dict__})
         elif isinstance(message, MessageEnvelope):
             task_name = message.meta.get("task_name")
             if not task_name:
@@ -69,7 +69,7 @@ class ServerCommLayer(CommunicationLayer, FLComponent):
 
             message.receiver = sites
             min_responses = message.meta.get("min_responses", len(sites))
-            shareable = Shareable(message.__dict__)
+            shareable = Shareable({StrategyConstants.INPUT: message.__dict__})
         else:
             raise TypeError("Message must be FLMessage or MessageEnvelope.")
 
@@ -79,7 +79,7 @@ class ServerCommLayer(CommunicationLayer, FLComponent):
             result_received_cb=self.result_received_cb,
         )
 
-        self.controller.broadcast_and_wait(
+        self.communicator.broadcast_and_wait(
             task=task,
             fl_ctx=self.fl_ctx,
             targets=sites,
@@ -95,7 +95,9 @@ class ServerCommLayer(CommunicationLayer, FLComponent):
                 self._wait_for_result(min_responses)
                 return self.response
 
-    def push_to_peers(self, sender_id: str, recipients: siteOrSiteList, message_type: str, payload: Any, timeout: Optional[float] = None, meta: Optional[Dict[str, Any]] = None) -> Tuple[List[str], List[MessageType]]:
+    def push_to_peers(self, sender_id: str, recipients: siteOrSiteList, message_type: str, payload: Any,
+                      timeout: Optional[float] = None, meta: Optional[Dict[str, Any]] = None) -> Tuple[
+        List[str], List[MessageType]]:
         # return self.comm.push_to_peers(sender_id, recipients, message_type, payload, timeout, meta)
         raise NotImplementedError
 
@@ -110,14 +112,14 @@ class ServerCommLayer(CommunicationLayer, FLComponent):
             self.log_info(fl_ctx, f"Received result entries from client:{client_name}, " f"for task {task_name}")
             dxo: DXO = from_shareable(result)
             dx = dxo.data
-            # dx will be either MesasgeEnvelope (FLMessage or MessageEnvelope)
-            self.response.update({client_name: dx})
+            message = dx.get(StrategyConstants.OUTPUT, None)
+            # message will be either MessageEnvelope (FLMessage or MessageEnvelope)
+            self.response.update({client_name: message})
         else:
             self.errors.update({client_name: rc})
 
         # Cleanup task result
         client_task.result = None
-
 
     def _wait_for_result(self, min_responses, wait_timeout: int = 5):
         response_count = len(self.response)
