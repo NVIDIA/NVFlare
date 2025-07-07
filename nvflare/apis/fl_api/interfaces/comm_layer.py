@@ -25,12 +25,8 @@ class CommunicationLayer(ABC):
 
     def push_to_peers(
             self,
-            sender_id: str,
             recipients: siteOrSiteList,
-            message_type: str,
-            payload: Any,
-            timeout: Optional[float] = None,
-            meta: Optional[Dict[str, Any]] = None,
+            message: MessageType
     ) -> Tuple[List[str], List[MessageType]]:
         """
         Push a payload to recipients with a given message type.

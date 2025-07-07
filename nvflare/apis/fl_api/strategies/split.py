@@ -8,9 +8,6 @@ class Split(Strategy):
     def coordinate(
             self,
             selected_clients: List[str],
-            global_state: Any,
-            round_number: int,
-            communicator: CommunicationLayer,
             **kwargs,
     ) -> Any:
         client_id = selected_clients[0]

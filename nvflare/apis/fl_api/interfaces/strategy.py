@@ -32,7 +32,7 @@ class Strategy(ABC):
                  strategy_config: Optional[StrategyConfig] = None,
                  **kwargs):
         self.strategy_config = strategy_config or StrategyConfig(**kwargs)
-        self.communicator: Optional[CommunicationLayer] = SimulatedCommLayer()
+        self.communicator: Optional[CommunicationLayer] = None
 
     # Only put unknown/extra fields into extra
         for k, v in kwargs.items():
@@ -40,8 +40,10 @@ class Strategy(ABC):
                 self.strategy_config.extra[k] = v
 
     def initialize(self, communicator: Optional[CommunicationLayer] = None, **kwargs):
-        if communicator is not None:
-            self.communicator = communicator
+            if communicator:
+                self.communicator = communicator
+            else:
+                self.communicator = SimulatedCommLayer()
 
 
     def coordinate(

@@ -29,7 +29,6 @@ class FedAvg(Strategy):
     def __init__(
             self,
             strategy_config: Optional[FedAvgConfig] = None,
-            communicator: Optional[CommunicationLayer] = None,
             **kwargs
     ):
         """
@@ -41,7 +40,7 @@ class FedAvg(Strategy):
         """
 
         config = strategy_config or FedAvgConfig(**kwargs)
-        super().__init__(strategy_config=config, communicator=communicator)
+        super().__init__(strategy_config=config)
 
         if config.aggregator:
             self.aggregator = config.aggregator
