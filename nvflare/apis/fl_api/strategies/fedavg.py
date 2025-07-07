@@ -7,6 +7,10 @@ from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer, Messag
 class FedAvg(Strategy):
     def __init__(
             self,
+            num_clients: int = 3,
+            num_rounds: int = 5,
+            start_round: int = 0,
+            stop_cond: str = None,
             aggregator: Optional[Aggregator] = None,
             aggregation_fn: Optional[Callable[[List[MessageType]], MessageType]] = None,
             **kwargs

@@ -16,23 +16,3 @@ class Strategy(ABC):
             **kwargs,
     ) -> Any:
         pass
-
-    async def coordinate_async(
-            self,
-            selected_clients: List[str],
-            global_state: Any,
-            round_number: int,
-            communication: "CommunicationLayer",
-            **kwargs,
-    ) -> Any:
-        """
-        Async coordination for streaming updates.
-        """
-    pass
-
-    @classmethod
-    def from_preset(cls, name: str, **kwargs) -> "Strategy":
-        strategy_cls = _STRATEGY_REGISTRY.get(name)
-        if not strategy_cls:
-            raise ValueError(f"Unknown strategy preset: {name}")
-        return strategy_cls(**kwargs)
