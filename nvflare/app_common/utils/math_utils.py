@@ -23,7 +23,7 @@ operator_mapping = {
 }
 
 
-def parse_compare_criteria(compare_expr: Optional[str] = None) -> Tuple[str, float, Callable]:
+def parse_compare_criteria(compare_expr: Optional[str] = None) -> Optional[Tuple[str, float, Callable]]:
     """Parses the compare expression into individual component.
 
         The compare expression is in the format of string literal : "<key> <op> <value>"
@@ -39,6 +39,9 @@ def parse_compare_criteria(compare_expr: Optional[str] = None) -> Tuple[str, flo
     Returns:
         A Tuple of (key, value, operator)
     """
+    if compare_expr is None:
+        return None
+
     tokens = compare_expr.split(" ")
     if len(tokens) != 3:
         raise ValueError(

@@ -15,16 +15,16 @@ class FedXGBoost(Strategy):
             selected_clients: List[str],
             global_state: Any,
             round_number: int,
-            communication: CommunicationLayer,
+            communicator: CommunicationLayer,
             **kwargs,
     ) -> Any:
         for r in range(self.num_rounds):
             # Broadcast the current global booster to all clients
             booster_msg = MessageEnvelope()
             booster_msg.payload = {"global_booster": global_state}
-            communication.broadcast_and_wait(selected_clients, booster_msg)
+            communicator.broadcast_and_wait(selected_clients, booster_msg)
             # Collect updates (e.g., booster weights, gradients, etc.) from all clients
-            updates = communication.receive_from_peers(selected_clients)
+            updates = communicator.receive_from_peers(selected_clients)
             # Aggregate updates (this could be tree averaging, federated gradient boosting, etc.)
             result = self.aggregate(updates, round_number=round_number, **kwargs)
             global_state = result.payload["global_booster"]

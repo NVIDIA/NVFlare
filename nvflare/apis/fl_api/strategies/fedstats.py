@@ -16,16 +16,16 @@ class FedStatsy(Strategy):
         self.min_clients = min_clients
         self.global_mean = None  # For round 1 stats
 
-    def coordinate(self, selected_clients, global_state, round_number, communication, **kwargs):
+    def coordinate(self, selected_clients, global_state, round_number, communicator, **kwargs):
         # Accept a list of stats to compute in this round
         stats = kwargs.get("stats", ["mean", "sum", "count", "min", "max", "histogram", "quantile"])
         results = {}
         # Inform peers of the target statistics for this round using MessageEnvelope.payload
         msg = MessageEnvelope()
         msg.payload = {"target_stats": stats}
-        communication.broadcast_and_wait(selected_clients, msg)
+        communicator.broadcast_and_wait(selected_clients, msg)
         if round_number == 0:
-            updates = communication.receive_from_peers(selected_clients)
+            updates = communicator.receive_from_peers(selected_clients)
             for stat in stats:
                 result_msg = self.aggregate(updates, stat, round_number=0, **kwargs)
                 results[stat] = result_msg
@@ -36,11 +36,11 @@ class FedStatsy(Strategy):
             if any(s in next_stats for s in ("variance", "std")):
                 mean_msg = MessageEnvelope()
                 mean_msg.payload = {"global_mean": self.global_mean}
-                communication.broadcast_and_wait(selected_clients, mean_msg)
+                communicator.broadcast_and_wait(selected_clients, mean_msg)
             return results
         elif round_number == 1:
             # Instruct clients to use the global mean (already sent) for their local computation
-            updates = communication.receive_from_peers(selected_clients)
+            updates = communicator.receive_from_peers(selected_clients)
             for stat in stats:
                 results[stat] = self.aggregate(updates, stat, round_number=1, **kwargs)
             return results

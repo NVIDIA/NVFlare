@@ -2,8 +2,7 @@ from typing import List, Any, Tuple, Union, Optional
 
 from nvflare.apis.fl_api.aggregator.handlers.tensor_handler import TensorHandler
 from nvflare.fuel.utils.import_utils import optional_import
-from nvflare.apis.fl_api.message.fl_message import FLMessage, MessageEnvelope
-from nvflare.apis.fl_api.interfaces.comm_layer import MessageType
+from nvflare.apis.fl_api.message.message_type import MessageType
 
 np, _ = optional_import("numpy")
 torch, _ = optional_import("torch")
@@ -27,6 +26,7 @@ class FuncAggregatorWrapper(Aggregator):
 class DefaultAggregator(Aggregator):
     def aggregate(self, updates: List[MessageType]) -> MessageType:
         # Weighted average aggregation using TensorHandler
+
         total_weight = sum(update.meta.get("weight", 1) for update in updates)
         if total_weight == 0:
             raise ValueError("Total weight is zero. Cannot aggregate.")

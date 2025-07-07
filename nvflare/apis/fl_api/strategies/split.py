@@ -10,20 +10,20 @@ class Split(Strategy):
             selected_clients: List[str],
             global_state: Any,
             round_number: int,
-            communication: CommunicationLayer,
+            communicator: CommunicationLayer,
             **kwargs,
     ) -> Any:
         client_id = selected_clients[0]
 
         # Send the global state (e.g., server-side model) to the client
-        communication.broadcast_and_wait([client_id], global_state)
+        communicator.broadcast_and_wait([client_id], global_state)
 
         # Receive the activation from the client
-        activation = communication.collect_from_queue(client_id)
+        activation = communicator.collect_from_queue(client_id)
         server_output = self.forward_on_server(activation)
 
         # Send server output back to the client
-        communication.push_to_peers(
+        communicator.push_to_peers(
             sender_id="server",
             recipients=[client_id],
             message_type="server_output",
@@ -31,7 +31,7 @@ class Split(Strategy):
         )
 
         # Receive gradients from the client
-        gradients = communication.collect_from_queue(client_id)
+        gradients = communicator.collect_from_queue(client_id)
         return self.backward_on_server(gradients)
 
     def forward_on_server(self, activation):

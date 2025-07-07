@@ -1,35 +1,38 @@
-
-
-from typing import List, Any
-
+from typing import List, Any, Optional
+from pydantic import Field
 from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer
-from nvflare.apis.fl_api.message.fl_message import MessageType
-from nvflare.apis.fl_api.registry.strategy_registry import register_strategy
-from nvflare.apis.fl_api.interfaces.strategy import Strategy
+from nvflare.apis.fl_api.interfaces.strategy import Strategy, StrategyConfig
 
+class CyclicConfig(StrategyConfig):
+    schedule: List[str] = Field(..., description="List of client names in the cyclic schedule.")
+    num_rounds: int = Field(10, description="Number of rounds to run the cyclic strategy.")
+    start_round: int = Field(1, description="Starting round index.")
 
-@register_strategy("cyclic")
-class CyclicStrategy(Strategy):
-    def __init__(self, schedule: List[str], **kwargs):
-        super().__init__(**kwargs)
-        self.schedule = schedule
+class Cyclic(Strategy):
+    def __init__(self, strategy_config: Optional[CyclicConfig] = None, **kwargs):
+        config = strategy_config or CyclicConfig(**kwargs)
+        super().__init__(strategy_config=config)
+        self.schedule = config.schedule
+        self.num_rounds = config.num_rounds
 
     def coordinate(
             self,
             selected_clients: List[str],
-            global_state: MessageType,
-            round_number: int,
-            communication: CommunicationLayer,
             **kwargs,
-    ) -> Any:
-        current_client = self.schedule[round_number % len(self.schedule)]
-        next_index = (round_number + 1) % len(self.schedule)
+    ):
+        current_round = self.strategy_config.start_round
+        load_model = self.load_model()
+
+        
+
+        current_index = current_round % len(self.schedule)
+        current_client = self.schedule[current_index]
+
+        next_index = (current_round + 1) % len(self.schedule)
         next_client = self.schedule[next_index]
 
-        # Send global_state to next client (not to current client)
-        #  blocking call
-        communication.broadcast_and_wait(sites=[next_client], message=global_state, exclude=[current_client])
+        self.communicator.broadcast_and_wait(sites=[next_client], message=global_state)
 
         # Receive updated state from next client
-        update = communication.collect_from_queue(next_client)
+        update = communicator.collect_from_queue(next_client)
         return update

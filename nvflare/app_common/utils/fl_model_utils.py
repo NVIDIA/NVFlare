@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
@@ -238,3 +238,14 @@ class FLModelUtils:
         else:
             raise RuntimeError(f"params_type {model_update.params_type} of `model_update` not supported!")
         return model
+
+    @staticmethod
+    def is_curr_model_better(best_model: FLModel, curr_model: FLModel, target_metric: str, op_fn: Callable) -> bool:
+        curr_metrics = curr_model.metrics
+        if curr_metrics is None:
+            return False
+        if target_metric not in curr_metrics:
+            return False
+
+        best_metrics = best_model.metrics
+        return op_fn(curr_metrics.get(target_metric), best_metrics.get(target_metric))

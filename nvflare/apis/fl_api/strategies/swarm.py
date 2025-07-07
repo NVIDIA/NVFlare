@@ -7,17 +7,13 @@ from nvflare.apis.fl_api.strategies.fedavg import FedAvg
 class Swarm(FedAvg):
     def coordinate(
         self,
-        selected_clients: List[str],
-        global_state: Any,
-        round_number: int,
-        communication: CommunicationLayer,
         **kwargs,
     ) -> Any:
         aggregator_node = selected_clients[0]
         peer_ids = [c for c in selected_clients if c != aggregator_node]
 
         # Aggregator node sends model to peers using the new interface
-        communication.push_to_peers(
+        communicator.push_to_peers(
             sender_id=aggregator_node,
             recipients=peer_ids,
             message_type="global_state",
@@ -25,7 +21,7 @@ class Swarm(FedAvg):
         )
 
         # Peers send updates back to the aggregator node
-        updates = communication.receive_from_peers(peer_ids)
+        updates = communicator.receive_from_peers(peer_ids)
         # Aggregate using the new aggregator
         aggregated = self.aggregator.aggregate(updates)
         return aggregated
