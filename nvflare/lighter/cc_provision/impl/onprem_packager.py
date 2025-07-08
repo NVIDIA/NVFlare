@@ -62,6 +62,7 @@ class OnPremPackager(Packager):
     def _build_cc_image(self, cc_config_yaml: str, site_name: str, startup_folder_path: str):
         """Build CC image for the site."""
         print(f"calling {self.build_image_cmd=} {cc_config_yaml=} {site_name=} {startup_folder_path=}")
+        cc_config_yaml = os.path.abspath(cc_config_yaml)
         command = [self.build_image_cmd, cc_config_yaml, site_name, startup_folder_path]
         run_command(command)
 
