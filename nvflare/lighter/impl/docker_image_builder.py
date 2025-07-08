@@ -30,7 +30,7 @@ class DockerImageBuilder(Builder):
 
         Args:
             base_dockerfile (str): Path to the base Dockerfile to use as a starting point.
-            nvflare_url (str): URL or version string compatible with pip (e.g., a version or 
+            nvflare_url (str): URL or version string compatible with pip (e.g., a version or
                 "git+https://github.com/NVIDIA/NVFlare.git@main").
             image_name (str): Name of the Docker image to be built.
         """
