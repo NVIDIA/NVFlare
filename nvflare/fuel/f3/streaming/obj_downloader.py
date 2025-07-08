@@ -290,14 +290,33 @@ class ObjDownloader:
         return ref.rid
 
     @classmethod
-    def delete_transaction(cls, transaction_id: str):
+    def delete_transaction(cls, transaction_id: str, call_cb=False):
         with cls._tx_lock:
             tx = cls._tx_table.get(transaction_id)
             if tx:
-                cls._delete_tx(tx)
+                cls._delete_tx(tx, call_cb)
 
     @classmethod
-    def _delete_tx(cls, tx: _Transaction):
+    def shutdown(cls):
+        """Shutdown and clean up resources.
+
+        Returns: None
+
+        """
+        with cls._tx_lock:
+            tx_list = list(cls._tx_table.values())
+            if tx_list:
+                for tx in tx_list:
+                    cls._delete_tx(tx, True)
+
+    @classmethod
+    def _delete_tx(cls, tx: _Transaction, call_cb=False):
+        if call_cb:
+            try:
+                tx.timed_out()
+            except Exception as ex:
+                cls._logger.error(f"exception from timeout_cb: {secure_format_exception(ex)}")
+
         cls._tx_table.pop(tx.tid, None)
 
         # remove all refs
@@ -362,11 +381,7 @@ class ObjDownloader:
 
                 if expired_tx:
                     for tx in expired_tx:
-                        cls._delete_tx(tx)
-                        try:
-                            tx.timed_out()
-                        except Exception as ex:
-                            cls._logger.error(f"exception from timeout_cb: {secure_format_exception(ex)}")
+                        cls._delete_tx(tx, True)
             time.sleep(5.0)
 
 

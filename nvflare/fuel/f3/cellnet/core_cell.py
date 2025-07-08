@@ -50,6 +50,7 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
@@ -163,7 +164,7 @@ class _BulkSender:
         if self.secure:
             message.add_headers({MessageHeaderKey.SECURE: True})
 
-        encode_payload(message)
+        encode_payload(message, fobs_ctx=self.cell.get_fobs_context())
         self.cell.encrypt_payload(message)
 
         with self.lock:
@@ -504,6 +505,23 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.credential_manager = CredentialManager(self.endpoint)
         self.cert_ex = CertificateExchanger(self, self.credential_manager)
+        self.fobs_ctx = {FOBSContextKey.CORE_CELL: self}
+
+    def update_fobs_context(self, props: dict):
+        if not isinstance(props, dict):
+            raise ValueError(f"props must be dict but got {type(props)}")
+        self.fobs_ctx.update(props)
+
+    def get_fobs_context(self, props: dict = None):
+        """Return a new copy of the fobs context
+
+        Returns: a new copy of the fobs context
+
+        """
+        ctx = copy.copy(self.fobs_ctx)
+        if props:
+            ctx.update(props)
+        return ctx
 
     def log_error(self, log_text: str, msg: Union[None, Message], log_except=False):
         log_messaging_error(
@@ -1141,7 +1159,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
     def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
         err = ""
         try:
-            encode_payload(message)
+            encode_payload(message, fobs_ctx=self.get_fobs_context())
             self.encrypt_payload(message)
 
             message.set_header(MessageHeaderKey.SEND_TIME, time.time())

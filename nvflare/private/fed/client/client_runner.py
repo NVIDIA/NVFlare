@@ -14,6 +14,7 @@
 import fnmatch
 import threading
 import time
+import uuid
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -27,7 +28,9 @@ from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.fuel.data_event.data_bus import DataBus, dynamic_topic
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from nvflare.private.fed.tbi import TBI
@@ -555,6 +558,9 @@ class ClientRunner(TBI):
 
     def _try_send_result_once(self, result: Shareable, task_id: str, fl_ctx: FLContext):
         # wait until server is ready to receive
+        msg_root_id = str(uuid.uuid4())
+        result.set_header(ReservedHeaderKey.MSG_ROOT_ID, msg_root_id)
+
         while True:
             if self.run_abort_signal.triggered:
                 return _TASK_CHECK_RESULT_TASK_GONE
@@ -573,6 +579,8 @@ class ClientRunner(TBI):
         reply_sent = self.engine.send_task_result(result, fl_ctx, timeout=self.submit_task_result_timeout)
         if reply_sent:
             self.log_info(fl_ctx, f"task result sent to {self.parent_target}")
+            topic = dynamic_topic(ReservedTopic.MSG_ROOT_DELETED, msg_root_id)
+            DataBus().publish([topic], datum=msg_root_id)
             return _TASK_CHECK_RESULT_OK
         else:
             self.log_error(fl_ctx, f"failed to send task result to {self.parent_target} - will try again")
@@ -640,6 +648,8 @@ class ClientRunner(TBI):
             self.end_run_events_sequence()
             ReliableMessage.shutdown()
             self.engine.shutdown_streamer()
+            FileDownloader.shutdown()
+
             with self.task_lock:
                 self.running_tasks = {}
 

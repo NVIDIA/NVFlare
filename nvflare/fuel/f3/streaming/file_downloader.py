@@ -17,9 +17,8 @@ import uuid
 from typing import Any, List, Optional
 
 from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.streaming.obj_downloader import Consumer, ObjDownloader, Producer, ProduceRC, download_object
 from nvflare.fuel.utils.validation_utils import check_positive_int
-
-from .obj_downloader import Consumer, ObjDownloader, Producer, ProduceRC, download_object
 
 DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024
 
@@ -78,7 +77,7 @@ class _ChunkProducer(Producer):
         return ProduceRC.OK, chunk, {_StateKey.RECEIVED_BYTES: received_bytes + len(chunk)}
 
 
-class FileDownloader:
+class FileDownloader(ObjDownloader):
 
     @classmethod
     def new_transaction(

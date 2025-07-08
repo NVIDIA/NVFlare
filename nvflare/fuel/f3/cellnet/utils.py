@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import traceback
 from typing import Any
 
 import nvflare.fuel.utils.fobs as fobs
@@ -90,7 +91,7 @@ def format_log_message(fqcn: str, message: Message, log: str) -> str:
     return " ".join(context) + f"] {log}"
 
 
-def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING) -> int:
+def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING, fobs_ctx: dict = None) -> int:
     """Encode the payload of the specified message.
 
     Args:
@@ -102,10 +103,14 @@ def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
         - If the payload is None, encoding scheme is NONE
         - If the payload data type is like bytes, encoding scheme is BYTES
         - Otherwise, encoding scheme is FOBS, and the payload is serialized with FOBS.
+        fobs_ctx: contextual info for decomposers
 
     Returns: the encoded payload size.
 
     """
+    if isinstance(fobs_ctx, dict):
+        fobs_ctx[fobs.FOBSContextKey.MESSAGE] = message
+
     encoding = message.get_header(encoding_key)
     if not encoding:
         if message.payload is None:
@@ -114,7 +119,7 @@ def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
             encoding = Encoding.BYTES
         else:
             encoding = Encoding.FOBS
-            message.payload = fobs.dumps(message.payload, buffer_list=True)
+            message.payload = fobs.dumps(message.payload, buffer_list=True, fobs_ctx=fobs_ctx)
         message.set_header(encoding_key, encoding)
 
     size = buffer_len(message.payload)
@@ -122,7 +127,10 @@ def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
     return size
 
 
-def decode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING):
+def decode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCODING, fobs_ctx: dict = None):
+    if isinstance(fobs_ctx, dict):
+        fobs_ctx[fobs.FOBSContextKey.MESSAGE] = message
+
     size = buffer_len(message.payload)
     message.set_header(MessageHeaderKey.PAYLOAD_LEN, size)
 
@@ -131,7 +139,7 @@ def decode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
         return
 
     if encoding == Encoding.FOBS:
-        message.payload = fobs.loads(message.payload)
+        message.payload = fobs.loads(message.payload, fobs_ctx=fobs_ctx)
     elif encoding == Encoding.NONE:
         message.payload = None
     else:

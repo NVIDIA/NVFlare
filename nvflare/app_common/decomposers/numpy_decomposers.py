@@ -14,11 +14,11 @@
 """Decomposers for types from app_common and Machine Learning libraries."""
 import os
 from abc import ABC
-from io import BytesIO
 from typing import Any
 
 import numpy as np
 
+from nvflare.app_common.decomposers.via_file import ViaFileDecomposer
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
 
@@ -53,18 +53,20 @@ class Int32ScalarDecomposer(NumpyScalarDecomposer):
         return np.int32
 
 
-class NumpyArrayDecomposer(fobs.Decomposer):
+class NumpyArrayDecomposer(ViaFileDecomposer):
     def supported_type(self):
         return np.ndarray
 
-    def decompose(self, target: np.ndarray, manager: DatumManager = None) -> Any:
-        stream = BytesIO()
-        np.save(stream, target, allow_pickle=False)
-        return stream.getvalue()
+    def dump_to_file(self, target: Any, path: str):
+        print(f"NP: dumping {target} to file {path}")
+        try:
+            np.save(path, target, allow_pickle=False)
+            return path + ".npy"
+        except Exception as e:
+            print(f"exception dumping NP to file: {e}")
 
-    def recompose(self, data: Any, manager: DatumManager = None) -> np.ndarray:
-        stream = BytesIO(data)
-        return np.load(stream, allow_pickle=False)
+    def load_from_file(self, path: str) -> Any:
+        return np.load(path, allow_pickle=False)
 
 
 def register():

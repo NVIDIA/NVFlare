@@ -85,7 +85,7 @@ class DatumRef:
 
 
 class DatumManager:
-    def __init__(self, threshold=None):
+    def __init__(self, threshold=None, fobs_ctx: dict = None):
         if not threshold:
             threshold = TEN_MEGA
 
@@ -97,11 +97,15 @@ class DatumManager:
 
         self.threshold = threshold
         self.datums: Dict[str, Datum] = {}
+        self.fobs_ctx = fobs_ctx
 
         # some decomposers (e.g. Shareable, Learnable, etc.) make a shallow copy of the original object before
         # serialization. After serialization, only the values in the copy are restored. We need to keep a ref
         # from the copy to the original object so that values in the original are also restored.
         self.obj_copies = {}  # copy id => original object
+
+    def get_fobs_context(self):
+        return self.fobs_ctx
 
     def register_copy(self, obj_copy, original_obj):
         """Register the object_copy => original object

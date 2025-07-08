@@ -41,3 +41,12 @@ loads = load_from_bytes
 dumps = dump_to_bytes
 loadf = load_from_file
 dumpf = dump_to_file
+
+
+class FOBSContextKey:
+    CELL = "cell"
+    CORE_CELL = "core_cell"
+    MESSAGE = "message"
+    DOWNLOAD_TX_ID = "download_tx_id"
+    ABORT_SIGNAL = "abort_signal"
+    DOWNLOAD_REQ_TIMEOUT = "download_req_timeout"
