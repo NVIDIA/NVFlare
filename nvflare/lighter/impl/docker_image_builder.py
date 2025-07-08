@@ -23,12 +23,19 @@ class DockerImageBuilder(Builder):
     def __init__(
         self,
         base_dockerfile="Dockerfile",
-        nvflare="git+https://github.com/NVIDIA/NVFlare.git@main",
+        nvflare_url="2.6.0",
         image_name="nvflare/nvflare",
     ):
-        """Build docker compose file."""
+        """DockerImageBuilder generates a separate Dockefile and build script for each site.
+
+        Args:
+            base_dockerfile (str): Path to the base Dockerfile to use as a starting point.
+            nvflare_url (str): URL or version string compatible with pip (e.g., a version or 
+                "git+https://github.com/NVIDIA/NVFlare.git@main").
+            image_name (str): Name of the Docker image to be built.
+        """
         self.base_dockerfile = base_dockerfile
-        self.nvflare = nvflare
+        self.nvflare_url = nvflare_url
         self.image_name = image_name
 
     def _build_dockerfile(self, entity, ctx: ProvisionContext):
@@ -42,7 +49,7 @@ class DockerImageBuilder(Builder):
         startup_script = self._determine_startup_script(entity, ctx)
         shutil.copy(self.base_dockerfile, dockerfile_path)
         with open(dockerfile_path, "a") as f:
-            f.write(f"RUN pip install {self.nvflare}\n")
+            f.write(f"RUN pip install {self.nvflare_url}\n")
             for p in relative_paths:
                 f.write(f"COPY {p} /opt/nvflare/{p}\n")
             f.write(f'ENTRYPOINT ["/opt/nvflare/startup/{startup_script}"]\n')

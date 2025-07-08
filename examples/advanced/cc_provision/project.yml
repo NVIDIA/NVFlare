@@ -16,7 +16,7 @@ participants:
   - name: site-1
     type: client
     org: nvidia
-      #    cc_config: cc_site-1.yml
+      #cc_config: cc_site-1.yml
     # Specifying listening_host will enable the creation of one pair of
     # certificate/private key for this client, allowing the client to function
     # as a server for 3rd-party integration.
@@ -69,9 +69,9 @@ builders:
   - path: nvflare.lighter.impl.docker_image_builder.DockerImageBuilder
     args:
       base_dockerfile: Dockerfile.base
-      nvflare: git+https://github.com/YuanTingHsieh/NVFlare.git@enhance_cc_provision
+      nvflare_url: git+https://github.com/YuanTingHsieh/NVFlare.git@enhance_cc_provision
 packager:
   path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
   args:
-    build_image_cmd: /localhome/local-yuantingh/NVFlare/nvflare/lighter/cc_provision/build_cvm_image.sh
-    #build_image_cmd: /localhome/local-yuantingh/nvflare-github/nvflare/lighter/cc/image_builder/cvm_build.sh
+    #build_image_cmd: /localhome/local-yuantingh/NVFlare/nvflare/lighter/cc_provision/build_cvm_image.sh
+    build_image_cmd: /localhome/local-yuantingh/nvflare-github/nvflare/lighter/cc/image_builder/cvm_build.sh

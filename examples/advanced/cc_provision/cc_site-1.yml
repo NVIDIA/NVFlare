@@ -6,7 +6,6 @@ root_drive_size: 8
 secure_drive_size: 2
 data_source: /tmp/data
 nfs_mount: nfs-server.local:/data
-custom_code: /tmp/custom
 
 cc_issuers:
   - id: snp_authorizer
