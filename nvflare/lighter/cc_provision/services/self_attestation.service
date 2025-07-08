@@ -1,0 +1,13 @@
+[Unit]
+Description=Self Attestation Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment="PATH=/vault/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/vault/scripts/self_attestation.sh
+User=root
+
+[Install]
+WantedBy=multi-user.target
