@@ -69,6 +69,7 @@ class Authenticator:
         cert_file: str,
         msg_timeout: float,
         retry_interval: float,
+        timeout=None,
     ):
         """Authenticator is to be used to register a client to the Server.
 
@@ -84,6 +85,7 @@ class Authenticator:
             cert_file: file path of the client's certificate
             msg_timeout: timeout for authentication messages
             retry_interval: interval between tries
+            timeout: overall timeout for the authentication.
         """
         self.cell = cell
         self.project_name = project_name
@@ -96,6 +98,7 @@ class Authenticator:
         self.msg_timeout = msg_timeout
         self.retry_interval = retry_interval
         self.secure_mode = secure_mode
+        self.timeout = timeout
         self.logger = get_obj_logger(self)
 
     def _challenge_server(self):
@@ -192,6 +195,7 @@ class Authenticator:
         token_verifier = None
         if self.secure_mode:
             # explicitly authenticate with the Server
+            start_time = time.time()
             while True:
                 server_nonce, token_verifier = self._challenge_server()
 
@@ -201,6 +205,10 @@ class Authenticator:
                 if server_nonce is None:
                     # retry
                     self.logger.info(f"re-challenge after {self.retry_interval} seconds")
+
+                    if self.timeout and time.time() - start_time > self.timeout:
+                        raise FLCommunicationError(f"cannot connect to server for {self.timeout} seconds")
+
                     time.sleep(self.retry_interval)
                 else:
                     break
@@ -221,6 +229,7 @@ class Authenticator:
         login_message = new_cell_message(headers, shareable)
 
         self.logger.debug("Trying to register with server ...")
+        start_time = time.time()
         while True:
             try:
                 result = self.cell.send_request(
@@ -250,6 +259,10 @@ class Authenticator:
                 token_signature = payload.get(CellMessageHeaderKeys.TOKEN_SIGNATURE, "NA")
                 ssid = payload.get(CellMessageHeaderKeys.SSID)
                 if not token and not abort_signal.triggered:
+                    if self.timeout and time.time() - start_time > self.timeout:
+                        # timed out
+                        raise FLCommunicationError(f"cannot authenticate to server for {self.timeout} seconds")
+
                     time.sleep(self.retry_interval)
                 else:
                     break

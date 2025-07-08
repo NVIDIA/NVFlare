@@ -111,15 +111,26 @@ fed_client: |
     "format_version": 2,
     "servers": [
       {
-        "name": "spleen_segmentation",
+        "name": "{~~name~~}",
         "service": {
-        }
+          "scheme": "{~~scheme~~}"
+        },
+        "identity": "{~~server_identity~~}"
       }
     ],
     "client": {
       "ssl_private_key": "client.key",
       "ssl_cert": "client.crt",
-      "ssl_root_cert": "rootCA.pem"
+      "ssl_root_cert": "rootCA.pem",
+      "fqsn": "{~~fqsn~~}",
+      "is_leaf": {~~is_leaf~~},
+      "connection_security": "{~~conn_sec~~}"
+    },
+    "overseer_agent": {
+      "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+      "args": {
+        "sp_end_point": "{~~sp_end_point~~}"
+      }
     }
   }
 
@@ -259,32 +270,52 @@ fed_server: |
     "format_version": 2,
     "servers": [
         {
-            "name": "spleen_segmentation",
+            "name": "{~~name~~}",
             "service": {
-                "target": "localhost:8002"
+                "target": "{~~target~~}",
+                "scheme": "{~~scheme~~}"
             },
-            "admin_host": "localhost",
-            "admin_port": 5005,
             "ssl_private_key": "server.key",
             "ssl_cert": "server.crt",
-            "ssl_root_cert": "rootCA.pem"
+            "ssl_root_cert": "rootCA.pem",
+            "connection_security": "{~~conn_sec~~}"
         }
-    ] 
+    ],
+    "overseer_agent": {
+      "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+      "args": {
+        "sp_end_point": "{~~sp_end_point~~}"
+      }
+    }
   }
 
 fed_admin: |
   {
     "format_version": 1,
     "admin": {
+      "project_name": "{~~project_name~~}",
+      "server_identity": "{~~server_identity~~}",
+      "scheme": "{~~scheme~~}",
+      "host": "{~~host~~}",
+      "port": {~~port~~},
+      "connection_security": "{~~conn_sec~~}",
+      "uid_source": "{~~uid_source~~}",
       "with_file_transfer": true,
       "upload_dir": "transfer",
       "download_dir": "transfer",
-      "with_login": true,
-      "with_ssl": true,
-      "cred_type": "cert",
       "client_key": "client.key",
       "client_cert": "client.crt",
-      "ca_cert": "rootCA.pem",
+      "ca_cert": "rootCA.pem"
+    }
+  }
+
+default_admin_resources: |
+  {
+    "format_version": 1,
+    "admin": {
+      "idle_timeout": 900.0,
+      "login_timeout": 10.0,
+      "with_debug": false,
       "prompt": "> "
     }
   }

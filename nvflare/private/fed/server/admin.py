@@ -30,7 +30,7 @@ from nvflare.fuel.hci.server.authz import AuthzFilter
 from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.hci import AdminServer
-from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
+from nvflare.fuel.hci.server.login import LoginModule, SessionManager
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader
@@ -97,32 +97,18 @@ class FedAdminServer(AdminServer):
         self,
         cell: Cell,
         fed_admin_interface,
-        users,
         cmd_modules,
         file_upload_dir,
         file_download_dir,
-        host,
-        port,
-        ca_cert_file_name,
-        server_cert_file_name,
-        server_key_file_name,
-        accepted_client_cns=None,
         download_job_url="",
     ):
         """The FedAdminServer is the framework for developing admin commands.
 
         Args:
             fed_admin_interface: the server's federated admin interface
-            users: a dict of {username: pwd hash}
             cmd_modules: a list of CommandModules
             file_upload_dir: the directory for uploaded files
             file_download_dir: the directory for files to be downloaded
-            host: the IP address of the admin server
-            port: port number of admin server
-            ca_cert_file_name: the root CA's cert file name
-            server_cert_file_name: server's cert, signed by the CA
-            server_key_file_name: server's private key file
-            accepted_client_cns: list of accepted Common Names from client, if specified
             download_job_url: download job url
         """
         cmd_reg = new_command_register_with_builtin_module(app_ctx=fed_admin_interface)
@@ -130,9 +116,8 @@ class FedAdminServer(AdminServer):
         self.cell = cell
         self.client_lock = threading.Lock()
 
-        authenticator = SimpleAuthenticator(users)
-        sess_mgr = SessionManager()
-        login_module = LoginModule(authenticator, sess_mgr)
+        sess_mgr = SessionManager(cell)
+        login_module = LoginModule(sess_mgr)
         cmd_reg.register_module(login_module)
 
         # register filters - order is important!
@@ -175,14 +160,11 @@ class FedAdminServer(AdminServer):
 
         AdminServer.__init__(
             self,
+            cell=cell,
             cmd_reg=cmd_reg,
-            host=host,
-            port=port,
-            ca_cert=ca_cert_file_name,
-            server_cert=server_cert_file_name,
-            server_key=server_key_file_name,
-            accepted_client_cns=accepted_client_cns,
+            engine=self.sai,
             extra_conn_props={
+                ConnProps.ADMIN_SERVER: self,
                 ConnProps.DOWNLOAD_DIR: file_download_dir,
                 ConnProps.UPLOAD_DIR: file_upload_dir,
                 ConnProps.DOWNLOAD_JOB_URL: download_job_url,

@@ -18,13 +18,15 @@ import uuid
 from typing import Optional
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, SecureTrainConst
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
-from nvflare.private.fed.utils.identity_utils import IdentityVerifier, load_crt_bytes
+from nvflare.private.fed.server.cred_keeper import CredKeeper
+from nvflare.private.fed.utils.identity_utils import load_crt_bytes
 from nvflare.security.logging import secure_format_exception
 
 
@@ -43,7 +45,7 @@ class ClientManager:
         self.max_num_clients = max_num_clients
         self.clients = dict()  # token => Client
         self.name_to_clients = dict()  # name => Client
-        self.id_verifier = None
+        self.cred_keeper = CredKeeper()
         self.lock = threading.Lock()
 
         self.logger = get_obj_logger(self)
@@ -137,28 +139,7 @@ class ClientManager:
         return client
 
     def _get_id_verifier(self, fl_ctx: FLContext):
-        if not self.id_verifier:
-            server_config = fl_ctx.get_prop(FLContextKey.SERVER_CONFIG)
-            if not server_config:
-                self.logger.error(f"missing {FLContextKey.SERVER_CONFIG} in FL context")
-                return None
-
-            if not isinstance(server_config, list):
-                self.logger.error(f"expect server_config to be list but got {type(server_config)}")
-                return None
-
-            server1 = server_config[0]
-            if not isinstance(server1, dict):
-                self.logger.error(f"expect server config data to be dict but got {type(server1)}")
-                return None
-
-            root_cert_file = server1.get(SecureTrainConst.SSL_ROOT_CERT)
-            if not root_cert_file:
-                self.logger.error(f"missing {SecureTrainConst.SSL_ROOT_CERT} in server config")
-                return None
-
-            self.id_verifier = IdentityVerifier(root_cert_file=root_cert_file)
-        return self.id_verifier
+        return self.cred_keeper.get_id_verifier(fl_ctx)
 
     def authenticated_client(self, request, fl_ctx: FLContext) -> Optional[Client]:
         """Use SSL certificate for authenticate the client.
@@ -211,7 +192,7 @@ class ClientManager:
                 self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")
                 return None
 
-            self.logger.info(f"identity verified for client '{client_name}'")
+            self.logger.debug(f"identity verified for client '{client_name}'")
 
         with self.lock:
             clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
@@ -224,7 +205,7 @@ class ClientManager:
         client = Client(client_name, str(uuid.uuid4()))
         client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
         self._set_client_props(client, client_fqcn, fl_ctx)
-        self.logger.info(f"authenticated client {client_name}: {client_fqcn=}")
+        self.logger.debug(f"authenticated client {client_name}: {client_fqcn=}")
 
         if len(self.clients) >= self.max_num_clients:
             fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Maximum number of clients reached", sticky=False)
@@ -334,7 +315,14 @@ class ClientManager:
     def get_client_from_name(self, client_name):
         result = self.name_to_clients.get(client_name)
         if not result:
-            self.logger.error(
-                f"no client for {client_name}: I have {self.name_to_clients.keys()} {self.clients.keys()}"
-            )
+            # Check whether this is a valid admin client.
+            # Note that since admin clients are not kept in name_to_clients, we assume that the admin client
+            # is valid and dynamically create the Client object as the result.
+            if is_valid_admin_client_name(client_name):
+                result = Client(client_name, None)
+                result.set_fqcn(client_name)
+            else:
+                self.logger.debug(
+                    f"no client for {client_name}: I have {self.name_to_clients.keys()} {self.clients.keys()}"
+                )
         return result

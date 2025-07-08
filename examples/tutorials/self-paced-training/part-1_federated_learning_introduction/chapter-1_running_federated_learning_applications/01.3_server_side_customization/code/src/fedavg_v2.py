@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import torch
 
@@ -25,29 +25,43 @@ from nvflare.fuel.utils import fobs
 
 
 class FedAvgV2(BaseFedAvg):
-    """Controller for FedAvg Workflow with Early Stopping and Model Selection.
+    def __init__(
+        self,
+        *args,
+        stop_cond: Optional[str] = None,
+        patience: Optional[int] = None,
+        task_to_optimize: Optional[str] = "train",
+        save_filename: Optional[str] = "FL_global_model.pt",
+        initial_model: Optional[FLModel] = None,
+        **kwargs,
+    ) -> None:
+        """Controller for FedAvg Workflow with Early Stopping and Model Selection.
 
-    Args:
-        num_clients (int, optional): The number of clients. Defaults to 3.
-        num_rounds (int, optional): The total number of training rounds. Defaults to 5.
-        stop_cond (str, optional): early stopping condition based on metric.
-            string literal in the format of "<key> <op> <value>" (e.g. "accuracy >= 80")
-        save_filename (str, optional): filename for saving model
-        initial_model (nn.Module, optional): initial PyTorch model
-    """
-
-    def __init__(self, *args, stop_cond: str, save_filename: str = "FL_global_model.pt", initial_model=None, **kwargs):
+        Args:
+            num_clients (int, optional): The number of clients. Defaults to 3.
+            num_rounds (int, optional): The total number of training rounds. Defaults to 5.
+            stop_cond (str, optional): early stopping condition based on metric. String
+                literal in the format of '\\<key\\> \\<op\\> \\<value\\>' (e.g. "accuracy >= 80")
+            patience (int, optional): The number of checks with no improvement after which
+                the FL will be stopped. If set to `None`, this parameter is disabled.
+                If stop_condition is None, patience does not apply
+            task_to_optimize (str, optional): Specifies whether to optimize the target
+                metric on the training or validation task. Defaults is train.
+            save_filename (str, optional): filename for saving model
+            initial_model (nn.Module, optional): initial PyTorch model
+        """
         super().__init__(*args, **kwargs)
-
+        self.patience = patience
+        self.task_to_optimize = task_to_optimize
+        self.num_fl_rounds_without_improvement: int = 0
         self.stop_cond = stop_cond
-
-        if stop_cond:
+        if self.stop_cond:
             self.stop_condition = parse_compare_criteria(stop_cond)
         else:
             self.stop_condition = None
         self.save_filename = save_filename
-        self.initial_model = initial_model
-        self.best_model: Optional[FLModel] = None
+        self.initial_model: FLModel = initial_model
+        self.best_target_metric_value: Any = None
 
     def run(self) -> None:
         self.info("Start FedAvg.")
@@ -72,78 +86,117 @@ class FedAvgV2(BaseFedAvg):
             clients = self.sample_clients(self.num_clients)
 
             results: List[FLModel] = self.send_model_and_wait(targets=clients, data=model)
-            aggregate_results = self.aggregate(
-                results, aggregate_fn=self.aggregate_fn
-            )  # using default aggregate_fn with `WeightedAggregationHelper`. Can overwrite self.aggregate_fn with signature Callable[List[FLModel], FLModel]
 
+            # using default aggregate_fn with `WeightedAggregationHelper`.
+            # Can overwrite self.aggregate_fn with signature Callable[List[FLModel], FLModel]
+            aggregate_results = self.aggregate(results, aggregate_fn=self.aggregate_fn)
             model = self.update_model(model, aggregate_results)
 
             self.info(f"Round {self.current_round} global metrics: {model.metrics}")
 
-            self.select_best_model(model)
+            if self.is_curr_model_better(model):
+                self.info("New best model found")
+                self.save_model(model, os.path.join(os.getcwd(), self.save_filename))
+            else:
+                if self.patience:
+                    self.info(
+                        f"No metric improvment, num of FL rounds without improvement: "
+                        f"{self.num_fl_rounds_without_improvement}"
+                    )
 
-            self.save_model(self.best_model, os.path.join(os.getcwd(), self.save_filename))
-
-            if self.should_stop(model.metrics, self.stop_condition):
-                self.info(
-                    f"Stopping at round={self.current_round} out of total_rounds={self.num_rounds}. Early stop condition satisfied: {self.stop_condition}"
-                )
+            if self.should_stop(model.metrics):
+                self.info(f"Stopping at round={self.current_round} out of total_rounds={self.num_rounds}.")
                 break
 
         self.info("Finished FedAvg.")
 
-    def should_stop(self, metrics: Optional[Dict] = None, stop_condition: Optional[str] = None):
-        if stop_condition is None or metrics is None:
+    def should_stop(self, metrics: Optional[Dict] = None) -> bool:
+        """Checks whether the current FL experiment should stop.
+
+        Args:
+            metrics (Dict, optional): experiment metrics.
+
+        Returns:
+            True if the experiment should stop, False otherwise.
+        """
+        if self.stop_condition is None or metrics is None:
             return False
 
-        key, target, op_fn = stop_condition
+        if self.patience and (self.patience <= self.num_fl_rounds_without_improvement):
+            self.info(f"Exceeded the number of FL rounds ({self.patience}) without improvments")
+            return True
+
+        key, target, op_fn = self.stop_condition
         value = metrics.get(key, None)
 
         if value is None:
             raise RuntimeError(f"stop criteria key '{key}' doesn't exists in metrics")
 
-        return op_fn(value, target)
+        if op_fn(value, target):
+            self.info(f"Early stop condition satisfied: {self.stop_condition}")
+            return True
 
-    def select_best_model(self, curr_model: FLModel):
-        if self.best_model is None:
-            self.best_model = curr_model
-            return
+        return False
 
-        if self.stop_condition:
-            metric, _, op_fn = self.stop_condition
-            if self.is_curr_model_better(self.best_model, curr_model, metric, op_fn):
-                self.info("Current model is new best model.")
-                self.best_model = curr_model
-        else:
-            self.best_model = curr_model
+    def is_curr_model_better(self, curr_model: FLModel) -> bool:
+        """Checks if the new model is better than the current best model.
 
-    def is_curr_model_better(
-        self, best_model: FLModel, curr_model: FLModel, target_metric: str, op_fn: Callable
-    ) -> bool:
+        Args:
+            curr_model (FLModel): the new model to evaluate.
+
+        Returns:
+            True if the new model is better than the current best model, False otherwise
+        """
+        if self.stop_condition is None:
+            return True
+
         curr_metrics = curr_model.metrics
         if curr_metrics is None:
             return False
-        if target_metric not in curr_metrics:
+
+        target_metric, _, op_fn = self.stop_condition
+        curr_target_metric = curr_metrics.get(target_metric, None)
+        if curr_target_metric is None:
             return False
 
-        best_metrics = best_model.metrics
-        return op_fn(curr_metrics.get(target_metric), best_metrics.get(target_metric))
+        if self.best_target_metric_value is None or op_fn(curr_target_metric, self.best_target_metric_value):
+            if self.patience and self.best_target_metric_value == curr_target_metric:
+                self.num_fl_rounds_without_improvement += 1
+                return False
+            else:
+                self.best_target_metric_value = curr_target_metric
+                self.num_fl_rounds_without_improvement = 0
+                return True
 
-    def save_model(self, model, filepath=""):
+        self.num_fl_rounds_without_improvement += 1
+        return False
+
+    def save_model(self, model: FLModel, filepath: Optional[str] = "") -> None:
+        """Saves the model to the specified file path.
+
+        Args:
+            model (FLModel): model to save
+            filepath (str, optional): location where the model will be saved
+        """
         params = model.params
         # PyTorch save
         torch.save(params, filepath)
 
         # save FLModel metadata
         model.params = {}
-        fobs.dumpf(model, filepath + ".metadata")
+        fobs.dumpf(model, f"{filepath}.metadata")
         model.params = params
 
-    def load_model(self, filepath=""):
+    def load_model(self, filepath: Optional[str] = "") -> FLModel:
+        """Loads a model from the provided file path.
+
+        Args:
+            filepath (str, optional): location of the saved model to load
+        """
         # PyTorch load
         params = torch.load(filepath)
 
         # load FLModel metadata
-        model = fobs.loadf(filepath + ".metadata")
+        model: FLModel = fobs.loadf(f"{filepath}.metadata")
         model.params = params
         return model
