@@ -40,7 +40,9 @@ def run_attestation():
 def validate_attestation_token(client):
     print("[AttestationService] Validating token against policy...")
 
-    policy_file = "/home/nvidia/nvtrust/guest_tools/attestation_sdk/tests/policies/remote/v4/NVGPURemotePolicyExample.json"
+    policy_file = (
+        "/home/nvidia/nvtrust/guest_tools/attestation_sdk/tests/policies/remote/v4/NVGPURemotePolicyExample.json"
+    )
     try:
         with open(policy_file) as json_file:
             json_data = json.load(json_file)
