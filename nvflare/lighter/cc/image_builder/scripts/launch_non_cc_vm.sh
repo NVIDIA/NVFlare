@@ -1,12 +1,13 @@
 # Check exact number of arguments
-if [ $# -ne 3 ]; then
-  echo "Usage: $0 <root_drive> <applog_drive> <log_file>"
+if [ $# -ne 4 ]; then
+  echo "Usage: $0 <root_drive> <applog_drive> <DATA_DRIVE> <log_file>"
   exit 1
 fi
 
 ROOT_DRIVE=$1
 APPLOG_DRIVE=$2
-LOG_FILE=$3
+DATA_DRIVE=$3
+LOG_FILE=$4
 
 sudo qemu-system-x86_64 \
     -bios OVMF_AMD.fd \
@@ -25,6 +26,8 @@ sudo qemu-system-x86_64 \
     -device virtio-blk-pci,drive=disk0,serial=rootfs \
     -drive file=$APPLOG_DRIVE,if=none,id=disk1,format=qcow2 \
     -device virtio-blk-pci,drive=disk1,serial=applog \
+    -drive file=$DATA_DRIVE,if=none,id=disk2,format=qcow2 \
+    -device virtio-blk-pci,drive=disk2,serial=user_data \
     -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=true,romfile= \
     -netdev user,id=vmnic,hostfwd=tcp::2222-:22,hostfwd=tcp::8002-:8002,hostfwd=tcp::8003-:8003 \
     -device virtio-net-pci,disable-legacy=on,iommu_platform=true,netdev=vmnic,romfile=  \

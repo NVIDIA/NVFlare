@@ -69,7 +69,7 @@ touch $LOG_FILE
 
 cd $TARGET_FOLDER
 nohup $BASE_DIR/scripts/launch_non_cc_vm.sh $SCRATCH_FOLDER/rootfs.qcow2 \
-    $TARGET_FOLDER/applog.qcow2 $LOG_FILE > $LOG_FILE  2>&1 &
+    $TARGET_FOLDER/applog.qcow2 $TARGET_FOLDER/user_data.qcow2 $LOG_FILE > $LOG_FILE  2>&1 &
 
 echo "Waiting for VM to get ready ..."
 while ! grep -q " login:" "$LOG_FILE"; do
