@@ -16,10 +16,10 @@
 # limitations under the License.
 
 
-from nv_attestation_sdk import attestation
-import os
 import json
 import sys
+
+from nv_attestation_sdk import attestation
 
 
 def run_attestation():
