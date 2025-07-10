@@ -16,8 +16,7 @@ class DistributedConfig(BaseModel):
     timeout_seconds: int = Field(1800, description="Timeout in seconds for distributed operations.")
 
     accelerator: Optional[str] = Field(
-        default=None,
-        description="Device type to use for training. Options: 'cpu', 'gpu', 'tpu'."
+        default=None, description="Device type to use for training. Options: 'cpu', 'gpu', 'tpu'."
     )
 
     devices: Optional[Union[int, List[int], str]] = Field(
@@ -28,11 +27,10 @@ class DistributedConfig(BaseModel):
             "If list: specify device indices explicitly (e.g., [0, 2]). "
             "If str: 'auto' lets the framework choose available devices. "
             "Used together with 'accelerator'."
-        )
+        ),
     )
     strategy: Optional[str] = Field(
-        default=None,
-        description="Distributed strategy, e.g. 'ddp', 'ddp_spawn', 'dp', or custom."
+        default=None, description="Distributed strategy, e.g. 'ddp', 'ddp_spawn', 'dp', or custom."
     )
 
     extra: Dict[str, Any] = Field(default_factory=dict, description="Extra parameters.")

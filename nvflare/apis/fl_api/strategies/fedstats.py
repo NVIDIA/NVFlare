@@ -18,16 +18,16 @@ class FedStatsy(Strategy):
         self.min_clients = min_clients
         self.global_mean = None  # For round 1 stats
 
-    def coordinate(self, selected_clients,  **kwargs):
+    def coordinate(self, available_clients, **kwargs):
         # Accept a list of stats to compute in this round
         stats = kwargs.get("stats", ["mean", "sum", "count", "min", "max", "histogram", "quantile"])
         results = {}
         # Inform peers of the target statistics for this round using MessageEnvelope.payload
         msg = MessageEnvelope()
         msg.payload = {"target_stats": stats}
-        self.communicator.broadcast_and_wait(selected_clients, msg)
+        self.communicator.broadcast_and_wait(available_clients, msg)
         if round_number == 0:
-            updates = self.communicator.receive_from_peers(selected_clients)
+            updates = self.communicator.receive_from_peers(available_clients)
             for stat in stats:
                 result_msg = self.aggregate(updates, stat, round_number=0, **kwargs)
                 results[stat] = result_msg
@@ -38,11 +38,11 @@ class FedStatsy(Strategy):
             if any(s in next_stats for s in ("variance", "std")):
                 mean_msg = MessageEnvelope()
                 mean_msg.payload = {"global_mean": self.global_mean}
-                self.communicator.broadcast_and_wait(selected_clients, mean_msg)
+                self.communicator.broadcast_and_wait(available_clients, mean_msg)
             return results
         elif round_number == 1:
             # Instruct clients to use the global mean (already sent) for their local computation
-            updates = communicator.receive_from_peers(selected_clients)
+            updates = communicator.receive_from_peers(available_clients)
             for stat in stats:
                 results[stat] = self.aggregate(updates, stat, round_number=1, **kwargs)
             return results
@@ -85,8 +85,11 @@ class FedStatsy(Strategy):
                 raise RuntimeError("Global mean must be computed in round 0 before std/variance aggregation.")
             # Each update should provide sum((x_i - mean)^2) and count
             if stat in ("variance", "std"):
-                sq_diffs = [u.model_state["sq_diff"] for u in updates if
-                            hasattr(u, "model_state") and "sq_diff" in u.model_state]
+                sq_diffs = [
+                    u.model_state["sq_diff"]
+                    for u in updates
+                    if hasattr(u, "model_state") and "sq_diff" in u.model_state
+                ]
                 counts = [u.model_state.get("count", 1) for u in updates if hasattr(u, "model_state")]
                 total_sq_diff = np.sum(sq_diffs, axis=0)
                 total_count = np.sum(counts)

@@ -6,11 +6,11 @@ from nvflare.apis.fl_api.env.deployment_envs import DeploymentEnv
 
 class FLJob:
     def __init__(
-            self,
-            strategy: Strategy,
-            client_trainers: Dict[str, FedTrainer],
-            rounds: int = 1,
-            deployment_settings: Optional[Dict[str, Any]] = None,
+        self,
+        strategy: Strategy,
+        client_trainers: Dict[str, FedTrainer],
+        rounds: int = 1,
+        deployment_settings: Optional[Dict[str, Any]] = None,
     ):
         self.strategy = strategy
         self.client_trainers = client_trainers

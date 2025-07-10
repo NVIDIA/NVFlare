@@ -41,10 +41,10 @@ class ServerCommLayer(CommunicationLayer, FLComponent):
 
     def broadcast_and_wait(self, sites: List[str], message: MessageType) -> Dict[str, MessageType]:
         """
-         Send a message to the specified site(s).
-         If message is FLMessage, create Task with FLMessage, get task name from context.
-         If message is MessageEnvelope, create Task with MessageEnvelope, get task name from meta.
-         Set up a callback to handle the response.
+        Send a message to the specified site(s).
+        If message is FLMessage, create Task with FLMessage, get task name from context.
+        If message is MessageEnvelope, create Task with MessageEnvelope, get task name from meta.
+        Set up a callback to handle the response.
         """
         if isinstance(message, FLMessage):
             task_name = message.context.get("task_name")
@@ -60,9 +60,11 @@ class ServerCommLayer(CommunicationLayer, FLComponent):
             if message.sender is None:
                 message.sender = self.fl_ctx.get_identity_name()
             if message.receiver and message.receiver != sites:
-                self.log_info(self.fl_ctx,
-                              f"[WARNING] MessageEnvelope.receiver ({message.receiver}) is different "
-                              f"from broadcast_to_queue targets ({sites}), overwriting receiver with sites.")
+                self.log_info(
+                    self.fl_ctx,
+                    f"[WARNING] MessageEnvelope.receiver ({message.receiver}) is different "
+                    f"from broadcast_to_queue targets ({sites}), overwriting receiver with sites.",
+                )
 
             if message.type is None:
                 message.type = "task"
@@ -79,12 +81,7 @@ class ServerCommLayer(CommunicationLayer, FLComponent):
             result_received_cb=self.result_received_cb,
         )
 
-        self.communicator.broadcast_and_wait(
-            task=task,
-            fl_ctx=self.fl_ctx,
-            targets=sites,
-            min_responses=min_responses
-        )
+        self.communicator.broadcast_and_wait(task=task, fl_ctx=self.fl_ctx, targets=sites, min_responses=min_responses)
 
         if self.errors:
             raise RuntimeError(f"Received errors from clients: {self.errors}")
@@ -95,9 +92,15 @@ class ServerCommLayer(CommunicationLayer, FLComponent):
                 self._wait_for_result(min_responses)
                 return self.response
 
-    def push_to_peers(self, sender_id: str, recipients: siteOrSiteList, message_type: str, payload: Any,
-                      timeout: Optional[float] = None, meta: Optional[Dict[str, Any]] = None) -> Tuple[
-        List[str], List[MessageType]]:
+    def push_to_peers(
+        self,
+        sender_id: str,
+        recipients: siteOrSiteList,
+        message_type: str,
+        payload: Any,
+        timeout: Optional[float] = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[List[str], List[MessageType]]:
         # return self.comm.push_to_peers(sender_id, recipients, message_type, payload, timeout, meta)
         raise NotImplementedError
 

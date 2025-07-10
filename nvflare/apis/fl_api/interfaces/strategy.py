@@ -1,6 +1,6 @@
 from enum import Enum
 from abc import ABC
-from typing import List, Any, Optional, Dict
+from typing import List, Any, Optional, Dict, Callable
 from pydantic import BaseModel, Field
 
 from nvflare.apis.fl_api.communication.wf_comm_client_layers import MessageType
@@ -20,7 +20,10 @@ class StrategyConfig(BaseModel):
     """
     Base config for strategies. Extend this in specific strategies for more fields.
     """
+
+    num_clients: int = Field(3, description="Number of clients to select per round.")
     framework: FrameworkType = Field(None, description="ML framework to use.")
+    sample_clients_fn: Optional[Callable[[int], List[str]]] = Field(None, description="Function to sample clients.")
     extra: Dict[str, Any] = Field(default_factory=dict, description="Extra/experimental parameters.")
 
     class Config:
@@ -28,28 +31,23 @@ class StrategyConfig(BaseModel):
 
 
 class Strategy(ABC):
-    def __init__(self,
-                 strategy_config: Optional[StrategyConfig] = None,
-                 **kwargs):
+    def __init__(self, strategy_config: Optional[StrategyConfig] = None, **kwargs):
         self.strategy_config = strategy_config or StrategyConfig(**kwargs)
         self.communicator: Optional[CommunicationLayer] = None
 
-    # Only put unknown/extra fields into extra
-        for k, v in kwargs.items():
-            if not hasattr(self.strategy_config, k):
-                self.strategy_config.extra[k] = v
+        # Only put unknown/extra fields into extra
+        if kwargs:
+            for k, v in kwargs.items():
+                if not hasattr(self.strategy_config, k):
+                    self.strategy_config.extra[k] = v
 
-    def initialize(self, communicator: Optional[CommunicationLayer] = None, **kwargs):
-            if communicator:
-                self.communicator = communicator
-            else:
-                self.communicator = SimulatedCommLayer()
-
+    def initialize(self, communicator: Optional[CommunicationLayer] = SimulatedCommLayer, **kwargs):
+        self.communicator = communicator
 
     def coordinate(
-            self,
-            selected_clients: List[str],
-            **kwargs,
+        self,
+        available_clients: List[str],
+        **kwargs,
     ) -> Optional[MessageType]:
         pass
 

@@ -12,22 +12,14 @@ class CommunicationLayer(ABC):
     in federated learning or similar distributed workflows.
     """
 
-    def broadcast_and_wait(
-            self,
-            sites: siteOrSiteList,
-            message: MessageType
-    ) -> Dict[str, MessageType]:
+    def broadcast_and_wait(self, sites: siteOrSiteList, message: MessageType) -> Dict[str, MessageType]:
         """
         Broadcast a message to multiple sites, with optional exclusions.
         Returns the response message.
         """
         raise NotImplementedError
 
-    def push_to_peers(
-            self,
-            recipients: siteOrSiteList,
-            message: MessageType
-    ) -> Tuple[List[str], List[MessageType]]:
+    def push_to_peers(self, recipients: siteOrSiteList, message: MessageType) -> Tuple[List[str], List[MessageType]]:
         """
         Push a payload to recipients with a given message type.
         Returns a tuple of (recipient list, response list).
@@ -36,11 +28,7 @@ class CommunicationLayer(ABC):
 
 
 class SimulatedCommLayer(CommunicationLayer):
-    def broadcast_and_wait(
-            self,
-            sites: siteOrSiteList,
-            message: MessageType
-    ) -> Dict[str, MessageType]:
+    def broadcast_and_wait(self, sites: siteOrSiteList, message: MessageType) -> Dict[str, MessageType]:
         if isinstance(sites, str):
             sites = [sites]
         print("[SimulatedCommLayer] Simulating broadcast_and_waitL: returning same message for all sites")

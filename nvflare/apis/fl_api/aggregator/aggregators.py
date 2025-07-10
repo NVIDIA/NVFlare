@@ -9,7 +9,8 @@ torch, _ = optional_import("torch")
 tf, _ = optional_import("tensorflow")
 
 
-#TODO: focused on sync aggregate for now, handle async incremental aggregate later.
+# TODO: focused on sync aggregate for now, handle async incremental aggregate later.
+
 
 class Aggregator:
     def aggregate(self, updates: List[MessageType]) -> MessageType:
@@ -22,6 +23,7 @@ class FuncAggregatorWrapper(Aggregator):
 
     def aggregate(self, updates: List[MessageType]) -> MessageType:
         return self.fn(updates)
+
 
 class DefaultAggregator(Aggregator):
     def aggregate(self, updates: List[MessageType]) -> MessageType:

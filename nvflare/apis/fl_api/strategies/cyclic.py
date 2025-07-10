@@ -20,9 +20,9 @@ class Cyclic(Strategy):
         self.schedule = config.schedule
 
     def coordinate(
-            self,
-            selected_clients: List[str],
-            **kwargs,
+        self,
+        available_clients: List[str],
+        **kwargs,
     ):
         print("Start Cyclic.")
 
@@ -34,11 +34,11 @@ class Cyclic(Strategy):
             print(f"Round {r} started.")
             model.current_round = r
 
-            clients = self.sample_clients(selected_clients)
-            result : Optional[FLModel] = None
+            clients = self.sample_clients(available_clients)
+            result: Optional[FLModel] = None
             for client in clients:
                 meta = {"round": r}
-                result: FLModel = self.send_model_and_wait(targets=[client], fl_model=model, meta = meta)[0]
+                result: FLModel = self.send_model_and_wait(targets=[client], fl_model=model, meta=meta)[0]
 
             if result:
                 self.save_model(result)
@@ -62,7 +62,7 @@ class Cyclic(Strategy):
         if self.strategy_config.save_model_fn:
             self.strategy_config.save_model_fn(model)
 
-    def send_model_and_wait(self, targets: List[str], fl_model: FLModel, meta: Dict ) -> Dict[str, FLModel]:
+    def send_model_and_wait(self, targets: List[str], fl_model: FLModel, meta: Dict) -> Dict[str, FLModel]:
         if not meta:
             meta = {}
         """Send model to clients and wait for responses."""

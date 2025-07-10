@@ -1,8 +1,8 @@
-
 from typing import Callable, Dict
 from nvflare.apis.fl_api.interfaces.strategy import Strategy
 
 _STRATEGY_REGISTRY: Dict[str, Callable[..., "Strategy"]] = {}
+
 
 @property
 def get_strategy_registry():
@@ -16,6 +16,7 @@ def register_strategy(name: str):
         else:
             print(f"Strategy '{name}' already registered.")
         return cls_or_fn
+
     return decorator
 
 

@@ -21,7 +21,7 @@ class FedOpt(FedAvg):
         # Assume agg_result.model_state contains aggregated gradients (same keys as global_model_state)
         # Set gradients for each parameter
         for name, param in self.global_model_state.items():
-            if hasattr(param, 'grad'):
+            if hasattr(param, "grad"):
                 param.grad = agg_result.model_state[name]
             else:
                 # For raw tensors, assign .grad attribute dynamically (PyTorch only)
@@ -35,6 +35,6 @@ class FedOpt(FedAvg):
         # Update FLMessage with new weights and optimizer state
         agg_result.model_state = {name: param.data.clone() for name, param in self.global_model_state.items()}
         # Save optimizer state (PyTorch: state_dict)
-        if hasattr(self.optimizer, 'state_dict'):
+        if hasattr(self.optimizer, "state_dict"):
             agg_result.optimizer_state = self.optimizer.state_dict()
         return agg_result

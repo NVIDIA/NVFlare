@@ -8,13 +8,14 @@ from nvflare.apis.impl.wf_comm_client import WFCommClient
 from nvflare.apis.wf_comm_spec import WFCommSpec
 
 siteOrSiteList = Any  # Replace with actual type if available
-MessageType = Any     # Replace with actual type if available
+MessageType = Any  # Replace with actual type if available
 
 
 class ClientCommLayer(CommunicationLayer):
     """
     Communication layer for FL Client using Executor and WFCommClient.
     """
+
     def __init__(self, communicator: WFCommSpec, fl_ctx: FLContext):
         if communicator is None:
             raise ValueError("communicator must not be None.")
@@ -30,8 +31,16 @@ class ClientCommLayer(CommunicationLayer):
     def comm(self) -> WFCommSpec:
         return self.communicator
 
-    def broadcast_and_wait(self, sites: List[str], message: MessageType ) -> Dict[str, MessageType]:
+    def broadcast_and_wait(self, sites: List[str], message: MessageType) -> Dict[str, MessageType]:
         raise NotImplementedError
 
-    def push_to_peers(self, sender_id: str, recipients: siteOrSiteList, message_type: str, payload: Any, timeout: Optional[float] = None, meta: Optional[Dict[str, Any]] = None) -> Tuple[List[str], List[MessageType]]:
-         raise NotImplementedError
+    def push_to_peers(
+        self,
+        sender_id: str,
+        recipients: siteOrSiteList,
+        message_type: str,
+        payload: Any,
+        timeout: Optional[float] = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[List[str], List[MessageType]]:
+        raise NotImplementedError

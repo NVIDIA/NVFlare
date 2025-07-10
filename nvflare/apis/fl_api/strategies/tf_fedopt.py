@@ -3,6 +3,7 @@ from nvflare.apis.fl_api.strategies.fedopt_base import FedOptBase
 from nvflare.apis.fl_api.registry.strategy_registry import register_strategy
 from nvflare.apis.fl_api.message.fl_message import MessageType
 
+
 @register_strategy("tf_fedopt")
 class TFFedOpt(FedOptBase):
     def __init__(self, global_model_state, optimizer, aggregator, **kwargs):

@@ -1,6 +1,5 @@
-
-
 _TRAINER_REGISTRY = {}
+
 
 @property
 def get_trainer_registry():
@@ -14,6 +13,7 @@ def register_trainer(name: str):
         else:
             print(f"Trainer '{name}' already registered.")
         return factory_fn
+
     return decorator
 
 

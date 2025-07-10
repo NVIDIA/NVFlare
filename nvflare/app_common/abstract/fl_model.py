@@ -39,6 +39,7 @@ class FLModelConst:
 class MetaKey(FLMetaKey):
     pass
 
+
 class FLModel(BaseModel):
     params_type: Optional[Union[str, ParamsType]] = Field("FULL", description="Type of model weights: FULL or DIFF.")
     params: Any = Field(default_factory=dict, description="Model weights.")
@@ -47,7 +48,9 @@ class FLModel(BaseModel):
     start_round: Optional[PositiveInt] = Field(0, description="Starting round index.")
     current_round: Optional[PositiveInt] = Field(0, description="Current round index.")
     total_rounds: Optional[PositiveInt] = Field(1, description="Total number of FL rounds.")
-    context: Optional[Dict] = Field(default_factory=dict, description="Task-specific, semantic, or workflow-related info.")
+    context: Optional[Dict] = Field(
+        default_factory=dict, description="Task-specific, semantic, or workflow-related info."
+    )
     meta: Optional[Dict] = Field(default_factory=dict, description="Protocol-level or transmission-related metadata.")
 
     class Config:
@@ -76,7 +79,7 @@ class FLModel(BaseModel):
             start_round=self.start_round,
             current_round=self.current_round,
             total_rounds=self.total_rounds,
-            context = self.context
+            context=self.context,
         )
         self._add_to_summary(kvs)
         return self._summary

@@ -7,21 +7,16 @@ from nvflare.apis.fl_api.interfaces.comm_layer import CommunicationLayer
 
 class FedTrainer(ABC):
     def __init__(
-            self,
-            local_trainer: Any,  # User's native trainer/model/pipeline (e.g., PyTorch Lightning, sklearn)
-
-            communication: CommunicationLayer = None,
-
-            config: Optional[TrainerConfig] = None,
-
-            # Custom function to extract model state to be sent to server or peers
-            get_state_fn: Optional[Callable[[], Any]] = None,
-
-            # Custom function to apply received model state from server or peers
-            set_state_fn: Optional[Callable[[Any], None]] = None,
-
-            # Custom evaluation function (optional)
-            evaluate_fn: Optional[Callable[[Any], Any]] = None,
+        self,
+        local_trainer: Any,  # User's native trainer/model/pipeline (e.g., PyTorch Lightning, sklearn)
+        communication: CommunicationLayer = None,
+        config: Optional[TrainerConfig] = None,
+        # Custom function to extract model state to be sent to server or peers
+        get_state_fn: Optional[Callable[[], Any]] = None,
+        # Custom function to apply received model state from server or peers
+        set_state_fn: Optional[Callable[[Any], None]] = None,
+        # Custom evaluation function (optional)
+        evaluate_fn: Optional[Callable[[Any], Any]] = None,
     ):
         self.local_trainer = local_trainer
         self.get_state_fn = get_state_fn
@@ -44,14 +39,9 @@ class FedTrainer(ABC):
             metrics = self.evaluate_fn()
 
         # 4. Send update to server
-        self.communication.send_update(
-            client_id=self.client_id,
-            update=local_update,
-            metrics=metrics
-        )
+        self.communication.send_update(client_id=self.client_id, update=local_update, metrics=metrics)
 
         return metrics
-
 
     def evaluate(self):
         pass
@@ -62,15 +52,14 @@ class FedTrainer(ABC):
     def set_state(self, state: Any) -> None:
         self.set_state_fn(state)
 
-
     @classmethod
     def from_function(
-            cls,
-            train_fn: Callable[[Any], Tuple[Any, Dict]],
-            get_state_fn: Callable[[], Any],
-            set_state_fn: Callable[[Any], None],
-            evaluate_fn: Optional[Callable[[Any], Dict]] = None,
-            config: Optional[TrainerConfig] = None,
+        cls,
+        train_fn: Callable[[Any], Tuple[Any, Dict]],
+        get_state_fn: Callable[[], Any],
+        set_state_fn: Callable[[Any], None],
+        evaluate_fn: Optional[Callable[[Any], Dict]] = None,
+        config: Optional[TrainerConfig] = None,
     ) -> "FedTrainer":
         return cls(
             local_trainer=train_fn,

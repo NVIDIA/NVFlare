@@ -6,11 +6,11 @@ from nvflare.apis.fl_api.interfaces.strategy import Strategy
 
 class Split(Strategy):
     def coordinate(
-            self,
-            selected_clients: List[str],
-            **kwargs,
+        self,
+        available_clients: List[str],
+        **kwargs,
     ) -> Any:
-        client_id = selected_clients[0]
+        client_id = available_clients[0]
 
         # Send the global state (e.g., server-side model) to the client
         communicator.broadcast_and_wait([client_id], global_state)

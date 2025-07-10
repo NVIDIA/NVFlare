@@ -57,7 +57,3 @@ class StrategyExecutor(Executor):
         elif event_type == EventType.FATAL_SYSTEM_ERROR:
             self.stop_executor(fl_ctx)
             pass
-
-
-
-
