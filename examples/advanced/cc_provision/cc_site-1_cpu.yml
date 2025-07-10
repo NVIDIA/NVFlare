@@ -10,6 +10,6 @@ compute_env: onprem_cvm
 data_source: /tmp/data
 nvflare_package: application_code.zip
 nvflare_version: git+https://github.com/YuanTingHsieh/NVFlare.git@enhance_cc_provision
-role: server
+role: client
 root_drive_size: 8
 secure_drive_size: 2

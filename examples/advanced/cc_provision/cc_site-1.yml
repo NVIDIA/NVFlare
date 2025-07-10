@@ -5,15 +5,16 @@ role: client
 root_drive_size: 8
 secure_drive_size: 2
 data_source: /tmp/data
-nfs_mount: nfs-server.local:/data
+nvflare_package: application_code.zip
+nvflare_version: git+https://github.com/YuanTingHsieh/NVFlare.git@enhance_cc_provision
 
 cc_issuers:
   - id: snp_authorizer
+    path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
     token_expiration: 3600
-    path: "nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer"
   - id: gpu_authorizer
+    path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
     token_expiration: 3600
-    path: "nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer"
 
 cc_attestation:
   check_frequency: 1800
