@@ -24,6 +24,8 @@ from typing import Dict
 from zipfile import ZipFile
 
 from nvflare.tool.code_pre_installer.constants import (
+    APPLICATION_CODE_DIR,
+    APPLICATION_SHARED_CODE_DIR,
     CUSTOM_DIR_NAME,
     DEFAULT_APPLICATION_INSTALL_DIR,
     PYTHON_PATH_SHARED_DIR,
@@ -52,7 +54,7 @@ def define_pre_install_parser(cmd_name: str, sub_cmd):
     return parser
 
 
-def install_requirements(requirements_file: Path):
+def _install_requirements(requirements_file: Path):
     """Install Python packages from requirements.txt."""
     if not requirements_file.exists():
         print("No requirements.txt found, skipping package installation")
@@ -126,6 +128,54 @@ def _find_app_dirs(application_dir: Path, site_name: str) -> Dict[str, Path]:
     return matched_apps
 
 
+def _install_site_specific_code(application_dir: Path, site_name: str, install_prefix: Path):
+    """Find and install site-specific custom code directories under application_dir.
+
+    Args:
+        application_dir (Path): Root application directory containing site apps.
+        site_name (str): Site name to filter app directories.
+        install_prefix (Path): Destination prefix path for installation.
+    """
+    app_dirs = _find_app_dirs(application_dir, site_name)
+
+    for job_name, site_app_dir in app_dirs.items():
+        custom_dir = site_app_dir / CUSTOM_DIR_NAME
+
+        if not custom_dir.exists() or not any(custom_dir.iterdir()):
+            continue
+
+        install_dir = install_prefix / job_name
+        install_dir.mkdir(parents=True, exist_ok=True)
+
+        for item in custom_dir.iterdir():
+            dest = install_dir / item.name
+            if item.is_dir():
+                shutil.copytree(item, dest, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, dest)
+
+
+def _install_shared_code(shared_dir: Path, target_shared_dir: Path):
+    """Install shared application code from shared_dir to target_shared_dir.
+
+    Args:
+        shared_dir (Path): Source directory for shared code.
+        target_shared_dir (Path): Destination directory for shared code.
+    """
+    if not shared_dir.exists() or not any(shared_dir.iterdir()):
+        return  # Nothing to install
+
+    target_dir = target_shared_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    for item in shared_dir.iterdir():
+        dest = target_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, dest)
+
+
 def install_app_code(
     app_code_zip: Path, install_prefix: Path, site_name: str, target_shared_dir: str, delete: bool
 ) -> None:
@@ -148,46 +198,25 @@ def install_app_code(
         with ZipFile(app_code_zip) as zf:
             zf.extractall(temp_path)
         # Verify structure
-        application_dir = temp_path / "application"
-        shared_dir = temp_path / "application-share"
-        if not application_dir.exists() or not any(application_dir.iterdir()):
-            raise ValueError("Invalid application code: Missing application directory")
+        application_dir = temp_path / APPLICATION_CODE_DIR
+        shared_dir = temp_path / APPLICATION_SHARED_CODE_DIR
+        if not application_dir.exists() and not shared_dir.exists():
+            raise ValueError(
+                f"Invalid application code zip: Missing both {APPLICATION_CODE_DIR} and {APPLICATION_SHARED_CODE_DIR} directory."
+            )
 
-        # Find all appropriate app directories based on site name
-        app_dirs = _find_app_dirs(application_dir, site_name)
-
-        # Install site-specific code for each app
-        for job_name, site_app_dir in app_dirs.items():
-            custom_dir = site_app_dir / CUSTOM_DIR_NAME
-            if custom_dir.exists():
-                # Create install directory
-                install_dir = install_prefix / job_name
-                install_dir.mkdir(parents=True, exist_ok=True)
-
-                # Copy custom code
-                for item in custom_dir.iterdir():
-                    dest = install_dir / item.name
-                    if item.is_dir():
-                        shutil.copytree(item, dest, dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(item, dest)
+        # Install site specific code if present
+        if application_dir.exists() and any(application_dir.iterdir()):
+            _install_site_specific_code(application_dir, site_name, install_prefix)
 
         # Install shared code if present
         if shared_dir.exists() and any(shared_dir.iterdir()):
-            target_dir = Path(target_shared_dir)
-            target_dir.mkdir(parents=True, exist_ok=True)
-
-            for item in shared_dir.iterdir():
-                dest = target_dir / item.name
-                if item.is_dir():
-                    shutil.copytree(item, dest, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(item, dest)
+            _install_shared_code(shared_dir, Path(target_shared_dir))
 
         # Install requirements if present
         requirements = temp_path / "requirements.txt"
         if requirements.exists():
-            install_requirements(requirements)
+            _install_requirements(requirements)
 
     # Cleanup
     print(f"Deleting {app_code_zip} after installation: {delete}")
