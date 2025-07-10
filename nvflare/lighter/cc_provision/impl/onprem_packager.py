@@ -17,6 +17,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import yaml
+
 from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
@@ -32,6 +34,18 @@ def update_log_filenames(config, new_log_root: str = "/applog"):
         if filename:
             handler_cfg["filename"] = os.path.join(new_log_root, filename)
     return config
+
+
+def update_nvflare_package_path(yaml_path):
+    with open(yaml_path, "r") as f:
+        config = yaml.safe_load(f)
+    package_path = config.get("nvflare_package")
+    if package_path and not os.path.isabs(package_path):
+        yaml_dir = os.path.dirname(os.path.abspath(yaml_path))
+        abs_path = os.path.abspath(os.path.join(yaml_dir, package_path))
+        config["nvflare_package"] = abs_path
+    with open(yaml_path, "w") as f:
+        yaml.dump(config, f)
 
 
 def run_command(command, cwd=None):
@@ -63,6 +77,7 @@ class OnPremPackager(Packager):
         """Build CC image for the site."""
         print(f"calling {self.build_image_cmd=} {cc_config_yaml=} {site_name=} {startup_folder_path=}")
         cc_config_yaml = os.path.abspath(cc_config_yaml)
+        update_nvflare_package_path(cc_config_yaml)
         command = [self.build_image_cmd, cc_config_yaml, site_name, startup_folder_path]
         run_command(command)
 
