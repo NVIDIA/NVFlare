@@ -75,18 +75,12 @@ class OnPremPackager(Packager):
         with open(log_config_path, "w") as f:
             json.dump(updated_config, f, indent=4)
 
-    def _build_docker_image(self, participant: Participant, dest_dir: str):
-        command = ["sudo", "/bin/bash", f"{dest_dir}/{participant.name}/docker_build.sh"]
-        run_command(command, cwd=f"{dest_dir}/{participant.name}")
-
     def _package_for_participant(self, participant: Participant, ctx: ProvisionContext):
         """Package the startup kit for the participant."""
         if not participant.get_prop(self.cc_config_key):
             return
 
         dest_dir = Path(ctx.get_result_location())
-        # Build docker image for each
-        self._build_docker_image(participant, dest_dir)
         # Build CC image
         self._build_cc_image(participant.get_prop(self.cc_config_key), participant.name, dest_dir)
 

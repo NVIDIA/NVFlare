@@ -14,10 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Dict
@@ -63,7 +63,7 @@ def _install_requirements(requirements_file: Path):
     print(f"Installing packages from {requirements_file}...")
 
     try:
-        subprocess.run(["pip", "install", "-r", str(requirements_file)], check=True)
+        subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(requirements_file)], check=True)
     except subprocess.CalledProcessError as e:
         raise ValueError(f"Failed to install requirements: {e}")
 
