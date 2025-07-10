@@ -7,10 +7,14 @@ if ! /opt/scripts/cpu_attestation.sh; then
     poweroff
 fi
 
-echo "[Attestation] Starting GPU attestation..."
-if ! python3 /opt/scripts/gpu_attestation.py; then
-    echo "[Attestation] GPU attestation failed. Powering off."
-    poweroff
+
+# Run GPU attestation if script is present and executable
+if [ -f /vault/scripts/gpu_attestation.py ]; then
+    echo "[Attestation] Starting GPU attestation..."
+    if ! python3 /vault/scripts/gpu_attestation.py; then
+        echo "[Attestation] GPU attestation failed. Powering off."
+        poweroff
+    fi
 fi
 
 echo "[Attestation] All attestation checks passed."
