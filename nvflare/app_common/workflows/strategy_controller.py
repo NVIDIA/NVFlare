@@ -1,7 +1,7 @@
 from typing import List
 
-from nvflare.apis.fl_api import Strategy
-from nvflare.apis.fl_api.communication.wf_comm_server_layers import ServerCommLayer
+from experimental.fl_api import Strategy
+from experimental.fl_api.nvflare.communication import ServerCommLayer
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.signal import Signal
