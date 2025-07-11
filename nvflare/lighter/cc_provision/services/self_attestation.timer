@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Self Attestation Periodically
+After=network-online.target
+Wants=network-online.target
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=15min
+Unit=self_attestation.service
+
+[Install]
+WantedBy=timers.target
+
