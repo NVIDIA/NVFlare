@@ -26,12 +26,13 @@ SNP_NAMESPACE = "x-snp"
 class SNPAuthorizer(CCAuthorizer):
     """AMD SEV-SNP Authorizer"""
 
-    def __init__(self):
+    def __init__(self, amd_certs_dir="/opt/certs"):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.amd_certs_dir = amd_certs_dir
 
     def generate(self):
-        cmd = ["sudo", "snpguest", "report", "report.bin", "request.bin"]
+        cmd = ["snpguest", "report", "report.bin", "request.bin"]
         with open("request.bin", "wb") as request_file:
             request_file.write(b"\x01" * 64)
         _ = subprocess.run(cmd, capture_output=True)
@@ -45,7 +46,7 @@ class SNPAuthorizer(CCAuthorizer):
             tmp_bin_file = uuid.uuid4().hex
             with open(tmp_bin_file, "wb") as report_file:
                 report_file.write(report_bin)
-            cmd = ["snpguest", "verify", "attestation", "./cert", tmp_bin_file]
+            cmd = ["snpguest", "verify", "attestation", self.amd_certs_dir, tmp_bin_file]
             cp = subprocess.run(cmd, capture_output=True)
             if cp.returncode != 0:
                 return False
