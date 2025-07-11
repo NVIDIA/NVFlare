@@ -15,6 +15,7 @@
 import base64
 import logging
 import os
+import random
 import subprocess
 import uuid
 
@@ -29,14 +30,23 @@ class SNPAuthorizer(CCAuthorizer):
     def __init__(self):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.my_nonce_list = list()
+        self.seen_nonce_list = list()
+        self.my_nonce_list_limit = 100
+        self.see_nonce_list_limit = 5000
 
-    def generate(self):
+    def generate(self, nonce=None):
         cmd = ["sudo", "snpguest", "report", "report.bin", "request.bin"]
         with open("request.bin", "wb") as request_file:
-            request_file.write(b"\x01" * 64)
+            if nonce is None or len(nonce) != 64:
+                nonce = bytearray([random.randint(0, 255) for _ in range(64)])
+            request_file.write(nonce)
         _ = subprocess.run(cmd, capture_output=True)
         with open("report.bin", "rb") as report_file:
             token = base64.b64encode(report_file.read())
+        self.nonce_list.append(nonce)
+        if len(self.nonce_list) > 2*self.my_nonce_list_limit:
+            self.nonce_list == self.nonce_list[-self.my_nonce_list_limit:]
         return token
 
     def verify(self, token):
