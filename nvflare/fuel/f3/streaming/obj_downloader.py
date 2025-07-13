@@ -106,10 +106,15 @@ class _Ref:
         self,
         tx,
         obj: Any,
+        ref_id=None,
         obj_downloaded_cb=None,
         **cb_kwargs,
     ):
-        self.rid = "R" + str(uuid.uuid4())
+        if ref_id:
+            # use provided ref_id
+            self.rid = ref_id
+        else:
+            self.rid = "R" + str(uuid.uuid4())
         self.tx = tx
         self.obj = obj
         self.obj_downloaded_cb = obj_downloaded_cb
@@ -159,18 +164,29 @@ class Producer(ABC):
 
 class _Transaction:
 
-    def __init__(self, producer: Producer, timeout: float, timeout_cb, **cb_kwargs):
+    def __init__(
+        self,
+        producer: Producer,
+        timeout: float,
+        tx_id=None,
+        timeout_cb=None,
+        **cb_kwargs,
+    ):
         """Constructor of the transaction object.
 
         Args:
             producer: the Producer object to produce small objects.
             timeout: amount of time since last activity
+            tx_id: if provided, use it; otherwise create one
             timeout_cb: the CB to be called when the transaction timed out
             **cb_kwargs: args to be passed to the timeout CB
         """
         check_callable("timeout_cb", timeout_cb)
         check_object_type("producer", producer, Producer)
-        self.tid = "T" + str(uuid.uuid4())
+        if tx_id:
+            self.tid = tx_id
+        else:
+            self.tid = "T" + str(uuid.uuid4())
         self.producer = producer
         self.timeout = timeout
         self.timeout_cb = timeout_cb
@@ -203,6 +219,7 @@ class _Transaction:
     def add_download_object(
         self,
         obj: Any,
+        ref_id=None,
         obj_downloaded_cb=None,
         **cb_kwargs,
     ):
@@ -210,13 +227,14 @@ class _Transaction:
 
         Args:
             obj: the large object to be downloaded
+            ref_id: the ref id to be used, if specified
             obj_downloaded_cb: the CB to be called when the object is fully downloaded
             **cb_kwargs: args to be passed to the CB.
 
         Returns:
 
         """
-        r = _Ref(self, obj, obj_downloaded_cb, **cb_kwargs)
+        r = _Ref(self, obj, ref_id, obj_downloaded_cb, **cb_kwargs)
         self.refs.append(r)
         return r
 
@@ -261,9 +279,9 @@ class ObjDownloader:
                 cls._initialized_cells[id(cell)] = True
 
     @classmethod
-    def new_transaction(cls, cell: Cell, producer: Producer, timeout: float, timeout_cb, **cb_kwargs):
+    def new_transaction(cls, cell: Cell, producer: Producer, timeout: float, tx_id=None, timeout_cb=None, **cb_kwargs):
         cls._initialize(cell)
-        tx = _Transaction(producer, timeout, timeout_cb, **cb_kwargs)
+        tx = _Transaction(producer, timeout, tx_id, timeout_cb, **cb_kwargs)
         with cls._tx_lock:
             cls._tx_table[tx.tid] = tx
         return tx.tid
@@ -273,6 +291,7 @@ class ObjDownloader:
         cls,
         transaction_id: str,
         obj: Any,
+        ref_id=None,
         obj_downloaded_cb=None,
         **cb_kwargs,
     ) -> str:
@@ -284,7 +303,7 @@ class ObjDownloader:
             raise ValueError(f"no such transaction {transaction_id}")
 
         assert isinstance(tx, _Transaction)
-        ref = tx.add_download_object(obj, obj_downloaded_cb, **cb_kwargs)
+        ref = tx.add_download_object(obj, ref_id, obj_downloaded_cb, **cb_kwargs)
         with cls._tx_lock:
             cls._ref_table[ref.rid] = ref
         return ref.rid

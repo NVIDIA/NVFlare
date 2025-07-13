@@ -20,9 +20,10 @@ from typing import Any, BinaryIO, Union
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.fobs.buf_list_stream import BufListStream
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
-from nvflare.fuel.utils.fobs.fobs import deserialize, serialize
+from nvflare.fuel.utils.fobs.fobs import deserialize, get_dat_handler, serialize
 
-HEADER_STRUCT = struct.Struct(">BQ")  # marker(1), size(8)
+# DAT: Datum App Type
+HEADER_STRUCT = struct.Struct(">BBQ")  # marker(1), dat(1), size(8)
 HEADER_LEN = HEADER_STRUCT.size
 
 MARKER_MAIN = 100
@@ -40,8 +41,9 @@ DEFAULT_DATUM_DIR = "/tmp/nvflare/datums"
 
 
 class _Header:
-    def __init__(self, marker, size: int):
+    def __init__(self, marker: int, dat: int, size: int):
         self.marker = marker
+        self.dat = dat
         self.size = size
 
     @classmethod
@@ -49,19 +51,19 @@ class _Header:
         if len(buffer) < HEADER_LEN:
             raise ValueError("Header too short")
 
-        marker, size = HEADER_STRUCT.unpack_from(buffer, 0)
-        return _Header(marker, size)
+        marker, dat, size = HEADER_STRUCT.unpack_from(buffer, 0)
+        return _Header(marker, dat, size)
 
     def to_bytes(self):
-        return HEADER_STRUCT.pack(self.marker, self.size)
+        return HEADER_STRUCT.pack(self.marker, self.dat, self.size)
 
 
-def _write_datum_header(stream: BinaryIO, marker, datum_id: str, value_size: int):
+def _write_datum_header(stream: BinaryIO, marker, dat, datum_id: str, value_size: int):
     datum_uuid = uuid.UUID(datum_id)
     datum_id_bytes = datum_uuid.bytes
     if len(datum_id_bytes) != DATUM_ID_LEN:
         raise RuntimeError(f"program error: datum ID length should be {DATUM_ID_LEN} but got {len(datum_id_bytes)}")
-    header = _Header(marker, DATUM_ID_LEN + value_size)
+    header = _Header(marker, dat, DATUM_ID_LEN + value_size)
     stream.write(header.to_bytes())
     stream.write(datum_id_bytes)
 
@@ -90,7 +92,7 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None, fobs_ctx: di
     """
     mgr = DatumManager(max_value_size, fobs_ctx=fobs_ctx)
     main_body = serialize(obj, mgr)
-    header = _Header(MARKER_MAIN, len(main_body))
+    header = _Header(MARKER_MAIN, 0, len(main_body))
     stream.write(header.to_bytes())
     stream.write(main_body)
 
@@ -108,10 +110,10 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None, fobs_ctx: di
             # text representation is platform specific.
             # we convert it to utf-8 based bytes, which is platform independent.
             data_bytes = datum.value.encode("utf-8")
-            _write_datum_header(stream, MARKER_DATUM_TEXT, datum_id, len(data_bytes))
+            _write_datum_header(stream, MARKER_DATUM_TEXT, datum.app_type, datum_id, len(data_bytes))
             stream.write(data_bytes)
         elif datum.datum_type == DatumType.BLOB:
-            _write_datum_header(stream, MARKER_DATUM_BLOB, datum_id, len(datum.value))
+            _write_datum_header(stream, MARKER_DATUM_BLOB, datum.app_type, datum_id, len(datum.value))
             stream.write(datum.value)
         else:
             # file type:
@@ -123,7 +125,7 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None, fobs_ctx: di
                 raise RuntimeError(f"{file_path} is not a valid file")
 
             file_size = os.path.getsize(file_path)
-            _write_datum_header(stream, MARKER_DATUM_FILE, datum_id, file_size)
+            _write_datum_header(stream, MARKER_DATUM_FILE, datum.app_type, datum_id, file_size)
             with open(file_path, "rb") as f:
                 while True:
                     bytes_read = f.read(MAX_BYTES_PER_READ)
@@ -253,22 +255,36 @@ def load_from_stream(stream: BinaryIO, fobs_ctx: dict = None):
             # all done
             break
 
+        assert isinstance(header, _Header)
         if header.marker == MARKER_DATUM_TEXT:
             # the body is utf-8 encoded bytes
             text = body.decode("utf-8")
-            datum = Datum.text_datum(text)
+            datum = Datum.text_datum(text, header.dat)
         elif header.marker == MARKER_DATUM_BLOB:
-            datum = Datum.blob_datum(body)
+            datum = Datum.blob_datum(body, header.dat)
         else:
             # put the value in a file
             datum_dir = _get_datum_dir()
             file_path = os.path.join(datum_dir, f"{datum_id}.dat")
             with open(file_path, "wb") as f:
                 f.write(body)
-            datum = Datum.file_datum(file_path)
+            datum = Datum.file_datum(file_path, header.dat)
 
         datum.datum_id = datum_id
-        mgr.datums[datum_id] = datum
+        mgr.add_datum(datum)
+
+    # process datums if needed
+    datums = mgr.get_datums()
+    for datum in datums.values():
+        if not isinstance(datum, Datum):
+            raise RuntimeError(f"datum {datum} should be Datum but got {type(datum)}")
+
+        if datum.app_type > 0:
+            # this datum needs processing
+            handler = get_dat_handler(datum.app_type)
+            if not handler:
+                raise RuntimeError(f"cannot find handler for Datum App Type {datum.app_type}")
+            handler.process_datum(datum, mgr)
     return deserialize(main_body, mgr)
 
 

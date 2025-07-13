@@ -26,8 +26,8 @@ from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
 from nvflare.apis.signal import Signal
 from nvflare.apis.wf_comm_spec import WFCommSpec
-from nvflare.fuel.data_event.data_bus import DataBus, dynamic_topic
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -960,8 +960,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                     if exit_task.task_done_cb is not None:
                         try:
                             msg_root_id = exit_task.msg_root_id
-                            topic = dynamic_topic(ReservedTopic.MSG_ROOT_DELETED, msg_root_id)
-                            DataBus().publish([topic], datum=msg_root_id)
+                            delete_msg_root(msg_root_id)
                             exit_task.task_done_cb(task=exit_task, fl_ctx=fl_ctx)
                         except Exception as e:
                             self.log_exception(

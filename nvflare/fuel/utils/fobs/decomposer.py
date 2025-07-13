@@ -14,7 +14,7 @@
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Type, TypeVar
+from typing import Any, List, Optional, Type, TypeVar
 
 # Generic type supported by the decomposer.
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumRef, DatumType
@@ -38,6 +38,28 @@ class Decomposer(ABC):
 
         Returns:
             The class (not instance) of supported type
+        """
+        pass
+
+    def supported_dats(self) -> Optional[List[int]]:
+        """Return ths Datum App Types supported by this decomposer.
+        If a DAT is returned, this decomposer's process_datum method will be called for any datum whose app_type
+        matches this DAT.
+
+        Returns: None or list of DATs
+
+        """
+        pass
+
+    def process_datum(self, datum: Datum, manager: DatumManager):
+        """This method will be called during message deserialization to process the specified datum.
+
+        Args:
+            datum: the datum to be processed
+            manager: the datum manger
+
+        Returns: None
+
         """
         pass
 

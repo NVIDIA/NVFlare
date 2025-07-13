@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, List, Union
@@ -93,11 +92,12 @@ class DataBus(EventPubSub):
             for topic in topics:
                 subs_to_delete = []
                 subscribers = self.subscribers.get(topic)
-                for sub in subscribers:
-                    callback, one_shot, kwargs = sub
-                    subs_to_execute.append((topic, callback, kwargs))
-                    if one_shot:
-                        subs_to_delete.append(sub)
+                if subscribers:
+                    for sub in subscribers:
+                        callback, one_shot, kwargs = sub
+                        subs_to_execute.append((topic, callback, kwargs))
+                        if one_shot:
+                            subs_to_delete.append(sub)
 
                 for sub in subs_to_delete:
                     subscribers.remove(sub)
@@ -139,7 +139,9 @@ class DataBus(EventPubSub):
 
 
 def dynamic_topic(base_topic: str, values: Union[str, List[str]]) -> str:
+    parts = [base_topic]
     if isinstance(values, str):
-        return f"{base_topic}_{values}"
+        parts.append(values)
     else:
-        return f"{base_topic}_{'_'.join(values)}"
+        parts.extend(values)
+    return "_".join(parts)

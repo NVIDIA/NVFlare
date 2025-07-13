@@ -17,6 +17,7 @@ from typing import Any
 import torch
 from safetensors.torch import load_file, save_file
 
+import nvflare.fuel.utils.fobs.dats as dats
 from nvflare.app_common.decomposers.via_file import ViaFileDecomposer
 
 
@@ -30,10 +31,20 @@ class TensorDecomposer(ViaFileDecomposer):
     def supported_type(self):
         return torch.Tensor
 
-    def dump_to_file(self, target: Any, path: str):
-        tensors = {"tensor": target}
-        save_file(tensors, path)
+    def supported_dats(self):
+        return [dats.LOCAL_TENSOR, dats.REMOTE_TENSOR]
+
+    def dump_to_file(self, items: dict, path: str):
+        print(f"SafeTensor: dumping {len(items)} tensors to file {path}")
+        save_file(items, path)
 
     def load_from_file(self, path: str) -> Any:
-        loaded_tensors = load_file(path)
-        return loaded_tensors.get("tensor")
+        items = load_file(path)
+        print(f"SafeTensor: got {len(items)} tensors from file {path}")
+        return items
+
+    def get_local_dat(self) -> int:
+        return dats.LOCAL_TENSOR
+
+    def get_remote_dat(self) -> int:
+        return dats.REMOTE_TENSOR
