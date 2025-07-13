@@ -18,7 +18,7 @@ import torch
 from safetensors.torch import load_file, save_file
 
 import nvflare.fuel.utils.fobs.dats as dats
-from nvflare.app_common.decomposers.via_file import ViaFileDecomposer
+from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
 
 
 class SerializationModule(torch.nn.Module):

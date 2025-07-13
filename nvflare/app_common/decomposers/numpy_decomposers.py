@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 
 import nvflare.fuel.utils.fobs.dats as dats
-from nvflare.app_common.decomposers.via_file import ViaFileDecomposer
+from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
 
