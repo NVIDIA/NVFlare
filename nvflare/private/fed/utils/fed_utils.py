@@ -15,9 +15,13 @@ import importlib
 import json
 import os
 import pkgutil
+import shlex
+import subprocess
 import sys
 import warnings
 from typing import List, Union
+
+from IPython.utils.capture import capture_output
 
 from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
@@ -446,3 +450,14 @@ def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
         raise RuntimeError(f"The job launcher must be JobLauncherSpec but got {type(launcher)}")
 
     return job_launcher[0]
+
+
+def execute_command_directly(command: str) -> str:
+    """Execute a command directly, without using shell"""
+    args = shlex.split(command)
+
+    result = subprocess.run(
+        args, capture_output=True, text=True, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+    )
+
+    return result.stdout
