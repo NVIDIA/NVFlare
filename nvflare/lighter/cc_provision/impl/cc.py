@@ -42,11 +42,6 @@ VALID_COMPUTE_ENVS = [
         CCConfigValue.NVIDIA_CC,
     ),
     (
-        CCConfigValue.ONPREM_CVM,
-        CCConfigValue.AMD_SEV_SNP,
-        None,
-    ),
-    (
         CCConfigValue.MOCK,
         None,
         None,
