@@ -28,18 +28,18 @@ class DatumType(Enum):
 class Datum:
     """Datum is a class that holds information for externalized data"""
 
-    def __init__(self, datum_type: DatumType, value: Any, app_type=0):
+    def __init__(self, datum_type: DatumType, value: Any, dot=0):
         """Constructor of Datum object
 
         Args:
             datum_type: type of the datum.
             value: value of the datum
-            app_type: the app type of the datum
+            dot: the Object Type of the datum
 
         """
         self.datum_id = str(uuid.uuid4())
         self.datum_type = datum_type
-        self.app_type = app_type
+        self.dot = dot
         self.value = value
         self.restore_func = None  # func to restore original object.
         self.restore_func_data = None  # arg to the restore func
@@ -62,19 +62,19 @@ class Datum:
         self.restore_func_data = func_data
 
     @staticmethod
-    def blob_datum(blob: Union[bytes, bytearray, memoryview], app_type):
+    def blob_datum(blob: Union[bytes, bytearray, memoryview], dot):
         """Factory method to create a BLOB datum"""
-        return Datum(DatumType.BLOB, blob, app_type)
+        return Datum(DatumType.BLOB, blob, dot)
 
     @staticmethod
-    def text_datum(text: str, app_type):
+    def text_datum(text: str, dot):
         """Factory method to create a TEXT datum"""
-        return Datum(DatumType.TEXT, text, app_type)
+        return Datum(DatumType.TEXT, text, dot)
 
     @staticmethod
-    def file_datum(path: str, app_type):
+    def file_datum(path: str, dot):
         """Factory method to crate a file datum"""
-        return Datum(DatumType.FILE, path, app_type)
+        return Datum(DatumType.FILE, path, dot)
 
 
 class DatumRef:

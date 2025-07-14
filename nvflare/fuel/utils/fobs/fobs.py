@@ -44,6 +44,7 @@ __all__ = [
     "deserialize",
     "deserialize_stream",
     "reset",
+    "get_dot_handler",
 ]
 
 from nvflare.security.logging import secure_format_exception
@@ -58,7 +59,7 @@ T = TypeVar("T")
 
 log = logging.getLogger(__name__)
 _decomposers: Dict[str, Decomposer] = {}
-_dat_handlers: Dict[int, Decomposer] = {}  # decomposers that handle Datum App Types (DAT)
+_dot_handlers: Dict[int, Decomposer] = {}  # decomposers that handle Datum Object Types (DOT)
 _decomposers_registered = False
 # If this is enabled, FOBS will try to register generic decomposers automatically
 _enum_auto_registration = True
@@ -73,7 +74,7 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
     """
 
     global _decomposers
-    global _dat_handlers
+    global _dot_handlers
 
     if inspect.isclass(decomposer):
         instance = decomposer()
@@ -89,23 +90,23 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
         return
 
     _decomposers[name] = instance
-    supported_dats = instance.supported_dats()
-    if supported_dats:
-        for d in supported_dats:
+    supported_dots = instance.supported_dots()
+    if supported_dots:
+        for d in supported_dots:
             if not isinstance(d, int):
-                log.error(f"Bad DAT {d} - it must be a positive int but got {type(d)}")
+                log.error(f"Bad DOT {d} - it must be a positive int but got {type(d)}")
                 continue
 
             if d <= 0:
-                log.error(f"Bad DAT {d} - it must be a positive int")
+                log.error(f"Bad DOT {d} - it must be a positive int")
                 continue
 
-            h = _dat_handlers.get(d)
+            h = _dot_handlers.get(d)
             if h:
-                log.error(f"Duplicate registration for DAT {d}: {type(h)} and {type(instance)}")
+                log.error(f"Duplicate registration for DOT {d}: {type(h)} and {type(instance)}")
                 continue
 
-            _dat_handlers[d] = instance
+            _dot_handlers[d] = instance
 
 
 class Packer:
@@ -384,14 +385,14 @@ def deserialize_stream(stream: BinaryIO, manager: DatumManager = None, **kwargs)
     return deserialize(data, manager, **kwargs)
 
 
-def get_dat_handler(dat: int):
-    global _dat_handlers
-    return _dat_handlers.get(dat)
+def get_dot_handler(dot: int):
+    global _dot_handlers
+    return _dot_handlers.get(dot)
 
 
 def reset():
     """Reset FOBS to initial state. Used for unit test"""
-    global _decomposers, _decomposers_registered, _dat_handlers
+    global _decomposers, _decomposers_registered, _dot_handlers
     _decomposers.clear()
-    _dat_handlers.clear()
+    _dot_handlers.clear()
     _decomposers_registered = False

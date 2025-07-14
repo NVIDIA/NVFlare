@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import uuid
 from typing import List, Union
 
 from nvflare.apis.client import Client
@@ -19,9 +20,10 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, SiteType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.private.fed.utils.fed_utils import get_target_names
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
@@ -126,6 +128,10 @@ class TaskController(FLComponent, ControllerSpec):
             raise ValueError(f"The task timeout must > 0. But got {task.timeout}")
 
         request.set_header(ReservedKey.TASK_NAME, task.name)
+        msg_root_id = str(uuid.uuid4())
+        request.set_header(ReservedHeaderKey.MSG_ROOT_ID, msg_root_id)
+        request.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
+
         replies = engine.send_aux_request(
             targets=targets,
             topic=ReservedTopic.DO_TASK,
@@ -134,6 +140,8 @@ class TaskController(FLComponent, ControllerSpec):
             fl_ctx=fl_ctx,
             secure=task.secure,
         )
+
+        delete_msg_root(msg_root_id)
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
         self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)

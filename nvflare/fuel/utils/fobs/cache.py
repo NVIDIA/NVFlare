@@ -30,15 +30,6 @@ class FobsCache:
             cls._items[key] = value
 
     @classmethod
-    def get_or_create(cls, key, value):
-        with cls._lock:
-            if key in cls._items:
-                return cls._items[key]
-            else:
-                cls._items[key] = value
-                return value
-
-    @classmethod
-    def remove(cls, key):
+    def remove_item(cls, key):
         with cls._lock:
             return cls._items.pop(key, None)

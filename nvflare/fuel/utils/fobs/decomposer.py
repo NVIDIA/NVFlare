@@ -41,12 +41,12 @@ class Decomposer(ABC):
         """
         pass
 
-    def supported_dats(self) -> Optional[List[int]]:
-        """Return ths Datum App Types supported by this decomposer.
-        If a DAT is returned, this decomposer's process_datum method will be called for any datum whose app_type
-        matches this DAT.
+    def supported_dots(self) -> Optional[List[int]]:
+        """Return ths Datum Object Types supported by this decomposer.
+        If a DOT is returned, this decomposer's process_datum method will be called for any datum whose DOT
+        matches this DOT.
 
-        Returns: None or list of DATs
+        Returns: None or list of DOTs
 
         """
         pass

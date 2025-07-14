@@ -18,10 +18,12 @@ from typing import Any
 
 import numpy as np
 
-import nvflare.fuel.utils.fobs.dats as dats
-from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
+import nvflare.fuel.utils.fobs.dots as dots
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
+from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
+
+_NPZ_EXTENSION = ".npz"
 
 
 class NumpyScalarDecomposer(fobs.Decomposer, ABC):
@@ -58,22 +60,25 @@ class NumpyArrayDecomposer(ViaFileDecomposer):
     def supported_type(self):
         return np.ndarray
 
-    def supported_dats(self):
-        return [dats.LOCAL_NUMPY, dats.REMOTE_NUMPY]
+    def supported_dots(self):
+        return [dots.NUMPY_BYTES, dots.NUMPY_FILE]
 
-    def get_local_dat(self) -> int:
-        return dats.LOCAL_NUMPY
+    def get_bytes_dot(self) -> int:
+        return dots.NUMPY_BYTES
 
-    def get_remote_dat(self) -> int:
-        return dats.REMOTE_NUMPY
+    def get_file_dot(self) -> int:
+        return dots.NUMPY_FILE
 
     def dump_to_file(self, items: dict, path: str):
-        print(f"NP: dumping {len(items)} arrays to file {path}")
+        if not path.endswith(_NPZ_EXTENSION):
+            path += _NPZ_EXTENSION
+        self.logger.info(f"NP: dumping {len(items)} arrays to file {path}")
         try:
             np.savez(allow_pickle=False, file=path, **items)
-            return path + ".npz"
+            return path
         except Exception as e:
-            print(f"exception dumping NP to file: {e}")
+            self.logger.error(f"exception dumping NP to file: {e}")
+            raise e
 
     def load_from_file(self, path: str) -> Any:
         result = {}

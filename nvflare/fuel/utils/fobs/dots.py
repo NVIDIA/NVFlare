@@ -13,10 +13,10 @@
 # limitations under the License.
 
 """
-All DATs (Datum App Type) must be unique.
-This file is used as the global DAT registry to ensure that all DATs are unique.
+All DOTs (Datum Object Type) must be unique.
+This file is used as the global DOT registry to ensure that all DOTs are unique.
 """
-LOCAL_NUMPY = 1
-REMOTE_NUMPY = 2
-LOCAL_TENSOR = 3
-REMOTE_TENSOR = 4
+NUMPY_BYTES = 1
+NUMPY_FILE = 2
+TENSOR_BYTES = 3
+TENSOR_FILE = 4

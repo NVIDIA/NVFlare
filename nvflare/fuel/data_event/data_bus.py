@@ -13,7 +13,7 @@
 # limitations under the License.
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, List, Union
+from typing import Any, Callable, List
 
 from nvflare.fuel.data_event.pub_sub import EventPubSub
 
@@ -48,7 +48,6 @@ class DataBus(EventPubSub):
         self,
         topics: List[str],
         callback: Callable[[str, Any, "DataBus"], None],
-        one_shot=False,
         **cb_kwargs,
     ) -> None:
         """
@@ -57,7 +56,6 @@ class DataBus(EventPubSub):
         Args:
             topics (List[str]): A list of topics to subscribe to.
             callback (Callable): The callback function to be called when messages are published to the subscribed topics.
-            one_shot: whether the callback is used once.
         """
 
         if not topics:
@@ -70,9 +68,47 @@ class DataBus(EventPubSub):
             with self._lock:
                 if topic not in self.subscribers:
                     self.subscribers[topic] = []
-                self.subscribers[topic].append((callback, one_shot, cb_kwargs))
+                self.subscribers[topic].append((callback, cb_kwargs))
 
-        print(f"total subscribers after subscribe: {len(self.subscribers)}")
+    def unsubscribe(
+        self,
+        topic: str,
+        callback=None,
+    ) -> None:
+        """Unsubscribe from the specified topic.
+        If the callback is specified, only remove the subscription that has this callback;
+        If the callback is not specified, remove all subscriptions of this topic.
+
+        Args:
+            topic: the topic to unsubscribe
+            callback: the callback to be removed
+
+        Returns: None
+
+        """
+        with self._lock:
+            if topic not in self.subscribers:
+                return
+
+            if callback is None:
+                # remove this topic
+                self.subscribers.pop(topic, None)
+                return
+
+            subs_to_delete = []
+            subs = self.subscribers[topic]
+            assert isinstance(subs, list)
+            for sub in subs:
+                # sub is a tuple of (cb, cb_args)
+                if sub[0] == callback:
+                    subs_to_delete.append(sub)
+
+            for sub in subs_to_delete:
+                subs.remove(sub)
+
+            if len(subs) == 0:
+                # no more subs for this topic!
+                self.subscribers.pop(topic, None)
 
     def publish(self, topics: List[str], datum: Any) -> None:
         """
@@ -90,20 +126,11 @@ class DataBus(EventPubSub):
         with self._lock:
             subs_to_execute = []
             for topic in topics:
-                subs_to_delete = []
                 subscribers = self.subscribers.get(topic)
                 if subscribers:
                     for sub in subscribers:
-                        callback, one_shot, kwargs = sub
+                        callback, kwargs = sub
                         subs_to_execute.append((topic, callback, kwargs))
-                        if one_shot:
-                            subs_to_delete.append(sub)
-
-                for sub in subs_to_delete:
-                    subscribers.remove(sub)
-
-                if not subscribers:
-                    self.subscribers.pop(topic, None)
 
         if not subs_to_execute:
             return
@@ -136,12 +163,3 @@ class DataBus(EventPubSub):
             Any: The stored datum if found, or None if not found.
         """
         return self.data_store.get(key)
-
-
-def dynamic_topic(base_topic: str, values: Union[str, List[str]]) -> str:
-    parts = [base_topic]
-    if isinstance(values, str):
-        parts.append(values)
-    else:
-        parts.extend(values)
-    return "_".join(parts)

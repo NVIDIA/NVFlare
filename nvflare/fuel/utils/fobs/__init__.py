@@ -16,6 +16,7 @@ from nvflare.fuel.utils.fobs.fobs import (
     auto_register_enum_types,
     deserialize,
     deserialize_stream,
+    get_dot_handler,
     num_decomposers,
     register,
     register_data_classes,

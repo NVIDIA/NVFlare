@@ -165,7 +165,7 @@ class _ChunkConsumer(Consumer):
         self.location = location
         self.file_path = os.path.join(location, str(uuid.uuid4()))
         self.file = open(self.file_path, "wb")
-        self.logger.info(f"created file {self.file_path}")
+        self.logger.debug(f"created file {self.file_path}")
         self.total_bytes = 0
         self.error = None
 
@@ -173,7 +173,7 @@ class _ChunkConsumer(Consumer):
         assert isinstance(data, bytes)
         self.file.write(data)
         self.total_bytes += len(data)
-        self.logger.info(f"received {self.total_bytes} bytes for file {self.file_path}")
+        self.logger.debug(f"received {self.total_bytes} bytes for file {self.file_path}")
         return {_StateKey.RECEIVED_BYTES: self.total_bytes}
 
     def download_failed(self, ref_id, reason: str):
@@ -183,7 +183,7 @@ class _ChunkConsumer(Consumer):
 
     def download_completed(self, ref_id: str):
         self.file.close()
-        self.logger.info(f"closed file {self.file_path}")
+        self.logger.debug(f"closed file {self.file_path}")
 
 
 def download_file(
