@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import re
-import subprocess
 from typing import List
 
 from nvflare.apis.fl_constant import SiteType
@@ -36,6 +35,7 @@ from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
+from nvflare.private.fed.utils.fed_utils import execute_command, execute_command_directly
 
 
 class _CommandExecutor(object):
@@ -85,7 +85,7 @@ class _CommandExecutor(object):
         shell_cmd = conn.get_prop("shell_cmd")
         if target == SiteType.SERVER:
             # run the shell command on server
-            output = subprocess.getoutput(shell_cmd)
+            output = execute_command_directly(shell_cmd)
             conn.append_string(output)
             return
 
