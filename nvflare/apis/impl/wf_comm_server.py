@@ -20,7 +20,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReservedTopic, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, SystemConfigs
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy

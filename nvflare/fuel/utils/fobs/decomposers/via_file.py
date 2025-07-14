@@ -28,8 +28,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.msg_root_utils import subscribe_to_msg_root
 
 # if the file size for collected items is < _MIN_SIZE_FOR_FILE, they will be attached to the message.
-# _MIN_SIZE_FOR_FILE = 1024 * 1024 * 2
-_MIN_SIZE_FOR_FILE = 0
+_MIN_SIZE_FOR_FILE = 1024 * 1024 * 2
 
 _MIN_MSG_ROOT_TTL = 60  # allow at least 1 minute gap between download activities
 
@@ -227,7 +226,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             fobs_ctx[_CtxKey.ROOT] = root
         else:
             # if msg root is not present, then there are no secondary msgs!
-            self.logger.debug(f"ViaFile: no msg root")
+            self.logger.debug("ViaFile: no msg root")
             is_primary = True
 
         fobs_ctx[_CtxKey.IS_PRIMARY] = is_primary
