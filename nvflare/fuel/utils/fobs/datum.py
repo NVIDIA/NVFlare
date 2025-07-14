@@ -62,17 +62,17 @@ class Datum:
         self.restore_func_data = func_data
 
     @staticmethod
-    def blob_datum(blob: Union[bytes, bytearray, memoryview], dot):
+    def blob_datum(blob: Union[bytes, bytearray, memoryview], dot=0):
         """Factory method to create a BLOB datum"""
         return Datum(DatumType.BLOB, blob, dot)
 
     @staticmethod
-    def text_datum(text: str, dot):
+    def text_datum(text: str, dot=0):
         """Factory method to create a TEXT datum"""
         return Datum(DatumType.TEXT, text, dot)
 
     @staticmethod
-    def file_datum(path: str, dot):
+    def file_datum(path: str, dot=0):
         """Factory method to crate a file datum"""
         return Datum(DatumType.FILE, path, dot)
 
