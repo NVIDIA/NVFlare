@@ -48,6 +48,6 @@ class FOBSContextKey:
     CELL = "cell"
     CORE_CELL = "core_cell"
     MESSAGE = "message"
-    DOWNLOAD_TX_ID = "download_tx_id"
     ABORT_SIGNAL = "abort_signal"
     DOWNLOAD_REQ_TIMEOUT = "download_req_timeout"
+    SEC_CREDS = "sec_creds"

@@ -392,6 +392,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         if credentials:
             enhance_credential_info(credentials)
+            self.update_fobs_context({FOBSContextKey.SEC_CREDS: credentials})
 
         ep = Endpoint(
             name=fqcn,
