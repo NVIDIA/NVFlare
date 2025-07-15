@@ -35,7 +35,7 @@ from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
-from nvflare.private.fed.utils.fed_utils import execute_command, execute_command_directly
+from nvflare.private.fed.utils.fed_utils import execute_command_directly
 
 
 class _CommandExecutor(object):
