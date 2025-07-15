@@ -21,8 +21,6 @@ import sys
 import warnings
 from typing import List, Union
 
-from IPython.utils.capture import capture_output
-
 from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
