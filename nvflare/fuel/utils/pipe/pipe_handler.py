@@ -19,6 +19,7 @@ from typing import Optional
 
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe, Topic
 from nvflare.fuel.utils.validation_utils import (
     check_callable,
@@ -27,7 +28,6 @@ from nvflare.fuel.utils.validation_utils import (
     check_positive_number,
 )
 from nvflare.security.logging import secure_format_exception
-from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 
 
 class PipeHandler(object):
