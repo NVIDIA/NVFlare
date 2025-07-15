@@ -457,7 +457,7 @@ def execute_command_directly(command: str) -> str:
     args = shlex.split(command)
 
     result = subprocess.run(
-        args, capture_output=True, text=True, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        args, capture_output=False, text=True, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
 
     return result.stdout
