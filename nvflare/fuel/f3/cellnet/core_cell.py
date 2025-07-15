@@ -321,6 +321,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if fqcn in self.ALL_CELLS:
             raise ValueError(f"there is already a cell named {fqcn}")
 
+        self.fobs_ctx = {FOBSContextKey.CORE_CELL: self}
         comm_configurator = CommConfigurator()
         self._name = self.__class__.__name__
         self.logger = get_obj_logger(self)
@@ -506,7 +507,6 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.credential_manager = CredentialManager(self.endpoint)
         self.cert_ex = CertificateExchanger(self, self.credential_manager)
-        self.fobs_ctx = {FOBSContextKey.CORE_CELL: self}
 
     def update_fobs_context(self, props: dict):
         if not isinstance(props, dict):
