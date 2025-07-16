@@ -26,7 +26,6 @@ def delete_msg_root(msg_root_id: str):
 
 def subscribe_to_msg_root(msg_root_id: str, cb, **cb_kwargs):
     topic = _make_topic(ReservedTopic.MSG_ROOT_DELETED, msg_root_id)
-    print(f"subscribe_to_msg_root: {msg_root_id=}")
     DataBus().subscribe(topics=[topic], callback=_msg_root_deleted, app_cb=cb, **cb_kwargs)
 
 

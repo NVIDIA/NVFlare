@@ -36,8 +36,8 @@ MAX_BYTES_PER_READ = 1024 * 1024  # 1MB
 
 DATUM_DIR_CONFIG_VAR = "datum_dir"
 
-# this default is for linux systems. other systems must set NVFLARE_DATUM_DIR system environment variable.
-DEFAULT_DATUM_DIR = "/tmp/nvflare/datums"
+# this default should work for all systems. Can be overridden by NVFLARE_DATUM_DIR system environment variable.
+DEFAULT_DATUM_DIR = os.path.join(os.path.abspath(os.sep), "tmp", "nvflare", "datums")
 
 
 class _Header:
@@ -208,7 +208,7 @@ def _get_one_section(stream: BinaryIO, expect_datum: bool):
     return header, datum_id, data
 
 
-def _get_datum_dir():
+def get_datum_dir():
     """When a file datum is received, the data will be stored in a temporary file under a predefined Datum Directory.
     This function returns this predefined Datum Directory. The function also tries to create the directory if
     it does not exist.
@@ -264,7 +264,7 @@ def load_from_stream(stream: BinaryIO, fobs_ctx: dict = None):
             datum = Datum.blob_datum(body, header.dot)
         else:
             # put the value in a file
-            datum_dir = _get_datum_dir()
+            datum_dir = get_datum_dir()
             file_path = os.path.join(datum_dir, f"{datum_id}.dat")
             with open(file_path, "wb") as f:
                 f.write(body)

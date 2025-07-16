@@ -118,22 +118,61 @@ class DatumManager:
         self.datums[d.datum_id] = d
 
     def get_fobs_context(self):
+        """Get the FOBS Context associated with the manager.
+        The context is available during the whole process of serialization/deserialization of a single message.
+        Since Decomposers are singleton objects that could be used by multiple decomposition processes concurrently,
+        processing state data must not be stored in the decomposer! Instead, such data should be stored in the
+        FOBS context.
+
+        Returns:
+
+        """
         return self.fobs_ctx
 
     def register_post_cb(self, cb: Callable[["DatumManager"], None], **cb_kwargs):
+        """Register a callback that will be called after the decomposition is done during serialization process.
+        The callback is typically registered during decomposition by decomposers.
+
+        Note that the callback itself could also call this method to register additional callbacks. These callbacks
+        will be appended to the callback list.
+
+        The manager's post CB processing continues until all registered callbacks are invoked.
+
+        Args:
+            cb: the callback to be registered
+            **cb_kwargs: kwargs to be passed to the callback when invoked
+
+        Returns:
+
+        """
         if not callable(cb):
             raise ValueError("cb is not callable")
         self.post_cbs.append((cb, cb_kwargs))
 
     def set_error(self, error: str):
+        """Set an error with the manager.
+        The manager will eventually raise RuntimeError at the end of serialization if any error is set.
+
+        Args:
+            error: the error to be set
+
+        Returns: None
+
+        """
         if error and not self.error:
             self.error = error
 
     def get_error(self):
+        """Get the error set with the manager
+
+        Returns: the error set with the manager
+
+        """
         return self.error
 
     def post_process(self):
-        """Called during serialization after all objects are decomposed.
+        """Invoke all post serialization callbacks.
+        Called during serialization after all objects are decomposed.
 
         Returns: None
 

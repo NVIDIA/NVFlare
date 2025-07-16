@@ -13,7 +13,6 @@
 # limitations under the License.
 import json
 import os
-import tempfile
 import threading
 import uuid
 from abc import ABC, abstractmethod
@@ -24,11 +23,13 @@ from nvflare.fuel.f3.streaming.file_downloader import FileDownloader, download_f
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.cache import FobsCache
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
+from nvflare.fuel.utils.fobs.lobs import get_datum_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.msg_root_utils import subscribe_to_msg_root
 
 # if the file size for collected items is < _MIN_SIZE_FOR_FILE, they will be attached to the message.
-_MIN_SIZE_FOR_FILE = 1024 * 1024 * 2
+# _MIN_SIZE_FOR_FILE = 1024 * 1024 * 2
+_MIN_SIZE_FOR_FILE = 0
 
 _MIN_MSG_ROOT_TTL = 60  # allow at least 1 minute gap between download activities
 
@@ -89,10 +90,10 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
     def __init__(self):
         self.logger = get_obj_logger(self)
         self.lock = threading.Lock()
-        prefix = self.__class__.__name__
-        self.decompose_ctx_key = f"{prefix}_dc"  # kept in fobs_ctx: each target type has its own DecomposeCtx
-        self.items_key = f"{prefix}_items"  # in fobs_ctx: each target type has its own set of items
-        self.datum_key = f"{prefix}_datum"  # in root: each target type has its own final datum
+        self.prefix = self.__class__.__name__
+        self.decompose_ctx_key = f"{self.prefix}_dc"  # kept in fobs_ctx: each target type has its own DecomposeCtx
+        self.items_key = f"{self.prefix}_items"  # in fobs_ctx: each target type has its own set of items
+        self.datum_key = f"{self.prefix}_datum"  # in root: each target type has its own final datum
 
     @abstractmethod
     def dump_to_file(self, items: dict, path: str):
@@ -120,9 +121,9 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         """
         pass
 
-    @staticmethod
-    def _get_temp_file_name():
-        return os.path.join(tempfile.gettempdir(), str(uuid.uuid4()))
+    def _get_temp_file_name(self):
+        datum_dir = get_datum_dir()
+        return os.path.join(datum_dir, f"{self.prefix}_{uuid.uuid4()}")
 
     def _create_ref(self, target: Any, manager: DatumManager, fobs_ctx: dict):
         # create a reference item for the target object. The ref item represents the target object in
@@ -568,6 +569,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         err, file_path = download_file(
             from_fqcn=fqcn,
             ref_id=file_ref_id,
+            location=get_datum_dir(),
             per_request_timeout=req_timeout,
             cell=cell,
             abort_signal=abort_signal,
