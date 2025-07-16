@@ -35,14 +35,14 @@ def export_job(args):
         job.configure_client(
             aggregator_factory=factory,
             max_model_versions=args.max_model_aggr,
-            update_timeout=300.0,
+            update_timeout=1000.0,
             simulation_config_file=args.simulation_config_file,
         )
     else:
         job.configure_client(
             aggregator_factory=factory,
             max_model_versions=args.max_model_aggr,
-            update_timeout=300.0,
+            update_timeout=1000.0,
         )
 
     evaluator = GlobalEvaluator(
