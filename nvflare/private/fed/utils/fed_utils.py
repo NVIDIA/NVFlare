@@ -50,6 +50,7 @@ from .app_authz import AppAuthzService
 
 ALLOWED_SHELL_COMMANDS = {"pwd", "ls", "cat", "head", "tail", "grep"}
 
+
 def _check_secure_content(site_type: str) -> List[str]:
     """To check the security contents.
 
