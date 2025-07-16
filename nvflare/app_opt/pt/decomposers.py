@@ -15,7 +15,7 @@
 from typing import Any
 
 import torch
-from safetensors.torch import load_file, save_file
+from safetensors.torch import load, save
 
 import nvflare.fuel.utils.fobs.dots as dots
 from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
@@ -37,13 +37,13 @@ class TensorDecomposer(ViaFileDecomposer):
     def dump_to_file(self, items: dict, path: str):
         self.logger.debug(f"SafeTensor: dumping {len(items)} tensors to file {path}")
         try:
-            save_file(items, path)
+            torch.save(items, path)
         except Exception as e:
             self.logger.error(f"exception dumping tensors to file: {e}")
             raise e
 
     def load_from_file(self, path: str) -> Any:
-        items = load_file(path)
+        items = torch.load(path, weights_only=True)
         self.logger.debug(f"SafeTensor: got {len(items)} tensors from file {path}")
         return items
 
