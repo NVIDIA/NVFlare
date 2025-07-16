@@ -77,8 +77,7 @@ This guide will help you get started with NVIDIA FLARE, a powerful platform for 
     - How to use the FLARE Python API to interact with the FLARE System, submit jobs, and monitor progress: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_api.ipynb>`
     - Understand the FLARE logging configuration, output, and customize logging configuration: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/logging.ipynb>`
     - How to use the FLARE job CLI to submit jobs and modify the job configuration based on job templates: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/job_cli.ipynb>`
-    - How to work with Docker containers: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/docker.ipynb>`
-    - How to work with Kubernetes: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/kubernetes.ipynb>`
+  
   
  * **Research Topics:**
     - `Different FL research algorithms and implementations <https://github.com/NVIDIA/NVFlare/tree/main/research>`_
