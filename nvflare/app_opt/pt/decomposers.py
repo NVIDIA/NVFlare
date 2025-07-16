@@ -15,7 +15,6 @@
 from typing import Any
 
 import torch
-from safetensors.torch import load, save
 
 import nvflare.fuel.utils.fobs.dots as dots
 from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
