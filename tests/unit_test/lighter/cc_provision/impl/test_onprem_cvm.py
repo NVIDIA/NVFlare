@@ -13,12 +13,10 @@
 # limitations under the License.
 
 import json
-import os
 import tempfile
 from unittest.mock import patch
 
 import pytest
-import yaml
 
 from nvflare.lighter.cc_provision.cc_constants import CC_AUTHORIZERS_KEY
 from nvflare.lighter.cc_provision.impl.onprem_cvm import OnPremCVMBuilder
@@ -36,7 +34,7 @@ def basic_project():
         PropKey.CC_ENABLED: True,
         PropKey.CC_CONFIG_DICT: {
             "compute_env": "onprem_cvm",
-            "cc_cpu_mechanism": "tdx",
+            "cc_cpu_mechanism": "amd_sev_snp",
             "cc_gpu_mechanism": "nvidia_cc",
             "cc_issuer": "test_issuer",
             "cc_attestation": "test_attestation",
@@ -61,29 +59,17 @@ def builder():
     # Create a test authorizers file
     test_authorizers = {"cc_authorizers": [{"id": "test_authorizer", "path": "test.path.TestAuthorizer", "args": {}}]}
 
-    with tempfile.NamedTemporaryFile(delete=False) as test_file:
-        with open(test_file.name, "w") as f:
-            yaml.dump(test_authorizers, f)
-
-        yield OnPremCVMBuilder(token_expiration=3600, authorizers_yaml_path=test_file.name)
-    os.remove(test_file.name)
+    return OnPremCVMBuilder()
 
 
 class TestOnPremCVMBuilder:
     """Test suite for OnPremCVMBuilder."""
 
-    def test_initialize(self, builder, basic_project, ctx):
-        """Test initializing the builder."""
-        builder.initialize(basic_project, ctx)
-        authorizers = ctx.get(CC_AUTHORIZERS_KEY, [])
-        assert len(authorizers) == 1
-        assert authorizers[0]["authorizer_id"] == "test_authorizer"
-
     @patch("nvflare.lighter.utils.write")
     def test_build_resources(self, mock_write, builder, basic_project, ctx):
         """Test building resources for an entity."""
         server = basic_project.get_server()
-        builder.authorizers = [{"id": "test_authorizer", "path": "test.path.TestAuthorizer", "args": {}}]
+        ctx[CC_AUTHORIZERS_KEY] = [{"id": "test_authorizer", "path": "test.path.TestAuthorizer", "args": {}}]
 
         builder._build_resources(server, ctx)
 

@@ -59,8 +59,10 @@ class TestOnPremPackager:
     @patch("builtins.open", new_callable=mock_open, read_data="docker run {~~cvm_image_name~~}")
     @patch("nvflare.lighter.utils.load_yaml")
     @patch("nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager._build_cc_image")
+    @patch("nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager._change_log_dir")
     def test_package_for_participant(
         self,
+        mock_change_log_dir,
         mock_build_cc_image,
         mock_load_yaml,
         mock_open,
@@ -78,10 +80,6 @@ class TestOnPremPackager:
 
         assert mock_build_cc_image.call_count == 3
         mock_build_cc_image.assert_has_calls(
-            [
-                call("test_config.yaml", "server", "test_workspace/server-copy"),
-                call("test_config.yaml", "client1", "test_workspace/client1-copy"),
-                call("test_config.yaml", "client2", "test_workspace/client2-copy"),
-            ],
+            [call("test_config.yaml", p.name, "test_workspace") for p in basic_project.get_all_participants()],
             any_order=True,
         )
