@@ -38,7 +38,7 @@ application_code_folder
 │               ├── app_<site>/     # Site custom code
 │                  └── custom/      # Site custom code
 ├── application-share/              # Shared resources
-│   └── shared.py
+|   └── simple_network.py           # Shared model definition 
 └── requirements.txt       # Python dependencies (optional)
 ```
 
@@ -55,25 +55,28 @@ python -m zipfile -c application_code.zip application_code/*
 compute_env: onprem_cvm
 cc_cpu_mechanism: amd_sev_snp
 role: server
+
+# All drive sizes are in GB
 root_drive_size: 8
 secure_drive_size: 2
 data_source: /tmp/data
 
-nvflare_version: "git+https://github.com/YuanTingHsieh/NVFlare.git@enhance_cc_provision"
+# Can be any pip-installable version string (e.g., "2.6.0", "latest", Git URL, etc.)
+nvflare_version: "2.6.0"
+
+# NVFlare application code package to be pre-installed inside the CVM
 nvflare_package: application_code.zip
 
 
 cc_issuers:
   - id: snp_authorizer
-    token_expiration: 3600
     path: "nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer"
+    token_expiration: 3600 # in seconds
   - id: gpu_authorizer
-    token_expiration: 3600
     path: "nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer"
+    token_expiration: 3600 # in seconds
 
 cc_attestation:
-  check_frequency: 1800
-  failure_action: stop_job
+  check_frequency: 180 # in seconds
 
-cvm_image_name: nvflare_cvm
 ```

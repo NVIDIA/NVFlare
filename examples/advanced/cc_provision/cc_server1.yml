@@ -1,6 +1,5 @@
 cc_attestation:
-  check_frequency: 1800
-  failure_action: stop_job
+  check_frequency: 180
 cc_cpu_mechanism: amd_sev_snp
 cc_issuers:
 - id: snp_authorizer
@@ -8,8 +7,8 @@ cc_issuers:
   token_expiration: 3600
 compute_env: onprem_cvm
 data_source: /tmp/data
-nvflare_package: application_code.zip
-nvflare_version: git+https://github.com/YuanTingHsieh/NVFlare.git@enhance_cc_provision
+nvflare_package: /localhome/local-yuantingh/NVFlare/examples/advanced/cc_provision/application_code.zip
+nvflare_version: 2.6.0
 role: server
 root_drive_size: 8
 secure_drive_size: 2
