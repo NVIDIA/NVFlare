@@ -54,7 +54,7 @@ def define_pre_install_parser(cmd_name: str, sub_cmd):
     return parser
 
 
-def _install_requirements(requirements_file: Path):
+def install_requirements(requirements_file: Path):
     """Install Python packages from requirements.txt."""
     if not requirements_file.exists():
         print("No requirements.txt found, skipping package installation")
@@ -216,7 +216,7 @@ def install_app_code(
         # Install requirements if present
         requirements = temp_path / "requirements.txt"
         if requirements.exists():
-            _install_requirements(requirements)
+            install_requirements(requirements)
 
     # Cleanup
     print(f"Deleting {app_code_zip} after installation: {delete}")
