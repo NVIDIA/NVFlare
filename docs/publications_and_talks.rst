@@ -32,7 +32,7 @@ Publications: 2022
 * **2022-10** `Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation <https://arxiv.org/abs/2203.06338>`__ (`ECCV 2022 <https://eccv2022.ecva.net/>`__)
 * **2022-10** `Joint Multi Organ and Tumor Segmentation from Partial Labels Using Federated Learning <https://link.springer.com/chapter/10.1007/978-3-031-18523-6_6>`__ (`DeCaF @ MICCAI 2022 <https://decaf-workshop.github.io/decaf-2022/>`__)
 * **2022-10** `Split-U-Net: Preventing Data Leakage in Split Learning for Collaborative Multi-modal Brain Tumor Segmentation <https://arxiv.org/abs/2208.10553>`__ (`DeCaF @ MICCAI 2022 <https://decaf-workshop.github.io/decaf-2022/>`__)
-* **2022-06** `Closing the Generalization Gap of Cross-silo Federated Medical Image Segmentation <https://openaccess.thecvf.com/content/CVPR2022/papers/Xu_Closing_the_Generalization_Gap_of_Cross-Silo_Federated_Medical_Image_Segmentation_CVPR_2022_paper.pdf>`__ (`CVPR 2022 <https://cvpr2022.thecvf.com/>`__)
+* **2022-06** `Closing the Generalization Gap of Cross-silo Federated Medical Image Segmentation <https://openaccess.thecvf.com/content/CVPR2022/papers/Xu_Closing_the_Generalization_Gap_of_Cross-Silo_Federated_Medical_Image_Segmentation_CVPR_2022_paper.pdf>`__ (CVPR 2022)
 * **2022-02** `Do Gradient Inversion Attacks Make Federated Learning Unsafe? <https://arxiv.org/abs/2202.06924>`__ (Preprint)
 
 Publications: 2021
