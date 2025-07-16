@@ -22,7 +22,7 @@ Default Logging Configuration
 
 The default logging configuration json file (**log_config.json.default**, ``LogMode.FULL``) is divided into 3 main sections: formatters, handlers, and loggers.
 This file can be found at :github_nvflare_link:`log_config.json <nvflare/fuel/utils/log_config.json>`.
-See the `configuration dictionary schema <(https://docs.python.org/3/library/logging.config.html#configuration-dictionary-schema)>`_ for more details.
+See the `configuration dictionary schema <https://docs.python.org/3/library/logging.config.html#configuration-dictionary-schema>`_ for more details.
 
 .. code-block:: json
 

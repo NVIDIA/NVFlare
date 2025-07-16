@@ -1,0 +1,28 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "fed_stats_pre_run" ,"fed_stats"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
+        "args": {
+          "generator_id": "holoscan_fl_example_stats_generator"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "holoscan_fl_example_stats_generator",
+      "path": "holoscan_statistics.HoloscanExampleStatistics",
+      "args": {
+        "data_path": "/workspace/holoscan_data"
+      }
+    }
+  ]
+}
