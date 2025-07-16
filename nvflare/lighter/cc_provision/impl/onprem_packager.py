@@ -36,20 +36,29 @@ def update_log_filenames(config, new_log_root: str = "/applog"):
     return config
 
 
-def update_nvflare_package_path(yaml_path):
+def to_abs_path(yaml_path, file_path):
+    if not yaml_path or not file_path:
+        raise RuntimeError("Invalid input")
+    if not os.path.isabs(file_path):
+        yaml_dir = os.path.dirname(os.path.abspath(yaml_path))
+        abs_path = os.path.abspath(os.path.join(yaml_dir, file_path))
+        return abs_path
+    return file_path
+
+
+def update_path_inside_cc_config(yaml_path, config_key: str):
     with open(yaml_path, "r") as f:
         config = yaml.safe_load(f)
-    package_path = config.get("nvflare_package")
-    if package_path and not os.path.isabs(package_path):
-        yaml_dir = os.path.dirname(os.path.abspath(yaml_path))
-        abs_path = os.path.abspath(os.path.join(yaml_dir, package_path))
-        config["nvflare_package"] = abs_path
+    package_path = config.get(config_key)
+    if package_path:
+        config[config_key] = to_abs_path(yaml_path, package_path)
     with open(yaml_path, "w") as f:
         yaml.dump(config, f)
 
 
 def run_command(command, cwd=None):
     try:
+        print(f"Try running {command=} in {cwd}")
         result = subprocess.run(
             command,
             cwd=cwd,
@@ -57,7 +66,6 @@ def run_command(command, cwd=None):
             text=True,
             check=True,  # Raises CalledProcessError on non-zero return
         )
-        print(f"Process succeeded with return code {result.returncode}")
         print(f"STDOUT:\n{result.stdout}")
         print(f"STDERR:\n{result.stderr}")
 
@@ -75,10 +83,12 @@ class OnPremPackager(Packager):
 
     def _build_cc_image(self, cc_config_yaml: str, site_name: str, startup_folder_path: str):
         """Build CC image for the site."""
-        print(f"calling {self.build_image_cmd=} {cc_config_yaml=} {site_name=} {startup_folder_path=}")
         cc_config_yaml = os.path.abspath(cc_config_yaml)
-        update_nvflare_package_path(cc_config_yaml)
-        command = [self.build_image_cmd, cc_config_yaml, site_name, startup_folder_path]
+        update_path_inside_cc_config(cc_config_yaml, config_key="nvflare_package")
+        build_image_cmd = to_abs_path(cc_config_yaml, self.build_image_cmd)
+        if not os.path.exists(build_image_cmd) or not os.access(build_image_cmd, os.X_OK):
+            raise FileNotFoundError(f"Build image command '{build_image_cmd}' not found or is not executable.")
+        command = [build_image_cmd, cc_config_yaml, site_name, startup_folder_path]
         run_command(command)
 
     def _change_log_dir(self, log_config_path: str):

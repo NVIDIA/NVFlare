@@ -1,22 +1,18 @@
-compute_env: onprem_cvm
+cc_attestation:
+  check_frequency: 180
 cc_cpu_mechanism: amd_sev_snp
 cc_gpu_mechanism: nvidia_cc
+cc_issuers:
+- id: snp_authorizer
+  path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
+  token_expiration: 3600
+- id: gpu_authorizer
+  path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
+  token_expiration: 3600
+compute_env: onprem_cvm
+data_source: /tmp/data
+nvflare_package: /localhome/local-yuantingh/NVFlare/examples/advanced/cc_provision/application_code.zip
+nvflare_version: 2.6.0
 role: client
 root_drive_size: 8
 secure_drive_size: 2
-data_source: /tmp/data
-nvflare_package: application_code.zip
-nvflare_version: git+https://github.com/YuanTingHsieh/NVFlare.git@enhance_cc_provision
-
-cc_issuers:
-  - id: snp_authorizer
-    path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
-    token_expiration: 3600
-  - id: gpu_authorizer
-    path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
-    token_expiration: 3600
-
-cc_attestation:
-  check_frequency: 1800
-  failure_action: stop_job
-
