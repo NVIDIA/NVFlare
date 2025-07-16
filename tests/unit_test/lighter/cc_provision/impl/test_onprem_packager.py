@@ -16,7 +16,6 @@ from unittest.mock import call, mock_open, patch
 
 import pytest
 
-from nvflare.lighter.cc_provision.cc_constants import CCConfigKey
 from nvflare.lighter.cc_provision.impl.onprem_packager import OnPremPackager
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Project
@@ -53,29 +52,26 @@ class TestOnPremPackager:
         assert packager.cc_config_key == "cc_config"
         assert packager.build_image_cmd == "custom_build_cmd.sh"
 
-    @patch("shutil.copytree")
+    @patch("shutil.copy")
     @patch("shutil.rmtree")
-    @patch("os.makedirs")
+    @patch("os.mkdir")
     @patch("builtins.open", new_callable=mock_open, read_data="docker run {~~cvm_image_name~~}")
-    @patch("nvflare.lighter.utils.load_yaml")
     @patch("nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager._build_cc_image")
     @patch("nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager._change_log_dir")
     def test_package_for_participant(
         self,
         mock_change_log_dir,
         mock_build_cc_image,
-        mock_load_yaml,
         mock_open,
         mock_makedirs,
         mock_rmtree,
-        mock_copytree,
+        mock_copy,
         packager,
         basic_project,
         ctx,
     ):
         """Test packaging for a participant."""
 
-        mock_load_yaml.return_value = {CCConfigKey.CVM_IMAGE_NAME: "nvflare_cvm"}
         packager.package(basic_project, ctx)
 
         assert mock_build_cc_image.call_count == 3
