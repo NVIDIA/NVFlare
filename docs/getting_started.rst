@@ -1,13 +1,3 @@
-.. toctree::
-   :maxdepth: 2
-
-   installation
-   running_modes
-   quickstart
-   learn_more
-   self_paced_training
-   real_world_use_cases
-
 ###############
 Getting Started
 ###############
@@ -78,72 +68,41 @@ This guide will help you get started with NVIDIA FLARE, a powerful platform for 
     - Understand the FLARE logging configuration, output, and customize logging configuration: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/logging.ipynb>`
     - How to use the FLARE job CLI to submit jobs and modify the job configuration based on job templates: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/job_cli.ipynb>`
   
+5. **Research Topics:**
+   - `Different FL research algorithms and implementations <https://github.com/NVIDIA/NVFlare/tree/main/research>`_
+
+6. **Self-Paced Training**
+   We offer extensive materials for self-paced training with NVIDIA FLARE, 
+   including detailed tutorials and resources. For a comprehensive guide, 
+   please refer to the **`Self-Paced Training <self-paced-training/self_paced_training.rst>`_** documentation. 
+   This includes a 12-chapter course that provides an in-depth overview of FLARE, covering topics such as running federated 
+   learning applications, algorithms, system architecture, experimental tracking, system monitoring, 
+   and industrial applications. While each notebook can be run independently, it is recommended to follow 
+   them sequentially for the best learning experience. With over 100 notebooks and 88 videos, this tutorial 
+   serves as a thorough guide to federated learning with FLARE.
+
+7. **Real-World Use Cases**:
+
+   - `NVIDIA FLARE DAY Talks in 2024 <https://nvidia.github.io/NVFlare/flareDay/>`_
+     Use cases from different industries, including healthcare, finance, and more.
+
+   - NVIDIA FLARE DAY US+EMEA 2025: 2025-09-16 Workshop, 2025-09-17 Webinar : coming soon
+
+   - NVIDIA FLARE DAY US+EMEA 2025: 2025-09-23 Workshop, 2025-09-24 Webinar : coming soon
+
+8. **Discover FLARE via Chat**
   
- * **Research Topics:**
-    - `Different FL research algorithms and implementations <https://github.com/NVIDIA/NVFlare/tree/main/research>`_
+   You can also use the chatbot to search the documentation, explore program flows, and find relevant code snippets, system architecture details, and more.
 
- * **Self-Paced Training**
-  - `NVIDIA Deep Learning Institute (DLI) Course 1: Introduction to Federated Learning with NVIDIA FLARE <https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-28+V1>`_
-     A 2-hour introduction to FLARE (free class).
+   Visit: [DeepWiki NVFlare Chatbot](https://deepwiki.com/NVIDIA/NVFlare)
 
-  - `NVIDIA Deep Learning Institute (DLI) Course 2: Decentralized AI at Scale with NVIDIA Flare <https://learn.nvidia.com/courses/course-detail?course_id=course-v1:DLI+S-FX-29+V1>`_
-     FLARE introduction and hands-on exercise with provided AWS instances (CPU only) (free class).
+   For example, you can ask the chatbot:
+   - "Where can I set the heartbeat timeout between the client and server?"
 
-  - `NVIDIA Deep Learning Institute (DLI) Course 3 coming soon`_
-    Advanced hands-on exercise with provided AWS instances (CPU + GPU) (paid class),
-    covering features of topics including advanced FL algorithms, peer-to-peer algorithms, privacy and security, LLM training, XGBoost, FL in healthcare, financial services, and more.
+   The chatbot will find all relevant locations and provide explanations for different types of heartbeat timeouts. You can follow up with questions like:
 
-  - `Self-paced training tutorial: Federated Learning with NVIDIA FLARE <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/self-paced-training>`_
-    
-     - **Videos**: Coming soon.
+   - "I thought you could set the heartbeat in `resource.json` on the server or client side, which overwrites the default value."
 
-    The 12-chapter course offers a comprehensive overview of FLARE, covering topics such as running federated learning applications, algorithms, system architecture, experimental tracking, system monitoring, and industrial applications.
-    While each notebook can be run independently, and you have the option to skip certain chapters or sections, it is recommended to follow them sequentially.
-    With 100+ notebooks and 88+ videos, this tutorial is a comprehensive guide to federated learning with FLARE.
+   The chatbot will then give you more details on how to set the heartbeat timeout in `resource.json`.
 
-    **Part 1: Introduction to Federated Learning**
-    This section focuses on running and developing federated learning applications using a simulator.
-
-    **Part 2: Federated Learning System**
-    Here, we explore NVIDIA FLARE's federated learning/computing system, including its architecture, deployment process, simulation of deployments, and system interactions.
-
-    **Part 3: Security and Privacy**
-    After understanding the basics of federated learning applications and systems, we delve into privacy and security aspects. This includes discussions on privacy concerns, various Privacy-Enhancing Technologies (PETs), and enterprise security support.
-
-    **Part 4: Advanced Topics in Federated Learning**
-    This section covers advanced topics in federated learning, such as:
-
-    - Various federated learning algorithms like FedOpt and FedProx.
-    - Different federated learning workflows, including cyclic, split learning, and swarm learning.
-    - Training or fine-tuning large language models.
-    - Secure federated XGBoost training.
-    - A comparison of FLARE's high-level and low-level APIs, with a focus on the powerful low-level APIs.
-
-    **Part 5: Federated Learning in Different Industries**
-    Having covered a range of federated learning techniques, this part demonstrates their application in various fields, such as cancer research and fraud detection.
-
-5. **Real-World Use Cases**:
-
-    - `NVIDIA FLARE DAY Talks in 2024 <https://nvidia.github.io/NVFlare/flareDay/>`_
-       Use cases from different industries, including healthcare, finance, and more.
-
-    - `NVIDIA FLARE DAY US+EMEA 2025: 2025-09-16 Workshop, 2025-09-17 Webinar : coming soon`_
-
-    - `NVIDIA FLARE DAY US+EMEA 2025: 2025-09-23 Workshop, 2025-09-24 Webinar : coming soon`_
-
-6. **Discover FLARE via Chat**
-  
-  You can also use the chatbot to search the documentation, explore program flows, and find relevant code snippets, system architecture details, and more.
-
-  Visit: [DeepWiki NVFlare Chatbot](https://deepwiki.com/NVIDIA/NVFlare)
-
-  For example, you can ask the chatbot:
-  - "Where can I set the heartbeat timeout between the client and server?"
-
-  The chatbot will find all relevant locations and provide explanations for different types of heartbeat timeouts. You can follow up with questions like:
-
-  - "I thought you could set the heartbeat in `resource.json` on the server or client side, which overwrites the default value."
-
-  The chatbot will then give you more details on how to set the heartbeat timeout in `resource.json`.
-
-  Other prompts you can ask include "How to fine-tune LLM," "What are the privacy features," etc.
+   Other prompts you can ask include "How to fine-tune LLM," "What are the privacy features," etc.
