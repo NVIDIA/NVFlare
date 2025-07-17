@@ -69,6 +69,7 @@ class PropKey:
     CC_CONFIG_DICT = "cc_config_dict"
     CC_ENABLED = "cc_enabled"
     USE_AIO = "use_aio"
+    CC_ISSUERS = "cc_issuers"
 
     # the following are internal properties added by builders during provision
     PARENT = "parent"
