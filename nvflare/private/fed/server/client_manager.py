@@ -22,6 +22,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
 from nvflare.private.fed.server.cred_keeper import CredKeeper
@@ -314,10 +315,14 @@ class ClientManager:
     def get_client_from_name(self, client_name):
         result = self.name_to_clients.get(client_name)
         if not result:
-            # self.logger.error(
-            #     f"no client for {client_name}: I have {self.name_to_clients.keys()} {self.clients.keys()}"
-            # )
-            # admin
-            result = Client(client_name, None)
-            result.set_fqcn(client_name)
+            # Check whether this is a valid admin client.
+            # Note that since admin clients are not kept in name_to_clients, we assume that the admin client
+            # is valid and dynamically create the Client object as the result.
+            if is_valid_admin_client_name(client_name):
+                result = Client(client_name, None)
+                result.set_fqcn(client_name)
+            else:
+                self.logger.debug(
+                    f"no client for {client_name}: I have {self.name_to_clients.keys()} {self.clients.keys()}"
+                )
         return result
