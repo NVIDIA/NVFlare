@@ -72,7 +72,6 @@ class TaskController(FLComponent, ControllerSpec):
         min_responses: int = 0,
         wait_time_after_min_received: int = 0,
     ):
-
         return self.broadcast_and_wait(task, fl_ctx, targets, min_responses, wait_time_after_min_received)
 
     def broadcast_and_wait(

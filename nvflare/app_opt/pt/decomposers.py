@@ -27,6 +27,17 @@ class SerializationModule(torch.nn.Module):
 
 
 class TensorDecomposer(ViaFileDecomposer):
+    """We first planned to use safetensors' "save_file" and "load_file" to save and load tensors.
+    Unfortunately that does not work if there are shared memory among different tensors.
+    Safetensors suggests to use "save_model" and "load_model" instead, which does not work for us either.
+    This is because both methods require a model (nn.Module) object that defines model architecture.
+    Though this could be done on the sending side, there is no way for the receiving side to have the model
+    object during the recomposition process.
+
+    We decided to use torch's "save" and "load" methods, which work even if tensors have shared memory among them.
+    NOTE: the "save" method does NOT involve pickle when saving only model weights, which is what we do.
+    """
+
     def supported_type(self):
         return torch.Tensor
 
@@ -34,7 +45,7 @@ class TensorDecomposer(ViaFileDecomposer):
         return [dots.TENSOR_BYTES, dots.TENSOR_FILE]
 
     def dump_to_file(self, items: dict, path: str):
-        self.logger.debug(f"SafeTensor: dumping {len(items)} tensors to file {path}")
+        self.logger.debug(f"dumping {len(items)} tensors to file {path}")
         try:
             torch.save(items, path)
         except Exception as e:
@@ -43,7 +54,7 @@ class TensorDecomposer(ViaFileDecomposer):
 
     def load_from_file(self, path: str) -> Any:
         items = torch.load(path, weights_only=True)
-        self.logger.debug(f"SafeTensor: got {len(items)} tensors from file {path}")
+        self.logger.debug(f"got {len(items)} tensors from file {path}")
         return items
 
     def get_bytes_dot(self) -> int:
