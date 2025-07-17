@@ -131,3 +131,19 @@ This guide will help you get started with NVIDIA FLARE, a powerful platform for 
 
     - `NVIDIA FLARE DAY US+EMEA 2025: 2025-09-23 Workshop, 2025-09-24 Webinar : coming soon`_
 
+6. **Discover FLARE via Chat**
+  
+  You can also use the chatbot to search the documentation, explore program flows, and find relevant code snippets, system architecture details, and more.
+
+  Visit: [DeepWiki NVFlare Chatbot](https://deepwiki.com/NVIDIA/NVFlare)
+
+  For example, you can ask the chatbot:
+  - "Where can I set the heartbeat timeout between the client and server?"
+
+  The chatbot will find all relevant locations and provide explanations for different types of heartbeat timeouts. You can follow up with questions like:
+
+  - "I thought you could set the heartbeat in `resource.json` on the server or client side, which overwrites the default value."
+
+  The chatbot will then give you more details on how to set the heartbeat timeout in `resource.json`.
+
+  Other prompts you can ask include "How to fine-tune LLM," "What are the privacy features," etc.
