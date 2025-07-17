@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
+import time
 from typing import Any
 
 import nvflare.fuel.utils.fobs as fobs
@@ -18,6 +20,7 @@ from nvflare.fuel.f3.cellnet.defs import Encoding, MessageHeaderKey
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.utils.buffer_list import BufferList
+from nvflare.fuel.utils.time_utils import time_to_string
 
 cell_mapping = {
     "O": MessageHeaderKey.ORIGIN,
@@ -33,6 +36,41 @@ msg_mapping = {
     "STP": StreamHeaderKey.TOPIC,
     "SEQ": StreamHeaderKey.SEQUENCE,
 }
+
+
+_MSG_SIZE_HW_THRESHOLD = 1024 * 1024 * 10
+
+
+class MsgHighWaterInfo:
+
+    def __init__(self, hw_type: str):
+        self.hw_type = hw_type
+        self.size = 0
+        self.timestamp = None
+        self.topic = None
+        self.origin = None
+        self.destination = None
+        self.headers = None
+
+    def update(self, size, msg: Message):
+        if size <= self.size:
+            return
+
+        self.size = size
+        self.timestamp = time.time()
+        self.topic = msg.get_header(MessageHeaderKey.TOPIC)
+        self.origin = msg.get_header(MessageHeaderKey.ORIGIN)
+        self.destination = msg.get_header(MessageHeaderKey.DESTINATION)
+        self.headers = copy.copy(msg.headers)
+
+        if size > _MSG_SIZE_HW_THRESHOLD:
+            info = f"from {self.origin} to {self.destination}: {size=} topic={self.topic} headers={self.headers}"
+            print(f"{time_to_string(self.timestamp)}: {self.hw_type} Msg Size High Water: {info}")
+
+
+# Some stats of msg size high water
+_sent_hw_info = MsgHighWaterInfo("Sent")
+_received_hw_info = MsgHighWaterInfo("Received")
 
 
 def new_cell_message(headers: dict, payload=None):
@@ -123,6 +161,10 @@ def encode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
 
     size = buffer_len(message.payload)
     message.set_header(MessageHeaderKey.PAYLOAD_LEN, size)
+
+    global _sent_hw_info
+    _sent_hw_info.update(size, message)
+
     return size
 
 
@@ -132,6 +174,9 @@ def decode_payload(message: Message, encoding_key=MessageHeaderKey.PAYLOAD_ENCOD
 
     size = buffer_len(message.payload)
     message.set_header(MessageHeaderKey.PAYLOAD_LEN, size)
+
+    global _received_hw_info
+    _received_hw_info.update(size, message)
 
     encoding = message.get_header(encoding_key)
     if not encoding:
