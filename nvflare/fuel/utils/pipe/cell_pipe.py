@@ -347,11 +347,13 @@ class CellPipe(Pipe):
             )
             return True
 
+        request = _to_cell_message(msg)
+        request.set_header(MessageHeaderKey.MSG_ROOT_ID, msg.msg_id)
         reply = self.cell.send_request(
             channel=self.channel,
             topic=msg.topic,
             target=self.peer_fqcn,
-            request=_to_cell_message(msg),
+            request=request,
             timeout=timeout,
             optional=optional,
         )

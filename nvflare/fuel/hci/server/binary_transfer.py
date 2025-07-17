@@ -15,7 +15,7 @@
 import os
 import shutil
 
-from nvflare.app_common.streamers.file_downloader import FileDownloader
+from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps

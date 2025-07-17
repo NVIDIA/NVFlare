@@ -33,6 +33,8 @@ class ReservedHeaderKey(object):
     TASK_OPERATOR = "__task_operator__"
     ERROR = "__error__"
     PEER_CTX = ServerCommandKey.PEER_FL_CONTEXT
+    MSG_ROOT_ID = "__msg_root_id__"
+    MSG_ROOT_TTL = "__msg_root_ttl__"  # TTL = time to live
 
 
 class Shareable(dict):

@@ -26,6 +26,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
 from nvflare.fuel.utils.job_utils import build_client_hierarchy
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.tbi import TBI
@@ -226,6 +227,7 @@ class ServerRunner(TBI):
 
             ReliableMessage.shutdown()
             self.engine.shutdown_streamer()
+            FileDownloader.shutdown()
             self.log_info(fl_ctx, "Server runner finished.")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

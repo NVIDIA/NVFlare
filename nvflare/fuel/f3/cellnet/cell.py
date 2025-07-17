@@ -26,6 +26,7 @@ from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
+from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.waiter_utils import WaiterRC, conditional_wait
 from nvflare.security.logging import secure_format_exception
@@ -75,7 +76,7 @@ class Adapter:
         self.logger.debug(f"{stream_req_id=}: {headers=}, incoming data={result}")
         request = Message(headers, result)
 
-        decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING)
+        decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
 
         channel = request.get_header(StreamHeaderKey.CHANNEL)
         request.set_header(MessageHeaderKey.CHANNEL, channel)
@@ -103,7 +104,7 @@ class Adapter:
             }
         )
 
-        encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING)
+        encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
         reply_future = self.cell.send_blob(
             CellChannel.RETURN_ONLY, f"{channel}:{topic}", origin, response, secure, optional
@@ -118,6 +119,18 @@ class Cell(StreamCell):
         self.requests_dict = dict()
         self.logger = get_obj_logger(self)
         self.register_blob_cb(CellChannel.RETURN_ONLY, "*", self._process_reply)  # this should be one-time registration
+        self.core_cell.update_fobs_context({FOBSContextKey.CELL: self})
+
+    def update_fobs_context(self, props: dict):
+        self.core_cell.update_fobs_context(props)
+
+    def get_fobs_context(self, props: dict = None):
+        """Return a new copy of the fobs context
+
+        Returns: a new copy of the fobs context
+
+        """
+        return self.core_cell.get_fobs_context()
 
     def __getattr__(self, func):
         """
@@ -177,7 +190,7 @@ class Cell(StreamCell):
         future_to_target = {}
 
         # encode the request now so each target thread won't need to do it again.
-        self._encode_message(request)
+        self._encode_message(request, abort_signal)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as executor:
             self.logger.debug(f"broadcast to {targets=}")
@@ -227,7 +240,7 @@ class Cell(StreamCell):
         Returns: None
 
         """
-        encode_payload(message, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING)
+        encode_payload(message, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.get_fobs_context())
         if isinstance(targets, str):
             targets = [targets]
 
@@ -281,9 +294,13 @@ class Cell(StreamCell):
         else:
             return True
 
-    def _encode_message(self, msg: Message) -> int:
+    def _encode_message(self, msg: Message, abort_signal) -> int:
         try:
-            return encode_payload(msg, StreamHeaderKey.PAYLOAD_ENCODING)
+            return encode_payload(
+                msg,
+                StreamHeaderKey.PAYLOAD_ENCODING,
+                fobs_ctx=self.get_fobs_context({FOBSContextKey.ABORT_SIGNAL: abort_signal}),
+            )
         except BaseException as exc:
             self.logger.error(f"Can't encode {msg=} {exc=}")
             raise exc
@@ -314,7 +331,7 @@ class Cell(StreamCell):
         Returns: reply data
 
         """
-        self._encode_message(request)
+        self._encode_message(request, abort_signal)
         return self._send_one_request(channel, target, topic, request, timeout, secure, optional, abort_signal)
 
     def _send_one_request(
@@ -372,7 +389,11 @@ class Cell(StreamCell):
                 return self._get_result(req_id)
             self.logger.debug(f"{req_id=}: receiving complete")
             waiter.result = Message(r_future.headers, r_future.result())
-            decode_payload(waiter.result, encoding_key=StreamHeaderKey.PAYLOAD_ENCODING)
+            decode_payload(
+                waiter.result,
+                encoding_key=StreamHeaderKey.PAYLOAD_ENCODING,
+                fobs_ctx=self.get_fobs_context(props={FOBSContextKey.ABORT_SIGNAL: abort_signal}),
+            )
             self.logger.debug(f"{req_id=}: return result {waiter.result=}")
             return self._get_result(req_id)
         except Exception as ex:

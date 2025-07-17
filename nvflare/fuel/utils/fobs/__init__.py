@@ -16,6 +16,7 @@ from nvflare.fuel.utils.fobs.fobs import (
     auto_register_enum_types,
     deserialize,
     deserialize_stream,
+    get_dot_handler,
     num_decomposers,
     register,
     register_data_classes,
@@ -41,3 +42,12 @@ loads = load_from_bytes
 dumps = dump_to_bytes
 loadf = load_from_file
 dumpf = dump_to_file
+
+
+class FOBSContextKey:
+    CELL = "cell"
+    CORE_CELL = "core_cell"
+    MESSAGE = "message"
+    ABORT_SIGNAL = "abort_signal"
+    DOWNLOAD_REQ_TIMEOUT = "download_req_timeout"
+    SEC_CREDS = "sec_creds"

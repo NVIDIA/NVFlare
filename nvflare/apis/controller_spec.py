@@ -151,6 +151,7 @@ class Task(object):
         self.after_task_sent_cb = after_task_sent_cb
         self.result_received_cb = result_received_cb
         self.task_done_cb = task_done_cb
+        self.msg_root_id = str(uuid.uuid4())
 
         self.targets = None
         self.client_tasks = []  # list of ClientTasks sent
