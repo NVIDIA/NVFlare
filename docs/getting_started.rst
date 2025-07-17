@@ -90,7 +90,7 @@ This guide will help you get started with NVIDIA FLARE, a powerful platform for 
 
    - NVIDIA FLARE DAY US+EMEA 2025: 2025-09-16 Workshop, 2025-09-17 Webinar : coming soon
 
-   - NVIDIA FLARE DAY US+EMEA 2025: 2025-09-23 Workshop, 2025-09-24 Webinar : coming soon
+   - NVIDIA FLARE DAY APAC 2025: 2025-09-23 Workshop, 2025-09-24 Webinar : coming soon
 
 8. **Discover FLARE via Chat**
   
