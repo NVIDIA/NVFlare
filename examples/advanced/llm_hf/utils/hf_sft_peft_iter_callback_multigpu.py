@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import argparse
-import copy
 import os
 
 # Add deterministic seed for reproducibility illustration
 import random
+import shutil
 
 import datasets
 import numpy as np
@@ -27,8 +27,6 @@ from accelerate import PartialState
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, TrainerCallback, trainer_utils
 from trl import SFTConfig, SFTTrainer
-
-import nvflare.client as flare
 
 
 # Add callback to stop at each epoch
@@ -94,7 +92,7 @@ def main():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="./workspace_federated/llama-3.2-1b-dolly-sft",
+        default="./workspace_centralized/llama-3.2-1b-dolly-sft-iter",
     )
     parser.add_argument(
         "--train_mode",
@@ -108,14 +106,6 @@ def main():
         default="constant",
         help="learning rate scheduler type, default to 'constant'",
     )
-    parser.add_argument(
-        "--message_mode",
-        type=str,
-        default="numpy",
-        help="message mode, numpy or tensor, default to numpy",
-    )
-    parser.add_argument("--local_epoch", type=int, default=3)
-    parser.add_argument("--clean_up", type=int, default=0)
     args = parser.parse_args()
 
     # Setup distributed training
@@ -126,9 +116,12 @@ def main():
     device_map = {"": device_string}
 
     # If output path exists, remove it (only on main process)
-    if local_rank == 0 and os.path.exists(args.output_path):
-        print(f"Output path {args.output_path} exists, removing it.")
-        shutil.rmtree(args.output_path)
+    if local_rank == 0:
+        try:
+            print(f"Attempting to remove output path {args.output_path}.")
+            shutil.rmtree(args.output_path)
+        except FileNotFoundError:
+            print(f"Output path {args.output_path} does not exist, skipping removal.")
 
     # Wait for main process to finish cleanup
     if dist.is_initialized():
@@ -187,8 +180,8 @@ def main():
     train_args = SFTConfig(
         output_dir=args.output_path,
         # Using callback, stop at each epoch, so specify num_train_epochs
-        # the same as the total epoch in one-call training
-        num_train_epochs=args.local_epoch,
+        # the same as one-call training
+        num_train_epochs=3,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
         gradient_checkpointing=False,
@@ -229,49 +222,50 @@ def main():
         callbacks=[StopCallback()],
     )
 
-    # initializes NVFlare client API
-    flare.init()
-
-    # Train federated rounds
-    # start with global model at the beginning of each round
-    while flare.is_running():
-        # receives golobal model from NVFlare (only on main process)
-        if local_rank == 0:
-            input_model = flare.receive()
-            curr_round = input_model.current_round
-            print(f"current_round={curr_round}")
-            # Update the key name received from global model if using model def file
-            global_model = copy.deepcopy(input_model.params)
-            for key in list(global_model.keys()):
-                global_model[key.replace("model.", "", 1)] = global_model.pop(key)
-        else:
-            curr_round = None
-            global_model = None
-
-        # broadcast current round and global_model to all processes
-        if dist.is_initialized():
-            curr_round_list = [curr_round]
-            global_model_list = [global_model]
-            dist.broadcast_object_list(curr_round_list, src=0)
-            dist.broadcast_object_list(global_model_list, src=0)
-            curr_round = curr_round_list[0]
-            global_model = global_model_list[0]
-
-        if dist.is_initialized():
-            dist.barrier()
-
-        # Load state dict
+    # Save base model state_dict, which will be used as the starting
+    # weights for each round - to show the weights are loaded correctly
+    # Only save on main process
+    if local_rank == 0:
+        initial_model_path = os.path.join(args.output_path, "pytorch_model_initial.pth")
         if train_mode:
-            set_peft_model_state_dict(trainer.model, global_model)
+            params = get_peft_model_state_dict(model)
         else:
-            trainer.model.load_state_dict(global_model)
+            params = model.state_dict()
+        torch.save(params, initial_model_path)
+
+    # Wait for main process to finish saving
+    if dist.is_initialized():
+        dist.barrier()
+
+    # Train iteratively by using "resume" functionality
+    # and replace the resume weights every round
+    for curr_round in range(3):
+        # Load initial model (only on main process)
+        if local_rank == 0:
+            print(f"current_round={curr_round}")
+
+            if curr_round == 0:
+                # Load initial model weights
+                resume_model_file_path = os.path.join(args.output_path, "pytorch_model_initial.pth")
+            else:
+                # Get the last checkpoint folder
+                resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
+                # Load the last checkpoint weights "pytorch_model.bin"
+                resume_model_file_path = os.path.join(resume_from_checkpoint_folder, "pytorch_model.bin")
+            state_dict_replace = torch.load(resume_model_file_path)
+
+            # Load state dict
+            if train_mode:
+                set_peft_model_state_dict(trainer.model, state_dict_replace)
+            else:
+                trainer.model.load_state_dict(state_dict_replace)
+
         # Wait for main process to finish model loading
         if dist.is_initialized():
             dist.barrier()
 
-        # Evaluate the global model
-        eval_loss = trainer.evaluate()
-        eval_loss = float(eval_loss["eval_loss"])
+        # Evaluate
+        trainer.evaluate()
 
         # Train
         if curr_round == 0:
@@ -284,12 +278,12 @@ def main():
                 if train_mode:
                     # PEFT model small, directly save via torch.save
                     resume_model_file_path = os.path.join(resume_from_checkpoint_folder, utils.WEIGHTS_NAME)
-                    torch.save(global_model, resume_model_file_path)
+                    torch.save(state_dict_replace, resume_model_file_path)
                 else:
                     # SFT model can be large, save via HF API
                     # Disable safetensor for now
                     trainer.model.save_pretrained(
-                        resume_from_checkpoint_folder, state_dict=global_model, safe_serialization=False
+                        resume_from_checkpoint_folder, state_dict=state_dict_replace, safe_serialization=False
                     )
 
             # Wait for main process to finish saving before continuing
@@ -300,37 +294,8 @@ def main():
             # as we used callback, no need to increment num_train_epochs
             trainer.train(resume_from_checkpoint=True)
 
-        # Wait for all process to finish training before continuing
-        if dist.is_initialized():
-            dist.barrier()
-
-        # compose output model to send back to server (only on main process)
-        if local_rank == 0:
-            if train_mode:
-                # PEFT, load PEFT part from trainer model
-                out_param = get_peft_model_state_dict(trainer.model)
-            else:
-                # SFT, load whole model state_dict
-                out_param = trainer.model.state_dict()
-
-            # update the key name sent to global model
-            if not train_mode:
-                for key in list(out_param.keys()):
-                    out_param["model." + key] = out_param.pop(key).cpu()
-
-            if args.message_mode.lower() == "numpy":
-                # cast out_param to float32 preparing for communication with numpy
-                # otherwise do nothing
-                out_param = {k: v.to(torch.float32) for k, v in out_param.items()}
-
-            # construct trained FL model
-            output_model = flare.FLModel(
-                params=out_param,
-                metrics={"eval_loss": eval_loss},
-                meta={"NUM_STEPS_CURRENT_ROUND": trainer.train_dataset.num_rows},
-            )
-            # send model back to NVFlare
-            flare.send(output_model)
+    # Cleanup distributed training
+    cleanup_distributed_training()
 
 
 if __name__ == "__main__":
