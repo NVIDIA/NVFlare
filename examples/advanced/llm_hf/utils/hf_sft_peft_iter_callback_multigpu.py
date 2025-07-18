@@ -116,9 +116,12 @@ def main():
     device_map = {"": device_string}
 
     # If output path exists, remove it (only on main process)
-    if local_rank == 0 and os.path.exists(args.output_path):
-        print(f"Output path {args.output_path} exists, removing it.")
-        shutil.rmtree(args.output_path)
+    if local_rank == 0:
+        try:
+            print(f"Attempting to remove output path {args.output_path}.")
+            shutil.rmtree(args.output_path)
+        except FileNotFoundError:
+            print(f"Output path {args.output_path} does not exist, skipping removal.")
 
     # Wait for main process to finish cleanup
     if dist.is_initialized():
