@@ -240,18 +240,31 @@ def main():
             input_model = flare.receive()
             curr_round = input_model.current_round
             print(f"current_round={curr_round}")
-
             # Update the key name received from global model if using model def file
             global_model = copy.deepcopy(input_model.params)
             for key in list(global_model.keys()):
                 global_model[key.replace("model.", "", 1)] = global_model.pop(key)
+        else:
+            curr_round = None
+            global_model = None
 
-            # Load state dict
-            if train_mode:
-                set_peft_model_state_dict(trainer.model, global_model)
-            else:
-                trainer.model.load_state_dict(global_model)
+        # broadcast current round and global_model to all processes
+        if dist.is_initialized():
+            curr_round_list = [curr_round]
+            global_model_list = [global_model]
+            dist.broadcast_object_list(curr_round_list, src=0)
+            dist.broadcast_object_list(global_model_list, src=0)
+            curr_round = curr_round_list[0]
+            global_model = global_model_list[0]
 
+        if dist.is_initialized():
+            dist.barrier(device_ids=[local_rank])
+
+        # Load state dict
+        if train_mode:
+            set_peft_model_state_dict(trainer.model, global_model)
+        else:
+            trainer.model.load_state_dict(global_model)
         # Wait for main process to finish model loading
         if dist.is_initialized():
             dist.barrier(device_ids=[local_rank])
@@ -287,6 +300,10 @@ def main():
             # as we used callback, no need to increment num_train_epochs
             trainer.train(resume_from_checkpoint=True)
 
+        # Wait for all process to finish training before continuing
+        if dist.is_initialized():
+            dist.barrier(device_ids=[local_rank])
+
         # compose output model to send back to server (only on main process)
         if local_rank == 0:
             if train_mode:
@@ -314,12 +331,6 @@ def main():
             )
             # send model back to NVFlare
             flare.send(output_model)
-
-        # Wait for main process to finish before continuing
-        if dist.is_initialized():
-            dist.barrier(device_ids=[local_rank])
-        # Cleanup distributed training
-        cleanup_distributed_training()
 
 
 if __name__ == "__main__":

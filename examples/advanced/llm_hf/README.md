@@ -149,6 +149,11 @@ python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspa
 The loss curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two SFT training loss curves align with each other. 
 ![sft](./figs/fl_sft.png)
 
+Similarly, 2-GPU training can be run with the following command:
+```
+python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/dolly_fl_multi_gpu --job_dir ${PWD}/workspace/jobs/dolly_fl_multi_gpu --gpu [0,1]
+```
+
 ## Model Quantization for Communication
 In the above example, we used numpy in float32 for communication. To reduce the message size, we can use model precision conversion and quantization 
 from float32 to 16-bit, 8-bit, and 4-bit for communication. Quantization is enabled by NVFlare's [filter mechanism](https://nvflare.readthedocs.io/en/main/programming_guide/filters.html). We can use the following command to run the federated training with model quantization.
