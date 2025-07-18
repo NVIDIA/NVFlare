@@ -122,7 +122,7 @@ def main():
 
     # Wait for main process to finish cleanup
     if dist.is_initialized():
-        dist.barrier(device_ids=[local_rank])
+        dist.barrier()
 
     # Dataset
     dataset_train = datasets.load_dataset("json", data_files=args.data_path_train, split="train")
@@ -232,7 +232,7 @@ def main():
 
     # Wait for main process to finish saving
     if dist.is_initialized():
-        dist.barrier(device_ids=[local_rank])
+        dist.barrier()
 
     # Train iteratively by using "resume" functionality
     # and replace the resume weights every round
@@ -259,7 +259,7 @@ def main():
 
         # Wait for main process to finish model loading
         if dist.is_initialized():
-            dist.barrier(device_ids=[local_rank])
+            dist.barrier()
 
         # Evaluate
         trainer.evaluate()
@@ -285,7 +285,7 @@ def main():
 
             # Wait for main process to finish saving before continuing
             if dist.is_initialized():
-                dist.barrier(device_ids=[local_rank])
+                dist.barrier()
 
             # continue training
             # as we used callback, no need to increment num_train_epochs

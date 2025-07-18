@@ -132,7 +132,7 @@ def main():
 
     # Wait for main process to finish cleanup
     if dist.is_initialized():
-        dist.barrier(device_ids=[local_rank])
+        dist.barrier()
 
     # Dataset
     dataset_train = datasets.load_dataset("json", data_files=args.data_path_train, split="train")
@@ -258,7 +258,7 @@ def main():
             global_model = global_model_list[0]
 
         if dist.is_initialized():
-            dist.barrier(device_ids=[local_rank])
+            dist.barrier()
 
         # Load state dict
         if train_mode:
@@ -267,7 +267,7 @@ def main():
             trainer.model.load_state_dict(global_model)
         # Wait for main process to finish model loading
         if dist.is_initialized():
-            dist.barrier(device_ids=[local_rank])
+            dist.barrier()
 
         # Evaluate the global model
         eval_loss = trainer.evaluate()
@@ -294,7 +294,7 @@ def main():
 
             # Wait for main process to finish saving before continuing
             if dist.is_initialized():
-                dist.barrier(device_ids=[local_rank])
+                dist.barrier()
 
             # continue training
             # as we used callback, no need to increment num_train_epochs
@@ -302,7 +302,7 @@ def main():
 
         # Wait for all process to finish training before continuing
         if dist.is_initialized():
-            dist.barrier(device_ids=[local_rank])
+            dist.barrier()
 
         # compose output model to send back to server (only on main process)
         if local_rank == 0:
