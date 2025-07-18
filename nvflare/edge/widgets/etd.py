@@ -72,7 +72,7 @@ class EdgeTaskDispatcher(Widget):
             self._handle_edge_request,
             msg_topic=EdgeMsgTopic.TASK_REQUEST,
             bad_req_reply=TaskResponse(EdgeApiStatus.INVALID_REQUEST),
-            no_job_reply=TaskResponse(EdgeApiStatus.DONE),
+            no_job_reply=TaskResponse(EdgeApiStatus.NO_JOB),
             comm_err_reply=TaskResponse(EdgeApiStatus.RETRY),
         )
         self.register_event_handler(
@@ -80,7 +80,7 @@ class EdgeTaskDispatcher(Widget):
             self._handle_edge_request,
             msg_topic=EdgeMsgTopic.SELECTION_REQUEST,
             bad_req_reply=SelectionResponse(EdgeApiStatus.INVALID_REQUEST),
-            no_job_reply=SelectionResponse(EdgeApiStatus.DONE),
+            no_job_reply=SelectionResponse(EdgeApiStatus.NO_JOB),
             comm_err_reply=SelectionResponse(EdgeApiStatus.RETRY),
         )
         self.register_event_handler(
@@ -88,7 +88,7 @@ class EdgeTaskDispatcher(Widget):
             self._handle_edge_request,
             msg_topic=EdgeMsgTopic.RESULT_REPORT,
             bad_req_reply=ResultResponse(EdgeApiStatus.INVALID_REQUEST),
-            no_job_reply=ResultResponse(EdgeApiStatus.DONE),
+            no_job_reply=ResultResponse(EdgeApiStatus.NO_JOB),
             comm_err_reply=ResultResponse(EdgeApiStatus.RETRY),
         )
         self.logger.debug("EdgeTaskDispatcher created!")

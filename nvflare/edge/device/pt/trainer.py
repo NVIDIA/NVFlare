@@ -86,6 +86,9 @@ class PTTrainer(Executor):
                 # update weights
                 optimizer.step()
 
+            # reset dataset for next epoch
+            train_dataset.reset()
+
         weights = {}
         for name, param in model.named_parameters():
             if param.requires_grad:
