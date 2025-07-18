@@ -1,0 +1,43 @@
+{
+  "components": [
+    {
+      "type": "Trainer.DLTrainer",
+      "name": "trainer",
+      "args": {
+        "epoch": 5,
+        "lr": 0.0001,
+        "optimizer": "@opt",
+        "loss": "@loss",
+        "transforms": ["@t1"]
+      }
+    },
+    {
+      "type": "Optimizer.SGD",
+      "name": "opt",
+      "args": {}
+    },
+    {
+      "type": "Loss.BCELoss",
+      "name": "loss",
+      "args": {}
+    },
+    {
+      "type": "Transform.rotate",
+      "name": "t1",
+      "args": {
+        "angle": 90
+      }
+    },
+    {
+      "type": "Filter.DP",
+      "name": "dp",
+      "args": {}
+    },
+    {
+      "type": "Handler.StatsKeeper",
+      "name": "stats"
+    }
+  ],
+  "filters": ["@dp", "@stats"],
+  "handlers": ["@stats"]
+}
