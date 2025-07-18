@@ -81,8 +81,7 @@ class Session(SessionSpec):
 
         workspace = Workspace(root_dir=startup_path)
         conf = secure_load_admin_config(workspace)
-
-        admin_config = conf.config_data.get("admin", None)
+        admin_config = conf.get_admin_config()
         if not admin_config:
             raise ConfigError("Missing admin section in fed_admin configuration.")
 
@@ -852,7 +851,7 @@ class Session(SessionSpec):
         else:
             return None
 
-    def monitor_job(
+    def monitor_job_and_return_job_meta(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
     ) -> (MonitorReturnCode, Optional[dict]):
         """Monitor the job progress.
