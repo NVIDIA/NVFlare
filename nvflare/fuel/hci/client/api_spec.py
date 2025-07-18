@@ -230,6 +230,7 @@ class AdminConfigKey:
     DOWNLOAD_DIR = "download_dir"
     USERNAME = "username"
     FILE_DOWNLOAD_PROGRESS_TIMEOUT = "file_download_progress_timeout"
+    AUTHENTICATE_MSG_TIMEOUT = "authenticate_msg_timeout"
 
 
 class UidSource:

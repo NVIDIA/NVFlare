@@ -287,6 +287,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.host = admin_config.get(AdminConfigKey.HOST, "localhost")
         self.port = admin_config.get(AdminConfigKey.PORT, 8002)
         self.file_download_progress_timeout = admin_config.get(AdminConfigKey.FILE_DOWNLOAD_PROGRESS_TIMEOUT, 5.0)
+        self.authenticate_msg_timeout = admin_config.get(AdminConfigKey.AUTHENTICATE_MSG_TIMEOUT, 5.0)
         self.user_name = user_name
         self.event_handlers = event_handlers
 
@@ -402,7 +403,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             root_cert_file=self.ca_cert,
             private_key_file=self.client_key,
             cert_file=self.client_cert,
-            msg_timeout=2.0,
+            msg_timeout=self.authenticate_msg_timeout,
             retry_interval=1.0,
             timeout=timeout,
         )
