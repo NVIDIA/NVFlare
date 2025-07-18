@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft
 from transformers import AutoModelForCausalLM, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
+# set deterministic seed for reproducibility
 torch.manual_seed(0)
 random.seed(0)
 np.random.seed(0)
@@ -66,6 +67,12 @@ def main():
         type=str,
         default="SFT",
         help="training mode, SFT or PEFT, default to SFT",
+    )
+    parser.add_argument(
+        "--lr_scheduler",
+        type=str,
+        default="constant",
+        help="learning rate scheduler type, default to 'constant'",
     )
     args = parser.parse_args()
 
@@ -128,18 +135,25 @@ def main():
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
         gradient_checkpointing=False,
-        optim="paged_adamw_32bit",
+        # optimizers using bitsandbytes like "paged_adamw_32bit" have an issue with
+        # multi-gpu training, to be consistent, use regular optimizer
+        optim="adamw_torch",
         logging_steps=logging_steps,
         save_strategy="epoch",
         learning_rate=5e-4,
         bf16=True,
         max_grad_norm=0.3,
         warmup_ratio=0.03,
-        lr_scheduler_type="constant",
+        # use cosine_with_restarts scheduler to check the iterative behavior
+        lr_scheduler_type=args.lr_scheduler,
+        lr_scheduler_kwargs={"num_cycles": 2},
         disable_tqdm=True,
         max_seq_length=1024,
+        save_total_limit=2,
         # safetensors has some issues in saving lm_head.weight, disable it for now
         save_safetensors=False,
+        seed=0,
+        data_seed=0,
     )
 
     # Trainer
@@ -154,7 +168,7 @@ def main():
 
     # Save base model state_dict, which will be used as the starting
     # weights for each round - to show the weights are loaded correctly
-    initial_model_path = os.path.join(args.output_path, "model_dict_base.pt")
+    initial_model_path = os.path.join(args.output_path, "pytorch_model_initial.pth")
     if train_mode:
         params = get_peft_model_state_dict(model)
     else:
@@ -167,11 +181,12 @@ def main():
         print(f"current_round={curr_round}")
 
         # Load and Evaluate model file
-        state_dict_replace = torch.load(initial_model_path, map_location="cpu", weights_only=True)
+        state_dict_replace = torch.load(initial_model_path)
         if train_mode:
             set_peft_model_state_dict(trainer.model, state_dict_replace)
         else:
             trainer.model.load_state_dict(state_dict_replace)
+        # Evaluate
         trainer.evaluate()
 
         # Train
@@ -188,7 +203,10 @@ def main():
             else:
                 # SFT model can be large, save via HF API
                 # Disable safetensor for now
-                trainer.model.save_pretrained(resume_from_checkpoint_folder, safe_serialization=False)
+                trainer.model.save_pretrained(
+                    resume_from_checkpoint_folder, state_dict=state_dict_replace, safe_serialization=False
+                )
+
             # increment num_train_epochs so that the trainer will continue training
             trainer.args.num_train_epochs += 1
             # continue training

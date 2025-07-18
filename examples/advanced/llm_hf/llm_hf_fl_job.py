@@ -29,6 +29,8 @@ def main():
     train_script = "src/hf_sft_peft_fl.py"
     client_ids = args.client_ids
     num_clients = len(client_ids)
+    num_gpus = len(args.gpu.split(","))
+    print(f"Number of clients: {num_clients}, Number of GPUs: {num_gpus}")
 
     if args.threads:
         num_threads = args.threads
@@ -107,7 +109,8 @@ def main():
             script=train_script,
             script_args=script_args,
             server_expected_format=server_expected_format,
-            launch_external_process=False,
+            launch_external_process=True,
+            command=f"accelerate launch --num_processes {num_gpus}",
         )
         job.to(runner, site_name, tasks=["train"])
 

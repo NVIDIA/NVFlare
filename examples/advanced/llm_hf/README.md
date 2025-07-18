@@ -9,11 +9,11 @@ We used the [Llama-3.2-1B model](https://huggingface.co/meta-llama/Llama-3.2-1B)
 For PEFT, we used LoRA method, other PEFT methods (e.g. p-tuning, prompt-tuning) can be easily adapted as well by modifying the configs following [PEFT](https://github.com/huggingface/peft) examples.
 
 We would like to showcase three key points in this example:
-- Adapt local HuggingFace training scripts, both SFT and PEFT, to federated application
+- Adapt local HuggingFace training scripts, both SFT and PEFT, to federated application. This further includes local training with multiple GPUs.
 - Handling large model weights (~6 GB for Llama-3.2-1B model with float32 precision for communication), which is beyond protobuf's 2 GB hard limit. It is supported by NVFlare infrastructure via streaming, and does not need any code change.
 - Use NVFlare's filter functionality to enable model quantization and precision conversion for communication, which can significantly reduce the message size and is thus important for communicating LLM updates.  
 
-We conducted these experiments on a single 48GB RTX 6000 Ada GPU. 
+We conducted experiments on 48GB RTX 6000 Ada GPUs. 
 
 To use Llama-3.2-1B model, please request access to the model here https://huggingface.co/meta-llama/Llama-3.2-1B and login with an access token using huggingface-cli.
 
@@ -54,18 +54,19 @@ Therefore, we will perform the adaptation process in two steps:
 
 During the process, we will examine three training modes:
 1. Centralized one-call training (baseline) without NVFlare
-2. Centralized iterative training (adapted) without NVFlare
+2. Centralized iterative training (adapted) without NVFlare, both basic and enhanced with multi-gpu capabilities and callback to handle scheduler alignment.
 3. Federated training (adapted) with NVFlare
 
 > Note: all training runs are logged with TensorBoard, and the training loss curves can be visualized with TensorBoard via `tensorboard --logdir=./workspace`. 
 > Curves related to each experiment will be associated with the corresponding workspace folder, e.g. `./workspace/dolly_cen_sft`, `./workspace/dolly_cen_peft`, etc.
 
+In the following, we will illustrate the SFT training process, and the PEFT training process follows the same steps by setting `--train_mode PEFT`.
+
 ### Baseline: One-call training
 The original HuggingFace training script is a single call to `trainer.train()`, which is not suitable for federated training.
 Centralized trainings, as the baseline for comparison with other results, are done with the following command:
 ```
-python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_sft --train_mode SFT
-python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_peft --train_mode PEFT
+python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_onecall
 ```
 
 ### Adaptation Step 1: iterative training
@@ -90,18 +91,50 @@ If the correct "global model" is successfully reloaded each round, the training 
 
 To run iterative training, we use the following command:
 ``` 
-python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/dolly_cen_sft_iter --train_mode SFT
-python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/dolly_cen_peft_iter --train_mode PEFT
+python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/dolly_cen_iter 
 ```
 
 The SFT curves are shown below, black for single call, blue for iterative. We can see the "zig-zag" pattern in the iterative training loss curve.
 ![sft](./figs/cen_sft.png)
 
-Similar patterns can be observed from the PEFT curves, purple for single call, green for iterative.
-![peft](./figs/cen_peft.png)
+### Adaptation Step 1.5: iterative training with scheduler alignment and multi-gpu support
+The above iterative training script is a basic version, it works fine if using a constant lr_scheduler. However, if using more complicated lr_scheduler like "cosine_with_restarts", the lr will not be aligned with the iterative training process, which can lead to unexpected results.
+We can see this with the following experiment, which uses cosine_with_restarts scheduler:
+```
+python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_onecall_cosine --lr_scheduler cosine_with_restarts
+python3 ./utils/hf_sft_peft_iter.py --output_path ./workspace/dolly_cen_iter_cosine --lr_scheduler cosine_with_restarts
+```
+
+We can notice below lr discrepancy:
+![lr](./figs/lr.png)
+
+As shown, the lr in each round of iterative training is determined by the `num_train_epochs` for that round, which is incremented by 1 each time. This means that only the lr in the last round will be aligned with the single call training, but not in any other round. This can lead to quite different training results:
+![sft_cosine](./figs/cen_sft_cosine.png)
+
+Also, the basic iterative training script does not support multi-GPU training.
+
+To enhance the iterative training script, we can add scheduler alignment via callback and multi-GPU support with `./utils/hf_sft_peft_iter_callback_multigpu.py`.
+
+Single-GPU experiment can be run with the following command:
+``` 
+python3 ./utils/hf_sft_peft_iter_callback_multigpu.py --output_path ./workspace/dolly_cen_iter_callback_cosine --lr_scheduler cosine_with_restarts 
+```
+For multi-GPU experiments, we can use the following command:
+```
+accelerate launch \
+    --num_processes 2 \
+    ./utils/hf_sft_peft_iter_callback_multigpu.py \
+    --output_path ./workspace/dolly_cen_iter_callback_cosine_multigpu \
+    --lr_scheduler cosine_with_restarts
+```
+Note that for this experiment to check proper lr alignment and multi-gpu training, we load the model weights from the previous round rather than the fixed starting model.
+
+The SFT curves are shown below, black for single call, blue for iterative with callback, and red for iterative with callback under 2-gpu training. 
+We can see the three curves align well.
+![sft](./figs/callback_multigpu.png)
 
 ### Adaptation Step 2: federated with NVFlare
-Once we have the iterative training script ready with "starting model" loading capability, it can be easily adapted to a NVFlare trainer by using [Client API](../../hello-world/ml-to-fl/pt/README.md).
+Once we have the iterative training script ready with "starting model" loading capability, scheduler alignment, and mult-gpu support, it can be easily adapted to a NVFlare trainer by using [Client API](../../hello-world/ml-to-fl/pt/README.md).
 
 The major code modifications are for replacing the fixed model reloading processing with 
 receiving and returning the global model, as shown below:
@@ -109,16 +142,12 @@ receiving and returning the global model, as shown below:
 ![diff](./figs/diff_fl_1.png)
 ![diff](./figs/diff_fl_2.png)
 
-We run the federated training on a single client using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
+We run the federated training on a single client with single GPU using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
 ```
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft --job_dir ${PWD}/workspace/jobs/hf_sft --train_mode SFT 
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft --job_dir ${PWD}/workspace/jobs/hf_peft --train_mode PEFT 
+python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/dolly_fl_single_gpu --job_dir ${PWD}/workspace/jobs/dolly_fl_single_gpu
 ```
-The SFT curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two SFT training loss curves align with each other. 
+The loss curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two SFT training loss curves align with each other. 
 ![sft](./figs/fl_sft.png)
-
-Similar patterns can be observed from the PEFT curves, purple for centralized results, orange for FL training. Alignment better than SFT can be observed.
-![peft](./figs/fl_peft.png)
 
 ## Model Quantization for Communication
 In the above example, we used numpy in float32 for communication. To reduce the message size, we can use model precision conversion and quantization 

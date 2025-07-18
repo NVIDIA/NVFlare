@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -65,6 +65,12 @@ def main():
         default="SFT",
         help="training mode, SFT or PEFT, default to SFT",
     )
+    parser.add_argument(
+        "--lr_scheduler",
+        type=str,
+        default="constant",
+        help="learning rate scheduler type, default to 'constant'",
+    )
     args = parser.parse_args()
 
     # Dataset
@@ -121,16 +127,23 @@ def main():
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
         gradient_checkpointing=False,
-        optim="paged_adamw_32bit",
+        # optimizers using bitsandbytes like "paged_adamw_32bit" have an issue with
+        # multi-gpu training, to be consistent, use regular optimizer
+        optim="adamw_torch",
         logging_steps=logging_steps,
         save_strategy="epoch",
         learning_rate=5e-4,
         bf16=True,
         max_grad_norm=0.3,
         warmup_ratio=0.03,
-        lr_scheduler_type="constant",
+        # use cosine_with_restarts scheduler to check the iterative behavior
+        lr_scheduler_type=args.lr_scheduler,
+        lr_scheduler_kwargs={"num_cycles": 2},
         disable_tqdm=True,
         max_seq_length=1024,
+        save_total_limit=2,
+        seed=0,
+        data_seed=0,
     )
 
     # Trainer
