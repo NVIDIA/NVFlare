@@ -1,21 +1,39 @@
+.. _part3_security_privacy:
+
 ========================================
-Part 3: Security and Privacy in Federated Learning
+Part 3: Security and Privacy in Federated Learning with NVIDIA FLARE
 ========================================
 
 Federated Learning (FL) enables decentralized model training while preserving data privacy, making it ideal for sensitive domains like healthcare and finance. However, FL introduces security and privacy risks, such as data leakage, adversarial attacks, and model integrity threats.
 
-**Key Concerns**
+---------------------
+What You'll Learn
+---------------------
+- Privacy risks and attack vectors in federated learning
+- Protections: differential privacy, secure aggregation, homomorphic encryption
+- Security challenges: adversarial attacks, unauthorized access, communication threats
+- Security solutions: authentication, RBAC, encrypted communication, trust mechanisms
+- How NVIDIA FLARE implements robust security and privacy for federated learning
 
-- **Privacy Risks**: Model updates can leak information through gradient leakage, membership inference, and property inference attacks.
+-------------------------------
+Chapters Overview
+-------------------------------
 
-- **Privacy Protections**: Techniques like differential privacy, secure aggregation, and homomorphic encryption mitigate exposure.
+**Chapter 5: Privacy in Federated Learning**
+`[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-5_Privacy_In_Federated_Learning/05.0_introduction/introduction.ipynb)`
 
-- **Security Challenges**: FL is vulnerable to adversarial model poisoning, unauthorized access, and communication threats.
+- Understand privacy risks and attacks in federated learning
+- Explore privacy-preserving techniques with NVIDIA FLARE
 
-- **Security Solutions**: Authentication, role-based access control (RBAC), encrypted communication (TLS), and trust-based mechanisms enhance FL security.
+**Chapter 6: Security in Federated Computing System**
+`[View on GitHub](https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-6_Security_in_federated_compute_system/06.0_introduction/introduction.ipynb)`
 
-NVIDIA FLARE addresses these concerns with secure aggregation, cryptographic protections, and robust access controls, ensuring FL remains both effective and trustworthy.
+- Learn about security threats and solutions in federated learning
+- See how NVIDIA FLARE enforces secure communication, authentication, and access control
 
-`Chapter 5: Privacy in Federated Learning <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-5_Privacy_In_Federated_Learning/05.0_introduction/introduction.ipynb>`_
-
-`Chapter 6: Security in Federated Computing System <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-6_Security_in_federated_compute_system/06.0_introduction/introduction.ipynb>`_
+---------------------
+Tips
+---------------------
+- Each notebook is self-contained; start with any topic of interest.
+- For a thorough understanding, follow the chapters sequentially.
+- Refer to the official NVIDIA FLARE documentation for more detail and troubleshooting.
