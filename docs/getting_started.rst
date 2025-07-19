@@ -10,33 +10,8 @@ This guide will help you get started with NVIDIA FLARE, a powerful platform for 
    - Begin by visiting the :ref:`installation` section to set up NVFLARE on your system. This step is crucial to ensure that all necessary components are correctly installed.
 
 2. **Running Modes:**
-   - NVFLARE offers various modes to suit different needs, from development to production. Here’s an overview of the available modes:
-
-   **Modes to Run NVFLARE**
-   =========================
-   NVFLARE supports different running modes to accommodate various use cases:
-
-   .. list-table:: NVIDIA FLARE Modes
-      :header-rows: 1
-
-      * - **Mode**
-        - **Documentation**
-        - **Description**
-      * - Simulator
-        - :ref:`fl_simulator`
-        - | The FL Simulator is a lightweight simulation tool that automates job runs on a 
-          | single system. It is ideal for quickly running jobs or experimenting with research 
-          | and FL algorithms.
-      * - POC
-        - :ref:`poc_command`
-        - | POC mode simulates deployment on a single host. It uses separate processes for Clients and Server, 
-          | allowing you to test the "provision" process locally with all pointing to localhost. 
-          | You can also interact with the FLARE system locally via POC mode.
-      * - Production
-        - :ref:`provisioned_setup`
-        - | The production mode involves a distributed deployment with startup kits generated 
-          | from the provisioning process. It provides tools for provisioning, a dashboard, and 
-          | various deployment options.
+   - NVFLARE offers various modes to suit different needs, from development to production.
+     check available modes :ref:`run_mode`
 
 3. **Quick Start:**
    - In the :ref:`quickstart` section, we introduce a set of hello-world programs using various machine learning frameworks. 
@@ -47,8 +22,7 @@ This guide will help you get started with NVIDIA FLARE, a powerful platform for 
    - Now that you understand the different ways to run NVFLARE and have tried different quick start examples, 
      consider the following to learn more:
 
-   * Watch videos for a quick taste of FL programming with FLARE for deep learning and traditional ML: 
-   `<https://nvidia.github.io/NVFlare/>`_
+   * Watch videos for a quick taste of FL programming with FLARE for deep learning and traditional ML: `<https://nvidia.github.io/NVFlare/>`_
     We present both videos and code for two examples: CIFAR10 classification and Kaplan-Meier survival analysis.
     The CIFAR10 example is demonstrated using PyTorch, Torch Lightning, and TensorFlow with Client Side, Server Side, and Job code.
 
