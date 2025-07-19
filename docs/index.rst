@@ -10,8 +10,9 @@ NVIDIA FLARE
    fl_introduction
    flare_overview
    Installation <installation>
-   Quickstart <quickstart>
    getting_started
+   Quickstart <quickstart>
+   
    whats_new
 
 .. toctree::
