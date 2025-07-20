@@ -48,8 +48,13 @@ copyright = "2024, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
-release = "2.4.0"
-version = "2.4.0"
+import versioneer
+
+# read the contents of your README file
+#
+versions = versioneer.get_versions(root="../.")
+version = versions["version"]
+release = version
 
 readthedocs_version_name = os.environ.get("READTHEDOCS_VERSION_NAME")
 build_version = readthedocs_version_name if readthedocs_version_name not in (None, "latest", "stable") else "main"
@@ -80,8 +85,17 @@ extensions = [
     "sphinx.ext.autosectionlabel",
     "sphinx_copybutton",
     "sphinxcontrib.jquery",
-    "sphinx.ext.extlinks"
+    "sphinx.ext.extlinks",
+    'sphinx_gallery.gen_gallery',
 ]
+sphinx_gallery_conf = {
+    'examples_dirs': ['../examples/hello-world' ], # Source scripts
+    'gallery_dirs': ['auto_examples/hello-world'], # Output .rst/.html
+    'filename_pattern': r'(_doc|_tutorial)',       # Only run matching scripts
+    'ignore_pattern': r'__init__\.py',             # Ignore files
+    'remove_config_comments': True,                # Clean config comments
+    'first_notebook_cell': "%matplotlib inline",   # For nb rendering
+}
 
 autoclass_content = "both"
 add_module_names = False

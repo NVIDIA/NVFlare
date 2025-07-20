@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+This script demonstrates how to run the resent with pytorch script runner
+"""
+
+
 from src.resnet_18 import Resnet18
 
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob

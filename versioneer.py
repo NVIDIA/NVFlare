@@ -1643,7 +1643,7 @@ class VersioneerBadRootError(Exception):
     """The project root directory is unknown or missing key files."""
 
 
-def get_versions(verbose=False):
+def get_versions(verbose=False, root=None):
     """Get the project version from whatever source is available.
 
     Returns dict with two keys: 'version' and 'full'.
@@ -1652,7 +1652,8 @@ def get_versions(verbose=False):
         # see the discussion in cmdclass.py:get_cmdclass()
         del sys.modules["versioneer"]
 
-    root = get_root()
+    if root is None:
+        root = get_root()
     cfg = get_config_from_root(root)
 
     assert cfg.VCS is not None, "please set [versioneer]VCS= in setup.cfg"

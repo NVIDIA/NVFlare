@@ -50,9 +50,20 @@ function clean_docs() {
 
 function build_html_docs() {
     pip install -e .[dev]
+    cp versioneer.py docs/.
     sphinx-apidoc --module-first -f -o docs/apidocs/ nvflare "*poc" "*private"
     sphinx-build -b html docs docs/_build
+
 }
+
+function final_cleanup() {
+    echo "Performing final cleanup..."
+    if [ -f docs/versioneer.py ]; then
+        rm docs/versioneer.py
+    fi
+}
+
+trap final_cleanup EXIT
 
 if [ -z "$1" ]
 then
