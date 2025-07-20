@@ -1,31 +1,17 @@
 .. _hello_pt_job_api:
+.. _hello_pt:
 
-Hello PyTorch with Job API
-==========================
+Hello PyTorch
+=============
 
 This example demonstrates how to use NVIDIA FLARE with PyTorch to train an image classifier using federated averaging (FedAvg).
 The complete example code can be found in the :github_nvflare_link:`hello-pt directory <examples/hello-world/hello-pt/>`.
 
-Before You Start
-----------------
-
-Feel free to refer to the :doc:`detailed documentation <../programming_guide>` at any point
-to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
-
-We recommend you first finish the :doc:`Hello FedAvg with NumPy <hello_fedavg_numpy>` exercise since it introduces the
-federated learning concepts of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
-
-Make sure you have an environment with NVIDIA FLARE installed.
-
-You can follow :ref:`getting_started` on the general concept of setting up a
-Python virtual environment (the recommended environment) and how to install NVIDIA FLARE.
-
-Introduction
--------------
-
 Through this exercise, you will integrate NVIDIA FLARE with the popular
 deep learning framework `PyTorch <https://pytorch.org/>`_ and learn how to use NVIDIA FLARE to train a convolutional
 network with the CIFAR10 dataset using the included :class:`FedAvg<nvflare.app_common.workflows.fedavg.FedAvg>` workflow.
+
+It is recommended to create a virtual environment and run everything within a virtualenv.
 
 The setup of this exercise consists of one **server** and two **clients**.
 
@@ -45,6 +31,8 @@ To run this example:
 
    $ git clone https://github.com/NVIDIA/NVFlare.git
    $ cd NVFlare/examples/hello-world/hello-pt
+
+
 
 2. Install the required dependencies:
 

@@ -1,10 +1,11 @@
 .. _quickstart:
 
-##########
-Quickstart
-##########
+######################
+Quick Start Series
+######################
 
-This guide will get you running a simple federated learning example in minutes.
+Welcome to the NVIDIA FLARE Quick Start Series! This guide provides a set of hello-world examples to help you quickly learn how to build federated learning programs using NVIDIA FLARE.
+
 Make sure you have completed the :ref:`installation` steps before proceeding.
 
 Prerequisites
@@ -14,45 +15,40 @@ Prerequisites
 - Git
 - NVFlare installed (see :ref:`installation`)
 
-Run Your First Example
-======================
-1. Clone the examples:
+Quick Start Examples
+====================
 
-.. code-block:: shell
+The following hello-world examples demonstrate different federated learning algorithms and workflows. Each example includes instructions and code to help you get started.
 
-   $ git clone https://github.com/NVIDIA/NVFlare.git
-   $ cd NVFlare/examples/hello-world/hello-pt
+1. **hello-fedavg-pytorch**
+   - Federated averaging with PyTorch models and training loops.
+   - See: :ref:`hello_pt`
+2. **hello-fedavg-lightning**
+   - Example using PyTorch Lightning for streamlined model training.
+   - See: :ref:`hello_lightning`
+3. **hello-fedavg-tensorflow**
+   - Federated averaging using TensorFlow models.
+   - See: :ref:`hello_tf`
+4. **hello-LR**
+   - Federated logistic regression example using scikit-learn.
+   - See: :ref:`hello_lr`
+5. **hello-KMeans**
+   - Federated KMeans clustering example.
+   - See: :ref:`hello_kmeans`
+6. **hello-survival-analysis-KM**
+   - Federated Kaplan-Meier survival analysis.
+   - See: :ref:`hello_km`
+7. **hello_statistics**
+   - Federated statistics computation example.
+   - See: :ref:`hello_fedstats`
+8. **hello-cyclic**
+   - Cyclic federated learning workflow example.
+   - See: :ref:`hello_cyclic`
+9. **hello-cross-site-evaluation**
+   - Cross-site evaluation of models in a federated setting.
+   - See: :ref:`hello-cross_val`
+10. **hello-xgboost**
+    - Federated XGBoost example demonstrating gradient boosting for tabular data in a federated setting.
+    - See: :ref:`hello_xgboost`
 
-2. Install example dependencies:
-
-.. code-block:: shell
-
-   $ pip install -r requirements.txt
-
-3. Run the example:
-
-.. code-block:: shell
-
-   $ python fedavg_script_runner_pt.py
-
-That's it! You should see the federated learning simulation running with two clients training a model together.
-
-Understanding the Example
-=========================
-This example demonstrates a simple federated learning scenario using PyTorch. For a detailed explanation of:
-
-- How the example works
-- The neural network architecture
-- The federated learning workflow
-- PyTorch integration details
-
-See the :doc:`Hello PyTorch with Job API <examples/hello_pt_job_api>` guide and the :doc:`FedJob API <programming_guide/fed_job_api>` documentation.
-
-Next Steps
-==========
-Now that you've run your first example:
-
-1. Learn more about different ways to run NVFlare in the :ref:`getting_started` guide
-2. Explore more examples in the :ref:`example_applications` section
-3. When ready for production, see :ref:`real_world_fl` for deployment guidance
-4. For development, see :ref:`programming_guide`
+Let's start with hello fedavg with numpy.
