@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -279,7 +279,11 @@ def main():
             for epoch in range(args.local_epoch):
                 print(f"Training local epoch {epoch + 1}/{args.local_epoch}")
                 # train for one epoch
-                trainer.train()
+                if epoch == 0:
+                    trainer.train()
+                else:
+                    # continue training
+                    trainer.train(resume_from_checkpoint=True)
         else:
             # replace local resume weights with global weights (only on main process)
             if local_rank == 0:

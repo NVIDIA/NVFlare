@@ -98,7 +98,7 @@ The SFT curves are shown below, black for single call, blue for iterative. We ca
 ![sft](./figs/cen_sft.png)
 
 ### Adaptation Step 1.5: iterative training with scheduler alignment and multi-gpu support
-The above iterative training script is a basic version, it works fine if using a constant lr_scheduler. However, if using more complicated lr_scheduler like "cosine_with_restarts", the lr will not be aligned with the iterative training process, which can lead to unexpected results.
+The above iterative training script is a basic version, it works fine if using a constant learning rate. However, if using more complicated lr_scheduler like "cosine_with_restarts", the lr will not be aligned with the iterative training process, which can lead to unexpected results.
 We can see this with the following experiment, which uses cosine_with_restarts scheduler:
 ```
 python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_onecall_cosine --lr_scheduler cosine_with_restarts
