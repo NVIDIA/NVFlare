@@ -114,8 +114,8 @@ def main():
         default="numpy",
         help="message mode, numpy or tensor, default to numpy",
     )
-    parser.add_argument("--local_epoch", type=int, default=3)
-    parser.add_argument("--clean_up", type=int, default=0)
+    parser.add_argument("--local_epoch", type=int, default=1)
+    parser.add_argument("--num_rounds", type=int, default=3)
     args = parser.parse_args()
 
     # Setup distributed training
@@ -188,7 +188,7 @@ def main():
         output_dir=args.output_path,
         # Using callback, stop at each epoch, so specify num_train_epochs
         # the same as the total epoch in one-call training
-        num_train_epochs=args.local_epoch,
+        num_train_epochs=args.local_epoch * args.num_rounds,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
         gradient_checkpointing=False,
@@ -276,7 +276,10 @@ def main():
         # Train
         if curr_round == 0:
             # First round, start from pretrained model
-            trainer.train()
+            for epoch in range(args.local_epoch):
+                print(f"Training local epoch {epoch + 1}/{args.local_epoch}")
+                # train for one epoch
+                trainer.train()
         else:
             # replace local resume weights with global weights (only on main process)
             if local_rank == 0:
@@ -298,7 +301,9 @@ def main():
 
             # continue training
             # as we used callback, no need to increment num_train_epochs
-            trainer.train(resume_from_checkpoint=True)
+            for epoch in range(args.local_epoch):
+                print(f"Training local epoch {epoch + 1}/{args.local_epoch}")
+                trainer.train(resume_from_checkpoint=True)
 
         # Wait for all process to finish training before continuing
         if dist.is_initialized():

@@ -144,14 +144,23 @@ receiving and returning the global model, as shown below:
 
 We run the federated training on a single client with single GPU using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
 ```
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/dolly_fl_single_gpu --job_dir ${PWD}/workspace/jobs/dolly_fl_single_gpu
+python3 llm_hf_fl_job.py \
+    --client_ids dolly \
+    --data_path ${PWD}/dataset \
+    --workspace_dir ${PWD}/workspace/dolly_fl_single_gpu \
+    --job_dir ${PWD}/workspace/jobs/dolly_fl_single_gpu 
 ```
 The loss curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two SFT training loss curves align with each other. 
 ![sft](./figs/fl_sft.png)
 
 Similarly, 2-GPU training can be run with the following command:
 ```
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/dolly_fl_multi_gpu --job_dir ${PWD}/workspace/jobs/dolly_fl_multi_gpu --gpu [0,1]
+python3 llm_hf_fl_job.py \
+       --client_ids dolly \
+       --data_path ${PWD}/dataset \
+       --workspace_dir ${PWD}/workspace/dolly_fl_multi_gpu \
+       --job_dir ${PWD}/workspace/jobs/dolly_fl_multi_gpu \
+       --gpu [0,1]
 ```
 
 ## Model Quantization for Communication

@@ -37,12 +37,6 @@ def main():
     else:
         num_threads = num_clients
 
-    if num_threads < num_clients:
-        print("The number of threads smaller than the number of clients, runner clean-up will be performed.")
-        clean_up = 1
-    else:
-        clean_up = 0
-
     num_rounds = args.num_rounds
     workspace_dir = args.workspace_dir
     job_dir = args.job_dir
@@ -97,7 +91,7 @@ def main():
         data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
 
-        script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --clean_up {clean_up}"
+        script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --num_rounds {num_rounds}"
         if message_mode == "tensor":
             server_expected_format = "pytorch"
         elif message_mode == "numpy":
@@ -141,7 +135,7 @@ def define_parser():
         "--num_rounds",
         type=int,
         default=3,
-        help="Number of rounds, default to 5",
+        help="Number of rounds, default to 3",
     )
     parser.add_argument(
         "--workspace_dir",
