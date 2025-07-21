@@ -2100,6 +2100,17 @@ def scan_setup_py():
         errors += 1
     return errors
 
+def extract_version(version_string):
+    """
+    Extracts the major.minor.patch part from a version string.
+    E.g., '2.7.0rc1' -> '2.7.0'
+    """
+    match = re.match(r"^(\d+\.\d+\.\d+)", version_string)
+    if match:
+        return match.group(1)
+    else:
+        raise ValueError(f"Invalid version format: {version_string}")
+
 
 if __name__ == "__main__":
     cmd = sys.argv[1]

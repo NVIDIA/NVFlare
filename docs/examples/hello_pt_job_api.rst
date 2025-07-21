@@ -1,5 +1,4 @@
 .. _hello_pt_job_api:
-.. _hello_pt:
 
 Hello PyTorch
 =============

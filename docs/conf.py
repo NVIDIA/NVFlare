@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ print(sys.path)
 # -- Project information -----------------------------------------------------
 
 project = "NVIDIA FLARE"
-copyright = "2024, NVIDIA"
+copyright = "2025, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
@@ -53,7 +53,7 @@ import versioneer
 # read the contents of your README file
 #
 versions = versioneer.get_versions(root="../.")
-version = versions["version"]
+version =  versioneer.extract_version(versions["version"])
 release = version
 
 readthedocs_version_name = os.environ.get("READTHEDOCS_VERSION_NAME")
@@ -90,8 +90,8 @@ extensions = [
 ]
 sphinx_gallery_conf = {
     'examples_dirs': ['../examples/hello-world' ], # Source scripts
-    'gallery_dirs': ['auto_examples/hello-world'], # Output .rst/.html
-    'filename_pattern': r'(_doc|_tutorial)',       # Only run matching scripts
+    'gallery_dirs': ['hello-world'],               # Output .rst/.html
+    'filename_pattern': r'(MATCH_NOTHING)',        # Only run matching scripts
     'ignore_pattern': r'__init__\.py',             # Ignore files
     'remove_config_comments': True,                # Clean config comments
     'first_notebook_cell': "%matplotlib inline",   # For nb rendering

@@ -12,31 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-This script demonstrates how to run the fedavg with pytorch script runner
+This code show to use NVIDIA FLARE Job Recipe to connect both Federated learning client and server algorithm
+and run it under different environments
 """
-
-
-
-from src.simple_network import SimpleNetwork
-
-from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.app_opt.pt.job_config.Job_recipe import FedAvgRecipe
+from model import SimpleNetwork
 
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 2
-    train_script = "src/hello-pt_cifar10_fl.py"
+    train_script = "client.py"
+    client_script_args = ""
 
-    job = FedAvgJob(
-        name="hello-pt_cifar10_fedavg", n_clients=n_clients, num_rounds=num_rounds, initial_model=SimpleNetwork()
-    )
+    recipe = FedAvgRecipe(clients=n_clients,
+                          num_rounds=num_rounds,
+                          model= SimpleNetwork(),
+                          client_script=train_script,
+                          client_script_args= client_script_args)
+    recipe.execute()
 
-    # Add clients
-    for i in range(n_clients):
-        executor = ScriptRunner(
-            script=train_script, script_args=""  # f"--batch_size 32 --data_path /tmp/data/site-{i}"
-        )
-        job.to(executor, f"site-{i + 1}")
-
-    # job.export_job("/tmp/nvflare/jobs/job_config")
-    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

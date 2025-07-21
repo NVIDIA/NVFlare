@@ -1,0 +1,7 @@
+nvflare.app\_opt.xgboost.histogram\_based\_v2.grpc\_client module
+=================================================================
+
+.. automodule:: nvflare.app_opt.xgboost.histogram_based_v2.grpc_client
+   :members:
+   :undoc-members:
+   :show-inheritance:
