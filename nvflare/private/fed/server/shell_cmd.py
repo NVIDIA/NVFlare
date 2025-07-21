@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import re
+import shlex
 from typing import List
 
 from nvflare.apis.fl_constant import SiteType
@@ -85,7 +86,8 @@ class _CommandExecutor(object):
         shell_cmd = conn.get_prop("shell_cmd")
         if target == SiteType.SERVER:
             # run the shell command on server
-            output = execute_command_directly(shell_cmd)
+            cmd_args = shlex.split(shell_cmd)
+            output = execute_command_directly(cmd_args)
             conn.append_string(output)
             return
 

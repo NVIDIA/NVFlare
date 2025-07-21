@@ -15,7 +15,6 @@ import importlib
 import json
 import os
 import pkgutil
-import shlex
 import subprocess
 import sys
 import warnings
@@ -47,8 +46,6 @@ from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 from ..simulator.simulator_const import SimulatorConstants
 from .app_authz import AppAuthzService
-
-ALLOWED_SHELL_COMMANDS = {"pwd", "ls", "cat", "head", "tail", "grep"}
 
 
 def _check_secure_content(site_type: str) -> List[str]:
@@ -452,12 +449,8 @@ def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
     return job_launcher[0]
 
 
-def execute_command_directly(command: str) -> str:
+def execute_command_directly(args: List[str]) -> str:
     """Execute a command directly, without using shell"""
-    args = shlex.split(command)
-
-    if args[0] not in ALLOWED_SHELL_COMMANDS:
-        return f"Error: {args[0]} is not allowed"
 
     result = subprocess.run(
         args, capture_output=False, text=True, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
