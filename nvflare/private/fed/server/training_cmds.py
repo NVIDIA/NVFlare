@@ -162,10 +162,13 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 return
 
         if target_type in [self.TARGET_TYPE_ALL]:
-            # shutdown the cellnet
-            data_bus = DataBus()
-            data_bus.publish(["stop_cellnet"], conn)
-            # time.sleep(2.0)
+            # shutdown the cellnet - we need to stop the cellnet if any relays are used
+            # this is because relays are hidden nodes that cannot be stopped normally.
+            if engine.has_relays():
+                self.logger.info(f"trying to stop relays ...")
+                data_bus = DataBus()
+                data_bus.publish(["stop_cellnet"], conn)
+                time.sleep(2.0)
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             # shut down the server

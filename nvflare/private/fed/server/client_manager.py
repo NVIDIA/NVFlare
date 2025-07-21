@@ -17,7 +17,7 @@ import time
 import uuid
 from typing import Optional
 
-from nvflare.apis.client import Client
+from nvflare.apis.client import Client, ClientPropKey
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -47,6 +47,7 @@ class ClientManager:
         self.name_to_clients = dict()  # name => Client
         self.cred_keeper = CredKeeper()
         self.lock = threading.Lock()
+        self.num_relays = 0
 
         self.logger = get_obj_logger(self)
 
@@ -110,6 +111,9 @@ class ClientManager:
             return None
         return self.authenticated_client(client_login, fl_ctx, client_type)
 
+    def has_relays(self):
+        return self.num_relays > 0
+
     def validate_client(self, request, fl_ctx: FLContext, allow_new=False):
         """Validate the client state message.
 
@@ -147,6 +151,7 @@ class ClientManager:
         Args:
             request: client login request Message
             fl_ctx: FL_Context
+            client_type: type of the client
 
         Returns:
             Client object.
@@ -212,6 +217,9 @@ class ClientManager:
             fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Maximum number of clients reached", sticky=False)
             self.logger.info(f"Maximum number of clients reached. Reject client: {client_name} login.")
             return None
+
+        if client_type == ClientType.RELAY:
+            self.num_relays += 1
 
         return client
 

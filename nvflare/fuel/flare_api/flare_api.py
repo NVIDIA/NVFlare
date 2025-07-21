@@ -153,7 +153,10 @@ class Session(SessionSpec):
             elif cmd_status == MetaStatusValue.INTERNAL_ERROR:
                 raise InternalError(f"server internal error: {info}")
             elif cmd_status == MetaStatusValue.INVALID_TARGET:
-                raise InvalidTarget(info)
+                if info == "no clients available":
+                    raise NoClientsAvailable("no clients available")
+                else:
+                    raise InvalidTarget(info)
             elif cmd_status == MetaStatusValue.NO_REPLY:
                 raise NoReply(info)
             elif cmd_status != MetaStatusValue.OK:
@@ -492,6 +495,7 @@ class Session(SessionSpec):
 
         command = " ".join(parts)
         self._do_command(command)
+        self.close()
 
     def set_timeout(self, value: float):
         """Set a session-specific command timeout.

@@ -20,7 +20,7 @@ from abc import ABC, abstractmethod
 from threading import Lock
 from typing import Dict, List, Optional
 
-from nvflare.apis.client import Client
+from nvflare.apis.client import Client, ClientPropKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
