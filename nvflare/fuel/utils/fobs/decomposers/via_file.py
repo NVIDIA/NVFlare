@@ -102,10 +102,10 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             items: a dict of items of target object type to be dumped to file
             path: the path to the file.
 
-        Returns: if a new file name if used, return it; otherwise returns None.
+        Returns: if a new file name is used, return it; otherwise returns None.
 
         The "path" is a temporary file name. You should create the file with the specified name.
-        However, some framework (e.g. numpy) may add a special suffix to the name. In this case, you must return the
+        However, some frameworks (e.g. numpy) may add a special suffix to the name. In this case, you must return the
         modified name.
 
         The "items" is a dict of target objects. The dict contains all objects of the target type in one payload.
