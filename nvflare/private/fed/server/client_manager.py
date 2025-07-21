@@ -17,7 +17,7 @@ import time
 import uuid
 from typing import Optional
 
-from nvflare.apis.client import Client, ClientPropKey
+from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable

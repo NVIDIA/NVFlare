@@ -165,7 +165,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             # shutdown the cellnet - we need to stop the cellnet if any relays are used
             # this is because relays are hidden nodes that cannot be stopped normally.
             if engine.has_relays():
-                self.logger.info(f"trying to stop relays ...")
+                self.logger.info("trying to stop relays ...")
                 data_bus = DataBus()
                 data_bus.publish(["stop_cellnet"], conn)
                 time.sleep(2.0)
