@@ -16,7 +16,7 @@ import os
 import threading
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.streaming.file_downloader import FileDownloader, download_file
@@ -95,12 +95,41 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         self.datum_key = f"{self.prefix}_datum"  # in root: each target type has its own final datum
 
     @abstractmethod
-    def dump_to_file(self, items: dict, path: str):
+    def dump_to_file(self, items: dict, path: str) -> Optional[str]:
+        """Dump the items to the file with the specified path
+
+        Args:
+            items: a dict of items of target object type to be dumped to file
+            path: the path to the file.
+
+        Returns: if a new file name if used, return it; otherwise returns None.
+
+        The "path" is a temporary file name. You should create the file with the specified name.
+        However, some framework (e.g. numpy) may add a special suffix to the name. In this case, you must return the
+        modified name.
+
+        The "items" is a dict of target objects. The dict contains all objects of the target type in one payload.
+        The dict could be very big. You must create a file to contain all the objects.
+
+        """
         pass
 
     @abstractmethod
     def load_from_file(self, path: str) -> dict:
+        """Load target object items from the specified file
+
+        Args:
+            path: the absolute path to the file to be loaded.
+
+        Returns: a dict of target objects.
+
+        You must not delete the file after loading. Management of the file is done by the ViaFile class.
+
+        """
         pass
+
+    def supported_dots(self):
+        return [self.get_bytes_dot(), self.get_file_dot()]
 
     @abstractmethod
     def get_file_dot(self) -> int:

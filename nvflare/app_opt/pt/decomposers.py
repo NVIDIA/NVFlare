@@ -41,9 +41,6 @@ class TensorDecomposer(ViaFileDecomposer):
     def supported_type(self):
         return torch.Tensor
 
-    def supported_dots(self):
-        return [dots.TENSOR_BYTES, dots.TENSOR_FILE]
-
     def dump_to_file(self, items: dict, path: str):
         self.logger.debug(f"dumping {len(items)} tensors to file {path}")
         try:

@@ -60,9 +60,6 @@ class NumpyArrayDecomposer(ViaFileDecomposer):
     def supported_type(self):
         return np.ndarray
 
-    def supported_dots(self):
-        return [dots.NUMPY_BYTES, dots.NUMPY_FILE]
-
     def get_bytes_dot(self) -> int:
         return dots.NUMPY_BYTES
 
