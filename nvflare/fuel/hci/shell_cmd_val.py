@@ -33,12 +33,14 @@ class ShellCommandValidator(object):
     def get_usage(self):
         return self.arg_validator.get_usage()
 
+
 class PwdValidator(ShellCommandValidator):
     def __init__(self):
         """Validator for the pwd command, used by client only."""
         val = ArgValidator("pwd")
         # pwd doesn't take any argument
         ShellCommandValidator.__init__(self, val)
+
 
 class TailValidator(ShellCommandValidator):
     def __init__(self):
