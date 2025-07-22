@@ -14,6 +14,7 @@
 import json
 import os
 import threading
+import time
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Optional
@@ -37,6 +38,7 @@ class _FileRefKey:
     LOCATION = "location"
     FILE_REF_ID = "file_ref_id"
     FQCN = "fqcn"
+    FILE_META = "file_meta"
 
 
 class _FileLocation:
@@ -68,6 +70,32 @@ class _DecomposeCtx:
         self.last_item_id = 0
         self.waiter = None
 
+        # some stats
+        self.file_creation_time = None
+        self.file_size = 0
+        self.num_files = 0
+        self.num_secondary_msgs = 0
+        self.num_lookups = 0
+        self.lock = threading.Lock()
+
+    def set_file_creation_time(self, duration):
+        self.file_creation_time = duration
+
+    def set_file_size(self, size):
+        self.file_size = size
+
+    def inc_files(self):
+        with self.lock:
+            self.num_files += 1
+
+    def inc_2nd_msgs(self):
+        with self.lock:
+            self.num_secondary_msgs += 1
+
+    def inc_lookup(self):
+        with self.lock:
+            self.num_lookups += 1
+
     def add_item(self, item: Any):
         target_id = id(item)
         item_id = self.target_to_item.get(target_id)
@@ -95,14 +123,15 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         self.datum_key = f"{self.prefix}_datum"  # in root: each target type has its own final datum
 
     @abstractmethod
-    def dump_to_file(self, items: dict, path: str) -> Optional[str]:
+    def dump_to_file(self, items: dict, path: str, fobs_ctx: dict) -> (Optional[str], Optional[dict]):
         """Dump the items to the file with the specified path
 
         Args:
             items: a dict of items of target object type to be dumped to file
             path: the path to the file.
+            fobs_ctx: FOBS Context
 
-        Returns: if a new file name is used, return it; otherwise returns None.
+        Returns: a tuple of (file name, meta info)
 
         The "path" is a temporary file name. You should create the file with the specified name.
         However, some frameworks (e.g. numpy) may add a special suffix to the name. In this case, you must return the
@@ -115,11 +144,13 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         pass
 
     @abstractmethod
-    def load_from_file(self, path: str) -> dict:
+    def load_from_file(self, path: str, fobs_ctx: dict, meta: dict = None) -> dict:
         """Load target object items from the specified file
 
         Args:
             path: the absolute path to the file to be loaded.
+            fobs_ctx: FOBS Context.
+            meta: meta info of the file.
 
         Returns: a dict of target objects.
 
@@ -164,11 +195,17 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             manager.register_post_cb(self._post_process)
         return item_id
 
-    def _create_file(self, items: dict) -> (str, int):
+    def _create_file(self, items: dict, fobs_ctx: dict) -> (str, int, dict):
+        dc = fobs_ctx.get(self.decompose_ctx_key)
+
         file_name = self._get_temp_file_name()
         try:
             self.logger.debug(f"ViaFile: dumping {len(items)} items to file {file_name}")
-            new_file_name = self.dump_to_file(items, file_name)
+            start = time.time()
+            new_file_name, meta = self.dump_to_file(items, file_name, fobs_ctx)
+            end = time.time()
+            dc.set_file_creation_time(end - start)
+            dc.inc_files()
             if new_file_name:
                 file_name = new_file_name
         except Exception as e:
@@ -177,7 +214,8 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
 
         size = os.path.getsize(file_name)
         self.logger.debug(f"ViaFile: created file {file_name=} {size=}")
-        return file_name, size
+        dc.set_file_size(size)
+        return file_name, size, meta
 
     def decompose(self, target: Any, manager: DatumManager = None) -> Any:
         if not manager:
@@ -251,6 +289,9 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
                 # root is already created. only the primary msg can create the root.
                 is_primary = False
                 waiter = root[_RootKey.WAITER]
+                dc.inc_2nd_msgs()
+                self.logger.debug(f"secondary: {dc.num_secondary_msgs=}")
+                self.logger.debug(f"_determine_primary_msg: DCID: {id(dc)}")
             fobs_ctx[_CtxKey.WAITER] = waiter
             fobs_ctx[_CtxKey.ROOT] = root
         else:
@@ -288,6 +329,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
                 raise RuntimeError(f"{tid=}: cannot find ref from root {root=} for target {target_id}")
             else:
                 self.logger.debug(f"{tid=} ViaFile: got ref from cached root {ref}")
+                dc.inc_lookup()
                 dc.target_items[target_id] = ref
                 if len(dc.target_items) == 1:
                     manager.register_post_cb(self._post_process)
@@ -372,11 +414,13 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
 
     def _create_datum(self, fobs_ctx: dict):
         dc = fobs_ctx.get(self.decompose_ctx_key)
-        file_name, size = self._create_file(dc.target_items)
+        file_name, size, meta = self._create_file(dc.target_items, fobs_ctx)
         cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
         use_local_file = fobs_ctx.get(_CtxKey.USE_LOCAL_FILE, False)
 
         if use_local_file:
+            use_file_dot = True
+        elif meta:
             use_file_dot = True
         else:
             use_file_dot = cell and size > _MIN_SIZE_FOR_FILE
@@ -405,12 +449,14 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
                 file_ref = {
                     _FileRefKey.LOCATION: _FileLocation.LOCAL,
                     _FileRefKey.FILE_REF_ID: file_name,
+                    _FileRefKey.FILE_META: meta,
                 }
             else:
                 file_ref = {
                     _FileRefKey.LOCATION: _FileLocation.REMOTE_CELL,
                     _FileRefKey.FQCN: cell.get_fqcn(),
                     _FileRefKey.FILE_REF_ID: file_ref_id,
+                    _FileRefKey.FILE_META: meta,
                 }
             self.logger.debug(f"created file ref for target type {self.__class__.__name__}: {file_ref=}")
             datum = Datum(datum_type=DatumType.TEXT, value=json.dumps(file_ref), dot=self.get_file_dot())
@@ -419,6 +465,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
     def _finalize_download_tx(self, mgr: DatumManager):
         # must be primary
         fobs_ctx = mgr.fobs_ctx
+        dc = fobs_ctx.get(self.decompose_ctx_key)
         use_local_file = fobs_ctx.get(_CtxKey.USE_LOCAL_FILE, False)
 
         tid = threading.get_ident()
@@ -451,6 +498,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
                 cb=self._delete_msg_root,
                 download_tx_id=download_tx_id,
                 files_to_delete=files_to_delete,
+                dc=dc,
             )
 
         # Release waiters after the download tx is fully set.
@@ -461,8 +509,21 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             self.logger.debug(f"{tid=} freed waiter")
             waiter.set()
 
-    def _delete_msg_root(self, msg_root_id: str, download_tx_id: str, files_to_delete):
+    def _delete_msg_root(self, msg_root_id: str, download_tx_id: str, files_to_delete, dc: _DecomposeCtx):
         self.logger.debug(f"deleting msg root {msg_root_id}: {files_to_delete=}")
+
+        # print stats
+        stats = {
+            "msg_root_id": msg_root_id,
+            "file_creation_time": dc.file_creation_time,
+            "file_size": dc.file_size,
+            "num_files": dc.num_files,
+            "num_2nd_msgs": dc.num_secondary_msgs,
+            "num_lookups": dc.num_lookups,
+            "num_items": len(dc.target_items),
+        }
+        self.logger.info(f"Message Root Info: {stats}")
+
         FobsCache.remove_item(msg_root_id)
 
         if files_to_delete:
@@ -475,7 +536,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             FileDownloader.delete_transaction(download_tx_id, call_cb=True)
 
     def _delete_download_tx(self, tx_id, file_names, msg_root_id):
-        self.logger.info(f"ViaFile: deleting download tx: {tx_id}")
+        self.logger.debug(f"ViaFile: deleting download tx: {tx_id}")
         if msg_root_id:
             FobsCache.remove_item(msg_root_id)
             self.logger.debug(f"ViaFile: removed msg root {msg_root_id} from FobsCache")
@@ -510,7 +571,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         fobs_ctx = manager.fobs_ctx
         if datum.dot == self.get_bytes_dot():
             # data is in the value
-            items = self._load_from_bytes(datum.value)
+            items = self._load_from_bytes(datum.value, fobs_ctx)
         else:
             # data is in a file
             file_ref = json.loads(datum.value)
@@ -528,7 +589,8 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             else:
                 raise RuntimeError(f"unsupported file location {location}")
 
-            items = self._load_items_from_file(file_path, remove_after_loading)
+            file_meta = file_ref.get(_FileRefKey.FILE_META, None)
+            items = self._load_items_from_file(file_path, remove_after_loading, fobs_ctx, file_meta)
         fobs_ctx[self.items_key] = items
 
     def recompose(self, data: Any, manager: DatumManager = None) -> Any:
@@ -553,15 +615,15 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             self.logger.error(f"cannot find item {item_id} from loaded data")
         return item
 
-    def _load_from_bytes(self, data: bytes):
+    def _load_from_bytes(self, data: bytes, fobs_ctx: dict):
         file_path = self._get_temp_file_name()
         with open(file_path, "wb") as f:
             f.write(data)
         self.logger.debug(f"ViaFile recompose: created temp file {file_path}")
-        return self._load_items_from_file(file_path, True)
+        return self._load_items_from_file(file_path, True, fobs_ctx, None)
 
-    def _load_items_from_file(self, file_path: str, remove_after_loading: bool):
-        items = self.load_from_file(file_path)
+    def _load_items_from_file(self, file_path: str, remove_after_loading: bool, fobs_ctx: dict, file_meta):
+        items = self.load_from_file(file_path, fobs_ctx, file_meta)
         self.logger.debug(f"items loaded from file {file_path}: {type(items)}")
         if not isinstance(items, dict):
             self.logger.error(f"items loaded from file should be dict but got {type(items)}")

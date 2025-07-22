@@ -66,18 +66,18 @@ class NumpyArrayDecomposer(ViaFileDecomposer):
     def get_file_dot(self) -> int:
         return dots.NUMPY_FILE
 
-    def dump_to_file(self, items: dict, path: str):
+    def dump_to_file(self, items: dict, path: str, fobs_ctx: dict):
         if not path.endswith(_NPZ_EXTENSION):
             path += _NPZ_EXTENSION
         self.logger.info(f"NP: dumping {len(items)} arrays to file {path}")
         try:
             np.savez(allow_pickle=False, file=path, **items)
-            return path
+            return path, None
         except Exception as e:
             self.logger.error(f"exception dumping NP to file: {e}")
             raise e
 
-    def load_from_file(self, path: str) -> Any:
+    def load_from_file(self, path: str, fobs_ctx: dict, meta: dict = None) -> Any:
         result = {}
         with np.load(path, allow_pickle=False) as npz_obj:
             for k in npz_obj.files:

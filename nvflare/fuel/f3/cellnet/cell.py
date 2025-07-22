@@ -125,12 +125,15 @@ class Cell(StreamCell):
         self.core_cell.update_fobs_context(props)
 
     def get_fobs_context(self, props: dict = None):
-        """Return a new copy of the fobs context
+        """Return a new copy of the fobs context. If props is specified, they will be set into the context.
 
         Returns: a new copy of the fobs context
 
         """
-        return self.core_cell.get_fobs_context()
+        ctx = self.core_cell.get_fobs_context()
+        if props:
+            ctx.update(props)
+        return ctx
 
     def __getattr__(self, func):
         """

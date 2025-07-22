@@ -127,7 +127,7 @@ class TaskController(FLComponent, ControllerSpec):
             raise ValueError(f"The task timeout must > 0. But got {task.timeout}")
 
         request.set_header(ReservedKey.TASK_NAME, task.name)
-        msg_root_id = str(uuid.uuid4())
+        msg_root_id = task.msg_root_id
         request.set_header(ReservedHeaderKey.MSG_ROOT_ID, msg_root_id)
         request.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
 
