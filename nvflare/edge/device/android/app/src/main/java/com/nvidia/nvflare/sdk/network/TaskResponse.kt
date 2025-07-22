@@ -1,7 +1,9 @@
 package com.nvidia.nvflare.sdk.network
 
 import com.google.gson.annotations.SerializedName
-import com.nvidia.nvflare.models.TrainingTask
+import com.nvidia.nvflare.sdk.utils.TrainingTask
+import com.nvidia.nvflare.sdk.utils.asMap
+import com.nvidia.nvflare.sdk.utils.asList
 import com.nvidia.nvflare.sdk.training.TrainingConfig
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive

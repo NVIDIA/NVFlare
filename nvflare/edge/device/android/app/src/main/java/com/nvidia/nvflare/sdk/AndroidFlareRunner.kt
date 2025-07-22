@@ -7,7 +7,7 @@ import com.nvidia.nvflare.sdk.network.JobResponse
 import com.nvidia.nvflare.sdk.network.TaskResponse
 import com.nvidia.nvflare.sdk.network.ResultResponse
 import com.nvidia.nvflare.sdk.network.NVFlareError
-import com.nvidia.nvflare.models.asMap
+import com.nvidia.nvflare.sdk.utils.asMap
 import com.nvidia.nvflare.sdk.defs.Context
 import com.nvidia.nvflare.sdk.defs.Signal
 import com.nvidia.nvflare.sdk.defs.ContextKey

@@ -1,7 +1,7 @@
 package com.nvidia.nvflare.sdk.training
 
-import com.nvidia.nvflare.models.DatasetType
-import com.nvidia.nvflare.models.MetaKey
+import com.nvidia.nvflare.sdk.utils.DatasetType
+import com.nvidia.nvflare.sdk.utils.MetaKey
 
 data class TrainingConfig(
     val totalEpochs: Int = 1,
