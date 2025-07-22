@@ -495,7 +495,8 @@ class Session(SessionSpec):
 
         command = " ".join(parts)
         self._do_command(command)
-        self.close()
+        if target_type in [TargetType.ALL, TargetType.SERVER]:
+            self.close()
 
     def set_timeout(self, value: float):
         """Set a session-specific command timeout.
