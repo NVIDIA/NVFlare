@@ -367,6 +367,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         assert isinstance(dc, _DecomposeCtx)
         waiter = fobs_ctx.get(_CtxKey.WAITER)
         root = fobs_ctx.get(_CtxKey.ROOT)
+        msg_root_id = fobs_ctx.get(_CtxKey.MSG_ROOT_ID)
 
         is_primary = fobs_ctx.get(_CtxKey.IS_PRIMARY)
         self.logger.debug(f"{is_primary=}")
@@ -383,6 +384,13 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
                 raise RuntimeError(f"expect to get a Datum but got {type(datum)}")
             self.logger.debug(f"{tid=} got datum from cache")
             mgr.add_datum(datum)
+
+            if msg_root_id:
+                subscribe_to_msg_root(
+                    msg_root_id=msg_root_id,
+                    cb=self._show_secondary_msg_stats,
+                    dc=dc,
+                )
             return
 
         # this is primary msg - create datum for the collected target items
@@ -393,6 +401,13 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         # For large object, file generation could take long time. If we create the download transaction, it may
         # become expired even before file generation is done!
         # This is why we do the file generation in this CB, and then create the transaction in the final_cb!
+        if msg_root_id:
+            subscribe_to_msg_root(
+                msg_root_id=msg_root_id,
+                cb=self._show_primary_msg_stats,
+                dc=dc,
+            )
+
         final_cb_registered = fobs_ctx.get(_CtxKey.FINAL_CB_REGISTERED)
         if not final_cb_registered:
             # register final_cb
@@ -498,7 +513,6 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
                 cb=self._delete_msg_root,
                 download_tx_id=download_tx_id,
                 files_to_delete=files_to_delete,
-                dc=dc,
             )
 
         # Release waiters after the download tx is fully set.
@@ -509,23 +523,29 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             self.logger.debug(f"{tid=} freed waiter")
             waiter.set()
 
-    def _delete_msg_root(self, msg_root_id: str, download_tx_id: str, files_to_delete, dc: _DecomposeCtx):
-        self.logger.debug(f"deleting msg root {msg_root_id}: {files_to_delete=}")
+    def _show_secondary_msg_stats(self, msg_root_id: str, dc: _DecomposeCtx):
+        # print stats
+        stats = {
+            "msg_root_id": msg_root_id,
+            "num_lookups": dc.num_lookups,
+        }
+        self.logger.info(f"Secondary Message Info: {stats}")
 
+    def _show_primary_msg_stats(self, msg_root_id: str, dc: _DecomposeCtx):
         # print stats
         stats = {
             "msg_root_id": msg_root_id,
             "file_creation_time": dc.file_creation_time,
             "file_size": dc.file_size,
             "num_files": dc.num_files,
-            "num_2nd_msgs": dc.num_secondary_msgs,
-            "num_lookups": dc.num_lookups,
             "num_items": len(dc.target_items),
         }
-        self.logger.info(f"Message Root Info: {stats}")
+        self.logger.info(f"Primary Message Info: {stats}")
+
+    def _delete_msg_root(self, msg_root_id: str, download_tx_id: str, files_to_delete):
+        self.logger.debug(f"deleting msg root {msg_root_id}: {files_to_delete=}")
 
         FobsCache.remove_item(msg_root_id)
-
         if files_to_delete:
             # clean up local files
             for _, file_name in files_to_delete:

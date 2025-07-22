@@ -82,9 +82,9 @@ class TensorDecomposer(ViaFileDecomposer):
         return torch.Tensor
 
     def dump_to_file(self, items: dict, path: str, fobs_ctx: dict):
-        self.logger.debug(f"dumping {len(items)} tensors to file {path}")
         try:
             meta = _safe_save(items, path)
+            self.logger.info(f"dumping {len(items)} tensors to file {path}: removed tensor info {meta}")
             return path, meta
         except Exception as e:
             self.logger.error(f"exception dumping tensors to file: {e}")
