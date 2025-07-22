@@ -11,28 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
-
-
-class Status(CellReturnCode):
-    NO_TASK = "no_task"
-    NO_JOB = "no_job"
-
-
-class EdgeProtoKey:
-    STATUS = "status"
-    DATA = "data"
 
 
 class EdgeContextKey:
-    JOB_ID = "__edge_job_id__"
     EDGE_CAPABILITIES = "__edge_capabilities__"
     REQUEST_FROM_EDGE = "__request_from_edge__"
     REPLY_TO_EDGE = "__reply_to_edge__"
 
 
 class EdgeEventType:
-    EDGE_REQUEST_RECEIVED = "_edge_request_received"
+    EDGE_TASK_REQUEST_RECEIVED = "_edge_task_request_received"
+    EDGE_RESULT_REPORT_RECEIVED = "_edge_result_report_received"
+    EDGE_SELECTION_REQUEST_RECEIVED = "_edge_selection_request_received"
     EDGE_JOB_REQUEST_RECEIVED = "_edge_job_request_received"
 
 
@@ -40,6 +30,12 @@ class EdgeTaskHeaderKey:
     TASK_SEQ = "task_seq"
     HAS_UPDATE_DATA = "has_update_data"
     UPDATE_INTERVAL = "update_interval"
+
+
+class EdgeMsgTopic:
+    TASK_REQUEST = "task_request"
+    SELECTION_REQUEST = "selection_request"
+    RESULT_REPORT = "result_report"
 
 
 class MsgKey:
@@ -60,7 +56,15 @@ class EdgeApiStatus:
     ERROR = "ERROR"
     NO_JOB = "NO_JOB"
     NO_TASK = "NO_TASK"
+    INVALID_REQUEST = "INVALID_REQUEST"
 
 
-class EdgeApiKey:
-    JOB_DONE = "_job_done"
+class CookieKey:
+    MODEL_VERSION = "model_version"
+    DEVICE_SELECTION_ID = "device_selection_id"
+
+
+class HttpHeaderKey:
+    DEVICE_ID = "X-Flare-Device-ID"
+    DEVICE_INFO = "X-Flare-Device-Info"
+    USER_INFO = "X-Flare-User-Info"

@@ -550,16 +550,16 @@ const tag_list = [
                 <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 stroke-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"/>
                 </svg>
-                <input type="text" id="search-bar" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-nvidia focus:border-nvidia block w-full ps-10 p-2.5  dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="Search keyword..." />
+                <input type="text" id="search-bar" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-nvidia focus:border-nvidia block w-full ps-10 p-2.5" placeholder="Search keyword..." />
             </div>
           </form>
           <!-- Filter Categories -->
-          <div id="filter-categories" class="ml-2 place-content-center" data-accordion="open" data-active-classes="bg-white dark:bg-gray-500 text-gray-500 dark:text-white" data-inactive-classes="text-gray-500 dark:text-gray-400">
+          <div id="filter-categories" class="ml-2 place-content-center" data-accordion="open" data-active-classes="bg-white text-gray-500" data-inactive-classes="text-gray-500">
               {
                 tag_list.map((category) => (
                   <div class="">
                     <h2 id={category.name} class="">
-                      <button type="button" class="flex items-center justify-between mr-4 py-2 font-medium rtl:text-right text-gray-900 border-gray-200 dark:border-gray-700 dark:text-gray-400 gap-3" data-accordion-target={"#" + category.id} aria-expanded="true" aria-controls={category.id}>
+                      <button type="button" class="flex items-center justify-between mr-4 py-2 font-medium rtl:text-right text-gray-900 border-gray-200 gap-3" data-accordion-target={"#" + category.id} aria-expanded="true" aria-controls={category.id}>
                         <span>{category.name}</span>
                         <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
                           <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/>
@@ -570,7 +570,7 @@ const tag_list = [
                       {category.list.map((tag) => (
                         <ul>
                           <input type="checkbox" id={tag} value="" class="check hidden peer" required=""/>
-                          <label for={tag} class="inline-flex rounded-full peer-checked:bg-green-50 px-2.5 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-inset ring-gray-600/20 peer-checked:ring-green-600/20 text-gray-500 bg-white border-1 border-transparent rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-nvidia hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-green-700 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                          <label for={tag} class="inline-flex rounded-full peer-checked:bg-green-50 px-2.5 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-inset ring-gray-600/20 peer-checked:ring-green-600/20 text-gray-500 bg-white border-1 border-transparent rounded-lg cursor-pointer peer-checked:border-nvidia hover:text-gray-600 peer-checked:text-green-700 hover:bg-gray-50">
                             {tag}
                           </label>
                         </ul>

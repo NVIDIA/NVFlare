@@ -104,5 +104,5 @@ class BaseAppConfig(ABC):
         # no conflicting task_set
         taskset_filters.append((tasks, [filter]))
 
-    def add_file_source(self, src_path: str, dest_dir=None):
-        self.file_sources.append((src_path, dest_dir))
+    def add_file_source(self, src_path: str, dest_dir=None, app_folder_type=None):
+        self.file_sources.append((src_path, dest_dir, app_folder_type))

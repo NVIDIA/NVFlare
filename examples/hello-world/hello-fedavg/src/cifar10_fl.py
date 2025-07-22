@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ from nvflare.app_common.app_constant import ModelName
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
-DEVICE = "cuda:0"
+DEVICE = "cuda" if torch.cuda.is_available() else "CPU"
 
 
 def define_parser():
@@ -88,7 +88,7 @@ def main():
     # (2) initialize NVFlare client API
     flare.init()
 
-    # (3) run continously when launch_once=true
+    # (3) run continuously when launch_once=true
     while flare.is_running():
 
         # (4) receive FLModel from NVFlare

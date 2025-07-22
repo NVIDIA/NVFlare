@@ -22,15 +22,14 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
-from nvflare.fuel.hci.client.config import FLAdminClientStarterConfigurator
-from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
+from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
+from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.cmd_arg_utils import (
     process_targets_into_str,
     validate_file_string,
     validate_options_string,
     validate_path_string,
     validate_required_target_string,
-    validate_sp_string,
 )
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
 
@@ -49,7 +48,6 @@ from .api_spec import (
     JobNotRunning,
     MonitorReturnCode,
     NoClientsAvailable,
-    NoConnection,
     NoReply,
     ServerInfo,
     SessionClosed,
@@ -62,94 +60,59 @@ _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 
 
 class Session(SessionSpec):
-    def __init__(self, username: str = None, startup_path: str = None, secure_mode: bool = True, debug: bool = False):
+    def __init__(
+        self,
+        username: str = None,
+        startup_path: str = None,
+        secure_mode: bool = True,
+        debug: bool = False,
+    ):
         """Initializes a session with the NVFLARE system.
 
         Args:
             username (str): string of username to log in with
             startup_path (str): path to the provisioned startup kit, which contains endpoint of the system
-            secure_mode (bool): whether to run in secure mode or not
+            secure_mode (bool): whether to log in with secure mode
+            debug (bool): turn on debug or not
         """
         assert isinstance(username, str), "username must be str"
-        self.username = username
         assert isinstance(startup_path, str), "startup_path must be str"
-        self.secure_mode = secure_mode
-
         assert os.path.isdir(startup_path), f"startup kit does not exist at {startup_path}"
 
         workspace = Workspace(root_dir=startup_path)
-        conf = FLAdminClientStarterConfigurator(workspace)
-        conf.configure()
-
-        admin_config = conf.config_data.get("admin", None)
+        conf = secure_load_admin_config(workspace)
+        admin_config = conf.get_admin_config()
         if not admin_config:
             raise ConfigError("Missing admin section in fed_admin configuration.")
 
-        ca_cert = admin_config.get("ca_cert", "")
-        client_cert = admin_config.get("client_cert", "")
-        client_key = admin_config.get("client_key", "")
+        if not secure_mode:
+            admin_config[AdminConfigKey.UID_SOURCE] = UidSource.CERT
 
-        if admin_config.get("with_ssl"):
-            if len(ca_cert) <= 0:
-                raise ConfigError("missing CA Cert file name field ca_cert in fed_admin configuration")
-
-            if len(client_cert) <= 0:
-                raise ConfigError("missing Client Cert file name field client_cert in fed_admin configuration")
-
-            if len(client_key) <= 0:
-                raise ConfigError("missing Client Key file name field client_key in fed_admin configuration")
-        else:
-            ca_cert = None
-            client_key = None
-            client_cert = None
-
-        upload_dir = admin_config.get("upload_dir")
-        download_dir = admin_config.get("download_dir")
+        self.username = username
+        upload_dir = admin_config.get(AdminConfigKey.UPLOAD_DIR)
+        download_dir = admin_config.get(AdminConfigKey.DOWNLOAD_DIR)
         if not os.path.isdir(download_dir):
             os.makedirs(download_dir)
 
-        if self.secure_mode:
-            if not os.path.isfile(ca_cert):
-                raise ConfigError(f"rootCA.pem does not exist at {ca_cert}")
-
-            if not os.path.isfile(client_cert):
-                raise ConfigError(f"client.crt does not exist at {client_cert}")
-
-            if not os.path.isfile(client_key):
-                raise ConfigError(f"client.key does not exist at {client_key}")
-
-        service_finder = ServiceFinderByOverseer(conf.overseer_agent)
-
         self.api = AdminAPI(
-            ca_cert=ca_cert,
-            client_cert=client_cert,
-            client_key=client_key,
-            upload_dir=upload_dir,
-            download_dir=download_dir,
-            service_finder=service_finder,
+            admin_config=admin_config,
             user_name=username,
-            insecure=(not self.secure_mode),
             debug=debug,
             event_handlers=conf.handlers,
         )
         self.upload_dir = upload_dir
         self.download_dir = download_dir
-        self.overseer_agent = conf.overseer_agent
 
     def close(self):
         """Close the session."""
-        self.api.close()
+        self.api.logout()
 
     def try_connect(self, timeout):
         if self.api.closed:
             raise SessionClosed("session closed")
 
-        start_time = time.time()
-        while not self.api.is_ready():
-            if time.time() - start_time > timeout:
-                self.api.close()
-                raise NoConnection(f"cannot connect to FLARE in {timeout} seconds")
-            time.sleep(0.5)
+        self.api.connect(timeout)
+        self.api.login()
 
     def _do_command(self, command: str, enforce_meta=True, props=None):
         if self.api.closed:
@@ -555,36 +518,6 @@ class Session(SessionSpec):
         """
         self.api.unset_command_timeout()
 
-    def list_sp(self) -> dict:
-        """List available service providers.
-
-        Returns: a dict that contains information about the primary SP and others
-
-        """
-        reply = self._do_command("list_sp", enforce_meta=False)
-        return reply.get(ResultKey.DETAILS)
-
-    def get_active_sp(self) -> dict:
-        """Get the current active service provider (SP).
-
-        Returns: a dict that describes the current active SP. If no SP is available currently, the 'name' attribute of
-        the result is empty.
-        """
-        reply = self._do_command("get_active_sp", enforce_meta=False)
-        return reply.get(ResultKey.META)
-
-    def promote_sp(self, sp_end_point: str):
-        """Promote the specified endpoint to become the active SP.
-
-        Args:
-            sp_end_point: the endpoint of the SP. It's string in this format: <url>:<server_port>:<admin_port>
-
-        Returns: None
-
-        """
-        sp_end_point = validate_sp_string(sp_end_point)
-        self._do_command("promote_sp " + sp_end_point)
-
     def get_available_apps_to_upload(self):
         """Get defined FLARE app folders from the upload folder on the machine the FLARE API is running.
 
@@ -598,21 +531,17 @@ class Session(SessionSpec):
         return dir_list
 
     def shutdown_system(self):
-        """Shutdown the whole NVFLARE system including the overseer, FL server(s), and all FL clients.
+        """Shutdown the whole NVFLARE system including FL server, and all FL clients.
 
         Returns: None
 
         Note: the user must be a Project Admin to use this method; otherwise the NOT_AUTHORIZED exception will be raised.
 
         """
+        self.shutdown(target_type=TargetType.ALL)
         sys_info = self._do_get_system_info(AdminCommandNames.ADMIN_CHECK_STATUS)
         if sys_info.server_info.status != "stopped":
             raise JobNotDone("there are still running jobs")
-
-        resp = self.overseer_agent.set_state("shutdown")
-        err = json.loads(resp.text).get("Error")
-        if err:
-            raise RuntimeError(err)
 
     def ls_target(self, target: str, options: str = None, path: str = None) -> str:
         """Run the "ls" command on the specified target and return the result.
@@ -895,9 +824,36 @@ class Session(SessionSpec):
             raise RuntimeError(f"missing {MetaKey.CLIENTS} from meta")
         return client_envs
 
-    def monitor_job(
+    def do_command(self, command: str, props=None):
+        """Execute an admin command.
+
+        Args:
+            command: the command to be executed
+            props: extra properties passed with the command
+
+        Returns:
+
+        """
+        return self.api.do_command(command, props)
+
+    def get_job_status(self, job_id: str) -> Optional[str]:
+        """Get the status of a job.
+
+        Args:
+            job_id: ID of the job
+
+        Returns: status of the job
+
+        """
+        job_meta = self.get_job_meta(job_id)
+        if job_meta:
+            return job_meta.get(JobMetaKey.STATUS.value)
+        else:
+            return None
+
+    def monitor_job_and_return_job_meta(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
-    ) -> MonitorReturnCode:
+    ) -> (MonitorReturnCode, Optional[dict]):
         """Monitor the job progress.
 
         Monitors until one of the conditions occurs:
@@ -911,7 +867,7 @@ class Session(SessionSpec):
             poll_interval (float): how often to poll job status
             cb: if provided, callback to be called after each status poll
 
-        Returns: a MonitorReturnCode
+        Returns: a tuple of (MonitorReturnCode, job meta dict)
 
         Every time the cb is called, it must return a bool indicating whether the monitor
         should continue. If False, this method ends.
@@ -920,13 +876,13 @@ class Session(SessionSpec):
         start_time = time.time()
         while True:
             if 0 < timeout < time.time() - start_time:
-                return MonitorReturnCode.TIMEOUT
+                return MonitorReturnCode.TIMEOUT, None
 
             job_meta = self.get_job_meta(job_id)
             if cb is not None:
                 should_continue = cb(self, job_id, job_meta, *cb_args, **cb_kwargs)
                 if not should_continue:
-                    return MonitorReturnCode.ENDED_BY_CB
+                    return MonitorReturnCode.ENDED_BY_CB, None
 
             # check whether the job is finished
             job_status = job_meta.get(JobMetaKey.STATUS.value, None)
@@ -934,7 +890,7 @@ class Session(SessionSpec):
                 raise InternalError(f"missing status in job {job_id}")
 
             if job_status.startswith("FINISHED"):
-                return MonitorReturnCode.JOB_FINISHED
+                return MonitorReturnCode.JOB_FINISHED, job_meta
 
             time.sleep(poll_interval)
 
@@ -957,6 +913,18 @@ def basic_cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_
     return True
 
 
+def new_session(
+    username: str,
+    startup_kit_location: str,
+    secure_mode: bool = True,
+    debug: bool = False,
+    timeout: float = 10.0,
+) -> Session:
+    session = Session(username=username, startup_path=startup_kit_location, debug=debug, secure_mode=secure_mode)
+    session.try_connect(timeout)
+    return session
+
+
 def new_secure_session(username: str, startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
     """Create a new secure FLARE API session with the NVFLARE system.
 
@@ -969,10 +937,7 @@ def new_secure_session(username: str, startup_kit_location: str, debug: bool = F
     Returns: a Session object
 
     """
-    session = Session(username=username, startup_path=startup_kit_location, secure_mode=True, debug=debug)
-
-    session.try_connect(timeout)
-    return session
+    return new_session(username, startup_kit_location, True, debug, timeout)
 
 
 def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
@@ -988,7 +953,6 @@ def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout
     The username for insecure session is always "admin".
 
     """
-    session = Session(username="admin", startup_path=startup_kit_location, secure_mode=False, debug=debug)
-
-    session.try_connect(timeout)
-    return session
+    return new_session(
+        username="", startup_kit_location=startup_kit_location, secure_mode=False, debug=debug, timeout=timeout
+    )

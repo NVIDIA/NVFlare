@@ -26,6 +26,7 @@ pip install nvflare torch torchvision
 const clientCode_pt = `
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
@@ -810,9 +811,9 @@ const frameworks = [
     <div id="" class="flex flex-wrap -mb-px text-xl font-medium text-center place-content-center mt-4 space-x-3">
 
       <!-- Framework Dropdown -->
-      <button id="dropdownFrameworkButton" data-dropdown-toggle="framework-dropdown" class="text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-1 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
+      <button id="dropdownFrameworkButton" data-dropdown-toggle="framework-dropdown" class="text-gray-900 m-0.5 hover:bg-gray-100 rounded-lg py-1 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
         <span id="framework-labels" class="inline-flex items-center">
-            <svg class="w-5 h-5 text-gray-800 dark:text-white me-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+            <svg class="w-5 h-5 text-gray-800 me-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
               <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 8-4 4 4 4m8 0 4-4-4-4m-2-3-4 14"/>
             </svg>
             <!-- Framework Labels -->
@@ -826,22 +827,22 @@ const frameworks = [
       </button>
 
       <!-- Framework Dropdown Options -->
-      <div id="framework-dropdown" class="z-10 hidden bg-white divide-y divide-gray-100 rounded-lg shadow-lg dark:bg-gray-700 m-0.5 px-2.5">
-        <ul id="framework-tabs" class="flex-column h-fit space-y -mb-px py-2 text-sm" id="default-styled-tab" data-tabs-toggle="#default-styled-tab-content" data-tabs-active-classes="text-gray-900 bg-gray-100" data-tabs-inactive-classes="dark:border-transparent text-gray-500 hover:text-gray-900 dark:text-gray-400 border-transparent hover:border-gray-300 dark:border-gray-700 dark:hover:text-gray-300" role="tablist">
+      <div id="framework-dropdown" class="z-10 hidden bg-white divide-y divide-gray-100 rounded-lg shadow-lg m-0.5 px-2.5">
+        <ul id="framework-tabs" class="flex-column h-fit space-y -mb-px py-2 text-sm" id="default-styled-tab" data-tabs-toggle="#default-styled-tab-content" data-tabs-active-classes="text-gray-900 bg-gray-100" data-tabs-inactive-classes="text-gray-500 hover:text-gray-900 border-transparent hover:border-gray-300" role="tablist">
           <li class="" role="presentation">
-              <button class="rounded-lg block px-4 py-2 dark:hover:text-white w-full" id="client-tab" data-tabs-target="#framework-pytorch-label" type="button" role="tab" aria-controls="profile" aria-selected="false">PyTorch</button>
+              <button class="rounded-lg block px-4 py-2 w-full" id="client-tab" data-tabs-target="#framework-pytorch-label" type="button" role="tab" aria-controls="profile" aria-selected="false">PyTorch</button>
           </li>
           <li class="" role="presentation">
-              <button class="rounded-lg block px-4 py-2 dark:hover:text-white w-full" id="controller-tab" data-tabs-target="#framework-lightning-label" type="button" role="tab" aria-controls="dashboard" aria-selected="false">Lightning</button>
+              <button class="rounded-lg block px-4 py-2 w-full" id="controller-tab" data-tabs-target="#framework-lightning-label" type="button" role="tab" aria-controls="dashboard" aria-selected="false">Lightning</button>
           </li>
           <li class="" role="presentation">
-              <button class="rounded-lg block px-4 py-2 dark:hover:text-white w-full" id="job-tab" data-tabs-target="#framework-tensorflow-label" type="button" role="tab" aria-controls="settings" aria-selected="false">TensorFlow</button>
+              <button class="rounded-lg block px-4 py-2 w-full" id="job-tab" data-tabs-target="#framework-tensorflow-label" type="button" role="tab" aria-controls="settings" aria-selected="false">TensorFlow</button>
           </li>
         </ul>
       </div>
 
       <!-- Google Colab Button -->
-      <a id="colab-button" href=`https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb` target="_blank" rel="noopener noreferrer" class="text-xs font-semibold text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-2 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
+      <a id="colab-button" href=`https://colab.research.google.com/github/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb` target="_blank" rel="noopener noreferrer" class="text-xs font-semibold text-gray-900 m-0.5 hover:bg-gray-100 rounded-lg py-2 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
         <span id="default-message" class="inline-flex items-center">
           <svg class="w-0 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 20">
               <img class="w-6 me-1.5" src={GoogleColab.src} alt="NVIDIA logo">
@@ -851,9 +852,9 @@ const frameworks = [
       </a>
 
       <!-- View on Github Button -->
-      <a id="github-button" href=`https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb` target="_blank" rel="noopener noreferrer" class="text-xs font-semibold text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-2 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
+      <a id="github-button" href=`https://github.com/NVIDIA/NVFlare/blob/${gh_branch}/examples/getting_started/pt/nvflare_pt_getting_started.ipynb` target="_blank" rel="noopener noreferrer" class="text-xs font-semibold text-gray-900 m-0.5 hover:bg-gray-100 rounded-lg py-2 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
         <span id="default-message" class="inline-flex items-center">
-          <svg class="w-4 h-4 text-black dark:text-white mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4 text-black mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
             <path fill-rule="evenodd" d="M12.006 2a9.847 9.847 0 0 0-6.484 2.44 10.32 10.32 0 0 0-3.393 6.17 10.48 10.48 0 0 0 1.317 6.955 10.045 10.045 0 0 0 5.4 4.418c.504.095.683-.223.683-.494 0-.245-.01-1.052-.014-1.908-2.78.62-3.366-1.21-3.366-1.21a2.711 2.711 0 0 0-1.11-1.5c-.907-.637.07-.621.07-.621.317.044.62.163.885.346.266.183.487.426.647.71.135.253.318.476.538.655a2.079 2.079 0 0 0 2.37.196c.045-.52.27-1.006.635-1.37-2.219-.259-4.554-1.138-4.554-5.07a4.022 4.022 0 0 1 1.031-2.75 3.77 3.77 0 0 1 .096-2.713s.839-.275 2.749 1.05a9.26 9.26 0 0 1 5.004 0c1.906-1.325 2.74-1.05 2.74-1.05.37.858.406 1.828.101 2.713a4.017 4.017 0 0 1 1.029 2.75c0 3.939-2.339 4.805-4.564 5.058a2.471 2.471 0 0 1 .679 1.897c0 1.372-.012 2.477-.012 2.814 0 .272.18.592.687.492a10.05 10.05 0 0 0 5.388-4.421 10.473 10.473 0 0 0 1.313-6.948 10.32 10.32 0 0 0-3.39-6.165A9.847 9.847 0 0 0 12.007 2Z" clip-rule="evenodd"/>
           </svg>
           <span class="text-sm font-semibold">View on Github</span>
@@ -866,11 +867,11 @@ const frameworks = [
 
     <div class="mx-auto max-w-[1500px] py-4 text-left flex flex-col md:flex-row">
       <!-- Client, Server, Job Tabs -->
-      <ul id="code-tabs" class="flex md:flex-col w-full flex-wrap md:w-auto h-fit md:border-r border-b md:border-b-0 space-y-0 md:space-y-2 space-x-2 md:space-x-0 text-xl font-medium md:mr-14 ms-1" id="default-styled-tab" data-tabs-toggle="#default-styled-tab-content" data-tabs-active-classes="stroke-nvidia text-nvidia hover:text-nvidia dark:text-nvidia-light dark:hover:text-nvidia-light border-b-2 md:border-nvidia border-nvidia dark:border-nvidia-light" data-tabs-inactive-classes="stroke-gray-500 hover:stroke-gray-600 dark:border-transparent text-gray-500 hover:text-gray-600 dark:text-gray-400 border-transparent hover:border-gray-300 dark:border-gray-700 dark:hover:text-gray-300" role="tablist">
+      <ul id="code-tabs" class="flex md:flex-col w-full flex-wrap md:w-auto h-fit md:border-r border-b md:border-b-0 space-y-0 md:space-y-2 space-x-2 md:space-x-0 text-xl font-medium md:mr-14 ms-1" id="default-styled-tab" data-tabs-toggle="#default-styled-tab-content" data-tabs-active-classes="stroke-nvidia text-nvidia hover:text-nvidia border-b-2 md:border-nvidia border-nvidia" data-tabs-inactive-classes="stroke-gray-500 hover:stroke-gray-600 text-gray-500 hover:text-gray-600 border-transparent hover:border-gray-300" role="tablist">
         <li class="flex-1" role="presentation">
           <button class="w-36 md:w-36 inline-block p-5 border-r-0 md:border-r-2 md:border-b-0 font-bold text-left" id="client-tab" data-tabs-target="#client-wrapper" type="button" role="tab" aria-controls="client" aria-selected="false">
             <span id="default-message" class="inline-flex items-center py-2.5">
-              <svg class="w-8 h-8 text-gray-800 dark:text-white mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+              <svg class="w-8 h-8 text-gray-800 mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
                 <path stroke="" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v5m-3 0h6M4 11h16M5 15h14a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1Z"/>
               </svg>
               Client
@@ -880,7 +881,7 @@ const frameworks = [
         <li class="flex-1" role="presentation">
           <button class="w-36 md:w-36 inline-block p-5 border-r-0 md:border-r-2 md:border-b-0 font-bold text-left" id="server-tab" data-tabs-target="#server-wrapper" type="button" role="tab" aria-controls="server" aria-selected="false">
             <span id="default-message" class="inline-flex items-center py-2.5">
-              <svg class="w-8 h-8 text-gray-800 dark:text-white mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+              <svg class="w-8 h-8 text-gray-800 mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
                 <path stroke="" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4a1 1 0 0 0-1-1M5 12h14M5 12a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1m-2 3h.01M14 15h.01M17 9h.01M14 9h.01"/>
               </svg>
               Server
@@ -890,7 +891,7 @@ const frameworks = [
         <li class="flex-1" role="presentation">
           <button class="w-36 md:w-36 inline-block p-5 border-r-0 md:border-r-2 md:border-b-0 font-bold text-left" id="job-tab" data-tabs-target="#job-wrapper" type="button" role="tab" aria-controls="job" aria-selected="false">
             <span id="default-message" class="inline-flex items-center py-2.5">
-              <svg class="w-8 h-8 text-gray-800 dark:text-white mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+              <svg class="w-8 h-8 text-gray-800 mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
                 <path stroke="" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 3v4a1 1 0 0 1-1 1H5m5 4-2 2 2 2m4-4 2 2-2 2m5-12v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7.914a1 1 0 0 1 .293-.707l3.914-3.914A1 1 0 0 1 9.914 3H18a1 1 0 0 1 1 1Z"/>
               </svg>
               Job
@@ -994,7 +995,7 @@ const frameworks = [
         <h2 class="text-2xl font-bold text-gray-900 mb-2">${code_section.title}</h2>
         <p class="text-slate-900 mb-4">${code_section.description}</p>
         <div class="relative rounded-lg border-2 border-nvidia-light border-solid bg-white text-sm text-pretty overflow-x-auto overflow-y-auto ${code_height}">
-          <button data-copy-to-clipboard-target="${code_section.id}-unformatted-block" data-copy-to-clipboard-content-type="innerHTML" data-copy-to-clipboard-html-entities="true" class="absolute top-2 right-2 z-10 text-gray-900 dark:text-gray-400 m-0.5 hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700 rounded-lg py-2 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
+          <button data-copy-to-clipboard-target="${code_section.id}-unformatted-block" data-copy-to-clipboard-content-type="innerHTML" data-copy-to-clipboard-html-entities="true" class="absolute top-2 right-2 z-10 text-gray-900 m-0.5 hover:bg-gray-100 rounded-lg py-2 px-2.5 inline-flex items-center justify-center bg-white border-gray-200 border">
             <span id="default-message" class="inline-flex items-center">
               <svg class="w-3 h-3 me-1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 20">
                 <path d="M16 1h-3.278A1.992 1.992 0 0 0 11 0H7a1.993 1.993 0 0 0-1.722 1H2a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2Zm-3 14H5a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2Zm0-4H5a1 1 0 0 1 0-2h8a1 1 0 0 1 0 2Zm0-5H5a1 1 0 0 1 0-2h2V2h4v2h2a1 1 0 1 1 0 2Z"/>

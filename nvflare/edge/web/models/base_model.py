@@ -11,8 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional
+from typing import List, Optional, Union
 from urllib.parse import parse_qs, urlencode
+
+
+class EdgeProtoKey:
+    STATUS = "status"
+    JOB_ID = "job_id"
+    TASK_ID = "task_id"
+    CAPABILITIES = "capabilities"
+    TASK_NAME = "task_name"
+    RESULT = "result"
+    COOKIE = "cookie"
+    DEVICE_INFO = "device_info"
+    DEVICE_ID = "device_id"
+    USER_INFO = "user_info"
+    METHODS = "methods"
 
 
 class BaseModel(dict):
@@ -39,3 +53,12 @@ class BaseModel(dict):
             return None
 
         return device_info.get("device_id")
+
+    @staticmethod
+    def check_keys(d: dict, keys: Union[str, List[str]]) -> str:
+        if isinstance(keys, str):
+            keys = [keys]
+        for key in keys:
+            if key not in d:
+                return f"missing {key}"
+        return ""

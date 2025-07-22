@@ -1,0 +1,39 @@
+{
+  "format_version": 2,
+  "workflows": [
+    {
+      "id": "fed_stats_controller",
+      "path": "nvflare.app_common.workflows.hierarchical_statistics_controller.HierarchicalStatisticsController",
+      "args": {
+        "statistic_configs": {
+          "count": {},
+          "sum": {},
+          "max": {},
+          "min": {},
+          "mean": {},
+          "var": {},
+          "stddev": {},
+          "histogram": {
+            "*": { "bins": 2, "range": [0, 1] },
+            "Confidence Score": {"bins": 5, "range": [0.5, 1] }
+          }
+        },
+        "writer_id": "stats_writer",
+        "enable_pre_run_task": false,
+        "precision": 4,
+        "hierarchy_config": "device_map_2.json"
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "stats_writer",
+      "path": "holoscan_stats_writer.HoloscanStatsWriter",
+      "args": {
+        "output_path": "/workspace/nvflare_data/",
+        "output_file_name": "nvflare_output.json",
+        "json_encoder_path": "nvflare.app_common.utils.json_utils.ObjectEncoder"
+      }
+    }
+  ]
+}

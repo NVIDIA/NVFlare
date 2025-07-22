@@ -5,12 +5,12 @@ cleanup: True
 
 
 tests:
-  - test_name: "run qa_job_4561872"
+  - test_name: "run swarm_cse_pt"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job qa_job_4561872" ]
+        "actions": [ "submit_job swarm_cse_pt" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
@@ -24,12 +24,12 @@ tests:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
     teardown:
       - rm -rf /tmp/nvflare/data
-  - test_name: "run qa_job_4558419"
+  - test_name: "run big_model_4g"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job qa_job_4558419" ]
+        "actions": [ "submit_job big_model_4g" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
@@ -43,12 +43,12 @@ tests:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
     teardown:
       - rm -rf /tmp/nvflare/data
-  - test_name: "run qa_job_4561583"
+  - test_name: "run pt_lightning"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job qa_job_4561583" ]
+        "actions": [ "submit_job pt_lightning" ]
         "result":
           "type": "job_submit_success"
       - "trigger":
@@ -63,31 +63,12 @@ tests:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
     teardown:
       - rm -rf /tmp/nvflare/data
-  - test_name: "run qa_job_4561872"
+  - test_name: "run pt_client_api_basic"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job qa_job_4561872" ]
-        "result":
-          "type": "job_submit_success"
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-    setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/data', train=True, download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/data
-  - test_name: "run qa_job_4592780"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job qa_job_4592780" ]
+        "actions": [ "submit_job pt_client_api_basic" ]
         "result":
           "type": "job_submit_success"
       - "trigger":

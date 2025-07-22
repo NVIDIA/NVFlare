@@ -71,7 +71,11 @@ def _get_provisioner(root_dir: str, scheme, docker_image=None):
         CertBuilder(),
         SignatureBuilder(),
     ]
-    return Provisioner(root_dir, builders)
+
+    # TBD: need to add Packager object to the provisioner!
+    # Should we create the Provisioner based on a project.yml file?
+    packager = None
+    return Provisioner(root_dir, builders, packager)
 
 
 def gen_server_blob(key):
@@ -87,7 +91,7 @@ def _gen_kit(download_key, prepare_target_cb=None, **cb_kwargs):
     u = Store.get_user(1)
     super_user = u.get("user")
     fl_port = 8002
-    admin_port = 8003
+    admin_port = fl_port
     with tempfile.TemporaryDirectory() as tmp_dir:
         project = Project.query.first()
         scheme = project.scheme if hasattr(project, "scheme") else "grpc"

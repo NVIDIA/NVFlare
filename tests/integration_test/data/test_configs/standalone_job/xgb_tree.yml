@@ -1,0 +1,33 @@
+n_servers: 1
+n_clients: 2
+jobs_root_dir: ./data/jobs
+cleanup: True
+
+
+tests:
+- test_name: Test job higgs_2_cyclic_uniform_split_uniform_lr for xgboost tree-based example.
+  event_sequence:
+  - actions:
+    - submit_job higgs_2_cyclic_uniform_split_uniform_lr
+    result:
+      type: job_submit_success
+    trigger:
+      data: Server started
+      type: server_log
+  - actions:
+    - ensure_current_job_done
+    result:
+      data:
+        run_finished: true
+      type: run_state
+    trigger:
+      data:
+        run_finished: true
+      type: run_state
+  setup:
+  - cp ../../examples/advanced/xgboost/requirements.txt
+    ../../examples/advanced/xgboost/temp_requirements.txt
+  - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/xgboost/temp_requirements.txt
+  - pip install -r ../../examples/advanced/xgboost/temp_requirements.txt
+  - bash ../../examples/advanced/xgboost/fedxgb/prepare_data.sh /tmp/nvflare/dataset
+  - rm -f ../../examples/advanced/xgboost/temp_requirements.txt

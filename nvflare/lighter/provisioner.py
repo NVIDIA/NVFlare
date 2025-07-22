@@ -14,16 +14,16 @@
 import os
 import shutil
 import traceback
-from typing import List
+from typing import List, Optional
 
-from .constants import ProvisionMode, WorkDir
+from .constants import CtxKey, ProvisionMode, WorkDir
 from .ctx import ProvisionContext
 from .entity import Project
-from .spec import Builder
+from .spec import Builder, Packager
 
 
 class Provisioner:
-    def __init__(self, root_dir: str, builders: List[Builder]):
+    def __init__(self, root_dir: str, builders: List[Builder], packager: Optional[Packager] = None):
         """Workflow class that drive the provision process.
 
         Provisioner's tasks:
@@ -48,7 +48,19 @@ class Provisioner:
         """
         self.root_dir = root_dir
         self.builders = builders
+        self.packager = packager
         self.template = {}
+
+        if not builders:
+            raise ValueError("no builders are provided")
+
+        for b in builders:
+            if not isinstance(b, Builder):
+                raise ValueError(f"builders must all be Builder type but got {type(b)}")
+
+        if packager:
+            if not isinstance(packager, Packager):
+                raise ValueError(f"packager must be Packager type but got {type(packager)}")
 
     def add_template(self, template: dict):
         if not isinstance(template, dict):
@@ -77,6 +89,13 @@ class Provisioner:
             property (CtxKey.CURRENT_PROD_DIR) that specifies where the provision result is stored.
 
         """
+        ctx = self._build(project, mode, logger)
+        if self.packager and not ctx.get(CtxKey.BUILD_ERROR):
+            self.packager.package(project, ctx)
+        return ctx
+
+    def _build(self, project: Project, mode=None, logger=None) -> ProvisionContext:
+
         if logger:
             self._check_method(logger, "info")
             self._check_method(logger, "debug")
@@ -118,6 +137,7 @@ class Provisioner:
                 shutil.rmtree(prod_dir)
             ctx.error(f"Exception {ex} raised during provision.  Incomplete prod_n folder removed.")
             traceback.print_exc()
+            ctx[CtxKey.BUILD_ERROR] = True
         finally:
             wip_dir = ctx.get(WorkDir.WIP)
             if wip_dir:

@@ -15,26 +15,35 @@
 import base64
 import logging
 import os
+import random
 import subprocess
 import uuid
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
+from .utils import NonceHistory
+
 SNP_NAMESPACE = "x-snp"
 
 
 class SNPAuthorizer(CCAuthorizer):
-    def __init__(self):
+    """AMD SEV-SNP Authorizer"""
+
+    def __init__(self, max_nonce_history=1000):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.my_nonce_history = NonceHistory(max_nonce_history)
+        self.seen_nonce_history = NonceHistory(max_nonce_history)
 
     def generate(self):
         cmd = ["sudo", "snpguest", "report", "report.bin", "request.bin"]
         with open("request.bin", "wb") as request_file:
-            request_file.write(b"\x01" * 64)
+            nonce = bytearray([random.randint(0, 255) for _ in range(64)])
+            request_file.write(nonce)
         _ = subprocess.run(cmd, capture_output=True)
         with open("report.bin", "rb") as report_file:
             token = base64.b64encode(report_file.read())
+        self.my_nonce_history.add(nonce)
         return token
 
     def verify(self, token):
@@ -45,15 +54,30 @@ class SNPAuthorizer(CCAuthorizer):
                 report_file.write(report_bin)
             cmd = ["snpguest", "verify", "attestation", "./cert", tmp_bin_file]
             cp = subprocess.run(cmd, capture_output=True)
-            if cp.returncode != 0:
+            if cp.returncode == 0:
+                return self._check_nonce(tmp_bin_file)
+            else:
                 return False
-            return True
         except Exception as e:
             self.logger.info(f"Token verification failed {e=}")
             return False
         finally:
             if os.path.exists(tmp_bin_file):
                 os.remove(tmp_bin_file)
+
+    def _check_nonce(self, tmp_bin_file):
+        cmd = ["snpguest", "display", "report", tmp_bin_file]
+        cp = subprocess.run(cmd, capture_output=True)
+        if cp.returncode != 0:
+            return False
+        output_string = cp.stdout
+        lines = output_string.decode("utf-8").split("\n")
+        report_data_string = ""
+        for i in range(len(lines)):
+            if lines[i] == "Report Data:":
+                report_data_string = " ".join(lines[i + 1 : i + 6]).replace(" ", "")
+                break
+        return self.seen_nonce_history.add(report_data_string)
 
     def get_namespace(self) -> str:
         return SNP_NAMESPACE

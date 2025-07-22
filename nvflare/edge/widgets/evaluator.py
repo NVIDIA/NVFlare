@@ -34,6 +34,7 @@ class GlobalEvaluator(Widget):
     def __init__(
         self,
         model_path: str,
+        eval_frequency: int = 1,
         torchvision_dataset: Optional[Dict] = None,
         custom_dataset: Optional[Dict] = None,
     ):
@@ -51,6 +52,7 @@ class GlobalEvaluator(Widget):
             raise ValueError("Cannot provide both torchvision_dataset and custom_dataset")
 
         self.model_path = model_path
+        self.eval_frequency = eval_frequency
         self.torchvision_dataset = torchvision_dataset
         self.custom_dataset = custom_dataset
         self.batch_size = 4
@@ -59,7 +61,7 @@ class GlobalEvaluator(Widget):
         self.tb_writer = None
 
         self.register_event_handler(EventType.START_RUN, self._initialize)
-        self.register_event_handler(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, self.evaluate)
+        self.register_event_handler(AppEventType.GLOBAL_WEIGHTS_UPDATED, self.evaluate)
 
     def _load_model(self, model_path: str, fl_ctx: FLContext) -> Any:
         """Load model from model path.
@@ -151,10 +153,11 @@ class GlobalEvaluator(Widget):
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         # Load the model weights
         global_weights = global_model[ModelLearnableKey.WEIGHTS]
-        # Convert numpy weights to torch weights
-        global_weights = {k: torch.from_numpy(v) for k, v in global_weights.items()}
+        # Convert weights from list to torch tensors
+        global_weights = {k: torch.tensor(v) for k, v in global_weights.items()}
         self.model.load_state_dict(global_weights)
-        # Evaluate the model
-        metrics = self._eval_model()
-        for key, value in metrics.items():
-            self.tb_writer.add_scalar(key, value, current_round)
+        # Evaluate the model according to the evaluation frequency
+        if current_round % self.eval_frequency == 0:
+            metrics = self._eval_model()
+            for key, value in metrics.items():
+                self.tb_writer.add_scalar(key, value, current_round)
