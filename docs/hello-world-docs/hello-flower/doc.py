@@ -1,14 +1,14 @@
 """
 **Hello Pytorch** ||
-`hello lightning <../hello-lightning/tutorial.html>`_ ||
-`hello tensorflow <../hello-tf/tutorial.html>`_ ||
-`hello LR <../hello-lr/tutorial.html>`_ ||
-`hello KMeans <../hello-KMeans/tutorial.html>`_ ||
-`hello KM <../hello-km/tutorial.html>`_ ||
-`hello stats <../hello-stats/tutorial.html>`_ ||
-`hello cyclic <../hello-cyclic/tutorial.html>`_ ||
-`hello-xgboost <../hello-xgboost/tutorial.html>`_ ||
-`hello-flower <../hello-flower/tutorial.html>`_ ||
+`hello lightning <../hello-lightning/doc.html>`_ ||
+`hello tensorflow <../hello-tf/doc.html>`_ ||
+`hello LR <../hello-lr/doc.html>`_ ||
+`hello KMeans <../hello-kmeans/doc.html>`_ ||
+`hello KM <../hello-km/doc.html>`_ ||
+`hello stats <../hello-stats/doc.html>`_ ||
+`hello cyclic <../hello-cyclic/doc.html>`_ ||
+`hello-xgboost <../hello-xgboost/doc.html>`_ ||
+`hello-flower <../hello-flower/doc.html>`_ ||
 
 
 Hello Pytorch

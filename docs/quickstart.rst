@@ -1,7 +1,7 @@
 .. _quickstart:
 
 ######################
-Hello world Series
+Quick Start Series
 ######################
 
 Welcome to the NVIDIA FLARE Quick Start Series! This guide provides a set of hello-world examples to help you quickly learn how to build federated learning programs using NVIDIA FLARE.
@@ -15,7 +15,7 @@ Prerequisites
 - Git
 - NVFlare installed (see :ref:`installation`)
 
-Quick Start Examples
+Hello-world Examples
 ====================
 
 The following hello-world examples demonstrate different federated learning algorithms and workflows. Each example includes instructions and code to help you get started.

@@ -89,7 +89,7 @@ extensions = [
     'sphinx_gallery.gen_gallery',
 ]
 sphinx_gallery_conf = {
-    'examples_dirs': ['../examples/hello-world' ], # Source scripts
+    'examples_dirs': ['hello-world-docs' ], # Source scripts
     'gallery_dirs': ['hello-world'],               # Output .rst/.html
     'filename_pattern': r'(MATCH_NOTHING)',        # Only run matching scripts
     'ignore_pattern': r'__init__\.py',             # Ignore files
