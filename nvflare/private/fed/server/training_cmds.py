@@ -17,7 +17,7 @@ import time
 from typing import List
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames, SiteType
+from nvflare.apis.fl_constant import AdminCommandNames, ReservedTopic, SiteType
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, ReplyKeyword, make_meta
@@ -167,7 +167,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             if engine.has_relays():
                 self.logger.info("trying to stop relays ...")
                 data_bus = DataBus()
-                data_bus.publish(["stop_cellnet"], conn)
+                data_bus.publish([ReservedTopic.STOP_CELLNET], conn)
                 time.sleep(2.0)
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
