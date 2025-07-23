@@ -16,7 +16,7 @@ Hello Pytorch
 ===================
 
 This example demonstrates how to use NVIDIA FLARE with PyTorch to train an image classifier using
-federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-pt/>`.
+federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-pt/>_`.
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
 NVIDIA FLARE Installation
@@ -59,9 +59,7 @@ then navigate to the hello-pt directory:
         |-- model.py          # model definition
         |-- job.py            # job recipe that defines client and server configurations
         |-- requirements.txt  # dependencies
-        |-- doc.py            # documentation file to generate the current documentation
 
-doc.py is this file, it is used for documentation generation, it is not part of the fl code.
 
 Data
 -----------------

@@ -1,257 +1,336 @@
+
 """
-**Hello Pytorch** ||
-`hello-lightning <../hello-lightning/doc.html>`_ ||
-`hello-tensorflow <../hello-tensorflow/doc.html>`_ ||
-`hello-LR <../hello-LR/doc.html>`_ ||
-`hello-KMeans <../hello-kmeans/doc.html>`_ ||
-`hello-survival-analysis-KM <../hello-survival-analysis-KM/doc.html>`_ ||
-`hello_statistics <../hello_statistics/doc.html>`_ ||
-`hello-cyclic <../hello-cyclic/doc.html>`_ ||
-`hello-cross-site-evaluation <../hello-cross-site-evaluation/doc.html>`_ ||
+`hello pytorch <../hello-pt/doc.html>`_ ||
+`hello lightning <../hello-lightning/doc.html>`_ ||
+`hello tensorflow <../hello-tf/doc.html>`_ ||
+`hello LR <../hello-lr/doc.html>`_ ||
+`hello KMeans <../hello-kmeans/doc.html>`_ ||
+`hello KM <../hello-km/doc.html>`_ ||
+`hello stats <../hello-stats/doc.html>`_ ||
+**hello cyclic** ||
 `hello-xgboost <../hello-xgboost/doc.html>`_ ||
+`hello-flower <../hello-flower/doc.html>`_ ||
 
 
-Hello Pytorch Cyclic
+Hello Cyclic
 ===================
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
-using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework.
+This example demonstrates how to use NVIDIA FLARE with **Tensorflow** to train an image classifier using
+federated Cyclic weight transfer.The complete example code can be found in the`hello-cyclic directory <examples/hello-world/hello-cyclic/>`_.
+It is recommended to create a virtual environment and run everything within a virtualenv.
 
-Working with data
+NVIDIA FLARE Installation
+-------------------------
+for the complete installation instructions, see `installation <../../installation.html>`_
+
+.. code-block:: text
+
+    pip install nvflare
+
+Install the dependency
+
+.. code-block:: text
+
+    pip install -r requirements.txt
+
+
+Code Structure
+--------------
+
+first get the example code from github:
+
+.. code-block:: text
+
+    git clone https://github.com/NVIDIA/NVFlare.git
+
+then navigate to the hello-pt directory:
+
+.. code-block:: text
+
+    git switch <release branch>
+    cd examples/hello-world/hello-cyclic
+
+
+.. code-block:: text
+
+    hello-pt
+        |
+        |-- client.py         # client local training script
+        |-- model.py          # model definition
+        |-- job.py            # job recipe that defines client and server configurations
+        |-- requirements.txt  # dependencies
+
+Data
 -----------------
-PyTorch has two `primitives to work with data <https://pytorch.org/docs/stable/data.html>`_:
-``torch.utils.data.DataLoader`` and ``torch.utils.data.Dataset``.
-``Dataset`` stores the samples and their corresponding labels, and ``DataLoader`` wraps an iterable around
-the ``Dataset``.
+This example uses the `CIFAR-10 <https://www.cs.toronto.edu/~kriz/cifar.html>`_ dataset
 
 In a real FL experiment, each client would have their own dataset used for their local training.
-You can download the CIFAR10 dataset from the Internet via torchvision's datasets module, so for simplicity's sake, this is
-the dataset we will be using on each client.
-
+You can download the CIFAR10 dataset from the Internet via torchvision's datasets module,
+You can split the datasets for different clients, so that each client has its own dataset.
+Here for simplicity's sake, the same dataset we will be using on each client.
 
 """
-
-import torch
-from torch import nn
-from torch.utils.data import DataLoader
-from torchvision import datasets
-from torchvision.transforms import ToTensor
-
-######################################################################
-# PyTorch offers domain-specific libraries such as `TorchText <https://pytorch.org/text/stable/index.html>`_,
-# `TorchVision <https://pytorch.org/vision/stable/index.html>`_, and `TorchAudio <https://pytorch.org/audio/stable/index.html>`_,
-# all of which include datasets. For this tutorial, we  will be using a TorchVision dataset.
-#
-# The ``torchvision.datasets`` module contains ``Dataset`` objects for many real-world vision data like
-# CIFAR, COCO (`full list here <https://pytorch.org/vision/stable/datasets.html>`_). In this tutorial, we
-# use the FashionMNIST dataset. Every TorchVision ``Dataset`` includes two arguments: ``transform`` and
-# ``target_transform`` to modify the samples and labels respectively.
-
-# Download training data from open datasets.
-training_data = datasets.FashionMNIST(
-    root="data",
-    train=True,
-    download=True,
-    transform=ToTensor(),
-)
-
-# Download test data from open datasets.
-test_data = datasets.FashionMNIST(
-    root="data",
-    train=False,
-    download=True,
-    transform=ToTensor(),
-)
-
-######################################################################
-# We pass the ``Dataset`` as an argument to ``DataLoader``. This wraps an iterable over our dataset, and supports
-# automatic batching, sampling, shuffling and multiprocess data loading. Here we define a batch size of 64, i.e. each element
-# in the dataloader iterable will return a batch of 64 features and labels.
-
-batch_size = 64
-
-# Create data loaders.
-train_dataloader = DataLoader(training_data, batch_size=batch_size)
-test_dataloader = DataLoader(test_data, batch_size=batch_size)
-
-for X, y in test_dataloader:
-    print(f"Shape of X [N, C, H, W]: {X.shape}")
-    print(f"Shape of y: {y.shape} {y.dtype}")
-    break
-
-######################################################################
-# Read more about `loading data in PyTorch <data_doc.html>`_.
-#
-
-######################################################################
-# --------------
-#
-
 ################################
-# Working with Model
+# Model
 # ------------------
-# To define a neural network in PyTorch, we create a class that inherits
-# from `nn.Module <https://pytorch.org/docs/stable/generated/torch.nn.Module.html>`_. We define the layers of the network
-# in the ``__init__`` function and specify how data will pass through the network in the ``forward`` function. To accelerate
-# operations in the neural network, we move it to the `accelerator <https://pytorch.org/docs/stable/torch.html#accelerators>`__
-# such as CUDA, MPS, MTIA, or XPU. If the current accelerator is available, we will use it. Otherwise, we use the CPU.
+# In PyTorch, neural networks are implemented by defining a class (e.g., `SimpleNetwork`) that extends
+# `nn.Module <https://pytorch.org/docs/stable/generated/torch.nn.Module.html>`_. The network’s architecture is
+# set up in the `__init__` method,# while the `forward` method determines how input data flows through the layers.
+# For faster computations, the model is transferred to a hardware accelerator (such as CUDA GPUs) if available;
+# otherwise, it runs on the CPU. The implementation of this model can be found in model.py.
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 print(f"Using {device} device")
 
-# Define model
-class NeuralNetwork(nn.Module):
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class SimpleNetwork(nn.Module):
     def __init__(self):
-        super().__init__()
-        self.flatten = nn.Flatten()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(28*28, 512),
-            nn.ReLU(),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Linear(512, 10)
-        )
+        super(SimpleNetwork, self).__init__()
+        self.conv1 = nn.Conv2d(3, 6, 5)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
 
     def forward(self, x):
-        x = self.flatten(x)
-        logits = self.linear_relu_stack(x)
-        return logits
-
-model = NeuralNetwork().to(device)
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+model = SimpleNetwork().to(device)
 print(model)
 
-
-
-######################################################################
-# Read more about `building neural networks in PyTorch <buildmodel_doc.html>`_.
-#
-"""
-  
-This ``NeuralNetwork`` class is your convolutional neural network to train with the CIFAR10 dataset.
-
-"""
 ######################################################################
 # --------------
 #
 
 
 #####################################################################
-# Optimizing the Model Parameters
-# ----------------------------------------
-# To train a model, we need a `loss function <https://pytorch.org/docs/stable/nn.html#loss-functions>`_
-# and an `optimizer <https://pytorch.org/docs/stable/optim.html>`_.
-
-loss_fn = nn.CrossEntropyLoss()
-optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
-
-
-#######################################################################
-# In a single training loop, the model makes predictions on the training dataset (fed to it in batches), and
-# backpropagates the prediction error to adjust the model's parameters.
-
-def train(dataloader, model, loss_fn, optimizer):
-    size = len(dataloader.dataset)
-    model.train()
-    for batch, (X, y) in enumerate(dataloader):
-        X, y = X.to(device), y.to(device)
-
-        # Compute prediction error
-        pred = model(X)
-        loss = loss_fn(pred, y)
-
-        # Backpropagation
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-
-        if batch % 100 == 0:
-            loss, current = loss.item(), (batch + 1) * len(X)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
-
-##############################################################################
-# We also check the model's performance against the test dataset to ensure it is learning.
-
-def test(dataloader, model, loss_fn):
-    size = len(dataloader.dataset)
-    num_batches = len(dataloader)
-    model.eval()
-    test_loss, correct = 0, 0
-    with torch.no_grad():
-        for X, y in dataloader:
-            X, y = X.to(device), y.to(device)
-            pred = model(X)
-            test_loss += loss_fn(pred, y).item()
-            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
-    test_loss /= num_batches
-    correct /= size
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
-
-##############################################################################
-# The training process is conducted over several iterations (*epochs*). During each epoch, the model learns
-# parameters to make better predictions. We print the model's accuracy and loss at each epoch; we'd like to see the
-# accuracy increase and the loss decrease with every epoch.
-
-epochs = 5
-for t in range(epochs):
-    print(f"Epoch {t+1}\n-------------------------------")
-    train(train_dataloader, model, loss_fn, optimizer)
-    test(test_dataloader, model, loss_fn)
-print("Done!")
-
-######################################################################
-# Read more about `Training your model <optimization_doc.html>`_.
+# Client Code
+# ------------------
+#
+# Notice the training code is almost identical to the pytorch standard training code.
+# The only difference is that we added a few lines to receive and send data to the server.
 #
 
-######################################################################
-# --------------
+import os
+
+import torch
+from model import SimpleNetwork
+from torch import nn
+from torch.optim import SGD
+from torch.utils.data.dataloader import DataLoader
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import Compose, Normalize, ToTensor
+
+import nvflare.client as flare
+from nvflare.client.tracking import SummaryWriter
+
+DATASET_PATH = "/tmp/nvflare/data"
+
+
+def main():
+    batch_size = 16
+    epochs = 2
+    lr = 0.01
+    model = SimpleNetwork()
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    loss = nn.CrossEntropyLoss()
+    optimizer = SGD(model.parameters(), lr=lr, momentum=0.9)
+    transforms = Compose(
+        [
+            ToTensor(),
+            Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ]
+    )
+
+    flare.init()
+    sys_info = flare.system_info()
+    client_name = sys_info["site_name"]
+
+    train_dataset = CIFAR10(
+        root=os.path.join(DATASET_PATH, client_name), transform=transforms, download=True, train=True
+    )
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    summary_writer = SummaryWriter()
+    while flare.is_running():
+        input_model = flare.receive()
+        print(f"site = {client_name}, current_round={input_model.current_round}")
+
+        model.load_state_dict(input_model.params)
+        model.to(device)
+
+        steps = epochs * len(train_loader)
+        for epoch in range(epochs):
+            running_loss = 0.0
+            for i, batch in enumerate(train_loader):
+                images, labels = batch[0].to(device), batch[1].to(device)
+                optimizer.zero_grad()
+
+                predictions = model(images)
+                cost = loss(predictions, labels)
+                cost.backward()
+                optimizer.step()
+
+                running_loss += cost.cpu().detach().numpy() / images.size()[0]
+                if i % 3000 == 0:
+                    print(f"site={client_name}, Epoch: {epoch}/{epochs}, Iteration: {i}, Loss: {running_loss / 3000}")
+                    global_step = input_model.current_round * steps + epoch * len(train_loader) + i
+                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
+                    running_loss = 0.0
+
+        print(f"Finished Training for {client_name}")
+
+        PATH = "./cifar_net.pth"
+        torch.save(model.state_dict(), PATH)
+
+        output_model = flare.FLModel(
+            params=model.cpu().state_dict(),
+            meta={"NUM_STEPS_CURRENT_ROUND": steps},
+        )
+        print(f"site: {client_name}, sending model to server.")
+        flare.send(output_model)
+
+
+if __name__ == "__main__":
+    main()
+
+#####################################################################
+# Server Code
+# ------------------
+# In federated averaging, the server code is responsible for
+# aggregating model updates from clients, the workflow pattern is similar to scatter-gather.
+# In this example, we will directly use the default federated averaging algorithm provided by NVFlare.
+# The FedAvg class is defined in `nvflare.app_common.workflows.fedavg.FedAvg`
+# There is no need to defined a customized server code for this example.
+
+
+#####################################################################
+# Job Recipe Code
+# ------------------
+# Job Recipe contains the client.py and built-in fedavg algorithm.
+
+from nvflare.app_opt.pt.job_config.Job_recipe import FedAvgRecipe
+
+if __name__ == "__main__":
+    n_clients = 2
+    num_rounds = 2
+    train_script = "src/client.py"
+    client_script_args = ""
+
+    recipe = FedAvgRecipe(clients=n_clients,
+                          num_rounds=num_rounds,
+                          model= SimpleNetwork(),
+                          client_script=train_script,
+                          client_script_args= client_script_args)
+    recipe.execute()
+
+
+
+#####################################################################
+# Run FL Job
+# ------------------
 #
-
-######################################################################
-# Saving Models
-# -------------
-# A common way to save a model is to serialize the internal state dictionary (containing the model parameters).
-
-torch.save(model.state_dict(), "model.pth")
-print("Saved PyTorch Model State to model.pth")
+# This section provides the command to execute the federated learning job
+# using the job recipe defined above. Run this command in your terminal.
 
 
-
-######################################################################
-# Loading Models
-# ----------------------------
+#####################################################################
+# **Command to execute the FL job**
 #
-# The process for loading a model includes re-creating the model structure and loading
-# the state dictionary into it.
-
-model = NeuralNetwork().to(device)
-model.load_state_dict(torch.load("model.pth", weights_only=True))
-
-#############################################################
-# This model can now be used to make predictions.
-
-classes = [
-    "T-shirt/top",
-    "Trouser",
-    "Pullover",
-    "Dress",
-    "Coat",
-    "Sandal",
-    "Shirt",
-    "Sneaker",
-    "Bag",
-    "Ankle boot",
-]
-
-model.eval()
-x, y = test_data[0][0], test_data[0][1]
-with torch.no_grad():
-    x = x.to(device)
-    pred = model(x)
-    predicted, actual = classes[pred[0].argmax(0)], classes[y]
-    print(f'Predicted: "{predicted}", Actual: "{actual}"')
-
-
-######################################################################
-# Read more about `Saving & Loading your model <saveloadrun_doc.html>`_.
+# Use the following command in your terminal to start the job with the specified
+# number of rounds, batch size, and number of clients.
 #
+#
+# .. code-block:: text
+#
+#   python job.py --num_rounds 2 --batch_size 16
+
+
+#####################################################################
+# output
+#
+# .. code-block:: text
+#
+#     2025-07-20 21:41:23,489 - INFO - model selection weights control: {}
+#     2025-07-20 21:41:24,357 - INFO - Tensorboard records can be found in /tmp/nvflare/sim/workspace/server/simulate_job/tb_events you can view it using `tensorboard --logdir=/tmp/nvflare/sim/workspace/server/simulate_job/tb_events`
+#     2025-07-20 21:41:24,358 - INFO - Initializing BaseModelController workflow.
+#     2025-07-20 21:41:24,359 - INFO - Beginning model controller run.
+#     2025-07-20 21:41:24,359 - INFO - Start FedAvg.
+#     2025-07-20 21:41:24,360 - INFO - loading initial model from persistor
+#     2025-07-20 21:41:24,360 - INFO - Both source_ckpt_file_full_name and ckpt_preload_path are not provided. Using the default model weights initialized on the persistor side.
+#     2025-07-20 21:41:24,361 - INFO - Round 0 started.
+#     2025-07-20 21:41:24,361 - INFO - Sampled clients: ['site-1', 'site-2']
+#     2025-07-20 21:41:24,361 - INFO - Sending task train to ['site-1', 'site-2']
+#     2025-07-20 21:41:28,049 - INFO - start task run() with full path: /tmp/nvflare/sim/workspace/site-2/simulate_job/app_site-2/custom/client.py
+#     2025-07-20 21:41:28,052 - INFO - start task run() with full path: /tmp/nvflare/sim/workspace/site-1/simulate_job/app_site-1/custom/client.py
+#     2025-07-20 21:41:28,060 - INFO - execute for task (train)
+#     2025-07-20 21:41:28,060 - INFO - send data to peer
+#     2025-07-20 21:41:28,061 - INFO - sending payload to peer
+#     2025-07-20 21:41:28,061 - INFO - Waiting for result from peer
+#     2025-07-20 21:41:28,063 - INFO - execute for task (train)
+#     2025-07-20 21:41:28,063 - INFO - send data to peer
+#     2025-07-20 21:41:28,064 - INFO - sending payload to peer
+#     2025-07-20 21:41:28,064 - INFO - Waiting for result from peer
+#     2025-07-20 21:41:29,128 - INFO - Files already downloaded and verified
+#     2025-07-20 21:41:29,168 - INFO - Files already downloaded and verified
+#     2025-07-20 21:41:29,566 - INFO - site = site-1, current_round=0
+#     2025-07-20 21:41:29,599 - INFO - site = site-2, current_round=0
+#     2025-07-20 21:41:29,987 - INFO - site=site-1, Epoch: 0/2, Iteration: 0, Loss: 4.805266360441844e-05
+#     2025-07-20 21:41:30,002 - INFO - site=site-2, Epoch: 0/2, Iteration: 0, Loss: 4.810774823029836e-05
+#     2025-07-20 21:41:39,339 - INFO - site=site-1, Epoch: 0/2, Iteration: 3000, Loss: 0.10355195295189817
+#     2025-07-20 21:41:39,348 - INFO - site=site-2, Epoch: 0/2, Iteration: 3000, Loss: 0.1036934811597069
+#     2025-07-20 21:41:39,737 - INFO - site=site-1, Epoch: 1/2, Iteration: 0, Loss: 2.9984918733437858e-05
+#     2025-07-20 21:41:39,746 - INFO - site=site-2, Epoch: 1/2, Iteration: 0, Loss: 2.9017041126887005e-05
+#     2025-07-20 21:41:49,111 - INFO - site=site-1, Epoch: 1/2, Iteration: 3000, Loss: 0.08605644813800852
+#     2025-07-20 21:41:49,120 - INFO - site=site-2, Epoch: 1/2, Iteration: 3000, Loss: 0.08581393839791417
+#     2025-07-20 21:41:49,497 - INFO - Finished Training for site-1
+#     2025-07-20 21:41:49,506 - INFO - Finished Training for site-2
+#     2025-07-20 21:41:49,507 - INFO - site: site-1, sending model to server.
+#     2025-07-20 21:41:49,508 - INFO - site: site-2, sending model to server.
+#     2025-07-20 21:41:49,990 - INFO - aggregating 2 update(s) at round 0
+#     2025-07-20 21:41:49,992 - INFO - Start persist model on server.
+#     2025-07-20 21:41:49,995 - INFO - End persist model on server.
+#     2025-07-20 21:41:49,995 - INFO - Round 1 started.
+#     2025-07-20 21:41:49,995 - INFO - Sampled clients: ['site-1', 'site-2']
+#     2025-07-20 21:41:49,996 - INFO - Sending task train to ['site-1', 'site-2']
+#     2025-07-20 21:41:51,695 - INFO - execute for task (train)
+#     2025-07-20 21:41:51,696 - INFO - send data to peer
+#     2025-07-20 21:41:51,696 - INFO - sending payload to peer
+#     2025-07-20 21:41:51,697 - INFO - Waiting for result from peer
+#     2025-07-20 21:41:51,754 - INFO - execute for task (train)
+#     2025-07-20 21:41:51,754 - INFO - send data to peer
+#     2025-07-20 21:41:51,755 - INFO - sending payload to peer
+#     2025-07-20 21:41:51,756 - INFO - Waiting for result from peer
+#     2025-07-20 21:41:52,010 - INFO - site = site-1, current_round=1
+#     2025-07-20 21:41:52,011 - INFO - site = site-2, current_round=1
+#     2025-07-20 21:41:52,023 - INFO - site=site-1, Epoch: 0/2, Iteration: 0, Loss: 3.0566091338793434e-05
+#     2025-07-20 21:41:52,023 - INFO - site=site-2, Epoch: 0/2, Iteration: 0, Loss: 2.9468193650245666e-05
+#     2025-07-20 21:42:05,812 - INFO - site=site-2, Epoch: 0/2, Iteration: 3000, Loss: 0.08019066233622531
+#     2025-07-20 21:42:06,095 - INFO - site=site-1, Epoch: 0/2, Iteration: 3000, Loss: 0.08063799119119842
+#     2025-07-20 21:42:06,218 - INFO - site=site-2, Epoch: 1/2, Iteration: 0, Loss: 2.4138346314430236e-05
+#     2025-07-20 21:42:06,494 - INFO - site=site-1, Epoch: 1/2, Iteration: 0, Loss: 2.6129357516765596e-05
+#     2025-07-20 21:42:15,555 - INFO - site=site-2, Epoch: 1/2, Iteration: 3000, Loss: 0.07604475673598547
+#     2025-07-20 21:42:15,841 - INFO - site=site-1, Epoch: 1/2, Iteration: 3000, Loss: 0.07583552108642956
+#     2025-07-20 21:42:15,944 - INFO - Finished Training for site-2
+#     2025-07-20 21:42:15,945 - INFO - site: site-2, sending model to server.
+#     2025-07-20 21:42:16,217 - INFO - Finished Training for site-1
+#     2025-07-20 21:42:16,220 - INFO - site: site-1, sending model to server.
+#     2025-07-20 21:42:16,236 - WARNING - validation metric not existing in site-1
+#     2025-07-20 21:42:16,300 - WARNING - validation metric not existing in site-2
+#     2025-07-20 21:42:16,427 - INFO - aggregating 2 update(s) at round 1
+#     2025-07-20 21:42:16,428 - INFO - Start persist model on server.
+#     2025-07-20 21:42:16,431 - INFO - End persist model on server.
+#     2025-07-20 21:42:16,431 - INFO - Finished FedAvg.
+
+
+

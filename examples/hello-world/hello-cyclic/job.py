@@ -15,7 +15,7 @@
 This script demonstrates how to run the cyclic script runner for federated learning.
 """
 
-from src.tf_net import Net
+from model import Net
 
 from nvflare import FedJob
 from nvflare.app_common.workflows.cyclic import Cyclic
@@ -25,9 +25,11 @@ from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 3
-    train_script = "src/hello-cyclic_fl.py"
+    train_script = "client.py"
 
-    job = FedJob(name="hello-tf_cyclic")
+    job = CyclicRecipe()
+
+    job = FedJob(name="hello-tf-cyclic")
 
     # Define the controller workflow and send to server
     controller = Cyclic(

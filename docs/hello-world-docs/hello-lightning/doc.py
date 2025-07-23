@@ -17,7 +17,7 @@ Hello Pytorch Lightning
 ======================
 
 This example demonstrates how to use NVIDIA FLARE with PyTorch lightning to train an image classifier using
-federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-lightning/>`.
+federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-lightning/>`_.
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
 
@@ -42,7 +42,7 @@ then navigate to the hello-pt directory:
 .. code-block:: text
 
     git switch <release branch>
-    cd examples/hello-world/hello-pt
+    cd examples/hello-world/hello-lightning
 
 
 hello-pt
