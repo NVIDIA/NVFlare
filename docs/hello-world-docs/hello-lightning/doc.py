@@ -18,13 +18,17 @@ This example demonstrates how to use NVIDIA FLARE with PyTorch lightning to trai
 federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-lightning/>`.
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
+
 NVIDIA FLARE Installation
 -------------------------
+
 for the complete installation instructions, see <../../installation.html>
 pip install nvflare
 
+
 Code Structure
 --------------
+
 first get the example code from github:
 git clone https://github.com/NVIDIA/NVFlare.git
 then navigate to the hello-pt directory:
@@ -53,27 +57,127 @@ You can download the CIFAR10 dataset from the Internet via torchvision's dataset
 You can split the datasets for different clients, so that each client has its own dataset.
 Here for simplicity's sake, the same dataset we will be using on each client.
 
+In PyTorch Lightning, a `LightningDataModule` is a standardized way to handle data loading and processing. It encapsulates all the steps required to prepare data for training, validation, and testing, making it easier to manage datasets and data loaders in a clean and organized manner. This abstraction helps separate data-related logic from the model and training code, promoting better code organization and reusability.
+
+### Brief Description of `LightningDataModule`
+
+- **Purpose:** The `LightningDataModule` is designed to encapsulate all data-related operations, including downloading, transforming, and splitting datasets, as well as providing data loaders for training, validation, testing, and prediction.
+
+- **Key Methods:**
+  - `prepare_data()`: Used for downloading and preparing data. This method is called only once and is not distributed across multiple GPUs or nodes.
+  - `setup(stage)`: Used to set up datasets for different stages (e.g., 'fit', 'validate', 'test', 'predict'). This method is called on every GPU or node.
+  - `train_dataloader()`, `val_dataloader()`, `test_dataloader()`, `predict_dataloader()`: These methods return the respective data loaders for each stage.
+
+### Setup of `CIFAR10DataModule`
+
+In the `CIFAR10DataModule`, we have implemented the following:
+
+- **Initialization (`__init__`):** The constructor initializes the data directory and batch size, which are used throughout the data module.
+
+- **Data Preparation (`prepare_data`):** This method downloads the CIFAR-10 dataset if it is not already available in the specified directory. It prepares both the training and test datasets.
+
+- **Setup (`setup`):** This method assigns datasets for different stages:
+  - For the 'fit' and 'validate' stages, it splits the CIFAR-10 training dataset into training and validation sets.
+  - For the 'test' and 'predict' stages, it assigns the test dataset.
+
+- **Data Loaders:** The module provides data loaders for training, validation, testing, and prediction, each configured with the specified batch size.
+
+By using a `LightningDataModule`, the data handling logic is neatly encapsulated, making it easier to manage and modify data-related operations without affecting the rest of the training code.
+
 """
+class CIFAR10DataModule(LightningDataModule):
+    def __init__(self, data_dir: str = DATASET_PATH, batch_size: int = BATCH_SIZE):
+        super().__init__()
+        self.data_dir = data_dir
+        self.batch_size = batch_size
+
+    def prepare_data(self):
+        torchvision.datasets.CIFAR10(root=self.data_dir, train=True, download=True, transform=transform)
+        torchvision.datasets.CIFAR10(root=self.data_dir, train=False, download=True, transform=transform)
+
+    def setup(self, stage: str):
+        # Assign train/val datasets for use in dataloaders
+        if stage == "fit" or stage == "validate":
+            cifar_full = torchvision.datasets.CIFAR10(
+                root=self.data_dir, train=True, download=False, transform=transform
+            )
+            self.cifar_train, self.cifar_val = random_split(cifar_full, [0.8, 0.2])
+
+        # Assign test dataset for use in dataloader(s)
+        if stage == "test" or stage == "predict":
+            self.cifar_test = torchvision.datasets.CIFAR10(
+                root=self.data_dir, train=False, download=False, transform=transform
+            )
+
+    def train_dataloader(self):
+        return DataLoader(self.cifar_train, batch_size=self.batch_size)
+
+    def val_dataloader(self):
+        return DataLoader(self.cifar_val, batch_size=self.batch_size)
+
+    def test_dataloader(self):
+        return DataLoader(self.cifar_test, batch_size=self.batch_size)
+
+    def predict_dataloader(self):
+        return DataLoader(self.cifar_test, batch_size=self.batch_size)
+
+
 ################################
 # Model
 # ------------------
-# In PyTorch, neural networks are implemented by defining a class (e.g., `SimpleNetwork`) that extends
-# `nn.Module <https://pytorch.org/docs/stable/generated/torch.nn.Module.html>`_. The network’s architecture is
-# set up in the `__init__` method,# while the `forward` method determines how input data flows through the layers.
-# For faster computations, the model is transferred to a hardware accelerator (such as CUDA GPUs) if available;
-# otherwise, it runs on the CPU. The implementation of this model can be found in model.py.
+# In PyTorch Lightning, a `LightningModule` is a high-level abstraction built
+# on top of PyTorch that streamlines the process of training models. It
+# encapsulates the model architecture, training, validation, and testing logic,
+# allowing developers to focus on the core components of their models without
+# getting bogged down by the boilerplate code typically associated with PyTorch.
+#
+# General Summary of a `LightningModule`
+#
+# - **Model Definition:** The `LightningModule` is initialized with the model
+#   architecture, which is defined using PyTorch's `nn.Module`. This includes
+#   layers, activation functions, and any other components necessary for the
+#   model.
+#
+# - **Forward Pass:** The `forward` method specifies how the input data flows
+#   through the model. This is where the core computation of the model is
+#   defined.
+#
+# - **Training Logic:** The `training_step` method contains the logic for a
+#   single training iteration. It computes the loss and any metrics you wish to
+#   track, such as accuracy. This method is called automatically during the
+#   training loop.
+#
+# - **Validation and Testing:** Similar to the training step, the
+#   `validation_step` and `test_step` methods define how the model is evaluated
+#   on validation and test datasets, respectively. These methods help in
+#   monitoring the model's performance and generalization.
+#
+# - **Optimizer Configuration:** The `configure_optimizers` method specifies the
+#   optimizer(s) and learning rate scheduler(s) used during training. This
+#   allows for flexible and customizable training strategies.
+#
+# By using a `LightningModule`, developers can leverage PyTorch Lightning's
+# features like distributed training, automatic checkpointing, and logging,
+# making it easier to scale experiments and manage complex training workflows.
+# This abstraction promotes cleaner code, better organization, and easier
+# debugging, ultimately accelerating the model development process.
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
 
-print(f"Using {device} device")
+from typing import Any
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
+from pytorch_lightning import LightningModule
+from torchmetrics import Accuracy
 
-class SimpleNetwork(nn.Module):
+NUM_CLASSES = 10
+criterion = nn.CrossEntropyLoss()
+
+
+class Net(nn.Module):
     def __init__(self):
-        super(SimpleNetwork, self).__init__()
+        super().__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
@@ -89,8 +193,55 @@ class SimpleNetwork(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
-model = SimpleNetwork().to(device)
-print(model)
+
+
+class LitNet(LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.save_hyperparameters()
+        self.model = Net()
+        self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+        self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+        # (optional) pass additional information via self.__fl_meta__
+        self.__fl_meta__ = {}
+
+    def forward(self, x):
+        out = self.model(x)
+        return out
+
+    def training_step(self, batch, batch_idx):
+        x, labels = batch
+        outputs = self(x)
+        loss = criterion(outputs, labels)
+        self.train_acc(outputs, labels)
+        self.log("train_loss", loss)
+        self.log("train_acc", self.train_acc, on_step=True, on_epoch=False)
+        return loss
+
+    def evaluate(self, batch, stage=None):
+        x, labels = batch
+        outputs = self(x)
+        loss = criterion(outputs, labels)
+        self.valid_acc(outputs, labels)
+
+        if stage:
+            self.log(f"{stage}_loss", loss)
+            self.log(f"{stage}_acc", self.valid_acc, on_step=True, on_epoch=True)
+        return outputs
+
+    def validation_step(self, batch, batch_idx):
+        self.evaluate(batch, "val")
+
+    def test_step(self, batch, batch_idx):
+        self.evaluate(batch, "test")
+
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        return self.evaluate(batch)
+
+    def configure_optimizers(self):
+        optimizer = optim.SGD(self.parameters(), lr=0.001, momentum=0.9)
+        return {"optimizer": optimizer}
+
 
 ######################################################################
 # --------------
@@ -102,93 +253,124 @@ print(model)
 # ------------------
 #
 # The client code is responsible for
-# Notice the training code is almost identical to the pytorch standard training code.
+# Notice the training code is almost identical to the pytorch lightning standard training code.
 # The only difference is that we added a few lines to receive and send data to the server.
+# We mark all the chagned code with number 0 to 4 to make it easier to understand.
 #
-
-import os
-
+import argparse
 import torch
-from model import SimpleNetwork
-from torch import nn
-from torch.optim import SGD
-from torch.utils.data.dataloader import DataLoader
-from torchvision.datasets import CIFAR10
-from torchvision.transforms import Compose, Normalize, ToTensor
+import torchvision
+import torchvision.transforms as transforms
+from model import LitNet
+from pytorch_lightning import LightningDataModule, Trainer, seed_everything
+from torch.utils.data import DataLoader, random_split
 
-# (1) import nvflare client API
-import nvflare.client as flare
-# (2) import nvflare experimental tracking API for metrics collection, this is optional
-from nvflare.client.tracking import SummaryWriter
+# (0) import nvflare lightning client API
+import nvflare.client.lightning as flare
+
+seed_everything(7)
+
 
 DATASET_PATH = "/tmp/nvflare/data"
+BATCH_SIZE = 4
+
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
+
+class CIFAR10DataModule(LightningDataModule):
+       # <skip rest of code> 
+       # described in data section above
+       pass
+
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch_size", type=int, default=4)
+
+    return parser.parse_args()
+
 
 def main():
-    batch_size = 4
-    epochs = 5
-    lr = 0.01
-    model = SimpleNetwork()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    loss = nn.CrossEntropyLoss()
-    optimizer = SGD(model.parameters(), lr=lr, momentum=0.9)
-    transforms = Compose(
-        [
-            ToTensor(),
-            Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ]
-    )
-    # (3) import init FLARE API
+    args = define_parser()
+    batch_size = args.batch_size
+
+    # (1) flare.init() is only needed if the flare function is used (such as flare.get_site_name())
     flare.init()
-    sys_info = flare.system_info()
-    client_name = sys_info["site_name"]
+    print(f"batch_size={batch_size}, site={flare.get_site_name()}")
 
-    train_dataset = CIFAR10(
-        root=os.path.join(DATASET_PATH, client_name), transform=transforms, download=True, train=True
-    )
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    model = LitNet()
+    cifar10_dm = CIFAR10DataModule(batch_size=batch_size)
+    if torch.cuda.is_available():
+        trainer = Trainer(max_epochs=1, accelerator="gpu", devices=1 if torch.cuda.is_available() else None)
+    else:
+        trainer = Trainer(max_epochs=1, devices=None)
 
-    summary_writer = SummaryWriter()
-    # (4) if the overall FL training loop is still running
+    # (2) patch the lightning trainer
+    flare.patch(trainer)
+
     while flare.is_running():
-        # (5) receive global model from FL Server. This is the aggregated model
+        # (3) receives FLModel from NVFlare
+        # Note that we don't need to pass this input_model to trainer
+        # because after flare.patch the trainer.fit/validate will get the
+        # global model internally
         input_model = flare.receive()
-        print(f"current_round={input_model.current_round}")
+        print(f"\n[Current Round={input_model.current_round}, Site = {flare.get_site_name()}]\n")
 
-        model.load_state_dict(input_model.params)
-        model.to(device)
+        # (4) evaluate the current global model to allow server-side model selection
+        print("--- validate global model ---")
+        trainer.validate(model, datamodule=cifar10_dm)
 
-        steps = epochs * len(train_loader)
-        for epoch in range(epochs):
-            running_loss = 0.0
-            for i, batch in enumerate(train_loader):
-                images, labels = batch[0].to(device), batch[1].to(device)
-                optimizer.zero_grad()
+        # perform local training starting with the received global model
+        print("--- train new model ---")
+        trainer.fit(model, datamodule=cifar10_dm)
 
-                predictions = model(images)
-                cost = loss(predictions, labels)
-                cost.backward()
-                optimizer.step()
+        # test local model
+        print("--- test new model ---")
+        trainer.test(ckpt_path="best", datamodule=cifar10_dm)
 
-                running_loss += cost.cpu().detach().numpy() / images.size()[0]
-                if i % 3000 == 0:
-                    print(f"Epoch: {epoch}/{epochs}, Iteration: {i}, Loss: {running_loss / 3000}")
-                    global_step = input_model.current_round * steps + epoch * len(train_loader) + i
-                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
-                    running_loss = 0.0
+        # get predictions
+        print("--- prediction with new best model ---")
+        trainer.predict(ckpt_path="best", datamodule=cifar10_dm)
 
-        print("Finished Training")
 
-        PATH = "./cifar_net.pth"
-        torch.save(model.state_dict(), PATH)
+if __name__ == "__main__":
+    main()
 
-        # (6) prepare new model update
-        output_model = flare.FLModel(
-            params=model.cpu().state_dict(),
-            meta={"NUM_STEPS_CURRENT_ROUND": steps},
-        )
+# The main flow of the code logic in the `client.py` file involves running a federated learning (FL) training logics locally on each client using PyTorch Lightning and NVFlare. 
+# Here's a breakdown of the key steps:
 
-        # (7) send model back to NVFlare
-        flare.send(output_model)
+# 1. **Argument Parsing:**
+#    - The `define_parser()` function is used to parse command-line arguments, specifically the `--batch_size` argument, which sets the batch size for data loading.
+
+# 2. **Initialization:**
+#    - The `main()` function begins by parsing the command-line arguments to get the batch size.
+#    - The `flare.init()` function is called to initialize the NVFlare client, which is necessary for using certain NVFlare functions like `flare.get_site_name()`.
+
+# 3. **Model and Data Module Setup:**
+#    - An instance of `LitNet`, a PyTorch Lightning model, is created.
+#    - An instance of `CIFAR10DataModule` is created with the specified batch size to handle data loading and processing.
+
+# 4. **Trainer Configuration:**
+#    - A PyTorch Lightning `Trainer` is configured. If a GPU is available, it is set to use it; otherwise, it defaults to CPU.
+
+# 5. **NVFlare Integration:**
+#    - The `flare.patch(trainer)` function is called to integrate NVFlare with the PyTorch Lightning trainer. This allows the trainer to handle federated learning tasks.
+
+# 6. **Federated Learning Loop:**
+#    - A loop runs while `flare.is_running()` returns `True`, indicating that the federated learning job is active.
+#    - Within the loop:
+#      - The global model is received from the NVFlare server using `flare.receive()`.
+#      - The current round and site name are printed for logging purposes.
+#      - The global model is validated using `trainer.validate()`.
+#      - Local training is performed using `trainer.fit()`, starting with the received global model.
+#      - The local model is tested using `trainer.test()`.
+#      - Predictions are made using `trainer.predict()`.
+
+# 7. **Execution:**
+#    - The `main()` function is executed if the script is run as the main module, starting the entire process.
+
+
 
 #####################################################################
 # Server Code
@@ -203,12 +385,57 @@ def main():
 #####################################################################
 # Job Recipe Code
 # ------------------
-#
+# The job recipe code is used to define the client and server configurations.
+
+
+import argparse
+
+from model import LitNet
+from nvflare.app_opt.pt.job_config.Job_recipe import FedAvgRecipe
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n_clients", type=int, default=2)
+    parser.add_argument("--num_rounds", type=int, default=5)
+    parser.add_argument("--batch_size", type=int, default=4)
+
+    return parser.parse_args()
+
+
+def main():
+    args = define_parser()
+
+    n_clients = args.n_clients
+    num_rounds = args.num_rounds
+    batch_size = args.batch_size
+
+    recipe = FedAvgRecipe(clients=n_clients,
+                          num_rounds=num_rounds,
+                          model= LitNet(),
+                          client_script="client.py",
+                          client_script_args= f"--batch_size {batch_size}")
+
+    recipe.execute()
+
+
+
+if __name__ == "__main__":
+    main()
 
 
 #####################################################################
 # Run FL Job
 # ------------------
 #
+# This section provides the command to execute the federated learning job
+# using the job recipe defined above. Run this command in your terminal.
 
-# python job.py
+# Command to execute the FL job
+# -----------------------------
+# Use the following command in your terminal to start the job with the specified
+# number of rounds, batch size, and number of clients.
+
+# python job.py --num_rounds 2 --batch_size 16 
+
+
