@@ -62,6 +62,11 @@ def main():
         )
 
     if args.with_debug:
+        with_debug = True
+    else:
+        with_debug = admin_config.get(AdminConfigKey.WITH_DEBUG, False)
+
+    if with_debug:
         print("File Transfer: {}".format(admin_config.get(AdminConfigKey.WITH_FILE_TRANSFER)))
         if admin_config.get(AdminConfigKey.WITH_FILE_TRANSFER):
             print("  Upload Dir: {}".format(admin_config.get(AdminConfigKey.UPLOAD_DIR)))
@@ -70,7 +75,7 @@ def main():
     client = AdminClient(
         admin_config=admin_config,
         cmd_modules=modules,
-        debug=args.with_debug,
+        debug=with_debug,
         username=admin_config.get(AdminConfigKey.USERNAME, ""),
         handlers=conf.handlers,
         cli_history_dir=args.workspace,

@@ -306,7 +306,11 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if not self.user_name:
             raise Exception("user_name is required.")
 
-        self._debug = debug
+        if debug:
+            self._debug = debug
+        else:
+            self._debug = admin_config.get(AdminConfigKey.WITH_DEBUG, False)
+
         self.cmd_timeout = None
 
         # for login

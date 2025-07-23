@@ -225,6 +225,8 @@ class AdminConfigKey:
     LOGIN_TIMEOUT = "login_timeout"
     IDLE_TIMEOUT = "idle_timeout"
     WITH_FILE_TRANSFER = "with_file_transfer"
+    CLI_HISTORY_SIZE = "cli_history_size"
+    WITH_DEBUG = "with_debug"
     UID_SOURCE = "uid_source"  # where does user id come from
     UPLOAD_DIR = "upload_dir"
     DOWNLOAD_DIR = "download_dir"
