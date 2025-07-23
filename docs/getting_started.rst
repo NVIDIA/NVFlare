@@ -4,42 +4,53 @@
 Getting Started
 ###############
 
-This guide will help you understand the different ways to run NVIDIA FLARE and get started with your federated learning journey.
-Before proceeding, make sure you have completed the :ref:`quickstart` guide to run your first example.
+Welcome to NVIDIA FLARE! This guide will help you get started, explore key features, and discover resources for federated learning.
 
-Ways to Run NVFlare
-==================
-NVFlare supports different running modes to accommodate various use cases, from development to production:
+================
+1. Installation
+================
+- Visit the :ref:`installation` section to set up NVFLARE on your system.
+- Ensure all components are installed as described.
 
-.. list-table:: NVIDIA FLARE Modes
-   :header-rows: 1
+=================
+2. Running Modes
+=================
+- NVFLARE offers multiple modes for different needs (development, testing, production).
+- See available modes in :ref:`run_mode`.
 
-   * - **Mode**
-     - **Documentation**
-     - **Description**
-   * - Simulator
-     - :ref:`fl_simulator`
-     - | The FL Simulator is a light weight simulation where the job run is automated on a 
-       | single system. Useful for quickly running a job or experimenting with research 
-       | or FL algorithms.
-   * - POC
-     - :ref:`poc_command`
-     - | POC mode establishes and connects distinct server and client "systems" which can 
-       | then be orchestrated using the FLARE Console all from a single machine. Users can 
-       | also experiment with various deployment options (project.yml), which can be used 
-       | in production modes.
-   * - Production
-     - :ref:`provisioned_setup`
-     - | Real world production mode involves a distributed deployment with generated startup 
-       | kits from the provisioning process. Provides provisioning tool, dashboard, and 
-       | various deployment options.
+================
+3. Quick Start
+================
+- The :ref:`quickstart` section introduces hello-world programs using various ML frameworks.
+- Most examples run in simulation or POC mode and help you get familiar with the platform.
 
-Next Steps
-==========
-Now that you understand the different ways to run NVFlare:
+================
+4. Tutorials
+================
+- After exploring running modes and quick start, visit the :ref:`tutorials` section for in-depth tutorials, video guides, and walk-throughs.
 
-1. Try the getting started `tutorials <https://github.com/NVIDIA/NVFlare/tree/main/examples/getting_started>`__ to learn more about each mode
-2. Explore more advanced examples and `step-by-step <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step>`__ walk-throughs
-3. Learn how to convert your standalone/centralized training code to `federated learning code <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/ml-to-fl>`__
-4. When ready for production, see :ref:`real_world_fl` for deployment guidance
-5. For development, see :ref:`programming_guide` for detailed programming instructions
+====================
+5. Research Topics
+====================
+- Deepen your understanding with NVIDIA FLARE's research resources:
+  - **[NVIDIA FLARE Research Algorithms & Implementations](https://github.com/NVIDIA/NVFlare/tree/main/research)**
+    - Wide range of FL research projects, algorithms, and experimental features.
+    - Ideal for advanced FL techniques and custom solutions.
+
+========================
+6. Real-World Use Cases
+========================
+
+- **NVIDIA FLARE DAY Talks 2024:**
+  See: https://nvidia.github.io/NVFlare/flareDay/
+  - Showcases use cases from cancer studies, drug discovery, financial services, genomics research, edge training, NVIDIA FLARE-based LLM training, and more.
+- **NVIDIA FLARE DAY 2025:**  (coming soon)
+
+  - Workshop: 2025-09-16
+  - Conference Events: 2025-09-17, 2025-09-24
+
+=============================
+7. Discover NVIDIA FLARE via Chatbot
+=============================
+- Use the chatbot to search documentation, explore program flows, and find code snippets or system details.
+- Visit: [DeepWiki NVIDIA FLARE Chatbot](https://deepwiki.com/NVIDIA/NVFlare)
