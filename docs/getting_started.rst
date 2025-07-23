@@ -18,15 +18,15 @@ Welcome to NVIDIA FLARE! This guide will help you get started, explore key featu
 - NVFLARE offers multiple modes for different needs (development, testing, production).
 - See available modes in :ref:`run_mode`.
 
-================
+===============
 3. Quick Start
-================
+===============
 - The :ref:`quickstart` section introduces hello-world programs using various ML frameworks.
 - Most examples run in simulation or POC mode and help you get familiar with the platform.
 
-================
+=============
 4. Tutorials
-================
+=============
 - After exploring running modes and quick start, visit the :ref:`tutorials` section for in-depth tutorials, video guides, and walk-throughs.
 
 ====================
@@ -49,8 +49,8 @@ Welcome to NVIDIA FLARE! This guide will help you get started, explore key featu
   - Workshop: 2025-09-16
   - Conference Events: 2025-09-17, 2025-09-24
 
-=============================
+====================================
 7. Discover NVIDIA FLARE via Chatbot
-=============================
+====================================
 - Use the chatbot to search documentation, explore program flows, and find code snippets or system details.
-- Visit: [DeepWiki NVIDIA FLARE Chatbot](https://deepwiki.com/NVIDIA/NVFlare)
+- Visit: `DeepWiki NVIDIA FLARE Chatbot <https://deepwiki.com/NVIDIA/NVFlare>`_

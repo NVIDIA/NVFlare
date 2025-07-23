@@ -1,8 +1,8 @@
 .. _quickstart:
 
-######################
+###################
 Quick Start Series
-######################
+###################
 
 Welcome to the NVIDIA FLARE Quick Start Series! This guide provides a set of hello-world examples to help you quickly learn how to build federated learning programs using NVIDIA FLARE.
 
@@ -41,4 +41,4 @@ The following hello-world examples demonstrate different federated learning algo
 10. **hello xgboost** `<hello-world/hello-xgboost/doc.html>`_
     - Federated XGBoost example demonstrating gradient boosting for tabular data in a federated setting.
 
-Let's start with hello fedavg with pytorch: `<hello-world/hello-pt/doc.html>`_
+Let's start with hello federated average with pytorch: `<hello-world/hello-pt/doc.html>`_
