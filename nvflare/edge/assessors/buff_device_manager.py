@@ -52,7 +52,7 @@ class BuffDeviceManager(DeviceManager):
 
     def update_available_devices(self, devices: Dict, fl_ctx) -> None:
         self.available_devices.update(devices)
-        self.log_debug(
+        self.log_info(
             fl_ctx,
             f"assessor got reported {len(devices)} available devices from child. "
             f"total num available devices: {len(self.available_devices)}",

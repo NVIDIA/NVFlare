@@ -134,7 +134,7 @@ class ModelUpdateAssessor(Assessor):
                 self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
 
         else:
-            self.log_debug(fl_ctx, "no model updates")
+            self.log_info(fl_ctx, "no model updates")
 
         # Handle initial model generation
         if self.model_manager.current_model_version == 0:

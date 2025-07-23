@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import traceback
 import time
 from typing import Optional
 
@@ -160,9 +162,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         assert isinstance(task_state, BaseState)
 
         if not task_state.model_version:
-            self.log_info(
-                fl_ctx, "no model version, skipping task"
-            )
+            self.log_info(fl_ctx, "no model version, skipping task")
             # nothing to train
             return self._make_retry(job_id, "Model not ready")
 
@@ -174,9 +174,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
 
         selected, new_selection_id = task_state.is_device_selected(device_id, device_selection_id)
         if not selected:
-            self.log_info(
-                fl_ctx, f"device {device_id} not selected, skipping task"
-            )
+            self.log_info(fl_ctx, f"device {device_id} not selected, skipping task")
             return self._make_retry(job_id, "Device not selected")
 
         self.log_info(
@@ -219,7 +217,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
                 self.accept_device_result(request, current_task, fl_ctx)
                 return ResultResponse(EdgeApiStatus.OK, task_id=request.task_id, task_name=request.task_name)
         except Exception as ex:
-            msg = f"Error accepting contribution: {secure_format_exception(ex)}"
+            msg = f"Error accepting contribution: {ex} {traceback.format_exc()}"
             secure_log_traceback(self.logger)
             self.log_error(fl_ctx, msg)
             return ResultResponse(

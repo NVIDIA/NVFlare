@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
+
 import torch
 import torch.nn as nn
 from executorch.exir import to_edge
 from torch.export import export
 from torch.export.experimental import _export_forward_backward
 from torch.nn import functional as F
-import base64
+
 
 def export_model_to_bytes(net: nn.Module, input_shape, output_shape):
     input_tensor = torch.randn(input_shape)

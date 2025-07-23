@@ -1,11 +1,12 @@
 {
-  "endpoint": "http://localhost:9003",
+  "endpoint": "http://localhost:4321",
   "num_devices": 5,
+  "num_active_devices": 5,
   "device_id_prefix": "sim-device-",
   "processor": {
     "path": "processors.et_xor_task_processor.ETXORTaskProcessor",
     "args": {
-      "data_path": "xor_data.csv",
+      "data_path": "/tmp/xor_data.csv",
       "training_config": {
         "batch_size": 1, "shuffle": false, "num_workers": 0
       }

@@ -76,6 +76,9 @@ class Simulator:
 
         self.logger = get_obj_logger(self)
         self.update_lock = threading.Lock()
+        self.logger.info(
+            f"{self.num_active_devices=} {self.num_devices=} {self.num_workers=} {self.device_reuse_rate=}"
+        )
 
     def set_send_func(self, send_f, **kwargs):
         """Set the function for sending request to Flare
@@ -122,7 +125,7 @@ class Simulator:
 
             # include this device
             result[did] = sid
-            self.logger.debug(f"added selected device to active: {did} {sid=}")
+            self.logger.info(f"added selected device to active: {did} {sid=}")
 
             if len(result) >= self.num_active_devices:
                 # enough devices
@@ -168,7 +171,7 @@ class Simulator:
 
         while not self.done:
             cycle_num += 1
-            self.logger.debug(f"Starting query cycle: {cycle_num}")
+            self.logger.info(f"Starting query cycle: {cycle_num}")
 
             # Get selections from Flare for two reasons:
             # 1. Proactively place selected devices in active_devices can make task assignment happen quickly;
@@ -185,13 +188,13 @@ class Simulator:
                         selected_devices = resp.selection
 
             if selected_devices:
-                self.logger.debug(f"got selected devices: {dict(sorted(selected_devices.items()))}")
+                self.logger.info(f"got selected devices: {dict(sorted(selected_devices.items()))}")
 
             with self.update_lock:
                 # determine active devices for query
                 active_devices = self._determine_active_devices(selected_devices, active_device_candidates)
 
-            self.logger.debug(f"got active devices: {len(active_devices)}")
+            self.logger.info(f"got active devices: {len(active_devices)}")
 
             # Shuffle the keys to spread the selected devices evenly to avoid training spike.
             # Otherwise, since those devices are added first, they will also query first, which will make them
@@ -215,16 +218,16 @@ class Simulator:
                 if device.get_job_id():
                     # the device already got a job: ask for task
                     resp = self._ask_for_task(device)
-                    self.logger.debug(f"tried to get task for device {did}")
+                    self.logger.info(f"tried to get task for device {did}")
 
                     if resp.status == EdgeApiStatus.OK:
                         num_activities += 1
                         assert isinstance(resp, TaskResponse)
-                        self.logger.debug(f"TaskResponse status for device {did}: {resp.status}")
+                        self.logger.info(f"TaskResponse status for device {did}: {resp.status}")
 
                         if resp.status == EdgeApiStatus.OK:
                             # got a task to do
-                            self.logger.debug(f"device {did} got a task")
+                            self.logger.info(f"device {did} got a task")
                             device.state = DeviceState.LEARNING
                             device.cookie = resp.cookie
 
@@ -243,7 +246,7 @@ class Simulator:
                         num_activities += 1
                     elif resp.status in [EdgeApiStatus.DONE, EdgeApiStatus.NO_JOB]:
                         # this device is done - job is done
-                        self.logger.debug(f"device {did} is {resp.status}!")
+                        self.logger.info(f"device {did} is {resp.status}!")
                         device.job_id = None
                     else:
                         # ERROR or NO_JOB
@@ -251,7 +254,7 @@ class Simulator:
                         return
                 else:
                     # the device has no job yet - asking for job
-                    self.logger.debug(f"asking for job for device {did}")
+                    self.logger.info(f"asking for job for device {did}")
                     resp = self._ask_for_job(device)
                     if resp:
                         assert isinstance(resp, JobResponse)
@@ -277,7 +280,7 @@ class Simulator:
                             self.logger.info(f"stop running due to bad JobResponse status: {resp.status}")
                             return
                     else:
-                        self.logger.debug("failed to get job: will retry")
+                        self.logger.info("failed to get job: will retry")
 
                 # pause before next query
                 time.sleep(interval)
@@ -333,7 +336,7 @@ class Simulator:
             cookie=device.cookie,
         )
         resp = self._send_request(req, device, TaskResponse(EdgeApiStatus.RETRY), **self.send_kwargs)
-        self.logger.debug(f"got task response: {resp}")
+        self.logger.info(f"got task response: {resp}")
         return resp
 
     def _ask_for_selection(self, job_id: str) -> SelectionResponse:
@@ -347,7 +350,7 @@ class Simulator:
         device = self.all_devices[first_key]
         req = SelectionRequest(device.get_device_info(), job_id)
         resp = self._send_request(req, device, SelectionResponse(EdgeApiStatus.RETRY), **self.send_kwargs)
-        self.logger.debug(f"got selection response: {resp}")
+        self.logger.info(f"got selection response: {resp}")
         return resp
 
     def _ask_for_job(self, device: SimulatedDevice) -> JobResponse:
@@ -365,7 +368,7 @@ class Simulator:
             capabilities=device.get_capabilities(),
         )
         resp = self._send_request(req, device, JobResponse(EdgeApiStatus.RETRY), **self.send_kwargs)
-        self.logger.debug(f"got job response: {resp}")
+        self.logger.info(f"got job response: {resp}")
         return resp
 
     def _pick_a_used_device(self):
@@ -461,7 +464,7 @@ class Simulator:
         )
 
         # report the result to Flare
-        self.logger.debug(f"Device {device.device_id} result: {report}")
+        self.logger.info(f"Device {device.device_id} result: {report}")
         resp = self._send_request(report, device, ResultResponse(EdgeApiStatus.RETRY), **self.send_kwargs)
         self.logger.info(f"got result response: {resp}")
 

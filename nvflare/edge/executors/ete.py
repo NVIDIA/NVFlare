@@ -128,18 +128,18 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
         self.log_info(fl_ctx, f"handling edge request: {event_type}")
         task_info = self.get_current_task(fl_ctx)
         if not task_info:
-            self.log_debug(fl_ctx, f"received edge event {event_type} but I don't have pending task")
+            self.log_info(fl_ctx, f"received edge event {event_type} but I don't have pending task")
             reply = no_task_reply
         else:
             request = fl_ctx.get_prop(EdgeContextKey.REQUEST_FROM_EDGE)
-            self.log_debug(fl_ctx, f"received edge request: {request}")
+            self.log_info(fl_ctx, f"received edge request: {request}")
             reply = process_f(request=request, fl_ctx=fl_ctx, current_task=task_info)
 
-        self.log_debug(fl_ctx, f"Reply to edge: {reply}")
+        self.log_info(fl_ctx, f"Reply to edge: {reply}")
         fl_ctx.set_prop(EdgeContextKey.REPLY_TO_EDGE, reply, private=True, sticky=False)
 
     def _handle_edge_job_request(self, event_type: str, fl_ctx: FLContext):
         job_id = fl_ctx.get_job_id()
         reply = JobResponse(EdgeApiStatus.OK, job_id)
-        self.log_debug(fl_ctx, f"Reply to edge: {reply}")
+        self.log_info(fl_ctx, f"Reply to edge: {reply}")
         fl_ctx.set_prop(EdgeContextKey.REPLY_TO_EDGE, reply, private=True, sticky=False)
