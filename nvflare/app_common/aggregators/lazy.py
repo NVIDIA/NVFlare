@@ -39,18 +39,18 @@ class _Contribution:
         self.fl_ctx = fl_ctx.clone()
 
 
-class AsyncAggregator(Aggregator):
+class LazyAggregator(Aggregator):
 
     def __init__(self, aggregator_id: str, accept_timeout: float = 600.0):
-        """Constructor of AsyncAggregator.
-        AsyncAggregator is a wrapper for other aggregators to do accept processing in a separate thread.
+        """Constructor of LazyAggregator.
+        LazyAggregator is a wrapper for other aggregators to do accept processing in a separate thread.
 
         During a typical SAG-based training, updates from clients are processed by the aggregator's "accept" method.
         To ensure the integrity of training task, The SAG workflow processes client updates sequentially.
         If the "accept" method is time-consuming and there are many clients, then the update processing will
         become bottleneck.
 
-        Using the AsyncAggregator, the updates from clients are simply added to a queue quickly.
+        Using the LazyAggregator, the updates from clients are simply added to a queue quickly.
         The actual "accept" processing is done in a separate thread that processes the queued updates sequentially.
 
         Args:
@@ -68,25 +68,25 @@ class AsyncAggregator(Aggregator):
         self.aggregating = False
         self.run_ended = False
         self.accept_done = threading.Event()
-        self.register_event_handler(EventType.START_RUN, self._async_aggr_start_run)
-        self.register_event_handler(EventType.END_RUN, self._async_aggr_end_run)
+        self.register_event_handler(EventType.START_RUN, self._lazy_aggr_start_run)
+        self.register_event_handler(EventType.END_RUN, self._lazy_aggr_end_run)
 
-    def _async_aggr_start_run(self, event_type: str, fl_ctx: FLContext):
+    def _lazy_aggr_start_run(self, event_type: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         aggr = engine.get_component(self.aggregator_id)
         if not isinstance(aggr, Aggregator):
             self.system_panic(f"component {self.aggregator_id} must be Aggregator but got {type(aggr)}", fl_ctx)
             return
 
-        if isinstance(aggr, AsyncAggregator):
-            self.system_panic(f"component {self.aggregator_id} must not be AsyncAggregator", fl_ctx)
+        if isinstance(aggr, LazyAggregator):
+            self.system_panic(f"component {self.aggregator_id} must not be LazyAggregator", fl_ctx)
             return
 
         self.aggregator = aggr
         accept_thread = threading.Thread(target=self._do_accept, daemon=True)
         accept_thread.start()
 
-    def _async_aggr_end_run(self, event_type: str, fl_ctx: FLContext):
+    def _lazy_aggr_end_run(self, event_type: str, fl_ctx: FLContext):
         self.run_ended = True
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
