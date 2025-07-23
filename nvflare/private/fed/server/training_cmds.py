@@ -20,7 +20,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import AdminCommandNames, SiteType
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
+from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
@@ -236,7 +236,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         elif target_type == self.TARGET_TYPE_CLIENT:
             clients = conn.get_prop(self.TARGET_CLIENT_TOKENS)
             if not clients:
-                conn.append_error("no clients available", meta=make_meta(MetaStatusValue.NO_CLIENTS, "no clients"))
+                conn.append_error(
+                    ReplyKeyword.NO_CLIENTS, meta=make_meta(MetaStatusValue.NO_CLIENTS, ReplyKeyword.NO_CLIENTS)
+                )
                 return
             else:
                 response = self._restart_clients(conn)

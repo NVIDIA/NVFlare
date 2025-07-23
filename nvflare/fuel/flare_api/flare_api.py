@@ -31,7 +31,7 @@ from nvflare.fuel.hci.cmd_arg_utils import (
     validate_path_string,
     validate_required_target_string,
 )
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, ReplyKeyword
 
 from .api_spec import (
     AuthenticationError,
@@ -149,12 +149,12 @@ class Session(SessionSpec):
             elif cmd_status == MetaStatusValue.CLIENTS_RUNNING:
                 raise ClientsStillRunning("one or more clients are still running")
             elif cmd_status == MetaStatusValue.NO_CLIENTS:
-                raise NoClientsAvailable("no clients available")
+                raise NoClientsAvailable(ReplyKeyword.NO_CLIENTS)
             elif cmd_status == MetaStatusValue.INTERNAL_ERROR:
                 raise InternalError(f"server internal error: {info}")
             elif cmd_status == MetaStatusValue.INVALID_TARGET:
-                if info == "no clients available":
-                    raise NoClientsAvailable("no clients available")
+                if info == ReplyKeyword.NO_CLIENTS:
+                    raise NoClientsAvailable(ReplyKeyword.NO_CLIENTS)
                 else:
                     raise InvalidTarget(info)
             elif cmd_status == MetaStatusValue.NO_REPLY:

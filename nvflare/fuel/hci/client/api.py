@@ -47,6 +47,7 @@ from nvflare.fuel.hci.proto import (
     InternalCommands,
     MetaKey,
     ProtoKey,
+    ReplyKeyword,
     StreamChannel,
     StreamTopic,
     make_error,
@@ -715,7 +716,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 process_json_func(json_data)
             except:
                 traceback.print_exc()
-                process_json_func(make_error("Failed to communicate with Admin Server"))
+                process_json_func(make_error(f"{ReplyKeyword.COMM_FAILURE} with Admin Server"))
 
     def _try_command(self, cmd_ctx: CommandContext):
         """Try to execute a command on server side.
@@ -753,7 +754,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             if self._debug:
                 secure_log_traceback()
             traceback.print_exc()
-            process_json_func(make_error(f"Failed to communicate with Admin Server: {secure_format_exception(e)}"))
+            process_json_func(
+                make_error(f"{ReplyKeyword.COMM_FAILURE} with Admin Server: {secure_format_exception(e)}")
+            )
 
     def _get_command_detail(self, command):
         """Get command details
@@ -933,17 +936,17 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 if t == ProtoKey.STRING or t == ProtoKey.ERROR:
                     reply_data_list.append(d[ProtoKey.DATA])
         reply_data_full_response = "\n".join(reply_data_list)
-        if "session_inactive" in reply_data_full_response:
+        if ReplyKeyword.SESSION_INACTIVE in reply_data_full_response:
             return APIStatus.ERROR_INACTIVE_SESSION
-        if "wrong server" in reply_data_full_response:
+        if ReplyKeyword.WRONG_SERVER in reply_data_full_response:
             return APIStatus.ERROR_SERVER_CONNECTION
-        if "Failed to communicate" in reply_data_full_response:
+        if ReplyKeyword.COMM_FAILURE in reply_data_full_response:
             return APIStatus.ERROR_SERVER_CONNECTION
-        if "invalid client" in reply_data_full_response:
+        if ReplyKeyword.INVALID_CLIENT in reply_data_full_response:
             return APIStatus.ERROR_INVALID_CLIENT
-        if "unknown site" in reply_data_full_response:
+        if ReplyKeyword.UNKNOWN_SITE in reply_data_full_response:
             return APIStatus.ERROR_INVALID_CLIENT
-        if "not authorized" in reply_data_full_response:
+        if ReplyKeyword.NOT_AUTHORIZED in reply_data_full_response:
             return APIStatus.ERROR_AUTHORIZATION
         return APIStatus.SUCCESS
 

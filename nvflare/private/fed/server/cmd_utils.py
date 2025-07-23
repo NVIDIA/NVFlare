@@ -17,7 +17,7 @@ from typing import List
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
@@ -104,10 +104,10 @@ class CommandUtil(object):
                 invalid_inputs.extend(admin_clients)
 
             if invalid_inputs:
-                return "invalid client(s): {}".format(" ".join(invalid_inputs))
+                return f"{ReplyKeyword.INVALID_CLIENT}(s): {' '.join(invalid_inputs)}"
 
         if target_type == self.TARGET_TYPE_CLIENT and not clients:
-            return "no clients available"
+            return ReplyKeyword.NO_CLIENTS
 
         valid_tokens = []
         client_names = []
@@ -128,7 +128,9 @@ class CommandUtil(object):
     def must_be_project_admin(self, conn: Connection, args: List[str]):
         role = conn.get_prop(ConnProps.USER_ROLE, "")
         if role not in ["project_admin"]:
-            conn.append_error(f"Not authorized for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
+            conn.append_error(
+                f"{ReplyKeyword.NOT_AUTHORIZED} for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED)
+            )
             return PreAuthzReturnCode.ERROR
         else:
             return PreAuthzReturnCode.OK

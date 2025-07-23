@@ -17,7 +17,7 @@ from typing import List
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import InternalCommands
+from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.security import IdentityKey, get_identity_info
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -151,7 +151,7 @@ class LoginModule(CommandModule, CommandFilter):
                 self.logger.info(f"recreated admin session for {sess.user_name}")
             except Exception as ex:
                 self.logger.error(f"cannot recreate admin session: {secure_format_exception(ex)}")
-                conn.append_error("session_inactive")
+                conn.append_error(ReplyKeyword.SESSION_INACTIVE)
                 conn.append_string(
                     "user not authenticated or session timed out after {} seconds of inactivity - logged out".format(
                         self.session_mgr.idle_timeout
