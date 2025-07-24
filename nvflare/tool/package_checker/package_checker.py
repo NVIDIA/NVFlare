@@ -14,7 +14,6 @@
 
 import os
 import signal
-import traceback
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from subprocess import TimeoutExpired
