@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-import nvflare.app_common.streamers.file_downloader as downloader
+import nvflare.fuel.f3.streaming.file_downloader as downloader
 from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, ProcessType, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
