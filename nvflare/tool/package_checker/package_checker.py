@@ -14,6 +14,7 @@
 
 import os
 import signal
+import traceback
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from subprocess import TimeoutExpired
@@ -96,6 +97,7 @@ class PackageChecker(ABC):
             if all_passed:
                 ret_code = self.check_dry_run()
         except Exception as e:
+            traceback.print_exc()
             self.add_report(
                 "Package Error",
                 f"Exception happens in checking: {e}, this package is not in correct format.",
