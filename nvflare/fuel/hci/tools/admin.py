@@ -23,6 +23,8 @@ from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
 from nvflare.security.logging import secure_format_exception
 
+DEFAULT_CLI_HIST_SIZE = 1000
+
 
 def main():
     """
@@ -34,7 +36,7 @@ def main():
     parser.add_argument(
         "--fed_admin", "-s", type=str, help="json file with configurations for launching admin client", required=True
     )
-    parser.add_argument("--cli_history_size", type=int, default=1000)
+    parser.add_argument("--cli_history_size", type=int, default=DEFAULT_CLI_HIST_SIZE)
     parser.add_argument("--with_debug", action="store_true")
 
     args = parser.parse_args()
@@ -62,19 +64,34 @@ def main():
         )
 
     if args.with_debug:
-        print("File Transfer: {}".format(admin_config.get(AdminConfigKey.WITH_FILE_TRANSFER)))
-        if admin_config.get(AdminConfigKey.WITH_FILE_TRANSFER):
-            print("  Upload Dir: {}".format(admin_config.get(AdminConfigKey.UPLOAD_DIR)))
-            print("  Download Dir: {}".format(admin_config.get(AdminConfigKey.DOWNLOAD_DIR)))
+        with_debug = True
+    else:
+        with_debug = admin_config.get(AdminConfigKey.WITH_DEBUG, False)
+
+    cli_history_size = admin_config.get(AdminConfigKey.CLI_HISTORY_SIZE)
+    if not cli_history_size:
+        cli_history_size = args.cli_history_size
+
+    if not isinstance(cli_history_size, int) or cli_history_size <= 0:
+        print(f"invalid cli_history_size {cli_history_size}: set it to {DEFAULT_CLI_HIST_SIZE}")
+        cli_history_size = DEFAULT_CLI_HIST_SIZE
+
+    if with_debug:
+        with_file_transfer = admin_config.get(AdminConfigKey.WITH_FILE_TRANSFER)
+        print(f"CLI History Size: {cli_history_size}")
+        print(f"File Transfer: {with_file_transfer}")
+        if with_file_transfer:
+            print(f"  Upload Dir: {admin_config.get(AdminConfigKey.UPLOAD_DIR)}")
+            print(f"  Download Dir: {admin_config.get(AdminConfigKey.DOWNLOAD_DIR)}")
 
     client = AdminClient(
         admin_config=admin_config,
         cmd_modules=modules,
-        debug=args.with_debug,
+        debug=with_debug,
         username=admin_config.get(AdminConfigKey.USERNAME, ""),
         handlers=conf.handlers,
         cli_history_dir=args.workspace,
-        cli_history_size=args.cli_history_size,
+        cli_history_size=cli_history_size,
     )
 
     client.run()
