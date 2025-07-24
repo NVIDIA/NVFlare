@@ -26,6 +26,7 @@ class FlareRunner:
 
     def __init__(
         self,
+        job_name: str,
         data_source: DataSource,
         device_info: dict,
         user_info: dict,
@@ -37,6 +38,7 @@ class FlareRunner:
         """Constructor of FlareRunner
 
         Args:
+            job_name: name of the job. Used for matching Flare job on host.
             data_source: data source for the training
             device_info: device info
             user_info: info of the device user
@@ -47,6 +49,7 @@ class FlareRunner:
 
         Note: app provided filters apply to all jobs and are invoked before configured job filters!
         """
+        self.job_name = job_name
         self.resolver_registry = {}
         self.data_source = data_source
         self.device_info = device_info
@@ -56,7 +59,6 @@ class FlareRunner:
         self.app_out_filters = out_filters
         self.abort_signal = Signal()
         self.job_id = None
-        self.job_name = None
         self.cookie = None
 
         # add built-in creators
