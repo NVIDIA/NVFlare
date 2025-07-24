@@ -201,7 +201,8 @@ def main():
         disable_tqdm=True,
         max_seq_length=1024,
         save_total_limit=2,
-        # safetensors has some issues in saving lm_head.weight, disable it for now
+        # safetensors will remove shared layers, e.g. lm_head.weight
+        # disable for local checkpointing
         save_safetensors=False,
         seed=0,
         data_seed=0,
@@ -246,7 +247,7 @@ def main():
 
             if curr_round == 0:
                 # Load initial model weights
-                resume_model_file_path = os.path.join(args.output_path, "pytorch_model_initial.pth")
+                resume_model_file_path = os.path.join(args.output_path, "pytorch_model_initial.pt")
             else:
                 # Get the last checkpoint folder
                 resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
@@ -281,7 +282,7 @@ def main():
                     torch.save(state_dict_replace, resume_model_file_path)
                 else:
                     # SFT model can be large, save via HF API
-                    # Disable safetensor for now
+                    # Disable safetensor for local checkpointing
                     trainer.model.save_pretrained(
                         resume_from_checkpoint_folder, state_dict=state_dict_replace, safe_serialization=False
                     )

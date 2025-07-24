@@ -148,19 +148,21 @@ python3 llm_hf_fl_job.py \
     --client_ids dolly \
     --data_path ${PWD}/dataset \
     --workspace_dir ${PWD}/workspace/dolly_fl_single_gpu \
-    --job_dir ${PWD}/workspace/jobs/dolly_fl_single_gpu 
+    --job_dir ${PWD}/workspace/jobs/dolly_fl_single_gpu \
+    --message_mode tensor
 ```
 The loss curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two SFT training loss curves align with each other. 
 ![sft](./figs/fl_sft.png)
 
-Similarly, 2-GPU training can be run with the following command:
+Similarly, 2-GPU training with two clients can be run with the following command:
 ```
 python3 llm_hf_fl_job.py \
-       --client_ids dolly \
+       --client_ids dolly oasst1\
        --data_path ${PWD}/dataset \
        --workspace_dir ${PWD}/workspace/dolly_fl_multi_gpu \
        --job_dir ${PWD}/workspace/jobs/dolly_fl_multi_gpu \
-       --gpu [0,1]
+       --gpu "[0,1],[2,3]" \
+       --ports 7777 8888
 ```
 
 ## Model Quantization for Communication

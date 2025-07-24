@@ -18,6 +18,7 @@ import os
 
 # Add deterministic seed for reproducibility illustration
 import random
+import shutil
 
 import datasets
 import numpy as np
@@ -126,9 +127,12 @@ def main():
     device_map = {"": device_string}
 
     # If output path exists, remove it (only on main process)
-    if local_rank == 0 and os.path.exists(args.output_path):
-        print(f"Output path {args.output_path} exists, removing it.")
-        shutil.rmtree(args.output_path)
+    if local_rank == 0:
+        try:
+            print(f"Attempting to remove output path {args.output_path}.")
+            shutil.rmtree(args.output_path)
+        except FileNotFoundError:
+            print(f"Output path {args.output_path} does not exist, skipping removal.")
 
     # Wait for main process to finish cleanup
     if dist.is_initialized():
@@ -208,7 +212,8 @@ def main():
         disable_tqdm=True,
         max_seq_length=1024,
         save_total_limit=2,
-        # safetensors has some issues in saving lm_head.weight, disable it for now
+        # safetensors will remove shared layers, e.g. lm_head.weight
+        # disable for local checkpointing
         save_safetensors=False,
         seed=0,
         data_seed=0,
@@ -331,6 +336,9 @@ def main():
                 # cast out_param to float32 preparing for communication with numpy
                 # otherwise do nothing
                 out_param = {k: v.to(torch.float32) for k, v in out_param.items()}
+
+            # print the dict size
+            print(f"In total {len(out_param.keys())} params to be sent to server.")
 
             # construct trained FL model
             output_model = flare.FLModel(
