@@ -18,11 +18,12 @@ import uuid
 from typing import Any, BinaryIO, Union
 
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.fobs import deserialize, get_dot_handler, serialize
 from nvflare.fuel.utils.fobs.buf_list_stream import BufListStream
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
-from nvflare.fuel.utils.fobs.fobs import deserialize, serialize
 
-HEADER_STRUCT = struct.Struct(">BQ")  # marker(1), size(8)
+# DAT: Datum App Type
+HEADER_STRUCT = struct.Struct(">BBQ")  # marker(1), dot(1), size(8)
 HEADER_LEN = HEADER_STRUCT.size
 
 MARKER_MAIN = 100
@@ -35,13 +36,14 @@ MAX_BYTES_PER_READ = 1024 * 1024  # 1MB
 
 DATUM_DIR_CONFIG_VAR = "datum_dir"
 
-# this default is for linux systems. other systems must set NVFLARE_DATUM_DIR system environment variable.
-DEFAULT_DATUM_DIR = "/tmp/nvflare/datums"
+# this default should work for all systems. Can be overridden by NVFLARE_DATUM_DIR system environment variable.
+DEFAULT_DATUM_DIR = os.path.join(os.path.abspath(os.sep), "tmp", "nvflare", "datums")
 
 
 class _Header:
-    def __init__(self, marker, size: int):
+    def __init__(self, marker: int, dot: int, size: int):
         self.marker = marker
+        self.dot = dot
         self.size = size
 
     @classmethod
@@ -49,24 +51,24 @@ class _Header:
         if len(buffer) < HEADER_LEN:
             raise ValueError("Header too short")
 
-        marker, size = HEADER_STRUCT.unpack_from(buffer, 0)
-        return _Header(marker, size)
+        marker, dot, size = HEADER_STRUCT.unpack_from(buffer, 0)
+        return _Header(marker, dot, size)
 
     def to_bytes(self):
-        return HEADER_STRUCT.pack(self.marker, self.size)
+        return HEADER_STRUCT.pack(self.marker, self.dot, self.size)
 
 
-def _write_datum_header(stream: BinaryIO, marker, datum_id: str, value_size: int):
+def _write_datum_header(stream: BinaryIO, marker, dot, datum_id: str, value_size: int):
     datum_uuid = uuid.UUID(datum_id)
     datum_id_bytes = datum_uuid.bytes
     if len(datum_id_bytes) != DATUM_ID_LEN:
         raise RuntimeError(f"program error: datum ID length should be {DATUM_ID_LEN} but got {len(datum_id_bytes)}")
-    header = _Header(marker, DATUM_ID_LEN + value_size)
+    header = _Header(marker, dot, DATUM_ID_LEN + value_size)
     stream.write(header.to_bytes())
     stream.write(datum_id_bytes)
 
 
-def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None):
+def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None, fobs_ctx: dict = None):
     """
     Serialize the specified object to a stream of bytes. If the object contains any datums, they will be included
     into the result.
@@ -83,13 +85,14 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None):
         stream: the stream that serialized data will be written to.
         max_value_size: max size of bytes/str value allowed. If a value exceeds this, it will be converted to datum.
         If not specified, default is 10MB.
+        fobs_ctx: context info
 
     Returns: None
 
     """
-    mgr = DatumManager(max_value_size)
+    mgr = DatumManager(max_value_size, fobs_ctx=fobs_ctx)
     main_body = serialize(obj, mgr)
-    header = _Header(MARKER_MAIN, len(main_body))
+    header = _Header(MARKER_MAIN, 0, len(main_body))
     stream.write(header.to_bytes())
     stream.write(main_body)
 
@@ -107,10 +110,10 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None):
             # text representation is platform specific.
             # we convert it to utf-8 based bytes, which is platform independent.
             data_bytes = datum.value.encode("utf-8")
-            _write_datum_header(stream, MARKER_DATUM_TEXT, datum_id, len(data_bytes))
+            _write_datum_header(stream, MARKER_DATUM_TEXT, datum.dot, datum_id, len(data_bytes))
             stream.write(data_bytes)
         elif datum.datum_type == DatumType.BLOB:
-            _write_datum_header(stream, MARKER_DATUM_BLOB, datum_id, len(datum.value))
+            _write_datum_header(stream, MARKER_DATUM_BLOB, datum.dot, datum_id, len(datum.value))
             stream.write(datum.value)
         else:
             # file type:
@@ -122,7 +125,7 @@ def dump_to_stream(obj: Any, stream: BinaryIO, max_value_size=None):
                 raise RuntimeError(f"{file_path} is not a valid file")
 
             file_size = os.path.getsize(file_path)
-            _write_datum_header(stream, MARKER_DATUM_FILE, datum_id, file_size)
+            _write_datum_header(stream, MARKER_DATUM_FILE, datum.dot, datum_id, file_size)
             with open(file_path, "rb") as f:
                 while True:
                     bytes_read = f.read(MAX_BYTES_PER_READ)
@@ -205,7 +208,7 @@ def _get_one_section(stream: BinaryIO, expect_datum: bool):
     return header, datum_id, data
 
 
-def _get_datum_dir():
+def get_datum_dir():
     """When a file datum is received, the data will be stored in a temporary file under a predefined Datum Directory.
     This function returns this predefined Datum Directory. The function also tries to create the directory if
     it does not exist.
@@ -224,7 +227,7 @@ def _get_datum_dir():
     return dir_name
 
 
-def load_from_stream(stream: BinaryIO):
+def load_from_stream(stream: BinaryIO, fobs_ctx: dict = None):
     """Load/deserialize data from the specified stream into an object.
 
     The data in the stream must be a well-formed serialized data. It has one or more sections:
@@ -233,11 +236,12 @@ def load_from_stream(stream: BinaryIO):
 
     Args:
         stream: the stream that contains data to be deserialized.
+        fobs_ctx: contextual info for decomposers
 
     Returns: an object
 
     """
-    mgr = DatumManager()
+    mgr = DatumManager(fobs_ctx=fobs_ctx)
 
     # get main body
     header, _, main_body = _get_one_section(stream, expect_datum=False)
@@ -251,26 +255,40 @@ def load_from_stream(stream: BinaryIO):
             # all done
             break
 
+        assert isinstance(header, _Header)
         if header.marker == MARKER_DATUM_TEXT:
             # the body is utf-8 encoded bytes
             text = body.decode("utf-8")
-            datum = Datum.text_datum(text)
+            datum = Datum.text_datum(text, header.dot)
         elif header.marker == MARKER_DATUM_BLOB:
-            datum = Datum.blob_datum(body)
+            datum = Datum.blob_datum(body, header.dot)
         else:
             # put the value in a file
-            datum_dir = _get_datum_dir()
+            datum_dir = get_datum_dir()
             file_path = os.path.join(datum_dir, f"{datum_id}.dat")
             with open(file_path, "wb") as f:
                 f.write(body)
-            datum = Datum.file_datum(file_path)
+            datum = Datum.file_datum(file_path, header.dot)
 
         datum.datum_id = datum_id
-        mgr.datums[datum_id] = datum
+        mgr.add_datum(datum)
+
+    # process datums if needed
+    datums = mgr.get_datums()
+    for datum in datums.values():
+        if not isinstance(datum, Datum):
+            raise RuntimeError(f"datum {datum} should be Datum but got {type(datum)}")
+
+        if datum.dot > 0:
+            # this datum needs processing
+            handler = get_dot_handler(datum.dot)
+            if not handler:
+                raise RuntimeError(f"cannot find handler for Datum Object Type {datum.dot}")
+            handler.process_datum(datum, mgr)
     return deserialize(main_body, mgr)
 
 
-def dump_to_bytes(obj: Any, buffer_list=False, max_value_size=None):
+def dump_to_bytes(obj: Any, buffer_list=False, max_value_size=None, fobs_ctx: dict = None):
     """Serialize an object to bytes
 
     Args:
@@ -278,6 +296,7 @@ def dump_to_bytes(obj: Any, buffer_list=False, max_value_size=None):
         max_value_size: the max size allowed for bytes/str value in the object. If a value exceeds this, it will be
         converted to datum. If not specified, default is 10MB.
         buffer_list: If true, returns buffer list to save memory
+        fobs_ctx: context info for decomposers
 
     Returns: a bytes object
 
@@ -286,15 +305,16 @@ def dump_to_bytes(obj: Any, buffer_list=False, max_value_size=None):
         bio = BufListStream()
     else:
         bio = io.BytesIO()
-    dump_to_stream(obj, bio, max_value_size)
+    dump_to_stream(obj, bio, max_value_size, fobs_ctx=fobs_ctx)
     return bio.getvalue()
 
 
-def load_from_bytes(data: Union[bytes, list]) -> Any:
+def load_from_bytes(data: Union[bytes, list], fobs_ctx: dict = None) -> Any:
     """Deserialize the bytes into an object
 
     Args:
         data: the bytes to be deserialized
+        fobs_ctx: context info for decomposers
 
     Returns: an object
 
@@ -304,10 +324,10 @@ def load_from_bytes(data: Union[bytes, list]) -> Any:
     else:
         stream = io.BytesIO(data)
 
-    return load_from_stream(stream)
+    return load_from_stream(stream, fobs_ctx=fobs_ctx)
 
 
-def dump_to_file(obj: Any, file_path: str, max_value_size=None):
+def dump_to_file(obj: Any, file_path: str, max_value_size=None, fobs_ctx: dict = None):
     """Serialize the object and save result to the specified file.
 
     Args:
@@ -315,22 +335,24 @@ def dump_to_file(obj: Any, file_path: str, max_value_size=None):
         file_path: path of the file to store serialized data
         max_value_size: the max size allowed for bytes/str value in the object. If a value exceeds this, it will be
         converted to datum. If not specified, default is 10MB.
+        fobs_ctx: context info for decomposers
 
     Returns: None
 
     """
     with open(file_path, "wb") as f:
-        dump_to_stream(obj, f, max_value_size)
+        dump_to_stream(obj, f, max_value_size, fobs_ctx=fobs_ctx)
 
 
-def load_from_file(file_path: str) -> Any:
+def load_from_file(file_path: str, fobs_ctx: dict = None) -> Any:
     """Deserialized data in the specified file into an object
 
     Args:
         file_path: the file that contains data to be deserialized.
+        fobs_ctx: context info for decomposers
 
     Returns: an object
 
     """
     with open(file_path, "rb") as f:
-        return load_from_stream(f)
+        return load_from_stream(f, fobs_ctx=fobs_ctx)

@@ -47,6 +47,7 @@ class ClientManager:
         self.name_to_clients = dict()  # name => Client
         self.cred_keeper = CredKeeper()
         self.lock = threading.Lock()
+        self.num_relays = 0
 
         self.logger = get_obj_logger(self)
 
@@ -57,7 +58,8 @@ class ClientManager:
             self.name_to_clients[c.name] = c
 
     def authenticate(self, request, fl_ctx: FLContext) -> Optional[Client]:
-        client = self.login_client(request, fl_ctx)
+        client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
+        client = self.login_client(request, fl_ctx, client_type)
         if not client:
             return None
 
@@ -66,7 +68,6 @@ class ClientManager:
 
         # new client join
         with self.lock:
-            client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
             if client_type == ClientType.REGULAR:
                 self.name_to_clients[client.name] = client
                 self.clients.update({client.token: client})
@@ -100,7 +101,7 @@ class ClientManager:
             )
             return client
 
-    def login_client(self, client_login, fl_ctx: FLContext):
+    def login_client(self, client_login, fl_ctx: FLContext, client_type):
         proj_name = client_login.get_header(CellMessageHeaderKeys.PROJECT_NAME)
         if not self.is_valid_task(proj_name):
             fl_ctx.set_prop(
@@ -108,7 +109,10 @@ class ClientManager:
             )
             self.logger.error(f"login_client failed: {proj_name}")
             return None
-        return self.authenticated_client(client_login, fl_ctx)
+        return self.authenticated_client(client_login, fl_ctx, client_type)
+
+    def has_relays(self):
+        return self.num_relays > 0
 
     def validate_client(self, request, fl_ctx: FLContext, allow_new=False):
         """Validate the client state message.
@@ -141,12 +145,13 @@ class ClientManager:
     def _get_id_verifier(self, fl_ctx: FLContext):
         return self.cred_keeper.get_id_verifier(fl_ctx)
 
-    def authenticated_client(self, request, fl_ctx: FLContext) -> Optional[Client]:
+    def authenticated_client(self, request, fl_ctx: FLContext, client_type) -> Optional[Client]:
         """Use SSL certificate for authenticate the client.
 
         Args:
             request: client login request Message
             fl_ctx: FL_Context
+            client_type: type of the client
 
         Returns:
             Client object.
@@ -207,10 +212,14 @@ class ClientManager:
         self._set_client_props(client, client_fqcn, fl_ctx)
         self.logger.debug(f"authenticated client {client_name}: {client_fqcn=}")
 
-        if len(self.clients) >= self.max_num_clients:
+        if client_type == ClientType.REGULAR and len(self.clients) >= self.max_num_clients:
+            # only impose the limit to REGULAR clients
             fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Maximum number of clients reached", sticky=False)
             self.logger.info(f"Maximum number of clients reached. Reject client: {client_name} login.")
             return None
+
+        if client_type == ClientType.RELAY:
+            self.num_relays += 1
 
         return client
 

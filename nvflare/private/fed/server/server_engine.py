@@ -126,6 +126,12 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         self.kv_list = parse_vars(args.set)
 
+    def has_relays(self):
+        if not self.client_manager:
+            return False
+        else:
+            return self.client_manager.has_relays()
+
     def _get_run_folder(self, job_id):
         workspace = Workspace(self.args.workspace)
         return workspace.get_run_dir(job_id)
