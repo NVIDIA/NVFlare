@@ -21,7 +21,7 @@ from nvflare.fuel.f3.cellnet.defs import CellChannel
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import InternalCommands
+from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.utils.time_utils import time_to_string
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
@@ -255,7 +255,7 @@ class SessionManager(CommandModule):
         if sess:
             conn.append_string("OK")
         else:
-            conn.append_error("session_inactive")
+            conn.append_error(ReplyKeyword.SESSION_INACTIVE)
             conn.append_string(
                 "admin client session timed out after {} seconds of inactivity - logging out".format(self.idle_timeout)
             )

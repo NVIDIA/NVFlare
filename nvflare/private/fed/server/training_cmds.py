@@ -17,10 +17,10 @@ import time
 from typing import List
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames, SiteType
+from nvflare.apis.fl_constant import AdminCommandNames, ReservedTopic, SiteType
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
+from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
@@ -162,10 +162,13 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 return
 
         if target_type in [self.TARGET_TYPE_ALL]:
-            # shutdown the cellnet
-            data_bus = DataBus()
-            data_bus.publish(["stop_cellnet"], conn)
-            # time.sleep(2.0)
+            # shutdown the cellnet - we need to stop the cellnet if any relays are used
+            # this is because relays are hidden nodes that cannot be stopped normally.
+            if engine.has_relays():
+                self.logger.info("trying to stop relays ...")
+                data_bus = DataBus()
+                data_bus.publish([ReservedTopic.STOP_CELLNET], conn)
+                time.sleep(2.0)
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             # shut down the server
@@ -233,7 +236,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         elif target_type == self.TARGET_TYPE_CLIENT:
             clients = conn.get_prop(self.TARGET_CLIENT_TOKENS)
             if not clients:
-                conn.append_error("no clients available", meta=make_meta(MetaStatusValue.NO_CLIENTS, "no clients"))
+                conn.append_error(
+                    ReplyKeyword.NO_CLIENTS, meta=make_meta(MetaStatusValue.NO_CLIENTS, ReplyKeyword.NO_CLIENTS)
+                )
                 return
             else:
                 response = self._restart_clients(conn)
