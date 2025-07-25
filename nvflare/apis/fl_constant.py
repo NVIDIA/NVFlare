@@ -214,6 +214,8 @@ class ReservedTopic(object):
     JOB_HEART_BEAT = "__job_heartbeat__"
     TASK_CHECK = "__task_check__"
     APP_METRICS = "__app_metrics__"
+    MSG_ROOT_DELETED = "__msg_root_deleted__"
+    STOP_CELLNET = "__stop_cellnet__"
 
 
 class AdminCommandNames(object):

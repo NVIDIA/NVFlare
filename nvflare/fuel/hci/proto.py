@@ -98,6 +98,21 @@ class MetaStatusValue(object):
     NO_CLIENTS = "no_clients"
 
 
+class ReplyKeyword:
+    """
+    Admin API relies on certain keywords in the server reply to determine command status.
+    We define these keywords here to assure that the server and client sides use the keywords consistently.
+    """
+
+    NO_CLIENTS = "no clients available"
+    SESSION_INACTIVE = "session_inactive"
+    WRONG_SERVER = "wrong server"
+    COMM_FAILURE = "Failed to communicate"
+    INVALID_CLIENT = "invalid client"
+    UNKNOWN_SITE = "unknown site"
+    NOT_AUTHORIZED = "not authorized"
+
+
 class InternalCommands(object):
 
     CERT_LOGIN = "_cert_login"

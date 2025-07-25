@@ -44,7 +44,12 @@ class DataBus(EventPubSub):
                 cls._instance.data_store = {}
         return cls._instance
 
-    def subscribe(self, topics: List[str], callback: Callable[[str, Any, "DataBus"], None]) -> None:
+    def subscribe(
+        self,
+        topics: List[str],
+        callback: Callable[[str, Any, "DataBus"], None],
+        **cb_kwargs,
+    ) -> None:
         """
         Subscribe a callback function to one or more topics.
 
@@ -63,7 +68,47 @@ class DataBus(EventPubSub):
             with self._lock:
                 if topic not in self.subscribers:
                     self.subscribers[topic] = []
-                self.subscribers[topic].append(callback)
+                self.subscribers[topic].append((callback, cb_kwargs))
+
+    def unsubscribe(
+        self,
+        topic: str,
+        callback=None,
+    ) -> None:
+        """Unsubscribe from the specified topic.
+        If the callback is specified, only remove the subscription that has this callback;
+        If the callback is not specified, remove all subscriptions of this topic.
+
+        Args:
+            topic: the topic to unsubscribe
+            callback: the callback to be removed
+
+        Returns: None
+
+        """
+        with self._lock:
+            if topic not in self.subscribers:
+                return
+
+            if callback is None:
+                # remove this topic
+                self.subscribers.pop(topic, None)
+                return
+
+            subs_to_delete = []
+            subs = self.subscribers[topic]
+            assert isinstance(subs, list)
+            for sub in subs:
+                # sub is a tuple of (cb, cb_args)
+                if sub[0] == callback:
+                    subs_to_delete.append(sub)
+
+            for sub in subs_to_delete:
+                subs.remove(sub)
+
+            if len(subs) == 0:
+                # no more subs for this topic!
+                self.subscribers.pop(topic, None)
 
     def publish(self, topics: List[str], datum: Any) -> None:
         """
@@ -73,14 +118,28 @@ class DataBus(EventPubSub):
             topics (List[str]): A list of topics to publish the data to.
             datum (Any): The data to be published to the specified topics.
         """
-        if topics:
+        if not topics:
+            return
+
+        # minimize the time of lock - only manage the subscribers data structure within the lock
+        # do not run the CBs within the lock
+        with self._lock:
+            subs_to_execute = []
             for topic in topics:
-                if topic in self.subscribers:
-                    with self._lock:
-                        executor = ThreadPoolExecutor(max_workers=len(self.subscribers[topic]))
-                        for callback in self.subscribers[topic]:
-                            executor.submit(callback, topic, datum, self)
-                    executor.shutdown()
+                subscribers = self.subscribers.get(topic)
+                if subscribers:
+                    for sub in subscribers:
+                        callback, kwargs = sub
+                        subs_to_execute.append((topic, callback, kwargs))
+
+        if not subs_to_execute:
+            return
+
+        executor = ThreadPoolExecutor(max_workers=len(subs_to_execute))
+        for sub in subs_to_execute:
+            topic, callback, kwargs = sub
+            executor.submit(callback, topic, datum, self, **kwargs)
+        executor.shutdown()
 
     def put_data(self, key: Any, datum: Any) -> None:
         """

@@ -14,13 +14,16 @@
 """Decomposers for types from app_common and Machine Learning libraries."""
 import os
 from abc import ABC
-from io import BytesIO
 from typing import Any
 
 import numpy as np
 
+import nvflare.fuel.utils.fobs.dots as dots
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
+from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
+
+_NPZ_EXTENSION = ".npz"
 
 
 class NumpyScalarDecomposer(fobs.Decomposer, ABC):
@@ -53,18 +56,33 @@ class Int32ScalarDecomposer(NumpyScalarDecomposer):
         return np.int32
 
 
-class NumpyArrayDecomposer(fobs.Decomposer):
+class NumpyArrayDecomposer(ViaFileDecomposer):
     def supported_type(self):
         return np.ndarray
 
-    def decompose(self, target: np.ndarray, manager: DatumManager = None) -> Any:
-        stream = BytesIO()
-        np.save(stream, target, allow_pickle=False)
-        return stream.getvalue()
+    def get_bytes_dot(self) -> int:
+        return dots.NUMPY_BYTES
 
-    def recompose(self, data: Any, manager: DatumManager = None) -> np.ndarray:
-        stream = BytesIO(data)
-        return np.load(stream, allow_pickle=False)
+    def get_file_dot(self) -> int:
+        return dots.NUMPY_FILE
+
+    def dump_to_file(self, items: dict, path: str, fobs_ctx: dict):
+        if not path.endswith(_NPZ_EXTENSION):
+            path += _NPZ_EXTENSION
+        self.logger.info(f"NP: dumping {len(items)} arrays to file {path}")
+        try:
+            np.savez(allow_pickle=False, file=path, **items)
+            return path, None
+        except Exception as e:
+            self.logger.error(f"exception dumping NP to file: {e}")
+            raise e
+
+    def load_from_file(self, path: str, fobs_ctx: dict, meta: dict = None) -> Any:
+        result = {}
+        with np.load(path, allow_pickle=False) as npz_obj:
+            for k in npz_obj.files:
+                result[k] = npz_obj[k]
+        return result
 
 
 def register():

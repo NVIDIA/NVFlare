@@ -24,6 +24,7 @@ from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import APISyntaxError, FLAdminAPIResponse, FLAdminAPISpec, TargetType
 from nvflare.fuel.hci.cmd_arg_utils import validate_text_file_name
+from nvflare.fuel.hci.proto import ReplyKeyword
 from nvflare.security.logging import secure_format_exception
 
 from .api_spec import AdminConfigKey
@@ -213,7 +214,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if self._error_buffer:
             err = self._error_buffer
             self._error_buffer = None
-            if "not authorized" in err:
+            if ReplyKeyword.NOT_AUTHORIZED in err:
                 raise PermissionError(err)
             raise RuntimeError(err)
         if reply.get("status") == APIStatus.SUCCESS:
@@ -228,18 +229,18 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                     if data.get("type") == "string" or data.get("type") == "error":
                         reply_data_list.append(data["data"])
             reply_data_full_response = "\n".join(reply_data_list)
-            if "session_inactive" in reply_data_full_response:
+            if ReplyKeyword.SESSION_INACTIVE in reply_data_full_response:
                 raise ConnectionRefusedError(reply_data_full_response)
-            if "Failed to communicate" in reply_data_full_response:
+            if ReplyKeyword.COMM_FAILURE in reply_data_full_response:
                 raise ConnectionError(reply_data_full_response)
-            if "invalid client" in reply_data_full_response:
+            if ReplyKeyword.INVALID_CLIENT in reply_data_full_response:
                 raise LookupError(reply_data_full_response)
-            if "unknown site" in reply_data_full_response:
+            if ReplyKeyword.UNKNOWN_SITE in reply_data_full_response:
                 raise LookupError(reply_data_full_response)
-            if "not authorized" in reply_data_full_response:
+            if ReplyKeyword.NOT_AUTHORIZED in reply_data_full_response:
                 raise PermissionError(reply_data_full_response)
         if reply.get("status") != APIStatus.SUCCESS:
-            if reply.get("details") and ("not authorized" in reply.get("details")):
+            if reply.get("details") and (ReplyKeyword.NOT_AUTHORIZED in reply.get("details")):
                 raise PermissionError(reply.get("details"))
             raise RuntimeError(reply.get("details"))
         return success_in_data, reply_data_full_response, reply
@@ -503,7 +504,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             raise APISyntaxError("target_type must be server, client, or all.")
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
         if reply_data_full_response:
-            if "no clients available" in reply_data_full_response:
+            if ReplyKeyword.NO_CLIENTS in reply_data_full_response:
                 return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response})
             if "Server is starting, please wait for started before restart" in reply_data_full_response:
                 return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response})

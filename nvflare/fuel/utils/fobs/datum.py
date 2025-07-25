@@ -13,7 +13,7 @@
 # limitations under the License.
 import uuid
 from enum import Enum
-from typing import Any, Dict, Union
+from typing import Any, Callable, Dict, Union
 
 TEN_MEGA = 10 * 1024 * 1024
 MIN_THRESHOLD = 1024
@@ -28,16 +28,18 @@ class DatumType(Enum):
 class Datum:
     """Datum is a class that holds information for externalized data"""
 
-    def __init__(self, datum_type: DatumType, value: Any):
+    def __init__(self, datum_type: DatumType, value: Any, dot=0):
         """Constructor of Datum object
 
         Args:
             datum_type: type of the datum.
             value: value of the datum
+            dot: the Object Type of the datum
 
         """
         self.datum_id = str(uuid.uuid4())
         self.datum_type = datum_type
+        self.dot = dot
         self.value = value
         self.restore_func = None  # func to restore original object.
         self.restore_func_data = None  # arg to the restore func
@@ -60,19 +62,19 @@ class Datum:
         self.restore_func_data = func_data
 
     @staticmethod
-    def blob_datum(blob: Union[bytes, bytearray, memoryview]):
+    def blob_datum(blob: Union[bytes, bytearray, memoryview], dot=0):
         """Factory method to create a BLOB datum"""
-        return Datum(DatumType.BLOB, blob)
+        return Datum(DatumType.BLOB, blob, dot)
 
     @staticmethod
-    def text_datum(text: str):
+    def text_datum(text: str, dot=0):
         """Factory method to create a TEXT datum"""
-        return Datum(DatumType.TEXT, text)
+        return Datum(DatumType.TEXT, text, dot)
 
     @staticmethod
-    def file_datum(path: str):
+    def file_datum(path: str, dot=0):
         """Factory method to crate a file datum"""
-        return Datum(DatumType.FILE, path)
+        return Datum(DatumType.FILE, path, dot)
 
 
 class DatumRef:
@@ -85,7 +87,7 @@ class DatumRef:
 
 
 class DatumManager:
-    def __init__(self, threshold=None):
+    def __init__(self, threshold=None, fobs_ctx: dict = None):
         if not threshold:
             threshold = TEN_MEGA
 
@@ -95,13 +97,99 @@ class DatumManager:
         if threshold < MIN_THRESHOLD:
             raise ValueError(f"threshold must be at least {MIN_THRESHOLD} but got {threshold}")
 
+        if not fobs_ctx:
+            fobs_ctx = {}
+
         self.threshold = threshold
         self.datums: Dict[str, Datum] = {}
+        self.fobs_ctx = fobs_ctx
 
         # some decomposers (e.g. Shareable, Learnable, etc.) make a shallow copy of the original object before
         # serialization. After serialization, only the values in the copy are restored. We need to keep a ref
         # from the copy to the original object so that values in the original are also restored.
         self.obj_copies = {}  # copy id => original object
+
+        # Post CBs are called after the serialize process is done
+        # Post CBs could be used, for example, to prepare files to be downloaded by the message receiver
+        self.post_cbs = []
+        self.error = None  # save error text
+
+    def add_datum(self, d: Datum):
+        self.datums[d.datum_id] = d
+
+    def get_fobs_context(self):
+        """Get the FOBS Context associated with the manager.
+        The context is available during the whole process of serialization/deserialization of a single message.
+        Since Decomposers are singleton objects that could be used by multiple decomposition processes concurrently,
+        processing state data must not be stored in the decomposer! Instead, such data should be stored in the
+        FOBS context.
+
+        Returns:
+
+        """
+        return self.fobs_ctx
+
+    def register_post_cb(self, cb: Callable[["DatumManager"], None], **cb_kwargs):
+        """Register a callback that will be called after the decomposition is done during serialization process.
+        The callback is typically registered during decomposition by decomposers.
+
+        Note that the callback itself could also call this method to register additional callbacks. These callbacks
+        will be appended to the callback list.
+
+        The manager's post CB processing continues until all registered callbacks are invoked.
+
+        Args:
+            cb: the callback to be registered
+            **cb_kwargs: kwargs to be passed to the callback when invoked
+
+        Returns:
+
+        """
+        if not callable(cb):
+            raise ValueError("cb is not callable")
+        self.post_cbs.append((cb, cb_kwargs))
+
+    def set_error(self, error: str):
+        """Set an error with the manager.
+        The manager will eventually raise RuntimeError at the end of serialization if any error is set.
+
+        Args:
+            error: the error to be set
+
+        Returns: None
+
+        """
+        if error and not self.error:
+            self.error = error
+
+    def get_error(self):
+        """Get the error set with the manager
+
+        Returns: the error set with the manager
+
+        """
+        return self.error
+
+    def post_process(self):
+        """Invoke all post serialization callbacks.
+        Called during serialization after all objects are decomposed.
+
+        Returns: None
+
+        """
+        # must guarantee that all post_cbs are called!
+        i = 0
+        while True:
+            # we cannot use a simple for-loop here since a cb could register additional CBs during processing!
+            if i >= len(self.post_cbs):
+                return
+
+            cb, cb_kwargs = self.post_cbs[i]
+            i += 1
+            try:
+                cb(self, **cb_kwargs)
+            except Exception as ex:
+                self.set_error(f"exception from post_cb {cb.__name__}: {type(ex)}")
 
     def register_copy(self, obj_copy, original_obj):
         """Register the object_copy => original object
@@ -139,7 +227,7 @@ class DatumManager:
         if isinstance(data, Datum):
             # this is an app-defined datum. we need to keep it as is when deserialized.
             # hence unwrap is set to False in the DatumRef.
-            self.datums[data.datum_id] = data
+            self.add_datum(data)
             return DatumRef(data.datum_id, False)
 
         if len(data) >= self.threshold:
@@ -148,7 +236,7 @@ class DatumManager:
                 d = Datum.text_datum(data)
             else:
                 d = Datum.blob_datum(data)
-            self.datums[d.datum_id] = d
+            self.add_datum(d)
             return DatumRef(d.datum_id, True)
         else:
             return data

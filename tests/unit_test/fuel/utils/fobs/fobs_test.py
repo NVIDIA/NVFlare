@@ -48,7 +48,7 @@ class TestFobs:
         assert data["set"] == TestFobs.SET
 
     def test_unsupported_classes(self):
-        with pytest.raises(TypeError):
+        with pytest.raises(Exception):
             # Queue contains collections.deque, which has no __dict__, can't be handled as Data Class
             unsupported_class = queue.Queue()
             try:

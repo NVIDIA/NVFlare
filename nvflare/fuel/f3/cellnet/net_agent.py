@@ -29,6 +29,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -931,8 +932,14 @@ class NetAgent:
 
         children, clients = self.cell.get_sub_cell_names()
         targets = []
-        targets.extend(children)
-        targets.extend(clients)
+
+        for c in children:
+            if not is_valid_admin_client_name(c):
+                targets.append(c)
+
+        for c in clients:
+            if not is_valid_admin_client_name(c):
+                targets.append(c)
 
         if targets:
             if timeout > 0.0:

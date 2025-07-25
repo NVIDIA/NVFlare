@@ -15,6 +15,7 @@ import importlib
 import json
 import os
 import pkgutil
+import subprocess
 import sys
 import warnings
 from typing import List, Union
@@ -446,3 +447,13 @@ def get_job_launcher(job_meta: dict, fl_ctx: FLContext) -> JobLauncherSpec:
         raise RuntimeError(f"The job launcher must be JobLauncherSpec but got {type(launcher)}")
 
     return job_launcher[0]
+
+
+def execute_command_directly(args: List[str]) -> str:
+    """Execute a command directly, without using shell"""
+
+    result = subprocess.run(
+        args, capture_output=False, text=True, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+    )
+
+    return result.stdout

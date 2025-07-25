@@ -27,6 +27,7 @@ from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
 from nvflare.apis.signal import Signal
 from nvflare.apis.wf_comm_spec import WFCommSpec
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -319,6 +320,8 @@ class WFCommServer(FLComponent, WFCommSpec):
                 self._client_task_map[client_task_to_send.id] = client_task_to_send
 
             task_data.set_header(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
+            task_data.set_header(ReservedHeaderKey.MSG_ROOT_ID, task.msg_root_id)
+            task_data.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
             return task_name, client_task_to_send.id, make_copy(task_data)
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
@@ -956,6 +959,8 @@ class WFCommServer(FLComponent, WFCommSpec):
 
                     if exit_task.task_done_cb is not None:
                         try:
+                            msg_root_id = exit_task.msg_root_id
+                            delete_msg_root(msg_root_id)
                             exit_task.task_done_cb(task=exit_task, fl_ctx=fl_ctx)
                         except Exception as e:
                             self.log_exception(

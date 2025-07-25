@@ -31,7 +31,7 @@ from nvflare.fuel.hci.cmd_arg_utils import (
     validate_path_string,
     validate_required_target_string,
 )
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, ReplyKeyword
 
 from .api_spec import (
     AuthenticationError,
@@ -149,11 +149,14 @@ class Session(SessionSpec):
             elif cmd_status == MetaStatusValue.CLIENTS_RUNNING:
                 raise ClientsStillRunning("one or more clients are still running")
             elif cmd_status == MetaStatusValue.NO_CLIENTS:
-                raise NoClientsAvailable("no clients available")
+                raise NoClientsAvailable(ReplyKeyword.NO_CLIENTS)
             elif cmd_status == MetaStatusValue.INTERNAL_ERROR:
                 raise InternalError(f"server internal error: {info}")
             elif cmd_status == MetaStatusValue.INVALID_TARGET:
-                raise InvalidTarget(info)
+                if info == ReplyKeyword.NO_CLIENTS:
+                    raise NoClientsAvailable(ReplyKeyword.NO_CLIENTS)
+                else:
+                    raise InvalidTarget(info)
             elif cmd_status == MetaStatusValue.NO_REPLY:
                 raise NoReply(info)
             elif cmd_status != MetaStatusValue.OK:
@@ -492,6 +495,8 @@ class Session(SessionSpec):
 
         command = " ".join(parts)
         self._do_command(command)
+        if target_type in [TargetType.ALL, TargetType.SERVER]:
+            self.close()
 
     def set_timeout(self, value: float):
         """Set a session-specific command timeout.

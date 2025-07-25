@@ -18,6 +18,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
+from nvflare.fuel.hci.proto import ReplyKeyword
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
@@ -156,7 +157,7 @@ class FedAdminAgent(object):
                                 if err:
                                     reply = error_reply(err)
                                 elif not authorized:
-                                    reply = error_reply("not authorized")
+                                    reply = error_reply(ReplyKeyword.NOT_AUTHORIZED)
                             else:
                                 reply = error_reply("requires authz but missing admin command")
 
