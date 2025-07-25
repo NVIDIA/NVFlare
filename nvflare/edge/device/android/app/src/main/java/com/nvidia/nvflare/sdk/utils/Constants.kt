@@ -23,6 +23,34 @@ object ModelExchangeFormat {
     const val MODEL_BUFFER_ENCODING = "model_buffer_encoding"
 }
 
+// Training Types
+enum class TrainerType {
+    EXECUTORCH
+}
+
+enum class MethodType(val displayName: String) {
+    CNN("cnn"),
+    XOR("xor");
+
+    val requiredDataset: String
+        get() = when (this) {
+            CNN -> "cifar10"
+            XOR -> "xor"
+        }
+
+    companion object {
+        fun fromString(value: String): MethodType? {
+            return values().find { it.displayName.equals(value, ignoreCase = true) }
+        }
+    }
+}
+
+enum class TrainingStatus {
+    IDLE,
+    TRAINING,
+    STOPPING
+}
+
 // Model Buffer Types
 enum class ModelBufferType {
     EXECUTORCH,

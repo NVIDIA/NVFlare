@@ -5,8 +5,8 @@ import com.nvidia.nvflare.sdk.defs.DXO
 import com.nvidia.nvflare.sdk.defs.Context
 import com.nvidia.nvflare.sdk.defs.Signal
 import com.nvidia.nvflare.sdk.defs.Executor
-import com.nvidia.nvflare.training.Trainer
-import com.nvidia.nvflare.training.ETTrainerWrapper
+import com.nvidia.nvflare.app.training.Trainer
+import com.nvidia.nvflare.app.training.ETTrainerWrapper
 import com.nvidia.nvflare.sdk.training.TrainingConfig
 import kotlinx.coroutines.runBlocking
 

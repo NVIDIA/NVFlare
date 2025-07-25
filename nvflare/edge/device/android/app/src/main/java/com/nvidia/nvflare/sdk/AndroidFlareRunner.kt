@@ -13,6 +13,11 @@ import com.nvidia.nvflare.sdk.defs.Signal
 import com.nvidia.nvflare.sdk.defs.ContextKey
 import com.nvidia.nvflare.sdk.defs.DataSource
 import com.nvidia.nvflare.sdk.defs.Filter
+import com.nvidia.nvflare.sdk.defs.NoOpFilter
+import com.nvidia.nvflare.sdk.defs.NoOpEventHandler
+import com.nvidia.nvflare.sdk.defs.NoOpTransform
+import com.nvidia.nvflare.sdk.defs.SimpleBatch
+
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
 
@@ -46,94 +51,145 @@ class AndroidFlareRunner(
 
     override fun addBuiltinResolvers() {
         // Add Android-specific component resolvers here
-        // For now, we'll rely on the app-provided resolvers
+        // Follow the Python pattern: component_type -> class_reference
+        resolverRegistryMap.putAll(mapOf(
+            "Executor.AndroidExecutor" to AndroidExecutor::class.java,
+            "Filter.NoOpFilter" to NoOpFilter::class.java,
+            "EventHandler.NoOpEventHandler" to NoOpEventHandler::class.java,
+            "Transform.NoOpTransform" to NoOpTransform::class.java,
+            "Batch.SimpleBatch" to SimpleBatch::class.java
+        ))
+        // Note: datasource resolver is provided by the app
     }
 
     override fun getJob(ctx: Context, abortSignal: Signal): Map<String, Any>? {
-        if (abortSignal.isTriggered) {
-            return null
-        }
-
-        return try {
-            val jobResponse = runBlocking {
-                connection.fetchJob()
-            }
-
-            when (jobResponse.status) {
-                "stopped" -> {
-                    Log.d(TAG, "Server requested stop")
-                    return null
-                }
-                "OK" -> {
-                    currentJobId = jobResponse.jobId
-                    currentJobName = jobResponse.jobName
-                    
-                    // Convert JobResponse to the format expected by FlareRunner
-                    mapOf(
-                        "job_id" to (jobResponse.jobId ?: ""),
-                        "job_name" to (jobResponse.jobName ?: ""),
-                        "job_data" to (jobResponse.jobData?.asMap() ?: emptyMap<String, Any>())
-                    )
-                }
-                else -> {
-                    Log.d(TAG, "Job fetch failed with status: ${jobResponse.status}")
-                    null
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching job", e)
-            if (e is NVFlareError.ServerRequestedStop) {
+        val startTime = System.currentTimeMillis()
+        
+        while (true) {
+            if (abortSignal.isTriggered) {
+                Log.d(TAG, "Job fetch aborted")
                 return null
             }
-            // Add delay before retry
-            runBlocking { delay(5000) }
-            null
+            
+            // Check job timeout
+            val elapsedTime = (System.currentTimeMillis() - startTime) / 1000.0f
+            if (elapsedTime > jobTimeout) {
+                Log.d(TAG, "Job fetch timed out after ${jobTimeout}s")
+                return null
+            }
+            
+            try {
+                val jobResponse = runBlocking {
+                    connection.fetchJob()
+                }
+
+                when (jobResponse.status) {
+                    "stopped" -> {
+                        Log.d(TAG, "Server requested stop")
+                        return null
+                    }
+                    "OK" -> {
+                        currentJobId = jobResponse.jobId
+                        currentJobName = jobResponse.jobName
+                        
+                        // Convert JobResponse to the format expected by FlareRunner
+                        return mapOf(
+                            "job_id" to (jobResponse.jobId ?: ""),
+                            "job_name" to (jobResponse.jobName ?: ""),
+                            "job_data" to (jobResponse.jobData?.asMap() ?: emptyMap<String, Any>())
+                        )
+                    }
+                    "RETRY" -> {
+                        val retryWait = jobResponse.retryWait ?: 5000L
+                        Log.d(TAG, "Server requested retry, waiting ${retryWait}ms")
+                        runBlocking { delay(retryWait) }
+                        continue
+                    }
+                    else -> {
+                        Log.d(TAG, "Job fetch failed with status: ${jobResponse.status}")
+                        runBlocking { delay(5000) }
+                        continue
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching job", e)
+                if (e is NVFlareError.ServerRequestedStop) {
+                    return null
+                }
+                // Retry after delay
+                runBlocking { delay(5000) }
+                continue
+            }
         }
     }
 
     override fun getTask(ctx: Context, abortSignal: Signal): Pair<Map<String, Any>?, Boolean> {
-        if (abortSignal.isTriggered) {
-            return Pair(null, true)
-        }
-
-        val jobId = currentJobId ?: return Pair(null, true)
-
-        return try {
-            val taskResponse = runBlocking {
-                connection.fetchTask(jobId)
+        val startTime = System.currentTimeMillis()
+        
+        while (true) {
+            if (abortSignal.isTriggered) {
+                Log.d(TAG, "Task fetch aborted")
+                return Pair(null, true)
             }
+            
+            // Check job timeout for task fetching
+            val elapsedTime = (System.currentTimeMillis() - startTime) / 1000.0f
+            if (elapsedTime > jobTimeout) {
+                Log.d(TAG, "Task fetch timed out after ${jobTimeout}s")
+                return Pair(null, true)
+            }
+            
+            val jobId = currentJobId ?: return Pair(null, true)
 
-            when (taskResponse.taskStatus) {
-                TaskResponse.TaskStatus.OK -> {
-                    // Convert TaskResponse to the format expected by FlareRunner
-                    val taskMap: Map<String, Any> = mapOf(
-                        "task_id" to (taskResponse.taskId ?: ""),
-                        "task_name" to (taskResponse.taskName ?: ""),
-                        "task_data" to mapOf(
-                            "data" to (taskResponse.taskData?.data?.toString() ?: ""),
-                            "meta" to (taskResponse.taskData?.meta?.asMap() ?: emptyMap<String, Any>()),
-                            "kind" to (taskResponse.taskData?.kind ?: "")
-                        ),
-                        "cookie" to (taskResponse.cookie?.asMap() ?: emptyMap<String, Any>())
-                    )
-                    Pair(taskMap, false)
+            try {
+                val taskResponse = runBlocking {
+                    connection.fetchTask(jobId)
                 }
-                TaskResponse.TaskStatus.DONE -> {
-                    Log.d(TAG, "Task session completed")
-                    Pair(null, true)
-                }
-                else -> {
-                    if (!taskResponse.taskStatus.shouldContinueTraining) {
-                        Log.d(TAG, "No tasks available, retrying...")
-                        runBlocking { delay(5000) }
+
+                when (taskResponse.taskStatus) {
+                    TaskResponse.TaskStatus.OK -> {
+                        // Convert TaskResponse to the format expected by FlareRunner
+                        val taskMap: Map<String, Any> = mapOf(
+                            "task_id" to (taskResponse.taskId ?: ""),
+                            "task_name" to (taskResponse.taskName ?: ""),
+                            "task_data" to mapOf(
+                                "data" to (taskResponse.taskData?.data?.toString() ?: ""),
+                                "meta" to (taskResponse.taskData?.meta?.asMap() ?: emptyMap<String, Any>()),
+                                "kind" to (taskResponse.taskData?.kind ?: "")
+                            ),
+                            "cookie" to (taskResponse.cookie?.asMap() ?: emptyMap<String, Any>())
+                        )
+                        return Pair(taskMap, false)
                     }
-                    Pair(null, false)
+                    TaskResponse.TaskStatus.DONE -> {
+                        Log.d(TAG, "Task session completed")
+                        return Pair(null, true)
+                    }
+                    TaskResponse.TaskStatus.RETRY -> {
+                        val retryWait = taskResponse.retryWait ?: 5000L
+                        Log.d(TAG, "Server requested task retry, waiting ${retryWait}ms")
+                        runBlocking { delay(retryWait) }
+                        continue
+                    }
+                    TaskResponse.TaskStatus.NO_TASK -> {
+                        val retryWait = taskResponse.retryWait ?: 5000L
+                        Log.d(TAG, "No tasks available, retrying in ${retryWait}ms")
+                        runBlocking { delay(retryWait) }
+                        continue
+                    }
+                    else -> {
+                        if (!taskResponse.taskStatus.shouldContinueTraining) {
+                            Log.d(TAG, "Task fetch failed, retrying...")
+                            runBlocking { delay(5000) }
+                        }
+                        continue
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching task", e)
+                runBlocking { delay(5000) }
+                continue
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching task", e)
-            runBlocking { delay(5000) }
-            Pair(null, false)
         }
     }
 

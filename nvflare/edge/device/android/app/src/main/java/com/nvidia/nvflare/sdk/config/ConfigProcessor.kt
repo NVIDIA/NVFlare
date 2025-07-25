@@ -142,7 +142,7 @@ private fun processComponents(
             override fun resolve(): Any? {
                 return try {
                     // Special handling for executor type to use AndroidExecutorFactory
-                    if (compType == "executor") {
+                    if (compType.startsWith("Executor.")) {
                         resolveExecutor(args)
                     } else {
                         // Default: create instance using reflection
