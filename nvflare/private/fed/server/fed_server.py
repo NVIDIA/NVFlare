@@ -183,8 +183,14 @@ class BaseServer(ABC):
         if len(parts) != 2:
             raise RuntimeError(f"bad service target: {target}")
 
-        ports = parts[1].split(",")
-        root_url = [f"{scheme}://0:{p}" for p in ports]
+        fl_port = int(parts[1])
+
+        # get admin port
+        admin_port = int(grpc_args.get("admin_port", fl_port))
+
+        root_url = [f"{scheme}://0:{fl_port}"]
+        if admin_port != fl_port:
+            root_url.append(f"{scheme}://0:{admin_port}")
 
         my_fqcn = FQCN.ROOT_SERVER
         self.cell = Cell(

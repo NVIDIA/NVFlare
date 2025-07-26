@@ -82,7 +82,13 @@ class CheckOverseerRunning(CheckRule):
             fed_config = json.load(f)
 
         if self.role == NVFlareRole.ADMIN:
-            overseer_agent_conf = fed_config["admin"]["overseer_agent"]
+            admin = fed_config["admin"]
+            host = admin["host"]
+            port = admin["port"]
+            overseer_agent_conf = {
+                "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+                "args": {"sp_end_point": f"{host}:{port}:{port}"},
+            }
         else:
             overseer_agent_conf = fed_config["overseer_agent"]
 
