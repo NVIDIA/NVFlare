@@ -84,7 +84,6 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 print(f"Using {device} device")
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -220,7 +219,7 @@ if __name__ == "__main__":
 # ------------------
 # Job Recipe contains the client.py and built-in fedavg algorithm.
 
-from nvflare.app_opt.pt.job_config.Job_recipe import FedAvgRecipe
+from nvflare.job_config.Job_recipe import FedAvgRecipe
 
 if __name__ == "__main__":
     n_clients = 2
@@ -228,12 +227,14 @@ if __name__ == "__main__":
     train_script = "src/client.py"
     client_script_args = ""
 
-    recipe = FedAvgRecipe(clients=n_clients,
+    recipe = FedAvgRecipe(min_clients=n_clients,
                           num_rounds=num_rounds,
                           model= SimpleNetwork(),
                           client_script=train_script,
                           client_script_args= client_script_args)
-    recipe.execute()
+
+    recipe.execute(clients=n_clients, gpus=0) # SimEnv default
+
 
 
 

@@ -1,255 +1,262 @@
+
 """
-**Hello Pytorch** ||
-`hello-lightning <../hello-lightning/doc.html>`_ ||
-`hello-tensorflow <../hello-tensorflow/doc.html>`_ ||
-`hello-LR <../hello-LR/doc.html>`_ ||
-`hello-kmenas <../hello-kmeans/doc.html>`_ ||
-`hello-survival-analysis-KM <../hello-survival-analysis-KM/doc.html>`_ ||
-`hello_statistics <../hello_statistics/doc.html>`_ ||
-`hello-cyclic <../hello-cyclic/doc.html>`_ ||
-`hello-cross-site-evaluation <../hello-cross-site-evaluation/doc.html>`_ ||
+`hello pytorch <../hello-pt/doc.html>`_ ||
+`hello lightning <../hello-lightning/doc.html>`_ ||
+**hello tensorflow** ||
+`hello LR <../hello-lr/doc.html>`_ ||
+`hello KMeans <../hello-kmeans/doc.html>`_ ||
+`hello KM <../hello-km/doc.html>`_ ||
+`hello stats <../hello-stats/doc.html>`_ ||
+`hello cyclic <../hello-cyclic/doc.html>`_ ||
 `hello-xgboost <../hello-xgboost/doc.html>`_ ||
+`hello-flower <../hello-flower/doc.html>`_ ||
 
 
-Hello Pytorch
+Hello Tensorflow
 ===================
-This section runs through the API for common tasks in machine learning. Refer to the links in each section to dive deeper.
 
-Working with data
+This example demonstrates how to use NVIDIA FLARE with **Tensorflow** to train an image classifier using
+cyclic weight transfer approach.The complete example code can be found in the`hello-tf directory <examples/hello-world/hello-tf/>`_.
+It is recommended to create a virtual environment and run everything within a virtualenv.
+
+NVIDIA FLARE Installation
+-------------------------
+for the complete installation instructions, see `installation <../../installation.html>`_
+
+.. code-block:: text
+
+    pip install nvflare
+
+Install the dependency
+
+.. code-block:: text
+
+    pip install -r requirements.txt
+
+
+Code Structure
+--------------
+
+first get the example code from github:
+
+.. code-block:: text
+
+    git clone https://github.com/NVIDIA/NVFlare.git
+
+then navigate to the hello-pt directory:
+
+.. code-block:: text
+
+    git switch <release branch>
+    cd examples/hello-world/hello-tf
+
+
+.. code-block:: text
+
+    hello-pt
+        |
+        |-- client.py         # client local training script
+        |-- model.py          # model definition
+        |-- job.py            # job recipe that defines client and server configurations
+        |-- requirements.txt  # dependencies
+
+Data
 -----------------
-PyTorch has two `primitives to work with data <https://pytorch.org/docs/stable/data.html>`_:
-``torch.utils.data.DataLoader`` and ``torch.utils.data.Dataset``.
-``Dataset`` stores the samples and their corresponding labels, and ``DataLoader`` wraps an iterable around
-the ``Dataset``.
+This example uses the `MNIST dataset`
 
-In a real FL experiment, each client would have their own dataset used for their local training.
-You can download the CIFAR10 dataset from the Internet via torchvision's datasets module, so for simplicity's sake, this is
-the dataset we will be using on each client.
+    (train_images, train_labels), (
+        test_images,
+        test_labels,
+    ) = tf.keras.datasets.mnist.load_data()
+    train_images, test_images = (
+        train_images / 255.0,
+        test_images / 255.0,
+    )
+
+    # simulate separate datasets for each client by dividing MNIST dataset in half
+    client_name = flare.get_site_name()
+    if client_name == "site-1":
+        train_images = train_images[: len(train_images) // 2]
+        train_labels = train_labels[: len(train_labels) // 2]
+        test_images = test_images[: len(test_images) // 2]
+        test_labels = test_labels[: len(test_labels) // 2]
+    elif client_name == "site-2":
+        train_images = train_images[len(train_images) // 2 :]
+        train_labels = train_labels[len(train_labels) // 2 :]
+        test_images = test_images[len(test_images) // 2 :]
+        test_labels = test_labels[len(test_labels) // 2 :]
+
+
 
 
 """
-
-import torch
-from torch import nn
-from torch.utils.data import DataLoader
-from torchvision import datasets
-from torchvision.transforms import ToTensor
-
-######################################################################
-# PyTorch offers domain-specific libraries such as `TorchText <https://pytorch.org/text/stable/index.html>`_,
-# `TorchVision <https://pytorch.org/vision/stable/index.html>`_, and `TorchAudio <https://pytorch.org/audio/stable/index.html>`_,
-# all of which include datasets. For this tutorial, we  will be using a TorchVision dataset.
-#
-# The ``torchvision.datasets`` module contains ``Dataset`` objects for many real-world vision data like
-# CIFAR, COCO (`full list here <https://pytorch.org/vision/stable/datasets.html>`_). In this tutorial, we
-# use the FashionMNIST dataset. Every TorchVision ``Dataset`` includes two arguments: ``transform`` and
-# ``target_transform`` to modify the samples and labels respectively.
-
-# Download training data from open datasets.
-training_data = datasets.FashionMNIST(
-    root="data",
-    train=True,
-    download=True,
-    transform=ToTensor(),
-)
-
-# Download test data from open datasets.
-test_data = datasets.FashionMNIST(
-    root="data",
-    train=False,
-    download=True,
-    transform=ToTensor(),
-)
-
-######################################################################
-# We pass the ``Dataset`` as an argument to ``DataLoader``. This wraps an iterable over our dataset, and supports
-# automatic batching, sampling, shuffling and multiprocess data loading. Here we define a batch size of 64, i.e. each element
-# in the dataloader iterable will return a batch of 64 features and labels.
-
-batch_size = 64
-
-# Create data loaders.
-train_dataloader = DataLoader(training_data, batch_size=batch_size)
-test_dataloader = DataLoader(test_data, batch_size=batch_size)
-
-for X, y in test_dataloader:
-    print(f"Shape of X [N, C, H, W]: {X.shape}")
-    print(f"Shape of y: {y.shape} {y.dtype}")
-    break
-
-######################################################################
-# Read more about `loading data in PyTorch <data_doc.html>`_.
-#
-
-######################################################################
-# --------------
-#
-
 ################################
-# Working with Model
+# Model
 # ------------------
-# To define a neural network in PyTorch, we create a class that inherits
-# from `nn.Module <https://pytorch.org/docs/stable/generated/torch.nn.Module.html>`_. We define the layers of the network
-# in the ``__init__`` function and specify how data will pass through the network in the ``forward`` function. To accelerate
-# operations in the neural network, we move it to the `accelerator <https://pytorch.org/docs/stable/torch.html#accelerators>`__
-# such as CUDA, MPS, MTIA, or XPU. If the current accelerator is available, we will use it. Otherwise, we use the CPU.
+# we are leveraging the Keras API to define the model.
+from tensorflow.keras import layers, models
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-print(f"Using {device} device")
-
-# Define model
-class NeuralNetwork(nn.Module):
-    def __init__(self):
+class TFNet(models.Sequential):
+    def __init__(self, input_shape=(None, 28, 28)):
         super().__init__()
-        self.flatten = nn.Flatten()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(28*28, 512),
-            nn.ReLU(),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Linear(512, 10)
-        )
-
-    def forward(self, x):
-        x = self.flatten(x)
-        logits = self.linear_relu_stack(x)
-        return logits
-
-model = NeuralNetwork().to(device)
-print(model)
+        self._input_shape = input_shape
+        self.add(layers.Flatten())
+        self.add(layers.Dense(128, activation="relu"))
+        self.add(layers.Dropout(0.2))
+        self.add(layers.Dense(10))
 
 
-
-######################################################################
-# Read more about `building neural networks in PyTorch <buildmodel_doc.html>`_.
-#
-"""
-  
-This ``NeuralNetwork`` class is your convolutional neural network to train with the CIFAR10 dataset.
-
-"""
 ######################################################################
 # --------------
 #
 
 
 #####################################################################
-# Optimizing the Model Parameters
-# ----------------------------------------
-# To train a model, we need a `loss function <https://pytorch.org/docs/stable/nn.html#loss-functions>`_
-# and an `optimizer <https://pytorch.org/docs/stable/optim.html>`_.
-
-loss_fn = nn.CrossEntropyLoss()
-optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
-
-
-#######################################################################
-# In a single training loop, the model makes predictions on the training dataset (fed to it in batches), and
-# backpropagates the prediction error to adjust the model's parameters.
-
-def train(dataloader, model, loss_fn, optimizer):
-    size = len(dataloader.dataset)
-    model.train()
-    for batch, (X, y) in enumerate(dataloader):
-        X, y = X.to(device), y.to(device)
-
-        # Compute prediction error
-        pred = model(X)
-        loss = loss_fn(pred, y)
-
-        # Backpropagation
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-
-        if batch % 100 == 0:
-            loss, current = loss.item(), (batch + 1) * len(X)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
-
-##############################################################################
-# We also check the model's performance against the test dataset to ensure it is learning.
-
-def test(dataloader, model, loss_fn):
-    size = len(dataloader.dataset)
-    num_batches = len(dataloader)
-    model.eval()
-    test_loss, correct = 0, 0
-    with torch.no_grad():
-        for X, y in dataloader:
-            X, y = X.to(device), y.to(device)
-            pred = model(X)
-            test_loss += loss_fn(pred, y).item()
-            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
-    test_loss /= num_batches
-    correct /= size
-    print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
-
-##############################################################################
-# The training process is conducted over several iterations (*epochs*). During each epoch, the model learns
-# parameters to make better predictions. We print the model's accuracy and loss at each epoch; we'd like to see the
-# accuracy increase and the loss decrease with every epoch.
-
-epochs = 5
-for t in range(epochs):
-    print(f"Epoch {t+1}\n-------------------------------")
-    train(train_dataloader, model, loss_fn, optimizer)
-    test(test_dataloader, model, loss_fn)
-print("Done!")
-
-######################################################################
-# Read more about `Training your model <optimization_doc.html>`_.
+# Client Code
+# ------------------
+#
+# Notice the training code is almost identical to the pytorch standard training code.
+# The only difference is that we added a few lines to receive and send data to the server.
 #
 
-######################################################################
-# --------------
+import tensorflow as tf
+
+import nvflare.client as flare
+
+WEIGHTS_PATH = "./tf_model.weights.h5"
+
+
+def main():
+    flare.init()
+
+    model = TFNet()
+    model.build(input_shape=(None, 28, 28))
+    model.compile(
+        optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
+    )
+    model.summary()
+
+    (train_images, train_labels), (
+        test_images,
+        test_labels,
+    ) = tf.keras.datasets.mnist.load_data()
+    train_images, test_images = (
+        train_images / 255.0,
+        test_images / 255.0,
+    )
+
+    # simulate separate datasets for each client by dividing MNIST dataset in half
+    client_name = flare.get_site_name()
+    if client_name == "site-1":
+        train_images = train_images[: len(train_images) // 2]
+        train_labels = train_labels[: len(train_labels) // 2]
+        test_images = test_images[: len(test_images) // 2]
+        test_labels = test_labels[: len(test_labels) // 2]
+    elif client_name == "site-2":
+        train_images = train_images[len(train_images) // 2 :]
+        train_labels = train_labels[len(train_labels) // 2 :]
+        test_images = test_images[len(test_images) // 2 :]
+        test_labels = test_labels[len(test_labels) // 2 :]
+
+    while flare.is_running():
+        input_model = flare.receive()
+        print(f"current_round={input_model.current_round}")
+
+        sys_info = flare.system_info()
+        print(f"system info is: {sys_info}")
+
+        for k, v in input_model.params.items():
+            model.get_layer(k).set_weights(v)
+
+        _, test_global_acc = model.evaluate(test_images, test_labels, verbose=2)
+        print(
+            f"Accuracy of the received model on round {input_model.current_round} on the test images: {test_global_acc * 100} %"
+        )
+
+        # training
+        model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
+
+        print("Finished Training")
+
+        model.save_weights(WEIGHTS_PATH)
+
+        sys_info = flare.system_info()
+        print(f"system info is: {sys_info}", flush=True)
+        print(f"finished round: {input_model.current_round}", flush=True)
+
+        output_model = flare.FLModel(
+            params={layer.name: layer.get_weights() for layer in model.layers},
+            params_type="FULL",
+            metrics={"accuracy": test_global_acc},
+            current_round=input_model.current_round,
+        )
+
+        flare.send(output_model)
+
+
+if __name__ == "__main__":
+    main()
+
+
+#####################################################################
+# Server Code
+# ------------------
+# In federated averaging, the server code is responsible for
+# aggregating model updates from clients, the workflow pattern is similar to scatter-gather.
+# In this example, we will directly use the default federated averaging algorithm provided by NVFlare.
+# The FedAvg class is defined in `nvflare.app_common.workflows.fedavg.FedAvg`
+# There is no need to defined a customized server code for this example.
+
+
+#####################################################################
+# Job Recipe Code
+# ------------------
+# Job Recipe contains the client.py and built-in fedavg algorithm.
+
+from model import TFNet
+from nvflare.job_config.Job_recipe import FedAvgRecipe
+
+if __name__ == "__main__":
+    n_clients = 2
+    num_rounds = 2
+    train_script = "client.py"
+    client_script_args = ""
+
+    recipe = FedAvgRecipe(name="hello-tf",
+                          min_clients=n_clients,
+                          num_rounds=num_rounds,
+                          model=TFNet(),
+                          client_script=train_script,
+                          client_script_args=client_script_args)
+
+    recipe.execute(clients=n_clients, gpus=0)  # defaul to SimEnv
+
+
+
+
+#####################################################################
+# Run FL Job
+# ------------------
 #
-
-######################################################################
-# Saving Models
-# -------------
-# A common way to save a model is to serialize the internal state dictionary (containing the model parameters).
-
-torch.save(model.state_dict(), "model.pth")
-print("Saved PyTorch Model State to model.pth")
+# This section provides the command to execute the federated learning job
+# using the job recipe defined above. Run this command in your terminal.
 
 
-
-######################################################################
-# Loading Models
-# ----------------------------
+#####################################################################
+# **Command to execute the FL job**
 #
-# The process for loading a model includes re-creating the model structure and loading
-# the state dictionary into it.
-
-model = NeuralNetwork().to(device)
-model.load_state_dict(torch.load("model.pth", weights_only=True))
-
-#############################################################
-# This model can now be used to make predictions.
-
-classes = [
-    "T-shirt/top",
-    "Trouser",
-    "Pullover",
-    "Dress",
-    "Coat",
-    "Sandal",
-    "Shirt",
-    "Sneaker",
-    "Bag",
-    "Ankle boot",
-]
-
-model.eval()
-x, y = test_data[0][0], test_data[0][1]
-with torch.no_grad():
-    x = x.to(device)
-    pred = model(x)
-    predicted, actual = classes[pred[0].argmax(0)], classes[y]
-    print(f'Predicted: "{predicted}", Actual: "{actual}"')
+# Use the following command in your terminal to start the job with the specified
+# number of rounds, batch size, and number of clients.
+#
+#
+# .. code-block:: text
+#
+#   python job.py --num_rounds 2 --batch_size 16
 
 
-######################################################################
-# Read more about `Saving & Loading your model <saveloadrun_doc.html>`_.
+#####################################################################
+# output
+#
+# .. code-block:: text
+#
 #

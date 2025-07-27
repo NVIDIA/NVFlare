@@ -16,7 +16,7 @@ Hello Cyclic
 ===================
 
 This example demonstrates how to use NVIDIA FLARE with **Tensorflow** to train an image classifier using
-federated Cyclic weight transfer.The complete example code can be found in the`hello-cyclic directory <examples/hello-world/hello-cyclic/>`_.
+cyclic weight transfer approach.The complete example code can be found in the`hello-cyclic directory <examples/hello-world/hello-cyclic/>`_.
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
 NVIDIA FLARE Installation
@@ -62,12 +62,32 @@ then navigate to the hello-pt directory:
 
 Data
 -----------------
-This example uses the `CIFAR-10 <https://www.cs.toronto.edu/~kriz/cifar.html>`_ dataset
+This example uses the `MNIST dataset`
 
-In a real FL experiment, each client would have their own dataset used for their local training.
-You can download the CIFAR10 dataset from the Internet via torchvision's datasets module,
-You can split the datasets for different clients, so that each client has its own dataset.
-Here for simplicity's sake, the same dataset we will be using on each client.
+    (train_images, train_labels), (
+        test_images,
+        test_labels,
+    ) = tf.keras.datasets.mnist.load_data()
+    train_images, test_images = (
+        train_images / 255.0,
+        test_images / 255.0,
+    )
+
+    # simulate separate datasets for each client by dividing MNIST dataset in half
+    client_name = flare.get_site_name()
+    if client_name == "site-1":
+        train_images = train_images[: len(train_images) // 2]
+        train_labels = train_labels[: len(train_labels) // 2]
+        test_images = test_images[: len(test_images) // 2]
+        test_labels = test_labels[: len(test_labels) // 2]
+    elif client_name == "site-2":
+        train_images = train_images[len(train_images) // 2 :]
+        train_labels = train_labels[len(train_labels) // 2 :]
+        test_images = test_images[len(test_images) // 2 :]
+        test_labels = test_labels[len(test_labels) // 2 :]
+
+
+
 
 """
 ################################
@@ -83,7 +103,6 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 print(f"Using {device} device")
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -219,7 +238,7 @@ if __name__ == "__main__":
 # ------------------
 # Job Recipe contains the client.py and built-in fedavg algorithm.
 
-from nvflare.app_opt.pt.job_config.Job_recipe import FedAvgRecipe
+from nvflare.job_config.Job_recipe import FedAvgRecipe
 
 if __name__ == "__main__":
     n_clients = 2
@@ -227,12 +246,14 @@ if __name__ == "__main__":
     train_script = "src/client.py"
     client_script_args = ""
 
-    recipe = FedAvgRecipe(clients=n_clients,
+    recipe = FedAvgRecipe(min_clients=n_clients,
                           num_rounds=num_rounds,
                           model= SimpleNetwork(),
                           client_script=train_script,
                           client_script_args= client_script_args)
-    recipe.execute()
+
+    recipe.execute(clients=n_clients, gpus=0) # SimEnv default
+
 
 
 

@@ -15,19 +15,40 @@
 This code show to use NVIDIA FLARE Job Recipe to connect both Federated learning client and server algorithm
 and run it under different environments
 """
-from nvflare.app_opt.pt.job_config.Job_recipe import FedAvgRecipe
+import argparse
+
+from nvflare.job_config.Job_recipe import FedAvgRecipe
 from model import SimpleNetwork
+from nvflare.job_config.api import AlgorithmType
+from nvflare.job_config.script_runner import FrameworkType
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n_clients", type=int, default=2)
+    parser.add_argument("--num_rounds", type=int, default=5)
+    parser.add_argument("--batch_size", type=int, default=4)
+
+    return parser.parse_args()
+
+
+def main():
+    args = define_parser()
+
+    n_clients = args.n_clients
+    num_rounds = args.num_rounds
+    batch_size = args.batch_size
+
+    recipe = FedAvgRecipe( name="hello-pt",
+                           min_clients=n_clients,
+                           num_rounds=num_rounds,
+                           model= SimpleNetwork(),
+                           client_script="client.py",
+                           client_script_args= f"--batch_size {batch_size}"
+                          )
+
+    recipe.execute(clients=n_clients, gpus=0) # SimEnv default
+
 
 if __name__ == "__main__":
-    n_clients = 2
-    num_rounds = 2
-    train_script = "client.py"
-    client_script_args = ""
-
-    recipe = FedAvgRecipe(clients=n_clients,
-                          num_rounds=num_rounds,
-                          model= SimpleNetwork(),
-                          client_script=train_script,
-                          client_script_args= client_script_args)
-    recipe.execute()
-
+    main()

@@ -15,7 +15,7 @@
 import argparse
 
 from model import LitNet
-from nvflare.app_opt.pt.job_config.Job_recipe import FedAvgRecipe
+from nvflare.job_config.Job_recipe import FedAvgRecipe
 
 
 def define_parser():
@@ -34,14 +34,13 @@ def main():
     num_rounds = args.num_rounds
     batch_size = args.batch_size
 
-    recipe = FedAvgRecipe(clients=n_clients,
+    recipe = FedAvgRecipe(min_clients=n_clients,
                           num_rounds=num_rounds,
                           model= LitNet(),
                           client_script="client.py",
                           client_script_args= f"--batch_size {batch_size}")
 
-    recipe.execute()
-
+    recipe.execute(clients=n_clients, gpus=0) # SimEnv default
 
 
 if __name__ == "__main__":

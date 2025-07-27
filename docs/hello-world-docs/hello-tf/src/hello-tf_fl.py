@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import tensorflow as tf
-from tf_net import TFNet
+from model import TFNet
 
 import nvflare.client as flare
 
@@ -22,9 +22,6 @@ WEIGHTS_PATH = "./tf_model.weights.h5"
 
 def main():
     flare.init()
-
-    sys_info = flare.system_info()
-    print(f"system info is: {sys_info}", flush=True)
 
     model = TFNet()
     model.build(input_shape=(None, 28, 28))
@@ -43,7 +40,7 @@ def main():
     )
 
     # simulate separate datasets for each client by dividing MNIST dataset in half
-    client_name = sys_info["site_name"]
+    client_name = flare.get_site_name()
     if client_name == "site-1":
         train_images = train_images[: len(train_images) // 2]
         train_labels = train_labels[: len(train_labels) // 2]
