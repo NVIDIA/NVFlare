@@ -14,7 +14,9 @@
 from abc import abstractmethod
 from typing import Optional
 
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.edge.constants import EdgeApiStatus, EdgeContextKey, EdgeEventType
 from nvflare.edge.executors.hug import HierarchicalUpdateGatherer, TaskInfo
 from nvflare.edge.web.models.job_response import JobResponse
@@ -138,7 +140,9 @@ class EdgeTaskExecutor(HierarchicalUpdateGatherer):
         fl_ctx.set_prop(EdgeContextKey.REPLY_TO_EDGE, reply, private=True, sticky=False)
 
     def _handle_edge_job_request(self, event_type: str, fl_ctx: FLContext):
+        job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+        job_name = job_meta.get(JobMetaKey.JOB_NAME)
         job_id = fl_ctx.get_job_id()
-        reply = JobResponse(EdgeApiStatus.OK, job_id)
+        reply = JobResponse(EdgeApiStatus.OK, job_id, job_name)
         self.log_debug(fl_ctx, f"Reply to edge: {reply}")
         fl_ctx.set_prop(EdgeContextKey.REPLY_TO_EDGE, reply, private=True, sticky=False)

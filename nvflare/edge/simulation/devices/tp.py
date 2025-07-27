@@ -33,14 +33,12 @@ class TaskProcessingDevice(SimulatedDevice):
         endpoint_url: str,
         device_info: DeviceInfo,
         user_info: UserInfo,
-        capabilities: Capabilities,
         processor: DeviceTaskProcessor,
     ):
         SimulatedDevice.__init__(self, device_id)
         self.endpoint_url = endpoint_url
         self.device_info = device_info
         self.user_info = user_info
-        self.capabilities = capabilities
         self.processor = processor
         processor.device = self
 
@@ -49,9 +47,6 @@ class TaskProcessingDevice(SimulatedDevice):
 
     def get_user_info(self):
         return self.user_info
-
-    def get_capabilities(self) -> Capabilities:
-        return self.capabilities
 
     def set_job(
         self,
@@ -84,18 +79,8 @@ class TPDeviceFactory(DeviceFactory):
         self.logger = get_obj_logger(self)
         self.parser = parser
         self.endpoint_url = parser.get_endpoint()
-        self.capabilities = parser.get_capabilities()
 
-        prefix = parser.get_device_id_prefix()
-        if not prefix:
-            prefix = "device"
-        self._id_prefix = prefix
-
-    def _make_device_id(self):
-        return f"{self._id_prefix}_{uuid.uuid4()}"
-
-    def make_device(self) -> SimulatedDevice:
-        device_id = self._make_device_id()
+    def make_device(self, device_id: str) -> SimulatedDevice:
         device_info = DeviceInfo(f"{device_id}", "flare_mobile", "1.0")
         user_info = UserInfo("demo_id", "demo_user")
         variables = {"device_id": device_id, "user_id": user_info.user_id}
@@ -107,5 +92,4 @@ class TPDeviceFactory(DeviceFactory):
             user_info=user_info,
             processor=processor,
             endpoint_url=self.endpoint_url,
-            capabilities=self.capabilities,
         )

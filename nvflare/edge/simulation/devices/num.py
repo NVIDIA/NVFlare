@@ -56,8 +56,8 @@ class NumDeviceFactory(DeviceFactory):
         self.min_train_time = min_train_time
         self.max_train_time = max_train_time
 
-    def make_device(self) -> SimulatedDevice:
-        return NumDevice(str(uuid.uuid4()), self.min_train_time, self.max_train_time)
+    def make_device(self, device_id: str) -> SimulatedDevice:
+        return NumDevice(device_id, self.min_train_time, self.max_train_time)
 
 
 class NumProcessor(DeviceTaskProcessor):
