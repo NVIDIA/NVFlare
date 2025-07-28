@@ -24,7 +24,11 @@
 		49DF58182E32F84300C655DE /* Constants.m in Sources */ = {isa = PBXBuildFile; fileRef = 49DF57F42E32F84300C655DE /* Constants.m */; };
 		49DF58192E32F84300C655DE /* NVFlareTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF57F12E32F84300C655DE /* NVFlareTypes.swift */; };
 		49DF581A2E32F84300C655DE /* TaskResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF57F82E32F84300C655DE /* TaskResponse.swift */; };
-		49DF58662E3422D500C655DE /* AppDatasets.mm in Sources */ = {isa = PBXBuildFile; fileRef = 49DF58652E3422D500C655DE /* AppDatasets.mm */; };
+		49DF587F2E376F3B00C655DE /* SwiftDatasetAdapter.mm in Sources */ = {isa = PBXBuildFile; fileRef = 49DF587E2E376F3B00C655DE /* SwiftDatasetAdapter.mm */; };
+		49DF58832E376F4800C655DE /* SwiftDataset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF58802E376F4800C655DE /* SwiftDataset.swift */; };
+		49DF58842E376F4800C655DE /* SwiftDatasetBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = 49DF58822E376F4800C655DE /* SwiftDatasetBridge.mm */; };
+		49DF58872E376F9A00C655DE /* SwiftCIFAR10Dataset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF58852E376F9A00C655DE /* SwiftCIFAR10Dataset.swift */; };
+		49DF58882E376F9A00C655DE /* SwiftXORDataset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF58862E376F9A00C655DE /* SwiftXORDataset.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,9 +54,14 @@
 		49DF58012E32F84300C655DE /* ETTrainer.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ETTrainer.mm; sourceTree = "<group>"; };
 		49DF58062E32F84300C655DE /* ETTrainerExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ETTrainerExecutor.swift; sourceTree = "<group>"; };
 		49DF58082E32F84300C655DE /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
-		49DF585F2E336E9200C655DE /* AppDatasets.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = AppDatasets.hpp; sourceTree = "<group>"; };
 		49DF58642E3377C600C655DE /* ETDataset.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ETDataset.h; sourceTree = "<group>"; };
-		49DF58652E3422D500C655DE /* AppDatasets.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AppDatasets.mm; sourceTree = "<group>"; };
+		49DF587D2E376F3B00C655DE /* SwiftDatasetAdapter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SwiftDatasetAdapter.h; sourceTree = "<group>"; };
+		49DF587E2E376F3B00C655DE /* SwiftDatasetAdapter.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = SwiftDatasetAdapter.mm; sourceTree = "<group>"; };
+		49DF58802E376F4800C655DE /* SwiftDataset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftDataset.swift; sourceTree = "<group>"; };
+		49DF58812E376F4800C655DE /* SwiftDatasetBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SwiftDatasetBridge.h; sourceTree = "<group>"; };
+		49DF58822E376F4800C655DE /* SwiftDatasetBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = SwiftDatasetBridge.mm; sourceTree = "<group>"; };
+		49DF58852E376F9A00C655DE /* SwiftCIFAR10Dataset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftCIFAR10Dataset.swift; sourceTree = "<group>"; };
+		49DF58862E376F9A00C655DE /* SwiftXORDataset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftXORDataset.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -122,6 +131,9 @@
 				49DF57EF2E32F84300C655DE /* NVFlareError.swift */,
 				49DF57F02E32F84300C655DE /* NVFlareRunner.swift */,
 				49DF57F12E32F84300C655DE /* NVFlareTypes.swift */,
+				49DF58802E376F4800C655DE /* SwiftDataset.swift */,
+				49DF58812E376F4800C655DE /* SwiftDatasetBridge.h */,
+				49DF58822E376F4800C655DE /* SwiftDatasetBridge.mm */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -153,6 +165,8 @@
 				49DF58002E32F84300C655DE /* ETTrainer.h */,
 				49DF58012E32F84300C655DE /* ETTrainer.mm */,
 				49DF58642E3377C600C655DE /* ETDataset.h */,
+				49DF587D2E376F3B00C655DE /* SwiftDatasetAdapter.h */,
+				49DF587E2E376F3B00C655DE /* SwiftDatasetAdapter.mm */,
 			);
 			path = ETTrainer;
 			sourceTree = "<group>";
@@ -180,8 +194,8 @@
 		49DF58612E336E9200C655DE /* Datasets */ = {
 			isa = PBXGroup;
 			children = (
-				49DF585F2E336E9200C655DE /* AppDatasets.hpp */,
-				49DF58652E3422D500C655DE /* AppDatasets.mm */,
+				49DF58852E376F9A00C655DE /* SwiftCIFAR10Dataset.swift */,
+				49DF58862E376F9A00C655DE /* SwiftXORDataset.swift */,
 			);
 			path = Datasets;
 			sourceTree = "<group>";
@@ -265,7 +279,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				49DF57EA2E32F83C00C655DE /* ExampleApp.swift in Sources */,
+				49DF58872E376F9A00C655DE /* SwiftCIFAR10Dataset.swift in Sources */,
+				49DF58882E376F9A00C655DE /* SwiftXORDataset.swift in Sources */,
 				49DF57EB2E32F83C00C655DE /* ContentView.swift in Sources */,
+				49DF58832E376F4800C655DE /* SwiftDataset.swift in Sources */,
+				49DF58842E376F4800C655DE /* SwiftDatasetBridge.mm in Sources */,
+				49DF587F2E376F3B00C655DE /* SwiftDatasetAdapter.mm in Sources */,
 				49DF57EC2E32F83C00C655DE /* TrainerController.swift in Sources */,
 				49DF580B2E32F84300C655DE /* NVFlareRunner.swift in Sources */,
 				49DF580C2E32F84300C655DE /* ETTrainer.mm in Sources */,
@@ -274,7 +293,6 @@
 				49DF58132E32F84300C655DE /* ETDebugUtils.mm in Sources */,
 				49DF58142E32F84300C655DE /* NVFlareError.swift in Sources */,
 				49DF58162E32F84300C655DE /* NVFlareConfig.swift in Sources */,
-				49DF58662E3422D500C655DE /* AppDatasets.mm in Sources */,
 				49DF58172E32F84300C655DE /* JobResponse.swift in Sources */,
 				49DF58182E32F84300C655DE /* Constants.m in Sources */,
 				49DF58192E32F84300C655DE /* NVFlareTypes.swift in Sources */,

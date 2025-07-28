@@ -74,28 +74,28 @@ class TrainerController: ObservableObject {
         
         currentTask = Task {
             do {
-                print("🚀 TrainerController: Starting federated learning")
+                print("TrainerController: Starting federated learning")
                 
-                // Create datasets based on supported jobs
-                let cppDataset: UnsafeMutableRawPointer?
+                // Create Swift datasets based on supported jobs
+                let swiftDataset: SwiftDataset
                 if supportedJobs.contains(.cifar10) {
-                    cppDataset = CreateAppCIFAR10Dataset()
-                    print("🔍 TrainerController: CreateAppCIFAR10Dataset() returned: \(String(describing: cppDataset))")
-                    print("📊 TrainerController: Created CIFAR-10 dataset for job")
+                    swiftDataset = SwiftCIFAR10Dataset()
+                    print("TrainerController: Created Swift CIFAR-10 dataset")
                 } else if supportedJobs.contains(.xor) {
-                    cppDataset = CreateAppXORDataset()
-                    print("🔍 TrainerController: CreateAppXORDataset() returned: \(String(describing: cppDataset))")
-                    print("📊 TrainerController: Created XOR dataset for job")
+                    swiftDataset = SwiftXORDataset()
+                    print("TrainerController: Created Swift XOR dataset")
                 } else {
                     throw TrainingError.datasetCreationFailed
                 }
                 
-                guard let dataset = cppDataset else {
-                    print("❌ TrainerController: Dataset creation returned nil!")
+                // Create C++ adapter from Swift dataset
+                let dataset = SwiftDatasetBridge.createDatasetAdapter(swiftDataset)
+                guard dataset != nil else {
+                    print("TrainerController: Failed to create C++ dataset adapter!")
                     throw TrainingError.datasetCreationFailed
                 }
                 
-                print("📊 TrainerController: Created app's C++ dataset")
+                print("TrainerController: Created C++ dataset adapter from Swift dataset")
                 
                 // Create FlareRunner with C++ dataset
                 let runner = NVFlareRunner(
@@ -115,14 +115,14 @@ class TrainerController: ObservableObject {
                 
                 self.flareRunner = runner
                 
-                print("📊 TrainerController: Supported jobs: \(supportedJobs.map { $0.rawValue })")
-                print("📊 TrainerController: Using app's C++ dataset implementation")
+                print("TrainerController: Supported jobs: \(supportedJobs.map { $0.rawValue })")
+                print("TrainerController: Using app's C++ dataset implementation")
                 
                 // Start the runner (this will call the main FL loop)
                 await runner.run()
                 
-                // Clean up dataset when done
-                DestroyAppDataset(dataset)
+                // Clean up C++ dataset adapter
+                SwiftDatasetBridge.destroyDatasetAdapter(dataset)
                 
             } catch {
                 await MainActor.run {

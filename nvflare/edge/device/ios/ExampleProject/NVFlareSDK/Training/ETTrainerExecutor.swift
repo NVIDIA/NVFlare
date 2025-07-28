@@ -58,16 +58,16 @@ public class ETTrainerExecutor: NSObject, NVFlareExecutor, ComponentCreator {
         
         // Get C++ dataset from FlareRunner context (set during FlareRunner initialization)
         guard let cppDatasetPtr = ctx[NVFlareContextKey.dataset] as? UnsafeMutableRawPointer else {
-            print("❌ ETTrainerExecutor: No C++ dataset found in context")
+            print("ETTrainerExecutor: No C++ dataset found in context")
             return NVFlareDXO(dataKind: "error", data: ["error": "No C++ dataset found in context"])
         }
         
-        print("🔍 ETTrainerExecutor: Retrieved dataset pointer from context: \(cppDatasetPtr)")
-        print("📊 ETTrainerExecutor: Training config - epochs: \(epochs), batch: \(batchSize), lr: \(learningRate)")
+        print("ETTrainerExecutor: Retrieved dataset pointer from context: \(cppDatasetPtr)")
+        print("ETTrainerExecutor: Training config - epochs: \(epochs), batch: \(batchSize), lr: \(learningRate)")
         if !trainerArgs.isEmpty {
-            print("📊 ETTrainerExecutor: Using config args: \(trainerArgs.keys.sorted())")
+            print("ETTrainerExecutor: Using config args: \(trainerArgs.keys.sorted())")
         }
-        print("📊 ETTrainerExecutor: Using app's C++ dataset directly")
+        print("ETTrainerExecutor: Using app's C++ dataset directly")
         
         // Create training configuration dictionary for C++ layer
         let trainingConfig: [String: Any] = [

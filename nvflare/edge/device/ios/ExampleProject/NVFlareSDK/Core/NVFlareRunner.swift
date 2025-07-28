@@ -22,6 +22,8 @@ public class NVFlareRunner: ObservableObject {
     public let jobTimeout: TimeInterval
     public let abortSignal = NVFlareSignal()
     
+
+    
     // MARK: - Filter Properties
     public let appInFilters: [NVFlareFilter]?
     public let appOutFilters: [NVFlareFilter]?
@@ -245,7 +247,7 @@ public class NVFlareRunner: ObservableObject {
         let ctx = NVFlareContext()
         ctx[NVFlareContextKey.runner] = self
         
-        print("🔍 NVFlareRunner: Storing dataset in context, pointer: \(String(describing: cppDataset))")
+        print("NVFlareRunner: Storing dataset in context, pointer: \(String(describing: cppDataset))")
         ctx[NVFlareContextKey.dataset] = cppDataset
         
         // Try to get job
@@ -315,15 +317,10 @@ public class NVFlareRunner: ObservableObject {
                 
                 // Create a NEW dataset for each task since ETTrainer takes ownership
                 if let originalDataset = ctx[NVFlareContextKey.dataset] as? UnsafeMutableRawPointer {
-                    print("🔍 NVFlareRunner: Creating new dataset for task (original was: \(originalDataset))")
-                    // Create a fresh dataset pointer for this task
-                    let newDataset = CreateAppXORDataset()
-                    if let newDataset = newDataset {
-                        print("🔍 NVFlareRunner: New dataset created: \(newDataset)")
-                        taskCtx[NVFlareContextKey.dataset] = newDataset
-                    } else {
-                        print("❌ NVFlareRunner: Failed to create new dataset for task")
-                    }
+                    print("NVFlareRunner: Creating new dataset for task (original was: \(originalDataset))")
+                    // Use the same dataset type that was passed in - the app is responsible for providing the correct dataset
+                    taskCtx[NVFlareContextKey.dataset] = originalDataset
+                    print("NVFlareRunner: Using original dataset for task: \(originalDataset)")
                 }
                 
                 self.cookie = task.cookie
