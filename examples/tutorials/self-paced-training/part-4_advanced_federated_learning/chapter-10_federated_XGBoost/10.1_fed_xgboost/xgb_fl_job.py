@@ -18,7 +18,7 @@ from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.app_opt.tracking.tb.tb_writer import TBWriter
 from nvflare.app_opt.xgboost.histogram_based_v2.csv_data_loader import CSVDataLoader
-from nvflare.job_config import FedJob
+from nvflare.job_config.api import FedJob
 
 ALGO_DIR_MAP = {
     "bagging": "tree-based",

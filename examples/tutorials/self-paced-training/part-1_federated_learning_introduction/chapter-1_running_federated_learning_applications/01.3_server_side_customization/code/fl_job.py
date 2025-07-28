@@ -18,7 +18,7 @@ import os
 from src.fedavg_v2 import FedAvgV2
 from src.network import SimpleNetwork
 
-from nvflare.job_config import FedJob
+from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":

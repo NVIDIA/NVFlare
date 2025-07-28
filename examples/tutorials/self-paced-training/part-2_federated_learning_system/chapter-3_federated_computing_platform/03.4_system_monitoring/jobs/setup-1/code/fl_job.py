@@ -19,7 +19,7 @@ from src.network import SimpleNetwork
 from src.server import FedAvg
 
 from nvflare.fuel_opt.statsd.statsd_reporter import StatsDReporter
-from nvflare.job_config import FedJob
+from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.metrics.job_metrics_collector import JobMetricsCollector
 

@@ -19,7 +19,7 @@ from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.client.config import ExchangeFormat
-from nvflare.job_config import FedJob
+from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
 if __name__ == "__main__":

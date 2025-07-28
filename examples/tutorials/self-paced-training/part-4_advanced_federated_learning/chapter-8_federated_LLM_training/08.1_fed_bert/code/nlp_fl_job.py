@@ -19,7 +19,7 @@ from src.nlp_models import BertModel, GPTModel
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.model import PTModel
-from nvflare.job_config import FedJob
+from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import ScriptRunner
 
 

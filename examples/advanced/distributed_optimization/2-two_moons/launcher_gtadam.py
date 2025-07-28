@@ -19,7 +19,7 @@ from nvflare.app_opt.p2p.controllers import DistOptController
 from nvflare.app_opt.p2p.executors import GTADAMExecutor
 from nvflare.app_opt.p2p.types import Config
 from nvflare.app_opt.p2p.utils.config_generator import generate_random_network
-from nvflare.job_config import FedJob
+from nvflare.job_config.api import FedJob
 
 
 class CustomGTADAMExecutor(GTADAMExecutor):

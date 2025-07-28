@@ -15,7 +15,8 @@ import json
 import os.path
 
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_positive_number, check_str
-from nvflare.job_config import FedJob, FileSource
+from nvflare.job_config.api import FedJob
+from nvflare.job_config.file_source import FileSource
 
 from .assessor import Assessor
 from .controllers.sage import ScatterAndGatherForEdge
