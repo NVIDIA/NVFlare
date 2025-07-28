@@ -710,7 +710,6 @@ class ClientRunner(TBI):
 
             self.log_info(fl_ctx, f"synced to parent {target} in {time.time() - sync_start} seconds")
             ReliableMessage.enable(fl_ctx)
-
             self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
