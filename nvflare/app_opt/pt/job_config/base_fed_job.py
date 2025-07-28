@@ -16,6 +16,7 @@ from typing import List, Optional
 
 from torch import nn as nn
 
+from nvflare import FedJob
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
@@ -25,7 +26,7 @@ from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.job_config.api import FedJob, validate_object_for_job
+from nvflare.job_config.api import validate_object_for_job
 
 
 class BaseFedJob(FedJob):

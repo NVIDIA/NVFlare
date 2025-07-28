@@ -21,7 +21,7 @@ from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.app_opt.tracking.tb.tb_writer import TBWriter
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_controller import XGBFedController
 from nvflare.app_opt.xgboost.histogram_based_v2.fed_executor import FedXGBHistogramExecutor
-from nvflare.job_config.api import FedJob
+from nvflare.job_config import FedJob
 
 
 def define_parser():

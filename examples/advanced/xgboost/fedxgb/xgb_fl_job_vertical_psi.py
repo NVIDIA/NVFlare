@@ -20,7 +20,7 @@ from nvflare.app_common.psi.dh_psi.dh_psi_controller import DhPSIController
 from nvflare.app_common.psi.file_psi_writer import FilePSIWriter
 from nvflare.app_common.psi.psi_executor import PSIExecutor
 from nvflare.app_opt.psi.dh_psi.dh_psi_task_handler import DhPSITaskHandler
-from nvflare.job_config.api import FedJob
+from nvflare.job_config import FedJob
 
 
 def define_parser():

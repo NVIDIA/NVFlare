@@ -274,11 +274,9 @@ class LitNet(LightningModule):
 # The only difference is that we added a few lines to receive and send data to the server.
 # We mark all the changed code with number 0 to 4 to make it easier to understand.
 #
-import argparse
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from model import LitNet
 from pytorch_lightning import LightningDataModule, Trainer, seed_everything
 from torch.utils.data import DataLoader, random_split
 
@@ -405,7 +403,7 @@ if __name__ == "__main__":
 import argparse
 
 from model import LitNet
-from nvflare.job_config.Job_recipe import FedAvgRecipe
+from nvflare.job_config import FedAvgRecipe
 
 
 def define_parser():

@@ -21,7 +21,7 @@ from nvflare.app_common.widgets.metric_relay import MetricRelay
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
 from nvflare.fuel.utils.validation_utils import check_object_type
-from nvflare.job_config.api import FedJob
+from nvflare.job_config import FedJob
 
 from .controller import FlowerController
 from .executor import FlowerExecutor

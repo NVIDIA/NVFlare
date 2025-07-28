@@ -20,7 +20,7 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.common import Constant, CyclicOrder
-from nvflare.job_config.api import FedJob, validate_object_for_job
+from nvflare.job_config import FedJob, validate_object_for_job
 from nvflare.widgets.widget import Widget
 
 from .cse_client_ctl import CrossSiteEvalClientController

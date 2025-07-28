@@ -22,8 +22,6 @@ from nvflare.app_common.ccwf.comps.np_file_model_persistor import NPFileModelPer
 from nvflare.app_common.ccwf.comps.simple_model_shareable_generator import SimpleModelShareableGenerator
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 
-
-
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 3

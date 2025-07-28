@@ -24,7 +24,7 @@ from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
 from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
-from nvflare.job_config.api import FedJob, validate_object_for_job
+from nvflare.job_config import FedJob, validate_object_for_job
 
 
 class BioNeMoMLPJob(FedJob):

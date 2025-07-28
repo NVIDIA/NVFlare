@@ -219,22 +219,42 @@ if __name__ == "__main__":
 # ------------------
 # Job Recipe contains the client.py and built-in fedavg algorithm.
 
-from nvflare.job_config.Job_recipe import FedAvgRecipe
 
-if __name__ == "__main__":
-    n_clients = 2
-    num_rounds = 2
-    train_script = "src/client.py"
-    client_script_args = ""
+import argparse
 
-    recipe = FedAvgRecipe(min_clients=n_clients,
-                          num_rounds=num_rounds,
-                          model= SimpleNetwork(),
-                          client_script=train_script,
-                          client_script_args= client_script_args)
+from nvflare.app_opt.pt.job_config.fedavg_recipe import FedAvgRecipe
+from model import SimpleNetwork
+
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n_clients", type=int, default=2)
+    parser.add_argument("--num_rounds", type=int, default=5)
+    parser.add_argument("--batch_size", type=int, default=4)
+
+    return parser.parse_args()
+
+
+def main():
+    args = define_parser()
+
+    n_clients = args.n_clients
+    num_rounds = args.num_rounds
+    batch_size = args.batch_size
+
+    recipe = FedAvgRecipe( name="hello-pt",
+                           min_clients=n_clients,
+                           num_rounds=num_rounds,
+                           model= SimpleNetwork(),
+                           client_script="client.py",
+                           client_script_args= f"--batch_size {batch_size}"
+                           )
 
     recipe.execute(clients=n_clients, gpus=0) # SimEnv default
 
+
+if __name__ == "__main__":
+    main()
 
 
 

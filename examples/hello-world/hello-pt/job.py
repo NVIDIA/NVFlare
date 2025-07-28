@@ -17,10 +17,9 @@ and run it under different environments
 """
 import argparse
 
-from nvflare.job_config.Job_recipe import FedAvgRecipe
 from model import SimpleNetwork
-from nvflare.job_config.api import AlgorithmType
-from nvflare.job_config.script_runner import FrameworkType
+
+from nvflare.app_opt.pt.job_config.fedavg_recipe import FedAvgRecipe
 
 
 def define_parser():
@@ -39,15 +38,16 @@ def main():
     num_rounds = args.num_rounds
     batch_size = args.batch_size
 
-    recipe = FedAvgRecipe( name="hello-pt",
-                           min_clients=n_clients,
-                           num_rounds=num_rounds,
-                           model= SimpleNetwork(),
-                           client_script="client.py",
-                           client_script_args= f"--batch_size {batch_size}"
-                          )
+    recipe = FedAvgRecipe(
+        name="hello-pt",
+        min_clients=n_clients,
+        num_rounds=num_rounds,
+        model=SimpleNetwork(),
+        client_script="client.py",
+        client_script_args=f"--batch_size {batch_size}",
+    )
 
-    recipe.execute(clients=n_clients, gpus=0) # SimEnv default
+    recipe.execute(clients=n_clients, gpus=0)  # SimEnv default
 
 
 if __name__ == "__main__":

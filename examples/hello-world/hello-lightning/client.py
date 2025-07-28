@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
+
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -66,7 +67,6 @@ class CIFAR10DataModule(LightningDataModule):
 
     def predict_dataloader(self):
         return DataLoader(self.cifar_test, batch_size=self.batch_size)
-
 
 
 def define_parser():

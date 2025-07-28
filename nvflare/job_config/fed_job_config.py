@@ -142,6 +142,7 @@ class FedJobConfig:
             os.makedirs(custom_dir, exist_ok=True)
 
             if fed_app.server_app:
+                print(f"\nfed_app ={fed_app}")
                 self._get_server_app(config_dir, custom_dir, fed_app)
 
             if fed_app.client_app:
@@ -326,6 +327,7 @@ class FedJobConfig:
         self._copy_file_sources(config_dir, custom_dir, fed_app.client_app.file_sources)
 
     def _get_base_app(self, custom_dir, app, app_config):
+        print(f"app={app}, {app.components=}")
         app_config["components"] = []
         for cid, component in app.components.items():
             app_config["components"].append(

@@ -19,7 +19,7 @@ from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.model import PTModel
 
 # from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
-from nvflare.job_config.api import FedJob
+from nvflare.job_config import FedJob
 from nvflare.job_config.script_runner import ScriptRunner
 
 if __name__ == "__main__":
