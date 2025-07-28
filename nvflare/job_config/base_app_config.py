@@ -69,13 +69,13 @@ class BaseAppConfig(ABC):
 
     def add_args(self, args: Dict[str, any]):
         """Add additional configuration arguments to be included in the generated JSON configs.
-        
+
         Args:
             args: Dictionary of configuration arguments (e.g., {"timeout": 600, "max_retries": 3})
         """
         if not isinstance(args, dict):
             raise RuntimeError(f"args must be type of dict, but got {type(args)}")
-        
+
         self.additional_args.update(args)
 
     @staticmethod

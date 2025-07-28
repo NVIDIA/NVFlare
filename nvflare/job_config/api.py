@@ -108,7 +108,7 @@ class FedApp:
 
     def add_args(self, args: Dict[str, any]):
         """Add additional configuration arguments to be included in the generated JSON configs.
-        
+
         Args:
             args: Dictionary of configuration arguments (e.g., {"timeout": 600, "max_retries": 3})
         """
