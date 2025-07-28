@@ -710,6 +710,8 @@ class ClientRunner(TBI):
 
             self.log_info(fl_ctx, f"synced to parent {target} in {time.time() - sync_start} seconds")
             ReliableMessage.enable(fl_ctx)
+            self.fire_event(EventType.SYSTEM_START, fl_ctx)
+
             self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
@@ -758,6 +760,7 @@ class ClientRunner(TBI):
             # now ready to end run
             self.fire_event(EventType.END_RUN, fl_ctx)
             self.log_info(fl_ctx, "END_RUN fired")
+            self.fire_event(EventType.SYSTEM_END, fl_ctx)
 
     def abort(self, msg: str = ""):
         """To Abort the current run.

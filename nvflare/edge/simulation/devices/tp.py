@@ -11,13 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import uuid
+import copy
 
 from nvflare.edge.constants import EdgeApiStatus
 from nvflare.edge.simulation.config import ConfigParser
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.simulation.simulated_device import DeviceFactory, SimulatedDevice
-from nvflare.edge.web.models.capabilities import Capabilities
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
@@ -92,4 +91,24 @@ class TPDeviceFactory(DeviceFactory):
             user_info=user_info,
             processor=processor,
             endpoint_url=self.endpoint_url,
+        )
+
+
+class TPODeviceFactory(DeviceFactory):
+
+    def __init__(self, tpo: DeviceTaskProcessor):
+        self.logger = get_obj_logger(self)
+        self.tpo = tpo
+
+    def make_device(self, device_id: str) -> SimulatedDevice:
+        device_info = DeviceInfo(f"{device_id}", "flare_mobile", "1.0")
+        user_info = UserInfo("demo_id", "demo_user")
+        processor = copy.deepcopy(self.tpo)
+
+        return TaskProcessingDevice(
+            device_id=device_id,
+            device_info=device_info,
+            user_info=user_info,
+            processor=processor,
+            endpoint_url="",  # not used
         )

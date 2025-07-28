@@ -1,4 +1,5 @@
 import json
+import os
 
 from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.edge.aggregators.model_update_dxo_factory import ModelUpdateDXOAggrFactory
@@ -7,6 +8,7 @@ from nvflare.edge.assessors.buff_model_manager import BuffModelManager
 from nvflare.edge.assessors.model_update import ModelUpdateAssessor
 from nvflare.edge.edge_job import EdgeJob
 from nvflare.edge.models.model import DeviceModel
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.widgets.evaluator import GlobalEvaluator
 from nvflare.job_config.file_source import FileSource
 
@@ -31,10 +33,13 @@ class EdgeJobMaker:
         min_hole_to_fill: int = 1,
         device_reuse: bool = True,
         const_selection: bool = False,
-        simulation_config_file=None,
+        custom_source_root: str = None,
     ):
         if not isinstance(device_model, DeviceModel):
             raise ValueError(f"model must be a DeviceModel but got {type(device_model)}")
+
+        if custom_source_root and not os.path.isdir(custom_source_root):
+            raise ValueError(f"{custom_source_root} is not a valid directory")
 
         self.job_name = job_name
         self.method_name = "edge"
@@ -51,8 +56,8 @@ class EdgeJobMaker:
         self.min_hole_to_fill = min_hole_to_fill
         self.device_reuse = device_reuse
         self.const_selection = const_selection
-        self.simulation_config_file = simulation_config_file
         self.device_trainer_args = None
+        self.custom_source_root = custom_source_root
         self.job = EdgeJob(name=self.job_name, edge_method=self.method_name)
 
     def set_device_trainer(self, **kwargs):
@@ -70,6 +75,15 @@ class EdgeJobMaker:
         )
         self.job.to_server(evaluator, id="evaluator")
 
+    def configure_simulation(
+        self,
+        task_processor: DeviceTaskProcessor,
+        job_timeout: float = 60.0,
+        num_devices: int = 1000,
+        num_workers: int = 10,
+    ):
+        self.job.configure_simulation(task_processor, job_timeout, num_devices, num_workers)
+
     def make(self, result_dir):
         # use EdgeJob to create a job
         job = self.job
@@ -79,7 +93,6 @@ class EdgeJobMaker:
             aggregator_factory=factory,
             max_model_versions=self.max_num_active_model_versions,
             update_timeout=self.update_timeout,
-            simulation_config_file=self.simulation_config_file,
         )
 
         # add persistor, model_manager, and device_manager
@@ -123,5 +136,10 @@ class EdgeJobMaker:
         with open(_DEVICE_CONFIG_FILE_NAME, "w") as f:
             json.dump(device_config, f, indent=4)
 
-        job.to_server(FileSource(_DEVICE_CONFIG_FILE_NAME))
+        job.to_server(FileSource(_DEVICE_CONFIG_FILE_NAME, app_folder_type="config"))
+
+        if self.custom_source_root:
+            job.to_server(self.custom_source_root)
+            job.to_clients(self.custom_source_root)
+
         job.export_job(result_dir)

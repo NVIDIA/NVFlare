@@ -25,7 +25,6 @@ class TPRunner(SimulationRunner):
     def __init__(self, config_file: str):
         SimulationRunner.__init__(self)
         self.config_file = config_file
-        self.simulator = None
 
     def create_simulator(self, fl_ctx: FLContext) -> Optional[Simulator]:
         parser = ConfigParser(self.config_file)
