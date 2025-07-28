@@ -117,7 +117,7 @@ def main():
 
         # Add additional arguments to clients
         client_args = {"submit_task_result_timeout": 300}
-        job.to(client_args, site_name, tasks=["train"])
+        job.to(client_args, site_name)
 
     # Export the job
     print("job_dir=", job_dir)
