@@ -230,7 +230,7 @@ class Simulator:
                         self.busy_devices[did] = selection_id
                 elif resp.status in [EdgeApiStatus.NO_JOB, EdgeApiStatus.RETRY]:
                     # the job is gone
-                    self.logger.info(f"job is gone when getting task - exiting")
+                    self.logger.info("job is gone when getting task - exiting")
                     return
                 elif resp.status == EdgeApiStatus.DONE:
                     # this device is done - job is done
