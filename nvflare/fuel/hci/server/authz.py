@@ -16,7 +16,7 @@ import logging
 from typing import List
 
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
+from nvflare.fuel.hci.proto import MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.reg import CommandEntry
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 
@@ -87,7 +87,8 @@ class AuthzFilter(CommandFilter):
 
         if not authorized:
             conn.append_error(
-                "This action is not authorized", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, "not authorized")
+                f"This action is {ReplyKeyword.NOT_AUTHORIZED}",
+                meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, ReplyKeyword.NOT_AUTHORIZED),
             )
             return False
         return True
