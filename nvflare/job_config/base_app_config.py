@@ -74,7 +74,7 @@ class BaseAppConfig(ABC):
             args: Dictionary of configuration arguments (e.g., {"timeout": 600, "max_retries": 3})
         """
         if not isinstance(args, dict):
-            raise RuntimeError(f"args must be type of dict, but got {args.__class__}")
+            raise RuntimeError(f"args must be type of dict, but got {type(args)}")
         
         self.additional_args.update(args)
 
