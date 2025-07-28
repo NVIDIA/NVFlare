@@ -115,17 +115,37 @@ case .stopping:
 
 ### Add Your Own Dataset
 ```swift
-// In your C++ code
-extern "C" {
-    void* CreateAppCustomDataset() {
-        // Return your custom dataset
-        return new MyCustomDataset();
+// In Swift - just implement the SwiftDataset protocol
+class MyCustomDataset: SwiftDataset {
+    private let myData: [MyDataPoint]
+    private var currentIndex = 0
+    
+    init(data: [MyDataPoint]) {
+        self.myData = data
     }
     
-    void DestroyAppDataset(void* dataset) {
-        delete static_cast<MyCustomDataset*>(dataset);
+    func getBatch(size: Int) -> [NSNumber]? {
+        // Convert your data to training format
+        let endIndex = min(currentIndex + size, myData.count)
+        let batchData = myData[currentIndex..<endIndex]
+        
+        let inputs = batchData.flatMap { $0.features }.map { NSNumber(value: $0) }
+        let labels = batchData.map { NSNumber(value: $0.label) }
+        
+        currentIndex = endIndex
+        return [NSArray(array: inputs), NSArray(array: labels)]
     }
+    
+    func reset() { currentIndex = 0 }
+    func size() -> Int { return myData.count }
+    func inputDim() -> Int { return myData.first?.features.count ?? 0 }
+    func labelDim() -> Int { return 1 }
+    func setShuffle(_ shuffle: Bool) { /* implement if needed */ }
 }
+
+// Use it
+let myDataset = MyCustomDataset(data: myData)
+trainer.startTraining(with: myDataset)
 ```
 
 ### Modify Supported Jobs
