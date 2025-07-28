@@ -13,7 +13,6 @@
 # limitations under the License.
 import random
 import time
-import uuid
 
 from nvflare.apis.dxo import DXO, from_dict
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
