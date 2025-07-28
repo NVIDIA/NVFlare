@@ -106,6 +106,14 @@ class FedApp:
     def add_file_source(self, src_path: str, dest_dir=None, app_folder_type=None):
         self.app_config.add_file_source(src_path, dest_dir, app_folder_type)
 
+    def add_args(self, args: Dict[str, any]):
+        """Add additional configuration arguments to be included in the generated JSON configs.
+        
+        Args:
+            args: Dictionary of configuration arguments (e.g., {"timeout": 600, "max_retries": 3})
+        """
+        self.app_config.add_args(args)
+
     def _add_resource(self, resource: str):
         if not isinstance(resource, str):
             raise ValueError(f"cannot add resource: resource must be a str but got {type(resource)}")
@@ -271,6 +279,10 @@ class FedJob:
                 app.add_external_script(obj)
             return None
 
+        if isinstance(obj, dict):  # treat dict type object as additional arguments
+            app.add_args(obj)
+            return None
+
         get_target_type_method = getattr(obj, "get_job_target_type", None)
         if get_target_type_method is not None:
             expected_target_type = get_target_type_method()
@@ -423,6 +435,19 @@ class FedJob:
         """
         app = self._get_app(ctx)
         app.add_file_source(src_path, dest_dir, app_folder_type)
+
+    def add_args(self, args: Dict[str, any], ctx: JobCtx):
+        """Add additional configuration arguments to the job. To be used by job component programmer.
+
+        Args:
+            args: Dictionary of configuration arguments (e.g., {"timeout": 600, "max_retries": 3})
+            ctx: JobCtx for contextual information.
+
+        Returns:
+
+        """
+        app = self._get_app(ctx)
+        app.add_args(args)
 
     def to_server(
         self,

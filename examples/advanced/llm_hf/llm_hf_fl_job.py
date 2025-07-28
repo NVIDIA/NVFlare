@@ -115,6 +115,10 @@ def main():
             job.to(quantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
             job.to(dequantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
 
+        # Add additional arguments to clients
+        client_args = {"submit_task_result_timeout": 300}
+        job.to(client_args, site_name, tasks=["train"])
+
     # Export the job
     print("job_dir=", job_dir)
     job.export_job(job_dir)

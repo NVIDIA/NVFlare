@@ -194,6 +194,11 @@ class FedJobConfig:
                 }
             )
         self._get_base_app(custom_dir, fed_app.server_app, server_app)
+        
+        # Add additional arguments to the server app config
+        if fed_app.server_app.additional_args:
+            server_app.update(fed_app.server_app.additional_args)
+            
         server_config = os.path.join(config_dir, FED_SERVER_JSON)
         with open(server_config, "w") as outfile:
             json_dump = json.dumps(server_app, indent=4)
@@ -316,6 +321,11 @@ class FedJobConfig:
                 }
             )
         self._get_base_app(custom_dir, fed_app.client_app, client_app)
+        
+        # Add additional arguments to the client app config
+        if fed_app.client_app.additional_args:
+            client_app.update(fed_app.client_app.additional_args)
+            
         client_config = os.path.join(config_dir, FED_CLIENT_JSON)
         with open(client_config, "w") as outfile:
             json_dump = json.dumps(client_app, indent=4)
