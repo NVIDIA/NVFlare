@@ -101,7 +101,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
             for i in range(max_id):
                 did = f"{prefix}{SpecialDeviceId.NUM_INDICATOR}{i}"
                 devices[did] = Device(did, client_name, now)
-            self.logger.info(f"accepted multi-devices: {prefix}{SpecialDeviceId.NUM_INDICATOR}0..{max_id-1}")
+            self.logger.info(f"accepted multi-devices: {prefix}{SpecialDeviceId.NUM_INDICATOR}0..{max_id - 1}")
         else:
             devices[device_id] = Device(device_id, client_name, now)
 
