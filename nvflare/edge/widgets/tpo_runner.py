@@ -38,9 +38,9 @@ class TPORunner(SimulationRunner):
         self.num_workers = num_workers
         self.task_processor_id = task_processor_id
         self.tpo = None
-        self.register_event_handler(EventType.SYSTEM_START, self._tpo_system_start)
+        self.register_event_handler(EventType.ABOUT_TO_START_RUN, self._tpo_about_to_start)
 
-    def _tpo_system_start(self, event_type: str, fl_ctx: FLContext):
+    def _tpo_about_to_start(self, event_type: str, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"TPO got event: {event_type}")
         engine = fl_ctx.get_engine()
         tpo = engine.get_component(self.task_processor_id)
