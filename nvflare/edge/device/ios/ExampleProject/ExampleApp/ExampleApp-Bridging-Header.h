@@ -5,7 +5,5 @@
 #import "../NVFlareSDK/Training/ETTrainer/ETTrainer.h"
 #import "../NVFlareSDK/Models/Common/Constants.h"
 
-// App's C++ dataset creation functions
-void* CreateAppCIFAR10Dataset(void);
-void* CreateAppXORDataset(void);
-void DestroyAppDataset(void* dataset);
+// Swift dataset bridge
+#import "../NVFlareSDK/Core/SwiftDatasetBridge.h"
