@@ -11,8 +11,12 @@ cc_issuers:
   token_expiration: 3600
 compute_env: onprem_cvm
 data_source: /tmp/data
+hosts_entries:
+  server1: 1.2.3.4
 nvflare_package: /localhome/local-yuantingh/NVFlare/examples/advanced/cc_provision/application_code.zip
 nvflare_version: 2.6.0
 role: client
-root_drive_size: 8
+root_drive_size: 15
 secure_drive_size: 2
+trustee_host: trustee-azsnptpm.eastus.cloudapp.azure.com
+trustee_port: 8999
