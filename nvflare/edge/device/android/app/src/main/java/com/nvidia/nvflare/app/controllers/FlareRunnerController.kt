@@ -20,6 +20,8 @@ import com.nvidia.nvflare.sdk.defs.NoOpFilter
 import com.nvidia.nvflare.sdk.defs.NoOpEventHandler
 import com.nvidia.nvflare.sdk.defs.NoOpTransform
 import com.nvidia.nvflare.sdk.defs.SimpleBatch
+import com.nvidia.nvflare.sdk.TrainerRegistry
+import com.nvidia.nvflare.sdk.trainers.ETTrainerFactory
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -158,6 +160,12 @@ class FlareRunnerController(
     }
     
     private fun createResolverRegistry(): Map<String, Class<*>> {
+        // Register trainer implementations in the dynamic registry
+        // This replaces the hardcoded methods in AndroidExecutorFactory
+        TrainerRegistry.registerTrainer("cnn", ETTrainerFactory())
+        TrainerRegistry.registerTrainer("xor", ETTrainerFactory())
+        // Future trainers can be added here without code changes to AndroidExecutorFactory
+        
         return mapOf(
             "Executor.AndroidExecutor" to AndroidExecutor::class.java,
             "DataSource.AndroidDataSource" to AndroidDataSource::class.java,

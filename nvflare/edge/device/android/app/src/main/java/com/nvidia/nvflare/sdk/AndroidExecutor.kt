@@ -68,19 +68,9 @@ object AndroidExecutorFactory {
     fun createExecutor(method: String, modelData: String, meta: Map<String, Any>): AndroidExecutor {
         val trainingConfig = TrainingConfig.fromMap(meta)
         
-        // Create the appropriate trainer based on the method
-        val trainer = when (method.lowercase()) {
-            "cnn" -> createETTrainer(modelData, trainingConfig)
-            "xor" -> createETTrainer(modelData, trainingConfig)
-            // Future: "custom_method" -> createCustomTrainer(modelData, trainingConfig)
-            else -> throw IllegalArgumentException("Unsupported training method: $method")
-        }
+        // Use dynamic trainer registry instead of hardcoded when block
+        val trainer = TrainerRegistry.createTrainer(method, modelData, trainingConfig)
         
         return AndroidExecutor(trainer)
-    }
-    
-    private fun createETTrainer(modelData: String, meta: TrainingConfig): Trainer {
-        // Use the existing ETTrainerWrapper which wraps the trivial ETTrainer
-        return ETTrainerWrapper(modelData, meta)
     }
 } 
