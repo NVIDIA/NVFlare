@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import gc
-import uuid
 from typing import Any
 
 from nvflare.apis.client import Client

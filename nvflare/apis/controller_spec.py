@@ -155,13 +155,16 @@ class Task(object):
         self.task_done_cb = task_done_cb
 
         if self.before_task_sent_cb is None:
-            # msg data can only be modified in the before_task_sent_cb.
-            # if the cb is not specified, then the msg data won't be mutable!
+            # task data can only be modified in the before_task_sent_cb.
+            # if the cb is not specified, then the task data won't be mutable!
             task_data_mutable = False
 
         if task_data_mutable:
+            # since task data could change during the life of task, each msg must be serialized individually.
             self.msg_root_id = None
         else:
+            # since task data won't change during the life of task, messages originated from this task can share
+            # serialization results.
             self.msg_root_id = str(uuid.uuid4())
 
         self.targets = None
