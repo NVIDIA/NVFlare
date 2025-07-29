@@ -16,6 +16,7 @@
 #include <vector>
 #include <sstream>
 #include "ETDataset.h"
+#include "SwiftDatasetAdapter.h"
 #include "Constants.h"
 #include "ETDebugUtils.h"
 
@@ -24,7 +25,7 @@ using namespace ::executorch::extension;
 @implementation ETTrainer {
     std::unique_ptr<training::TrainingModule> _training_module;
     NSDictionary<NSString *, id> *_meta;
-    std::unique_ptr<ETDataset> _dataset;
+    ETDataset* _dataset;  // Non-owning raw pointer - dataset managed elsewhere
 }
 
 // loadDataset method removed - dataset passed directly to initializer
@@ -67,64 +68,60 @@ using namespace ::executorch::extension;
 - (instancetype)initWithModelBase64:(NSString *)modelBase64
                              meta:(NSDictionary<NSString *, id> *)meta
                           dataset:(void *)cppDataset {
-    NSLog(@"🚀 ETTrainer: Initialization started with app's C++ dataset");
+    NSLog(@"ETTrainer: Initialization started with app's C++ dataset");
     self = [super init];
     if (self) {
         _meta = meta;
         
         // Use app's C++ dataset directly
         if (!cppDataset) {
-            NSLog(@"❌ ETTrainer: App provided null C++ dataset");
+            NSLog(@"ETTrainer: App provided null C++ dataset");
             return nil;
         }
         
-        NSLog(@"🔍 ETTrainer: cppDataset pointer = %p", cppDataset);
+        NSLog(@"ETTrainer: cppDataset pointer = %p", cppDataset);
         
         // Cast to our expected C++ dataset type
         ETDataset* dataset = static_cast<ETDataset*>(cppDataset);
         
-        NSLog(@"🔍 ETTrainer: After cast, dataset pointer = %p", dataset);
+        NSLog(@"ETTrainer: After cast, dataset pointer = %p", dataset);
         
-        // Create unique_ptr
-        _dataset = std::unique_ptr<ETDataset>(dataset);
+        // Store raw pointer (non-owning)
+        _dataset = dataset;
         
-        NSLog(@"🔍 ETTrainer: unique_ptr created, about to test object validity...");
+        NSLog(@"ETTrainer: Dataset pointer stored, about to test object validity...");
         
         // Test if the pointer is valid before calling methods
-        if (!_dataset.get()) {
-            NSLog(@"❌ ETTrainer: unique_ptr is null after creation");
+        if (!_dataset) {
+            NSLog(@"ETTrainer: Dataset pointer is null after creation");
             return nil;
         }
         
-        NSLog(@"🔍 ETTrainer: unique_ptr.get() = %p", _dataset.get());
-        
-        // Try a safer approach - use raw pointer first
-        ETDataset* rawPtr = _dataset.get();
-        NSLog(@"🔍 ETTrainer: Raw pointer = %p", rawPtr);
+        NSLog(@"ETTrainer: Dataset pointer = %p", _dataset);
         
         // Safely try to access the dataset
         @try {
-            NSLog(@"🔍 ETTrainer: About to call size() on raw pointer...");
-            size_t datasetSize = rawPtr->size();
-            NSLog(@"✅ ETTrainer: App's C++ dataset ready (size: %zu)", datasetSize);
+            NSLog(@"ETTrainer: About to call size() on dataset...");
+            size_t datasetSize = _dataset->size();
+            NSLog(@"ETTrainer: App's C++ dataset ready (size: %zu)", datasetSize);
         } @catch (NSException *exception) {
-            NSLog(@"❌ ETTrainer: Exception accessing dataset: %@", exception);
+            NSLog(@"ETTrainer: NSException accessing dataset: %@", exception);
             return nil;
         } @catch (...) {
-            NSLog(@"❌ ETTrainer: C++ exception accessing dataset");
+            NSLog(@"ETTrainer: C++ exception accessing dataset");
             return nil;
         }
         
         // Load model
-        NSLog(@"🤖 ETTrainer: Loading ExecutorTorch model");
+        NSLog(@"ETTrainer: Loading ExecutorTorch model");
         _training_module = [self loadModel:modelBase64];
         if (!_training_module) {
-            NSLog(@"❌ ETTrainer: Failed to load ExecutorTorch model");
+            NSLog(@"ETTrainer: Failed to load ExecutorTorch model");
             return nil;
         }
-        NSLog(@"✅ ETTrainer: ExecutorTorch model loaded successfully");
+        NSLog(@"ETTrainer: ExecutorTorch model loaded successfully");
     }
-    NSLog(@"🎯 ETTrainer: Initialization complete with app's C++ dataset");
+    NSLog(@"ETTrainer: Initialization complete with app's C++ dataset");
     return self;
 }
 

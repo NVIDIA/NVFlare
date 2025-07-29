@@ -16,114 +16,64 @@
 @implementation SwiftDatasetBridge
 
 + (void*)createDatasetAdapter:(id)swiftDataset {
-    // We'll use dynamic method calls since we can't directly access Swift protocols from Objective-C++
-    // The Swift side will ensure the object implements the required methods
+    NSLog(@"SwiftDatasetBridge: Creating adapter for Swift dataset: %@", swiftDataset);
     
-    // Create C++ callbacks that call Swift methods
-    auto getBatchFunc = [swiftDataset](size_t batchSize) -> std::optional<std::pair<std::vector<float>, std::vector<int64_t>>> {
-        @autoreleasepool {
-            // Use dynamic method call for Swift method getBatch(size:)
-            SEL selector = NSSelectorFromString(@"getBatchWithSize:");
-            if (![swiftDataset respondsToSelector:selector]) {
-                NSLog(@"SwiftDatasetBridge: Object does not respond to getBatchWithSize:");
-                return std::nullopt;
-            }
-            
-            NSArray *result = ((NSArray *(*)(id, SEL, NSInteger))objc_msgSend)(swiftDataset, selector, (NSInteger)batchSize);
-            if (!result || result.count != 2) {
-                return std::nullopt;
-            }
-            
-            NSArray<NSNumber *> *inputs = result[0];
-            NSArray<NSNumber *> *labels = result[1];
-            
-            if (!inputs || !labels) {
-                return std::nullopt;
-            }
-            
-            std::vector<float> inputVec;
-            std::vector<int64_t> labelVec;
-            
-            inputVec.reserve(inputs.count);
-            labelVec.reserve(labels.count);
-            
-            for (NSNumber *input in inputs) {
-                inputVec.push_back(input.floatValue);
-            }
-            
-            for (NSNumber *label in labels) {
-                labelVec.push_back(label.intValue);
-            }
-            
-            return std::make_pair(std::move(inputVec), std::move(labelVec));
-        }
-    };
+    // Validate the Swift dataset first
+    if (!swiftDataset) {
+        NSLog(@"SwiftDatasetBridge: Swift dataset is nil!");
+        return nullptr;
+    }
     
-    auto resetFunc = [swiftDataset]() {
-        @autoreleasepool {
-            SEL selector = @selector(reset);
-            if ([swiftDataset respondsToSelector:selector]) {
-                ((void (*)(id, SEL))objc_msgSend)(swiftDataset, selector);
-            }
-        }
-    };
+    // Test if the object responds to required methods
+    if (![swiftDataset respondsToSelector:@selector(size)]) {
+        NSLog(@"SwiftDatasetBridge: Swift dataset does not respond to size selector!");
+        return nullptr;
+    }
     
-    auto sizeFunc = [swiftDataset]() -> size_t {
-        @autoreleasepool {
-            SEL selector = @selector(size);
-            if ([swiftDataset respondsToSelector:selector]) {
-                NSInteger result = ((NSInteger (*)(id, SEL))objc_msgSend)(swiftDataset, selector);
-                return static_cast<size_t>(result);
-            }
-            return 0;
-        }
-    };
+    // Test the size method before creating the adapter
+    @try {
+        NSInteger testSize = ((NSInteger (*)(id, SEL))objc_msgSend)(swiftDataset, @selector(size));
+        NSLog(@"SwiftDatasetBridge: Test size call successful: %ld", (long)testSize);
+    } @catch (NSException *exception) {
+        NSLog(@"SwiftDatasetBridge: Test size call failed: %@", exception);
+        return nullptr;
+    }
     
-    auto inputDimFunc = [swiftDataset]() -> size_t {
-        @autoreleasepool {
-            SEL selector = @selector(inputDim);
-            if ([swiftDataset respondsToSelector:selector]) {
-                NSInteger result = ((NSInteger (*)(id, SEL))objc_msgSend)(swiftDataset, selector);
-                return static_cast<size_t>(result);
-            }
-            return 0;
-        }
-    };
+    // Standard ARC approach - store strong reference
+    id retainedDataset = swiftDataset;
     
-    auto labelDimFunc = [swiftDataset]() -> size_t {
-        @autoreleasepool {
-            SEL selector = @selector(labelDim);
-            if ([swiftDataset respondsToSelector:selector]) {
-                NSInteger result = ((NSInteger (*)(id, SEL))objc_msgSend)(swiftDataset, selector);
-                return static_cast<size_t>(result);
-            }
-            return 1; // Default to single label
-        }
-    };
+    // Create the C++ adapter with proper retained reference
+    void* retainedPtr = (void*)CFBridgingRetain(retainedDataset);
+    NSLog(@"SwiftDatasetBridge: CFBridgingRetain returned: %p", retainedPtr);
     
-    auto setShuffleFunc = [swiftDataset](bool shuffle) {
-        @autoreleasepool {
-            SEL selector = NSSelectorFromString(@"setShuffle:");
-            if ([swiftDataset respondsToSelector:selector]) {
-                ((void (*)(id, SEL, BOOL))objc_msgSend)(swiftDataset, selector, shuffle ? YES : NO);
-            }
-        }
-    };
+    if (!retainedPtr) {
+        NSLog(@"SwiftDatasetBridge: CFBridgingRetain returned null!");
+        return nullptr;
+    }
     
-    // Create the C++ adapter
-    SwiftDatasetAdapter* adapter = new SwiftDatasetAdapter(
-        getBatchFunc, resetFunc, sizeFunc, inputDimFunc, labelDimFunc, setShuffleFunc
-    );
+    SwiftDatasetAdapter* adapter = new SwiftDatasetAdapter(retainedPtr);
     
-    NSLog(@"SwiftDatasetBridge: Created C++ dataset adapter for Swift dataset");
+    NSLog(@"SwiftDatasetBridge: Created C++ dataset adapter at %p for Swift dataset", adapter);
     return static_cast<void*>(adapter);
 }
 
 + (void)destroyDatasetAdapter:(void*)dataset {
-    if (dataset) {
+    NSLog(@"SwiftDatasetBridge: destroyDatasetAdapter called with pointer: %p", dataset);
+    
+    if (!dataset) {
+        NSLog(@"SwiftDatasetBridge: dataset pointer is null, nothing to destroy");
+        return;
+    }
+    
+    @try {
         SwiftDatasetAdapter* adapter = static_cast<SwiftDatasetAdapter*>(dataset);
+        NSLog(@"SwiftDatasetBridge: About to delete adapter at %p", adapter);
+        
         delete adapter;
-        NSLog(@"SwiftDatasetBridge: Destroyed C++ dataset adapter");
+        
+        NSLog(@"SwiftDatasetBridge: Successfully destroyed C++ dataset adapter");
+    } @catch (NSException *exception) {
+        NSLog(@"SwiftDatasetBridge: Exception during adapter destruction: %@", exception);
     }
 }
 

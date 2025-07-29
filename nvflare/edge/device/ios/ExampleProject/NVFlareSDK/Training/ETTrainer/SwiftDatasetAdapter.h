@@ -8,7 +8,6 @@
 #pragma once
 
 #include "ETDataset.h"
-#include <functional>
 #include <optional>
 #include <vector>
 
@@ -16,30 +15,28 @@
 /// This allows Swift datasets to be used with the C++ ETTrainer
 class SwiftDatasetAdapter : public ETDataset {
 private:
-    // Swift callback functions
-    std::function<std::optional<std::pair<std::vector<float>, std::vector<int64_t>>>(size_t)> getBatchFunc;
-    std::function<void()> resetFunc;
-    std::function<size_t()> sizeFunc;
-    std::function<size_t()> inputDimFunc;
-    std::function<size_t()> labelDimFunc;
-    std::function<void(bool)> setShuffleFunc;
-    
+    // Swift object reference passed in via CFBridgingRetain() on the Swift side.
+    // Ownership is transferred to this adapter, which releases it via CFBridgingRelease().
+    // DO NOT pass unretained (__bridge) Swift objects here.
+    void* swiftObjectPtr;
+
+    // Flag to prevent double deletion
+    // Note: Not thread-safe; access must be synchronized if used concurrently.
+    mutable bool isDestroyed;
+
 public:
-    /// Constructor with Swift callbacks
-    SwiftDatasetAdapter(
-        std::function<std::optional<std::pair<std::vector<float>, std::vector<int64_t>>>(size_t)> getBatch,
-        std::function<void()> reset,
-        std::function<size_t()> size,
-        std::function<size_t()> inputDim,
-        std::function<size_t()> labelDim,
-        std::function<void(bool)> setShuffle
-    );
-    
-    // Required ETDataset interface
+    /// Constructor with Swift object
+    /// @param swiftObject Pointer from CFBridgingRetain - takes ownership
+    SwiftDatasetAdapter(void* swiftObject);
+
+    /// Destructor to handle cleanup - releases swiftObjectPtr via CFBridgingRelease
+    ~SwiftDatasetAdapter();
+
+    // Required ETDataset interface methods
     std::optional<BatchType> getBatch(size_t batchSize) override;
     void reset() override;
     void setShuffle(bool shuffle) override;
     size_t size() const override;
     size_t inputDim() const override;
     size_t labelDim() const override;
-}; 
+};

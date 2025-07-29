@@ -4,6 +4,4 @@
 
 #import "../NVFlareSDK/Training/ETTrainer/ETTrainer.h"
 #import "../NVFlareSDK/Models/Common/Constants.h"
-
-// Swift dataset bridge
 #import "../NVFlareSDK/Core/SwiftDatasetBridge.h"
