@@ -73,7 +73,6 @@ default_policy = """{
 
 
 class GPUAuthorizer(CCAuthorizer):
-<<<<<<< HEAD
     def __init__(
         self, verifier_url="https://nras.attestation.nvidia.com/v4/attest/gpu", policy_file=None, max_nonce_history=1000
     ):
