@@ -27,8 +27,8 @@ public class SwiftCIFAR10Dataset: SwiftDataset {
     private let imageSize = 32 * 32 * 3 // 3072 bytes per image
     private let maxImages = 16 // Demo limit
     
-    public init(shuffle: Bool = false) {
-        self.images = Self.loadCIFAR10Data()
+    public init(shuffle: Bool = false) throws {
+        self.images = try Self.loadCIFAR10Data()
         self.indices = Array(0..<images.count)
         self.shouldShuffle = shuffle
         reset()
@@ -58,7 +58,7 @@ public class SwiftCIFAR10Dataset: SwiftDataset {
         return [NSArray(array: inputs), NSArray(array: labels)]
     }
     
-    public func reset() {
+    @objc public func reset() {
         currentIndex = 0
         if shouldShuffle {
             indices.shuffle()
@@ -67,58 +67,68 @@ public class SwiftCIFAR10Dataset: SwiftDataset {
         }
     }
     
-    public func size() -> Int {
+    @objc public func size() -> Int {
         return images.count
     }
     
-    public func inputDim() -> Int {
+    @objc public func inputDim() -> Int {
         return imageSize
     }
     
-    public func labelDim() -> Int {
+    @objc public func labelDim() -> Int {
         return 1
     }
     
-    public func setShuffle(_ shuffle: Bool) {
+    @objc public func setShuffle(_ shuffle: Bool) {
         shouldShuffle = shuffle
         reset()
     }
     
     // MARK: - Private Methods
     
-    private static func loadCIFAR10Data() -> [CIFARImage] {
+    private static func loadCIFAR10Data() throws -> [CIFARImage] {
         var images: [CIFARImage] = []
         
         // Try to load CIFAR-10 data from app bundle
-        if let dataAsset = NSDataAsset(name: "data_batch_1") {
-            let binaryData = dataAsset.data
-            let bytes = [UInt8](binaryData)
-            
-            // Calculate number of images from file size
-            let bytesPerImage = 1 + 3072 // 1 byte label + 3072 bytes image data
-            let numImages = min(bytes.count / bytesPerImage, 16) // Demo limit
-            
-            for i in 0..<numImages {
-                let startIndex = i * bytesPerImage
-                let label = Int(bytes[startIndex])
-                
-                var imageData: [Float] = []
-                imageData.reserveCapacity(3072)
-                
-                // Convert raw bytes to normalized float values [0,1]
-                for j in 1..<bytesPerImage {
-                    let pixelValue = Float(bytes[startIndex + j]) / 255.0
-                    imageData.append(pixelValue)
-                }
-                
-                images.append(CIFARImage(label: label, data: imageData))
-            }
-            
-            print("SwiftCIFAR10Dataset: Successfully loaded \(images.count) CIFAR-10 images from app bundle")
-        } else {
-            print("SwiftCIFAR10Dataset: No data_batch_1 found in app bundle. Dataset will be empty.")
+        guard let dataAsset = NSDataAsset(name: "data_batch_1") else {
+            print("SwiftCIFAR10Dataset: No data_batch_1 found in app bundle.")
+            throw DatasetError.noDataFound
         }
         
+        let binaryData = dataAsset.data
+        let bytes = [UInt8](binaryData)
+        
+        // Validate data format
+        let bytesPerImage = 1 + 3072 // 1 byte label + 3072 bytes image data
+        guard bytes.count >= bytesPerImage else {
+            print("SwiftCIFAR10Dataset: Data file too small. Expected at least \(bytesPerImage) bytes, got \(bytes.count)")
+            throw DatasetError.invalidDataFormat
+        }
+        
+        let numImages = min(bytes.count / bytesPerImage, 16) // Demo limit
+        
+        guard numImages > 0 else {
+            print("SwiftCIFAR10Dataset: No valid images found in data file")
+            throw DatasetError.emptyDataset
+        }
+        
+        for i in 0..<numImages {
+            let startIndex = i * bytesPerImage
+            let label = Int(bytes[startIndex])
+            
+            var imageData: [Float] = []
+            imageData.reserveCapacity(3072)
+            
+            // Convert raw bytes to normalized float values [0,1]
+            for j in 1..<bytesPerImage {
+                let pixelValue = Float(bytes[startIndex + j]) / 255.0
+                imageData.append(pixelValue)
+            }
+            
+            images.append(CIFARImage(label: label, data: imageData))
+        }
+        
+        print("SwiftCIFAR10Dataset: Successfully loaded \(images.count) CIFAR-10 images from app bundle")
         return images
     }
 } 
