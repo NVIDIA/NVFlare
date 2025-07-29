@@ -106,7 +106,17 @@ class GPUAuthorizer(CCAuthorizer):
     def verify(self, eat_token):
         try:
             jwt_token = json.loads(eat_token)[1]
-            claims = jwt.decode(jwt_token.get("REMOTE_GPU_CLAIMS")[0][1], options={"verify_signature": False})
+            remote_gpu_claims = jwt_token.get("REMOTE_GPU_CLAIMS")
+            if (
+                isinstance(remote_gpu_claims, list)
+                and len(remote_gpu_claims) > 0
+                and isinstance(remote_gpu_claims[0], list)
+                and len(remote_gpu_claims[0]) > 1
+            ):
+                claims = jwt.decode(remote_gpu_claims[0][1], options={"verify_signature": False})
+            else:
+                self.logger.info("Invalid structure for REMOTE_GPU_CLAIMS")
+                return False
             # With claims, we will retrieve the nonce
             nonce = claims.get("eat_nonce")
             if not self.seen_nonce_history.add(nonce):
