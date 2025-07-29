@@ -42,8 +42,8 @@ class TestFedJob:
         with pytest.raises(Exception):
             job.to(component, None)
 
-    def test_add_args_functionality(self):
-        """Test that add_args functionality works correctly."""
+    def test_add_params_functionality(self):
+        """Test that add_params functionality works correctly."""
         job = FedJob(name="test_job")
 
         # Add a controller to server
@@ -55,14 +55,14 @@ class TestFedJob:
         job.to_clients(executor)
 
         # Add additional arguments to server
-        server_args = {"timeout": 600, "max_retries": 3, "heartbeat_interval": 30}
-        job.to_server(server_args)
+        server_params = {"timeout": 600, "max_retries": 3, "heartbeat_interval": 30}
+        job.to_server(server_params)
 
         # Add additional arguments to clients
-        client_args = {"batch_size": 32, "learning_rate": 0.001}
-        job.to_clients(client_args)
+        client_params = {"submit_task_result_timeout": 300}
+        job.to_clients(client_params)
 
-        # Export the job to verify the args are included
+        # Export the job to verify the params are included
         with tempfile.TemporaryDirectory() as temp_dir:
             job.export_job(temp_dir)
 
@@ -73,8 +73,8 @@ class TestFedJob:
             with open(server_config_path, "r") as f:
                 server_config = json.load(f)
 
-            # Verify server args are included
-            for key, value in server_args.items():
+            # Verify server params are included
+            for key, value in server_params.items():
                 assert key in server_config
                 assert server_config[key] == value
 
@@ -85,7 +85,7 @@ class TestFedJob:
             with open(client_config_path, "r") as f:
                 client_config = json.load(f)
 
-            # Verify client args are included
-            for key, value in client_args.items():
+            # Verify client params are included
+            for key, value in client_params.items():
                 assert key in client_config
                 assert client_config[key] == value
