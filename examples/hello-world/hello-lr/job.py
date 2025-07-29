@@ -12,58 +12,62 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from src.newton_raphson_persistor import NewtonRaphsonModelPersistor
-from src.newton_raphson_workflow import FedAvgNewtonRaphson
+import argparse
+from nvflare.app_opt.lr.fedavg import FedAvgLR
 
-from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE
-from nvflare.app_common.widgets.convert_to_fed_event import ConvertToFedEvent
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
+from server import load_model_fn, save_model_fn
 
-if __name__ == "__main__":
-    n_clients = 4
-    num_rounds = 5
+
+def define_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n_clients", type=int, default=2)
+    parser.add_argument("--num_rounds", type=int, default=5)
+
+    return parser.parse_args()
+
+
+def main():
+    args = define_parser()
+
+    n_clients = args.n_clients
+    num_rounds = args.num_rounds
+
+    print("n_clients=", n_clients)
+    # FedAvgLRRecipe()
 
     # Create FedJob.
-    job = FedJob(name="newton_raphson_fedavg")
+    job = FedJob(name="fed_avg_lr")
 
     # Send custom model persistor to server.
-    persistor_id = job.to_server(NewtonRaphsonModelPersistor(n_features=13), "persistor")
+    # persistor_id = job.to_server(NewtonRaphsonModelPersistor(n_features=13), "persistor")
 
     # Send custom controller to server
-    controller = FedAvgNewtonRaphson(
+    controller = FedAvgLR(
         num_clients=n_clients,
         num_rounds=num_rounds,
-        damping_factor=0.8,
-        persistor_id=persistor_id,
+        damping_factor=0.8
     )
     job.to(controller, "server")
-
-    # Send TBAnalyticsReceiver to server for tensorboard streaming.
-    analytics_receiver = TBAnalyticsReceiver()
-    job.to_server(
-        id="receiver",
-        obj=analytics_receiver,
-    )
-
-    convert_to_fed_event = ConvertToFedEvent(events_to_convert=[ANALYTIC_EVENT_TYPE])
 
     # Add clients
     for i in range(n_clients):
 
-        # Send ConvertToFedEvent to clients for tensorboard streaming.
-        job.to(id="event_to_fed", obj=convert_to_fed_event, target=f"site-{i + 1}")
-
         runner = ScriptRunner(
-            script="src/newton_raphson_train.py",
+            script="client.py",
             script_args="--data_root /tmp/flare/dataset/heart_disease_data",
-            launch_external_process=True,
+            # launch_external_process= True,
             framework=FrameworkType.RAW,
-            params_transfer_type=ExchangeFormat.RAW,
+            server_expected_format=ExchangeFormat.RAW,
         )
         job.to(runner, f"site-{i + 1}")
 
     job.export_job("/tmp/nvflare/jobs/job_config")
+    print("running simulator")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+
+
+if __name__ == "__main__":
+    main()
