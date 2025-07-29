@@ -15,8 +15,7 @@
    Federated Averaging for Logistic Regression with Newton-Raphson method
    using Numpy
 """
-import os.path
-from typing import List, Optional, Callable
+from typing import List, Optional
 
 import numpy as np
 
@@ -32,16 +31,16 @@ from nvflare.app_opt.lr.np_persistor import NewtonRaphsonModelPersistor
 
 class FedAvgLR(BaseFedAvg):
     def __init__(
-            self,
-            damping_factor: float,
-            epsilon: float = 1.0,
-            model_dir: str = "models",
-            model_name: str = "weights.npy",
-            n_features: int = 13,
-            aggregator: WeightedAggregationHelper = WeightedAggregationHelper(),
-            persistor: Optional[NPModelPersistor] = None,
-            *args,
-            **kwargs,
+        self,
+        damping_factor: float,
+        epsilon: float = 1.0,
+        model_dir: str = "models",
+        model_name: str = "weights.npy",
+        n_features: int = 13,
+        aggregator: WeightedAggregationHelper = WeightedAggregationHelper(),
+        persistor: Optional[NPModelPersistor] = None,
+        *args,
+        **kwargs,
     ):
         """
         Initialize the FedAvgLR class for Federated Averaging with Newton-Raphson optimization.
@@ -69,9 +68,7 @@ class FedAvgLR(BaseFedAvg):
         self.n_features = n_features
         self.aggregator = aggregator
         self._default_persistor = NewtonRaphsonModelPersistor(
-            model_dir=self.model_dir,
-            model_name=self.model_name,
-            n_features=self.n_features
+            model_dir=self.model_dir, model_name=self.model_name, n_features=self.n_features
         )
         self.persistor = persistor
 

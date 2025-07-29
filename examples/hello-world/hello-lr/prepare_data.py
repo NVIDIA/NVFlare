@@ -11,9 +11,12 @@ np.NaN = np.nan  # Patch for NumPy 2.0 compatibility
 from flamby.datasets.fed_heart_disease import FedHeartDisease
 from torch.utils.data import DataLoader as dl
 
+
 def download_data(data_dir: Path):
     flamby_install_dir = Path(sysconfig.get_path("purelib"))
-    download_script = flamby_install_dir / "flamby" / "datasets" / "fed_heart_disease" / "dataset_creation_scripts" / "download.py"
+    download_script = (
+        flamby_install_dir / "flamby" / "datasets" / "fed_heart_disease" / "dataset_creation_scripts" / "download.py"
+    )
 
     print(f"Creating {data_dir}")
     data_dir.mkdir(parents=True, exist_ok=True)

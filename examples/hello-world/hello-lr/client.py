@@ -23,7 +23,6 @@ import nvflare.client as flare
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.np.constants import NPConstants
-from nvflare.client.tracking import SummaryWriter
 
 
 def parse_arguments():
@@ -161,7 +160,8 @@ def main():
 
         print(
             f"[ROUND {curr_round}] - local training from client: {site_name} complete,"
-            f" sending results to server: {result_model}")
+            f" sending results to server: {result_model}"
+        )
 
         flare.send(result_model)
 

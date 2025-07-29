@@ -89,16 +89,13 @@ script.
   model, sent by the server, using `flare.receive()` API. The received
   global model is an instance of `FLModel`.
 - A local validation is first performed, where validation metrics
-  (accuracy and precision) are streamed to server using the
-  [`SummaryWriter`](../../../nvflare/client/tracking.py). The
-  streamed metrics can be loaded and visualized using tensorboard.
+  
 - Then each client computes it's gradient and Hessian based on local
   training data, using their respective theoretical formula described
   above. This is implemented in the
-  [`train_newton_raphson()`](./src/newton_raphson_train.py)
-  method. Each client then sends the computed results (always in
-  `FLModel` format) to server for aggregation, using `flare.send()`
-  API.
+  [`train_newton_raphson()`](./client.py) method. Each client then 
+  sends the computed results (always in `FLModel` format) to server for aggregation, 
+  using `flare.send()`  API.
 
 Each client site corresponds to a site listed in the data table above.
 
@@ -110,18 +107,19 @@ FL system, such as receiving and send `FLModel`.
 
 ## Server Side
 We leverage a builtin FLARE logistic regression with Newton Raphson method. 
+the server side fedavg class is located at `nvflare.app_opt.lr.fedavg.FedAvgLR`
 
-
-## Job Recipe 
- <todo> recipe
-
+## Job 
+    todo
 
 ## Download and prepare data
 
 Execute the following script
 ```
-bash ./prepare_heart_disease_data.sh
+python prepare_data.py download
+python prepare_data.py prepare
 ```
+
 This will download the heart disease dataset under
 `/tmp/flare/dataset/heart_disease_data/`
 
@@ -129,7 +127,7 @@ This will download the heart disease dataset under
 ## Running Job 
 
 Execute the following command to launch federated logistic
-regression. This will run in `nvflare`'s simulator mode.
+regression. This will run in `nvflare`'s simulation mode.
 ```
-nvflare simulator -w ./workspace -n 4 -t 4 job/newton_raphson/
+python job.py
 ```

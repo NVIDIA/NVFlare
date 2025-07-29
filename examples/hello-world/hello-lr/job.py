@@ -13,12 +13,11 @@
 # limitations under the License.
 
 import argparse
-from nvflare.app_opt.lr.fedavg import FedAvgLR
 
+from nvflare.app_opt.lr.fedavg import FedAvgLR
 from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
-from server import load_model_fn, save_model_fn
 
 
 def define_parser():
@@ -45,11 +44,7 @@ def main():
     # persistor_id = job.to_server(NewtonRaphsonModelPersistor(n_features=13), "persistor")
 
     # Send custom controller to server
-    controller = FedAvgLR(
-        num_clients=n_clients,
-        num_rounds=num_rounds,
-        damping_factor=0.8
-    )
+    controller = FedAvgLR(num_clients=n_clients, num_rounds=num_rounds, damping_factor=0.8)
     job.to(controller, "server")
 
     # Add clients
