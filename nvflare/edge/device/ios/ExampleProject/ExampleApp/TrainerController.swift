@@ -18,6 +18,7 @@ enum TrainingError: Error {
     case datasetCreationFailed
     case connectionFailed
     case trainingFailed
+    case noSupportedJobs
 }
 
 enum SupportedJob: String, CaseIterable {
@@ -47,6 +48,10 @@ class TrainerController: ObservableObject {
     private var currentTask: Task<Void, Error>?
     private var flareRunner: NVFlareRunner?
     
+    // CRITICAL: Strong reference to keep Swift dataset alive during training
+    // This prevents the dataset from being deallocated while C++ adapter still references it
+    private var currentSwiftDataset: SwiftDataset?
+    
     // Server configuration
     @Published var serverHost = "192.168.6.101"
     @Published var serverPort = 4321
@@ -70,6 +75,12 @@ class TrainerController: ObservableObject {
     
     func startTraining() async throws {
         guard status == .idle else { return }
+        
+        // Check if any jobs are supported
+        guard !supportedJobs.isEmpty else {
+            throw TrainingError.noSupportedJobs
+        }
+        
         status = .training
         
         currentTask = Task {
@@ -79,14 +90,39 @@ class TrainerController: ObservableObject {
                 // Create Swift datasets based on supported jobs
                 let swiftDataset: SwiftDataset
                 if supportedJobs.contains(.cifar10) {
-                    swiftDataset = SwiftCIFAR10Dataset()
-                    print("TrainerController: Created Swift CIFAR-10 dataset")
+                    do {
+                        swiftDataset = try SwiftCIFAR10Dataset()
+                        print("TrainerController: Created Swift CIFAR-10 dataset")
+                        
+                        // Validate dataset using SDK's standardized validation
+                        try swiftDataset.validate()
+                        print("TrainerController: CIFAR-10 dataset validation passed")
+                        print("TrainerController: CIFAR-10 dataset size: \(swiftDataset.size())")
+                        
+                    } catch DatasetError.noDataFound {
+                        print("TrainerController: CIFAR-10 data not found in app bundle")
+                        throw TrainingError.datasetCreationFailed
+                    } catch DatasetError.invalidDataFormat {
+                        print("TrainerController: CIFAR-10 data format is invalid")
+                        throw TrainingError.datasetCreationFailed
+                    } catch DatasetError.emptyDataset {
+                        print("TrainerController: CIFAR-10 dataset is empty")
+                        throw TrainingError.datasetCreationFailed
+                    } catch {
+                        print("TrainerController: Failed to create CIFAR-10 dataset: \(error)")
+                        throw TrainingError.datasetCreationFailed
+                    }
                 } else if supportedJobs.contains(.xor) {
                     swiftDataset = SwiftXORDataset()
                     print("TrainerController: Created Swift XOR dataset")
+                    print("TrainerController: XOR dataset size: \(swiftDataset.size())")
                 } else {
                     throw TrainingError.datasetCreationFailed
                 }
+                
+                // Store the Swift dataset to keep it alive during training
+                self.currentSwiftDataset = swiftDataset
+                print("TrainerController: Stored Swift dataset reference: \(swiftDataset)")
                 
                 // Create C++ adapter from Swift dataset
                 let dataset = SwiftDatasetBridge.createDatasetAdapter(swiftDataset)
@@ -96,6 +132,7 @@ class TrainerController: ObservableObject {
                 }
                 
                 print("TrainerController: Created C++ dataset adapter from Swift dataset")
+                print("TrainerController: Dataset size before adapter creation: \(swiftDataset.size())")
                 
                 // Create FlareRunner with C++ dataset
                 let runner = NVFlareRunner(
@@ -119,13 +156,23 @@ class TrainerController: ObservableObject {
                 print("TrainerController: Using app's C++ dataset implementation")
                 
                 // Start the runner (this will call the main FL loop)
+                print("TrainerController: About to start training with dataset reference: \(String(describing: self.currentSwiftDataset))")
                 await runner.run()
                 
-                // Clean up C++ dataset adapter
-                SwiftDatasetBridge.destroyDatasetAdapter(dataset)
+                print("TrainerController: Training completed, about to cleanup")
+                
+                // Reset status after successful completion
+                await MainActor.run {
+                    print("TrainerController: Clearing Swift dataset reference")
+                    self.currentSwiftDataset = nil  // Release Swift dataset reference
+                    status = .idle
+                }
                 
             } catch {
+                print("TrainerController: Training failed with error: \(error)")
                 await MainActor.run {
+                    print("TrainerController: Clearing Swift dataset reference due to error")
+                    self.currentSwiftDataset = nil  // Release Swift dataset reference on error too
                     status = .idle
                 }
                 throw error
@@ -139,8 +186,5 @@ class TrainerController: ObservableObject {
         status = .stopping
         flareRunner?.stop()
         currentTask?.cancel()
-        currentTask = nil
-        flareRunner = nil
-        status = .idle
     }
 } 

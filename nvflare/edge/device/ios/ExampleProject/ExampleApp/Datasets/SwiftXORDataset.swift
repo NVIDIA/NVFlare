@@ -50,7 +50,7 @@ public class SwiftXORDataset: SwiftDataset {
         return [NSArray(array: inputs), NSArray(array: labels)]
     }
     
-    public func reset() {
+    @objc public func reset() {
         currentIndex = 0
         if shouldShuffle {
             indices.shuffle()
@@ -59,19 +59,19 @@ public class SwiftXORDataset: SwiftDataset {
         }
     }
     
-    public func size() -> Int {
+    @objc public func size() -> Int {
         return xorTable.count
     }
     
-    public func inputDim() -> Int {
+    @objc public func inputDim() -> Int {
         return 2
     }
     
-    public func labelDim() -> Int {
+    @objc public func labelDim() -> Int {
         return 1
     }
     
-    public func setShuffle(_ shuffle: Bool) {
+    @objc public func setShuffle(_ shuffle: Bool) {
         shouldShuffle = shuffle
         reset()
     }

@@ -22,8 +22,6 @@ public class NVFlareRunner: ObservableObject {
     public let jobTimeout: TimeInterval
     public let abortSignal = NVFlareSignal()
     
-
-    
     // MARK: - Filter Properties
     public let appInFilters: [NVFlareFilter]?
     public let appOutFilters: [NVFlareFilter]?
@@ -315,13 +313,8 @@ public class NVFlareRunner: ObservableObject {
                     }
                 }
                 
-                // Create a NEW dataset for each task since ETTrainer takes ownership
-                if let originalDataset = ctx[NVFlareContextKey.dataset] as? UnsafeMutableRawPointer {
-                    print("NVFlareRunner: Creating new dataset for task (original was: \(originalDataset))")
-                    // Use the same dataset type that was passed in - the app is responsible for providing the correct dataset
-                    taskCtx[NVFlareContextKey.dataset] = originalDataset
-                    print("NVFlareRunner: Using original dataset for task: \(originalDataset)")
-                }
+                // Pass the dataset to the new task context
+                taskCtx[NVFlareContextKey.dataset] = cppDataset
                 
                 self.cookie = task.cookie
                 let taskName = task.taskName
