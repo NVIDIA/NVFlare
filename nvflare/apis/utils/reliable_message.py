@@ -23,6 +23,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import generate_log_message
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_module_logger
+from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.fuel.utils.validation_utils import check_positive_number
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
@@ -526,6 +527,10 @@ class ReliableMessage:
         if tx_timeout:
             check_positive_number("tx_timeout", tx_timeout)
 
+        msg_root_id = str(uuid.uuid4())
+        request.set_header(ReservedHeaderKey.MSG_ROOT_ID, msg_root_id)
+        request.set_header(ReservedHeaderKey.MSG_ROOT_TTL, per_msg_timeout)
+
         if not tx_timeout or tx_timeout <= per_msg_timeout:
             # simple aux message
             cls.debug(fl_ctx, f"send request with simple Aux Msg: {per_msg_timeout=} {tx_timeout=}")
@@ -538,6 +543,7 @@ class ReliableMessage:
                 fl_ctx=fl_ctx,
             )
             result, _ = _extract_result(reply, target)
+            delete_msg_root(msg_root_id)
             return result
 
         tx_id = str(uuid.uuid4())
@@ -555,6 +561,8 @@ class ReliableMessage:
         except Exception as e:
             cls.error(fl_ctx, f"exception sending reliable message: {secure_format_traceback()}")
             result = _error_reply(ReturnCode.ERROR, secure_format_exception(e))
+
+        delete_msg_root(msg_root_id)
         cls._reply_receivers.pop(tx_id)
         return result
 
