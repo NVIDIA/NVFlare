@@ -65,11 +65,28 @@ class LazyAggregator(Aggregator):
         self.accept_timeout = accept_timeout
         self.aggregator = None
         self.contributions = queue.Queue()
+        self._q_lock = threading.Lock()
         self.aggregating = False
         self.run_ended = False
         self.accept_done = threading.Event()
         self.register_event_handler(EventType.START_RUN, self._lazy_aggr_start_run)
         self.register_event_handler(EventType.END_RUN, self._lazy_aggr_end_run)
+
+    def _clear_contributions(self):
+        with self._q_lock:
+            q = self.contributions
+            while True:
+                try:
+                    q.get(block=False)  # Attempt to get an item without blocking
+                    q.task_done()  # Mark the task as done (important for JoinableQueue)
+                except queue.Empty:
+                    break  # Break the loop when the queue is empty
+
+    def _add_contribution(self, contrib: Shareable, fl_ctx: FLContext):
+        self.log_debug(fl_ctx, "adding contribution to queue")
+        with self._q_lock:
+            self.contributions.put(_Contribution(contrib, fl_ctx))
+        self.log_debug(fl_ctx, "done adding contribution to queue")
 
     def _lazy_aggr_start_run(self, event_type: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -91,9 +108,7 @@ class LazyAggregator(Aggregator):
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         if not self.aggregating:
-            self.log_debug(fl_ctx, "adding contribution to queue")
-            self.contributions.put(_Contribution(shareable, fl_ctx))
-            self.log_debug(fl_ctx, "done adding contribution to queue")
+            self._add_contribution(shareable, fl_ctx)
             return True
         else:
             # when the aggregation is started, we no longer accept new contributions
@@ -101,6 +116,8 @@ class LazyAggregator(Aggregator):
             return False
 
     def _do_accept(self):
+        # This thread monitors the contribution queue.
+        # It takes contributions from the queue and processes them one by one.
         self.logger.debug("Started accept thread")
         while True:
             if self.run_ended:
@@ -158,11 +175,17 @@ class LazyAggregator(Aggregator):
         # we then call the aggregator to perform actual aggregation
         result = self.aggregator.aggregate(fl_ctx)
 
-        # reset state
-        self.aggregating = False
-        self.accept_done.clear()
+        # reset state - some controllers may not call the aggregator's reset method for historical reason
+        # we call it here to make sure the aggregator state is reset.
+        self._reset(fl_ctx)
         self.log_debug(fl_ctx, "Finished aggregate for one round")
         return result
+
+    def _reset(self, fl_ctx: FLContext):
+        self.aggregating = False
+        self.accept_done.clear()
+        self._clear_contributions()
+        self.aggregator.reset(fl_ctx)
 
     def _check_end_run(self):
         if self.run_ended:
@@ -171,6 +194,4 @@ class LazyAggregator(Aggregator):
             return _AcceptWaitRC.OK
 
     def reset(self, fl_ctx: FLContext):
-        self.aggregating = False
-        self.accept_done.clear()
-        self.aggregator.reset(fl_ctx)
+        self._reset(fl_ctx)
