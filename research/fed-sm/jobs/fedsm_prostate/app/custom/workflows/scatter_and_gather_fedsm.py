@@ -212,6 +212,7 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                         timeout=self._train_timeout,
                         before_task_sent_cb=self._prepare_train_task_data,
                         result_received_cb=self._process_train_result,
+                        task_data_mutable=False,
                     )
 
                     # send only to the target client

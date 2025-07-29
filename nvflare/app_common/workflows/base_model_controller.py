@@ -204,6 +204,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             timeout=timeout,
             before_task_sent_cb=self._prepare_task_data,
             result_received_cb=self._process_result,
+            task_data_mutable=False,
         )
 
         return task

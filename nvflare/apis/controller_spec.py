@@ -78,6 +78,7 @@ class Task(object):
         task_done_cb=None,
         operator=None,
         secure=False,
+        task_data_mutable: bool = True,
     ):
         """Init the Task.
 
@@ -99,6 +100,7 @@ class Task(object):
                 It needs to follow the task_done_cb_signature.
             operator: task operator that describes the operation of the task
             secure: should this task be transmitted in a secure way
+            task_data_mutable: whether task data is mutable during the life of the task.
 
         """
         if not isinstance(name, str):
@@ -151,7 +153,16 @@ class Task(object):
         self.after_task_sent_cb = after_task_sent_cb
         self.result_received_cb = result_received_cb
         self.task_done_cb = task_done_cb
-        self.msg_root_id = str(uuid.uuid4())
+
+        if self.before_task_sent_cb is None:
+            # msg data can only be modified in the before_task_sent_cb.
+            # if the cb is not specified, then the msg data won't be mutable!
+            task_data_mutable = False
+
+        if task_data_mutable:
+            self.msg_root_id = None
+        else:
+            self.msg_root_id = str(uuid.uuid4())
 
         self.targets = None
         self.client_tasks = []  # list of ClientTasks sent

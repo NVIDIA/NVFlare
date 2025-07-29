@@ -168,6 +168,7 @@ class ScatterAndGatherForEdge(Controller):
                     data=task_data,
                     before_task_sent_cb=self._prepare_train_task_data,
                     result_received_cb=self._process_train_result,
+                    task_data_mutable=False,
                 )
 
                 self.broadcast(

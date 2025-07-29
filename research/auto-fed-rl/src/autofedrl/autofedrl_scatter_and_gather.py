@@ -168,6 +168,7 @@ class ScatterAndGatherAutoFedRL(ScatterAndGather):
                     timeout=self._train_timeout,
                     before_task_sent_cb=self._prepare_train_task_data,
                     result_received_cb=self._process_val_result,
+                    task_data_mutable=False,
                 )
 
                 self.broadcast_and_wait(
@@ -203,6 +204,7 @@ class ScatterAndGatherAutoFedRL(ScatterAndGather):
                     timeout=self._train_timeout,
                     before_task_sent_cb=self._prepare_train_task_data,
                     result_received_cb=self._process_train_result,
+                    task_data_mutable=False,
                 )
 
                 self.broadcast_and_wait(
