@@ -114,7 +114,7 @@ class FlareRunnerController(
             val userInfo = createUserInfo()
             
             // Create data source
-            val dataSource = AndroidDataSource()
+            val dataSource = AndroidDataSource(context)
             
             // Create resolver registry for components
             val resolverRegistry = createResolverRegistry()

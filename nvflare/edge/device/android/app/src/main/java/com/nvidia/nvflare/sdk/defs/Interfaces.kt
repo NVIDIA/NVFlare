@@ -7,7 +7,7 @@ package com.nvidia.nvflare.sdk.defs
  */
 interface Dataset {
     fun size(): Int
-    fun getNextBatch(batchSize: Int): Batch
+    fun getNextBatch(batchSize: Int): Batch?
     fun reset()
 }
 

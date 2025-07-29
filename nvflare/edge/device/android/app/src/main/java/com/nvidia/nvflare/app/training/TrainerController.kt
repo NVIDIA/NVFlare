@@ -190,4 +190,4 @@ class TrainerController(private val connection: Connection) : ViewModel() {
             else -> throw NVFlareError.InvalidMetadata("Unsupported trainer type")
         }
     }
-} 
+}

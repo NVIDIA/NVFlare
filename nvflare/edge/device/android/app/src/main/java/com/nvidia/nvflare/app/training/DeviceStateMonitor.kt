@@ -57,4 +57,4 @@ class DeviceStateMonitor(private val context: Context) {
         // If device has been running for more than 4 hours, consider it overheating
         return uptimeMillis > 4 * 60 * 60 * 1000
     }
-} 
+}

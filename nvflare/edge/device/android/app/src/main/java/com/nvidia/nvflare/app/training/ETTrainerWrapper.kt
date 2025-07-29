@@ -31,4 +31,4 @@ class ETTrainerWrapper(
             throw NVFlareError.TrainingFailed("Training failed: ${e.message}")
         }
     }
-} 
+}
