@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.recipe.spec import Recipe
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.recipe.spec import Recipe
 
 
 class FedAvgRecipe(Recipe):
@@ -32,13 +32,11 @@ class FedAvgRecipe(Recipe):
             n_clients=0,  # for all clients
             min_clients=min_clients,
             num_rounds=num_rounds,
-            initial_model=initial_model
+            initial_model=initial_model,
         )
         if not train_args:
             train_args = {}
 
-        executor = ScriptRunner(
-            script=train_script, **train_args
-        )
+        executor = ScriptRunner(script=train_script, **train_args)
         job.to_clients(executor)
         Recipe.__init__(self, job)

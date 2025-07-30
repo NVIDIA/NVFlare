@@ -24,7 +24,7 @@ class SimulationExecEnv(ExecEnv):
         num_clients: int = None,
         num_threads: int = None,
         gpu_config: str = None,
-        log_config: str = None
+        log_config: str = None,
     ):
         self.workspace = workspace
         self.num_clients = num_clients

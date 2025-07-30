@@ -33,9 +33,7 @@ class ProdExecEnv(ExecEnv):
         self.monitor_job_duration = monitor_job_duration
 
     def deploy(self, job: FedJob):
-        sess = new_insecure_session(
-            startup_kit_location=self.startup_kit_dir,
-            timeout=self.login_timeout)
+        sess = new_insecure_session(startup_kit_location=self.startup_kit_dir, timeout=self.login_timeout)
 
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
