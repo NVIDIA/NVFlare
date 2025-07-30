@@ -37,7 +37,7 @@ class Recipe(ABC):
         """
         self.job = job
 
-    def add_client_input_filter(self, filter: Filter, tasks=None):
+    def add_input_filter_to_clients(self, filter: Filter, tasks=None):
         """Add a filter to clients for incoming tasks from the server.
 
         Args:
@@ -49,7 +49,7 @@ class Recipe(ABC):
         """
         self.job.to_clients(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
-    def add_client_output_filter(self, filter: Filter, tasks=None):
+    def add_output_filter_to_clients(self, filter: Filter, tasks=None):
         """Add a filter to clients for outgoing result to server.
 
         Args:
@@ -61,7 +61,7 @@ class Recipe(ABC):
         """
         self.job.to_clients(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
-    def add_server_output_filter(self, filter: Filter, tasks=None):
+    def add_output_filter_to_server(self, filter: Filter, tasks=None):
         """Add a filter to the server for outgoing tasks to clients.
 
         Args:
@@ -73,7 +73,7 @@ class Recipe(ABC):
         """
         self.job.to_server(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
-    def add_server_input_filter(self, filter: Filter, tasks=None):
+    def add_input_filter_to_server(self, filter: Filter, tasks=None):
         """Add a filter to server for incoming task result from clients. .
 
         Args:
