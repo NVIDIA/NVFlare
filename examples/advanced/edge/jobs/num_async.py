@@ -15,6 +15,7 @@
 from nvflare.edge.aggregators.num_dxo_factory import NumDXOAggrFactory
 from nvflare.edge.assessors.async_num import AsyncNumAssessor
 from nvflare.edge.edge_job import EdgeJob
+from nvflare.edge.simulation.devices.num import NumProcessor
 
 job = EdgeJob(
     name="num_async_job",
@@ -23,8 +24,11 @@ job = EdgeJob(
 
 factory = NumDXOAggrFactory()
 job.configure_client(
-    aggregator_factory=factory, max_model_versions=3, simulation_config_file="configs/num_async_config.json"
+    aggregator_factory=factory,
+    max_model_versions=3,
 )
+
+job.configure_simulation(task_processor=NumProcessor())
 
 job.configure_server(
     assessor=AsyncNumAssessor(

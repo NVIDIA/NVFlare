@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import enum
-import uuid
 from abc import ABC, abstractmethod
 
 from nvflare.edge.web.models.capabilities import Capabilities
@@ -68,7 +67,7 @@ class SimulatedDevice(ABC):
         return self.job_id
 
     def get_capabilities(self) -> Capabilities:
-        return Capabilities(methods=["deep_learning"])
+        return Capabilities(methods=["edge"])
 
     def shutdown(self):
         pass
@@ -80,8 +79,8 @@ class SimulatedDevice(ABC):
 
 class DeviceFactory(ABC):
 
-    def make_device(self) -> SimulatedDevice:
-        return SimulatedDevice(str(uuid.uuid4()))
+    def make_device(self, device_id: str) -> SimulatedDevice:
+        return SimulatedDevice(device_id)
 
     def shutdown(self):
         pass

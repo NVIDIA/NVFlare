@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import traceback
 from abc import ABC, abstractmethod
 from typing import Optional
 
@@ -107,5 +108,6 @@ class QueryHandler(ABC):
             resp = process_f(req)
             return make_reply(EdgeApiStatus.OK, resp)
         except Exception as ex:
+            traceback.print_exc()
             self.logger.error(f"error processing request: {secure_format_exception(ex)}")
             return make_reply(EdgeApiStatus.ERROR)

@@ -32,7 +32,6 @@ class SimulationRunner(Widget):
     def __init__(self):
         Widget.__init__(self)
         self.simulator = None
-        self.register_event_handler(EventType.ABOUT_TO_START_RUN, self._sr_about_to_start_run)
         self.register_event_handler(EventType.START_RUN, self._sr_start_run)
         self.register_event_handler(EventType.END_RUN, self._sr_end_run)
 
@@ -40,16 +39,12 @@ class SimulationRunner(Widget):
     def create_simulator(self, fl_ctx: FLContext) -> Optional[Simulator]:
         pass
 
-    def _sr_about_to_start_run(self, event_type: str, fl_ctx: FLContext):
-        if fl_ctx.get_prop(ReservedKey.IS_LEAF):
-            # devices are only for leaf nodes
-            self.simulator = self.create_simulator(fl_ctx)
-
     def _sr_start_run(self, event_type: str, fl_ctx: FLContext):
         if not fl_ctx.get_prop(ReservedKey.IS_LEAF):
             # devices are only for leaf nodes
             return
 
+        self.simulator = self.create_simulator(fl_ctx)
         self.simulator.set_send_func(self._post_request, engine=fl_ctx.get_engine())
         runner = threading.Thread(target=self._run, daemon=True)
         runner.start()
