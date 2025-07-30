@@ -29,22 +29,96 @@ class ExecEnv(ABC):
 class Recipe(ABC):
 
     def __init__(self, job: FedJob):
+        """This is base class of a recipe. Recipes are implemented by jobs.
+        A concrete recipe must provide the job for recipe implementation.
+
+        Args:
+            job: the job that implements the recipe.
+        """
         self.job = job
 
     def add_client_data_filter(self, filter: Filter, tasks=None):
+        """Add data filter for clients.
+
+        Args:
+            filter: the filter to be added
+            tasks: tasks that the filter applies to
+
+        Returns: None
+
+        """
         self.job.to_clients(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
     def add_client_result_filter(self, filter: Filter, tasks=None):
+        """Add result filter for clients.
+
+        Args:
+            filter: the filter to be added
+            tasks: tasks that the filter applies to
+
+        Returns: None
+
+        """
         self.job.to_clients(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
     def add_server_data_filter(self, filter: Filter, tasks=None):
+        """Add data filter for server.
+
+        Args:
+            filter: the filter to be added
+            tasks: tasks that the filter applies to
+
+        Returns: None
+
+        """
         self.job.to_server(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
     def add_server_result_filter(self, filter: Filter, tasks=None):
+        """Add result filter for server.
+
+        Args:
+            filter: the filter to be added
+            tasks: tasks that the filter applies to
+
+        Returns: None
+
+        """
         self.job.to_server(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
-    def export(self, job_dir: str):
+    def export(self, job_dir: str, server_exec_params: dict = None, client_exec_params: dict = None):
+        """Export the recipe to a job definition.
+
+        Args:
+            job_dir: directory where the job will be exported to.
+            server_exec_params: execution params for the server
+            client_exec_params: execution params for clients
+
+        Returns: None
+
+        """
+        if server_exec_params:
+            self.job.to_server(server_exec_params)
+
+        if client_exec_params:
+            self.job.to_clients(client_exec_params)
+
         self.job.export_job(job_dir)
 
-    def execute(self, env: ExecEnv) -> Any:
+    def execute(self, env: ExecEnv, server_exec_params: dict = None, client_exec_params: dict = None) -> Any:
+        """Execute the recipe in a specified execution environment.
+
+        Args:
+            env: the execution environment
+            server_exec_params: execution params for the server
+            client_exec_params: execution params for clients
+
+        Returns: result returned from the execution environment's deployment
+
+        """
+        if server_exec_params:
+            self.job.to_server(server_exec_params)
+
+        if client_exec_params:
+            self.job.to_clients(client_exec_params)
+
         return env.deploy(self.job)
