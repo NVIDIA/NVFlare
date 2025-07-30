@@ -255,6 +255,10 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             # make sure the TTL is long enough
             msg_root_ttl = _MIN_MSG_ROOT_TTL
 
+        # disable msg root processing for now, until we find a better solution
+        # We need to detect that the msg object has mutated so that cached values cannot be used.
+        msg_root_id = None
+
         fobs_ctx[_CtxKey.MSG_ROOT_ID] = msg_root_id
         fobs_ctx[_CtxKey.MSG_ROOT_TTL] = msg_root_ttl
 
