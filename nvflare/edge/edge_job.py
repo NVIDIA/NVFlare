@@ -137,6 +137,14 @@ class EdgeJob(FedJob):
         self.client_config_added = True
 
     def configure_simulation_with_file(self, simulation_config_file: str):
+        """Configure simulation with a config file.
+
+        Args:
+            simulation_config_file: the simulation config file.
+
+        Returns:
+
+        """
         if self.simulation_set:
             raise RuntimeError("simulation is already configured")
 
@@ -163,6 +171,17 @@ class EdgeJob(FedJob):
         num_devices: int = 1000,
         num_workers: int = 10,
     ):
+        """Configure simulation with a DeviceTaskProcessor.
+
+        Args:
+            task_processor: the DeviceTaskProcessor object to be used for processing tasks.
+            job_timeout: timeout for trying to get job.
+            num_devices: number of devices to simulate.
+            num_workers: number of workers for executing tasks.
+
+        Returns: None
+
+        """
         if self.simulation_set:
             raise RuntimeError("simulation is already configured")
 

@@ -150,6 +150,9 @@ class GlobalEvaluator(Widget):
             # load the model
             model_class = self._load_model(self.model_path, fl_ctx)
             self.model = model_class()
+        else:
+            # the model_path is nn.Module
+            self.model = self.model_path
 
         # Initialize the data loader
         self._create_data_loader()

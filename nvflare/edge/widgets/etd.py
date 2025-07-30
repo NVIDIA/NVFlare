@@ -21,7 +21,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.edge.constants import EdgeApiStatus, EdgeConfigFile, EdgeContextKey, EdgeEventType, EdgeMsgTopic
+from nvflare.edge.constants import (
+    EdgeApiStatus,
+    EdgeConfigFile,
+    EdgeContextKey,
+    EdgeEventType,
+    EdgeMsgTopic,
+    JobDataKey,
+)
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_response import ResultResponse
@@ -155,7 +162,7 @@ class EdgeTaskDispatcher(Widget):
             # no job matched
             return None, None
 
-    def _find_job(self, job_id: str):
+    def _job_exists(self, job_id: str):
         with self.lock:
             for jobs in self.edge_jobs.values():
                 if job_id in jobs:
@@ -191,9 +198,16 @@ class EdgeTaskDispatcher(Widget):
 
         # find job for the caps
         self.logger.debug(f"trying to match job: {job_name}")
-        job_id, job_data = self._match_job(job_name)
+        job_id, device_config = self._match_job(job_name)
         if job_id:
-            reply = JobResponse(EdgeApiStatus.OK, job_id, job_name, job_data)
+            reply = JobResponse(
+                EdgeApiStatus.OK,
+                job_id=job_id,
+                job_name=job_name,
+                job_data={
+                    JobDataKey.CONFIG: device_config,
+                },
+            )
         else:
             reply = JobResponse(EdgeApiStatus.NO_JOB)
 
@@ -237,7 +251,7 @@ class EdgeTaskDispatcher(Widget):
             self._set_edge_reply(bad_req_reply, fl_ctx)
             return
 
-        if not self._find_job(job_id):
+        if not self._job_exists(job_id):
             self._set_edge_reply(no_job_reply, fl_ctx)
             return
 

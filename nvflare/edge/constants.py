@@ -77,3 +77,7 @@ class SpecialDeviceId:
     DUMMY = "dummy"
     MAX_INDICATOR = "?"
     NUM_INDICATOR = "#"
+
+
+class JobDataKey:
+    CONFIG = "config"

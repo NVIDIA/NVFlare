@@ -64,7 +64,6 @@ class ComponentResolver:
         self.comp_args = args
         self.obj_class = obj_class
 
-    @abstractmethod
     def resolve(self) -> Any:
         """Resolve the component spec and create device-native object.
 
