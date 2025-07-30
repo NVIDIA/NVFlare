@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import base64
+
 import torch
 import torch.nn as nn
 from executorch.exir import to_edge
@@ -20,7 +22,15 @@ from torch.export.experimental import _export_forward_backward
 from torch.nn import functional as F
 
 
-def export_model(net, input_tensor_example, label_tensor_example):
+def export_model_to_bytes(net: nn.Module, input_shape, output_shape):
+    input_tensor = torch.randn(input_shape)
+    label_tensor = torch.ones(output_shape, dtype=torch.int64)
+    model_buffer = export_model(net, input_tensor, label_tensor).buffer
+    base64_encoded = base64.b64encode(model_buffer).decode("utf-8")
+    return base64_encoded
+
+
+def export_model(net: nn.Module, input_tensor_example, label_tensor_example):
     # Captures the forward graph. The graph will look similar to the model definition now.
     # Will move to export_for_training soon which is the api planned to be supported in the long term.
     ep = export(net, (input_tensor_example, label_tensor_example), strict=True)

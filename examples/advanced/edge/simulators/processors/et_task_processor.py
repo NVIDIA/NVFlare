@@ -20,11 +20,10 @@ from typing import Dict
 from executorch.extension.training import _load_for_executorch_for_training_from_buffer, get_sgd_optimizer
 from torch.utils.data import DataLoader, Dataset
 
-from nvflare.edge.constants import MsgKey
+from nvflare.apis.dxo import DXO, from_dict
 from nvflare.edge.model_protocol import (
     ModelBufferType,
     ModelEncoding,
-    ModelExchangeFormat,
     ModelNativeFormat,
     verify_payload,
 )
@@ -204,16 +203,18 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             log.error(f"Received unknown task: {task.task_name}")
             raise ValueError(f"Unsupported task type: {task.task_name}")
 
+        payload: DXO = from_dict(task.task_data)
+
         # Validate inputs first - fail fast if invalid
-        payload = verify_payload(
-            task.task_data[MsgKey.PAYLOAD],
+        verify_payload(
+            payload,
             expected_type=ModelBufferType.EXECUTORCH,
             expected_format=ModelNativeFormat.BINARY,
             expected_encoding=ModelEncoding.BASE64,
         )
 
         try:
-            model_bytes = base64.b64decode(payload[ModelExchangeFormat.MODEL_BUFFER])
+            model_bytes = base64.b64decode(payload.data)
             et_model = _load_for_executorch_for_training_from_buffer(model_bytes)
         except Exception as e:
             log.error(f"Failed to load model: {e}")
@@ -222,7 +223,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         try:
             diff_dict = self.run_training(et_model)
             log.info("Training completed successfully")
-            return {"result": diff_dict}
+            return diff_dict
         except Exception as e:
             log.error(f"Training failed with unexpected error: {e}")
             raise RuntimeError("Training failed unexpectedly") from e
