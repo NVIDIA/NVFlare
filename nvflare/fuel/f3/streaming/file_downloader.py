@@ -17,9 +17,8 @@ import uuid
 from typing import Any, List, Optional
 
 from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.streaming.obj_downloader import Consumer, ObjDownloader, Producer, ProduceRC, download_object
 from nvflare.fuel.utils.validation_utils import check_positive_int
-
-from .obj_downloader import Consumer, ObjDownloader, Producer, ProduceRC, download_object
 
 DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024
 
@@ -78,7 +77,7 @@ class _ChunkProducer(Producer):
         return ProduceRC.OK, chunk, {_StateKey.RECEIVED_BYTES: received_bytes + len(chunk)}
 
 
-class FileDownloader:
+class FileDownloader(ObjDownloader):
 
     @classmethod
     def new_transaction(
@@ -123,6 +122,7 @@ class FileDownloader:
         cls,
         transaction_id: str,
         file_name: str,
+        ref_id=None,
         file_downloaded_cb=None,
         **cb_kwargs,
     ) -> str:
@@ -131,6 +131,7 @@ class FileDownloader:
         Args:
             transaction_id: ID of the transaction
             file_name: name of the file to be downloaded
+            ref_id: ref id to be used, if provided
             file_downloaded_cb: CB to be called when the file is done downloading
             **cb_kwargs: args to be passed to the CB
 
@@ -145,6 +146,7 @@ class FileDownloader:
         return ObjDownloader.add_download_object(
             transaction_id=transaction_id,
             obj=obj,
+            ref_id=ref_id,
             obj_downloaded_cb=cls._file_downloaded,
             app_downloaded_cb=file_downloaded_cb,
             **cb_kwargs,
@@ -163,6 +165,7 @@ class _ChunkConsumer(Consumer):
         self.location = location
         self.file_path = os.path.join(location, str(uuid.uuid4()))
         self.file = open(self.file_path, "wb")
+        self.logger.debug(f"created file {self.file_path}")
         self.total_bytes = 0
         self.error = None
 
@@ -170,6 +173,7 @@ class _ChunkConsumer(Consumer):
         assert isinstance(data, bytes)
         self.file.write(data)
         self.total_bytes += len(data)
+        self.logger.debug(f"received {self.total_bytes} bytes for file {self.file_path}")
         return {_StateKey.RECEIVED_BYTES: self.total_bytes}
 
     def download_failed(self, ref_id, reason: str):
@@ -179,6 +183,7 @@ class _ChunkConsumer(Consumer):
 
     def download_completed(self, ref_id: str):
         self.file.close()
+        self.logger.debug(f"closed file {self.file_path}")
 
 
 def download_file(

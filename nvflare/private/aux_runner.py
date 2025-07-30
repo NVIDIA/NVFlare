@@ -386,6 +386,14 @@ class AuxRunner(FLComponent):
 
         cell_msg = Message(payload=request)
         if timeout > 0:
+            msg_root_id = request.get_header(ReservedHeaderKey.MSG_ROOT_ID)
+            if msg_root_id:
+                cell_msg.set_header(MessageHeaderKey.MSG_ROOT_ID, msg_root_id)
+
+            msg_root_ttl = request.get_header(ReservedHeaderKey.MSG_ROOT_TTL)
+            if msg_root_ttl:
+                cell_msg.set_header(MessageHeaderKey.MSG_ROOT_TTL, msg_root_ttl)
+
             cell_replies = cell.broadcast_request(
                 channel=channel,
                 topic=topic,

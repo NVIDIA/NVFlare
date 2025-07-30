@@ -44,6 +44,7 @@ __all__ = [
     "deserialize",
     "deserialize_stream",
     "reset",
+    "get_dot_handler",
 ]
 
 from nvflare.security.logging import secure_format_exception
@@ -58,6 +59,7 @@ T = TypeVar("T")
 
 log = logging.getLogger(__name__)
 _decomposers: Dict[str, Decomposer] = {}
+_dot_handlers: Dict[int, Decomposer] = {}  # decomposers that handle Datum Object Types (DOT)
 _decomposers_registered = False
 # If this is enabled, FOBS will try to register generic decomposers automatically
 _enum_auto_registration = True
@@ -72,6 +74,7 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
     """
 
     global _decomposers
+    global _dot_handlers
 
     if inspect.isclass(decomposer):
         instance = decomposer()
@@ -87,6 +90,23 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
         return
 
     _decomposers[name] = instance
+    supported_dots = instance.supported_dots()
+    if supported_dots:
+        for d in supported_dots:
+            if not isinstance(d, int):
+                log.error(f"Bad DOT {d} - it must be a positive int but got {type(d)}")
+                continue
+
+            if d <= 0:
+                log.error(f"Bad DOT {d} - it must be a positive int")
+                continue
+
+            h = _dot_handlers.get(d)
+            if h:
+                log.error(f"Duplicate registration for DOT {d}: {type(h)} and {type(instance)}")
+                continue
+
+            _dot_handlers[d] = instance
 
 
 class Packer:
@@ -298,12 +318,27 @@ def serialize(obj: Any, manager: DatumManager = None, **kwargs) -> bytes:
     _register_decomposers()
     packer = Packer(manager)
     try:
-        return msgpack.packb(obj, default=packer.pack, strict_types=True, **kwargs)
+        result = msgpack.packb(obj, default=packer.pack, strict_types=True, **kwargs)
     except ValueError as ex:
         content = str(obj)
         if len(content) > MAX_CONTENT_LEN:
             content = content[:MAX_CONTENT_LEN] + " ..."
-        raise ValueError(f"Object {type(obj)} is not serializable: {secure_format_exception(ex)}: {content}")
+        error = f"Object {type(obj)} is not serializable: {secure_format_exception(ex)}: {content}"
+        manager.set_error(error)
+        result = None
+    except Exception as ex:
+        error = f"Exception serializing {type(obj)}: {secure_format_exception(ex)}"
+        manager.set_error(error)
+        result = None
+
+    # must ensure that manager.post_process is always called since some decomposers may need to clean up properly
+    manager.post_process()
+
+    error = manager.get_error()
+    if error:
+        raise RuntimeError(manager.error)
+
+    return result
 
 
 def serialize_stream(obj: Any, stream: BinaryIO, manager: DatumManager = None, **kwargs):
@@ -331,7 +366,9 @@ def deserialize(data: bytes, manager: DatumManager = None, **kwargs) -> Any:
     """
     _register_decomposers()
     packer = Packer(manager)
-    return msgpack.unpackb(data, strict_map_key=False, object_hook=packer.unpack, **kwargs)
+    result = msgpack.unpackb(data, strict_map_key=False, object_hook=packer.unpack, **kwargs)
+    manager.post_process()
+    return result
 
 
 def deserialize_stream(stream: BinaryIO, manager: DatumManager = None, **kwargs) -> Any:
@@ -348,8 +385,14 @@ def deserialize_stream(stream: BinaryIO, manager: DatumManager = None, **kwargs)
     return deserialize(data, manager, **kwargs)
 
 
+def get_dot_handler(dot: int):
+    global _dot_handlers
+    return _dot_handlers.get(dot)
+
+
 def reset():
     """Reset FOBS to initial state. Used for unit test"""
-    global _decomposers, _decomposers_registered
+    global _decomposers, _decomposers_registered, _dot_handlers
     _decomposers.clear()
+    _dot_handlers.clear()
     _decomposers_registered = False

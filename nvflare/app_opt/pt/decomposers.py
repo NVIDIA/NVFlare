@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from io import BytesIO
-from typing import Any
+from typing import Any, Optional
 
-import numpy as np
 import torch
+from safetensors.torch import _remove_duplicate_names, load_file, save_file
 
-from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.datum import DatumManager
+import nvflare.fuel.utils.fobs.dots as dots
+from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
 
 
 class SerializationModule(torch.nn.Module):
@@ -28,57 +27,81 @@ class SerializationModule(torch.nn.Module):
         self.register_buffer("saved_tensor", tensor)
 
 
-class TensorDecomposer(fobs.Decomposer):
+def _safe_save(state_dict, filename: str) -> Optional[dict]:
+    """Save model weights with the safetensors format.
+    The model weights may contain tensors with shared memory. In this case, save_file won't work.
+    We first try to find and remove such tensors, and then save the remaining tensors with save_file.
+    We then return the information about the removed tensors as a dict.
+    The key of the dict is the name of the tensor kept in the weights.
+    The value is a list of tensor names that are to be substituted by the kept tensor.
+
+    For example, the state_dict contains multiple tensors:
+
+    {
+        "t1": t1,
+        "t2": t2,
+        "t3": t3,
+        "t4": t4
+    }
+
+    Suppose tensors t1, t2 and t3 are shared, the state_dict after removing shared tensors will look like this:
+
+    {
+        "t1": t1,
+        "t4": t4
+    }
+
+    And the removed tensors dict looks like this:
+    {
+        "t1": ["t2", "t3"]
+    }
+
+    Args:
+        state_dict: the model weights to be saved
+        filename: name of the file
+
+    Returns: a dict that contains removed tensor info
+
+    """
+    to_removes = _remove_duplicate_names(state_dict)
+    for kept_name, to_remove_group in to_removes.items():
+        for to_remove in to_remove_group:
+            del state_dict[to_remove]
+    state_dict = {k: v.contiguous() for k, v in state_dict.items()}
+    save_file(state_dict, filename)
+    if to_removes:
+        # to_removes is dict-like but not a simple dict
+        return {k: v for k, v in to_removes.items()}
+    else:
+        return None
+
+
+class TensorDecomposer(ViaFileDecomposer):
+
     def supported_type(self):
         return torch.Tensor
 
-    def decompose(self, target: torch.Tensor, manager: DatumManager = None) -> Any:
-        if target.dtype == torch.bfloat16:
-            return self._jit_serialize(target)
-        else:
-            return self._numpy_serialize(target)
+    def dump_to_file(self, items: dict, path: str, fobs_ctx: dict):
+        try:
+            meta = _safe_save(items, path)
+            self.logger.info(f"dumping {len(items)} tensors to file {path}: removed tensor info {meta}")
+            return path, meta
+        except Exception as e:
+            self.logger.error(f"exception dumping tensors to file: {e}")
+            raise e
 
-    def recompose(self, data: Any, manager: DatumManager = None) -> torch.Tensor:
-        if isinstance(data, dict):
-            if data["dtype"] == "torch.bfloat16":
-                return self._jit_deserialize(data)
-            else:
-                buf = data["buffer"]
-        else:
-            buf = data
+    def load_from_file(self, path: str, fobs_ctx: dict, meta: dict = None) -> Any:
+        items = load_file(path)
+        self.logger.debug(f"got {len(items)} tensors from file {path}")
+        if meta:
+            # the meta keeps names of removed tensors and the name of the tensor for them
+            for kept, removed_group in meta.items():
+                for r in removed_group:
+                    items[r] = items[kept]
+        return items
 
-        return self._numpy_deserialize(buf)
+    def get_bytes_dot(self) -> int:
+        return dots.TENSOR_BYTES
 
-    @staticmethod
-    def _numpy_serialize(tensor: torch.Tensor) -> dict:
-        stream = BytesIO()
-        # supported ScalarType, use numpy to avoid Pickle
-        array = tensor.detach().cpu().numpy()
-        np.save(stream, array, allow_pickle=False)
-        return {
-            "buffer": stream.getvalue(),
-            "dtype": str(tensor.dtype),
-        }
-
-    @staticmethod
-    def _numpy_deserialize(data: Any) -> torch.Tensor:
-        stream = BytesIO(data)
-        array = np.load(stream, allow_pickle=False)
-        return torch.from_numpy(array)
-
-    @staticmethod
-    def _jit_serialize(tensor: torch.Tensor) -> dict:
-        stream = BytesIO()
-        # unsupported ScalarType by numpy, use torch.jit to avoid Pickle
-        module = SerializationModule(tensor)
-        torch.jit.save(torch.jit.script(module), stream)
-        return {
-            "buffer": stream.getvalue(),
-            "dtype": str(tensor.dtype),
-        }
-
-    @staticmethod
-    def _jit_deserialize(data: Any) -> torch.Tensor:
-        stream = BytesIO(data["buffer"])
-        loaded_module = torch.jit.load(stream)
-        return loaded_module.saved_tensor
+    def get_file_dot(self) -> int:
+        return dots.TENSOR_FILE
