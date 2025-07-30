@@ -1,0 +1,11 @@
+{
+  "name": "xor-sync-et",
+  "resource_spec": {},
+  "min_clients" : 1,
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  },
+  "edge_method": "xor"
+}
