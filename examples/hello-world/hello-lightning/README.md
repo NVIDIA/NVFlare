@@ -1,286 +1,205 @@
-# PyTorch Deep Learning to Federated Learning transition with NVFlare
+Hello Pytorch Lightning
+======================
 
-We will demonstrate how to transform an existing DL code into an FL application step-by-step:
+This example demonstrates how to use NVIDIA FLARE with PyTorch lightning to train an image classifier using
+federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-lightning/>`_.
+It is recommended to create a virtual environment and run everything within a virtualenv.
 
-  1. [Show a baseline training script](#the-baseline)
-  2. [How to modify an existing training script using DL2FL Client API](#transform-cifar10-dl-training-code-to-fl-including-best-model-selection-using-client-api)
-  3. [How to modify a PyTorch Lightning script using DL2FL Lightning Client API](#transform-cifar10-pytorch-lightning-training-code-to-fl-with-nvflare-client-lightning-integration-api)
 
-If you have multi GPU please refer to the following examples:
-
-  1. [How to modify a PyTorch DDP training script using DL2FL Client API](#transform-cifar10-pytorch--ddp-training-code-to-fl-using-client-api)
-  2. [How to modify a PyTorch Lightning DDP training script using DL2FL Lightning Client API](#transform-cifar10-pytorch-lightning--ddp-training-code-to-fl-with-nvflare-client-lightning-integration-api)
-
-## Software Requirements
-
-Please install the requirements first, it is suggested to install inside a virtual environment:
+NVIDIA FLARE Installation
+-------------------------
 
 ```bash
-pip install -r requirements.txt
-```
-
-## Minimum Hardware Requirements
-
-Each example has different requirements:
-
-| Example name | minimum requirements |
-| ------------ | -------------------- |
-| [Show a baseline training script](#the-baseline) | 1 CPU or 1 GPU* |
-| [How to modify an existing training script using DL2FL Client API](#transform-cifar10-dl-training-code-to-fl-including-best-model-selection-using-client-api) | 1 CPU or 1 GPU* |
-| [How to modify a PyTorch Lightning script using DL2FL Lightning Client API](#transform-cifar10-pytorch-lightning-training-code-to-fl-with-nvflare-client-lightning-integration-api) | 1 CPU or 1 GPU* |
-| [How to modify a PyTorch DDP training script using DL2FL Client API](#transform-cifar10-pytorch--ddp-training-code-to-fl-using-client-api) | 2 GPUs |
-| [How to modify a PyTorch Lightning DDP training script using DL2FL Lightning Client API](#transform-cifar10-pytorch-lightning--ddp-training-code-to-fl-with-nvflare-client-lightning-integration-api) | 2 CPUs or 2 GPUs** |
-
-
-\* it depends on you use `device=cpu` or `device=cuda`
-\*\* it depends on whether `torch.cuda.is_available()` is True or not
-
-## The baseline
-
-We take a CIFAR10 example directly from [PyTorch website](https://github.com/pytorch/tutorials/blob/main/beginner_source/blitz/cifar10_tutorial.py) and do the following cleanups to get [cifar10_original.py](./src/cifar10_original.py):
-
-1. Remove the comments
-2. Move the definition of Convolutional Neural Network to [net.py](./src/net.py)
-3. Wrap the whole code inside a main method (https://docs.python.org/3/library/multiprocessing.html#the-spawn-and-forkserver-start-methods)
-4. Add the ability to run on GPU to speed up the training process (optional)
-
-You can run the baseline using
-
-```bash
-python3 ./src/cifar10_original.py
-```
-
-It will run for 2 epochs.
-Then we will see something like this:
-
-```bash
-Extracting ./data/cifar-10-python.tar.gz to ./data
-Files already downloaded and verified
-[1,  2000] loss: 2.127
-[1,  4000] loss: 1.826
-[1,  6000] loss: 1.667
-[1,  8000] loss: 1.568
-[1, 10000] loss: 1.503
-[1, 12000] loss: 1.455
-[2,  2000] loss: 1.386
-[2,  4000] loss: 1.362
-[2,  6000] loss: 1.348
-[2,  8000] loss: 1.329
-[2, 10000] loss: 1.327
-[2, 12000] loss: 1.275
-Finished Training
-Accuracy of the network on the 10000 test images: 55 %
-```
-
-## Transform CIFAR10 DL training code to FL including best model selection using Client API
-
-Now we have a CIFAR10 DL training code, let's transform it to FL with NVFLARE Client API.
-
-
-We made the following changes:
-
-1. Import NVFlare Client API: ```import nvflare.client as flare```
-2. Initialize NVFlare Client API: ```flare.init()```
-3. Receive aggregated/global FLModel from NVFlare side each round: ```input_model = flare.receive()```
-4. Load the received aggregated/global model weights into the model structure: ```net.load_state_dict(input_model.params)```
-5. Wrap evaluation logic into a method to re-use for evaluation on both trained and received aggregated/global model
-6. Evaluate on received aggregated/global model to get the metrics for model selection
-7. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(xxx)```
-8. Send the model back to NVFlare: ```flare.send(output_model)```
-
-Optional: Change the data path to an absolute path and use ```./prepare_data.sh``` to download data
-
-The modified code can be found in [./src/cifar10_fl.py](./src/cifar10_fl.py)
-
-After we modify our training script, we can create a job using the in-process ScriptRunner: [pt_client_api_job.py](pt_client_api_job.py).
-(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) for more details on formulating a job)
-
-Then we can run it using the NVFlare Simulator:
-
-```bash
-bash ./prepare_data.sh
-python3 pt_client_api_job.py --script src/cifar10_fl.py
-```
-
-Congratulations! You have finished an FL training!
-
-
-## Transform CIFAR10 PyTorch Lightning training code to FL with NVFLARE Client lightning integration API
-
-If you are using [PyTorch Lightning](https://lightning.ai/) to write your training scripts, you can use our NVFlare lightning client API to convert it into FL.
-
-Given a CIFAR10 PyTorch Lightning code example: [./src/cifar10_lightning_original.py](./src/cifar10_lightning_original.py).
-Notice we wrap the [Net class](./src/net.py) into LightningModule: [LitNet class](./src/lit_net.py)
-
-You can run it using
-
-```bash
-python3 ./src/cifar10_lightning_original.py
+pip install nvflare
 ```
 
 
-To transform the existing code to FL training code, we made the following changes:
+Code Structure
+--------------
 
-1. Import NVFlare Lightning Client API: ```import nvflare.client.lightning as flare```
-2. Patch the PyTorch Lightning trainer ```flare.patch(trainer)```
-3. Receive aggregated/global FLModel from NVFlare side each round: ```input_model = flare.receive()```
-4. Call trainer.evaluate() method to evaluate newly received aggregated/global model. The resulting evaluation metric will be used for the best model selection
-
-The modified code can be found in [./src/cifar10_lightning_fl.py](./src/cifar10_lightning_fl.py)
-
-After we modify our training script, we can create a job using the in-process ScriptRunner: [pt_client_api_job.py](pt_client_api_job.py).
-
-Note that for PyTorch Lightning we pass the "key_metric"="val_acc_epoch" (this name originates from the code [here](./src/lit_net.py#L58))
-which means the validation accuracy for that epoch.
-
-And we use `lit_net.LitNet` instead of `net.Net` for model class.
-
-Then we run it using the NVFlare simulator:
+first get the example code from github:
+git clone https://github.com/NVIDIA/NVFlare.git
+then navigate to the hello-pt directory:
 
 ```bash
-bash ./prepare_data.sh
-python3 lightning_job.py --script src/cifar10_lightning_fl.py --key_metric val_acc_epoch
+
+    git switch <release branch>
+    cd examples/hello-world/hello-lightning
+    
+```
+code structure
+
+```
+hello-lightning
+|
+|-- client.py        # client local training script
+|-- model.py         # model definition
+|-- job.py              # job recipe that defines client and server configurations
+|-- requirements.txt    # dependencies
 ```
 
-## Transform CIFAR10 PyTorch + DDP training code to FL using Client API
+Data
+-----------------
+This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset
 
-We follow the official [PyTorch documentation](https://pytorch.org/tutorials/intermediate/ddp_tutorial.html#initialize-ddp-with-torch-distributed-run-torchrun) and write a [./src/cifar10_ddp_original.py](./src/cifar10_ddp_original.py).
+In a real FL experiment, each client would have their own dataset used for their local training.
+You can download the CIFAR10 dataset from the Internet via torchvision's datasets module,
+You can split the datasets for different clients, so that each client has its own dataset.
+Here for simplicity's sake, the same dataset we will be using on each client.
 
-Note that we wrap the evaluation logic into a method for better usability.
+The pytorch data module can download the datasets directly. since we have every site to download the same dataset,
+there are case, the training happens before the data is ready, which could lead to error. We can pre-download the data
+before we start the training by running from command line in a terminal
 
-It can be run using the torch distributed run:
+```
+    ./prepare_data.sh
+```
+
+In PyTorch Lightning, a `LightningDataModule` is a standardized way to handle data loading and processing. It encapsulates all the steps required to prepare data for training, validation, and testing, making it easier to manage datasets and data loaders in a clean and organized manner. This abstraction helps separate data-related logic from the model and training code, promoting better code organization and reusability.
+
+### LightningDataModule
+
+- **Purpose:** The `LightningDataModule` is designed to encapsulate all data-related operations, including downloading, transforming, and splitting datasets, as well as providing data loaders for training, validation, testing, and prediction.
+
+- **Key Methods:**
+    - `prepare_data()`: Used for downloading and preparing data. This method is called only once and is not distributed across multiple GPUs or nodes.
+    - `setup(stage)`: Used to set up datasets for different stages (e.g., 'fit', 'validate', 'test', 'predict'). This method is called on every GPU or node.
+    - `train_dataloader()`, `val_dataloader()`, `test_dataloader()`, `predict_dataloader()`: These methods return the respective data loaders for each stage.
+
+### Setup of DataModule
+
+In the `CIFAR10DataModule`, we have implemented the following:
+
+- **Initialization (`__init__`):** The constructor initializes the data directory and batch size, which are used throughout the data module.
+
+- **Data Preparation (`prepare_data`):** This method downloads the CIFAR-10 dataset if it is not already available in the specified directory. It prepares both the training and test datasets.
+
+- **Setup (`setup`):** This method assigns datasets for different stages:
+    - For the 'fit' and 'validate' stages, it splits the CIFAR-10 training dataset into training and validation sets.
+    - For the 'test' and 'predict' stages, it assigns the test dataset.
+
+- **Data Loaders:** The module provides data loaders for training, validation, testing, and prediction, each configured with the specified batch size.
+
+By using a `LightningDataModule`, the data handling logic is neatly encapsulated, making it easier to manage and modify data-related operations without affecting the rest of the training code.
+
+refer [client.py](client.py) lines 14-70
+
+Model
+------------------
+In PyTorch Lightning, a `LightningModule` is a high-level abstraction built
+on top of PyTorch that streamlines the process of training models. It
+encapsulates the model architecture, training, validation, and testing logic,
+allowing developers to focus on the core components of their models without
+getting bogged down by the boilerplate code typically associated with PyTorch.
+
+General Summary of a `LightningModule`
+
+- **Model Definition:** The `LightningModule` is initialized with the model
+  architecture, which is defined using PyTorch's `nn.Module`. This includes
+  layers, activation functions, and any other components necessary for the
+  model.
+
+- **Forward Pass:** The `forward` method specifies how the input data flows
+  through the model. This is where the core computation of the model is
+  defined.
+
+- **Training Logic:** The `training_step` method contains the logic for a
+  single training iteration. It computes the loss and any metrics you wish to
+  track, such as accuracy. This method is called automatically during the
+  training loop.
+
+- **Validation and Testing:** Similar to the training step, the
+  `validation_step` and `test_step` methods define how the model is evaluated
+  on validation and test datasets, respectively. These methods help in
+  monitoring the model's performance and generalization.
+
+- **Optimizer Configuration:** The `configure_optimizers` method specifies the
+  optimizer(s) and learning rate scheduler(s) used during training. This
+  allows for flexible and customizable training strategies.
+
+By using a `LightningModule`, developers can leverage PyTorch Lightning's
+features like distributed training, automatic checkpointing, and logging,
+making it easier to scale experiments and manage complex training workflows.
+This abstraction promotes cleaner code, better organization, and easier
+debugging, ultimately accelerating the model development process.
+
+refer [model.py](./model.py)
+
+--------------
+
+
+Client Code
+------------------
+
+Notice the training code is almost identical to the pytorch lightning standard training code.
+The only difference is that we added a few lines to receive and send data to the server.
+We mark all the changed code with number 0 to 4 to make it easier to understand.
+
+
+Refer [client.py](./client.py) lines: 71-
+
+
+The main flow of the code logic in the `client.py` file involves running a federated learning (FL) training logics locally on each client using PyTorch Lightning and NVFlare.
+Here's a breakdown of the key steps:
+
+1. **Argument Parsing:**
+    - The `define_parser()` function is used to parse command-line arguments, specifically the `--batch_size` argument, which sets the batch size for data loading.
+2. **Initialization:**
+    - The `main()` function begins by parsing the command-line arguments to get the batch size.
+    - The `flare.init()` function is called to initialize the NVFlare client, which is necessary for using certain NVFlare functions like `flare.get_site_name()`.
+3. **Model and Data Module Setup:**
+    - An instance of `LitNet`, a PyTorch Lightning model, is created.
+    - An instance of `CIFAR10DataModule` is created with the specified batch size to handle data loading and processing.
+4. **Trainer Configuration:**
+    - A PyTorch Lightning `Trainer` is configured. If a GPU is available, it is set to use it; otherwise, it defaults to CPU.
+5. **NVFlare Integration:**
+    - The `flare.patch(trainer)` function is called to integrate NVFlare with the PyTorch Lightning trainer. This allows the trainer to handle federated learning tasks.
+6. **Federated Learning Loop:**
+    - A loop runs while `flare.is_running()` returns `True`, indicating that the federated learning job is active.
+    - Within the loop:
+        - The global model is received from the NVFlare server using `flare.receive()`.
+        - The current round and site name are printed for logging purposes.
+        - The global model is validated using `trainer.validate()`.
+        - Local training is performed using `trainer.fit()`, starting with the received global model.
+        - The local model is tested using `trainer.test()`.
+        - Predictions are made using `trainer.predict()`.
+7. **Execution:**
+    - The `main()` function is executed if the script is run as the main module, starting the entire process.
+
+
+Server Code
+------------------
+In federated averaging, the server code is responsible for
+aggregating model updates from clients, the workflow pattern is similar to scatter-gather.
+In this example, we will directly use the default federated averaging algorithm provided by NVFlare.
+The FedAvg class is defined in `nvflare.app_common.workflows.fedavg.FedAvg`
+There is no need to defined a customized server code for this example.
+
+
+Job Recipe Code
+------------------
+The job recipe code is used to define the client and server configurations.
+
+Refer [job.py](./job.py)
+
+Run FL Job
+------------------
+
+This section provides the command to execute the federated learning job
+using the job recipe defined above. Run this command in your terminal.
+First, you need to remember to download the data
+
+```
+./prepare_data.sh
+```
+
+**Command to execute the FL job**
+
+Use the following command in your terminal to start the job with the specified
+number of rounds, batch size, and number of clients.
+
 
 ```bash
-python3 -m torch.distributed.run --nnodes=1 --nproc_per_node=2 --master_port=6666 ./src/cifar10_ddp_original.py
+python job.py --num_rounds 2 --batch_size 16
 ```
-
-To modify this multi-GPU code to be used in FL.
-We made the following changes:
-
-1. Import NVFlare Client API: ```import nvflare.client as flare```
-2. Initialize NVFlare Client API: ```flare.init()```
-3. Receive aggregated/global FLModel from NVFlare side each round: ```input_model = flare.receive()```
-4. Load the received aggregated/global model weights into the model structure: ```net.load_state_dict(input_model.params)```
-5. Evaluate on received aggregated/global model to get the metrics for model selection
-6. Construct the FLModel to be returned to the NVFlare side: ```output_model = flare.FLModel(xxx)```
-7. Send the model back to NVFlare: ```flare.send(output_model)```
-
-Note: The receive and send functions are executed only on rank 0 (the primary process in DDP). Since all worker processes will have the same model by the end of training, there is no need to send duplicate models from other workers.
-
-The updated PyTorch DDP script can be found in [./src/cifar10_ddp_fl.py](./src/cifar10_ddp_fl.py)
-
-After modifying the training script, the next step is to create a job using the ScriptRunner. It's important to note that multi-GPU training requires `launch_external_process`` to be set to True. This option ensures that the external command (e.g., torch.distributed.run) is executed outside the script, allowing for distributed training across multiple GPUs.
-
-Create the NVFlare Job with `ScriptRunner``: Use the following command to generate an NVFlare job directory. This command configures the job with the necessary settings for multi-GPU training, specifies the distributed training launch command, and sets the required ports.
-
-The key options in this command are:
-
-  - `--launch_external_process`: Enables launching an external process for multi-GPU training.
-
-  - `--launch_command`: Specifies the command to run for distributed training. In this case, it uses torch.distributed.run to launch the DDP processes.
-
-  - `--ports`: Defines the ports used for communication between processes.
-
-  - `--export`: Exports the job configuration.
-
-Here's the full command:
-
-```bash
-python3 pt_client_api_job.py --script src/cifar10_ddp_fl.py --launch_external_process --launch_command 'python3 -m torch.distributed.run --nnodes\=1 --nproc_per_node\=2 --master_port\={PORT}' --ports 7777,8888 --export
-```
-
-Note: you might need to change the ports if they are already taken on your machine.
-
-
-Once the job directory has been created, you can run the federated learning job using the NVFlare simulator.
-
-Run the simulator with 2 clients, each using 2 GPUs. The --gpu option specifies the GPU devices to be used by each client. The format for the GPU assignment is [GPU_1, GPU_2], [GPU_3, GPU_4], where each pair corresponds to the GPUs for each client.
-
-The following command starts the simulator with two clients and assigns two GPUs to each client:
-
-```bash
-bash ./prepare_data.sh
-nvflare simulator -n 2 -t 2 /tmp/nvflare/jobs/job_config/pt_client_api  --gpu "[0,1],[0,1]"
-```
-
-Here’s what the command does:
-
-  - `-n 2`: Starts 2 clients.
-
-  - `-t 2`: Specifies that 2 worker processes will be started to run each client.
-
-  - `/tmp/nvflare/jobs/job_config/pt_client_api`: Path to the job configuration.
-
-  - `--gpu "[0,1],[0,1]"`: Assigns GPU 0 and 1 to the first client, and GPU 0 and 1 to the second client.
-
-If you have more than two GPUs on your machine (e.g., 4 GPUs), you can specify different GPU groups. For example, to assign GPUs 0 and 1 to the first client and GPUs 2 and 3 to the second client: `--gpu "[0,1],[2,3]"`
-
-
-Note: Ensure that the GPUs specified in the --gpu option correspond to the GPUs available on your machine. If using fewer or more GPUs, adjust the groups accordingly.
-
-
-## Transform CIFAR10 PyTorch Lightning + ddp training code to FL with NVFLARE Client lightning integration API
-
-After we finish the [single GPU case](#transform-cifar10-pytorch-lightning-training-code-to-fl-with-nvflare-client-lightning-integration-api), we will
-show how to convert multi GPU training as well.
-
-We just need to change the Trainer initialize to add extra options: `strategy="ddp", devices=2` 
-
-The modified Lightning + DPP code can be found in [./src/cifar10_lightning_ddp_original.py](./src/cifar10_lightning_ddp_original.py)
-
-You can execute it using:
-
-```bash
-python3 ./src/cifar10_lightning_ddp_original.py
-```
-
-The modified FL code can be found in [./src/cifar10_lightning_ddp_fl.py](./src/cifar10_lightning_ddp_fl.py)
-
-After we modify our training script, we can create a job using the ScriptRunner to launch our script: [pt_client_api_job.py](pt_client_api_job.py).
-
-Note that we pass the "key_metric"="val_acc_epoch" (this name originates from the code [here](./src/lit_net.py#L58))
-which means the validation accuracy for that epoch.
-
-And we use `lit_net.LitNet` instead of `net.Net` for model class.
-
-
-After modifying the training script, the next step is to create a job using the ScriptRunner. It's important to note that multi-GPU training requires `launch_external_process`` to be set to True. This option ensures that the external command (e.g., torch.distributed.run) is executed outside the script, allowing for distributed training across multiple GPUs.
-
-Create the NVFlare Job with `ScriptRunner``: Use the following command to generate an NVFlare job directory. This command configures the job with the necessary settings for multi-GPU training, specifies the distributed training launch command, and sets the required ports.
-
-The key options in this command are:
-
-  - `--launch_external_process`: Enables launching an external process for multi-GPU training.
-
-  - `--export`: Exports the job configuration.
-
-```bash
-python3 lightning_job.py --script src/cifar10_lightning_ddp_fl.py --key_metric val_acc_epoch --launch_external_process --export
-```
-
-Once the job directory has been created, you can run the federated learning job using the NVFlare simulator.
-
-Run the simulator with 2 clients, each using 2 GPUs. The --gpu option specifies the GPU devices to be used by each client. The format for the GPU assignment is [GPU_1, GPU_2], [GPU_3, GPU_4], where each pair corresponds to the GPUs for each client.
-
-The following command starts the simulator with two clients and assigns two GPUs to each client:
-
-
-```bash
-bash ./prepare_data.sh
-nvflare simulator -n 2 -t 2 /tmp/nvflare/jobs/job_config/pt_lightning_client_api  --gpu "[0,1],[0,1]"
-```
-
-Here’s what the command does:
-
-  - `-n 2`: Starts 2 clients.
-
-  - `-t 2`: Specifies that 2 worker processes will be started to run each client.
-
-  - `/tmp/nvflare/jobs/job_config/pt_lightning_client_api`: Path to the job configuration.
-
-  - `--gpu "[0,1],[0,1]"`: Assigns GPU 0 and 1 to the first client, and GPU 0 and 1 to the second client.
-
-If you have more than two GPUs on your machine (e.g., 4 GPUs), you can specify different GPU groups. For example, to assign GPUs 0 and 1 to the first client and GPUs 2 and 3 to the second client: `--gpu "[0,1],[2,3]"`
-
-
-Note: Ensure that the GPUs specified in the --gpu option correspond to the GPUs available on your machine. If using fewer or more GPUs, adjust the groups accordingly.
+ 

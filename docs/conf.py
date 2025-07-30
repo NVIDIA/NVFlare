@@ -85,17 +85,8 @@ extensions = [
     "sphinx.ext.autosectionlabel",
     "sphinx_copybutton",
     "sphinxcontrib.jquery",
-    "sphinx.ext.extlinks",
-    'sphinx_gallery.gen_gallery',
+    "sphinx.ext.extlinks"
 ]
-sphinx_gallery_conf = {
-    'examples_dirs': ['hello-world-docs' ], # Source scripts
-    'gallery_dirs': ['hello-world'],               # Output .rst/.html
-    'filename_pattern': r'(MATCH_NOTHING)',        # Only run matching scripts
-    'ignore_pattern': r'__init__\.py',             # Ignore files
-    'remove_config_comments': True,                # Clean config comments
-    'first_notebook_cell': "%matplotlib inline",   # For nb rendering
-}
 
 autoclass_content = "both"
 add_module_names = False

@@ -12,11 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-This script demonstrates how to run the generate pretrain models
-"""
-
-
 import os
 
 import numpy as np

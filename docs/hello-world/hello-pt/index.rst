@@ -1,3 +1,5 @@
+.. _hello-world_hello-pt:
+
 
 """
 **Hello Pytorch** ||
@@ -74,50 +76,26 @@ Here for simplicity's sake, the same dataset we will be using on each client.
 ################################
 # Model
 # ------------------
-# In PyTorch, neural networks are implemented by defining a class (e.g., `SimpleNetwork`) that extends
-# `nn.Module <https://pytorch.org/docs/stable/generated/torch.nn.Module.html>`_. The network’s architecture is
+# In PyTorch, neural networks are implemented by defining a class that extends`nn.Module`. The network’s architecture is
 # set up in the `__init__` method,# while the `forward` method determines how input data flows through the layers.
 # For faster computations, the model is transferred to a hardware accelerator (such as CUDA GPUs) if available;
 # otherwise, it runs on the CPU. The implementation of this model can be found in model.py.
 
+The model implementation is located in ``model.py``.
 
-.. code-block:: text
+.. literalinclude:: ../../../examples/hello-world/hello-pt/model.py
+    :language: python
+    :linenos:
+    :caption: model.py
+    :lines: 14-
 
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-print(f"Using {device} device")
-
-import torch.nn as nn
-import torch.nn.functional as F
-
-class SimpleNetwork(nn.Module):
-    def __init__(self):
-        super(SimpleNetwork, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
-
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-model = SimpleNetwork().to(device)
-print(model)
-
-######################################################################
+################
 # --------------
 #
 
 
-#####################################################################
+####################
 # Client Code
 # ------------------
 #
@@ -125,93 +103,13 @@ print(model)
 # The only difference is that we added a few lines to receive and send data to the server.
 #
 
+.. literalinclude:: ../../../examples/hello-world/hello-pt/client.py
+    :language: python
+    :linenos:
+    :caption: client.py
+    :lines: 14-
 
 
-.. code-block:: text
-
-
-import os
-
-import torch
-from model import SimpleNetwork
-from torch import nn
-from torch.optim import SGD
-from torch.utils.data.dataloader import DataLoader
-from torchvision.datasets import CIFAR10
-from torchvision.transforms import Compose, Normalize, ToTensor
-
-import nvflare.client as flare
-from nvflare.client.tracking import SummaryWriter
-
-DATASET_PATH = "/tmp/nvflare/data"
-
-
-def main():
-    batch_size = 16
-    epochs = 2
-    lr = 0.01
-    model = SimpleNetwork()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    loss = nn.CrossEntropyLoss()
-    optimizer = SGD(model.parameters(), lr=lr, momentum=0.9)
-    transforms = Compose(
-        [
-            ToTensor(),
-            Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ]
-    )
-
-    flare.init()
-    sys_info = flare.system_info()
-    client_name = sys_info["site_name"]
-
-    train_dataset = CIFAR10(
-        root=os.path.join(DATASET_PATH, client_name), transform=transforms, download=True, train=True
-    )
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-    summary_writer = SummaryWriter()
-    while flare.is_running():
-        input_model = flare.receive()
-        print(f"site = {client_name}, current_round={input_model.current_round}")
-
-        model.load_state_dict(input_model.params)
-        model.to(device)
-
-        steps = epochs * len(train_loader)
-        for epoch in range(epochs):
-            running_loss = 0.0
-            for i, batch in enumerate(train_loader):
-                images, labels = batch[0].to(device), batch[1].to(device)
-                optimizer.zero_grad()
-
-                predictions = model(images)
-                cost = loss(predictions, labels)
-                cost.backward()
-                optimizer.step()
-
-                running_loss += cost.cpu().detach().numpy() / images.size()[0]
-                if i % 3000 == 0:
-                    print(f"site={client_name}, Epoch: {epoch}/{epochs}, Iteration: {i}, Loss: {running_loss / 3000}")
-                    global_step = input_model.current_round * steps + epoch * len(train_loader) + i
-                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
-                    running_loss = 0.0
-
-        print(f"Finished Training for {client_name}")
-
-        PATH = "./cifar_net.pth"
-        torch.save(model.state_dict(), PATH)
-
-        output_model = flare.FLModel(
-            params=model.cpu().state_dict(),
-            meta={"NUM_STEPS_CURRENT_ROUND": steps},
-        )
-        print(f"site: {client_name}, sending model to server.")
-        flare.send(output_model)
-
-
-if __name__ == "__main__":
-    main()
 
 #####################################################################
 # Server Code
@@ -229,46 +127,11 @@ if __name__ == "__main__":
 # Job Recipe contains the client.py and built-in fedavg algorithm.
 
 
-
-.. code-block:: text
-
-
-import argparse
-
-from nvflare.app_opt.pt.job_config.fedavg_recipe import FedAvgRecipe
-from model import SimpleNetwork
-
-
-def define_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--n_clients", type=int, default=2)
-    parser.add_argument("--num_rounds", type=int, default=5)
-    parser.add_argument("--batch_size", type=int, default=4)
-
-    return parser.parse_args()
-
-
-def main():
-    args = define_parser()
-
-    n_clients = args.n_clients
-    num_rounds = args.num_rounds
-    batch_size = args.batch_size
-
-    recipe = FedAvgRecipe( name="hello-pt",
-                           min_clients=n_clients,
-                           num_rounds=num_rounds,
-                           model= SimpleNetwork(),
-                           client_script="client.py",
-                           client_script_args= f"--batch_size {batch_size}"
-                           )
-
-    recipe.execute(clients=n_clients, gpus=0) # SimEnv default
-
-
-if __name__ == "__main__":
-    main()
-
+.. literalinclude:: ../../../examples/hello-world/hello-pt/job.py
+    :language: python
+    :linenos:
+    :caption: job recipe (job.py)
+    :lines: 14-
 
 
 #####################################################################
@@ -279,7 +142,7 @@ if __name__ == "__main__":
 # using the job recipe defined above. Run this command in your terminal.
 
 
-#####################################################################
+################################################################################
 # **Command to execute the FL job**
 #
 # Use the following command in your terminal to start the job with the specified
@@ -291,15 +154,12 @@ if __name__ == "__main__":
 #   python job.py --num_rounds 2 --batch_size 16
 
 
-#####################################################################
+#################################################################################################################################################################################
 # output
 #
 # .. code-block:: text
 #
-#     2025-07-20 21:41:23,489 - INFO - model selection weights control: {}
-#     2025-07-20 21:41:24,357 - INFO - Tensorboard records can be found in /tmp/nvflare/sim/workspace/server/simulate_job/tb_events you can view it using `tensorboard --logdir=/tmp/nvflare/sim/workspace/server/simulate_job/tb_events`
-#     2025-07-20 21:41:24,358 - INFO - Initializing BaseModelController workflow.
-#     2025-07-20 21:41:24,359 - INFO - Beginning model controller run.
+#     <skip earlier logs>
 #     2025-07-20 21:41:24,359 - INFO - Start FedAvg.
 #     2025-07-20 21:41:24,360 - INFO - loading initial model from persistor
 #     2025-07-20 21:41:24,360 - INFO - Both source_ckpt_file_full_name and ckpt_preload_path are not provided. Using the default model weights initialized on the persistor side.
@@ -309,13 +169,6 @@ if __name__ == "__main__":
 #     2025-07-20 21:41:28,049 - INFO - start task run() with full path: /tmp/nvflare/sim/workspace/site-2/simulate_job/app_site-2/custom/client.py
 #     2025-07-20 21:41:28,052 - INFO - start task run() with full path: /tmp/nvflare/sim/workspace/site-1/simulate_job/app_site-1/custom/client.py
 #     2025-07-20 21:41:28,060 - INFO - execute for task (train)
-#     2025-07-20 21:41:28,060 - INFO - send data to peer
-#     2025-07-20 21:41:28,061 - INFO - sending payload to peer
-#     2025-07-20 21:41:28,061 - INFO - Waiting for result from peer
-#     2025-07-20 21:41:28,063 - INFO - execute for task (train)
-#     2025-07-20 21:41:28,063 - INFO - send data to peer
-#     2025-07-20 21:41:28,064 - INFO - sending payload to peer
-#     2025-07-20 21:41:28,064 - INFO - Waiting for result from peer
 #     2025-07-20 21:41:29,128 - INFO - Files already downloaded and verified
 #     2025-07-20 21:41:29,168 - INFO - Files already downloaded and verified
 #     2025-07-20 21:41:29,566 - INFO - site = site-1, current_round=0
@@ -339,13 +192,7 @@ if __name__ == "__main__":
 #     2025-07-20 21:41:49,995 - INFO - Sampled clients: ['site-1', 'site-2']
 #     2025-07-20 21:41:49,996 - INFO - Sending task train to ['site-1', 'site-2']
 #     2025-07-20 21:41:51,695 - INFO - execute for task (train)
-#     2025-07-20 21:41:51,696 - INFO - send data to peer
-#     2025-07-20 21:41:51,696 - INFO - sending payload to peer
-#     2025-07-20 21:41:51,697 - INFO - Waiting for result from peer
-#     2025-07-20 21:41:51,754 - INFO - execute for task (train)
-#     2025-07-20 21:41:51,754 - INFO - send data to peer
-#     2025-07-20 21:41:51,755 - INFO - sending payload to peer
-#     2025-07-20 21:41:51,756 - INFO - Waiting for result from peer
+#     <... skip few lines of logs ...>
 #     2025-07-20 21:41:52,010 - INFO - site = site-1, current_round=1
 #     2025-07-20 21:41:52,011 - INFO - site = site-2, current_round=1
 #     2025-07-20 21:41:52,023 - INFO - site=site-1, Epoch: 0/2, Iteration: 0, Loss: 3.0566091338793434e-05
@@ -366,6 +213,3 @@ if __name__ == "__main__":
 #     2025-07-20 21:42:16,428 - INFO - Start persist model on server.
 #     2025-07-20 21:42:16,431 - INFO - End persist model on server.
 #     2025-07-20 21:42:16,431 - INFO - Finished FedAvg.
-
-
-
