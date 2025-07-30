@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
+import os.path
 import threading
 import time
 from random import randrange
@@ -19,8 +21,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.edge.constants import EdgeApiStatus, EdgeContextKey, EdgeEventType, EdgeMsgTopic
-from nvflare.edge.web.models.capabilities import Capabilities
+from nvflare.edge.constants import (
+    EdgeApiStatus,
+    EdgeConfigFile,
+    EdgeContextKey,
+    EdgeEventType,
+    EdgeMsgTopic,
+    JobDataKey,
+)
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.result_response import ResultResponse
@@ -51,8 +59,9 @@ class EdgeTaskDispatcher(Widget):
     def __init__(self, request_timeout: float = 5.0):
         Widget.__init__(self)
         self.request_timeout = request_timeout
-        self.edge_jobs = {}  # edge_method => list of job_ids
+        self.edge_jobs = {}  # job name => list of job_ids
         self.job_metas = {}  # job_id => job_meta
+        self.job_device_config = {}  # job_id => device config
         self.lock = threading.Lock()
 
         self.register_event_handler(
@@ -72,7 +81,7 @@ class EdgeTaskDispatcher(Widget):
             self._handle_edge_request,
             msg_topic=EdgeMsgTopic.TASK_REQUEST,
             bad_req_reply=TaskResponse(EdgeApiStatus.INVALID_REQUEST),
-            no_job_reply=TaskResponse(EdgeApiStatus.DONE),
+            no_job_reply=TaskResponse(EdgeApiStatus.NO_JOB),
             comm_err_reply=TaskResponse(EdgeApiStatus.RETRY),
         )
         self.register_event_handler(
@@ -80,7 +89,7 @@ class EdgeTaskDispatcher(Widget):
             self._handle_edge_request,
             msg_topic=EdgeMsgTopic.SELECTION_REQUEST,
             bad_req_reply=SelectionResponse(EdgeApiStatus.INVALID_REQUEST),
-            no_job_reply=SelectionResponse(EdgeApiStatus.DONE),
+            no_job_reply=SelectionResponse(EdgeApiStatus.NO_JOB),
             comm_err_reply=SelectionResponse(EdgeApiStatus.RETRY),
         )
         self.register_event_handler(
@@ -88,55 +97,72 @@ class EdgeTaskDispatcher(Widget):
             self._handle_edge_request,
             msg_topic=EdgeMsgTopic.RESULT_REPORT,
             bad_req_reply=ResultResponse(EdgeApiStatus.INVALID_REQUEST),
-            no_job_reply=ResultResponse(EdgeApiStatus.DONE),
+            no_job_reply=ResultResponse(EdgeApiStatus.NO_JOB),
             comm_err_reply=ResultResponse(EdgeApiStatus.RETRY),
         )
         self.logger.debug("EdgeTaskDispatcher created!")
 
-    def _add_job(self, job_meta: dict):
+    def _add_job(self, job_meta: dict, fl_ctx: FLContext):
         with self.lock:
             edge_method = job_meta.get(JobMetaKey.EDGE_METHOD)
             if not edge_method:
                 # this is not an edge job
                 return
 
-            jobs = self.edge_jobs.get(edge_method)
-            if not jobs:
-                jobs = []
-                self.edge_jobs[edge_method] = jobs
+            name = job_meta.get(JobMetaKey.JOB_NAME)
+            job_ids = self.edge_jobs.get(name)
+            if not job_ids:
+                job_ids = []
+                self.edge_jobs[name] = job_ids
 
             job_id = job_meta.get(JobMetaKey.JOB_ID)
-            jobs.append(job_id)
+
+            if job_id not in job_ids:
+                job_ids.append(job_id)
+
+            # get device config of the job
+            workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+            config_dir = workspace.get_app_config_dir(job_id)
+            device_config_file = os.path.join(config_dir, EdgeConfigFile.DEVICE_CONFIG)
+            device_config = None
+            if os.path.exists(device_config_file):
+                with open(device_config_file, "r") as f:
+                    device_config = json.load(f)
+
             self.job_metas[job_id] = job_meta
+            self.job_device_config[job_id] = device_config
 
     def _remove_job(self, job_id: str):
         with self.lock:
             if job_id in self.job_metas:
                 del self.job_metas[job_id]
 
-            # Delete this job from all methods
-            for edge_method, jobs in list(self.edge_jobs.items()):
-                assert isinstance(jobs, list)
-                if jobs and job_id in jobs:
-                    jobs.remove(job_id)
-                    if not jobs:
-                        # no more jobs for this edge method
-                        self.edge_jobs.pop(edge_method)
+            if job_id in self.job_device_config:
+                del self.job_device_config[job_id]
 
-    def _match_job(self, caps: Capabilities):
-        methods = caps.methods
+            for name, job_ids in list(self.edge_jobs.items()):
+                assert isinstance(job_ids, list)
+                if job_ids and job_id in job_ids:
+                    job_ids.remove(job_id)
+                    if not job_ids:
+                        # no more jobs for this edge method
+                        self.edge_jobs.pop(name)
+                    return
+
+    def _match_job(self, job_name: str):
         with self.lock:
-            for edge_method, jobs in self.edge_jobs.items():
-                if edge_method in methods:
+            for name, job_ids in self.edge_jobs.items():
+                if name == job_name:
                     # pick one randomly
-                    i = randrange(len(jobs))
-                    self.logger.debug(f"matched job {jobs[i]}")
-                    return jobs[i]
+                    i = randrange(len(job_ids))
+                    job_id = job_ids[i]
+                    self.logger.debug(f"matched job {job_id}")
+                    return job_id, self.job_device_config.get(job_id)
 
             # no job matched
-            return None
+            return None, None
 
-    def _find_job(self, job_id: str):
+    def _job_exists(self, job_id: str):
         with self.lock:
             for jobs in self.edge_jobs.values():
                 if job_id in jobs:
@@ -150,7 +176,7 @@ class EdgeTaskDispatcher(Widget):
             self.logger.error(f"missing {FLContextKey.JOB_META} from fl_ctx for event {event_type}")
         else:
             self.logger.debug(f"adding job: {job_meta=}")
-            self._add_job(job_meta)
+            self._add_job(job_meta, fl_ctx)
 
     def _handle_job_done(self, event_type: str, fl_ctx: FLContext):
         self.logger.debug(f"handling event {event_type}")
@@ -164,17 +190,24 @@ class EdgeTaskDispatcher(Widget):
         self.logger.debug(f"handling event {event_type}")
         req = fl_ctx.get_prop(EdgeContextKey.REQUEST_FROM_EDGE)
         assert isinstance(req, JobRequest)
-        edge_capabilities = req.capabilities
-        if not edge_capabilities:
-            self.logger.error(f"missing 'capabilities' from JobRequest for event {event_type}")
+        job_name = req.job_name
+        if not job_name:
+            self.logger.error(f"missing 'job_name' from JobRequest for event {event_type}")
             self._set_edge_reply(reply=JobResponse(EdgeApiStatus.INVALID_REQUEST), fl_ctx=fl_ctx)
             return
 
         # find job for the caps
-        self.logger.debug(f"trying to match job with caps: {edge_capabilities}")
-        job_id = self._match_job(edge_capabilities)
+        self.logger.debug(f"trying to match job: {job_name}")
+        job_id, device_config = self._match_job(job_name)
         if job_id:
-            reply = JobResponse(EdgeApiStatus.OK, job_id)
+            reply = JobResponse(
+                EdgeApiStatus.OK,
+                job_id=job_id,
+                job_name=job_name,
+                job_data={
+                    JobDataKey.CONFIG: device_config,
+                },
+            )
         else:
             reply = JobResponse(EdgeApiStatus.NO_JOB)
 
@@ -218,7 +251,7 @@ class EdgeTaskDispatcher(Widget):
             self._set_edge_reply(bad_req_reply, fl_ctx)
             return
 
-        if not self._find_job(job_id):
+        if not self._job_exists(job_id):
             self._set_edge_reply(no_job_reply, fl_ctx)
             return
 

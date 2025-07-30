@@ -18,7 +18,7 @@ This module defines the complete protocol for exchanging models between componen
 including message format specification, supported types, and validation utilities.
 
 Example:
-    >>> from nvflare.edge.utils.model_protocol import ModelBufferType, ModelExchangeFormat
+    >>> from nvflare.edge.model_protocol import ModelBufferType, ModelExchangeFormat
     >>> payload = {
     ...     ModelExchangeFormat.MODEL_BUFFER: encoded_data,
     ...     ModelExchangeFormat.MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
