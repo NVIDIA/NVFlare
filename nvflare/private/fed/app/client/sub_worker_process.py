@@ -20,6 +20,12 @@ import os
 import threading
 import time
 
+# CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC
+# See: https://github.com/grpc/grpc/issues/28557
+os.environ["GRPC_POLL_STRATEGY"] = "poll"
+os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "False"
+
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent

@@ -188,7 +188,7 @@ class NVFTestDriver:
             "ensure_current_job_done": _CheckJobHandler(),
         }
 
-    def initialize_super_user(self, workspace_root_dir: str, upload_root_dir: str, poc: bool, super_user_name: str):
+    def initialize_super_user(self, workspace_root_dir: str, upload_root_dir: str, super_user_name: str):
         self.super_admin_user_name = super_user_name
         try:
             admin_api = create_admin_api(
@@ -196,7 +196,6 @@ class NVFTestDriver:
                 upload_root_dir=upload_root_dir,
                 download_root_dir=self.download_root_dir,
                 admin_user_name=super_user_name,
-                poc=poc,
             )
             login_result = ensure_admin_api_logged_in(admin_api)
         except Exception as e:
@@ -206,7 +205,7 @@ class NVFTestDriver:
 
         self.super_admin_api = admin_api
 
-    def initialize_admin_users(self, workspace_root_dir: str, upload_root_dir: str, poc: bool, admin_user_names: list):
+    def initialize_admin_users(self, workspace_root_dir: str, upload_root_dir: str, admin_user_names: list):
         for user_name in admin_user_names:
             if user_name == self.super_admin_user_name:
                 continue
@@ -216,7 +215,6 @@ class NVFTestDriver:
                     upload_root_dir=upload_root_dir,
                     download_root_dir=self.download_root_dir,
                     admin_user_name=user_name,
-                    poc=poc,
                 )
                 login_result = ensure_admin_api_logged_in(admin_api)
             except Exception as e:
