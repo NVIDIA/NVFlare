@@ -24,7 +24,7 @@
     "@kui-react/text-input": "file:./vendor/npm-packages/kui-react-text-input-4.131.6.tgz",
     "@kui-react/theme": "file:./vendor/npm-packages/kui-react-theme-4.131.6.tgz",
     "@kui-shared/styles": "file:./vendor/npm-packages/kui-shared-styles-4.131.6.tgz",
-    "next": "14.2.15",
+    "next": "14.2.30",
     "react": "^18",
     "react-day-picker": "^9.4.2",
     "react-dom": "^18",

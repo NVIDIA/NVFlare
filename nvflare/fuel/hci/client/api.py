@@ -287,6 +287,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.uid_source = admin_config.get(AdminConfigKey.UID_SOURCE, UidSource.USER_INPUT)
         self.host = admin_config.get(AdminConfigKey.HOST, "localhost")
         self.port = admin_config.get(AdminConfigKey.PORT, 8002)
+        self.default_login_timeout = admin_config.get(AdminConfigKey.LOGIN_TIMEOUT, 10.0)
         self.file_download_progress_timeout = admin_config.get(AdminConfigKey.FILE_DOWNLOAD_PROGRESS_TIMEOUT, 5.0)
         self.authenticate_msg_timeout = admin_config.get(AdminConfigKey.AUTHENTICATE_MSG_TIMEOUT, 5.0)
         self.user_name = user_name
@@ -356,6 +357,17 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         return self.fl_ctx_mgr.new_context()
 
     def connect(self, timeout=None):
+        if timeout is not None:
+            # validate provided timeout value
+            if not isinstance(timeout, (int, float)):
+                raise ValueError(f"timeout must be a number but got {type(timeout)}")
+
+            if timeout <= 0:
+                raise ValueError(f"timeout must be a number > 0 but got {timeout}")
+        else:
+            # use value configured in admin config
+            timeout = self.default_login_timeout
+
         print("Connecting to FLARE ...")
         if self.cell:
             return
