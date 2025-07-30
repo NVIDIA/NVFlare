@@ -72,8 +72,10 @@ class Project(db.Model):
             for c in self.__table__.columns
             if c.name not in ["id", "root_cert", "root_key"]
         }
+        print("Before fixing: table_dict", table_dict)
         _fix_props(self, table_dict, "project_props")
         _fix_props(self, table_dict, "server_props")
+        print("After fixing: table_dict", table_dict)
 
         return table_dict
 

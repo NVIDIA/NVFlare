@@ -50,7 +50,7 @@ function clean_docs() {
 
 function build_html_docs() {
     pip install -e .[dev]
-    sphinx-apidoc --module-first -f -o docs/apidocs/ nvflare "*poc" "*private"
+    sphinx-apidoc --module-first -f -o docs/apidocs/ nvflare "*poc" "*private" "*/psi/*"
     sphinx-build -b html docs docs/_build
 }
 

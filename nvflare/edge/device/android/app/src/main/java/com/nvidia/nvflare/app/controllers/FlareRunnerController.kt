@@ -12,6 +12,9 @@ import com.nvidia.nvflare.app.data.AndroidDataSource
 import com.nvidia.nvflare.sdk.utils.MethodType
 import com.nvidia.nvflare.sdk.utils.TrainerType
 import com.nvidia.nvflare.sdk.utils.TrainingStatus
+import com.nvidia.nvflare.training.MethodType
+import com.nvidia.nvflare.training.TrainerType
+import com.nvidia.nvflare.training.TrainingStatus
 import com.nvidia.nvflare.sdk.defs.Filter
 import com.nvidia.nvflare.sdk.defs.EventHandler
 import com.nvidia.nvflare.sdk.defs.Transform

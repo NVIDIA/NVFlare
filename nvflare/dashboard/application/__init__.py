@@ -15,6 +15,7 @@
 import os
 
 from flask import Flask
+from flask_cors import CORS, cross_origin
 from flask_jwt_extended import JWTManager
 from flask_sqlalchemy import SQLAlchemy
 
@@ -27,6 +28,7 @@ def init_app():
     os.makedirs(web_root, exist_ok=True)
     static_folder = os.environ.get("NVFL_DASHBOARD_STATIC_FOLDER", "static")
     app = Flask(__name__, static_url_path="", static_folder=static_folder)
+    CORS(app, support_credentials=True)
     app.config.from_object("nvflare.dashboard.config.Config")
     db.init_app(app)
     jwt.init_app(app)

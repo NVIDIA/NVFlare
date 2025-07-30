@@ -94,6 +94,7 @@ autosectionlabel_prefix_document = True
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
+autodoc_mock_imports = ["dh_psi.dh_psi_client"]
 
 extlinks = {"github_nvflare_link": (f"https://github.com/NVIDIA/NVFlare/tree/{build_version}/%s", "")}
 
