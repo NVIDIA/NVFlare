@@ -23,6 +23,21 @@ from torch.nn import functional as F
 
 
 def export_model_to_bytes(net: nn.Module, input_shape, output_shape):
+    """Exports a PyTorch model to a base64-encoded string suitable for use in embedded or edge environments.
+
+    This function creates dummy input and label tensors based on the provided shapes,
+    runs the model export pipeline (including lowering to Executorch), and returns
+    the serialized model as a base64-encoded string.
+
+    Args:
+        net (nn.Module): The PyTorch model to export.
+        input_shape (tuple): The shape of the input tensor, e.g., (batch_size, channels, height, width).
+        output_shape (tuple): The shape of the output tensor, e.g., (batch_size, num_classes).
+
+    Returns:
+        str: A UTF-8 string containing base64-encoded bytes of the exported model.
+    """
+
     input_tensor = torch.randn(input_shape)
     label_tensor = torch.ones(output_shape, dtype=torch.int64)
     model_buffer = export_model(net, input_tensor, label_tensor).buffer
@@ -31,6 +46,22 @@ def export_model_to_bytes(net: nn.Module, input_shape, output_shape):
 
 
 def export_model(net: nn.Module, input_tensor_example, label_tensor_example):
+    """Runs the full export pipeline to convert a PyTorch model into an Executorch-compatible format.
+
+    This includes:
+      - Capturing the forward graph
+      - Capturing backward graph for training (if applicable)
+      - Lowering to Edge dialect
+      - Lowering to Executorch format
+
+    Args:
+        net (nn.Module): The PyTorch model to export.
+        input_tensor_example (torch.Tensor): An example input tensor for tracing.
+        label_tensor_example (torch.Tensor): An example output/label tensor for training export.
+
+    Returns:
+        ExportedProgram: The final lowered and exported Executorch model.
+    """
     # Captures the forward graph. The graph will look similar to the model definition now.
     # Will move to export_for_training soon which is the api planned to be supported in the long term.
     ep = export(net, (input_tensor_example, label_tensor_example), strict=True)

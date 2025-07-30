@@ -21,12 +21,7 @@ from executorch.extension.training import _load_for_executorch_for_training_from
 from torch.utils.data import DataLoader, Dataset
 
 from nvflare.apis.dxo import DXO, from_dict
-from nvflare.edge.model_protocol import (
-    ModelBufferType,
-    ModelEncoding,
-    ModelNativeFormat,
-    verify_payload,
-)
+from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelNativeFormat, verify_payload
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
@@ -38,7 +33,8 @@ def tensor_dict_to_json(d):
     j = {}
     for k, v in d.items():
         entry = {}
-        # TODO: this needs to be compatible with the "Controller" side logic
+        # Note: This needs to be compatible with the "NVFlare system" logic
+        #       for example: nvflare/edge/executors/et_edge_model_executor.py
         entry["data"] = v.cpu().numpy().tolist()
         entry["sizes"] = list(v.size())
         j[k] = entry

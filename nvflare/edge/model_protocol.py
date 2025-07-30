@@ -117,7 +117,6 @@ class ModelExchangeFormat:
             }
     """
 
-    MODEL_BUFFER = "model_buffer"
     MODEL_BUFFER_TYPE = "model_buffer_type"
     MODEL_BUFFER_NATIVE_FORMAT = "model_buffer_native_format"
     MODEL_BUFFER_ENCODING = "model_buffer_encoding"

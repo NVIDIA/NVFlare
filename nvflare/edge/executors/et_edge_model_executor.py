@@ -40,6 +40,21 @@ class ETEdgeModelExecutor(EdgeModelExecutor):
         max_model_versions: int,
         update_timeout=60,
     ):
+        """Initializes an edge model executor for on-device training using ExecuTorch.
+
+        This constructor sets up the executor with a training-ready PyTorch model
+        (wrapped to include loss computation), along with model input/output shapes
+        and versioning/update control parameters.
+
+        Args:
+            et_model (nn.Module): A PyTorch model wrapped for ExecuTorch export.
+                See `nvflare/edge/models/model.py` for wrapping examples.
+            input_shape (tuple): Shape of the input tensor (e.g., (1, 3, 224, 224)).
+            output_shape (tuple): Shape of the label/output tensor (e.g., (1,) for class index).
+            aggr_factory_id (str): Identifier used for selecting the model aggregation strategy.
+            max_model_versions (int): Maximum number of model versions to retain or track.
+            update_timeout (int, optional): Timeout in seconds for applying model updates. Defaults to 60.
+        """
         EdgeModelExecutor.__init__(self, aggr_factory_id, max_model_versions, update_timeout)
         self.et_model = et_model
         self.input_shape = input_shape
@@ -57,7 +72,7 @@ class ETEdgeModelExecutor(EdgeModelExecutor):
         """Convert task_data to a plain dict"""
         self.log_info(fl_ctx, f"ETEdgeModelExecutor Converting task for task: {current_task.id}")
 
-        # Add model version to the payload - WHY?
+        # Add model version to the payload to track the version of the model being processed.
         model_dxo = task_state.model
         model_dxo.set_meta_prop(MsgKey.MODEL_VERSION, task_state.model_version)
         model_dict = model_dxo.to_dict()
