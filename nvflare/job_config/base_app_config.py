@@ -35,6 +35,7 @@ class BaseAppConfig(ABC):
         self.ext_dirs = []
         self.file_sources = []
         self.handlers: [FLComponent] = []
+        self.additional_params: Dict[str, any] = {}  # additional configuration parameters
 
     def add_component(self, cid: str, component):
         if cid in self.components.keys():
@@ -65,6 +66,17 @@ class BaseAppConfig(ABC):
             raise RuntimeError(f"external resource dir: {ext_dir} does not exist")
 
         self.ext_dirs.append(ext_dir)
+
+    def add_params(self, args: Dict[str, any]):
+        """Add additional system configuration parameters to be included in the generated JSON configs.
+
+        Args:
+            args: Dictionary of configuration parameters (e.g., {"timeout": 600, "max_retries": 3})
+        """
+        if not isinstance(args, dict):
+            raise RuntimeError(f"args must be type of dict, but got {type(args)}")
+
+        self.additional_params.update(args)
 
     @staticmethod
     def _add_task_filter(tasks, filter, taskset_filters: list):

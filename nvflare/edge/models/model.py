@@ -69,7 +69,7 @@ class XorNet(nn.Module):
 
 # On device training requires the loss to be embedded in the model (and be the first output).
 # We wrap the original model here and add the loss calculation. This will be the model we export.
-class TrainingNet(nn.Module):
+class DeviceModel(nn.Module):
     def __init__(self, net):
         super().__init__()
         self.net = net

@@ -20,12 +20,14 @@ from nvflare.edge.web.models.user_info import UserInfo
 class JobRequest(BaseModel):
     def __init__(
         self,
+        job_name: str,
         device_info: DeviceInfo,
         user_info: UserInfo,
         capabilities: Capabilities = None,
         **kwargs,
     ):
         super().__init__()
+        self.job_name = job_name
         self.device_info = device_info
         self.user_info = user_info
         self.capabilities = capabilities
@@ -35,7 +37,7 @@ class JobRequest(BaseModel):
 
     @classmethod
     def validate(cls, d: dict) -> str:
-        return cls.check_keys(d, [EdgeProtoKey.CAPABILITIES, EdgeProtoKey.DEVICE_INFO])
+        return cls.check_keys(d, [EdgeProtoKey.CAPABILITIES, EdgeProtoKey.DEVICE_INFO, EdgeProtoKey.JOB_NAME])
 
     @classmethod
     def from_dict(cls, d: dict):
@@ -43,6 +45,7 @@ class JobRequest(BaseModel):
         if error:
             return error, None
 
+        job_name = d.pop(EdgeProtoKey.JOB_NAME, None)
         error, device_info = DeviceInfo.extract_from_dict(d)
         if error:
             return error, None
@@ -53,5 +56,5 @@ class JobRequest(BaseModel):
         if error:
             return error, None
 
-        job_req = JobRequest(device_info, user_info, caps, **d)
+        job_req = JobRequest(job_name, device_info, user_info, caps, **d)
         return "", job_req
