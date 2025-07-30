@@ -14,7 +14,6 @@
 
 
 class EdgeContextKey:
-    EDGE_CAPABILITIES = "__edge_capabilities__"
     REQUEST_FROM_EDGE = "__request_from_edge__"
     REPLY_TO_EDGE = "__reply_to_edge__"
 
@@ -68,3 +67,17 @@ class HttpHeaderKey:
     DEVICE_ID = "X-Flare-Device-ID"
     DEVICE_INFO = "X-Flare-Device-Info"
     USER_INFO = "X-Flare-User-Info"
+
+
+class EdgeConfigFile:
+    DEVICE_CONFIG = "device_config.json"
+
+
+class SpecialDeviceId:
+    DUMMY = "dummy"
+    MAX_INDICATOR = "?"
+    NUM_INDICATOR = "#"
+
+
+class JobDataKey:
+    CONFIG = "config"

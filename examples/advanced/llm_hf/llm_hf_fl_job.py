@@ -22,6 +22,7 @@ from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
 from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.private.fed.utils.fed_utils import split_gpus
 
 
 def main():
@@ -29,17 +30,23 @@ def main():
     train_script = "src/hf_sft_peft_fl.py"
     client_ids = args.client_ids
     num_clients = len(client_ids)
+    # get the GPU assignments and ports
+    gpus = split_gpus(args.gpu)
+    gpus = [g.split(",") for g in gpus]
+    ports = args.ports
+
+    print(f"Clients: {client_ids}, GPUs: {gpus}, ports: {ports}")
+    # make sure the number of GPUs matches the number of clients
+    if len(gpus) != num_clients:
+        raise ValueError(f"Number of GPUs ({len(gpus)}) does not match number of clients ({num_clients}).")
+    # make sure the number of ports equal or greater than the number of clients
+    if len(ports) < num_clients:
+        raise ValueError(f"Number of ports ({len(ports)}) is less than number of clients ({num_clients}).")
 
     if args.threads:
         num_threads = args.threads
     else:
         num_threads = num_clients
-
-    if num_threads < num_clients:
-        print("The number of threads smaller than the number of clients, runner clean-up will be performed.")
-        clean_up = 1
-    else:
-        clean_up = 0
 
     num_rounds = args.num_rounds
     workspace_dir = args.workspace_dir
@@ -95,7 +102,7 @@ def main():
         data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
 
-        script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --clean_up {clean_up}"
+        script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --num_rounds {num_rounds}"
         if message_mode == "tensor":
             server_expected_format = "pytorch"
         elif message_mode == "numpy":
@@ -103,12 +110,21 @@ def main():
         else:
             raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
 
-        runner = ScriptRunner(
-            script=train_script,
-            script_args=script_args,
-            server_expected_format=server_expected_format,
-            launch_external_process=False,
-        )
+        if len(gpus[i]) == 1:
+            runner = ScriptRunner(
+                script=train_script,
+                script_args=script_args,
+                server_expected_format=server_expected_format,
+                launch_external_process=True,
+            )
+        else:
+            runner = ScriptRunner(
+                script=train_script,
+                script_args=script_args,
+                server_expected_format=server_expected_format,
+                launch_external_process=True,
+                command=f"python3 -m torch.distributed.run --nnodes=1 --nproc_per_node={len(gpus[i])} --master_port={ports[i]}",
+            )
         job.to(runner, site_name, tasks=["train"])
 
         if args.quantize_mode:
@@ -142,7 +158,7 @@ def define_parser():
         "--num_rounds",
         type=int,
         default=3,
-        help="Number of rounds, default to 5",
+        help="Number of rounds, default to 3",
     )
     parser.add_argument(
         "--workspace_dir",
@@ -196,6 +212,12 @@ def define_parser():
         type=str,
         default="0",
         help="gpu assignments for simulating clients, comma separated, default to single gpu",
+    )
+    parser.add_argument(
+        "--ports",
+        nargs="+",
+        default="7777",
+        help="ports for the clients, default to one client 7777",
     )
     return parser.parse_args()
 
