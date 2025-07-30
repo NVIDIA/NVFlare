@@ -16,7 +16,7 @@ object TrainerRegistry {
      * Factory interface for creating trainer instances.
      */
     interface TrainerFactory {
-        fun createTrainer(modelData: String, meta: TrainingConfig): Trainer
+        fun createTrainer(context: android.content.Context, modelData: String, meta: TrainingConfig): Trainer
     }
 
     /**
@@ -30,7 +30,7 @@ object TrainerRegistry {
     /**
      * Create a trainer instance for the specified method.
      */
-    fun createTrainer(method: String, modelData: String, meta: TrainingConfig): Trainer {
+    fun createTrainer(context: android.content.Context, method: String, modelData: String, meta: TrainingConfig): Trainer {
         val factory = trainerFactories[method.lowercase()]
         if (factory == null) {
             val availableMethods = trainerFactories.keys.joinToString(", ")
@@ -41,7 +41,7 @@ object TrainerRegistry {
         }
         
         Log.d(TAG, "Creating trainer for method: $method")
-        return factory.createTrainer(modelData, meta)
+        return factory.createTrainer(context, modelData, meta)
     }
 
     /**

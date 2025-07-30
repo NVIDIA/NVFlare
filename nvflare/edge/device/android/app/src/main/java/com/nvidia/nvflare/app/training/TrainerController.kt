@@ -185,7 +185,9 @@ class TrainerController(private val connection: Connection) : ViewModel() {
         return when (_trainerType.value) {
             TrainerType.EXECUTORCH -> {
                 Log.d(TAG, "Creating ETTrainerWrapper")
-                ETTrainerWrapper(modelData, meta)
+                // TODO: Need to pass context to ETTrainerWrapper
+                // For now, we'll use a placeholder that will be updated when context is available
+                throw UnsupportedOperationException("ETTrainerWrapper requires context - use FlareRunnerController instead")
             }
             else -> throw NVFlareError.InvalidMetadata("Unsupported trainer type")
         }

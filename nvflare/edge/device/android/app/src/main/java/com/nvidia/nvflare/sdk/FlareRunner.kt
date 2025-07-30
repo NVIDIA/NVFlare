@@ -51,6 +51,14 @@ abstract class FlareRunner(
     }
 
     /**
+     * Get Android context for platform-specific operations.
+     * Override this in platform-specific implementations.
+     */
+    protected open fun getAndroidContext(): android.content.Context {
+        throw UnsupportedOperationException("getAndroidContext() not implemented in base FlareRunner")
+    }
+
+    /**
      * Main run loop that continuously processes jobs.
      */
     fun run() {
@@ -96,7 +104,7 @@ abstract class FlareRunner(
 
         // Process training configuration
         val trainConfig = if (jobData != null) {
-            processTrainConfig(jobData, resolverRegistryMap)
+            processTrainConfig(getAndroidContext(), jobData, resolverRegistryMap)
         } else {
             throw RuntimeException("No job data available")
         }

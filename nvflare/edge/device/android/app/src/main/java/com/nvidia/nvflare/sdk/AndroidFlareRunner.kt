@@ -69,6 +69,10 @@ class AndroidFlareRunner(
         // Note: datasource resolver is provided by the app
     }
 
+    override fun getAndroidContext(): android.content.Context {
+        return context
+    }
+
     override fun getJob(ctx: Context, abortSignal: Signal): Map<String, Any>? {
         val startTime = System.currentTimeMillis()
         

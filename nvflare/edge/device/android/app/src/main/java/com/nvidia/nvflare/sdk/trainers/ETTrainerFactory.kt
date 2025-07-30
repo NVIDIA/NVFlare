@@ -10,7 +10,7 @@ import com.nvidia.nvflare.sdk.training.TrainingConfig
  * Implements the TrainerRegistry.TrainerFactory interface.
  */
 class ETTrainerFactory : TrainerRegistry.TrainerFactory {
-    override fun createTrainer(modelData: String, meta: TrainingConfig): Trainer {
-        return ETTrainerWrapper(modelData, meta)
+    override fun createTrainer(context: android.content.Context, modelData: String, meta: TrainingConfig): Trainer {
+        return ETTrainerWrapper(context, modelData, meta)
     }
 } 

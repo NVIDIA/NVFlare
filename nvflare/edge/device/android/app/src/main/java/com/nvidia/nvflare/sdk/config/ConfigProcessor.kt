@@ -66,6 +66,7 @@ abstract class ComponentResolver(
  * Process training configuration and create a TrainConfig object.
  */
 fun processTrainConfig(
+    context: android.content.Context,
     config: Map<String, Any>,
     resolverRegistry: Map<String, Class<*>>
 ): TrainConfig {
@@ -75,7 +76,7 @@ fun processTrainConfig(
         ?: throw ConfigError("missing ${ConfigKey.COMPONENTS} in config")
 
     // Process components
-    val objTable = processComponents(components, resolverRegistry)
+    val objTable = processComponents(context, components, resolverRegistry)
 
     // Process input filters
     val inFilters = config[ConfigKey.IN_FILTERS] as? List<String>
@@ -118,6 +119,7 @@ fun processTrainConfig(
  * Process component specifications and create objects.
  */
 private fun processComponents(
+    context: android.content.Context,
     components: List<Map<String, Any>>,
     resolverRegistry: Map<String, Class<*>>
 ): Map<String, Any> {
@@ -161,7 +163,7 @@ private fun processComponents(
                 val meta = args?.get("meta") as? Map<String, Any> ?: emptyMap()
                 
                 // Use AndroidExecutorFactory to create the executor
-                return AndroidExecutorFactory.createExecutor(method, modelData, meta)
+                return AndroidExecutorFactory.createExecutor(context, method, modelData, meta)
             }
         }
 
