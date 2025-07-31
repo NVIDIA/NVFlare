@@ -20,13 +20,7 @@ import sys
 from typing import Any, Type
 
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
-from nvflare.fuel.utils.validation_utils import (
-    check_non_negative_number,
-    check_object_type,
-    check_positive_int,
-    check_positive_number,
-    check_str,
-)
+from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number, check_str
 
 VAR_PATTERN = re.compile(r"\{(.*?)}")
 
@@ -46,18 +40,14 @@ def load_class(class_path) -> Type:
 
 class ConfigParser:
     def __init__(self, config_file: str):
+        self.job_name = None
+        self.get_job_timeout = None
         self.processor = None
         self.endpoint = None
         self.num_devices = 100
-        self.num_active_devices = 20
         self.num_workers = 10
-        self.cycle_duration = 30.0
-        self.device_reuse_rate = 0.0
-        self.capabilities = {}
-        self.device_id_prefix = None
         self.processor_class = None
         self.processor_args = None
-
         self.parse(config_file)
 
     def get_processor(self, variables: dict = None) -> DeviceTaskProcessor:
@@ -75,23 +65,11 @@ class ConfigParser:
     def get_num_devices(self):
         return self.num_devices
 
-    def get_num_active_devices(self):
-        return self.num_active_devices
-
     def get_num_workers(self):
         return self.num_workers
 
-    def get_cycle_duration(self):
-        return self.cycle_duration
-
-    def get_device_reuse_rate(self):
-        return self.device_reuse_rate
-
-    def get_capabilities(self):
-        return self.capabilities
-
-    def get_device_id_prefix(self):
-        return self.device_id_prefix
+    def get_job_name(self):
+        return self.job_name
 
     def parse(self, config_file: str):
         with open(config_file, "r") as f:
@@ -121,39 +99,22 @@ class ConfigParser:
         if self.endpoint is not None:
             check_str("endpoint", self.endpoint)
 
+        self.job_name = config.get("job_name", None)
+        check_str("job_name", self.job_name)
+
         n = config.get("num_devices", None)
         if n:
             check_positive_int("num_devices", n)
             self.num_devices = n
-
-        n = config.get("num_active_devices", None)
-        if n:
-            check_positive_int("num_active_devices", n)
-            self.num_active_devices = n
-        else:
-            self.num_active_devices = min(self.num_devices / 2, 1000)
 
         n = config.get("num_workers", None)
         if n:
             check_positive_int("num_workers", n)
             self.num_workers = n
 
-        n = config.get("cycle_duration")
-        if n is not None:
-            check_positive_number("cycle_duration", n)
-            self.cycle_duration = n
-
-        n = config.get("device_reuse_rate")
-        if n is not None:
-            check_non_negative_number("device_reuse_rate", n)
-            self.device_reuse_rate = n
-
-        self.capabilities = config.get("capabilities", {})
-        check_object_type("capabilities", self.capabilities, dict)
-
-        self.device_id_prefix = config.get("device_id_prefix", None)
-        if self.device_id_prefix is not None:
-            check_str("device_id_prefix", self.device_id_prefix)
+        n = config.get("get_job_timeout", 60.0)
+        check_positive_number("get_job_timeout", n)
+        self.get_job_timeout = n
 
     def _variable_substitution(self, args: Any, variables: dict) -> Any:
         if isinstance(args, dict):
