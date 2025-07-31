@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package nvflare;
+
+service NVFlareService {
+  rpc FetchJob (JobRequest) returns (JobResponse) {}
+  rpc FetchTask (TaskRequest) returns (TaskResponse) {}
+  rpc SendResult (ResultRequest) returns (ResultResponse) {}
+}
+
+message JobRequest {
+  map<string, string> capabilities = 1;
+  map<string, string> device_info = 2;
+}
+
+message JobResponse {
+  string status = 1;
+  string message = 2;
+  int32 retry_wait = 3;
+  string job_id = 4;
+  map<string, string> meta = 5;
+}
+
+message TaskRequest {
+  string job_id = 1;
+  map<string, string> device_info = 2;
+}
+
+message TaskResponse {
+  string status = 1;
+  string message = 2;
+  int32 retry_wait = 3;
+  string task_id = 4;
+  string task_name = 5;
+  map<string, string> data = 6;
+}
+
+message ResultRequest {
+  string job_id = 1;
+  string task_id = 2;
+  string task_name = 3;
+  map<string, string> weight_diff = 4;
+  map<string, string> device_info = 5;
+}
+
+message ResultResponse {
+  string status = 1;
+  string message = 2;
+} 
