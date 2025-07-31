@@ -11,12 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import hashlib
 import logging
 import os
 import random
 import time
-import uuid
 
 import filelock
 import torch
@@ -53,20 +51,6 @@ class PTCifar10Processor(DeviceTaskProcessor):
     def shutdown(self) -> None:
         pass
 
-    def _uuid_to_seed(self, uuid_string):
-        """Converts a UUID-4 string to a seed number (integer)."""
-        try:
-            uuid_obj = uuid.UUID(uuid_string)
-        except ValueError:
-            raise ValueError("Invalid UUID string.")
-        # Get the bytes representation of the UUID
-        uuid_bytes = uuid_obj.bytes
-        # Hash the bytes using SHA-256 for better distribution
-        hashed_bytes = hashlib.sha256(uuid_bytes).digest()
-        # Convert the first 8 bytes of the hash to an integer (64-bit)
-        seed_number = int.from_bytes(hashed_bytes[:8], byteorder="big")
-        return seed_number
-
     def _pytorch_training(self, global_model):
         # Data loading code
         transform = transforms.Compose([transforms.ToTensor()])
@@ -78,13 +62,7 @@ class PTCifar10Processor(DeviceTaskProcessor):
             train_set = datasets.CIFAR10(root=self.data_root, train=True, download=True, transform=transform)
 
         # Generate seed according to device_id
-        device_id = self.device.device_id
-        # remove the prefix from device_id seperated by '_'
-        device_id = device_id.split("_")[-1]
-        random_seed = self._uuid_to_seed(device_id)
         # Randomly select a subset of the training set
-        # using the random seed
-        random.seed(random_seed)
         # generate a random indices list
         indices = list(range(len(train_set)))
         random.shuffle(indices)
