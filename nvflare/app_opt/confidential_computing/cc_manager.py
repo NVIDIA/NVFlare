@@ -81,7 +81,7 @@ class CCManager(FLComponent):
         self.cc_enabled_sites = cc_enabled_sites
 
         if not isinstance(verify_frequency, int):
-            raise ValueError(f"verify_frequency must be int, but got {verify_frequency.__class__}")
+            raise ValueError(f"verify_frequency must be int, but got {type(verify_frequency).__name__}")
         self.verify_frequency = int(verify_frequency)
 
         self.critical_level = critical_level
@@ -169,13 +169,13 @@ class CCManager(FLComponent):
             expiration = conf.get(TOKEN_EXPIRATION)
             issuer = engine.get_component(issuer_id)
             if not isinstance(issuer, CCAuthorizer):
-                raise RuntimeError(f"cc_issuer_id {issuer_id} must be a CCAuthorizer, but got {issuer.__class__}")
+                raise RuntimeError(f"cc_issuer_id {issuer_id} must be a CCAuthorizer, but got {type(issuer).__name__}")
             self.cc_issuers[issuer] = expiration
 
         for v_id in self.cc_verifier_ids:
             verifier = engine.get_component(v_id)
             if not isinstance(verifier, CCAuthorizer):
-                raise RuntimeError(f"cc_authorizer_id {v_id} must be a CCAuthorizer, but got {verifier.__class__}")
+                raise RuntimeError(f"cc_verifier_id {v_id} must be a CCAuthorizer, but got {type(verifier).__name__}")
             namespace = verifier.get_namespace()
             if namespace in self.cc_verifiers.keys():
                 raise RuntimeError(f"Authorizer with namespace: {namespace} already exist.")
@@ -247,7 +247,7 @@ class CCManager(FLComponent):
                 namespace = issuer.get_namespace()
 
                 if not isinstance(expiration, int):
-                    raise ValueError(f"token_expiration value must be int, but got {expiration.__class__}")
+                    raise ValueError(f"token_expiration value must be int, but got {type(expiration).__name__}")
                 if not my_token:
                     return f"{issuer} failed to get CC token"
 
