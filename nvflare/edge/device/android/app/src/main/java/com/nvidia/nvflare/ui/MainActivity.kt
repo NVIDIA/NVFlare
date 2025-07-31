@@ -15,10 +15,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.nvidia.nvflare.sdk.network.Connection
-import com.nvidia.nvflare.training.MethodType
-import com.nvidia.nvflare.sdk.FlareRunnerController
-import com.nvidia.nvflare.training.TrainingStatus
-import com.nvidia.nvflare.training.TrainerType
+import com.nvidia.nvflare.sdk.utils.MethodType
+import com.nvidia.nvflare.app.controllers.FlareRunnerController
+import com.nvidia.nvflare.sdk.utils.TrainingStatus
+import com.nvidia.nvflare.sdk.utils.TrainerType
 import com.nvidia.nvflare.ui.theme.NVFlareTheme
 import kotlinx.coroutines.launch
 import java.net.NetworkInterface
