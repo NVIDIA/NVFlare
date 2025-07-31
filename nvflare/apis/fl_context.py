@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import copy
 import threading
 from typing import Any, Dict, List
 
@@ -271,6 +271,19 @@ class FLContext(object):
 
         """
         self.props[key] = {V: value, M: make_mask(private, sticky)}
+
+    def clone(self):
+        """Make a copy from self.
+
+        Returns: a new FLContext object
+
+        """
+        with _update_lock:
+            new_ctx = FLContext()
+            new_ctx.model = self.model
+            new_ctx.logger = self.logger
+            new_ctx.props = copy.copy(self.props)  # shallow copy
+            return new_ctx
 
     # implement Context Manager protocol
     def __enter__(self):
