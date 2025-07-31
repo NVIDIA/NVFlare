@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,12 +44,17 @@ print(sys.path)
 # -- Project information -----------------------------------------------------
 
 project = "NVIDIA FLARE"
-copyright = "2024, NVIDIA"
+copyright = "2025, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
-release = "2.4.0"
-version = "2.4.0"
+import versioneer
+
+# read the contents of your README file
+#
+versions = versioneer.get_versions(root="../.")
+version =  versioneer.extract_version(versions["version"])
+release = version
 
 readthedocs_version_name = os.environ.get("READTHEDOCS_VERSION_NAME")
 build_version = readthedocs_version_name if readthedocs_version_name not in (None, "latest", "stable") else "main"
