@@ -218,8 +218,8 @@ class ETTrainer(
         val oldParams = toTensorDictionary(initialParameters)
         Log.d(TAG, "Captured initial parameters with ${oldParams.size} tensors")
         
-        // Note: We use CIFAR pattern (create per batch) instead of iOS pattern
-        // because Java ExecuTorch may require fresh optimizer instances
+        // Configure optimizer ONCE (mirrors iOS implementation exactly)
+        val sgd = SGD.create(initialParameters, learningRate.toDouble(), momentum.toDouble(), 0.0, 0.0, true)
         
         var totalLoss = 0.0f
         var totalSteps = 0
@@ -260,9 +260,7 @@ class ETTrainer(
                 epochSteps++
                 totalSteps++
                 
-                // Update parameters using SGD (mirrors CIFAR example - create per batch)
-                val parameters: Map<String, Tensor> = model.namedParameters("forward")
-                val sgd = SGD.create(parameters, learningRate.toDouble(), momentum.toDouble(), 0.0, 0.0, true)
+                // Update parameters using SGD (mirrors iOS implementation exactly)
                 val gradients: Map<String, Tensor> = model.namedGradients("forward")
                 sgd.step(gradients)
                 
