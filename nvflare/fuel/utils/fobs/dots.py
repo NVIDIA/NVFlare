@@ -18,5 +18,7 @@ This file is used as the global DOT registry to ensure that all DOTs are unique.
 """
 NUMPY_BYTES = 1
 NUMPY_FILE = 2
-TENSOR_BYTES = 3
-TENSOR_FILE = 4
+NUMPY_MAP = 3
+TENSOR_BYTES = 4
+TENSOR_FILE = 5
+TENSOR_MAP = 6
