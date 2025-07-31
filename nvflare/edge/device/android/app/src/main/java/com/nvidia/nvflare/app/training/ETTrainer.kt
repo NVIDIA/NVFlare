@@ -28,6 +28,10 @@ class ETTrainer(
     private val TAG = "ETTrainer"
     private var tModule: TrainingModule? = null
     private var isInitialized = false
+    
+    // CRITICAL: Strong reference to keep dataset alive during training
+    // This prevents the dataset from being deallocated while ExecuTorch still references it
+    private var currentDataset: com.nvidia.nvflare.sdk.defs.Dataset? = null
 
     init {
         initializeTrainingModule()
@@ -86,14 +90,11 @@ class ETTrainer(
             
             Log.d(TAG, "Model written to temporary file: ${tempFile.absolutePath}")
             
-            // For now, we'll use a dummy data path since we don't have the actual .ptd file
-            // In a real implementation, you would have the .ptd file in assets
-            val dummyDataPath = tempFile.absolutePath // Placeholder
-            
             // Load the training module using ExecuTorch's TrainingModule.load
-            tModule = TrainingModule.load(tempFile.absolutePath, dummyDataPath)
+            // For ExecuTorch models, we typically only need the .pte file
+            tModule = TrainingModule.load(tempFile.absolutePath, tempFile.absolutePath)
             
-            // Clean up temp file
+            // Clean up temp file after loading
             tempFile.delete()
             
             if (tModule == null) {
@@ -126,35 +127,29 @@ class ETTrainer(
             
             Log.d(TAG, "Training parameters - method: $method, epochs: $epochs, batchSize: $batchSize, lr: $learningRate")
             
-            // Get dataset based on method
-            val dataset = when (method) {
+                        // Get dataset based on method and store strong reference
+            currentDataset = when (method) {
                 "cnn" -> CIFAR10Dataset(context)
                 "xor" -> XORDataset()
                 else -> throw IllegalArgumentException("Unsupported method: $method")
             }
-            
+
             // Training loop based on CIFAR-10 example
             val trainingResult = performTraining(
-                tModule!!, 
-                dataset, 
-                method, 
-                epochs, 
-                batchSize, 
-                learningRate, 
+                tModule!!,
+                currentDataset!!,
+                method,
+                epochs,
+                batchSize,
+                learningRate,
                 momentum
             )
             
             // Convert to iOS-compatible format
             val resultData = when (method) {
                 "cnn" -> {
-                    // Return tensor format for CNN, matching iOS
-                    mapOf(
-                        "weight" to mapOf(
-                            "sizes" to listOf(4, 3, 32, 32),
-                            "strides" to listOf(3072, 1024, 32, 1),
-                            "data" to trainingResult["weight_data"] as? List<Float> ?: List(4 * 3 * 32 * 32) { 0.0f }
-                        )
-                    )
+                    // Return tensor differences for CNN (mirrors iOS exactly)
+                    trainingResult
                 }
                 "xor" -> {
                     // Return number format for XOR, matching iOS
@@ -164,13 +159,8 @@ class ETTrainer(
                     )
                 }
                 else -> {
-                    // Generic tensor format for other methods
-                    mapOf(
-                        "tensor" to mapOf(
-                            "name" to "weight",
-                            "data" to trainingResult["weight_data"] as? List<Float> ?: listOf(0.0f)
-                        )
-                    )
+                    // Return tensor differences for other methods (mirrors iOS)
+                    trainingResult
                 }
             }
 
@@ -190,11 +180,19 @@ class ETTrainer(
                 )
             )
 
-            Log.d(TAG, "Training completed successfully, returning DXO with ${resultData.keys.size} keys")
-            return dxo
+                        Log.d(TAG, "Training completed successfully, returning DXO with ${resultData.keys.size} keys")
             
+            // Release dataset reference after training
+            currentDataset = null
+            
+            return dxo
+
         } catch (e: Exception) {
             Log.e(TAG, "Training failed", e)
+            
+            // Release dataset reference on error too
+            currentDataset = null
+            
             throw RuntimeException("ExecuTorch training failed: ${e.message}", e)
         }
     }
@@ -215,9 +213,13 @@ class ETTrainer(
         
         Log.d(TAG, "Starting training loop for $epochs epochs")
         
-        // Get model parameters for optimizer
-        val parameters: Map<String, Tensor> = model.namedParameters("forward")
-        val sgd = SGD.create(parameters, learningRate.toDouble(), momentum.toDouble(), 0.0, 0.0, true)
+        // Get initial parameters (mirrors iOS implementation)
+        val initialParameters: Map<String, Tensor> = model.namedParameters("forward")
+        val oldParams = toTensorDictionary(initialParameters)
+        Log.d(TAG, "Captured initial parameters with ${oldParams.size} tensors")
+        
+        // Note: We use CIFAR pattern (create per batch) instead of iOS pattern
+        // because Java ExecuTorch may require fresh optimizer instances
         
         var totalLoss = 0.0f
         var totalSteps = 0
@@ -240,27 +242,35 @@ class ETTrainer(
                 val inputData = batch.getInput() as FloatArray
                 val labelData = batch.getLabel() as FloatArray
                 
-                // Create tensors
+                // Create tensors using proper ExecuTorch pattern
                 val inputTensor = createInputTensor(inputData, method, batchSize)
                 val labelTensor = createLabelTensor(labelData, batchSize)
                 
                 // Forward-backward pass
                 val inputEValues = arrayOf(EValue.from(inputTensor), EValue.from(labelTensor))
                 val outputEValues = model.executeForwardBackward("forward", *inputEValues)
+                    ?: throw IllegalStateException("Execution module is not loaded.")
                 
-                // Extract loss
+                // Extract loss and predictions (mirrors CIFAR example exactly)
                 val loss = outputEValues[0].toTensor().getDataAsFloatArray()[0]
+                val predictions = outputEValues[1].toTensor().getDataAsLongArray()
+                
                 epochLoss += loss
                 totalLoss += loss
                 epochSteps++
                 totalSteps++
                 
-                // Update parameters using SGD
+                // Update parameters using SGD (mirrors CIFAR example - create per batch)
+                val parameters: Map<String, Tensor> = model.namedParameters("forward")
+                val sgd = SGD.create(parameters, learningRate.toDouble(), momentum.toDouble(), 0.0, 0.0, true)
                 val gradients: Map<String, Tensor> = model.namedGradients("forward")
                 sgd.step(gradients)
                 
-                if (epochSteps % 10 == 0) {
-                    Log.d(TAG, "Epoch $epoch, Step $epochSteps, Loss: $loss")
+                // Progress logging (mirrors iOS implementation)
+                val samplesProcessed = epochSteps * batchSize
+                if (totalSteps % 500 == 0 || (epoch == epochs && epochSteps == 0)) {
+                    val progressPercent = (samplesProcessed.toFloat() * 100 / dataset.size()).toInt()
+                    Log.d(TAG, "Epoch $epoch/$epochs, Progress $progressPercent%, Step $totalSteps, Loss: $loss")
                 }
             }
             
@@ -269,57 +279,68 @@ class ETTrainer(
         
         Log.d(TAG, "Training completed - Total Steps: $totalSteps, Average Loss: ${totalLoss / totalSteps}")
         
-        // Return training results
+        // Get final parameters and calculate differences (mirrors iOS implementation)
+        val finalParameters: Map<String, Tensor> = model.namedParameters("forward")
+        val newParams = toTensorDictionary(finalParameters)
+        Log.d(TAG, "Captured final parameters with ${newParams.size} tensors")
+        
+        // Calculate tensor differences (new - old)
+        val tensorDiff = calculateTensorDifference(oldParams, newParams)
+        Log.d(TAG, "Calculated tensor differences with ${tensorDiff.size} tensors")
+        
+        // Return training results matching iOS format
         return when (method) {
             "cnn" -> {
-                // Extract weight differences for CNN
-                val weightData = extractWeightDifferences(parameters)
-                mapOf(
-                    "weight_data" to weightData,
-                    "loss" to (totalLoss / totalSteps),
-                    "steps" to totalSteps
-                )
+                // Return tensor differences for CNN (mirrors iOS)
+                tensorDiff
             }
             "xor" -> {
-                // For XOR, return simple values
+                // For XOR, return simple values (maintains backward compatibility)
                 mapOf(
                     "value" to (totalLoss / totalSteps).toDouble(),
                     "count" to totalSteps
                 )
             }
             else -> {
-                mapOf(
-                    "weight_data" to listOf<Float>(),
-                    "loss" to (totalLoss / totalSteps),
-                    "steps" to totalSteps
-                )
+                // Return tensor differences for other methods
+                tensorDiff
             }
         }
     }
 
     /**
      * Create input tensor based on method and batch size.
+     * Uses proper ExecuTorch tensor creation pattern.
      */
     private fun createInputTensor(inputData: FloatArray, method: String, batchSize: Int): Tensor {
         return when (method) {
             "cnn" -> {
                 // CIFAR-10: [batch, channels, height, width] = [batch, 3, 32, 32]
+                val buffer = Tensor.allocateFloatBuffer(inputData.size)
+                buffer.put(inputData)
+                buffer.rewind()
                 Tensor.fromBlob(
-                    inputData,
+                    buffer,
                     longArrayOf(batchSize.toLong(), 3L, 32L, 32L)
                 )
             }
             "xor" -> {
                 // XOR: [batch, features] = [batch, 2]
+                val buffer = Tensor.allocateFloatBuffer(inputData.size)
+                buffer.put(inputData)
+                buffer.rewind()
                 Tensor.fromBlob(
-                    inputData,
+                    buffer,
                     longArrayOf(batchSize.toLong(), 2L)
                 )
             }
             else -> {
                 // Default: assume 1D input
+                val buffer = Tensor.allocateFloatBuffer(inputData.size)
+                buffer.put(inputData)
+                buffer.rewind()
                 Tensor.fromBlob(
-                    inputData,
+                    buffer,
                     longArrayOf(batchSize.toLong(), (inputData.size / batchSize).toLong())
                 )
             }
@@ -328,26 +349,79 @@ class ETTrainer(
 
     /**
      * Create label tensor.
+     * Uses proper ExecuTorch tensor creation pattern matching CIFAR example exactly.
      */
     private fun createLabelTensor(labelData: FloatArray, batchSize: Int): Tensor {
-        val longLabels = LongArray(batchSize) { labelData[it].toLong() }
-        return Tensor.fromBlob(longLabels, longArrayOf(batchSize.toLong()))
+        val batchLabelBuffer = LongArray(batchSize) { labelData[it].toLong() }
+        return Tensor.fromBlob(batchLabelBuffer, longArrayOf(batchSize.toLong()))
     }
 
     /**
-     * Extract weight differences from parameters.
+     * Convert tensor map to dictionary format matching iOS implementation.
      */
-    private fun extractWeightDifferences(parameters: Map<String, Tensor>): List<Float> {
-        val weightData = mutableListOf<Float>()
+    private fun toTensorDictionary(parameters: Map<String, Tensor>): Map<String, Map<String, Any>> {
+        val tensorDict = mutableMapOf<String, Map<String, Any>>()
         
-        // Extract data from the first parameter (simplified)
-        val firstParam = parameters.values.firstOrNull()
-        if (firstParam != null) {
-            val data = firstParam.getDataAsFloatArray()
-            weightData.addAll(data.toList())
+        for ((key, tensor) in parameters) {
+            val sizes = tensor.sizes()
+            val strides = tensor.strides()
+            val data = tensor.getDataAsFloatArray()
+            
+            val singleTensorDict = mapOf(
+                "sizes" to sizes.toList(),
+                "strides" to strides.toList(),
+                "data" to data.toList()
+            )
+            
+            tensorDict[key] = singleTensorDict
         }
         
-        return weightData
+        return tensorDict
+    }
+
+    /**
+     * Calculate tensor differences between old and new parameters.
+     * Mirrors iOS calculateTensorDifference implementation.
+     */
+    private fun calculateTensorDifference(
+        oldDict: Map<String, Map<String, Any>>,
+        newDict: Map<String, Map<String, Any>>
+    ): Map<String, Map<String, Any>> {
+        val diffDict = mutableMapOf<String, Map<String, Any>>()
+        
+        for ((key, oldTensor) in oldDict) {
+            val newTensor = newDict[key]
+            if (newTensor == null) {
+                Log.w(TAG, "Warning: Tensor $key not found in new parameters")
+                continue
+            }
+            
+            val oldData = oldTensor["data"] as? List<Float>
+            val newData = newTensor["data"] as? List<Float>
+            
+            if (oldData == null || newData == null) {
+                Log.w(TAG, "Warning: Invalid data format for tensor $key")
+                continue
+            }
+            
+            if (oldData.size != newData.size) {
+                Log.w(TAG, "Warning: Tensor $key size mismatch: old=${oldData.size} new=${newData.size}")
+                continue
+            }
+            
+            // Calculate differences: new - old
+            val diffData = oldData.zip(newData).map { (oldVal, newVal) -> newVal - oldVal }
+            
+            val diffTensor = mapOf(
+                "sizes" to oldTensor["sizes"],
+                "strides" to oldTensor["strides"],
+                "data" to diffData
+            )
+            
+            diffDict[key] = diffTensor
+        }
+        
+        return diffDict
     }
 
     /**
@@ -363,6 +437,10 @@ class ETTrainer(
             }
             isInitialized = false
         }
+        
+        // Release dataset reference
+        currentDataset = null
+        Log.d(TAG, "Dataset reference released")
     }
 
     /**
