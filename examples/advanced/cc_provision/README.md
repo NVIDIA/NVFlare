@@ -57,7 +57,7 @@ cc_cpu_mechanism: amd_sev_snp
 role: server
 
 # All drive sizes are in GB
-root_drive_size: 8
+root_drive_size: 15
 secure_drive_size: 2
 data_source: /tmp/data
 
@@ -66,14 +66,17 @@ nvflare_version: "2.6.0"
 
 # NVFlare application code package to be pre-installed inside the CVM
 nvflare_package: application_code.zip
-
+allowed_ports:
+  - 8002
+trustee_host: trustee-azsnptpm.eastus.cloudapp.azure.com
+trustee_port: 8999
 
 cc_issuers:
   - id: snp_authorizer
-    path: "nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer"
+    path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
     token_expiration: 3600 # in seconds
   - id: gpu_authorizer
-    path: "nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer"
+    path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
     token_expiration: 3600 # in seconds
 
 cc_attestation:

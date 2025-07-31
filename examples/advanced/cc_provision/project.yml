@@ -10,7 +10,6 @@ participants:
     type: server
     org: nvidia
     fed_learn_port: 8002
-    admin_port: 8003
     cc_config: cc_server1.yml
   - name: site-1
     type: client
