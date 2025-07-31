@@ -120,6 +120,30 @@ class CIFAR10Dataset(
         return 1 // CIFAR-10 has 1 output (10-class classification)
     }
     
+    override fun validate() {
+        super.validate()
+        
+        // Additional CIFAR-10 specific validation
+        if (data.isEmpty()) {
+            throw DatasetError.NoDataFound("CIFAR-10 data not found in app bundle")
+        }
+        
+        if (data.size < 1000) { // CIFAR-10 should have at least 1000 samples
+            throw DatasetError.InvalidDataFormat("CIFAR-10 dataset size is too small: ${data.size}")
+        }
+        
+        // Validate data format (each sample should have 3072 features + 1 label)
+        val expectedFeatures = 3072 // 32x32x3
+        val expectedLabel = 1
+        
+        if (data.isNotEmpty()) {
+            val sample = data[0]
+            if (sample.features.size != expectedFeatures) {
+                throw DatasetError.InvalidDataFormat("CIFAR-10 features dimension mismatch: expected $expectedFeatures, got ${sample.features.size}")
+            }
+        }
+    }
+    
     /**
      * Load CIFAR-10 binary data from Android assets.
      * 

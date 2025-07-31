@@ -66,6 +66,7 @@ abstract class ComponentResolver(
  * Process training configuration and create a TrainConfig object.
  */
 fun processTrainConfig(
+    context: android.content.Context,
     config: Map<String, Any>,
     resolverRegistry: Map<String, Class<*>>
 ): TrainConfig {
@@ -75,7 +76,7 @@ fun processTrainConfig(
         ?: throw ConfigError("missing ${ConfigKey.COMPONENTS} in config")
 
     // Process components
-    val objTable = processComponents(components, resolverRegistry)
+    val objTable = processComponents(context, components, resolverRegistry)
 
     // Process input filters
     val inFilters = config[ConfigKey.IN_FILTERS] as? List<String>
@@ -118,6 +119,7 @@ fun processTrainConfig(
  * Process component specifications and create objects.
  */
 private fun processComponents(
+    context: android.content.Context,
     components: List<Map<String, Any>>,
     resolverRegistry: Map<String, Class<*>>
 ): Map<String, Any> {
@@ -141,12 +143,18 @@ private fun processComponents(
         val resolver = object : ComponentResolver(compType, name, args) {
             override fun resolve(): Any? {
                 return try {
-                    // Special handling for executor type to use AndroidExecutorFactory
-                    if (compType.startsWith("Executor.")) {
-                        resolveExecutor(args)
-                    } else {
-                        // Default: create instance using reflection
-                        clazz.getDeclaredConstructor().newInstance()
+                    // Special handling for executor and trainer types
+                    when {
+                        compType.startsWith("Executor.") -> {
+                            resolveExecutor(args)
+                        }
+                        compType.startsWith("Trainer.") -> {
+                            resolveTrainer(args)
+                        }
+                        else -> {
+                            // Default: create instance using reflection
+                            clazz.getDeclaredConstructor().newInstance()
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to create instance of $compType", e)
@@ -161,7 +169,27 @@ private fun processComponents(
                 val meta = args?.get("meta") as? Map<String, Any> ?: emptyMap()
                 
                 // Use AndroidExecutorFactory to create the executor
-                return AndroidExecutorFactory.createExecutor(method, modelData, meta)
+                return AndroidExecutorFactory.createExecutor(context, method, modelData, meta)
+            }
+            
+            private fun resolveTrainer(args: Map<String, Any>?): Any? {
+                // Map Trainer.DLTrainer to Android executor
+                // Extract training parameters from args
+                val epoch = args?.get("epoch") as? Int ?: 5
+                val lr = args?.get("lr") as? Double ?: 0.0001
+                val optimizer = args?.get("optimizer") as? String ?: "sgd"
+                val loss = args?.get("loss") as? String ?: "bce"
+                
+                // Create meta configuration for the trainer
+                val meta = mapOf(
+                    "epoch" to epoch,
+                    "learning_rate" to lr,
+                    "optimizer" to optimizer,
+                    "loss" to loss
+                )
+                
+                // Use AndroidExecutorFactory with default method
+                return AndroidExecutorFactory.createExecutor(context, "cnn", "", meta)
             }
         }
 

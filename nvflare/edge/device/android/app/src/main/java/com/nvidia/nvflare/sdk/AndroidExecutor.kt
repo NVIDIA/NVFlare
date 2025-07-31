@@ -65,11 +65,11 @@ object AndroidExecutorFactory {
     /**
      * Create an AndroidExecutor based on the training method and model data.
      */
-    fun createExecutor(method: String, modelData: String, meta: Map<String, Any>): AndroidExecutor {
+    fun createExecutor(context: android.content.Context, method: String, modelData: String, meta: Map<String, Any>): AndroidExecutor {
         val trainingConfig = TrainingConfig.fromMap(meta)
         
         // Use dynamic trainer registry instead of hardcoded when block
-        val trainer = TrainerRegistry.createTrainer(method, modelData, trainingConfig)
+        val trainer = TrainerRegistry.createTrainer(context, method, modelData, trainingConfig)
         
         return AndroidExecutor(trainer)
     }

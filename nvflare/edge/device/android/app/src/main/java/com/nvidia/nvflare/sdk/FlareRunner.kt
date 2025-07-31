@@ -16,6 +16,7 @@ import com.nvidia.nvflare.sdk.defs.Executor
  * Handles job fetching, task execution, and result reporting.
  */
 abstract class FlareRunner(
+    private val jobName: String,  // Add job_name parameter
     private val dataSource: DataSource,
     private val deviceInfo: Map<String, String>,
     private val userInfo: Map<String, String>,
@@ -27,7 +28,7 @@ abstract class FlareRunner(
     private val TAG = "FlareRunner"
     protected val abortSignal = Signal()
     protected var jobId: String? = null
-    protected var jobName: String? = null
+    protected var jobName: String? = jobName  // Initialize with constructor parameter
     protected var cookie: Any? = null
 
     protected val resolverRegistryMap = mutableMapOf<String, Class<*>>()
@@ -48,6 +49,14 @@ abstract class FlareRunner(
      */
     protected open fun addBuiltinResolvers() {
         // Default implementation is empty
+    }
+
+    /**
+     * Get Android context for platform-specific operations.
+     * Override this in platform-specific implementations.
+     */
+    protected open fun getAndroidContext(): android.content.Context {
+        throw UnsupportedOperationException("getAndroidContext() not implemented in base FlareRunner")
     }
 
     /**
@@ -88,7 +97,6 @@ abstract class FlareRunner(
             return true
         }
 
-        jobName = job["job_name"] as? String
         jobId = job["job_id"] as? String
         val jobData = job["job_data"] as? Map<String, Any>
 
@@ -96,7 +104,7 @@ abstract class FlareRunner(
 
         // Process training configuration
         val trainConfig = if (jobData != null) {
-            processTrainConfig(jobData, resolverRegistryMap)
+            processTrainConfig(getAndroidContext(), jobData, resolverRegistryMap)
         } else {
             throw RuntimeException("No job data available")
         }

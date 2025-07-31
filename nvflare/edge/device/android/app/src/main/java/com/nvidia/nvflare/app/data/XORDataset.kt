@@ -112,6 +112,32 @@ class XORDataset(private val phase: String = "train") : Dataset {
     fun labelDim(): Int {
         return 1 // XOR has 1 output (binary classification)
     }
+
+    override fun validate() {
+        super.validate()
+        
+        // XOR dataset should have exactly 4 samples
+        if (data.size != 4) {
+            throw DatasetError.InvalidDataFormat("XOR dataset should have exactly 4 samples, got ${data.size}")
+        }
+        
+        // Validate XOR truth table
+        val expectedData = listOf(
+            DataPoint(floatArrayOf(0f, 0f), 0f),
+            DataPoint(floatArrayOf(0f, 1f), 1f),
+            DataPoint(floatArrayOf(1f, 0f), 1f),
+            DataPoint(floatArrayOf(1f, 1f), 0f)
+        )
+        
+        for (i in data.indices) {
+            val actual = data[i]
+            val expected = expectedData[i]
+            
+            if (!actual.features.contentEquals(expected.features) || actual.label != expected.label) {
+                throw DatasetError.InvalidDataFormat("XOR dataset contains invalid data at index $i")
+            }
+        }
+    }
     
     /**
      * Data class representing a single XOR data point.

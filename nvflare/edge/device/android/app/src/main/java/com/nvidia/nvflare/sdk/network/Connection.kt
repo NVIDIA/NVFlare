@@ -19,6 +19,7 @@ import java.io.IOException
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import okhttp3.HttpUrl
+import com.google.gson.JsonPrimitive
 
 class Connection(private val context: Context) {
     private val TAG = "Connection"
@@ -67,7 +68,7 @@ class Connection(private val context: Context) {
         return info.map { (key, value) -> "$key=$value" }.joinToString("&")
     }
 
-    suspend fun fetchJob(): JobResponse = withContext(Dispatchers.IO) {
+    suspend fun fetchJob(jobName: String): JobResponse = withContext(Dispatchers.IO) {
         if (!isValid) {
             throw NVFlareError.InvalidRequest("Invalid hostname or port")
         }
@@ -79,9 +80,9 @@ class Connection(private val context: Context) {
             .addPathSegment("job")
             .build()
 
-        // Prepare request body
+        // Prepare request body with job_name instead of capabilities
         val requestBody = JsonObject().apply {
-            add("capabilities", gson.toJsonTree(capabilities))
+            add("job_name", JsonPrimitive(jobName))
         }
 
         val request = Request.Builder()
@@ -113,7 +114,7 @@ class Connection(private val context: Context) {
                             val retryWait = jobResponse.retryWait ?: 5000
                             Log.d(TAG, "Retrying job fetch after $retryWait ms")
                             delay(retryWait.toLong())
-                            fetchJob()
+                            fetchJob(jobName)
                         }
 
                         else -> throw NVFlareError.JobFetchFailed("Job fetch failed")

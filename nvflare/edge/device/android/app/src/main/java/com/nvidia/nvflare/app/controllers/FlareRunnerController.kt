@@ -2,177 +2,222 @@ package com.nvidia.nvflare.app.controllers
 
 import android.content.Context
 import android.util.Log
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.nvidia.nvflare.sdk.network.Connection
-import com.nvidia.nvflare.sdk.AndroidFlareRunner
 import com.nvidia.nvflare.app.data.AndroidDataSource
-import com.nvidia.nvflare.sdk.utils.MethodType
-import com.nvidia.nvflare.sdk.utils.TrainerType
-import com.nvidia.nvflare.sdk.utils.TrainingStatus
-import com.nvidia.nvflare.sdk.defs.Filter
-import com.nvidia.nvflare.sdk.defs.EventHandler
-import com.nvidia.nvflare.sdk.defs.Transform
-import com.nvidia.nvflare.sdk.defs.Batch
-import com.nvidia.nvflare.sdk.defs.NoOpFilter
-import com.nvidia.nvflare.sdk.defs.NoOpEventHandler
-import com.nvidia.nvflare.sdk.defs.NoOpTransform
-import com.nvidia.nvflare.sdk.defs.SimpleBatch
-import com.nvidia.nvflare.sdk.TrainerRegistry
+import com.nvidia.nvflare.app.data.DatasetError
+import com.nvidia.nvflare.sdk.AndroidFlareRunner
+import com.nvidia.nvflare.sdk.defs.Context as FlareContext
+import com.nvidia.nvflare.sdk.defs.DataSource
+import com.nvidia.nvflare.sdk.defs.Signal
+import com.nvidia.nvflare.sdk.defs.Dataset
 import com.nvidia.nvflare.sdk.trainers.ETTrainerFactory
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+enum class TrainingStatus {
+    IDLE,
+    TRAINING,
+    STOPPING
+}
+
+enum class TrainingError : Exception {
+    DATASET_CREATION_FAILED,
+    CONNECTION_FAILED,
+    TRAINING_FAILED,
+    NO_SUPPORTED_JOBS
+}
+
+enum class SupportedJob(val value: String) {
+    CIFAR10("CIFAR10"),
+    XOR("XOR");
+    
+    val displayName: String
+        get() = when (this) {
+            CIFAR10 -> "CIFAR-10"
+            XOR -> "XOR"
+        }
+    
+    val datasetType: String
+        get() = when (this) {
+            CIFAR10 -> "cifar10"
+            XOR -> "xor"
+        }
+}
+
 /**
- * Controller that manages FlareRunner instances.
- * Provides the same interface as the old TrainerController but uses the new SDK architecture.
+ * Android app-level coordinator that uses NVFlareSDK.
+ * Mirrors the iOS TrainerController pattern with strong reference management.
  */
 class FlareRunnerController(
-    private val context: Context,
-    private val connection: Connection
-) : ViewModel() {
+    private val context: Context
+) {
     private val TAG = "FlareRunnerController"
     
-    private val _status = MutableLiveData<TrainingStatus>(TrainingStatus.IDLE)
-    val status: LiveData<TrainingStatus> = _status
-
-    private val _trainerType = MutableLiveData<TrainerType>(TrainerType.EXECUTORCH)
-    val trainerType: LiveData<TrainerType> = _trainerType
-
-    private val _supportedMethods = MutableLiveData<Set<MethodType>>(setOf(MethodType.CNN, MethodType.XOR))
-    val supportedMethods: LiveData<Set<MethodType>> = _supportedMethods
-
-    private var currentFlareRunner: AndroidFlareRunner? = null
-    private var currentTask: kotlinx.coroutines.Job? = null
-
+    // State management
+    private var status: TrainingStatus = TrainingStatus.IDLE
+    var supportedJobs: Set<SupportedJob> = setOf(SupportedJob.CIFAR10, SupportedJob.XOR)
+        private set
+    
+    // Task management
+    private var currentJob: Job? = null
+    private var flareRunner: AndroidFlareRunner? = null
+    
+    // CRITICAL: Strong reference to keep dataset alive during training
+    // This prevents the dataset from being deallocated while training is in progress
+    private var currentDataset: Dataset? = null
+    
+    // Server configuration
+    var serverHost: String = "192.168.6.101"
+    var serverPort: Int = 4321
+    
     val capabilities: Map<String, Any>
-        get() {
-            val methods = _supportedMethods.value?.map { it.displayName } ?: emptyList()
-            return mapOf("methods" to methods)
-        }
-
-    init {
-        // Set initial capabilities
-        connection.setCapabilities(capabilities)
-    }
-
-    fun toggleMethod(method: MethodType) {
-        val currentMethods = _supportedMethods.value ?: emptySet()
-        _supportedMethods.value = if (currentMethods.contains(method)) {
-            currentMethods - method
+        get() = mapOf(
+            "supported_jobs" to supportedJobs.map { it.value }
+        )
+    
+    fun toggleJob(job: SupportedJob) {
+        if (supportedJobs.contains(job)) {
+            supportedJobs = supportedJobs - job
         } else {
-            currentMethods + method
+            supportedJobs = supportedJobs + job
         }
-        connection.setCapabilities(capabilities)
+        
+        // Update the runner if it exists
+        flareRunner?.let { runner ->
+            // Note: Android doesn't have updateSupportedJobs method yet, 
+            // but we can recreate the runner if needed
+        }
     }
-
-    fun setTrainerType(type: TrainerType) {
-        _trainerType.value = type
-    }
-
-    fun startTraining() {
-        if (_status.value == TrainingStatus.TRAINING) {
-            Log.w(TAG, "Training already in progress")
+    
+    fun startTraining(
+        onStatusUpdate: (TrainingStatus) -> Unit,
+        onError: (Exception) -> Unit,
+        onSuccess: () -> Unit
+    ) {
+        if (status != TrainingStatus.IDLE) return
+        
+        // Check if any jobs are supported
+        if (supportedJobs.isEmpty()) {
+            onError(TrainingError.NO_SUPPORTED_JOBS)
             return
         }
-
-        _status.value = TrainingStatus.TRAINING
-        currentTask = viewModelScope.launch {
+        
+        status = TrainingStatus.TRAINING
+        onStatusUpdate(status)
+        
+        currentJob = CoroutineScope(Dispatchers.IO).launch {
             try {
-                runTrainingWithFlareRunner()
-            } catch (e: Exception) {
-                Log.e(TAG, "Training failed", e)
-                if (_status.value != TrainingStatus.STOPPING) {
-                    _status.value = TrainingStatus.IDLE
+                Log.d(TAG, "FlareRunnerController: Starting federated learning")
+                
+                // Create dataset based on supported jobs
+                val dataset: Dataset
+                val dataSource = AndroidDataSource(context)
+                
+                if (supportedJobs.contains(SupportedJob.CIFAR10)) {
+                    try {
+                        dataset = dataSource.getDataset("cifar10", FlareContext())
+                        Log.d(TAG, "FlareRunnerController: Created CIFAR-10 dataset")
+                        
+                        // Validate dataset using SDK's standardized validation
+                        dataset.validate()
+                        Log.d(TAG, "FlareRunnerController: CIFAR-10 dataset validation passed")
+                        Log.d(TAG, "FlareRunnerController: CIFAR-10 dataset size: ${dataset.size()}")
+                        
+                    } catch (e: DatasetError.NoDataFound) {
+                        Log.e(TAG, "FlareRunnerController: CIFAR-10 data not found in app bundle")
+                        throw TrainingError.DATASET_CREATION_FAILED
+                    } catch (e: DatasetError.InvalidDataFormat) {
+                        Log.e(TAG, "FlareRunnerController: CIFAR-10 data format is invalid")
+                        throw TrainingError.DATASET_CREATION_FAILED
+                    } catch (e: DatasetError.EmptyDataset) {
+                        Log.e(TAG, "FlareRunnerController: CIFAR-10 dataset is empty")
+                        throw TrainingError.DATASET_CREATION_FAILED
+                    } catch (e: Exception) {
+                        Log.e(TAG, "FlareRunnerController: Failed to create CIFAR-10 dataset: $e")
+                        throw TrainingError.DATASET_CREATION_FAILED
+                    }
+                } else if (supportedJobs.contains(SupportedJob.XOR)) {
+                    dataset = dataSource.getDataset("xor", FlareContext())
+                    Log.d(TAG, "FlareRunnerController: Created XOR dataset")
+                    Log.d(TAG, "FlareRunnerController: XOR dataset size: ${dataset.size()}")
+                } else {
+                    throw TrainingError.DATASET_CREATION_FAILED
                 }
-                throw e
+                
+                // Store the dataset to keep it alive during training
+                currentDataset = dataset
+                Log.d(TAG, "FlareRunnerController: Stored dataset reference: $dataset")
+                
+                // Create FlareRunner with dataset
+                val runner = AndroidFlareRunner(
+                    context = context,
+                    connection = createConnection(),
+                    jobName = "federated_learning",
+                    dataSource = dataSource,
+                    deviceInfo = mapOf(
+                        "device_id" to android.provider.Settings.Secure.getString(
+                            context.contentResolver, 
+                            android.provider.Settings.Secure.ANDROID_ID
+                        ) ?: "unknown",
+                        "platform" to "android",
+                        "app_version" to context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                    ),
+                    userInfo = emptyMap(),
+                    jobTimeout = 30.0f
+                )
+                
+                flareRunner = runner
+                
+                Log.d(TAG, "FlareRunnerController: Supported jobs: ${supportedJobs.map { it.value }}")
+                Log.d(TAG, "FlareRunnerController: Using app's dataset implementation")
+                
+                // Start the runner (this will call the main FL loop)
+                Log.d(TAG, "FlareRunnerController: About to start training with dataset reference: $currentDataset")
+                runner.run()
+                
+                Log.d(TAG, "FlareRunnerController: Training completed, about to cleanup")
+                
+                // Reset status after successful completion
+                withContext(Dispatchers.Main) {
+                    Log.d(TAG, "FlareRunnerController: Clearing dataset reference")
+                    currentDataset = null // Release dataset reference
+                    status = TrainingStatus.IDLE
+                    onStatusUpdate(status)
+                    onSuccess()
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "FlareRunnerController: Training failed with error: $e")
+                withContext(Dispatchers.Main) {
+                    Log.d(TAG, "FlareRunnerController: Clearing dataset reference due to error")
+                    currentDataset = null // Release dataset reference on error too
+                    status = TrainingStatus.IDLE
+                    onStatusUpdate(status)
+                    onError(e)
+                }
             }
         }
     }
-
+    
     fun stopTraining() {
-        _status.value = TrainingStatus.STOPPING
-        currentFlareRunner?.stop()
-        currentTask?.cancel()
-        currentTask = null
-        currentFlareRunner = null
-        _status.value = TrainingStatus.IDLE
-        connection.resetCookie()
+        status = TrainingStatus.STOPPING
+        flareRunner?.stop()
+        currentJob?.cancel()
     }
-
-    private suspend fun runTrainingWithFlareRunner() = withContext(Dispatchers.IO) {
-        try {
-            Log.d(TAG, "Creating FlareRunner")
-            
-            // Create device info
-            val deviceInfo = createDeviceInfo()
-            
-            // Create user info
-            val userInfo = createUserInfo()
-            
-            // Create data source
-            val dataSource = AndroidDataSource(context)
-            
-            // Create resolver registry for components
-            val resolverRegistry = createResolverRegistry()
-            
-            // Create FlareRunner
-            currentFlareRunner = AndroidFlareRunner(
-                context = context,
-                connection = connection,
-                dataSource = dataSource,
-                deviceInfo = deviceInfo,
-                userInfo = userInfo,
-                jobTimeout = 300.0f, // 5 minutes timeout
-                resolverRegistry = resolverRegistry
+    
+    private fun createConnection(): com.nvidia.nvflare.sdk.network.Connection {
+        return com.nvidia.nvflare.sdk.network.Connection(
+            hostname = serverHost,
+            port = serverPort,
+            deviceInfo = mapOf(
+                "device_id" to android.provider.Settings.Secure.getString(
+                    context.contentResolver, 
+                    android.provider.Settings.Secure.ANDROID_ID
+                ) ?: "unknown",
+                "platform" to "android"
             )
-            
-            Log.d(TAG, "Starting FlareRunner")
-            currentFlareRunner?.run()
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "FlareRunner execution failed", e)
-            throw e
-        }
-    }
-    
-    private fun createDeviceInfo(): Map<String, String> {
-        return mapOf(
-            "device_id" to if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toString()
-            } else {
-                context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toString()
-            },
-            "app_name" to "test",
-            "app_version" to context.packageManager.getPackageInfo(context.packageName, 0).versionName,
-            "platform" to "android",
-            "platform_version" to "1.2.2"
-        )
-    }
-    
-    private fun createUserInfo(): Map<String, String> {
-        return mapOf(
-            "user_id" to "xyz"
-        )
-    }
-    
-    private fun createResolverRegistry(): Map<String, Class<*>> {
-        // Register trainer implementations in the dynamic registry
-        // This replaces the hardcoded methods in AndroidExecutorFactory
-        TrainerRegistry.registerTrainer("cnn", ETTrainerFactory())
-        TrainerRegistry.registerTrainer("xor", ETTrainerFactory())
-        // Future trainers can be added here without code changes to AndroidExecutorFactory
-        
-        return mapOf(
-            "Executor.AndroidExecutor" to AndroidExecutor::class.java,
-            "DataSource.AndroidDataSource" to AndroidDataSource::class.java,
-            "Filter.NoOpFilter" to NoOpFilter::class.java,
-            "EventHandler.NoOpEventHandler" to NoOpEventHandler::class.java,
-            "Transform.NoOpTransform" to NoOpTransform::class.java,
-            "Batch.SimpleBatch" to SimpleBatch::class.java
         )
     }
 } 

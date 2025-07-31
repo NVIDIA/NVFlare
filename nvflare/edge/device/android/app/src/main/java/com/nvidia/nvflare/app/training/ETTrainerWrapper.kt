@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class ETTrainerWrapper(
+    private val context: android.content.Context,
     private val modelBase64: String,
     private val meta: TrainingConfig
 ) : Trainer {
@@ -16,7 +17,7 @@ class ETTrainerWrapper(
 
     init {
         Log.d(TAG, "ETTrainerWrapper: Initializing with model and meta")
-        trainer = ETTrainer(modelBase64, meta.toMap())
+        trainer = ETTrainer(context, modelBase64, meta.toMap())
         Log.d(TAG, "ETTrainerWrapper: Initialization complete")
     }
 
