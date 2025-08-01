@@ -22,7 +22,7 @@ from nvflare.apis.fl_constant import ConnPropKey, FLContextKey, SecureTrainConst
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.overseer_spec import SP
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.data_event.utils import get_scope_property, set_scope_property
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -339,7 +339,10 @@ class FederatedClientBase:
         """
         try:
             self.logger.info("Starting to push execute result.")
-            execute_task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+            execute_task_name = shareable.get_header(ReservedHeaderKey.TASK_NAME)
+            if not execute_task_name:
+                execute_task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+
             return_code = self.communicator.submit_update(
                 project_name,
                 self.token,
