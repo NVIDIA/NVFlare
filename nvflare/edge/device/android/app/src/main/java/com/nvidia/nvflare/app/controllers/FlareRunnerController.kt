@@ -22,11 +22,11 @@ enum class TrainingStatus {
     STOPPING
 }
 
-enum class TrainingError : Exception {
-    DATASET_CREATION_FAILED,
-    CONNECTION_FAILED,
-    TRAINING_FAILED,
-    NO_SUPPORTED_JOBS
+sealed class TrainingError : Exception() {
+    object DATASET_CREATION_FAILED : TrainingError()
+    object CONNECTION_FAILED : TrainingError()
+    object TRAINING_FAILED : TrainingError()
+    object NO_SUPPORTED_JOBS : TrainingError()
 }
 
 enum class SupportedJob(val value: String) {
@@ -157,10 +157,10 @@ class FlareRunnerController(
                     jobName = "federated_learning",
                     dataSource = dataSource,
                     deviceInfo = mapOf(
-                        "device_id" to android.provider.Settings.Secure.getString(
+                        "device_id" to (android.provider.Settings.Secure.getString(
                             context.contentResolver, 
                             android.provider.Settings.Secure.ANDROID_ID
-                        ) ?: "unknown",
+                        ) ?: "unknown"),
                         "platform" to "android",
                         "app_version" to context.packageManager.getPackageInfo(context.packageName, 0).versionName
                     ),
@@ -208,16 +208,9 @@ class FlareRunnerController(
     }
     
     private fun createConnection(): com.nvidia.nvflare.sdk.network.Connection {
-        return com.nvidia.nvflare.sdk.network.Connection(
-            hostname = serverHost,
-            port = serverPort,
-            deviceInfo = mapOf(
-                "device_id" to android.provider.Settings.Secure.getString(
-                    context.contentResolver, 
-                    android.provider.Settings.Secure.ANDROID_ID
-                ) ?: "unknown",
-                "platform" to "android"
-            )
-        )
+        val connection = com.nvidia.nvflare.sdk.network.Connection(context)
+        connection.hostname.value = serverHost
+        connection.port.value = serverPort
+        return connection
     }
 } 

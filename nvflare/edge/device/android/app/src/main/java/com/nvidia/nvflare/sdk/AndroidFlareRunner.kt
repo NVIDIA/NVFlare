@@ -17,6 +17,7 @@ import com.nvidia.nvflare.sdk.defs.NoOpFilter
 import com.nvidia.nvflare.sdk.defs.NoOpEventHandler
 import com.nvidia.nvflare.sdk.defs.NoOpTransform
 import com.nvidia.nvflare.sdk.defs.SimpleBatch
+import com.nvidia.nvflare.sdk.defs.DXO
 import com.nvidia.nvflare.sdk.trainers.ETTrainerFactory
 
 import kotlinx.coroutines.runBlocking
@@ -114,7 +115,7 @@ class AndroidFlareRunner(
                     "RETRY" -> {
                         val retryWait = jobResponse.retryWait ?: 5000L
                         Log.d(TAG, "Server requested retry, waiting ${retryWait}ms")
-                        runBlocking { delay(retryWait) }
+                        runBlocking { delay(retryWait.toLong()) }
                         continue
                     }
                     else -> {
@@ -129,7 +130,7 @@ class AndroidFlareRunner(
                     return null
                 }
                 // Retry after delay
-                runBlocking { delay(5000) }
+                runBlocking { delay(5000L) }
                 continue
             }
         }
@@ -177,66 +178,68 @@ class AndroidFlareRunner(
                         Log.d(TAG, "Task session completed")
                         return Pair(null, true)
                     }
-                    TaskResponse.TaskStatus.RETRY -> {
-                        val retryWait = taskResponse.retryWait ?: 5000L
-                        Log.d(TAG, "Server requested task retry, waiting ${retryWait}ms")
-                        runBlocking { delay(retryWait) }
+                    TaskResponse.TaskStatus.ERROR -> {
+                        Log.d(TAG, "Task fetch error: ${taskResponse.message}")
+                        runBlocking { delay(5000L) }
                         continue
                     }
-                    TaskResponse.TaskStatus.NO_TASK -> {
+                    TaskResponse.TaskStatus.RETRY -> {
                         val retryWait = taskResponse.retryWait ?: 5000L
-                        Log.d(TAG, "No tasks available, retrying in ${retryWait}ms")
-                        runBlocking { delay(retryWait) }
+                        Log.d(TAG, "Task fetch retry requested, waiting ${retryWait}ms")
+                        runBlocking { delay(retryWait.toLong()) }
                         continue
                     }
                     else -> {
-                        if (!taskResponse.taskStatus.shouldContinueTraining) {
-                            Log.d(TAG, "Task fetch failed, retrying...")
-                            runBlocking { delay(5000) }
-                        }
+                        Log.d(TAG, "Task fetch failed with status: ${taskResponse.taskStatus}")
+                        runBlocking { delay(5000L) }
                         continue
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error fetching task", e)
-                runBlocking { delay(5000) }
+                if (e is NVFlareError.ServerRequestedStop) {
+                    return Pair(null, true)
+                }
+                // Retry after delay
+                runBlocking { delay(5000L) }
                 continue
             }
         }
     }
 
-    override fun reportResult(result: Map<String, Any>, ctx: Context, abortSignal: Signal): Boolean {
-        if (abortSignal.isTriggered) {
-            return true
-        }
-
-        val jobId = currentJobId ?: return true
-        val taskId = ctx.get(ContextKey.TASK_ID) as? String ?: return true
-        val taskName = ctx.get(ContextKey.TASK_NAME) as? String ?: return true
-
-        return try {
+    override fun reportResult(ctx: Context, output: DXO): Boolean {
+        val jobId = currentJobId ?: return false
+        val taskId = ctx.get(ContextKey.TASK_ID) as? String ?: return false
+        val taskName = ctx.get(ContextKey.TASK_NAME) as? String ?: return false
+        
+        try {
             val resultResponse = runBlocking {
                 connection.sendResult(
                     jobId = jobId,
                     taskId = taskId,
                     taskName = taskName,
-                    weightDiff = result
+                    weightDiff = output.toMap()
                 )
             }
-
+            
             when (resultResponse.status) {
                 "OK" -> {
-                    Log.d(TAG, "Result sent successfully")
-                    false // Continue with more tasks
+                    Log.d(TAG, "Result reported successfully")
+                    return true
+                }
+                "RETRY" -> {
+                    Log.d(TAG, "Result report retry requested, waiting 5000ms")
+                    runBlocking { delay(5000L) }
+                    return reportResult(ctx, output) // Retry
                 }
                 else -> {
-                    Log.e(TAG, "Failed to send result: ${resultResponse.message}")
-                    true // Session done due to error
+                    Log.e(TAG, "Result report failed with status: ${resultResponse.status}")
+                    return false
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error sending result", e)
-            true // Session done due to error
+            Log.e(TAG, "Error reporting result", e)
+            return false
         }
     }
 } 

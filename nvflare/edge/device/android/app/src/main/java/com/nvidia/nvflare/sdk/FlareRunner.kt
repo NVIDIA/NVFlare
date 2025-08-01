@@ -16,11 +16,11 @@ import com.nvidia.nvflare.sdk.defs.Executor
  * Handles job fetching, task execution, and result reporting.
  */
 abstract class FlareRunner(
-    private val jobName: String,  // Add job_name parameter
+    protected val jobName: String,  // Make protected and remove duplicate
     private val dataSource: DataSource,
     private val deviceInfo: Map<String, String>,
     private val userInfo: Map<String, String>,
-    private val jobTimeout: Float,
+    protected val jobTimeout: Float,  // Make protected so subclasses can access
     private val inFilters: List<Filter>? = null,
     private val outFilters: List<Filter>? = null,
     private val resolverRegistry: Map<String, Class<*>>? = null
@@ -28,7 +28,6 @@ abstract class FlareRunner(
     private val TAG = "FlareRunner"
     protected val abortSignal = Signal()
     protected var jobId: String? = null
-    protected var jobName: String? = jobName  // Initialize with constructor parameter
     protected var cookie: Any? = null
 
     protected val resolverRegistryMap = mutableMapOf<String, Class<*>>()
@@ -191,58 +190,47 @@ abstract class FlareRunner(
             }
 
             // Apply output filters
-            val filteredOutput = applyFilters(output, outputFilters, taskCtx)
+            var filteredOutput = applyFilters(output, outputFilters, taskCtx)
             if (filteredOutput !is DXO) {
-                throw RuntimeException("Output after filtering for task $taskName is not a valid DXO: ${filteredOutput::class.java}")
-            }
-
-            if (abortSignal.isTriggered) {
-                return true
+                throw RuntimeException("Output after filtering is not valid DXO: ${filteredOutput::class.java}")
             }
 
             // Report result
-            val resultSessionDone = reportResult(filteredOutput.toMap(), taskCtx, abortSignal)
-            if (resultSessionDone) {
-                return resultSessionDone
-            }
-
-            if (abortSignal.isTriggered) {
+            val result = reportResult(ctx, filteredOutput)
+            if (!result) {
+                Log.e(TAG, "Failed to report result")
                 return true
             }
         }
 
-        return true
-    }
-
-    /**
-     * Apply filters to data.
-     */
-    private fun applyFilters(data: DXO, filters: List<Filter>, ctx: Context): DXO {
-        var filteredData = data
-        for (filter in filters) {
-            filteredData = filter.filter(filteredData, ctx, abortSignal)
-            if (abortSignal.isTriggered) {
-                break
-            }
-        }
-        return filteredData
+        return false
     }
 
     /**
      * Get a job from the server.
-     * Must be implemented by platform-specific subclasses.
      */
     protected abstract fun getJob(ctx: Context, abortSignal: Signal): Map<String, Any>?
 
     /**
      * Get a task from the server.
-     * Must be implemented by platform-specific subclasses.
      */
     protected abstract fun getTask(ctx: Context, abortSignal: Signal): Pair<Map<String, Any>?, Boolean>
 
     /**
-     * Report results to the server.
-     * Must be implemented by platform-specific subclasses.
+     * Report a result to the server.
      */
-    protected abstract fun reportResult(result: Map<String, Any>, ctx: Context, abortSignal: Signal): Boolean
+    protected abstract fun reportResult(ctx: Context, output: DXO): Boolean
+
+    /**
+     * Apply filters to data.
+     */
+    private fun applyFilters(data: Any, filters: List<Filter>, ctx: Context): Any {
+        var result = data
+        for (filter in filters) {
+            if (result is DXO) {
+                result = filter.filter(result, ctx, abortSignal)
+            }
+        }
+        return result
+    }
 } 

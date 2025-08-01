@@ -57,10 +57,6 @@ class CIFAR10Dataset(
         val inputs = mutableListOf<Float>()
         val labels = mutableListOf<Float>()
         
-        // Pre-allocate capacity for efficiency
-        inputs.ensureCapacity(actualBatchSize * imageSize)
-        labels.ensureCapacity(actualBatchSize)
-        
         // Extract data from current batch range
         for (i in currentIndex until endIndex) {
             val image = images[indices[i]]
@@ -96,7 +92,7 @@ class CIFAR10Dataset(
      * 
      * @param shuffle true to enable shuffling, false to disable
      */
-    fun setShuffle(shuffle: Boolean) {
+    override fun setShuffle(shuffle: Boolean) {
         Log.d(TAG, "Setting shuffle to: $shuffle")
         shouldShuffle = shuffle
         reset()
@@ -107,7 +103,7 @@ class CIFAR10Dataset(
      * 
      * @return input dimension
      */
-    fun inputDim(): Int {
+    override fun inputDim(): Int {
         return imageSize // 3072 features per image (32x32x3)
     }
     
@@ -116,7 +112,7 @@ class CIFAR10Dataset(
      * 
      * @return label dimension
      */
-    fun labelDim(): Int {
+    override fun labelDim(): Int {
         return 1 // CIFAR-10 has 1 output (10-class classification)
     }
     
@@ -124,22 +120,21 @@ class CIFAR10Dataset(
         super.validate()
         
         // Additional CIFAR-10 specific validation
-        if (data.isEmpty()) {
+        if (images.isEmpty()) {
             throw DatasetError.NoDataFound("CIFAR-10 data not found in app bundle")
         }
         
-        if (data.size < 1000) { // CIFAR-10 should have at least 1000 samples
-            throw DatasetError.InvalidDataFormat("CIFAR-10 dataset size is too small: ${data.size}")
+        if (images.size < 1000) { // CIFAR-10 should have at least 1000 samples
+            throw DatasetError.InvalidDataFormat("CIFAR-10 dataset size is too small: ${images.size}")
         }
         
         // Validate data format (each sample should have 3072 features + 1 label)
         val expectedFeatures = 3072 // 32x32x3
-        val expectedLabel = 1
         
-        if (data.isNotEmpty()) {
-            val sample = data[0]
-            if (sample.features.size != expectedFeatures) {
-                throw DatasetError.InvalidDataFormat("CIFAR-10 features dimension mismatch: expected $expectedFeatures, got ${sample.features.size}")
+        if (images.isNotEmpty()) {
+            val sample = images[0]
+            if (sample.data.size != expectedFeatures) {
+                throw DatasetError.InvalidDataFormat("CIFAR-10 features dimension mismatch: expected $expectedFeatures, got ${sample.data.size}")
             }
         }
     }
@@ -182,7 +177,6 @@ class CIFAR10Dataset(
                 val label = bytes[startIndex].toInt()
                 
                 val imageData = mutableListOf<Float>()
-                imageData.ensureCapacity(3072)
                 
                 // Convert raw bytes to normalized float values [0,1]
                 for (j in 1 until bytesPerImage) {

@@ -50,10 +50,6 @@ class XORDataset(private val phase: String = "train") : Dataset {
         val inputs = mutableListOf<Float>()
         val labels = mutableListOf<Float>()
         
-        // Pre-allocate capacity for efficiency
-        inputs.ensureCapacity(actualBatchSize * 2) // 2 features per sample
-        labels.ensureCapacity(actualBatchSize)
-        
         // Extract data from current batch range
         for (i in currentIndex until endIndex) {
             val dataPoint = xorTable[indices[i]]
@@ -89,7 +85,7 @@ class XORDataset(private val phase: String = "train") : Dataset {
      * 
      * @param shuffle true to enable shuffling, false to disable
      */
-    fun setShuffle(shuffle: Boolean) {
+    override fun setShuffle(shuffle: Boolean) {
         Log.d(TAG, "Setting shuffle to: $shuffle")
         shouldShuffle = shuffle
         reset()
@@ -100,7 +96,7 @@ class XORDataset(private val phase: String = "train") : Dataset {
      * 
      * @return input dimension
      */
-    fun inputDim(): Int {
+    override fun inputDim(): Int {
         return 2 // XOR has 2 input features
     }
     
@@ -109,7 +105,7 @@ class XORDataset(private val phase: String = "train") : Dataset {
      * 
      * @return label dimension
      */
-    fun labelDim(): Int {
+    override fun labelDim(): Int {
         return 1 // XOR has 1 output (binary classification)
     }
 
@@ -117,23 +113,23 @@ class XORDataset(private val phase: String = "train") : Dataset {
         super.validate()
         
         // XOR dataset should have exactly 4 samples
-        if (data.size != 4) {
-            throw DatasetError.InvalidDataFormat("XOR dataset should have exactly 4 samples, got ${data.size}")
+        if (xorTable.size != 4) {
+            throw DatasetError.InvalidDataFormat("XOR dataset should have exactly 4 samples, got ${xorTable.size}")
         }
         
         // Validate XOR truth table
         val expectedData = listOf(
-            DataPoint(floatArrayOf(0f, 0f), 0f),
-            DataPoint(floatArrayOf(0f, 1f), 1f),
-            DataPoint(floatArrayOf(1f, 0f), 1f),
-            DataPoint(floatArrayOf(1f, 1f), 0f)
+            XORDataPoint(floatArrayOf(0f, 0f), 0),
+            XORDataPoint(floatArrayOf(0f, 1f), 1),
+            XORDataPoint(floatArrayOf(1f, 0f), 1),
+            XORDataPoint(floatArrayOf(1f, 1f), 0)
         )
         
-        for (i in data.indices) {
-            val actual = data[i]
+        for (i in xorTable.indices) {
+            val actual = xorTable[i]
             val expected = expectedData[i]
             
-            if (!actual.features.contentEquals(expected.features) || actual.label != expected.label) {
+            if (!actual.inputs.contentEquals(expected.inputs) || actual.label != expected.label) {
                 throw DatasetError.InvalidDataFormat("XOR dataset contains invalid data at index $i")
             }
         }

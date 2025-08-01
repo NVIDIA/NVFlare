@@ -180,7 +180,7 @@ class ETTrainer(
                 )
             )
 
-                        Log.d(TAG, "Training completed successfully, returning DXO with ${resultData.keys.size} keys")
+            Log.d(TAG, "Training completed successfully, returning DXO with ${resultData.keys.size} keys")
             
             // Release dataset reference after training
             currentDataset = null
@@ -220,7 +220,6 @@ class ETTrainer(
         
         // Note: We use CIFAR pattern (create per batch) instead of iOS pattern
         // because Java ExecuTorch requires fresh optimizer instances per batch
-        
         var totalLoss = 0.0f
         var totalSteps = 0
         
