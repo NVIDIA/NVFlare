@@ -265,7 +265,7 @@ def verify_folder_signature(src_folder, root_ca_path):
                         public_key=public_key,
                     )
         return True
-    except Exception as e:
+    except Exception:
         return False
 
 

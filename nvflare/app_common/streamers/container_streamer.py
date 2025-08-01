@@ -58,7 +58,7 @@ class _EntryConsumer(ObjectConsumer):
                 self.container.add(entry)
             else:
                 self.container.append(entry)
-        except Exception as ex:
+        except Exception:
             error = f"Unable to add entry ({type(entry)} to container ({type(self.container)}"
             self.logger.error(error)
             raise ValueError(error)
