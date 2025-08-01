@@ -298,7 +298,10 @@ class ByteStreamer:
             task.send_loop()
         except Exception as ex:
             msg = f"{task} Error while sending: {ex}"
-            log.error(msg)
+            if task.optional:
+                log.debug(msg)
+            else:
+                log.error(msg)
             task.stop(StreamError(msg), True)
         finally:
             # Delete task after it's sent

@@ -220,6 +220,17 @@ class ClientRunner(TBI):
         return reply
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
+        reply = self._do_process_task(task, fl_ctx)
+
+        cookie_jar = task.data.get_cookie_jar()
+        if cookie_jar:
+            reply.set_cookie_jar(cookie_jar)
+
+        reply.set_header(ReservedHeaderKey.TASK_NAME, task.name)
+        reply.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
+        return reply
+
+    def _do_process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
         if fl_ctx.is_job_unsafe():
             return make_reply(ReturnCode.UNSAFE_JOB)
 
@@ -228,7 +239,7 @@ class ClientRunner(TBI):
 
         abort_signal = Signal(parent=self.run_abort_signal)
         try:
-            reply = self._do_process_task(task, fl_ctx, abort_signal)
+            reply = self._do_task(task, fl_ctx, abort_signal)
         except Exception as ex:
             self.log_exception(fl_ctx, secure_format_exception(ex))
             reply = make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -240,20 +251,15 @@ class ClientRunner(TBI):
             self.log_error(fl_ctx, f"task reply must be Shareable, but got {type(reply)}")
             reply = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        cookie_jar = task.data.get_cookie_jar()
-        if cookie_jar:
-            reply.set_cookie_jar(cookie_jar)
-        reply.set_header(ReservedHeaderKey.TASK_NAME, task.name)
-        reply.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
         return reply
 
-    def _do_process_task(self, task: TaskAssignment, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def _do_task(self, task: TaskAssignment, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if not isinstance(task.data, Shareable):
             self.log_error(fl_ctx, f"got invalid task data in assignment: expect Shareable, but got {type(task.data)}")
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
         fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
-        fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task.task_id, private=True, sticky=False)
 
         server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
