@@ -15,7 +15,7 @@
 from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 
-from .et_task_processor import ETTaskProcessor
+from nvflare.edge.simulation.et_task_processor import ETTaskProcessor
 
 
 class ETCIFAR10TaskProcessor(ETTaskProcessor):

@@ -18,7 +18,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from .et_task_processor import ETTaskProcessor
+from nvflare.edge.simulation.et_task_processor import ETTaskProcessor
 
 
 class XORDataset(Dataset):
