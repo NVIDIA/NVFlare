@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
 
 import torch
 import torch.nn as nn
@@ -23,11 +22,11 @@ from torch.nn import functional as F
 
 
 def export_model_to_bytes(net: nn.Module, input_shape, output_shape):
-    """Exports a PyTorch model to a base64-encoded string suitable for use in embedded or edge environments.
+    """Exports a PyTorch model to ExecuTorch PTE format to be used in embedded or edge environments.
 
     This function creates dummy input and label tensors based on the provided shapes,
     runs the model export pipeline (including lowering to Executorch), and returns
-    the serialized model as a base64-encoded string.
+    the serialized model buffer.
 
     Args:
         net (nn.Module): The PyTorch model to export.
@@ -35,14 +34,13 @@ def export_model_to_bytes(net: nn.Module, input_shape, output_shape):
         output_shape (tuple): The shape of the output tensor, e.g., (batch_size, num_classes).
 
     Returns:
-        str: A UTF-8 string containing base64-encoded bytes of the exported model.
+        The exported model (.pte) in bytes.
     """
 
     input_tensor = torch.randn(input_shape)
     label_tensor = torch.ones(output_shape, dtype=torch.int64)
     model_buffer = export_model(net, input_tensor, label_tensor).buffer
-    base64_encoded = base64.b64encode(model_buffer).decode("utf-8")
-    return base64_encoded
+    return model_buffer
 
 
 def export_model(net: nn.Module, input_tensor_example, label_tensor_example):
