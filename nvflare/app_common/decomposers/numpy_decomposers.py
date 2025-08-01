@@ -66,9 +66,6 @@ class NumpyArrayDecomposer(ViaFileDecomposer):
     def get_file_dot(self) -> int:
         return dots.NUMPY_FILE
 
-    def get_mapping_dot(self) -> int:
-        return dots.NUMPY_MAP
-
     def dump_to_file(self, items: dict, path: str, fobs_ctx: dict):
         if not path.endswith(_NPZ_EXTENSION):
             path += _NPZ_EXTENSION

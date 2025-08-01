@@ -105,6 +105,3 @@ class TensorDecomposer(ViaFileDecomposer):
 
     def get_file_dot(self) -> int:
         return dots.TENSOR_FILE
-
-    def get_mapping_dot(self) -> int:
-        return dots.TENSOR_MAP
