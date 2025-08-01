@@ -65,7 +65,7 @@ class ETEdgeModelExecutor(EdgeModelExecutor):
         self.et_model.load_state_dict(model_weights)
         # Convert to buffer
         model_buffer = export_model_to_bytes(self.et_model, self.input_shape, self.output_shape)
-        model_str = base64.b64encode(model_uffer).decode("utf-8")
+        model_str = base64.b64encode(model_buffer).decode("utf-8")
         return model_str
 
     def _convert_task(self, task_state: BaseState, current_task: TaskInfo, fl_ctx: FLContext) -> dict:
