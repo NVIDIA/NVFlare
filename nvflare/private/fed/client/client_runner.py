@@ -221,6 +221,11 @@ class ClientRunner(TBI):
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
         reply = self._do_process_task(task, fl_ctx)
+
+        cookie_jar = task.data.get_cookie_jar()
+        if cookie_jar:
+            reply.set_cookie_jar(cookie_jar)
+
         reply.set_header(ReservedHeaderKey.TASK_NAME, task.name)
         reply.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
         return reply
@@ -246,11 +251,6 @@ class ClientRunner(TBI):
             self.log_error(fl_ctx, f"task reply must be Shareable, but got {type(reply)}")
             reply = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        cookie_jar = task.data.get_cookie_jar()
-        if cookie_jar:
-            reply.set_cookie_jar(cookie_jar)
-        reply.set_header(ReservedHeaderKey.TASK_NAME, task.name)
-        reply.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
         return reply
 
     def _do_task(self, task: TaskAssignment, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
