@@ -84,7 +84,7 @@ class ClientLogger(Logger):
     @override
     def version(self) -> Optional[str]:
 
-        return nvflare.__version__
+        return getattr(nvflare, "__version__", "unknown")
 
     @override
     def after_save_checkpoint(self, checkpoint_callback: ModelCheckpoint) -> None:

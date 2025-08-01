@@ -19,9 +19,10 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode, SiteType
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.private.fed.utils.fed_utils import get_target_names
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
@@ -51,7 +52,7 @@ class TaskController(FLComponent, ControllerSpec):
         if not self.task_result_filters:
             self.task_result_filters = {}
 
-    def control_flow(self, fl_ctx: FLContext):
+    def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         pass
 
     def stop_controller(self, fl_ctx: FLContext):
@@ -70,7 +71,6 @@ class TaskController(FLComponent, ControllerSpec):
         min_responses: int = 0,
         wait_time_after_min_received: int = 0,
     ):
-
         return self.broadcast_and_wait(task, fl_ctx, targets, min_responses, wait_time_after_min_received)
 
     def broadcast_and_wait(
@@ -126,6 +126,10 @@ class TaskController(FLComponent, ControllerSpec):
             raise ValueError(f"The task timeout must > 0. But got {task.timeout}")
 
         request.set_header(ReservedKey.TASK_NAME, task.name)
+        msg_root_id = task.msg_root_id
+        request.set_header(ReservedHeaderKey.MSG_ROOT_ID, msg_root_id)
+        request.set_header(ReservedHeaderKey.MSG_ROOT_TTL, task.timeout)
+
         replies = engine.send_aux_request(
             targets=targets,
             topic=ReservedTopic.DO_TASK,
@@ -134,6 +138,8 @@ class TaskController(FLComponent, ControllerSpec):
             fl_ctx=fl_ctx,
             secure=task.secure,
         )
+
+        delete_msg_root(msg_root_id)
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
         self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)

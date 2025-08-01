@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from nvflare.apis.fl_constant import ServerCommandKey
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import MessageHeaderKey, ReturnCode, make_reply
@@ -86,6 +87,14 @@ class ServerCommandAgent(object):
                 if reply is not None:
                     return_message = new_cell_message({}, reply)
                     return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+
+                    if isinstance(reply, Shareable):
+                        msg_root_id = reply.get_header(ReservedHeaderKey.MSG_ROOT_ID)
+                        msg_root_ttl = reply.get_header(ReservedHeaderKey.MSG_ROOT_TTL)
+                        if msg_root_id:
+                            return_message.set_header(MessageHeaderKey.MSG_ROOT_ID, msg_root_id)
+                        if msg_root_ttl:
+                            return_message.set_header(MessageHeaderKey.MSG_ROOT_TTL, msg_root_ttl)
                 else:
                     return_message = make_reply(ReturnCode.PROCESS_EXCEPTION, "No process results", None)
                 return return_message

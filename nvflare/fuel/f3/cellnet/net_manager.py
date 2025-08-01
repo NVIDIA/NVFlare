@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.apis.fl_constant import ReservedTopic
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
@@ -33,7 +34,7 @@ class NetManager(CommandModule):
         self.agent = agent
         self.diagnose = diagnose
         data_bus = DataBus()
-        data_bus.subscribe(["stop_cellnet"], self._stop_cellnet)
+        data_bus.subscribe([ReservedTopic.STOP_CELLNET], self._stop_cellnet)
 
     def _stop_cellnet(self, topic: str, conn: Connection, db: DataBus):
         self.agent.stop()
@@ -298,7 +299,7 @@ class NetManager(CommandModule):
         if not targets:
             conn.append_error("no targets to test")
 
-        conn.append_string(f"starting stress test on {targets}", flush=True)
+        conn.append_string(f"starting stress test on {targets}")
         result = self.agent.start_stress_test(targets=targets, num_rounds=num_tries, timeout=timeout)
 
         total_errors = 0
@@ -330,7 +331,7 @@ class NetManager(CommandModule):
         if not targets:
             conn.append_error("no targets to test")
 
-        conn.append_string(f"starting bulk test on {targets}", flush=True)
+        conn.append_string(f"starting bulk test on {targets}")
         result = self.agent.start_bulk_test(targets, bulk_size)
         conn.append_dict(result)
 

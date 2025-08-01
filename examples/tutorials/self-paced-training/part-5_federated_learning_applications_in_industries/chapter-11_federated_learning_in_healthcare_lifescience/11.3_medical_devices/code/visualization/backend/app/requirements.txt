@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+pydantic-settings
+pyjwt
+# Unit test dependencies
+pytest
+httpx
+pytest-asyncio

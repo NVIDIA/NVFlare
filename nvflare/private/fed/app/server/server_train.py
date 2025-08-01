@@ -106,14 +106,10 @@ def main(args):
             services = deployer.deploy(args)
 
             first_server = sorted(conf.config_data["servers"])[0]
-            # allow command to overwrite the admin_host
-            if conf.cmd_vars.get("host", None):
-                first_server["admin_host"] = conf.cmd_vars["host"]
             admin_server = create_admin_server(
                 services,
                 server_conf=first_server,
                 args=args,
-                secure_train=secure_train,
             )
             admin_server.start()
             services.set_admin_server(admin_server)

@@ -22,7 +22,6 @@ from nvflare.tool.package_checker.utils import (
     check_grpc_server_running,
     check_overseer_running,
     check_response,
-    check_socket_server_running,
     construct_dummy_response,
     get_required_args_for_overseer_agent,
     is_dummy_overseer_agent,
@@ -83,7 +82,13 @@ class CheckOverseerRunning(CheckRule):
             fed_config = json.load(f)
 
         if self.role == NVFlareRole.ADMIN:
-            overseer_agent_conf = fed_config["admin"]["overseer_agent"]
+            admin = fed_config["admin"]
+            host = admin["host"]
+            port = admin["port"]
+            overseer_agent_conf = {
+                "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+                "args": {"sp_end_point": f"{host}:{port}:{port}"},
+            }
         else:
             overseer_agent_conf = fed_config["overseer_agent"]
 
@@ -166,23 +171,6 @@ class CheckSPListInResponse(CheckRule):
         return CheckResult(CHECK_PASSED, "N/A", sp_list)
 
 
-class CheckPrimarySPSocketServerAvailable(CheckRule):
-    def __call__(self, package_path, data):
-        startup = os.path.join(package_path, "startup")
-        psp = _get_primary_sp(data)
-        sp_end_point = psp["sp_end_point"]
-        sp_name, grpc_port, admin_port = sp_end_point.split(":")
-        if not check_socket_server_running(startup=startup, host=sp_name, port=int(admin_port)):
-            return CheckResult(
-                f"Can't connect to ({sp_name}:{admin_port}) / DNS can't resolve",
-                f" 1) If ({sp_name}:{admin_port}) is public, check internet connection, try ping ({sp_name}:{admin_port})."
-                f" 2) If ({sp_name}:{admin_port}) is private, then you need to add its ip to the etc/hosts."
-                f" 3) If network is good, Please contact NVFLARE system admin and make sure the primary FL server"
-                f" is running.",
-            )
-        return CheckResult(CHECK_PASSED, "N/A", data)
-
-
 class CheckPrimarySPGRPCServerAvailable(CheckRule):
     def __call__(self, package_path, data):
         startup = os.path.join(package_path, "startup")
@@ -195,24 +183,6 @@ class CheckPrimarySPGRPCServerAvailable(CheckRule):
                 f"Can't connect to primary service provider's grpc server ({sp_name}:{grpc_port})",
                 "Please check if server is up.",
             )
-        return CheckResult(CHECK_PASSED, "N/A", data)
-
-
-class CheckNonPrimarySPSocketServerAvailable(CheckRule):
-    def __call__(self, package_path, data):
-        startup = os.path.join(package_path, "startup")
-        for sp in data:
-            if not sp["primary"]:
-                sp_end_point = sp["sp_end_point"]
-                sp_name, grpc_port, admin_port = sp_end_point.split(":")
-                if not check_socket_server_running(startup=startup, host=sp_name, port=int(admin_port)):
-                    return CheckResult(
-                        f"Can't connect to ({sp_name}:{admin_port}) / DNS can't resolve",
-                        f" 1) If ({sp_name}:{admin_port}) is public, check internet connection, try ping ({sp_name}:{admin_port})."
-                        f" 2) If ({sp_name}:{admin_port}) is private, then you need to add its ip to the etc/hosts."
-                        f" 3) If network is good, Please contact NVFLARE system admin and make sure the non-primary "
-                        "FL server is running.",
-                    )
         return CheckResult(CHECK_PASSED, "N/A", data)
 
 

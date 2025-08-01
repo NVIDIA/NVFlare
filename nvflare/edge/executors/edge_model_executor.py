@@ -17,7 +17,7 @@ from typing import Optional
 from nvflare.apis.dxo import DXO, from_dict
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey
-from nvflare.edge.constants import CookieKey, EdgeApiStatus, MsgKey
+from nvflare.edge.constants import CookieKey, EdgeApiStatus, MsgKey, SpecialDeviceId
 from nvflare.edge.executors.ete import EdgeTaskExecutor
 from nvflare.edge.executors.hug import TaskInfo
 from nvflare.edge.mud import BaseState, Device, ModelUpdate, StateUpdateReport
@@ -90,11 +90,26 @@ class EdgeModelExecutor(EdgeTaskExecutor):
 
     def accept_alive_device(self, device_id: str, fl_ctx: FLContext):
         client_name = fl_ctx.get_identity_name()
+
+        # is the device_id a range?
+        devices = {}
+        parts = device_id.split(SpecialDeviceId.MAX_INDICATOR)
+        now = time.time()
+        if len(parts) == 2:
+            prefix = parts[0]
+            max_id = int(parts[1])
+            for i in range(max_id):
+                did = f"{prefix}{SpecialDeviceId.NUM_INDICATOR}{i}"
+                devices[did] = Device(did, client_name, now)
+            self.logger.info(f"accepted multi-devices: {prefix}{SpecialDeviceId.NUM_INDICATOR}0..{max_id - 1}")
+        else:
+            devices[device_id] = Device(device_id, client_name, now)
+
         update_report = StateUpdateReport(
             current_model_version=0,
             current_device_selection_version=0,
             model_updates=None,
-            available_devices={device_id: Device(device_id, client_name, time.time())},
+            available_devices=devices,
         )
         return self.accept_update("", update_report.to_shareable(), fl_ctx)
 
@@ -128,7 +143,8 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         device_id = request.get_device_id()
         job_id = fl_ctx.get_job_id()
 
-        self.accept_alive_device(device_id, fl_ctx)
+        if device_id != SpecialDeviceId.DUMMY:
+            self.accept_alive_device(device_id, fl_ctx)
 
         task_state = current_task.task
         assert isinstance(task_state, BaseState)

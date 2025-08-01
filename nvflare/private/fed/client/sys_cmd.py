@@ -53,8 +53,6 @@ class SysInfoProcessor(RequestProcessor):
         # docker_image_tag = os.environ.get('DOCKER_IMAGE_TAG', 'N/A')
         # infos.update({'docker_image_tag':docker_image_tag})
         message = Message(topic="reply_" + req.topic, body=json.dumps(infos))
-        print("return sys_info")
-        print(infos)
         return message
 
 

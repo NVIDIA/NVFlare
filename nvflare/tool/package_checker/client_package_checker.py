@@ -17,10 +17,8 @@ import sys
 
 from .check_rule import (
     CheckNonPrimarySPGRPCServerAvailable,
-    CheckNonPrimarySPSocketServerAvailable,
     CheckOverseerRunning,
     CheckPrimarySPGRPCServerAvailable,
-    CheckPrimarySPSocketServerAvailable,
     CheckSPListInResponse,
 )
 from .package_checker import PackageChecker
@@ -45,11 +43,7 @@ class ClientPackageChecker(PackageChecker):
             [
                 CheckOverseerRunning(name="Check overseer running", role=self.NVF_ROLE),
                 CheckSPListInResponse(name="Check service provider list available"),
-                CheckPrimarySPSocketServerAvailable(name="Check primary SP's socket server available"),
                 CheckPrimarySPGRPCServerAvailable(name="Check primary SP's GRPC server available"),
-                CheckNonPrimarySPSocketServerAvailable(
-                    name="Check non-primary SP's socket server available", required=False
-                ),
                 CheckNonPrimarySPGRPCServerAvailable(
                     name="Check non-primary SP's GRPC server available", required=False
                 ),
@@ -60,6 +54,6 @@ class ClientPackageChecker(PackageChecker):
         command = (
             f"{sys.executable} -m {CLIENT_SCRIPT}"
             f" -m {self.package_path} -s {self.NVF_CONFIG}"
-            " --set secure_train=true config_folder=config"
+            " --set secure_train=true uid=client config_folder=config"
         )
         return command

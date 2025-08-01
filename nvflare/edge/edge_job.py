@@ -14,6 +14,7 @@
 import json
 import os.path
 
+from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_positive_number, check_str
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.file_source import FileSource
@@ -24,6 +25,7 @@ from .executors.edge_model_executor import EdgeModelExecutor
 from .updaters.emd import AggregatorFactory
 from .widgets.etr import EdgeTaskReceiver
 from .widgets.tp_runner import TPRunner
+from .widgets.tpo_runner import TPORunner
 
 
 class EdgeJob(FedJob):
@@ -47,6 +49,7 @@ class EdgeJob(FedJob):
 
         self.server_config_added = False
         self.client_config_added = False
+        self.simulation_set = False
 
     def configure_server(
         self,
@@ -129,19 +132,60 @@ class EdgeJob(FedJob):
         self.to_clients(executor, id="executor", tasks=[executor_task_name])
 
         if simulation_config_file:
-            if not os.path.isfile(simulation_config_file):
-                raise ValueError(f"file {simulation_config_file} does not exist or is not a valid file")
-
-            try:
-                with open(simulation_config_file, "r") as f:
-                    json.load(f)
-            except Exception as ex:
-                raise ValueError(f"file {simulation_config_file} is not a valid JSON file: {ex}")
-
-            self.to_clients(FileSource(simulation_config_file, app_folder_type="config"))
-
-            base_name = os.path.basename(simulation_config_file)
-            conf_file = "{JOB_CONFIG_DIR}/" + f"{base_name}"
-            self.to_clients(TPRunner(conf_file), id="tp_runner")
+            self.configure_simulation_with_file(simulation_config_file)
 
         self.client_config_added = True
+
+    def configure_simulation_with_file(self, simulation_config_file: str):
+        """Configure simulation with a config file.
+
+        Args:
+            simulation_config_file: the simulation config file.
+
+        Returns:
+
+        """
+        if self.simulation_set:
+            raise RuntimeError("simulation is already configured")
+
+        if not os.path.isfile(simulation_config_file):
+            raise ValueError(f"file {simulation_config_file} does not exist or is not a valid file")
+
+        try:
+            with open(simulation_config_file, "r") as f:
+                json.load(f)
+        except Exception as ex:
+            raise ValueError(f"file {simulation_config_file} is not a valid JSON file: {ex}")
+
+        self.to_clients(FileSource(simulation_config_file, app_folder_type="config"))
+
+        base_name = os.path.basename(simulation_config_file)
+        conf_file = "{JOB_CONFIG_DIR}/" + f"{base_name}"
+        self.to_clients(TPRunner(conf_file), id="tp_runner")
+        self.simulation_set = True
+
+    def configure_simulation(
+        self,
+        task_processor: DeviceTaskProcessor,
+        job_timeout: float = 60.0,
+        num_devices: int = 1000,
+        num_workers: int = 10,
+    ):
+        """Configure simulation with a DeviceTaskProcessor.
+
+        Args:
+            task_processor: the DeviceTaskProcessor object to be used for processing tasks.
+            job_timeout: timeout for trying to get job.
+            num_devices: number of devices to simulate.
+            num_workers: number of workers for executing tasks.
+
+        Returns: None
+
+        """
+        if self.simulation_set:
+            raise RuntimeError("simulation is already configured")
+
+        tp_id = self.to_clients(task_processor, "task_processor")
+        runner = TPORunner(tp_id, job_timeout, num_devices, num_workers)
+        self.to_clients(runner, "tpo_runner")
+        self.simulation_set = True

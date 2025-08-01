@@ -22,9 +22,7 @@ import psutil
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeComponentError
-from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.sec.security_content_service import SecurityContentService
-from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
@@ -58,39 +56,23 @@ def kill_child_processes(parent_pid):
         process.kill()
 
 
-def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):
+def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None):
     """To create the admin server.
 
     Args:
         fl_server: fl_server
         server_conf: server config
         args: command args
-        secure_train: True/False
 
     Returns:
         A FedAdminServer.
     """
-    users = {}
-    # Create a default user admin:admin for the POC insecure use case.
-    if not secure_train:
-        users = {"admin": hash_password("admin")}
-
-    root_cert = server_conf[SSLConstants.ROOT_CERT] if secure_train else None
-    server_cert = server_conf[SSLConstants.CERT] if secure_train else None
-    server_key = server_conf[SSLConstants.PRIVATE_KEY] if secure_train else None
     admin_server = FedAdminServer(
         cell=fl_server.cell,
         fed_admin_interface=fl_server.engine,
-        users=users,
         cmd_modules=fl_server.cmd_modules,
         file_upload_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
         file_download_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
-        host=server_conf.get("admin_host", "localhost"),
-        port=server_conf.get("admin_port", 5005),
-        ca_cert_file_name=root_cert,
-        server_cert_file_name=server_cert,
-        server_key_file_name=server_key,
-        accepted_client_cns=None,
         download_job_url=server_conf.get("download_job_url", "http://"),
     )
     return admin_server

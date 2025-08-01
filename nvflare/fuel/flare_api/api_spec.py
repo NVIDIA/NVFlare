@@ -328,36 +328,6 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def list_sp(self) -> dict:
-        """List available service providers
-
-        Returns: a dict that contains information about the primary SP and others
-
-        """
-        pass
-
-    @abstractmethod
-    def get_active_sp(self) -> dict:
-        """Get the current active service provider (SP).
-
-        Returns: a dict that describes the current active SP. If no SP is available currently, the 'name' attribute of
-        the result is empty.
-        """
-        pass
-
-    @abstractmethod
-    def promote_sp(self, sp_end_point: str):
-        """Promote the specified endpoint to become the active SP.
-
-        Args:
-            sp_end_point: the endpoint of the SP. It's string in this format: <url>:<server_port>:<admin_port>
-
-        Returns: None
-
-        """
-        pass
-
-    @abstractmethod
     def get_available_apps_to_upload(self):
         """Get defined FLARE app folders from the upload folder on the machine the FLARE API is running
 
@@ -538,6 +508,28 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
+    def monitor_job_and_return_job_meta(
+        self, job_id: str, timeout: int = 0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
+    ) -> (MonitorReturnCode, Optional[dict]):
+        """Monitor the job progress until one of the conditions occurs:
+         - job is done
+         - timeout
+         - the status_cb returns False
+
+        Args:
+            job_id: the job to be monitored
+            timeout: how long to monitor. If 0, never time out.
+            poll_interval: how often to poll job status
+            cb: if provided, callback to be called after each poll
+
+        Returns: a tuple of (MonitorReturnCode, job meta)
+
+        Every time the cb is called, it must return a bool indicating whether the monitor
+        should continue. If False, this method ends.
+
+        """
+        pass
+
     def monitor_job(
         self, job_id: str, timeout: int = 0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
     ) -> MonitorReturnCode:
@@ -552,13 +544,14 @@ class SessionSpec(ABC):
             poll_interval: how often to poll job status
             cb: if provided, callback to be called after each poll
 
-        Returns: a MonitorReturnCode
+        Returns: MonitorReturnCode
 
         Every time the cb is called, it must return a bool indicating whether the monitor
         should continue. If False, this method ends.
 
         """
-        pass
+        rc, _ = self.monitor_job_and_return_job_meta(job_id, timeout, poll_interval, cb, *cb_args, **cb_kwargs)
+        return rc
 
     @abstractmethod
     def close(self):

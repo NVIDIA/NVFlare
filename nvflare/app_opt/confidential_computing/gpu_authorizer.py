@@ -22,6 +22,8 @@ from nv_attestation_sdk import attestation
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
+from .utils import NonceHistory
+
 GPU_NAMESPACE = "x-nv-gpu"
 default_policy = """{
   "version":"1.0",
@@ -57,12 +59,15 @@ default_policy = """{
 
 
 class GPUAuthorizer(CCAuthorizer):
-    def __init__(self, verifier_url="https://nras.attestation.nvidia.com/v1/attest/gpu", policy_file=None):
+    def __init__(
+        self, verifier_url="https://nras.attestation.nvidia.com/v1/attest/gpu", policy_file=None, max_nonce_history=1000
+    ):
         self._can_generate = True
         self.client = attestation.Attestation()
         self.client.set_name("nvflare_node")
-        nonce = uuid.uuid4().hex + uuid.uuid1().hex
-        self.client.set_nonce(nonce)
+        self.my_nonce_history = NonceHistory(max_nonce_history)
+        self.seen_nonce_history = NonceHistory(max_nonce_history)
+
         if policy_file is None:
             self.remote_att_result_policy = default_policy
         else:
@@ -72,6 +77,9 @@ class GPUAuthorizer(CCAuthorizer):
 
     def generate(self):
         try:
+            nonce = uuid.uuid4().hex + uuid.uuid1().hex
+            self.client.set_nonce(nonce)
+            self.my_nonce_history.add(nonce)
             self.client.attest()
             token = self.client.get_token()
         except BaseException:
@@ -85,6 +93,8 @@ class GPUAuthorizer(CCAuthorizer):
             claims = jwt.decode(jwt_token.get("REMOTE_GPU_CLAIMS"), options={"verify_signature": False})
             # With claims, we will retrieve the nonce
             nonce = claims.get("eat_nonce")
+            if not self.seen_nonce_history.add(nonce):
+                return False
             self.client.set_nonce(nonce)
             self.client.set_token(name="nvflare_node", eat_token=eat_token)
             result = self.client.validate_token(self.remote_att_result_policy)

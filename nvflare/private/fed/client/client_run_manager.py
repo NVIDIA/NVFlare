@@ -369,12 +369,20 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         topic: str,
         factory: ConsumerFactory,
         stream_done_cb=None,
+        consumed_cb=None,
         **cb_kwargs,
     ):
         if not self.object_streamer:
             raise RuntimeError("object streamer has not been created")
 
-        self.object_streamer.register_stream_processing(channel, topic, factory, stream_done_cb, **cb_kwargs)
+        self.object_streamer.register_stream_processing(
+            channel=channel,
+            topic=topic,
+            factory=factory,
+            stream_done_cb=stream_done_cb,
+            consumed_cb=consumed_cb,
+            **cb_kwargs,
+        )
 
     def shutdown_streamer(self):
         if self.object_streamer:

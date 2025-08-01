@@ -84,7 +84,7 @@ class _ChunkConsumer(ObjectConsumer):
         if self.file:
             file_location = stream_ctx.get(_KEY_FILE_LOCATION)
             self.file.close()
-            self.logger.info(f"closed file {file_location}")
+            self.logger.debug(f"closed file {file_location}")
 
 
 class _ChunkConsumerFactory(ConsumerFactory):
@@ -130,9 +130,12 @@ class _ChunkProducer(ObjectProducer):
         fl_ctx: FLContext,
     ) -> Any:
         has_error = False
+        final_result = {}
         for target, reply in replies.items():
             rc = reply.get_return_code(ReturnCode.OK)
-            if rc != ReturnCode.OK:
+            if rc == ReturnCode.OK:
+                final_result[target] = reply
+            else:
                 self.logger.error(f"error from target {target}: {rc}")
                 has_error = True
 
@@ -141,7 +144,7 @@ class _ChunkProducer(ObjectProducer):
             return False
         elif self.eof:
             # done - succeeded
-            return True
+            return final_result
         else:
             # not done yet - continue streaming
             return None
@@ -155,6 +158,7 @@ class FileStreamer(StreamerBase):
         topic: str,
         dest_dir: str = None,
         stream_done_cb=None,
+        chunk_consumed_cb=None,
         **cb_kwargs,
     ):
         """Register for stream processing on the receiving side.
@@ -165,6 +169,7 @@ class FileStreamer(StreamerBase):
             topic: the app topic
             dest_dir: the destination dir for received file. If not specified, system temp dir is used
             stream_done_cb: if specified, the callback to be called when the file is completely received
+            chunk_consumed_cb: if specified, the callback to be called when a chunk is processed
             **cb_kwargs: the kwargs for the stream_done_cb
 
         Returns: None
@@ -187,6 +192,7 @@ class FileStreamer(StreamerBase):
             topic=topic,
             factory=_ChunkConsumerFactory(dest_dir),
             stream_done_cb=stream_done_cb,
+            consumed_cb=chunk_consumed_cb,
             **cb_kwargs,
         )
 
@@ -202,7 +208,7 @@ class FileStreamer(StreamerBase):
         chunk_timeout=None,
         optional=False,
         secure=False,
-    ) -> bool:
+    ) -> (str, bool):
         """Stream a file to one or more targets.
 
         Args:
@@ -217,7 +223,9 @@ class FileStreamer(StreamerBase):
             optional: whether the file is optional
             secure: whether P2P security is required
 
-        Returns: whether the streaming completed successfully
+        Returns: a tuple of (RC, Result):
+            - RC is ReturnCode.OK or ReturnCode.ERROR;
+            - Result is whether the streaming completed successfully
 
         Notes: this is a blocking call - only returns after the streaming is done.
         """

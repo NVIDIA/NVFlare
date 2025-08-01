@@ -11,37 +11,83 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import json
 import threading
 import time
+import uuid
 from typing import List
 
+from nvflare.fuel.f3.cellnet.defs import CellChannel
+from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import InternalCommands
+from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.security import make_session_token
 from nvflare.fuel.utils.time_utils import time_to_string
+from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
 
 LIST_SESSIONS_CMD_NAME = InternalCommands.LIST_SESSIONS
 CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION
 
 
 class Session(object):
-    def __init__(self):
+    def __init__(self, sess_id, user_name, org, role, origin_fqcn):
         """Object keeping track of an admin client session with token and time data."""
-        self.user_name = None
-        self.user_org = None
-        self.user_role = None
-        self.start_time = None
-        self.last_active_time = None
-        self.token = None
+        self.sess_id = sess_id
+        self.user_name = user_name
+        self.user_org = org
+        self.user_role = role
+        self.origin_fqcn = origin_fqcn
+        self.start_time = time.time()
+        self.last_active_time = time.time()
 
     def mark_active(self):
         self.last_active_time = time.time()
 
+    def make_token(self, id_asserter: IdentityAsserter):
+        user = {
+            "n": self.user_name,
+            "r": self.user_role,
+            "o": self.user_org,
+            "s": self.sess_id,
+        }
+        ds = json.dumps(user)
+        bds = str_to_b64str(ds)
+        signature = id_asserter.sign(ds, return_str=True)
+
+        # both bds and signature are b64 str
+        return f"{bds}:{signature}"
+
+    @staticmethod
+    def decode_token(token: str, id_asserter: IdentityAsserter = None):
+        if not isinstance(token, str):
+            raise ValueError(f"token must be str but got {type(token)}")
+
+        parts = token.split(":")
+        if len(parts) != 2:
+            raise ValueError(f"invalid token {token}: expects 2 parts but got {len(parts)}")
+
+        bds = parts[0]
+        signature = parts[1]
+        ds = b64str_to_str(bds)
+        if id_asserter:
+            token_verifier = TokenVerifier(id_asserter.cert)
+            is_valid = token_verifier.verify("", ds, signature)
+            if not is_valid:
+                return None
+
+        user = json.loads(ds)
+        return Session(
+            user_name=user.get("n"),
+            role=user.get("r"),
+            org=user.get("o"),
+            sess_id=user.get("s"),
+            origin_fqcn="",
+        )
+
 
 class SessionManager(CommandModule):
-    def __init__(self, idle_timeout=3600, monitor_interval=5):
+    def __init__(self, cell, idle_timeout=1800, monitor_interval=5):
         """Session manager.
 
         Args:
@@ -51,6 +97,7 @@ class SessionManager(CommandModule):
         if monitor_interval <= 0:
             monitor_interval = 5
 
+        self.cell = cell
         self.sess_update_lock = threading.Lock()
         self.sessions = {}  # token => Session
         self.idle_timeout = idle_timeout
@@ -77,7 +124,7 @@ class SessionManager(CommandModule):
 
             if dead_sess:
                 # print('ending dead session {}'.format(dead_sess.token))
-                self.end_session(dead_sess.token)
+                self.end_session_by_id(dead_sess.sess_id, "Your session is closed due to inactivity.")
             else:
                 # print('no dead sessions found')
                 pass
@@ -86,34 +133,47 @@ class SessionManager(CommandModule):
 
     def shutdown(self):
         self.asked_to_stop = True
-        # self.monitor.join(timeout=10)
 
-    def create_session(self, user_name, user_org, user_role):
+    def create_session(self, user_name, user_org, user_role, origin_fqcn):
         """Creates new session with a new session token.
 
         Args:
-            user_name: user name for session
+            user_name: username for session
             user_org: org of the user
             user_role: user's role
+            origin_fqcn: request origin FQCN
+            id_asserter: used to sign session token
 
         Returns: Session
 
         """
-        token = make_session_token()
-        sess = Session()
-        sess.user_name = user_name
-        sess.user_role = user_role
-        sess.user_org = user_org
-        sess.start_time = time.time()
-        sess.last_active_time = sess.start_time
-        sess.token = token
+        sess_id = str(uuid.uuid4())
+        sess = Session(
+            sess_id=sess_id,
+            user_name=user_name,
+            org=user_org,
+            role=user_role,
+            origin_fqcn=origin_fqcn,
+        )
         with self.sess_update_lock:
-            self.sessions[token] = sess
+            self.sessions[sess_id] = sess
+        return sess
+
+    def recreate_session(self, token: str, origin_fqcn, id_asserter: IdentityAsserter):
+        sess = Session.decode_token(token, id_asserter)
+        sess.origin_fqcn = origin_fqcn
+        with self.sess_update_lock:
+            self.sessions[sess.sess_id] = sess
         return sess
 
     def get_session(self, token: str):
+        try:
+            sess = Session.decode_token(token)
+        except:
+            return None
+
         with self.sess_update_lock:
-            return self.sessions.get(token)
+            return self.sessions.get(sess.sess_id)
 
     def get_sessions(self):
         result = []
@@ -122,9 +182,24 @@ class SessionManager(CommandModule):
                 result.append(s)
         return result
 
-    def end_session(self, token):
+    def end_session_by_token(self, token, reason=None):
+        try:
+            sess = Session.decode_token(token)
+        except:
+            return
+        self.end_session_by_id(sess.sess_id, reason)
+
+    def end_session_by_id(self, sess_id: str, reason=None):
         with self.sess_update_lock:
-            self.sessions.pop(token, None)
+            sess = self.sessions.pop(sess_id, None)
+            if sess and reason:
+                self.cell.fire_and_forget(
+                    channel=CellChannel.HCI,
+                    topic="SESSION_EXPIRED",
+                    targets=sess.origin_fqcn,
+                    message=CellMessage(payload=reason),
+                    optional=True,
+                )
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -136,7 +211,7 @@ class SessionManager(CommandModule):
                     usage=LIST_SESSIONS_CMD_NAME,
                     handler_func=self.handle_list_sessions,
                     visible=False,
-                    enabled=False,
+                    enabled=True,
                 ),
                 CommandSpec(
                     name=CHECK_SESSION_CMD_NAME,
@@ -163,27 +238,24 @@ class SessionManager(CommandModule):
                     s.user_name,
                     s.user_org,
                     s.user_role,
-                    "{}".format(s.token),
+                    s.sess_id,
                     time_to_string(s.start_time),
                     time_to_string(s.last_active_time),
-                    "{}".format(time.time() - s.last_active_time),
+                    f"{(time.time() - s.last_active_time)}",
                 ]
             )
 
     def handle_check_session(self, conn: Connection, args: List[str]):
-        token = None
-        data = conn.request["data"]
-        for item in data:
-            it = item["type"]
-            if it == "token":
-                token = item["data"]
-                break
+        token = conn.get_token()
+        if not token:
+            conn.append_error("invalid_session")
+            return
 
         sess = self.get_session(token)
         if sess:
             conn.append_string("OK")
         else:
-            conn.append_error("session_inactive")
+            conn.append_error(ReplyKeyword.SESSION_INACTIVE)
             conn.append_string(
                 "admin client session timed out after {} seconds of inactivity - logging out".format(self.idle_timeout)
             )

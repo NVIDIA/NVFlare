@@ -214,6 +214,8 @@ class ReservedTopic(object):
     JOB_HEART_BEAT = "__job_heartbeat__"
     TASK_CHECK = "__task_check__"
     APP_METRICS = "__app_metrics__"
+    MSG_ROOT_DELETED = "__msg_root_deleted__"
+    STOP_CELLNET = "__stop_cellnet__"
 
 
 class AdminCommandNames(object):
@@ -224,7 +226,6 @@ class AdminCommandNames(object):
     LIST_JOB = "list_job"
     DOWNLOAD_JOB = "download_job"
     DOWNLOAD_JOB_COMPONENTS = "download_job_components"
-    DOWNLOAD_JOB_FILE = "download_job_file"
     ABORT_JOB = "abort_job"
     DELETE_JOB = "delete_job"
     CLONE_JOB = "clone_job"
@@ -412,6 +413,7 @@ class WorkspaceConstants:
 
     SERVER_STARTUP_CONFIG = "fed_server.json"
     CLIENT_STARTUP_CONFIG = "fed_client.json"
+    ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
     SERVER_APP_CONFIG = JobConstants.SERVER_JOB_CONFIG
     CLIENT_APP_CONFIG = JobConstants.CLIENT_JOB_CONFIG

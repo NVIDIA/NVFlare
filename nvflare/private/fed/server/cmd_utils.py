@@ -17,9 +17,10 @@ from typing import List
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.private.fed.server.admin import FedAdminServer
 
 
@@ -91,12 +92,22 @@ class CommandUtil(object):
             # get all clients
             clients = engine.get_clients()
         else:
+            # check whether client names contain admin clients.
+            admin_clients = []
+            for c in client_names:
+                if is_valid_admin_client_name(c):
+                    admin_clients.append(c)
+
             clients, invalid_inputs = engine.validate_targets(client_names)
+            if admin_clients:
+                # admin clients are considered invalid since admin commands do not go to admin clients!
+                invalid_inputs.extend(admin_clients)
+
             if invalid_inputs:
-                return "invalid client(s): {}".format(" ".join(invalid_inputs))
+                return f"{ReplyKeyword.INVALID_CLIENT}(s): {' '.join(invalid_inputs)}"
 
         if target_type == self.TARGET_TYPE_CLIENT and not clients:
-            return "no clients available"
+            return ReplyKeyword.NO_CLIENTS
 
         valid_tokens = []
         client_names = []
@@ -117,7 +128,9 @@ class CommandUtil(object):
     def must_be_project_admin(self, conn: Connection, args: List[str]):
         role = conn.get_prop(ConnProps.USER_ROLE, "")
         if role not in ["project_admin"]:
-            conn.append_error(f"Not authorized for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
+            conn.append_error(
+                f"{ReplyKeyword.NOT_AUTHORIZED} for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED)
+            )
             return PreAuthzReturnCode.ERROR
         else:
             return PreAuthzReturnCode.OK
@@ -144,7 +157,7 @@ class CommandUtil(object):
         for token in client_tokens:
             requests.update({token: message})
 
-        admin_server: FedAdminServer = conn.server
+        admin_server: FedAdminServer = conn.get_prop(ConnProps.ADMIN_SERVER)
         cmd_timeout = conn.get_prop(ConnProps.CMD_TIMEOUT)
         if not cmd_timeout:
             cmd_timeout = admin_server.timeout

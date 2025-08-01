@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import importlib
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import torch
+import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
@@ -33,7 +34,8 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class GlobalEvaluator(Widget):
     def __init__(
         self,
-        model_path: str,
+        model_path: Union[str, nn.Module],
+        eval_frequency: int = 1,
         torchvision_dataset: Optional[Dict] = None,
         custom_dataset: Optional[Dict] = None,
     ):
@@ -50,7 +52,13 @@ class GlobalEvaluator(Widget):
         if torchvision_dataset is not None and custom_dataset is not None:
             raise ValueError("Cannot provide both torchvision_dataset and custom_dataset")
 
+        if isinstance(model_path, nn.Module):
+            pass
+        elif not isinstance(model_path, str):
+            raise ValueError(f"model_path must be either a Pytorch model or class path, but got {type(model_path)}")
+
         self.model_path = model_path
+        self.eval_frequency = eval_frequency
         self.torchvision_dataset = torchvision_dataset
         self.custom_dataset = custom_dataset
         self.batch_size = 4
@@ -59,7 +67,7 @@ class GlobalEvaluator(Widget):
         self.tb_writer = None
 
         self.register_event_handler(EventType.START_RUN, self._initialize)
-        self.register_event_handler(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, self.evaluate)
+        self.register_event_handler(AppEventType.GLOBAL_WEIGHTS_UPDATED, self.evaluate)
 
     def _load_model(self, model_path: str, fl_ctx: FLContext) -> Any:
         """Load model from model path.
@@ -138,8 +146,14 @@ class GlobalEvaluator(Widget):
 
     def _initialize(self, _event_type: str, fl_ctx: FLContext):
         # Initialize the model
-        model_class = self._load_model(self.model_path, fl_ctx)
-        self.model = model_class()
+        if isinstance(self.model_path, str):
+            # load the model
+            model_class = self._load_model(self.model_path, fl_ctx)
+            self.model = model_class()
+        else:
+            # the model_path is nn.Module
+            self.model = self.model_path
+
         # Initialize the data loader
         self._create_data_loader()
         # Initialize the tensorboard writer
@@ -151,10 +165,11 @@ class GlobalEvaluator(Widget):
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         # Load the model weights
         global_weights = global_model[ModelLearnableKey.WEIGHTS]
-        # Convert numpy weights to torch weights
-        global_weights = {k: torch.from_numpy(v) for k, v in global_weights.items()}
+        # Convert weights from list to torch tensors
+        global_weights = {k: torch.tensor(v) for k, v in global_weights.items()}
         self.model.load_state_dict(global_weights)
-        # Evaluate the model
-        metrics = self._eval_model()
-        for key, value in metrics.items():
-            self.tb_writer.add_scalar(key, value, current_round)
+        # Evaluate the model according to the evaluation frequency
+        if current_round % self.eval_frequency == 0:
+            metrics = self._eval_model()
+            for key, value in metrics.items():
+                self.tb_writer.add_scalar(key, value, current_round)

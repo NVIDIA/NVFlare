@@ -1,0 +1,32 @@
+{
+  "Manufacturers": [
+    {
+      "Name": "Manufacturer-1",
+      "Orgs": [
+        {
+          "Name": "Org-1",
+          "Locations": [
+            {
+              "Name": "Location-1",
+              "Devices": ["Holoscan-Device-1"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Manufacturer-2",
+      "Orgs": [
+        {
+          "Name": "Org-2",
+          "Locations": [
+            {
+              "Name": "Location-2",
+              "Devices": ["Holoscan-Device-2"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

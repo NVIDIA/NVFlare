@@ -45,6 +45,8 @@ class MessageHeaderKey:
     CLEAR_PAYLOAD_LEN = CELLNET_PREFIX + "clear_payload_len"
     ENCRYPTED = CELLNET_PREFIX + "encrypted"
     OPTIONAL = CELLNET_PREFIX + "optional"
+    MSG_ROOT_ID = CELLNET_PREFIX + "msg_root_id"
+    MSG_ROOT_TTL = CELLNET_PREFIX + "msg_root_ttl"
 
 
 class ReturnReason:
@@ -159,6 +161,7 @@ class CellChannel:
     SIMULATOR_RUNNER = "simulator_runner"
     RETURN_ONLY = "return_only"
     EDGE_REQUEST = "edge_request"
+    HCI = "hci_channel"
 
 
 class CellChannelTopic:

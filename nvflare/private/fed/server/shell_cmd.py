@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import re
-import subprocess
+import shlex
 from typing import List
 
 from nvflare.apis.fl_constant import SiteType
@@ -22,6 +22,7 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.shell_cmd_val import (
     CatValidator,
     GrepValidator,
@@ -35,6 +36,7 @@ from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
+from nvflare.private.fed.utils.fed_utils import execute_command_directly
 
 
 class _CommandExecutor(object):
@@ -84,7 +86,8 @@ class _CommandExecutor(object):
         shell_cmd = conn.get_prop("shell_cmd")
         if target == SiteType.SERVER:
             # run the shell command on server
-            output = subprocess.getoutput(shell_cmd)
+            cmd_args = shlex.split(shell_cmd)
+            output = execute_command_directly(cmd_args)
             conn.append_string(output)
             return
 
@@ -107,7 +110,7 @@ class _CommandExecutor(object):
             valid_tokens.append(c.token)
 
         req = new_message(conn=conn, topic=SysCommandTopic.SHELL, body=shell_cmd, require_authz=True)
-        server = conn.server
+        server = conn.get_prop(ConnProps.ADMIN_SERVER)
         reply = server.send_request_to_client(req, valid_tokens[0], timeout_secs=server.timeout)
         if reply is None:
             conn.append_error(
