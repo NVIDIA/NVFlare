@@ -384,7 +384,6 @@ class ServerSideController(Controller):
 
     def _process_start_reply(self, client_task: ClientTask, fl_ctx: FLContext):
         result = client_task.result
-        client_name = client_task.client.name
 
         rc = result.get_return_code()
         if rc == ReturnCode.OK:

@@ -32,7 +32,7 @@ class OnPremPackager(Packager):
 
     def _build_cc_image(self, cc_config_yaml: str, site_name: str, startup_folder_path: str):
         """Build CC image for the site."""
-        process = subprocess.Popen(
+        subprocess.Popen(
             [self.build_image_cmd, cc_config_yaml, site_name, startup_folder_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

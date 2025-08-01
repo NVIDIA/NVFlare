@@ -155,7 +155,7 @@ def convert_to_number(value: str):
             return float(value)
         else:
             return value
-    except Exception as ex:
+    except Exception:
         return value
 
 

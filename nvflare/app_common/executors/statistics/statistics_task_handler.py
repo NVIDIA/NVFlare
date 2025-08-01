@@ -305,7 +305,7 @@ class StatisticsTaskHandler(TaskHandler):
             else:
                 raise Exception(err_msg)
 
-        except KeyError as e:
+        except KeyError:
             raise Exception(err_msg)
 
     def get_bin_range(

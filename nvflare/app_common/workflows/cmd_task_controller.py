@@ -28,7 +28,7 @@ class CmdTaskController(ModelController):
             # use FLModel structure, add empty model
             task = FLModel(params={"task_name": self.task_name}, meta={"status": "request"})
             clients = self.sample_clients()
-            results = self.send_task_and_wait(task_name=self.task_name, targets=clients, data=task)
+            self.send_task_and_wait(task_name=self.task_name, targets=clients, data=task)
             self.info("Finished etl.")
         except Exception as ex:
             msg = secure_format_traceback()
