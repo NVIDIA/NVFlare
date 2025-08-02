@@ -1,4 +1,3 @@
-ha: True
 project_yaml: ./data/projects/authz.yml
 jobs_root_dir: ../unit_test/data/jobs
 cleanup: True

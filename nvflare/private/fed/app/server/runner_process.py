@@ -20,6 +20,12 @@ import os
 import sys
 import threading
 
+# CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC
+# See: https://github.com/grpc/grpc/issues/28557
+os.environ["GRPC_POLL_STRATEGY"] = "poll"
+os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "False"
+
+
 from nvflare.apis.fl_constant import ConfigVarName, JobConstants, SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError

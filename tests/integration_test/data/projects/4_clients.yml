@@ -3,12 +3,6 @@ name: integration_test
 description: NVIDIA FLARE integration_test project yaml file
 
 participants:
-  - name: localhost
-    type: overseer
-    org: nvidia
-    protocol: https
-    api_root: /api/v1
-    port: 8443
   - name: localhost0
     type: server
     org: nvidia
@@ -38,10 +32,13 @@ builders:
       template_file: master_template.yml
   - path: nvflare.lighter.impl.static_file.StaticFileBuilder
     args:
+      # config_folder can be set to inform NVIDIA FLARE where to get configuration
       config_folder: config
       overseer_agent:
-        path: nvflare.ha.overseer_agent.HttpOverseerAgent
-        overseer_exists: true
+        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
+        overseer_exists: false
+        args:
+          sp_end_point: localhost0:8002:8003
 
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
