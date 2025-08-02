@@ -152,7 +152,7 @@ class SessionKeyManager:
     def get_latest_key(self):
         try:
             k, last_value = _, self.key_hash_dict[k] = self.key_hash_dict.popitem()
-        except KeyError as e:
+        except KeyError:
             raise SessionKeyUnavailable("No session key established yet")
         return last_value
 

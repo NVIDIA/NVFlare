@@ -173,7 +173,7 @@ class InProcessClientAPIExecutor(Executor):
                     self.log_debug(fl_ctx, f"waiting for result, sleep for {self._result_pull_interval} secs")
                     time.sleep(self._result_pull_interval)
 
-        except Exception as e:
+        except Exception:
             self.log_error(fl_ctx, secure_format_traceback())
             self._event_manager.fire_event(TOPIC_ABORT, f"{task_name}' failed: {secure_format_traceback()}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)

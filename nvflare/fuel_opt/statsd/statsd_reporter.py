@@ -63,5 +63,5 @@ class StatsDReporter:
                     else:
                         self.logger.warning(f"Unknown metric type: {metric_type} for metric: {metric_name}")
 
-            except Exception as e:
+            except Exception:
                 self.logger.warning(f"Failed to process_metrics metrics: {traceback.format_exc()}")

@@ -152,7 +152,7 @@ def add_extra_clients(add_client_file_path, participant_defs):
         extra = load_yaml(add_client_file_path)
         extra.update({"type": "client"})
         participant_defs.append(extra)
-    except Exception as e:
+    except Exception:
         print("** Error during adding client **")
         print("The yaml file format is")
         print(adding_client_error_msg)
