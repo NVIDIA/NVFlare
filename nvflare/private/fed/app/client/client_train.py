@@ -19,11 +19,6 @@ import os
 import sys
 import time
 
-# CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC
-# See: https://github.com/grpc/grpc/issues/28557
-os.environ["GRPC_POLL_STRATEGY"] = "poll"
-os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "False"
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace

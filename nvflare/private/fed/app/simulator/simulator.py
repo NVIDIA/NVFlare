@@ -15,14 +15,8 @@
 """Federated Simulator launching script."""
 
 import argparse
-import os
 import sys
 from sys import platform
-
-# CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC
-# See: https://github.com/grpc/grpc/issues/28557
-os.environ["GRPC_POLL_STRATEGY"] = "poll"
-os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "False"
 
 from nvflare.fuel.utils.log_utils import LogMode
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner

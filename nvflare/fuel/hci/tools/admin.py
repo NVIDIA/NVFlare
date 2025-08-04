@@ -15,12 +15,6 @@
 import argparse
 import os
 
-# CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC
-# See: https://github.com/grpc/grpc/issues/28557
-os.environ["GRPC_POLL_STRATEGY"] = "poll"
-os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "False"
-
-
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey

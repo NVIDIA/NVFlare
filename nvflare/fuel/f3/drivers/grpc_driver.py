@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import threading
 from concurrent import futures
 from typing import Any, Dict, List, Union
@@ -203,6 +204,9 @@ class Server:
 class GrpcDriver(BaseDriver):
     def __init__(self):
         BaseDriver.__init__(self)
+
+        self.setup_grpc_env_var()
+
         self.server = None
         self.closing = False
         self.max_workers = 100
@@ -287,3 +291,11 @@ class GrpcDriver(BaseDriver):
         self.close_all()
         if self.server:
             self.server.shutdown()
+
+    @staticmethod
+    def setup_grpc_env_var():
+        env = os.environ
+
+        # GRPC with fork issue: https://github.com/grpc/grpc/issues/28557
+        env.setdefault("GRPC_ENABLE_FORK_SUPPORT", "False")
+        env.setdefault("GRPC_POLL_STRATEGY", "poll")
