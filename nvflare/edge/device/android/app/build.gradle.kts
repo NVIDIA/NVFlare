@@ -69,7 +69,7 @@ dependencies {
     // ExecuTorch dependencies
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     // Add SoLoader dependency for PyTorch native library loading
-    implementation("com.facebook.soloader:soloader:0.10.5")
+    implementation("com.facebook.soloader:nativeloader:0.10.5")
     // Add Facebook JNI dependency required by executorch
     implementation("com.facebook.fbjni:fbjni:0.5.1")
     
