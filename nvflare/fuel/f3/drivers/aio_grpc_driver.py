@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import asyncio
-import os
 import random
 import threading
 import time
