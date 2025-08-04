@@ -1,17 +1,14 @@
 api_version: 3
 builders:
-- args:
-    template_file: master_template.yml
-  path: nvflare.lighter.impl.workspace.WorkspaceBuilder
-- path: nvflare.lighter.impl.template.TemplateBuilder
-- args:
+- path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+- path: nvflare.lighter.impl.static_file.StaticFileBuilder
+  args:
     config_folder: config
     overseer_agent:
       args:
         sp_end_point: server:8002:8003
       overseer_exists: false
       path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
-  path: nvflare.lighter.impl.static_file.StaticFileBuilder
 - path: nvflare.lighter.impl.cert.CertBuilder
 - path: nvflare.lighter.impl.signature.SignatureBuilder
 description: health_project project yaml file

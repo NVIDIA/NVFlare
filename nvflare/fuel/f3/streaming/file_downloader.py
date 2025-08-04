@@ -157,6 +157,56 @@ class FileDownloader(ObjDownloader):
         if app_downloaded_cb:
             app_downloaded_cb(ref_id, to_site, status, obj.name, **cb_kwargs)
 
+    @classmethod
+    def download_file(
+        cls,
+        from_fqcn: str,
+        ref_id: str,
+        per_request_timeout: float,
+        cell: Cell,
+        location: str = None,
+        secure=False,
+        optional=False,
+        abort_signal=None,
+    ) -> (str, Optional[str]):
+        """Download the referenced file from the file owner.
+
+        Args:
+            from_fqcn: FQCN of the file owner.
+            ref_id: reference ID of the file to be downloaded.
+            per_request_timeout: timeout for requests sent to the file owner.
+            cell: cell to be used for communicating to the file owner.
+            location: dir for keeping the received file. If not specified, will use temp dir.
+            secure: P2P private mode for communication
+            optional: supress log messages of communication
+            abort_signal: signal for aborting download.
+
+        Returns: tuple of (error message if any, full path of the downloaded file).
+
+        """
+        if location is not None:
+            if not os.path.exists(location):
+                raise ValueError(f"location '{location}' does not exist")
+
+            if not os.path.isdir(location):
+                raise ValueError(f"location '{location}' is not a valid dir")
+        else:
+            location = tempfile.gettempdir()
+
+        consumer = _ChunkConsumer(location)
+        download_object(
+            from_fqcn=from_fqcn,
+            ref_id=ref_id,
+            consumer=consumer,
+            per_request_timeout=per_request_timeout,
+            cell=cell,
+            secure=secure,
+            optional=optional,
+            abort_signal=abort_signal,
+        )
+
+        return consumer.error, consumer.file_path
+
 
 class _ChunkConsumer(Consumer):
 
@@ -196,40 +246,6 @@ def download_file(
     optional=False,
     abort_signal=None,
 ) -> (str, Optional[str]):
-    """Download the referenced file from the file owner.
-
-    Args:
-        from_fqcn: FQCN of the file owner.
-        ref_id: reference ID of the file to be downloaded.
-        per_request_timeout: timeout for requests sent to the file owner.
-        cell: cell to be used for communicating to the file owner.
-        location: dir for keeping the received file. If not specified, will use temp dir.
-        secure: P2P private mode for communication
-        optional: supress log messages of communication
-        abort_signal: signal for aborting download.
-
-    Returns: tuple of (error message if any, full path of the downloaded file).
-
-    """
-    if location is not None:
-        if not os.path.exists(location):
-            raise ValueError(f"location '{location}' does not exist")
-
-        if not os.path.isdir(location):
-            raise ValueError(f"location '{location}' is not a valid dir")
-    else:
-        location = tempfile.gettempdir()
-
-    consumer = _ChunkConsumer(location)
-    download_object(
-        from_fqcn=from_fqcn,
-        ref_id=ref_id,
-        consumer=consumer,
-        per_request_timeout=per_request_timeout,
-        cell=cell,
-        secure=secure,
-        optional=optional,
-        abort_signal=abort_signal,
+    return FileDownloader.download_file(
+        from_fqcn, ref_id, per_request_timeout, cell, location, secure, optional, abort_signal
     )
-
-    return consumer.error, consumer.file_path
