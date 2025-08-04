@@ -10,15 +10,19 @@ import org.pytorch.executorch.Tensor
 import org.pytorch.executorch.EValue
 import org.pytorch.executorch.TrainingModule
 import org.pytorch.executorch.SGD
-import com.facebook.soloader.SoLoader
+import com.facebook.soloader.nativeloader.NativeLoader
+import com.facebook.soloader.nativeloader.SystemDelegate
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.*
 import kotlin.jvm.Throws
 
 /**
  * Android ExecuTorch trainer implementation that matches iOS functionality.
  * Uses proper ExecuTorch patterns from the CIFAR-10 example.
+ * Enhanced with comprehensive logging and model artifact saving.
  */
 class ETTrainer(
     private val context: Context,
@@ -32,9 +36,166 @@ class ETTrainer(
     // CRITICAL: Strong reference to keep dataset alive during training
     // This prevents the dataset from being deallocated while ExecuTorch still references it
     private var currentDataset: com.nvidia.nvflare.sdk.defs.Dataset? = null
-
+    
+    // Enhanced logging and artifact storage
+    private val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+    private val artifactsDir = File(context.filesDir, "training_artifacts_$timestamp")
+    private val modelsDir = File(artifactsDir, "models")
+    private val logsDir = File(artifactsDir, "logs")
+    
     init {
         initializeTrainingModule()
+        setupArtifactDirectories()
+    }
+
+    /**
+     * Setup directories for storing training artifacts and logs.
+     */
+    private fun setupArtifactDirectories() {
+        try {
+            artifactsDir.mkdirs()
+            modelsDir.mkdirs()
+            logsDir.mkdirs()
+            
+            Log.i(TAG, "Training artifacts directory: ${artifactsDir.absolutePath}")
+            Log.i(TAG, "Models directory: ${modelsDir.absolutePath}")
+            Log.i(TAG, "Logs directory: ${logsDir.absolutePath}")
+            
+            // Create a summary log file
+            val summaryLog = File(logsDir, "training_summary.txt")
+            summaryLog.writeText("""
+                Training Session Started: $timestamp
+                Artifacts Directory: ${artifactsDir.absolutePath}
+                Models Directory: ${modelsDir.absolutePath}
+                Logs Directory: ${logsDir.absolutePath}
+                
+                Meta Configuration:
+                ${meta.entries.joinToString("\n") { "  ${it.key}: ${it.value}" }}
+                
+                ========================================
+                
+            """.trimIndent())
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to setup artifact directories", e)
+        }
+    }
+
+    /**
+     * Save model parameters to file for debugging and analysis.
+     */
+    private fun saveModelParameters(
+        parameters: Map<String, Tensor>, 
+        filename: String,
+        description: String
+    ) {
+        try {
+            val paramFile = File(modelsDir, filename)
+            val paramDict = toTensorDictionary(parameters)
+            
+            // Save as JSON for easy inspection
+            val jsonContent = buildString {
+                appendLine("// $description")
+                appendLine("// Saved at: ${Date()}")
+                appendLine("// Parameters: ${paramDict.size}")
+                appendLine()
+                appendLine("{")
+                paramDict.forEach { (key, tensor) ->
+                    appendLine("  \"$key\": {")
+                    appendLine("    \"shape\": ${tensor["shape"]},")
+                    appendLine("    \"data\": [${(tensor["data"] as List<Float>).take(10).joinToString(", ")}${if ((tensor["data"] as List<Float>).size > 10) "..." else ""}]")
+                    appendLine("  },")
+                }
+                appendLine("}")
+            }
+            
+            paramFile.writeText(jsonContent)
+            Log.i(TAG, "Saved $description to: ${paramFile.absolutePath}")
+            
+            // Also log to summary
+            val summaryLog = File(logsDir, "training_summary.txt")
+            summaryLog.appendText("""
+                
+                $description saved to: ${paramFile.absolutePath}
+                Parameters: ${paramDict.size}
+                Total values: ${paramDict.values.sumOf { (it["data"] as List<Float>).size }}
+                
+            """.trimIndent())
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save model parameters: $filename", e)
+        }
+    }
+
+    /**
+     * Save training progress to log file.
+     */
+    private fun logTrainingProgress(
+        epoch: Int, 
+        totalEpochs: Int, 
+        step: Int, 
+        loss: Float, 
+        progressPercent: Int,
+        method: String
+    ) {
+        try {
+            val progressLog = File(logsDir, "training_progress.txt")
+            val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+            val logEntry = "[$timestamp] Epoch $epoch/$totalEpochs, Step $step, Loss: $loss, Progress: $progressPercent%, Method: $method\n"
+            
+            progressLog.appendText(logEntry)
+            
+            // Also log to Android logcat for real-time monitoring
+            Log.d(TAG, "Epoch $epoch/$totalEpochs, Progress $progressPercent%, Step $step, Loss: $loss")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to log training progress", e)
+        }
+    }
+
+    /**
+     * Save final training results and summary.
+     */
+    private fun saveTrainingSummary(
+        method: String,
+        epochs: Int,
+        batchSize: Int,
+        learningRate: Float,
+        totalSteps: Int,
+        totalLoss: Float,
+        tensorDiff: Map<String, Map<String, Any>>
+    ) {
+        try {
+            val summaryFile = File(logsDir, "training_summary.txt")
+            val summary = """
+                
+                ========================================
+                TRAINING COMPLETED
+                ========================================
+                
+                Method: $method
+                Epochs: $epochs
+                Batch Size: $batchSize
+                Learning Rate: $learningRate
+                Total Steps: $totalSteps
+                Average Loss: ${totalLoss / totalSteps}
+                
+                Tensor Differences:
+                ${tensorDiff.entries.joinToString("\n") { "  ${it.key}: ${it.value["data"]?.let { data -> if (data is List<*>) "size=${data.size}" else "unknown" } ?: "unknown"}" }}
+                
+                Artifacts Location: ${artifactsDir.absolutePath}
+                Session Duration: ${System.currentTimeMillis() - timestamp.hashCode()} ms
+                
+                ========================================
+                
+            """.trimIndent()
+            
+            summaryFile.appendText(summary)
+            Log.i(TAG, "Training summary saved to: ${summaryFile.absolutePath}")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save training summary", e)
+        }
     }
 
     /**
@@ -80,8 +241,10 @@ class ETTrainer(
         try {
             Log.d(TAG, "Initializing ExecuTorch training module")
             
-            // Initialize SoLoader for loading native libraries
-            SoLoader.init(context, false)
+            // Initialize NativeLoader for loading native libraries
+            if (!NativeLoader.isInitialized()) {
+                NativeLoader.init(SystemDelegate())
+            }
             
             // Decode base64 model data and write to temporary file
             val decodedModelData = java.util.Base64.getDecoder().decode(modelData)
@@ -89,6 +252,11 @@ class ETTrainer(
             tempFile.writeBytes(decodedModelData)
             
             Log.d(TAG, "Model written to temporary file: ${tempFile.absolutePath}")
+            
+            // Save the initial model for debugging
+            val initialModelFile = File(modelsDir, "initial_model.pte")
+            initialModelFile.writeBytes(decodedModelData)
+            Log.i(TAG, "Initial model saved to: ${initialModelFile.absolutePath}")
             
             // Load the training module using ExecuTorch's TrainingModule.load
             // For ExecuTorch models, we typically only need the .pte file
@@ -119,15 +287,15 @@ class ETTrainer(
         
         try {
             // Extract training parameters
-            val method = config.method ?: "cnn"
-            val epochs = config.epochs ?: 1
-            val batchSize = config.batchSize ?: 32
-            val learningRate = config.learningRate ?: 0.01f
-            val momentum = config.momentum ?: 0.9f
+            val method = config.method
+            val epochs = config.totalEpochs
+            val batchSize = config.batchSize
+            val learningRate = config.learningRate
+            val momentum = 0.9f  // Default momentum value
             
             Log.d(TAG, "Training parameters - method: $method, epochs: $epochs, batchSize: $batchSize, lr: $learningRate")
             
-                        // Get dataset based on method and store strong reference
+            // Get dataset based on method and store strong reference
             currentDataset = when (method) {
                 "cnn" -> CIFAR10Dataset(context)
                 "xor" -> XORDataset()
@@ -146,7 +314,7 @@ class ETTrainer(
             )
             
             // Convert to iOS-compatible format
-            val resultData = when (method) {
+            val resultData: Map<String, Any> = when (method) {
                 "cnn" -> {
                     // Return tensor differences for CNN (mirrors iOS exactly)
                     trainingResult
@@ -218,6 +386,9 @@ class ETTrainer(
         val oldParams = toTensorDictionary(initialParameters)
         Log.d(TAG, "Captured initial parameters with ${oldParams.size} tensors")
         
+        // Save initial parameters for debugging
+        saveModelParameters(initialParameters, "initial_parameters.json", "Initial Model Parameters")
+        
         // Note: We use CIFAR pattern (create per batch) instead of iOS pattern
         // because Java ExecuTorch requires fresh optimizer instances per batch
         var totalLoss = 0.0f
@@ -265,11 +436,11 @@ class ETTrainer(
                 val gradients: Map<String, Tensor> = model.namedGradients("forward")
                 sgd.step(gradients)
                 
-                // Progress logging (mirrors iOS implementation)
+                // Enhanced progress logging with file output
                 val samplesProcessed = epochSteps * batchSize
                 if (totalSteps % 500 == 0 || (epoch == epochs && epochSteps == 0)) {
                     val progressPercent = (samplesProcessed.toFloat() * 100 / dataset.size()).toInt()
-                    Log.d(TAG, "Epoch $epoch/$epochs, Progress $progressPercent%, Step $totalSteps, Loss: $loss")
+                    logTrainingProgress(epoch, epochs, totalSteps, loss, progressPercent, method)
                 }
             }
             
@@ -283,9 +454,38 @@ class ETTrainer(
         val newParams = toTensorDictionary(finalParameters)
         Log.d(TAG, "Captured final parameters with ${newParams.size} tensors")
         
+        // Save final parameters for debugging
+        saveModelParameters(finalParameters, "final_parameters.json", "Final Model Parameters")
+        
         // Calculate tensor differences (new - old)
         val tensorDiff = calculateTensorDifference(oldParams, newParams)
         Log.d(TAG, "Calculated tensor differences with ${tensorDiff.size} tensors")
+        
+        // Save tensor differences for debugging
+        try {
+            val diffFile = File(modelsDir, "tensor_differences.json")
+            val diffContent = buildString {
+                appendLine("// Tensor Differences (Final - Initial)")
+                appendLine("// Saved at: ${Date()}")
+                appendLine("// Method: $method")
+                appendLine()
+                appendLine("{")
+                tensorDiff.forEach { (key, tensor) ->
+                    appendLine("  \"$key\": {")
+                    appendLine("    \"shape\": ${tensor["shape"]},")
+                    appendLine("    \"data\": [${(tensor["data"] as List<Float>).take(10).joinToString(", ")}${if ((tensor["data"] as List<Float>).size > 10) "..." else ""}]")
+                    appendLine("  },")
+                }
+                appendLine("}")
+            }
+            diffFile.writeText(diffContent)
+            Log.i(TAG, "Tensor differences saved to: ${diffFile.absolutePath}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save tensor differences", e)
+        }
+        
+        // Save training summary
+        saveTrainingSummary(method, epochs, batchSize, learningRate, totalSteps, totalLoss, tensorDiff)
         
         // Return training results matching iOS format
         return when (method) {
@@ -362,13 +562,11 @@ class ETTrainer(
         val tensorDict = mutableMapOf<String, Map<String, Any>>()
         
         for ((key, tensor) in parameters) {
-            val sizes = tensor.sizes()
-            val strides = tensor.strides()
+            val shape = tensor.shape()
             val data = tensor.getDataAsFloatArray()
             
             val singleTensorDict = mapOf(
-                "sizes" to sizes.toList(),
-                "strides" to strides.toList(),
+                "shape" to shape.toList(),
                 "data" to data.toList()
             )
             
@@ -412,8 +610,7 @@ class ETTrainer(
             val diffData = oldData.zip(newData).map { (oldVal, newVal) -> newVal - oldVal }
             
             val diffTensor = mapOf(
-                "sizes" to oldTensor["sizes"],
-                "strides" to oldTensor["strides"],
+                "shape" to (oldTensor["shape"] ?: emptyList<Long>()),
                 "data" to diffData
             )
             
@@ -421,6 +618,13 @@ class ETTrainer(
         }
         
         return diffDict
+    }
+
+    /**
+     * Get the artifacts directory path for external access.
+     */
+    fun getArtifactsDirectory(): String {
+        return artifactsDir.absolutePath
     }
 
     /**
