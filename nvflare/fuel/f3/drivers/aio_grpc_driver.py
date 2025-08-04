@@ -32,6 +32,7 @@ from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
     StreamerStub,
     add_StreamerServicer_to_server,
 )
+from nvflare.fuel.f3.drivers.grpc_driver import GrpcDriver
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
@@ -281,8 +282,7 @@ class AioGrpcDriver(BaseDriver):
 
     def __init__(self):
         super().__init__()
-        # GRPC with fork issue: https://github.com/grpc/grpc/issues/28557
-        os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "False"
+        GrpcDriver.setup_grpc_env_var()
 
         self.server = None
         self.options = GRPC_DEFAULT_OPTIONS
