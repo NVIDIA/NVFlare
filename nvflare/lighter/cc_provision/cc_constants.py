@@ -17,7 +17,7 @@ class CCConfigKey:
     COMPUTE_ENV = "compute_env"
     CC_CPU_MECHANISM = "cc_cpu_mechanism"
     CC_GPU_MECHANISM = "cc_gpu_mechanism"
-    CC_ISSUER = "cc_issuer"
+    CC_ISSUERS = "cc_issuers"
     CC_ATTESTATION_CONFIG = "cc_attestation"
     CVM_IMAGE_NAME = "cvm_image_name"
 
@@ -49,6 +49,8 @@ class CCManagerArgs:
     CC_ENABLED_SITES = "cc_enabled_sites"
 
 
-class CCAuthConfig:
-    AUTHORIZER_ID = "authorizer_id"
+class CCIssuerConfig:
+    ID = "id"
     TOKEN_EXPIRATION = "token_expiration"
+    PATH = "path"
+    ARGS = "args"
