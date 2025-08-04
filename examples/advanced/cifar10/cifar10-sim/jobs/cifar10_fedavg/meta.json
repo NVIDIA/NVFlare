@@ -1,5 +1,5 @@
 {
-    "name": "cifar10_fedavg_alpha0.1",
+    "name": "cifar10_fedavg",
     "deploy_map": {
         "cifar10_fedavg": [
             "@ALL"
