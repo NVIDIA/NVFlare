@@ -18,14 +18,16 @@ This module defines the complete protocol for exchanging models between componen
 including message format specification, supported types, and validation utilities.
 
 Example:
-    >>> from nvflare.edge.model_protocol import ModelBufferType, ModelExchangeFormat
-    >>> payload = {
-    ...     ModelExchangeFormat.MODEL_BUFFER: encoded_data,
-    ...     ModelExchangeFormat.MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
-    ...     ModelExchangeFormat.MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.BINARY,
-    ...     ModelExchangeFormat.MODEL_BUFFER_ENCODING: ModelEncoding.BASE64
+    >>> from nvflare.edge.utils.model_protocol import ModelBufferType, ModelExchangeFormat
+    >>> task_dxo = {
+    ...     "data": encoded_data,
+    ...     "meta": {
+    ...         ModelExchangeFormat.MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
+    ...         ModelExchangeFormat.MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.BINARY,
+    ...         ModelExchangeFormat.MODEL_BUFFER_ENCODING: ModelEncoding.BASE64
+    ...     }
     ... }
-    >>> verified_payload = verify_payload(
+    >>> verify_payload(
     ...     payload,
     ...     expected_type=ModelBufferType.EXECUTORCH
     ... )
@@ -33,6 +35,8 @@ Example:
 
 import logging
 from typing import Dict, Optional
+
+from nvflare.apis.dxo import DXO
 
 log = logging.getLogger(__name__)
 
@@ -94,23 +98,25 @@ class ModelExchangeFormat:
     Examples:
         Binary data (ExecutorTorch model):
             {
-                MODEL_BUFFER: <encoded_data>,
-                MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
-                MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.BINARY,
-                MODEL_BUFFER_ENCODING: ModelEncoding.BASE64
+                "data": <encoded_data>,
+                "meta": {
+                  MODEL_BUFFER_TYPE: ModelBufferType.EXECUTORCH,
+                  MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.BINARY,
+                  MODEL_BUFFER_ENCODING: ModelEncoding.BASE64
+                }
             }
 
         String data (JSON config):
             {
-                MODEL_BUFFER: <json_string>,
-                MODEL_BUFFER_TYPE: ModelBufferType.JSON,
-                MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.STRING,
-                MODEL_BUFFER_ENCODING: ModelEncoding.UTF8
+                "data": <json_string>,
+                "meta": {
+                  MODEL_BUFFER_TYPE: ModelBufferType.JSON,
+                  MODEL_BUFFER_NATIVE_FORMAT: ModelNativeFormat.STRING,
+                  MODEL_BUFFER_ENCODING: ModelEncoding.UTF8
+                }
             }
     """
 
-    MODEL_BUFFER = "model_buffer"
-    MODEL_BUFFER_SIZE = "model_buffer_size"  # Optional
     MODEL_BUFFER_TYPE = "model_buffer_type"
     MODEL_BUFFER_NATIVE_FORMAT = "model_buffer_native_format"
     MODEL_BUFFER_ENCODING = "model_buffer_encoding"
@@ -118,7 +124,7 @@ class ModelExchangeFormat:
 
 
 def verify_payload(
-    task_data: Dict,
+    task_dxo: DXO,
     expected_type: Optional[str] = None,
     expected_format: Optional[str] = None,
     expected_encoding: Optional[str] = None,
@@ -126,47 +132,42 @@ def verify_payload(
     """Verify that the task data payload follows the model exchange protocol.
 
     Args:
-        task_data: The task data dictionary to verify
+        task_dxo: The task data dxo to verify
         expected_type: Expected model buffer type (from ModelBufferType)
         expected_format: Expected native format (from ModelNativeFormat)
         expected_encoding: Expected encoding (from ModelEncoding)
 
-    Returns:
-        Dict: The validated payload dictionary
-
     Raises:
         ValueError: If the payload structure is invalid or values don't match expected
     """
-    if not isinstance(task_data, dict):
-        raise ValueError("Task data must be a dictionary")
+    if not isinstance(task_dxo, DXO):
+        raise ValueError("task_dxo must be a DXO")
 
     # Validate required fields
     required_fields = [
-        ModelExchangeFormat.MODEL_BUFFER,
         ModelExchangeFormat.MODEL_BUFFER_TYPE,
         ModelExchangeFormat.MODEL_BUFFER_NATIVE_FORMAT,
         ModelExchangeFormat.MODEL_BUFFER_ENCODING,
     ]
+    task_meta = task_dxo.meta
 
     for field in required_fields:
-        if field not in task_data:
+        if field not in task_meta:
             raise ValueError(f"Missing required field: {field}")
 
     # Validate expected values if provided
-    if expected_type and task_data[ModelExchangeFormat.MODEL_BUFFER_TYPE] != expected_type:
+    if expected_type and task_meta[ModelExchangeFormat.MODEL_BUFFER_TYPE] != expected_type:
         raise ValueError(
-            f"Expected model type {expected_type}, " f"got {task_data[ModelExchangeFormat.MODEL_BUFFER_TYPE]}"
+            f"Expected model type {expected_type}, " f"got {task_meta[ModelExchangeFormat.MODEL_BUFFER_TYPE]}"
         )
 
-    if expected_format and task_data[ModelExchangeFormat.MODEL_BUFFER_NATIVE_FORMAT] != expected_format:
+    if expected_format and task_meta[ModelExchangeFormat.MODEL_BUFFER_NATIVE_FORMAT] != expected_format:
         raise ValueError(
             f"Expected native format {expected_format}, "
-            f"got {task_data[ModelExchangeFormat.MODEL_BUFFER_NATIVE_FORMAT]}"
+            f"got {task_meta[ModelExchangeFormat.MODEL_BUFFER_NATIVE_FORMAT]}"
         )
 
-    if expected_encoding and task_data[ModelExchangeFormat.MODEL_BUFFER_ENCODING] != expected_encoding:
+    if expected_encoding and task_meta[ModelExchangeFormat.MODEL_BUFFER_ENCODING] != expected_encoding:
         raise ValueError(
-            f"Expected encoding {expected_encoding}, " f"got {task_data[ModelExchangeFormat.MODEL_BUFFER_ENCODING]}"
+            f"Expected encoding {expected_encoding}, " f"got {task_meta[ModelExchangeFormat.MODEL_BUFFER_ENCODING]}"
         )
-
-    return task_data

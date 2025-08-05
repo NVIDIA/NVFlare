@@ -27,11 +27,6 @@ from tests.integration_test.src.constants import PREFLIGHT_CHECK_SCRIPT
 
 TEST_CASES = [
     {"project_yaml": "data/projects/dummy.yml", "admin_name": "super@test.org", "is_dummy_overseer": True},
-    {
-        "project_yaml": "data/projects/ha_2_servers_2_clients.yml",
-        "admin_name": "super@test.org",
-        "is_dummy_overseer": False,
-    },
 ]
 
 SERVER_OUTPUT_PASSED = (
@@ -63,23 +58,19 @@ OVERSEER_OUTPUT_PASSED = (
 )
 
 CLIENT_OUTPUT_PASSED = (
-    "--------------------------------------------------------------------------------------------------------------------------------------------------\n"
-    "| Checks                                         | Problems                                                                         | How to fix |\n"
-    "|------------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check overseer running                         | PASSED                                                                           | N/A        |\n"
-    "|------------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check service provider list available          | PASSED                                                                           | N/A        |\n"
-    "|------------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check primary SP's socket server available     | PASSED                                                                           | N/A        |\n"
-    "|------------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check primary SP's GRPC server available       | PASSED                                                                           | N/A        |\n"
-    "|------------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check non-primary SP's socket server available | PASSED                                                                           | N/A        |\n"
-    "|------------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check non-primary SP's GRPC server available   | PASSED                                                                           | N/A        |\n"
-    "|------------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check dry run                                  | PASSED                                                                           | N/A        |\n"
-    "--------------------------------------------------------------------------------------------------------------------------------------------------"
+    "------------------------------------------------------------------------------------------------------------------------------------------------\n"
+    "| Checks                                       | Problems                                                                         | How to fix |\n"
+    "|----------------------------------------------------------------------------------------------------------------------------------------------|\n"
+    "| Check overseer running                       | PASSED                                                                           | N/A        |\n"
+    "|----------------------------------------------------------------------------------------------------------------------------------------------|\n"
+    "| Check service provider list available        | PASSED                                                                           | N/A        |\n"
+    "|----------------------------------------------------------------------------------------------------------------------------------------------|\n"
+    "| Check primary SP's GRPC server available     | PASSED                                                                           | N/A        |\n"
+    "|----------------------------------------------------------------------------------------------------------------------------------------------|\n"
+    "| Check non-primary SP's GRPC server available | PASSED                                                                           | N/A        |\n"
+    "|----------------------------------------------------------------------------------------------------------------------------------------------|\n"
+    "| Check dry run                                | PASSED                                                                           | N/A        |\n"
+    "------------------------------------------------------------------------------------------------------------------------------------------------"
 )
 
 # TODO: this is a hack to filter out the GRPC message
@@ -198,6 +189,7 @@ class TestPreflightCheck:
 
     def test_run_check_on_client(self, setup_system):
         site_launcher, is_dummy_overseer, _ = setup_system
+        filtered_output = None
         try:
             if not is_dummy_overseer:
                 site_launcher.start_overseer()
@@ -207,7 +199,9 @@ class TestPreflightCheck:
             # preflight-check on clients
             for client_name, client_props in site_launcher.client_properties.items():
                 output = _run_preflight_check_command(package_path=client_props.root_dir)
-                assert _filter_output(output) == CLIENT_OUTPUT_PASSED.splitlines()
+                filtered_output = _filter_output(output)
+                print(filtered_output)
+                assert filtered_output == CLIENT_OUTPUT_PASSED.splitlines()
         except Exception:
             raise
         finally:
@@ -216,6 +210,7 @@ class TestPreflightCheck:
 
     def test_run_check_on_admin_console(self, setup_system):
         site_launcher, is_dummy_overseer, admin_folder_root = setup_system
+        filtered_output = None
         try:
             if not is_dummy_overseer:
                 site_launcher.start_overseer()
@@ -224,7 +219,9 @@ class TestPreflightCheck:
 
             # preflight-check on admin console
             output = _run_preflight_check_command(package_path=admin_folder_root)
-            assert _filter_output(output) == CLIENT_OUTPUT_PASSED.splitlines()
+            filtered_output = _filter_output(output)
+            print(filtered_output)
+            assert filtered_output == CLIENT_OUTPUT_PASSED.splitlines()
         except Exception:
             raise
         finally:

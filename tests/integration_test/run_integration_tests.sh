@@ -3,6 +3,12 @@
 set -e
 
 PYTHONPATH="${PWD}/../.."
+
+# CRITICAL: Set gRPC environment variables before ANY imports that might use gRPC
+# See: https://github.com/grpc/grpc/issues/28557
+export GRPC_POLL_STRATEGY="poll"
+export GRPC_ENABLE_FORK_SUPPORT="False"
+
 backends=(numpy tensorflow pytorch overseer auth preflight cifar auto stats xgboost client_api client_api_qa model_controller_api)
 
 usage()
@@ -79,8 +85,8 @@ if [[ $m == "tensorflow" ]]; then
     run_tensorflow
 elif [[ $m == "overseer" ]]; then
     run_overseer_test
-# elif [[ $m == "preflight" ]]; then
-#     run_preflight_check_test
+elif [[ $m == "preflight" ]]; then
+    run_preflight_check_test
 else
     run_system_test
 fi

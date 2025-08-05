@@ -17,6 +17,7 @@
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Dict
@@ -244,7 +245,7 @@ def test_install_requirements_success(mock_run, temp_dir):
     requirements_file.write_text("pytest==7.0.0")
 
     install_requirements(requirements_file)
-    mock_run.assert_called_once_with(["pip", "install", "-r", str(requirements_file)], check=True)
+    mock_run.assert_called_once_with([sys.executable, "-m", "pip", "install", "-r", str(requirements_file)], check=True)
 
 
 @patch("subprocess.run")
@@ -484,16 +485,18 @@ class TestInstall:
         temp_path = temp_dir / "temp"
         temp_path.mkdir()
 
-        # Only create application-share
-        shared_dir = temp_path / "application-share"
-        shared_dir.mkdir()
+        # Creates application-code
+        code_dir = temp_path / "application-code"
+        code_dir.mkdir()
 
         zip_path = temp_dir / "test.zip"
         with ZipFile(zip_path, "w") as zf:
             for path in temp_path.rglob("*"):
                 zf.write(path, path.relative_to(temp_path))
 
-        with pytest.raises(ValueError, match="Invalid application code: Missing application directory"):
+        with pytest.raises(
+            ValueError, match="Invalid application code zip: Missing both application and application-share directory."
+        ):
             install_app_code(zip_path, temp_dir, "site-1", str(temp_dir / "shared"), False)
 
     def test_install_app_code_missing_site(self, temp_dir):
