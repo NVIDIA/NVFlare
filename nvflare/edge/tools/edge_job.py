@@ -14,18 +14,17 @@
 import json
 import os.path
 
+from nvflare.edge.assessor import Assessor
+from nvflare.edge.controllers.sage import ScatterAndGatherForEdge
+from nvflare.edge.executors.edge_model_executor import EdgeModelExecutor
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
+from nvflare.edge.updaters.emd import AggregatorFactory
+from nvflare.edge.widgets.etr import EdgeTaskReceiver
+from nvflare.edge.widgets.tp_runner import TPRunner
+from nvflare.edge.widgets.tpo_runner import TPORunner
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_positive_number, check_str
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.file_source import FileSource
-
-from .assessor import Assessor
-from .controllers.sage import ScatterAndGatherForEdge
-from .executors.edge_model_executor import EdgeModelExecutor
-from .updaters.emd import AggregatorFactory
-from .widgets.etr import EdgeTaskReceiver
-from .widgets.tp_runner import TPRunner
-from .widgets.tpo_runner import TPORunner
 
 
 class EdgeJob(FedJob):
@@ -126,7 +125,7 @@ class EdgeJob(FedJob):
         self.to_clients(EdgeTaskReceiver(), id="edge_task_receiver")
 
         aggr_factory_id = self.to_clients(aggregator_factory, id="aggr_factory")
-        executor = EdgeModelExecutor(
+        executor = self._configure_executor(
             aggr_factory_id=aggr_factory_id, max_model_versions=max_model_versions, update_timeout=update_timeout
         )
         self.to_clients(executor, id="executor", tasks=[executor_task_name])
@@ -135,6 +134,11 @@ class EdgeJob(FedJob):
             self.configure_simulation_with_file(simulation_config_file)
 
         self.client_config_added = True
+
+    def _configure_executor(self, aggr_factory_id, max_model_versions, update_timeout):
+        return EdgeModelExecutor(
+            aggr_factory_id=aggr_factory_id, max_model_versions=max_model_versions, update_timeout=update_timeout
+        )
 
     def configure_simulation_with_file(self, simulation_config_file: str):
         """Configure simulation with a config file.

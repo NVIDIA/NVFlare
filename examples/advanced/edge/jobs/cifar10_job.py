@@ -19,7 +19,7 @@ from nvflare.edge.aggregators.model_update_dxo_factory import ModelUpdateDXOAggr
 from nvflare.edge.assessors.buff_device_manager import BuffDeviceManager
 from nvflare.edge.assessors.buff_model_manager import BuffModelManager
 from nvflare.edge.assessors.model_update import ModelUpdateAssessor
-from nvflare.edge.edge_job import EdgeJob
+from nvflare.edge.tools.edge_job import EdgeJob
 from nvflare.edge.models.model import Cifar10ConvNet
 from nvflare.edge.widgets.evaluator import GlobalEvaluator
 

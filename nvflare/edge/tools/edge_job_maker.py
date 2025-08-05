@@ -19,9 +19,9 @@ from nvflare.edge.aggregators.model_update_dxo_factory import ModelUpdateDXOAggr
 from nvflare.edge.assessors.buff_device_manager import BuffDeviceManager
 from nvflare.edge.assessors.buff_model_manager import BuffModelManager
 from nvflare.edge.assessors.model_update import ModelUpdateAssessor
-from nvflare.edge.edge_job import EdgeJob
 from nvflare.edge.models.model import DeviceModel
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
+from nvflare.edge.tools.edge_job import EdgeJob
 from nvflare.edge.widgets.evaluator import GlobalEvaluator
 from nvflare.job_config.file_source import FileSource
 
@@ -71,7 +71,10 @@ class EdgeJobMaker:
         self.const_selection = const_selection
         self.device_trainer_args = None
         self.custom_source_root = custom_source_root
-        self.job = EdgeJob(name=self.job_name, edge_method=self.method_name)
+        self.job = self.create_job()
+
+    def create_job(self):
+        return EdgeJob(name=self.job_name, edge_method=self.method_name)
 
     def set_device_trainer(self, **kwargs):
         self.device_trainer_args = kwargs
