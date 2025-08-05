@@ -75,6 +75,7 @@ LOCAL_HOST = "localhost"
 CA_CERT_NAME = "rootCA.pem"
 SIMULATION_CONFIG = "simulation_config.json"
 RUN_SIMULATOR = "python -m nvflare.edge.simulation.run_device_simulator"
+PROTO_TEST_CONFIG = "proto_test_config.json"
 
 
 class _Packager(Packager):
@@ -96,9 +97,18 @@ class _Packager(Packager):
         ca_cert_path = os.path.join(location, "server", "startup", CA_CERT_NAME)
         shutil.copy(ca_cert_path, os.path.join(demo_dir, CA_CERT_NAME))
 
+        run_rp = f"python -m nvflare.edge.web.routing_proxy {self.rp_port} {LCP_MAP_BASENAME} {CA_CERT_NAME}"
+
         utils.write(
             file_full_path=os.path.join(demo_dir, "start_rp.sh"),
-            content=f"python -m nvflare.edge.web.routing_proxy {self.rp_port} {LCP_MAP_BASENAME} {CA_CERT_NAME}",
+            content=run_rp,
+            mode="t",
+            exe=True,
+        )
+
+        utils.write(
+            file_full_path=os.path.join(demo_dir, "start_proto_test.sh"),
+            content=run_rp + " " + PROTO_TEST_CONFIG,
             mode="t",
             exe=True,
         )
