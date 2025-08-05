@@ -58,7 +58,6 @@ class FlareRunnerController(
     // State management
     private var status: TrainingStatus = TrainingStatus.IDLE
     var supportedJobs: Set<SupportedJob> = setOf(SupportedJob.CIFAR10, SupportedJob.XOR)
-        private set
     
     // Task management
     private var currentJob: Job? = null
@@ -83,12 +82,6 @@ class FlareRunnerController(
         } else {
             supportedJobs = supportedJobs + job
         }
-        
-        // Update the runner if it exists
-        flareRunner?.let { runner ->
-            // Note: Android doesn't have updateSupportedJobs method yet, 
-            // but we can recreate the runner if needed
-        }
     }
     
     fun startTraining(
@@ -107,6 +100,9 @@ class FlareRunnerController(
         status = TrainingStatus.TRAINING
         onStatusUpdate(status)
         
+        // Create connection on main thread to avoid background thread issues
+        val connection = createConnection()
+        
         currentJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 Log.d(TAG, "FlareRunnerController: Starting federated learning")
@@ -117,7 +113,9 @@ class FlareRunnerController(
                 
                 if (supportedJobs.contains(SupportedJob.CIFAR10)) {
                     try {
-                        dataset = dataSource.getDataset("cifar10", FlareContext())
+                        val context = FlareContext()
+                        context.put("dataset_name", "cifar10")
+                        dataset = dataSource.getDataset("train", context)
                         Log.d(TAG, "FlareRunnerController: Created CIFAR-10 dataset")
                         
                         // Validate dataset using SDK's standardized validation
@@ -139,7 +137,9 @@ class FlareRunnerController(
                         throw TrainingError.DATASET_CREATION_FAILED
                     }
                 } else if (supportedJobs.contains(SupportedJob.XOR)) {
-                    dataset = dataSource.getDataset("xor", FlareContext())
+                    val context = FlareContext()
+                    context.put("dataset_name", "xor")
+                    dataset = dataSource.getDataset("train", context)
                     Log.d(TAG, "FlareRunnerController: Created XOR dataset")
                     Log.d(TAG, "FlareRunnerController: XOR dataset size: ${dataset.size()}")
                 } else {
@@ -153,7 +153,7 @@ class FlareRunnerController(
                 // Create FlareRunner with dataset
                 val runner = AndroidFlareRunner(
                     context = context,
-                    connection = createConnection(),
+                    connection = connection,
                     jobName = "federated_learning",
                     dataSource = dataSource,
                     deviceInfo = mapOf(
@@ -211,6 +211,7 @@ class FlareRunnerController(
         val connection = com.nvidia.nvflare.sdk.network.Connection(context)
         connection.hostname.value = serverHost
         connection.port.value = serverPort
+        connection.setCapabilities(capabilities)
         return connection
     }
 } 

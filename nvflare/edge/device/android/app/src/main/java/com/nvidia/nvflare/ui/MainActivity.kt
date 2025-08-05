@@ -47,6 +47,8 @@ fun MainScreen() {
     var portText by remember { mutableStateOf(flareRunnerController.serverPort.toString()) }
     var status by remember { mutableStateOf(TrainingStatus.IDLE) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var supportedJobsState by remember { mutableStateOf(flareRunnerController.supportedJobs) }
+
     
     // Get IP address
     val ipAddress = remember {
@@ -149,18 +151,27 @@ fun MainScreen() {
                     style = MaterialTheme.typography.titleMedium
                 )
                 
+
+                
                 SupportedJob.values().forEach { job ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(job.displayName)
+                        Text(
+                            text = job.displayName,
+                            modifier = Modifier.weight(1f)
+                        )
                         Switch(
-                            checked = flareRunnerController.supportedJobs.contains(job),
+                            checked = supportedJobsState.contains(job),
                             onCheckedChange = { checked ->
                                 flareRunnerController.toggleJob(job)
-                            }
+                                supportedJobsState = flareRunnerController.supportedJobs
+                            },
+                            modifier = Modifier.padding(start = 8.dp)
                         )
                     }
                 }

@@ -80,9 +80,10 @@ class Connection(private val context: Context) {
             .addPathSegment("job")
             .build()
 
-        // Prepare request body with job_name instead of capabilities
+        // Prepare request body with job_name and capabilities
         val requestBody = JsonObject().apply {
             add("job_name", JsonPrimitive(jobName))
+            add("capabilities", gson.toJsonTree(capabilities))
         }
 
         val request = Request.Builder()
