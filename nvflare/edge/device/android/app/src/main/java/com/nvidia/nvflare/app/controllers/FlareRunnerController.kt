@@ -73,7 +73,8 @@ class FlareRunnerController(
     
     val capabilities: Map<String, Any>
         get() = mapOf(
-            "supported_jobs" to supportedJobs.map { it.value }
+            "supported_jobs" to supportedJobs.map { it.value },
+            "methods" to listOf("cnn", "xor")
         )
     
     fun toggleJob(job: SupportedJob) {
