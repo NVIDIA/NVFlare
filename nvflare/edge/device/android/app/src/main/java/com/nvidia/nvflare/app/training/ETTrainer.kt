@@ -44,7 +44,6 @@ class ETTrainer(
     private val logsDir = File(artifactsDir, "logs")
     
     init {
-        initializeTrainingModule()
         setupArtifactDirectories()
     }
 
@@ -282,7 +281,7 @@ class ETTrainer(
         Log.d(TAG, "Starting ExecuTorch training with method: ${config.method}")
         
         if (!isInitialized || tModule == null) {
-            throw RuntimeException("Training module not initialized")
+            initializeTrainingModule()
         }
         
         try {

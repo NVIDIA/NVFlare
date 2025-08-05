@@ -103,7 +103,37 @@ abstract class FlareRunner(
 
         // Process training configuration
         val trainConfig = if (jobData != null) {
-            processTrainConfig(getAndroidContext(), jobData, resolverRegistryMap)
+            // Extract config from job_data if it exists, otherwise use job_data directly
+            val configValue = jobData["config"]
+            Log.d(TAG, "Config value type: ${configValue?.javaClass?.simpleName}")
+            Log.d(TAG, "Config value: $configValue")
+            
+            val config = when (configValue) {
+                is Map<*, *> -> configValue as Map<String, Any>
+                is com.google.gson.JsonObject -> {
+                    // Convert JsonObject to Map
+                    try {
+                        com.google.gson.Gson().fromJson(configValue, Map::class.java) as Map<String, Any>
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to convert JsonObject to Map: $configValue", e)
+                        jobData
+                    }
+                }
+                is String -> {
+                    // If config is a JSON string, parse it
+                    try {
+                        com.google.gson.Gson().fromJson(configValue, Map::class.java) as Map<String, Any>
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to parse config JSON: $configValue", e)
+                        jobData
+                    }
+                }
+                else -> jobData
+            }
+            Log.d(TAG, "Job data: $jobData")
+            Log.d(TAG, "Extracted config: $config")
+            Log.d(TAG, "Config keys: ${config.keys}")
+            processTrainConfig(getAndroidContext(), config, resolverRegistryMap)
         } else {
             throw RuntimeException("No job data available")
         }

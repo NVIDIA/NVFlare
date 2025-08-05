@@ -72,6 +72,10 @@ fun processTrainConfig(
 ): TrainConfig {
     val TAG = "ConfigProcessor"
     
+    Log.d(TAG, "ConfigProcessor: Processing config: $config")
+    Log.d(TAG, "ConfigProcessor: Config keys: ${config.keys}")
+    Log.d(TAG, "ConfigProcessor: Looking for key: ${ConfigKey.COMPONENTS}")
+    
     val components = config[ConfigKey.COMPONENTS] as? List<Map<String, Any>>
         ?: throw ConfigError("missing ${ConfigKey.COMPONENTS} in config")
 
@@ -175,6 +179,7 @@ private fun processComponents(
             private fun resolveTrainer(args: Map<String, Any>?): Any? {
                 // Map Trainer.DLTrainer to Android executor
                 // Extract training parameters from args
+                val method = args?.get("method") as? String ?: "cnn"
                 val epoch = args?.get("epoch") as? Int ?: 5
                 val lr = args?.get("lr") as? Double ?: 0.0001
                 val optimizer = args?.get("optimizer") as? String ?: "sgd"
@@ -188,8 +193,8 @@ private fun processComponents(
                     "loss" to loss
                 )
                 
-                // Use AndroidExecutorFactory with default method
-                return AndroidExecutorFactory.createExecutor(context, "cnn", "", meta)
+                // Use AndroidExecutorFactory with the method from args
+                return AndroidExecutorFactory.createExecutor(context, method, "", meta)
             }
         }
 
