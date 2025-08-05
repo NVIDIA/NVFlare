@@ -48,7 +48,6 @@ def get_test_config(test_config_yaml: str) -> dict:
     test_config = read_yaml(test_config_yaml)
     test_config["single_app_as_job"] = test_config.get("single_app_as_job", False)
     test_config["cleanup"] = test_config.get("cleanup", True)
-    test_config["ha"] = test_config.get("ha", False)
     for x in ["cleanup", "single_app_as_job"]:
         if x not in test_config:
             raise NVFTestError(f"Test config: {test_config_yaml} missing required attributes {x}.")
@@ -63,10 +62,9 @@ def get_test_config(test_config_yaml: str) -> dict:
             raise NVFTestError(f"Test config: {test_config_yaml} missing jobs_root_dir.")
         print(f"\tjobs_root_dir: {test_config['jobs_root_dir']}")
 
-    if test_config["ha"]:
-        if "project_yaml" not in test_config:
-            raise NVFTestError(f"Test config: {test_config_yaml} missing project_yaml.")
-    else:
+    if "project_yaml" not in test_config:
+        print(f"Test config: {test_config_yaml} does not have project_yaml.")
+        print("Using POC attributes")
         for x in ["n_servers", "n_clients"]:
             if x not in test_config:
                 raise NVFTestError(f"Test config: {test_config_yaml} missing required attributes {x}.")
@@ -95,7 +93,7 @@ def setup_and_teardown_system(request):
     test_config = get_test_config(yaml_path)
 
     cleanup = test_config["cleanup"]
-    ha = test_config["ha"]
+    has_project_yaml = "project_yaml" in test_config
     poll_period = test_config.get("poll_period", 5)
     additional_python_paths = test_config.get("additional_python_paths", [])
     for additional_python_path in additional_python_paths:
@@ -106,20 +104,18 @@ def setup_and_teardown_system(request):
     test_driver = None
     site_launcher = None
     try:
-        if ha:
+        if has_project_yaml:
             project_yaml_path = test_config.get("project_yaml")
             if not os.path.isfile(project_yaml_path):
                 raise NVFTestError(f"Missing project_yaml at {project_yaml_path}.")
             site_launcher = ProvisionSiteLauncher(project_yaml=project_yaml_path)
-            poc = False
             super_user_name = "super@test.org"
         else:
             n_servers = int(test_config["n_servers"])
             if n_servers != 1:
-                raise NVFTestError("POC mode can only use one server. For more servers, use HA with provisioned mode.")
+                raise NVFTestError("NVFlare test only support one server.")
             n_clients = int(test_config["n_clients"])
             site_launcher = POCSiteLauncher(n_servers=n_servers, n_clients=n_clients)
-            poc = False  # POC now uses SSL as well so this needs to be False
             super_user_name = "admin@nvidia.com"
 
         workspace_root = site_launcher.prepare_workspace()
@@ -152,17 +148,16 @@ def setup_and_teardown_system(request):
             site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
         )
         test_driver.initialize_super_user(
-            workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, poc=poc, super_user_name=super_user_name
+            workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, super_user_name=super_user_name
         )
-        if ha:
+        if has_project_yaml:
             test_driver.initialize_admin_users(
                 workspace_root_dir=workspace_root,
                 upload_root_dir=jobs_root_dir,
-                poc=poc,
                 admin_user_names=site_launcher.admin_user_names,
             )
         test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()), timeout=2000)
-        yield ha, test_cases, site_launcher, test_driver, yaml_path
+        yield test_cases, site_launcher, test_driver, yaml_path
     finally:
         if test_driver:
             test_driver.finalize()
@@ -179,7 +174,7 @@ def setup_and_teardown_system(request):
 @pytest.mark.xdist_group(name="system_tests_group")
 class TestSystem:
     def test_run_job_complete(self, setup_and_teardown_system):
-        ha, test_cases, site_launcher, test_driver, test_yaml_path = setup_and_teardown_system
+        test_cases, site_launcher, test_driver, test_yaml_path = setup_and_teardown_system
 
         print(f"Running test suites from {test_yaml_path}")
 
