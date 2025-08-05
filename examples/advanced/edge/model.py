@@ -35,18 +35,3 @@ class Cifar10ConvNet(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
-
-
-# On device training requires the loss to be embedded in the model (and be the first output).
-# We wrap the original model here and add the loss calculation. This will be the model we export.
-class TrainingNet(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # !! this model_data needs to have both network definition and weights
-        #self.net: nn.Module = load_net_from_file(model_data)
-        self.net = Cifar10ConvNet()
-        self.loss = nn.CrossEntropyLoss()
-
-    def forward(self, input, label):
-        pred = self.net(input)
-        return self.loss(pred, label), pred.detach().argmax(dim=1)

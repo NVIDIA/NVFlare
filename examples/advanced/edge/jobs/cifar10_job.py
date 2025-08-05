@@ -31,19 +31,13 @@ def export_job(args):
     )
 
     factory = ModelUpdateDXOAggrFactory()
+    job.configure_client(
+        aggregator_factory=factory,
+        max_model_versions=args.max_model_aggr,
+        update_timeout=1000.0,
+    )
     if args.simulation_config_file:
-        job.configure_client(
-            aggregator_factory=factory,
-            max_model_versions=args.max_model_aggr,
-            update_timeout=1000.0,
-            simulation_config_file=args.simulation_config_file,
-        )
-    else:
-        job.configure_client(
-            aggregator_factory=factory,
-            max_model_versions=args.max_model_aggr,
-            update_timeout=1000.0,
-        )
+        job.configure_simulation_with_file(args.simulation_config_file)
 
     evaluator = GlobalEvaluator(
         model_path="nvflare.edge.models.model.Cifar10ConvNet",
