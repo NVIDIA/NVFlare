@@ -1,6 +1,6 @@
 api_version: 3
-name: example_project
-description: NVIDIA FLARE sample project yaml file
+name: integration_test
+description: NVIDIA FLARE integration_test project yaml file
 
 participants:
   - name: localhost0

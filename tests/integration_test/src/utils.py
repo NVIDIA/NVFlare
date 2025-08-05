@@ -26,7 +26,6 @@ import yaml
 
 from nvflare.apis.job_def import RunStatus
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.hci.client.api_spec import AdminConfigKey, UidSource
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.config import secure_load_admin_config
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
@@ -37,7 +36,7 @@ from .constants import DEFAULT_RESOURCE_CONFIG, FILE_STORAGE, PROVISION_SCRIPT, 
 from .example import Example
 
 OUTPUT_YAML_DIR = os.path.join("data", "test_configs", "generated")
-PROJECT_YAML = os.path.join("data", "projects", "ha_1_servers_2_clients.yml")
+PROJECT_YAML = os.path.join("data", "projects", "dummy.yml")
 POSTFIX = "_copy"
 REQUIREMENTS_TO_EXCLUDE = ["nvflare", "jupyter", "notebook"]
 
@@ -369,7 +368,6 @@ def _generate_test_config_for_one_job(
     setup.append(f"rm -f {new_requirements_file}")
 
     config = {
-        "ha": False,
         "jobs_root_dir": example.jobs_root_dir,
         "cleanup": True,
         "project_yaml": project_yaml,
@@ -404,13 +402,10 @@ def _read_admin_json_file(workspace: Workspace) -> dict:
     return conf.get_admin_config()
 
 
-def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, admin_user_name, poc: bool):
+def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, admin_user_name):
     admin_dir = os.path.join(workspace_root_dir, admin_user_name)
     workspace = Workspace(root_dir=admin_dir)
     admin_config = _read_admin_json_file(workspace)
-    if poc:
-        admin_config[AdminConfigKey.UID_SOURCE] = UidSource.CERT
-
     admin_api = FLAdminAPI(
         upload_dir=upload_root_dir,
         download_dir=download_root_dir,
@@ -418,7 +413,7 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
         admin_config=admin_config,
         auto_login_max_tries=20,
     )
-    admin_api.connect(5.0)
+    admin_api.connect(10.0)
     admin_api.login()
     return admin_api
 
