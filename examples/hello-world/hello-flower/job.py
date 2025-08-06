@@ -26,6 +26,7 @@ def main():
     parser.add_argument("--content_dir", type=str, required=True)
     parser.add_argument("--stream_metrics", action="store_true")
     parser.add_argument("--use_client_api", action="store_true")
+    parser.add_argument("--export_job", action="store_true")
     parser.add_argument("--export_dir", type=str, default="jobs")
     parser.add_argument("--workdir", type=str, default="/tmp/nvflare/hello-flower")
     args = parser.parse_args()
@@ -36,15 +37,20 @@ def main():
         # only external client api works with the current flower integration
         env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
+    num_of_clients=2
+
     job = FlowerPyTorchJob(
         name=args.job_name,
         flower_content=args.content_dir,
         stream_metrics=args.stream_metrics,
+        min_clients=num_of_clients,
         extra_env=env,
     )
 
-    job.export_job(args.export_dir)
-    job.simulator_run(os.path.join(args.workdir, job.name), gpu="0", n_clients=2)
+    if args.export_job:
+        job.export_job(args.export_dir)
+    else:
+        job.simulator_run(os.path.join(args.workdir, job.name), gpu="0", n_clients=num_of_clients)
 
 
 if __name__ == "__main__":
