@@ -26,13 +26,30 @@ class AndroidExecutor(
 
         try {
             Log.d(TAG, "Starting training execution")
+            Log.d(TAG, "Task data keys: ${taskData.data.keys}")
+            Log.d(TAG, "Task data: $taskData")
             
             // Extract training configuration from task data
             val trainingConfig = extractTrainingConfig(taskData, ctx)
             
-            // Execute training using the old Trainer interface
+            // Extract model data from task data
+            val modelData = taskData.data["model"] as? String
+            Log.d(TAG, "Extracted model data: ${modelData?.take(50) ?: "null"}...")
+            Log.d(TAG, "Model data length: ${modelData?.length ?: 0}")
+            Log.d(TAG, "Model data starts with '{': ${modelData?.startsWith("{")}")
+            Log.d(TAG, "Model data ends with '}': ${modelData?.endsWith("}")}")
+            Log.d(TAG, "Model data first 100 chars: ${modelData?.take(100)}")
+            Log.d(TAG, "Model data last 50 chars: ${modelData?.takeLast(50)}")
+            
+            // Validate model data
+            if (modelData.isNullOrEmpty()) {
+                Log.e(TAG, "No model data found in task data")
+                throw RuntimeException("No model data found in task data")
+            }
+            
+            // Execute training using the Trainer interface with model data
             val result = runBlocking {
-                trainer.train(trainingConfig)
+                trainer.train(trainingConfig, modelData)
             }
             
             Log.d(TAG, "Training completed successfully")

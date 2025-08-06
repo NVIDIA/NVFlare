@@ -79,7 +79,17 @@ class TrainingArtifactManager(
      */
     fun saveInitialModel(modelData: String) {
         try {
-            val decodedModelData = java.util.Base64.getDecoder().decode(modelData)
+            // Extract model_buffer from JSON if needed
+            val actualModelData = if (modelData.startsWith("{")) {
+                val jsonObject = com.google.gson.JsonParser.parseString(modelData).asJsonObject
+                val modelBuffer = jsonObject.get("model_buffer")?.asString
+                    ?: throw RuntimeException("No model_buffer found in JSON")
+                modelBuffer
+            } else {
+                modelData
+            }
+            
+            val decodedModelData = java.util.Base64.getDecoder().decode(actualModelData)
             val initialModelFile = File(modelsDir, "initial_model.pte")
             initialModelFile.writeBytes(decodedModelData)
             Log.i(TAG, "Initial model saved to: ${initialModelFile.absolutePath}")

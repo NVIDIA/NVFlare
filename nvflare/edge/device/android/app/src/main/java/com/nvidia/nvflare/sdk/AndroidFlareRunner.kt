@@ -166,7 +166,7 @@ class AndroidFlareRunner(
                             "task_id" to (taskResponse.taskId ?: ""),
                             "task_name" to (taskResponse.taskName ?: ""),
                             "task_data" to mapOf(
-                                "data" to (taskResponse.taskData?.data?.toString() ?: ""),
+                                "data" to mapOf("model" to (taskResponse.taskData?.data?.toString() ?: "")),
                                 "meta" to (taskResponse.taskData?.meta?.asMap() ?: emptyMap<String, Any>()),
                                 "kind" to (taskResponse.taskData?.kind ?: "")
                             ),

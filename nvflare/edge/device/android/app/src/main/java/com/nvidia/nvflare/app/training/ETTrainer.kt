@@ -84,7 +84,7 @@ class ETTrainer(
     /**
      * Initialize the ExecuTorch training module.
      */
-    private fun initializeTrainingModule() {
+    private fun initializeTrainingModule(modelData: String) {
         try {
             Log.d(TAG, "Initializing ExecuTorch training module")
             
@@ -92,16 +92,45 @@ class ETTrainer(
                 NativeLoader.init(SystemDelegate())
             }
             
-            val decodedModelData = java.util.Base64.getDecoder().decode(modelData)
+            // Extract model_buffer from JSON if needed
+            Log.d(TAG, "Model data starts with '{': ${modelData.startsWith("{")}")
+            val actualModelData = if (modelData.startsWith("{")) {
+                // Parse JSON and extract model_buffer
+                Log.d(TAG, "Parsing JSON model data")
+                val jsonObject = com.google.gson.JsonParser.parseString(modelData).asJsonObject
+                Log.d(TAG, "JSON object keys: ${jsonObject.keySet()}")
+                val modelBuffer = jsonObject.get("model_buffer")?.asString
+                    ?: throw RuntimeException("No model_buffer found in JSON")
+                Log.d(TAG, "Extracted model_buffer from JSON, length: ${modelBuffer.length}")
+                modelBuffer
+            } else {
+                // Use as-is if it's already base64
+                Log.d(TAG, "Using model data as-is (not JSON)")
+                modelData
+            }
+            
+            val decodedModelData = java.util.Base64.getDecoder().decode(actualModelData)
+            Log.d(TAG, "Decoded model data size: ${decodedModelData.size} bytes")
+            
+            // Validate model header (check for ExecuTorch magic bytes)
+            if (decodedModelData.size >= 8) {
+                val header = String(decodedModelData.take(8).toByteArray())
+                Log.d(TAG, "Model header: $header")
+                if (!header.startsWith("PAAAAEVU")) {
+                    Log.w(TAG, "Warning: Model header doesn't match expected ExecuTorch format")
+                }
+            }
+            
             val tempFile = File.createTempFile("model", ".pte")
             tempFile.writeBytes(decodedModelData)
+            Log.d(TAG, "Written ${decodedModelData.size} bytes to temp file: ${tempFile.absolutePath}")
             
             Log.d(TAG, "Model written to temporary file: ${tempFile.absolutePath}")
             
             // Save initial model for debugging
             artifactManager.saveInitialModel(modelData)
             
-            tModule = TrainingModule.load(tempFile.absolutePath, tempFile.absolutePath)
+            tModule = TrainingModule.load(tempFile.absolutePath)
             tempFile.delete()
             
             if (tModule == null) {
@@ -117,11 +146,14 @@ class ETTrainer(
         }
     }
 
-    override suspend fun train(config: TrainingConfig): Map<String, Any> {
+    override suspend fun train(config: TrainingConfig, modelData: String?): Map<String, Any> {
         Log.d(TAG, "Starting ExecuTorch training with method: ${config.method}")
         
+        // Model data should be provided separately (like iOS)
+        val actualModelData = modelData ?: throw RuntimeException("No model data provided for training")
+        
         if (!isInitialized || tModule == null) {
-            initializeTrainingModule()
+            initializeTrainingModule(actualModelData)
         }
         
         try {
@@ -215,38 +247,79 @@ class ETTrainer(
             var epochLoss = 0.0f
             var epochSteps = 0
             
-            while (true) {
-                val batch = dataset.getNextBatch(batchSize)
-                if (batch == null) break
+            // For XOR, process individual samples like the reference implementation
+            if (method == "xor") {
+                val xorData = listOf(
+                    floatArrayOf(1.0f, 1.0f) to 0L,
+                    floatArrayOf(0.0f, 0.0f) to 0L,
+                    floatArrayOf(1.0f, 0.0f) to 1L,
+                    floatArrayOf(0.0f, 1.0f) to 1L
+                )
                 
-                val inputData = batch.getInput() as FloatArray
-                val labelData = batch.getLabel() as FloatArray
-                
-                val inputTensor = createInputTensor(inputData, method, batchSize)
-                val labelTensor = createLabelTensor(labelData, batchSize)
-                
-                val inputEValues = arrayOf(EValue.from(inputTensor), EValue.from(labelTensor))
-                val outputEValues = model.executeForwardBackward("forward", *inputEValues)
-                    ?: throw IllegalStateException("Execution module is not loaded.")
-                
-                val loss = outputEValues[0].toTensor().getDataAsFloatArray()[0]
-                val predictions = outputEValues[1].toTensor().getDataAsLongArray()
-                
-                epochLoss += loss
-                totalLoss += loss
-                epochSteps++
-                totalSteps++
-                
-                val parameters: Map<String, Tensor> = model.namedParameters("forward")
-                val sgd = SGD.create(parameters, learningRate.toDouble(), momentum.toDouble(), 0.0, 0.0, true)
-                val gradients: Map<String, Tensor> = model.namedGradients("forward")
-                sgd.step(gradients)
-                
-                val samplesProcessed = epochSteps * batchSize
-                if (totalSteps % 500 == 0 || (epoch == epochs && epochSteps == 0)) {
-                    val progressPercent = (samplesProcessed.toFloat() * 100 / dataset.size()).toInt()
-                    artifactManager.logTrainingProgress(epoch, epochs, totalSteps, loss, progressPercent, method)
-                    Log.d(TAG, "Epoch $epoch/$epochs, Progress $progressPercent%, Step $totalSteps, Loss: $loss")
+                repeat(batchSize) { // Process batchSize iterations through the XOR data
+                    xorData.forEach { (inputData, label) ->
+                        // Create individual tensors like the reference
+                        val inputTensor = Tensor.fromBlob(inputData, longArrayOf(1L, 2L))
+                        val labelTensor = Tensor.fromBlob(longArrayOf(label), longArrayOf(1L))
+                        
+                        val inputEValues = arrayOf(EValue.from(inputTensor), EValue.from(labelTensor))
+                        val outputEValues = model.executeForwardBackward("forward", *inputEValues)
+                            ?: throw IllegalStateException("Execution module is not loaded.")
+                        
+                        val loss = outputEValues[0].toTensor().getDataAsFloatArray()[0]
+                        
+                        epochLoss += loss
+                        totalLoss += loss
+                        epochSteps++
+                        totalSteps++
+                        
+                        val parameters: Map<String, Tensor> = model.namedParameters("forward")
+                        val sgd = SGD.create(parameters, learningRate.toDouble(), momentum.toDouble(), 0.0, 0.0, true)
+                        val gradients: Map<String, Tensor> = model.namedGradients("forward")
+                        sgd.step(gradients)
+                        
+                        if (totalSteps % 500 == 0 || (epoch == epochs && epochSteps == 0)) {
+                            val progressPercent = (epochSteps.toFloat() * 100 / (xorData.size * batchSize)).toInt()
+                            artifactManager.logTrainingProgress(epoch, epochs, totalSteps, loss, progressPercent, method)
+                            Log.d(TAG, "Epoch $epoch/$epochs, Progress $progressPercent%, Step $totalSteps, Loss: $loss")
+                        }
+                    }
+                }
+            } else {
+                // For other methods (like CNN), use batch processing
+                while (true) {
+                    val batch = dataset.getNextBatch(batchSize)
+                    if (batch == null) break
+                    
+                    val inputData = batch.getInput() as FloatArray
+                    val labelData = batch.getLabel() as FloatArray
+                    
+                    val inputTensor = createInputTensor(inputData, method, batchSize)
+                    val labelTensor = createLabelTensor(labelData, batchSize)
+                    
+                    val inputEValues = arrayOf(EValue.from(inputTensor), EValue.from(labelTensor))
+                    val outputEValues = model.executeForwardBackward("forward", *inputEValues)
+                        ?: throw IllegalStateException("Execution module is not loaded.")
+                    
+                    val loss = outputEValues[0].toTensor().getDataAsFloatArray()[0]
+                    val predictions = outputEValues[1].toTensor().getDataAsLongArray()
+                    
+                    epochLoss += loss
+                    totalLoss += loss
+                    epochSteps++
+                    totalSteps++
+                    
+                    val parameters: Map<String, Tensor> = model.namedParameters("forward")
+                    val sgd = SGD.create(parameters, learningRate.toDouble(), momentum.toDouble(), 0.0, 0.0, true)
+                    val gradients: Map<String, Tensor> = model.namedGradients("forward")
+                    sgd.step(gradients)
+                    
+                    val samplesProcessed = epochSteps * batchSize
+                    if (totalSteps % 500 == 0 || (epoch == epochs && epochSteps == 0)) {
+                        val progressPercent = (samplesProcessed.toFloat() * 100 / dataset.size()).toInt()
+                        artifactManager.logTrainingProgress(epoch, epochs, totalSteps, loss, progressPercent, method)
+                        Log.d(TAG, "Epoch $epoch/$epochs, Progress $progressPercent%, Step $totalSteps, Loss: $loss")
+                    }
                 }
             }
             

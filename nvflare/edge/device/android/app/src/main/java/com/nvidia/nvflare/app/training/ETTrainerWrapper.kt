@@ -21,10 +21,14 @@ class ETTrainerWrapper(
         Log.d(TAG, "ETTrainerWrapper: Initialization complete")
     }
 
-    override suspend fun train(config: TrainingConfig): Map<String, Any> = withContext(Dispatchers.IO) {
+    override suspend fun train(config: TrainingConfig, modelData: String?): Map<String, Any> = withContext(Dispatchers.IO) {
         Log.d(TAG, "ETTrainerWrapper: Starting train()")
+        Log.d(TAG, "ETTrainerWrapper: Received modelData length: ${modelData?.length ?: 0}")
+        Log.d(TAG, "ETTrainerWrapper: Received modelData starts with '{': ${modelData?.startsWith("{")}")
+        Log.d(TAG, "ETTrainerWrapper: Using modelBase64 length: ${modelBase64.length}")
+        Log.d(TAG, "ETTrainerWrapper: Using modelBase64 starts with '{': ${modelBase64.startsWith("{")}")
         try {
-            val result = trainer.train(config)
+            val result = trainer.train(config, modelData)
             Log.d(TAG, "ETTrainerWrapper: train() completed with result keys: ${result.keys}")
             result
         } catch (e: Exception) {
