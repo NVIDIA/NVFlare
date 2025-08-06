@@ -3,11 +3,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 # Tested with:
-#   flwr==1.16.0
-#   nvflare==2.6.0
-#   torch==2.7.0
-#   torchvision==0.22.0
-#   tensorboard==2.19.0
+#   flwr==1.20.0
+#   nvflare==2.6.1
+#   torch==2.7.1
+#   torchvision==0.22.1
+#   tensorboard==2.20.0
 
 [project]
 name = "flwr_pt_tb"
