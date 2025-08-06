@@ -15,7 +15,6 @@ import json
 from typing import Dict
 
 from nvflare.edge.models.model import DeviceModel
-from nvflare.edge.simulation.et_task_processor import ETTaskProcessor
 from nvflare.edge.tools.edge_recipe import (
     DeviceManagerConfig,
     EdgeRecipe,
@@ -30,20 +29,6 @@ _TRAINER_NAME = "trainer"
 _DEVICE_CONFIG_FILE_NAME = "device_config.json"
 
 
-class ETSimulationConfig(SimulationConfig):
-
-    def __init__(
-        self,
-        data_path: str,
-        training_params: Dict = None,
-        job_timeout: float = 60.0,
-        num_devices: int = 1000,
-        num_workers: int = 10,
-    ):
-        task_processor = ETTaskProcessor(data_path=data_path, training_config=training_params)
-        SimulationConfig.__init__(self, task_processor, job_timeout, num_devices, num_workers)
-
-
 class ETRecipe(EdgeRecipe):
 
     def __init__(
@@ -55,7 +40,7 @@ class ETRecipe(EdgeRecipe):
         model_manager_config: ModelManagerConfig,
         device_manager_config: DeviceManagerConfig,
         evaluator_config: EvaluatorConfig = None,
-        simulation_config: ETSimulationConfig = None,
+        simulation_config: SimulationConfig = None,
         device_training_params: Dict = None,
         custom_source_root: str = None,
     ):
