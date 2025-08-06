@@ -178,7 +178,7 @@ class K8sJobHandle(JobHandleSpec):
     def _query_state(self):
         try:
             resp = self.api_instance.read_namespaced_pod(name=self.job_id, namespace=self.namespace)
-        except ApiException as e:
+        except ApiException:
             return JobState.UNKNOWN
         return POD_STATE_MAPPING.get(resp.status.phase, JobState.UNKNOWN)
 
@@ -249,7 +249,7 @@ class K8sJobLauncher(JobLauncherSpec):
             else:
                 job_handle.terminate()
                 return None
-        except ApiException as e:
+        except ApiException:
             job_handle.terminate()
             return None
 
