@@ -53,16 +53,16 @@ strategy = FedAvg(
     initial_parameters=parameters,
 )
 
-# Define config
-config = ServerConfig(num_rounds=3)
-
 
 # Flower ServerApp
 def server_fn(context: Context):
-    return ServerAppComponents(
-        strategy=strategy,
-        config=config,
-    )
+    # Read from config
+    num_rounds = context.run_config["num-server-rounds"]
+
+    # Define config
+    config = ServerConfig(num_rounds=num_rounds)
+    return ServerAppComponents(strategy=strategy, config=config)
 
 
+# Create ServerApp
 app = ServerApp(server_fn=server_fn)

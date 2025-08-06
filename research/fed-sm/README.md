@@ -3,7 +3,7 @@
 This directory contains the code for the personalized federated learning algorithm FedSM described in
 
 ### Closing the Generalization Gap of Cross-silo Federated Medical Image Segmentation ([arXiv:2203.10144](https://arxiv.org/abs/2203.10144))
-Accepted to [CVPR2022](https://cvpr2022.thecvf.com/).
+Accepted to CVPR2022.
 
 ###### Abstract:
 
@@ -88,3 +88,5 @@ BibTeX
   year={2022}
 }
 ```
+
+
