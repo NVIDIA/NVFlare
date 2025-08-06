@@ -15,7 +15,7 @@
 
 from flwr.client import ClientApp, NumPyClient
 from flwr.common import Context
-from flwr.common.record import MetricsRecord, RecordSet
+from flwr.common.record import MetricRecord, RecordDict
 
 from .task import DEVICE, Net, get_weights, load_data, set_weights, test, train
 
@@ -36,16 +36,16 @@ class FlowerClient(NumPyClient):
         self.writer = SummaryWriter()
         self.flwr_context = context
 
-        if "step" not in context.state.metrics_records:
+        if "step" not in context.state.metric_records:
             self.set_step(0)
 
     def set_step(self, step: int):
-        record = RecordSet()
-        record["step"] = MetricsRecord({"step": step})
+        record = RecordDict()
+        record["step"] = MetricRecord({"step": step})
         self.flwr_context.state = record
 
     def get_step(self):
-        return int(self.flwr_context.state.metrics_records["step"]["step"])
+        return int(self.flwr_context.state.metric_records["step"]["step"])
 
     def fit(self, parameters, config):
         step = self.get_step()
