@@ -11,22 +11,26 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os.path
+
 from nvflare.job_config.api import FedJob
 
 from .spec import ExecEnv
+
+WORKSPACE_ROOT = "/tmp/nvflare/simulation"
 
 
 class SimulationExecEnv(ExecEnv):
 
     def __init__(
         self,
-        workspace: str,
+        workspace_name: str,
         num_clients: int = None,
         num_threads: int = None,
         gpu_config: str = None,
         log_config: str = None,
     ):
-        self.workspace = workspace
+        self.workspace_name = workspace_name
         self.num_clients = num_clients
         self.num_threads = num_threads
         self.gpu_config = gpu_config
@@ -34,7 +38,7 @@ class SimulationExecEnv(ExecEnv):
 
     def deploy(self, job: FedJob):
         job.simulator_run(
-            workspace=self.workspace,
+            workspace=os.path.join(WORKSPACE_ROOT, self.workspace_name),
             n_clients=self.num_clients,
             threads=self.num_threads,
             gpu=self.gpu_config,
