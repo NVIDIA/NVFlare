@@ -37,7 +37,7 @@ def main():
         # only external client api works with the current flower integration
         env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
-    num_of_clients=2
+    num_of_clients = 2
 
     job = FlowerPyTorchJob(
         name=args.job_name,
