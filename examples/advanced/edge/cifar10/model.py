@@ -16,6 +16,8 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+from nvflare.edge.models.model import DeviceModel
+
 
 class Cifar10ConvNet(nn.Module):
     def __init__(self):
@@ -35,3 +37,8 @@ class Cifar10ConvNet(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+
+
+class TrainingNet(DeviceModel):
+    def __init__(self):
+        DeviceModel.__init__(self, Cifar10ConvNet())

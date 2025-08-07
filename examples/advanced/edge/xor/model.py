@@ -14,6 +14,8 @@
 
 import torch.nn as nn
 
+from nvflare.edge.models.model import DeviceModel
+
 
 class XorNet(nn.Module):
     def __init__(self):
@@ -27,3 +29,8 @@ class XorNet(nn.Module):
         x = self.sigmoid_1(x)
         x = self.linear2(x)
         return x
+
+
+class TrainingNet(DeviceModel):
+    def __init__(self):
+        DeviceModel.__init__(self, XorNet())

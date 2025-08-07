@@ -15,9 +15,8 @@
 import argparse
 
 from et_task_processor import Cifar10ETTaskProcessor
-from model import Cifar10ConvNet
+from model import TrainingNet
 
-from nvflare.edge.models.model import DeviceModel
 from nvflare.edge.tools.et_recipe import (
     DeviceManagerConfig,
     ETRecipe,
@@ -36,7 +35,7 @@ args = parser.parse_args()
 
 recipe = ETRecipe(
     job_name="cifar10_et",
-    device_model=DeviceModel(net=Cifar10ConvNet()),
+    device_model=TrainingNet(),
     input_shape=(BATCH_SIZE, 3, 32, 32),
     output_shape=(BATCH_SIZE,),
     model_manager_config=ModelManagerConfig(

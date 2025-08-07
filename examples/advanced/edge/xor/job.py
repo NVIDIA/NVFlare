@@ -16,9 +16,8 @@ import argparse
 import os
 
 from et_task_processor import XorETTaskProcessor
-from model import XorNet
+from model import TrainingNet
 
-from nvflare.edge.models.model import DeviceModel
 from nvflare.edge.tools.et_recipe import DeviceManagerConfig, ETRecipe, ModelManagerConfig, SimulationConfig
 from nvflare.recipe.simulation_env import SimulationExecEnv
 
@@ -31,7 +30,7 @@ args = parser.parse_args()
 
 recipe = ETRecipe(
     job_name="xor_et",
-    device_model=DeviceModel(net=XorNet()),
+    device_model=TrainingNet(),
     input_shape=(BATCH_SIZE, 2),
     output_shape=(BATCH_SIZE,),
     model_manager_config=ModelManagerConfig(
