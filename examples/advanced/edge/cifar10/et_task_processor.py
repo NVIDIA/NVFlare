@@ -30,7 +30,7 @@ class Cifar10ETTaskProcessor(ETTaskProcessor):
         super().__init__(data_path, training_config)
         self.subset_size = subset_size
 
-    def get_dataset(self, data_path: str) -> Dataset:
+    def create_dataset(self, data_path: str) -> Dataset:
         transform = transforms.Compose([transforms.ToTensor()])
         full_dataset = datasets.CIFAR10(root=data_path, train=True, download=True, transform=transform)
 

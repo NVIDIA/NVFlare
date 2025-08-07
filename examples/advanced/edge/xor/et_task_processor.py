@@ -68,5 +68,5 @@ class XorDataset(Dataset):
 class XorETTaskProcessor(ETTaskProcessor):
     """Task processor for XOR dataset."""
 
-    def get_dataset(self, data_path: str) -> Dataset:
+    def create_dataset(self, data_path: str) -> Dataset:
         return XorDataset(data_path)

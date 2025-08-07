@@ -79,6 +79,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         """
         DeviceTaskProcessor.__init__(self)
         self.data_path = data_path
+        self._dataset = None
 
         # Set default training configuration
         self.training_config = {
@@ -96,8 +97,10 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             self.training_config.update(training_config)
 
     @abstractmethod
-    def get_dataset(self, data_path: str) -> Dataset:
-        """Get dataset for training.
+    def create_dataset(self, data_path: str) -> Dataset:
+        """Create dataset for training.
+
+        Note: This method may perform expensive I/O operations.
 
         Args:
             data_path: Path to dataset
@@ -106,6 +109,12 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             Dataset: PyTorch dataset for training
         """
         pass
+
+    def get_dataset(self) -> Dataset:
+        """Get the dataset, creating it if necessary (cached)."""
+        if self._dataset is None:
+            self._dataset = self.create_dataset(self.data_path)
+        return self._dataset
 
     def setup(self, job: JobResponse) -> None:
         """Set up the task processor for a new job.
@@ -138,15 +147,14 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         log.info(f"Starting training for {total_epochs} epochs")
         initial_params = None
         # Dataset and DataLoader setup
-        self.dataset = self.get_dataset(self.data_path)
-        self.dataloader = DataLoader(
-            self.dataset,
+        dataloader = DataLoader(
+            self.get_dataset(),
             batch_size=self.training_config["batch_size"],
             shuffle=self.training_config["shuffle"],
             num_workers=self.training_config["num_workers"],
             drop_last=True,
         )
-        total_batches = len(self.dataloader)
+        total_batches = len(dataloader)
 
         for epoch in range(total_epochs):
             log.info(f"Epoch {epoch + 1}/{total_epochs}")
