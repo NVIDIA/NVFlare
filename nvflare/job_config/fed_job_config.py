@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import builtins
 import inspect
 import json
@@ -400,9 +401,6 @@ class FedJobConfig:
                 if param in ["self", "args", "kwargs"]:
                     continue
 
-                # Use getattr() for universal attribute access - works with any framework
-                attr_value = None
-
                 try:
                     attr_value = getattr(component, param)
                 except AttributeError:
@@ -418,10 +416,6 @@ class FedJobConfig:
                             "path": self._get_class_path(attr_value, custom_dir),
                             "args": self._get_args(attr_value, custom_dir),
                         }
-                else:
-                    pass
-        else:
-            pass
 
         return args
 
