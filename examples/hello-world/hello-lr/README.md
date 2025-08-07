@@ -110,7 +110,7 @@ We leverage a builtin FLARE logistic regression with Newton Raphson method.
 the server side fedavg class is located at `nvflare.app_opt.lr.fedavg.FedAvgLR`
 
 ## Job 
-    todo
+    toddo
 
 ## Download and prepare data
 
@@ -127,7 +127,7 @@ This will download the heart disease dataset under
 ## Running Job 
 
 Execute the following command to launch federated logistic
-regression. This will run in `nvflare`'s simulation mode.
+regression. This will run in nvflare's simulation mode.
 ```
 python job.py
 ```
