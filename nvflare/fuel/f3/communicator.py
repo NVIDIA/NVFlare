@@ -85,7 +85,7 @@ class Communicator:
         self.stopped = True
         try:
             _running_instances.remove(self)
-        except KeyError as ex:
+        except KeyError:
             # For weak-ref set, the entry may be removed automatically if no other ref so this is not an error
             log.debug(f"Weak-ref for Communicator {self.local_endpoint.name} is already removed")
 

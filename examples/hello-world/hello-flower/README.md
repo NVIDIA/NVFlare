@@ -1,12 +1,13 @@
 # Flower App (PyTorch) in NVIDIA FLARE
 
-In this example, we run 2 Flower clients and Flower Server in parallel using NVFlare's simulator.
+In this example, we run 2 clients and 1 server using NVFlare's simulator.
 
 ## Preconditions
 
-To run Flower code in NVFlare, we created a job, including an app with the following custom folder content 
+Following https://github.com/adap/flower/tree/main/examples/quickstart-pytorch we prepare the following flower app: 
+
 ```bash
-$ tree jobs/hello-flwr-pt/app/custom
+$ tree flwr-pt
 
 ├── flwr_pt
 │   ├── client.py   # <-- contains `ClientApp`
@@ -15,38 +16,42 @@ $ tree jobs/hello-flwr-pt/app/custom
 │   └── task.py     # <-- task-specific code (model, data)
 └── pyproject.toml  # <-- Flower project file
 ```
-Note, this code is adapted from Flower's [app-pytorch](https://github.com/adap/flower/tree/main/examples/app-pytorch) example.
+
+To be run inside NVFlare, we need to add the following sections to "pyproject.toml":
+```
+[tool.flwr.app.config]
+num-server-rounds = 3
+
+[tool.flwr.federations]
+default = "local-simulation"
+
+[tool.flwr.federations.local-simulation]
+options.num-supernodes = 2
+address = "127.0.0.1:9093"
+insecure = true
+```
+
+You can adjust the num-server-rounds.
+The number `options.num-supernodes` should match the number of NVFlare clients defined in [job.py](./job.py), e.g., `job.simulator_run(args.workdir, gpu="0", n_clients=2)`.
 
 ## 1. Install dependencies
 If you haven't already, we recommend creating a virtual environment.
 ```bash
 python3 -m venv nvflare_flwr
 source nvflare_flwr/bin/activate
-```
-We recommend installing an older version of NumPy as torch/torchvision doesn't support NumPy 2 at this time.
-```bash
-pip install numpy==1.26.4
-```
-## 2.1 Run a simulation
-
-To run flwr-pt job with NVFlare, we first need to install its dependencies.
-```bash
-pip install ./flwr-pt/
+pip install -r ./requirements.txt
 ```
 
-Next, we run 2 Flower clients and Flower Server in parallel using NVFlare's simulator.
+## 2.1 Run flwr-pt with NVFlare simulation
+
+We run 2 Flower clients and Flower Server in parallel using NVFlare's simulator.
 ```bash
 python job.py --job_name "flwr-pt" --content_dir "./flwr-pt"
 ```
 
-## 2.2 Run a simulation with TensorBoard streaming
+## 2.2 Run flwr-pt with NVFlare simulation and NVFlare's TensorBoard streaming
 
-To run flwr-pt_tb_streaming job with NVFlare, we first need to install its dependencies.
-```bash
-pip install ./flwr-pt-tb/
-```
-
-Next, we run 2 Flower clients and Flower Server in parallel using NVFlare while streaming 
+We run 2 Flower clients and Flower Server in parallel using NVFlare while streaming 
 the TensorBoard metrics to the server at each iteration using NVFlare's metric streaming.
 
 ```bash
@@ -59,16 +64,19 @@ tensorboard --logdir /tmp/nvflare/hello-flower
 ```
 ![tensorboard training curve](./train.png)
 
-## Notes
-Make sure your `pyproject.toml` files in the Flower apps contain an "address" field. This needs to be present as the `--federation-config` option of the `flwr run` command tries to override the `“address”` field.
-Your `pyproject.toml` should include a section similar to this:
-```
-[tool.flwr.federations]
-default = "xxx"
 
-[tool.flwr.federations.xxx]
-options.num-supernodes = 2
-address = "127.0.0.1:9093"
-insecure = false
+## 3. Run with real deployment
+
+First, check real-world deployment guide: https://nvflare.readthedocs.io/en/main/real_world_fl/overview.html
+
+Second, export the corresponding NVFlare job:
+```bash
+python job.py --job_name "flwr-pt" --content_dir "./flwr-pt" --export_job --export_dir "./jobs"
 ```
-The number `options.num-supernodes` should match the number of NVFlare clients defined in [job.py](./job.py), e.g., `job.simulator_run(args.workdir, gpu="0", n_clients=2)`.
+
+An NVFlare job will be generated at "./jobs" folder.
+
+Then you can copy it inside the admin console's transfer folder and then run:
+```bash
+submit_job flwr-pt
+```

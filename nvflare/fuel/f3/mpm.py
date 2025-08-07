@@ -152,11 +152,11 @@ class MainProcessMonitor:
                 os.remove(rc_file)
 
             rc = main_func(**kwargs)
-        except ConfigError as ex:
+        except ConfigError:
             # already handled
             rc = ProcessExitCode.CONFIG_ERROR
             logger.error(secure_format_traceback())
-        except ComponentNotAuthorized as ex:
+        except ComponentNotAuthorized:
             rc = ProcessExitCode.UNSAFE_COMPONENT
             logger.error(secure_format_traceback())
         except Exception as ex:

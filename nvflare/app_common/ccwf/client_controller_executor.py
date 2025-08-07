@@ -222,7 +222,7 @@ class ClientControllerExecutor(Executor):
                 self.log_info(fl_ctx, f"Starting control flow {self.controller.name}")
 
                 try:
-                    res = self.controller.control_flow(abort_signal, fl_ctx)
+                    self.controller.control_flow(abort_signal, fl_ctx)
                 except Exception as e:
                     error_msg = f"{controller_id} control_flow exception: {secure_format_exception(e)}"
                     self.log_error(fl_ctx, error_msg)

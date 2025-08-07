@@ -14,8 +14,8 @@
 
 from nvflare.edge.aggregators.num_dxo_factory import NumDXOAggrFactory
 from nvflare.edge.assessors.async_num import AsyncNumAssessor
-from nvflare.edge.edge_job import EdgeJob
 from nvflare.edge.simulation.devices.num import NumProcessor
+from nvflare.edge.tools.edge_job import EdgeJob
 
 job = EdgeJob(
     name="num_async_job",
