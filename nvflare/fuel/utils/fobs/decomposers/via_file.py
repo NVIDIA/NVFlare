@@ -529,7 +529,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             "msg_root_id": msg_root_id,
             "num_lookups": dc.num_lookups,
         }
-        self.logger.debug(f"Secondary Message Info: {stats}")
+        self.logger.info(f"Secondary Message Info: {stats}")
 
     def _show_primary_msg_stats(self, msg_root_id: str, dc: _DecomposeCtx):
         # print stats
@@ -540,7 +540,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             "num_files": dc.num_files,
             "num_items": len(dc.target_items),
         }
-        self.logger.debug(f"Primary Message Info: {stats}")
+        self.logger.info(f"Primary Message Info: {stats}")
 
     def _delete_msg_root(self, msg_root_id: str, download_tx_id: str, files_to_delete):
         self.logger.debug(f"deleting msg root {msg_root_id}: {files_to_delete=}")

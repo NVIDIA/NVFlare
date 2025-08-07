@@ -216,6 +216,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         self.fl_ctx = fl_ctx
         result = client_task.result
         client_name = client_task.client.name
+
         # Turn result into FLModel
         result_model = FLModelUtils.from_shareable(result)
         result_model.meta["props"] = client_task.task.props[AppConstants.META_DATA]

@@ -18,7 +18,7 @@ import numpy as np
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 
 
-class NewtonRaphsonModelPersistor(NPModelPersistor):
+class LRModelPersistor(NPModelPersistor):
     """
     This class defines the persistor for Newton Raphson model.
 

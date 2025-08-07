@@ -26,7 +26,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
-from nvflare.app_opt.lr.np_persistor import NewtonRaphsonModelPersistor
+from nvflare.app_common.lr.np_persistor import LRModelPersistor
 
 
 class FedAvgLR(BaseFedAvg):
@@ -67,7 +67,7 @@ class FedAvgLR(BaseFedAvg):
         self.model_name = model_name
         self.n_features = n_features
         self.aggregator = aggregator
-        self._default_persistor = NewtonRaphsonModelPersistor(
+        self._default_persistor = LRModelPersistor(
             model_dir=self.model_dir, model_name=self.model_name, n_features=self.n_features
         )
         self.persistor = persistor

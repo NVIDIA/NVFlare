@@ -14,7 +14,7 @@
 
 import argparse
 
-from nvflare.app_opt.lr.fedavg import FedAvgLR
+from nvflare.app_common.lr.fedavg import FedAvgLR
 from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner

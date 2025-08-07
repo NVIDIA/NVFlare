@@ -69,7 +69,7 @@ class NumpyArrayDecomposer(ViaFileDecomposer):
     def dump_to_file(self, items: dict, path: str, fobs_ctx: dict):
         if not path.endswith(_NPZ_EXTENSION):
             path += _NPZ_EXTENSION
-        self.logger.debug(f"NP: dumping {len(items)} arrays to file {path}")
+        self.logger.info(f"NP: dumping {len(items)} arrays to file {path}")
         try:
             np.savez(allow_pickle=False, file=path, **items)
             return path, None
