@@ -35,29 +35,22 @@ def main():
     num_rounds = args.num_rounds
 
     print("n_clients=", n_clients)
-    # FedAvgLRRecipe()
 
     # Create FedJob.
     job = FedJob(name="fed_avg_lr")
 
-    # Send custom model persistor to server.
-    # persistor_id = job.to_server(NewtonRaphsonModelPersistor(n_features=13), "persistor")
-
     # Send custom controller to server
     controller = FedAvgLR(num_clients=n_clients, num_rounds=num_rounds, damping_factor=0.8)
     job.to(controller, "server")
-
-    # Add clients
-    for i in range(n_clients):
-
-        runner = ScriptRunner(
+ 
+    runner = ScriptRunner(
             script="client.py",
             script_args="--data_root /tmp/flare/dataset/heart_disease_data",
             # launch_external_process= True,
             framework=FrameworkType.RAW,
             server_expected_format=ExchangeFormat.RAW,
-        )
-        job.to(runner, f"site-{i + 1}")
+    )
+    job.to_clients(runner)
 
     job.export_job("/tmp/nvflare/jobs/job_config")
     print("running simulator")
