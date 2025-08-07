@@ -21,7 +21,7 @@ import subprocess
 import sys
 from enum import Enum
 from tempfile import TemporaryDirectory
-from typing import Dict
+from typing import Dict, List
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -61,6 +61,7 @@ class FedJobConfig:
         self.min_clients = min_clients
         self.mandatory_clients = mandatory_clients
         self.meta_props = meta_props
+        self.app_packages = []
 
         self.fed_apps: Dict[str, FedAppConfig] = {}
         self.deploy_map: Dict[str, str] = {}
@@ -68,6 +69,23 @@ class FedJobConfig:
 
         self.custom_modules = []
         self.logger = get_obj_logger(self)
+
+    def set_app_packages(self, app_packages: List[str]):
+        """Set app packages.
+        When generating job config, code from these packages will not be included into "custom" folder.
+
+        Args:
+            app_packages: app packages
+
+        Returns: None
+
+        """
+        if not app_packages:
+            app_packages = []
+        else:
+            check_object_type("app_packages", app_packages, list)
+
+        self.app_packages = app_packages
 
     def add_fed_app(self, app_name: str, fed_app: FedAppConfig):
         if not isinstance(fed_app, FedAppConfig):
@@ -194,6 +212,11 @@ class FedJobConfig:
                 }
             )
         self._get_base_app(custom_dir, fed_app.server_app, server_app)
+
+        # Add additional system parameters to the server app config
+        if fed_app.server_app.additional_params:
+            server_app.update(fed_app.server_app.additional_params)
+
         server_config = os.path.join(config_dir, FED_SERVER_JSON)
         with open(server_config, "w") as outfile:
             json_dump = json.dumps(server_app, indent=4)
@@ -263,7 +286,7 @@ class FedJobConfig:
     def _get_custom_file(self, custom_dir, module, source_file):
         package = module.split(".")[0]
         if os.path.exists(source_file):
-            if package not in FL_PACKAGES and module not in self.custom_modules:
+            if package not in FL_PACKAGES and package not in self.app_packages and module not in self.custom_modules:
                 module_path = module.replace(".", os.sep)
                 if module_path in source_file:
                     index = source_file.rindex(module_path)
@@ -316,6 +339,11 @@ class FedJobConfig:
                 }
             )
         self._get_base_app(custom_dir, fed_app.client_app, client_app)
+
+        # Add additional system parameters to the client app config
+        if fed_app.client_app.additional_params:
+            client_app.update(fed_app.client_app.additional_params)
+
         client_config = os.path.join(config_dir, FED_CLIENT_JSON)
         with open(client_config, "w") as outfile:
             json_dump = json.dumps(client_app, indent=4)

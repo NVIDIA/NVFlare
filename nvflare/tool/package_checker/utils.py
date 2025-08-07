@@ -191,6 +191,24 @@ def check_response(resp: Optional[Response]) -> bool:
     return True
 
 
+def _get_conn_sec(startup: str):
+    # get connection security
+    # first try to see whether this is a client config.
+    client_config = os.path.join(startup, "fed_client.json")
+    if os.path.exists(client_config):
+        with open(client_config, "r") as f:
+            config = json.load(f)
+            return config["client"].get("connection_security", "mtls")
+
+    # try admin config
+    admin_config = os.path.join(startup, "fed_admin.json")
+    if os.path.exists(admin_config):
+        with open(admin_config, "r") as f:
+            config = json.load(f)
+            return config["admin"].get("connection_security", "mtls")
+    return "mtls"
+
+
 def check_grpc_server_running(startup: str, host: str, port: int, token=None) -> bool:
     with open(os.path.join(startup, _get_ca_cert_file_name()), "rb") as f:
         trusted_certs = f.read()
@@ -198,6 +216,11 @@ def check_grpc_server_running(startup: str, host: str, port: int, token=None) ->
         private_key = f.read()
     with open(os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT)), "rb") as f:
         certificate_chain = f.read()
+
+    conn_sec = _get_conn_sec(startup)
+    secure = True
+    if conn_sec == "clear":
+        secure = False
 
     call_credentials = grpc.metadata_call_credentials(
         lambda context, callback: callback((("x-custom-token", token),), None)
@@ -207,7 +230,11 @@ def check_grpc_server_running(startup: str, host: str, port: int, token=None) ->
     )
 
     composite_credentials = grpc.composite_channel_credentials(credentials, call_credentials)
-    channel = grpc.secure_channel(target=f"{host}:{port}", credentials=composite_credentials)
+    if secure:
+        channel = grpc.secure_channel(target=f"{host}:{port}", credentials=composite_credentials)
+    else:
+        channel = grpc.insecure_channel(target=f"{host}:{port}")
+
     try:
         grpc.channel_ready_future(channel).result(timeout=10)
     except grpc.FutureTimeoutError:

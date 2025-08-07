@@ -113,11 +113,7 @@ class StaticFileBuilder(Builder):
 
         admin_port = ctx.get(CtxKey.ADMIN_PORT)
         fed_learn_port = ctx.get(CtxKey.FED_LEARN_PORT)
-        if admin_port != fed_learn_port:
-            ports = f"{fed_learn_port},{admin_port}"
-        else:
-            ports = f"{fed_learn_port}"
-        target = f"{server.name}:{ports}"
+        target = f"{server.name}:{fed_learn_port}"
         sp_end_point = f"{server.name}:{fed_learn_port}:{admin_port}"
         conn_sec = self._build_conn_properties(server, ctx)
 
@@ -128,6 +124,8 @@ class StaticFileBuilder(Builder):
             replacement={
                 "name": project.name,
                 "target": target,
+                "admin_server": server.name,
+                "admin_port": admin_port,
                 "scheme": self._determine_scheme(server),
                 "conn_sec": conn_sec,
                 "sp_end_point": sp_end_point,

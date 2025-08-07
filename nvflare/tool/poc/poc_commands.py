@@ -391,7 +391,7 @@ def save_startup_kit_dir_config(workspace, project_name):
     if os.path.isfile(dst):
         try:
             config = CF.parse_file(dst)
-        except Exception as e:
+        except Exception:
             config = None
 
     prod_dir = get_prod_dir(workspace, project_name)

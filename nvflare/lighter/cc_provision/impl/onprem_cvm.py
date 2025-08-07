@@ -14,36 +14,17 @@
 
 import json
 import os
-from pathlib import Path
 
 from nvflare.lighter import utils
+from nvflare.lighter.cc_provision.cc_constants import CC_AUTHORIZERS_KEY
 from nvflare.lighter.constants import PropKey
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Entity, Project
 from nvflare.lighter.spec import Builder
 
-from ..cc_constants import CC_AUTHORIZERS_KEY, CCAuthConfig
-
-AUTHORIZERS_YAML_PATH = Path(__file__).parent.parent / "resources" / "onprem" / "cc_authorizers.yml"
-
 
 class OnPremCVMBuilder(Builder):
     """Builder for On-premises Confidential Computing VMs."""
-
-    def __init__(
-        self,
-        token_expiration=3600,
-        authorizers_yaml_path: str = AUTHORIZERS_YAML_PATH,
-    ):
-        """Initialize the builder.
-
-        Args:
-            token_expiration: Token expiration time in seconds
-            authorizers_yaml_path: Path to the authorizers yaml file
-        """
-        self.token_expiration = token_expiration
-        self.authorizers_yaml_path = authorizers_yaml_path
-        self.authorizers = []
 
     def initialize(self, project: Project, ctx: ProvisionContext):
         """Initialize the configurator.
@@ -52,18 +33,7 @@ class OnPremCVMBuilder(Builder):
             project: The project to configure
             ctx: The provisioning context
         """
-        print(f"Loading authorizers from {self.authorizers_yaml_path}")
-        self.authorizers = utils.load_yaml(self.authorizers_yaml_path).get(CC_AUTHORIZERS_KEY, [])
-        #  Add authorizers to ctx for cc manager
-        authorizers = ctx.get(CC_AUTHORIZERS_KEY, [])
-        for authorizer in self.authorizers:
-            authorizers.append(
-                {
-                    CCAuthConfig.AUTHORIZER_ID: authorizer.get("id"),
-                    CCAuthConfig.TOKEN_EXPIRATION: self.token_expiration,
-                }
-            )
-        ctx[CC_AUTHORIZERS_KEY] = authorizers
+        pass
 
     def build(self, project: Project, ctx: ProvisionContext):
         """Build CVM configuration for all participants."""
@@ -79,7 +49,8 @@ class OnPremCVMBuilder(Builder):
         """Build resources for the entity."""
         # Write authorizers to local resources
         dest_dir = ctx.get_local_dir(entity)
-        for authorizer in self.authorizers:
+        authorizers = ctx[CC_AUTHORIZERS_KEY]
+        for authorizer in authorizers:
             utils.write(
                 os.path.join(dest_dir, f"{authorizer['id']}__p_resources.json"),
                 json.dumps({"components": [authorizer]}, indent=2),

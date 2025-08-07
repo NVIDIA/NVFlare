@@ -11,25 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import threading
+from nvflare.job_config.api import FedJob
+from nvflare.recipe.spec import ExecEnv
 
 
-class FobsCache:
+class POCExecEnv(ExecEnv):
 
-    _lock = threading.Lock()
-    _items = {}
+    def __init__(self, num_clients: int = 2):
+        self.num_clients = num_clients
 
-    @classmethod
-    def get_item(cls, key):
-        with cls._lock:
-            return cls._items.get(key)
-
-    @classmethod
-    def set_item(cls, key, value):
-        with cls._lock:
-            cls._items[key] = value
-
-    @classmethod
-    def remove_item(cls, key):
-        with cls._lock:
-            return cls._items.pop(key, None)
+    def deploy(self, job: FedJob):
+        # TBD
+        # first launch a POC system;
+        # then submit job to it.
+        pass

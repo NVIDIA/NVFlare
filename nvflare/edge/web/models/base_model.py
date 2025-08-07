@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlencode
 
 class EdgeProtoKey:
     STATUS = "status"
+    JOB_NAME = "job_name"
     JOB_ID = "job_id"
     TASK_ID = "task_id"
     CAPABILITIES = "capabilities"

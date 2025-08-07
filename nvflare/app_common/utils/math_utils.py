@@ -55,7 +55,7 @@ def parse_compare_criteria(compare_expr: Optional[str] = None) -> Tuple[str, flo
         raise ValueError("Invalid empty or None target value")
     try:
         target_value = float(target)
-    except Exception as e:
+    except Exception:
         raise ValueError(f"expect a number, but get '{target}' in '{compare_expr}'")
 
     return key, target_value, op_fn
