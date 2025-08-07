@@ -19,12 +19,7 @@ from et_task_processor import XorETTaskProcessor
 from model import XorNet
 
 from nvflare.edge.models.model import DeviceModel
-from nvflare.edge.tools.et_recipe import (
-    DeviceManagerConfig,
-    ETRecipe,
-    ModelManagerConfig,
-    SimulationConfig,
-)
+from nvflare.edge.tools.et_recipe import DeviceManagerConfig, ETRecipe, ModelManagerConfig, SimulationConfig
 from nvflare.recipe.simulation_env import SimulationExecEnv
 
 BATCH_SIZE = 1
