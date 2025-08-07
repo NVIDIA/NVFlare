@@ -21,7 +21,7 @@ from torch.utils.data import Dataset
 from nvflare.edge.simulation.et_task_processor import ETTaskProcessor
 
 
-class XORDataset(Dataset):
+class XorDataset(Dataset):
     """XOR Dataset following PyTorch conventions."""
 
     def __init__(self, csv_path: str):
@@ -65,8 +65,8 @@ class XORDataset(Dataset):
         return self.X[idx], self.Y[idx]
 
 
-class ETXORTaskProcessor(ETTaskProcessor):
+class XorETTaskProcessor(ETTaskProcessor):
     """Task processor for XOR dataset."""
 
     def get_dataset(self, data_path: str) -> Dataset:
-        return XORDataset(data_path)
+        return XorDataset(data_path)

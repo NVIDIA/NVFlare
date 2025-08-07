@@ -95,16 +95,6 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         if training_config:
             self.training_config.update(training_config)
 
-        # Dataset and DataLoader setup
-        self.dataset = self.get_dataset(data_path)
-        self.dataloader = DataLoader(
-            self.dataset,
-            batch_size=self.training_config["batch_size"],
-            shuffle=self.training_config["shuffle"],
-            num_workers=self.training_config["num_workers"],
-            drop_last=True,
-        )
-
     @abstractmethod
     def get_dataset(self, data_path: str) -> Dataset:
         """Get dataset for training.
@@ -147,6 +137,15 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         """
         log.info(f"Starting training for {total_epochs} epochs")
         initial_params = None
+        # Dataset and DataLoader setup
+        self.dataset = self.get_dataset(self.data_path)
+        self.dataloader = DataLoader(
+            self.dataset,
+            batch_size=self.training_config["batch_size"],
+            shuffle=self.training_config["shuffle"],
+            num_workers=self.training_config["num_workers"],
+            drop_last=True,
+        )
         total_batches = len(self.dataloader)
 
         for epoch in range(total_epochs):

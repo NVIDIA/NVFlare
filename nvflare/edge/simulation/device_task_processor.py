@@ -13,6 +13,7 @@
 # limitations under the License.
 from abc import ABC, abstractmethod
 
+from nvflare.edge.simulation.simulated_device import SimulatedDevice
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -24,7 +25,7 @@ class DeviceTaskProcessor(ABC):
     """
 
     def __init__(self):
-        self.device = None
+        self.device: SimulatedDevice = None
         self.logger = get_obj_logger(self)
 
     @property

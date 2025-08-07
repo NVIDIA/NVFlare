@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from torch.utils.data import Dataset
-from torchvision import datasets, transforms
-
-from nvflare.edge.simulation.et_task_processor import ETTaskProcessor
+import torch.nn as nn
 
 
-class ETCIFAR10TaskProcessor(ETTaskProcessor):
-    def get_dataset(self, data_path: str) -> Dataset:
-        transform = transforms.Compose([transforms.ToTensor()])
-        return datasets.CIFAR10(root=data_path, train=True, download=True, transform=transform)
+class XorNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(2, 4)
+        self.sigmoid_1 = nn.Sigmoid()
+        self.linear2 = nn.Linear(4, 2)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.sigmoid_1(x)
+        x = self.linear2(x)
+        return x

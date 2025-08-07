@@ -24,13 +24,11 @@ class SimulationExecEnv(ExecEnv):
 
     def __init__(
         self,
-        workspace_name: str,
         num_clients: int = None,
         num_threads: int = None,
         gpu_config: str = None,
         log_config: str = None,
     ):
-        self.workspace_name = workspace_name
         self.num_clients = num_clients
         self.num_threads = num_threads
         self.gpu_config = gpu_config
@@ -38,7 +36,7 @@ class SimulationExecEnv(ExecEnv):
 
     def deploy(self, job: FedJob):
         job.simulator_run(
-            workspace=os.path.join(WORKSPACE_ROOT, self.workspace_name),
+            workspace=os.path.join(WORKSPACE_ROOT, job.name),
             n_clients=self.num_clients,
             threads=self.num_threads,
             gpu=self.gpu_config,

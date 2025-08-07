@@ -396,24 +396,32 @@ class FedJobConfig:
         args = {}
         if hasattr(component, "__dict__"):
             parameters = get_component_init_parameters(component)
-            attrs = component.__dict__
-
             for param in parameters:
-                attr_key = param if param in attrs.keys() else "_" + param
-
-                if attr_key in ["args", "kwargs"]:
+                if param in ["self", "args", "kwargs"]:
                     continue
 
-                if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
-                    if type(attrs[attr_key]).__name__ in dir(builtins):
-                        args[param] = attrs[attr_key]
-                    elif issubclass(attrs[attr_key].__class__, Enum):
-                        args[param] = attrs[attr_key].value
+                # Use getattr() for universal attribute access - works with any framework
+                attr_value = None
+
+                try:
+                    attr_value = getattr(component, param)
+                except AttributeError:
+                    continue
+
+                if parameters[param].default != attr_value:
+                    if type(attr_value).__name__ in dir(builtins):
+                        args[param] = attr_value
+                    elif issubclass(attr_value.__class__, Enum):
+                        args[param] = attr_value.value
                     else:
                         args[param] = {
-                            "path": self._get_class_path(attrs[attr_key], custom_dir),
-                            "args": self._get_args(attrs[attr_key], custom_dir),
+                            "path": self._get_class_path(attr_value, custom_dir),
+                            "args": self._get_args(attr_value, custom_dir),
                         }
+                else:
+                    pass
+        else:
+            pass
 
         return args
 
