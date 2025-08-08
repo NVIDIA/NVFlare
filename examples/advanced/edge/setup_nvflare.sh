@@ -1,6 +1,6 @@
 #!/bin/bash
 PROJECT_NAME=edge_example
-PROV_SCRIPT="../../../nvflare/edge/tree_prov.py"
+PROV_SCRIPT="../../../nvflare/edge/tools/tree_prov.py"
 WORKSPACE_DIR="/tmp/nvflare/workspaces"
 
 # Check if project directory exists and remove it

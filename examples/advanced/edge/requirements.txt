@@ -1,0 +1,5 @@
+executorch
+torchvision
+torch
+safetensors
+tensorboard

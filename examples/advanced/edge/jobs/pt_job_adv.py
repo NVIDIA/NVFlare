@@ -1,0 +1,92 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from processors.cifar10_pt_task_processor import Cifar10PTTaskProcessor
+from processors.models.cifar10_model import Cifar10ConvNet
+
+from nvflare.edge.tools.edge_recipe import (
+    DeviceManagerConfig,
+    EdgeRecipe,
+    EvaluatorConfig,
+    ModelManagerConfig,
+    SimulationConfig,
+)
+
+
+def main():
+    # FL recipe parameters
+    devices_per_leaf = 10000
+    device_selection_size = 400
+    output_dir = "/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer"
+    dataset_root = "/tmp/nvflare/datasets/cifar10"
+    subset_size = 100
+    communication_delay = {"mean": 0.0, "std": 0.0}
+    device_speed = {"mean": [0.0], "std": [0.0]}
+    global_lr = 0.001
+    num_updates_for_model = 100
+    max_model_version = 50
+    max_model_history = 20
+    min_hole_to_fill = 40
+    eval_frequency = 1
+
+    print("Creating federated learning recipe...")
+    # Task processor for device training simulation
+    task_processor = Cifar10PTTaskProcessor(
+        data_root=dataset_root,
+        subset_size=subset_size,
+        communication_delay=communication_delay,
+        device_speed=device_speed,
+    )
+
+    # Model manager and device manager configurations
+    model_manager_config = ModelManagerConfig(
+        global_lr=global_lr,
+        num_updates_for_model=num_updates_for_model,
+        max_model_version=max_model_version,
+        max_model_history=max_model_history,
+        max_num_active_model_versions=max_model_history,
+        update_timeout=500.0,
+    )
+    device_manager_config = DeviceManagerConfig(
+        device_selection_size=device_selection_size,
+        min_hole_to_fill=min_hole_to_fill,
+        device_reuse=False,
+        const_selection=False,
+    )
+    eval_frequency = eval_frequency
+
+    # Generate recipe
+    recipe = EdgeRecipe(
+        job_name="pt_job_adv",
+        model=Cifar10ConvNet(),
+        model_manager_config=model_manager_config,
+        device_manager_config=device_manager_config,
+        evaluator_config=EvaluatorConfig(
+            torchvision_dataset={"name": "CIFAR10", "path": dataset_root}, eval_frequency=eval_frequency
+        ),
+        simulation_config=SimulationConfig(
+            task_processor=task_processor, job_timeout=20.0, num_workers=10, num_devices=devices_per_leaf
+        ),
+        custom_source_root=None,
+    )
+
+    print("Exporting recipe...")
+    recipe.export(output_dir)
+    print("DONE")
+
+    return 0
+
+
+if __name__ == "__main__":
+    exit(main())
