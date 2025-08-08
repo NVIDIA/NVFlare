@@ -120,10 +120,10 @@ class EdgeRecipe(Recipe):
         self._configure_job(job)
         Recipe.__init__(self, job)
 
-    def create_job(self):
+    def create_job(self) -> EdgeJob:
         return EdgeJob(name=self.job_name, edge_method=self.method_name)
 
-    def _configure_job(self, job):
+    def _configure_job(self, job: EdgeJob):
         if self.evaluator_config:
             evaluator = GlobalEvaluator(
                 model_path=self.model,
