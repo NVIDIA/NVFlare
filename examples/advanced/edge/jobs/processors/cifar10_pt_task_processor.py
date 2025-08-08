@@ -22,16 +22,17 @@ from torch.utils.data import Subset
 from torchvision import datasets, transforms
 
 from nvflare.apis.dxo import DXO, DataKind, from_dict
-from nvflare.edge.models.model import Cifar10ConvNet
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
+
+from .models.cifar10_model import Cifar10ConvNet
 
 log = logging.getLogger(__name__)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
-class PTCifar10Processor(DeviceTaskProcessor):
+class Cifar10PTTaskProcessor(DeviceTaskProcessor):
 
     def __init__(self, data_root: str, subset_size: int, communication_delay: dict, device_speed: dict):
         DeviceTaskProcessor.__init__(self)
