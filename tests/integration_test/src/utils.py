@@ -25,7 +25,6 @@ from typing import List
 import yaml
 
 from nvflare.apis.job_def import RunStatus
-from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
@@ -410,22 +409,28 @@ def _read_admin_json_file(admin_json_file) -> dict:
 
 
 def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, admin_user_name):
-    admin_dir = os.path.join(workspace_root_dir, admin_user_name)
-    workspace = Workspace(root_dir=admin_dir)
-    admin_config = _read_admin_json_file(workspace)
+    admin_startup_folder = os.path.join(workspace_root_dir, admin_user_name, "startup")
+    admin_json_file = os.path.join(admin_startup_folder, "fed_admin.json")
+    admin_json = _read_admin_json_file(admin_json_file)
+    overseer_agent = instantiate_class(
+        class_path=admin_json["admin"]["overseer_agent"]["path"],
+        init_params=admin_json["admin"]["overseer_agent"]["args"],
+    )
+
+    ca_cert = os.path.join(admin_startup_folder, admin_json["admin"]["ca_cert"])
+    client_key = os.path.join(admin_startup_folder, admin_json["admin"]["client_key"])
+    client_cert = os.path.join(admin_startup_folder, admin_json["admin"]["client_cert"])
     admin_api = FLAdminAPI(
         upload_dir=upload_root_dir,
         download_dir=download_root_dir,
         overseer_agent=overseer_agent,
-        insecure=poc,
+        insecure=False,
         user_name=admin_user_name,
         ca_cert=ca_cert,
         client_key=client_key,
         client_cert=client_cert,
         auto_login_max_tries=20,
     )
-    admin_api.connect(10.0)
-    admin_api.login()
     return admin_api
 
 

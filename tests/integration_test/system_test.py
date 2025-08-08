@@ -122,7 +122,7 @@ def setup_and_teardown_system(request):
         print(f"Workspace root is {workspace_root}")
         print(f"sys.path start is: {sys.path}")
 
-        if ha:
+        if has_project_yaml:
             site_launcher.start_overseer()
         site_launcher.start_servers()
         site_launcher.start_clients()
