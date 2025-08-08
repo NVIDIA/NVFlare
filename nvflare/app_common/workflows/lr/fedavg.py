@@ -213,6 +213,9 @@ class FedAvgLR(BaseFedAvg):
         if model is None:
             raise ValueError("model can't be None")
 
+        if model.params is None:
+            raise ValueError("model params is None")
+
         return model
 
     def save_model(self, model: FLModel) -> None:
