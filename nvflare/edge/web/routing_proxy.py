@@ -53,16 +53,21 @@ if __name__ == "__main__":
         handlers=[logging.StreamHandler()],
     )
 
-    if len(sys.argv) != 4:
-        print(f"Usage: python {os.path.basename(sys.argv[0])} <port> <mapping_file> <ca_cert_file>")
+    if len(sys.argv) < 4:
+        print(f"Usage: python {os.path.basename(sys.argv[0])} <port> <mapping_file> <ca_cert_file> <proto_test_file>")
         sys.exit(1)
 
     proxy_port = int(sys.argv[1])
     lcp_mapping_file = sys.argv[2]
     ca_cert_file = sys.argv[3]
 
+    proto_test_file = None
+    if len(sys.argv) > 4:
+        proto_test_file = sys.argv[4]
+
     api_query.set_lcp_mapping(lcp_mapping_file)
     api_query.set_ca_cert(ca_cert_file)
+    api_query.set_proto_test(proto_test_file)
     api_query.start()
 
     app.json = FilteredJSONProvider(app)
