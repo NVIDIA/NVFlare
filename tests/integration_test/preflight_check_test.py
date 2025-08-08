@@ -71,7 +71,7 @@ class JSONPreflightResult:
 
 
 TEST_CASES = [
-    {"project_yaml": "data/projects/dummy.yml", "admin_name": "super@test.org", "is_dummy_overseer": True},
+    {"project_yaml": "data/projects/dummy.yml", "admin_name": "super@test.org"},
 ]
 
 SERVER_START_TIME = 15
@@ -140,7 +140,6 @@ def _run_preflight_check_json(package_path: str) -> JSONPreflightResult:
 def setup_system(request):
     test_config = request.param
     project_yaml_path = test_config["project_yaml"]
-    is_dummy_overseer = test_config["is_dummy_overseer"]
     admin_name = test_config["admin_name"]
 
     if not os.path.isfile(project_yaml_path):
@@ -151,34 +150,17 @@ def setup_system(request):
     print(f"Workspace root is {workspace_root}")
 
     admin_folder_root = os.path.abspath(os.path.join(workspace_root, admin_name))
-    return site_launcher, is_dummy_overseer, admin_folder_root
+    return site_launcher, admin_folder_root
 
 
 @pytest.mark.xdist_group(name="preflight_tests_group")
 class TestPreflightCheckJSON:
     """Preflight check tests using JSON output for clean validation."""
 
-    def test_overseer_preflight_check(self, setup_system):
-        """Test overseer preflight checks."""
-        site_launcher, is_dummy_overseer, _ = setup_system
-        if is_dummy_overseer:
-            pytest.skip("Skipping overseer test with dummy overseer")
-
-        try:
-            result = _run_preflight_check_json(site_launcher.overseer_properties.root_dir)
-            result.assert_check_passed("overseer port binding")
-            result.assert_check_passed("dry run")
-            result.assert_all_passed("All overseer checks should pass")
-        finally:
-            site_launcher.cleanup()
-
     def test_server_preflight_with_overseer(self, setup_system):
         """Test server preflight checks when overseer is running."""
-        site_launcher, is_dummy_overseer, _ = setup_system
+        site_launcher, _ = setup_system
         try:
-            if not is_dummy_overseer:
-                site_launcher.start_overseer()
-
             for server_name, server_props in site_launcher.server_properties.items():
                 result = _run_preflight_check_json(server_props.root_dir)
 
@@ -198,37 +180,19 @@ class TestPreflightCheckJSON:
 
     def test_server_preflight_without_overseer(self, setup_system):
         """Test server preflight checks when overseer is not running."""
-        site_launcher, is_dummy_overseer, _ = setup_system
+        site_launcher, _ = setup_system
         try:
             for server_name, server_props in site_launcher.server_properties.items():
                 result = _run_preflight_check_json(server_props.root_dir)
-
-                if is_dummy_overseer:
-                    # With dummy overseer, all checks should pass
-                    result.assert_all_passed(f"All {server_name} checks should pass with dummy overseer")
-                else:
-                    # Without overseer, only overseer check should fail
-                    overseer_check = result.get_check("overseer running")
-                    assert (
-                        overseer_check and not overseer_check["passed"]
-                    ), f"Overseer check should fail for {server_name} when overseer not running"
-
-                    # Other checks should still pass
-                    result.assert_check_passed("grpc port binding")
-                    result.assert_check_passed("admin port binding")
-                    result.assert_check_passed("snapshot storage writable")
-                    result.assert_check_passed("job storage writable")
-
+                result.assert_all_passed(f"All {server_name} checks should pass with dummy overseer")
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
 
     def test_client_preflight_check(self, setup_system):
         """Test client preflight checks."""
-        site_launcher, is_dummy_overseer, _ = setup_system
+        site_launcher, _ = setup_system
         try:
-            if not is_dummy_overseer:
-                site_launcher.start_overseer()
             site_launcher.start_servers()
             time.sleep(SERVER_START_TIME)
 
@@ -261,10 +225,8 @@ class TestPreflightCheckJSON:
 
     def test_admin_console_preflight_check(self, setup_system):
         """Test admin console preflight checks."""
-        site_launcher, is_dummy_overseer, admin_folder_root = setup_system
+        site_launcher, admin_folder_root = setup_system
         try:
-            if not is_dummy_overseer:
-                site_launcher.start_overseer()
             site_launcher.start_servers()
             time.sleep(SERVER_START_TIME)
 
