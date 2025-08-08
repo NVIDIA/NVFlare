@@ -76,6 +76,7 @@ class JobMetaKey(str, Enum):
     CUSTOM_PROPS = "custom_props"
     EDGE_METHOD = "edge_method"
     JOB_CLIENTS = "job_clients"  # clients that participated the job
+    DECOMPOSERS = "decomposers"
 
     def __repr__(self):
         return self.value

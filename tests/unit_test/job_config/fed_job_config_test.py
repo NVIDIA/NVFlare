@@ -40,3 +40,11 @@ class TestFedJobConfig:
         assert expected == job_config._trim_whitespace("site-0, site-1")
         assert expected == job_config._trim_whitespace(" site-0,site-1 ")
         assert expected == job_config._trim_whitespace(" site-0, site-1 ")
+
+    def test_decomposers(self):
+        job_config = FedJobConfig(job_name="job_name", min_clients=1)
+        job_config.add_decomposers("decomposer-1")
+        job_config.add_decomposers("decomposer-2", "decomposer-3")
+
+        expected = ["decomposer-1", "decomposer-2", "decomposer-3"]
+        assert expected == job_config.decomposers

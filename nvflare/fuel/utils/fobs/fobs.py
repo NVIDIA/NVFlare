@@ -17,13 +17,11 @@ import logging
 import os
 import sys
 from enum import Enum
-from os.path import dirname, join
-from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
+from typing import Any, BinaryIO, Type, TypeVar, Union
 
 import msgpack
 
-from nvflare.fuel.utils.class_loader import get_class_name, load_class
-from nvflare.fuel.utils.fobs.allowed_decomposers import ALLOWED_DECOMPOSERS
+from nvflare.fuel.utils.class_loader import get_class_name
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposer import (
     DataClassDecomposer,
@@ -32,10 +30,13 @@ from nvflare.fuel.utils.fobs.decomposer import (
     Externalizer,
     Internalizer,
 )
+from nvflare.fuel.utils.fobs.decomposer_registrar import DecomposerRegistrar
 from nvflare.security.logging import secure_format_exception
 
 __all__ = [
     "register",
+    "registrar",
+    "register_custom_folder",
     "register_data_classes",
     "register_enum_types",
     "auto_register_enum_types",
@@ -58,12 +59,7 @@ MSGPACK_TYPES = (type(None), bool, int, float, str, bytes, bytearray, memoryview
 T = TypeVar("T")
 
 log = logging.getLogger(__name__)
-_decomposers: Dict[str, Decomposer] = {}
-_dot_handlers: Dict[int, Decomposer] = {}  # decomposers that handle Datum Object Types (DOT)
-_decomposers_registered = False
-# If this is enabled, FOBS will try to register generic decomposers automatically
-_enum_auto_registration = True
-_data_auto_registration = True
+registrar = DecomposerRegistrar()
 
 
 def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
@@ -73,40 +69,7 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
         decomposer: The decomposer type or instance
     """
 
-    global _decomposers
-    global _dot_handlers
-
-    if inspect.isclass(decomposer):
-        instance = decomposer()
-    else:
-        instance = decomposer
-
-    name = get_class_name(instance.supported_type())
-    if name in _decomposers:
-        return
-
-    if not isinstance(instance, Decomposer):
-        log.error(f"Class {instance.__class__} is not a decomposer")
-        return
-
-    _decomposers[name] = instance
-    supported_dots = instance.supported_dots()
-    if supported_dots:
-        for d in supported_dots:
-            if not isinstance(d, int):
-                log.error(f"Bad DOT {d} - it must be a positive int but got {type(d)}")
-                continue
-
-            if d <= 0:
-                log.error(f"Bad DOT {d} - it must be a positive int")
-                continue
-
-            h = _dot_handlers.get(d)
-            if h:
-                log.error(f"Duplicate registration for DOT {d}: {type(h)} and {type(instance)}")
-                continue
-
-            _dot_handlers[d] = instance
+    registrar.register(decomposer)
 
 
 class Packer:
@@ -120,71 +83,36 @@ class Packer:
         if type(obj) in MSGPACK_TYPES:
             return obj
 
-        type_name = get_class_name(obj.__class__)
-        if type_name not in _decomposers:
-            registered = False
-            if isinstance(obj, Enum):
-                if _enum_auto_registration:
-                    register_enum_types(type(obj))
-                    registered = True
-            else:
-                if callable(obj) or (not hasattr(obj, "__dict__")):
-                    raise TypeError(f"{type(obj)} can't be serialized by FOBS without a decomposer")
-                if _data_auto_registration:
-                    register_data_classes(type(obj))
-                    registered = True
-
-            if not registered:
-                return obj
-
-        decomposer = _decomposers[type_name]
+        decomposer = registrar.find_for_object(obj)
 
         decomposed = decomposer.decompose(obj, self.manager)
         if self.manager:
             externalizer = Externalizer(self.manager)
             decomposed = externalizer.externalize(decomposed)
 
+        type_name = get_class_name(obj.__class__)
         return {FOBS_TYPE: type_name, FOBS_DATA: decomposed, FOBS_DECOMPOSER: get_class_name(type(decomposer))}
 
     def unpack(self, obj: Any) -> Any:
 
+        # FOBS serialized data is always a dict
         if type(obj) is not dict or FOBS_TYPE not in obj:
             return obj
 
-        type_name = obj[FOBS_TYPE]
-        if type_name not in _decomposers:
-            registered = False
-            decomposer_name = obj.get(FOBS_DECOMPOSER)
-            if decomposer_name not in ALLOWED_DECOMPOSERS:
-                raise TypeError(f"Decomposer {decomposer_name} must be pre-registered")
+        decomposer_name = obj.get(FOBS_DECOMPOSER)
 
-            cls = load_class(type_name)
-            if not decomposer_name:
-                # Maintaining backward compatibility with auto enum registration
-                if _enum_auto_registration:
-                    if issubclass(cls, Enum):
-                        register_enum_types(cls)
-                        registered = True
-            else:
-                decomposer_class = load_class(decomposer_name)
-                if decomposer_name == self.enum_decomposer_name or decomposer_name == self.data_decomposer_name:
-                    # Generic decomposer's __init__ takes the target class as argument
-                    decomposer = decomposer_class(cls)
-                else:
-                    decomposer = decomposer_class()
+        # If a decomposer is not registered, reject it due to security reasons
+        if not registrar.registered(decomposer_name):
+            raise TypeError(f"Decomposer {decomposer_name} is not pre-registered")
 
-                register(decomposer)
-                registered = True
-
-            if not registered:
-                raise TypeError(f"Type {type_name} has no decomposer registered")
+        type_name = obj.get(FOBS_TYPE)
+        decomposer = registrar.load(decomposer_name, type_name)
 
         data = obj[FOBS_DATA]
         if self.manager:
             internalizer = Internalizer(self.manager)
             data = internalizer.internalize(data)
 
-        decomposer = _decomposers[type_name]
         return decomposer.recompose(data, self.manager)
 
 
@@ -220,9 +148,7 @@ def auto_register_enum_types(enabled=True) -> None:
     Args:
         enabled: Auto-registration of enum classes is enabled if True.
     """
-    global _enum_auto_registration
-
-    _enum_auto_registration = enabled
+    registrar.set_enum_generic_enabled(enabled)
 
 
 def auto_register_data_classes(enabled=True) -> None:
@@ -231,9 +157,7 @@ def auto_register_data_classes(enabled=True) -> None:
     Args:
         enabled: Auto-registration of data classes is enabled if True.
     """
-    global _data_auto_registration
-
-    _data_auto_registration = enabled
+    registrar.set_data_generic_enabled(enabled)
 
 
 def register_folder(folder: str, package: str):
@@ -289,23 +213,13 @@ def register_custom_folder(folder: str):
                     pass
 
 
-def _register_decomposers():
-    global _decomposers_registered
-
-    if _decomposers_registered:
-        return
-
-    register_folder(join(dirname(__file__), "decomposers"), ".decomposers")
-    _decomposers_registered = True
-
-
 def num_decomposers() -> int:
     """Returns the number of decomposers registered.
 
     Returns:
         The number of decomposers
     """
-    return len(_decomposers)
+    return registrar.count()
 
 
 def serialize(obj: Any, manager: DatumManager = None, **kwargs) -> bytes:
@@ -318,7 +232,6 @@ def serialize(obj: Any, manager: DatumManager = None, **kwargs) -> bytes:
     Returns:
         Serialized data
     """
-    _register_decomposers()
     packer = Packer(manager)
     try:
         result = msgpack.packb(obj, default=packer.pack, strict_types=True, **kwargs)
@@ -367,7 +280,6 @@ def deserialize(data: bytes, manager: DatumManager = None, **kwargs) -> Any:
     Returns:
         Deserialized object
     """
-    _register_decomposers()
     packer = Packer(manager)
     result = msgpack.unpackb(data, strict_map_key=False, object_hook=packer.unpack, **kwargs)
     manager.post_process()
@@ -388,14 +300,10 @@ def deserialize_stream(stream: BinaryIO, manager: DatumManager = None, **kwargs)
     return deserialize(data, manager, **kwargs)
 
 
-def get_dot_handler(dot: int):
-    global _dot_handlers
-    return _dot_handlers.get(dot)
+def get_dot_handler(dot: int) -> Decomposer:
+    return registrar.find_for_dot(dot)
 
 
 def reset():
     """Reset FOBS to initial state. Used for unit test"""
-    global _decomposers, _decomposers_registered, _dot_handlers
-    _decomposers.clear()
-    _dot_handlers.clear()
-    _decomposers_registered = False
+    registrar.reset()

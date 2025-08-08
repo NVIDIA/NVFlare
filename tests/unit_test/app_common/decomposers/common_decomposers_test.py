@@ -18,11 +18,9 @@ import numpy as np
 import pytest
 
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.model import ModelLearnable
-from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
 
@@ -30,10 +28,6 @@ FIVE_M = 5 * 1024 * 1024
 
 
 class TestCommonDecomposers:
-    @classmethod
-    def setup_class(cls):
-        flare_decomposers.register()
-        common_decomposers.register()
 
     @pytest.mark.parametrize(
         "size",

@@ -22,6 +22,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ConfigVarName, FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.event import fire_event_to_components
@@ -30,6 +31,7 @@ from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
+from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
@@ -725,6 +727,12 @@ class ClientRunner(TBI):
 
             self.log_info(fl_ctx, f"synced to parent {target} in {time.time() - sync_start} seconds")
             ReliableMessage.enable(fl_ctx)
+
+            job_meta = fl_ctx.get_prop(FLContextKey.JOB_META, None)
+            decomposers = job_meta.get(JobMetaKey.DECOMPOSERS)
+            if decomposers:
+                fobs.registrar.register_decomposers(decomposers)
+
             self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
             fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)

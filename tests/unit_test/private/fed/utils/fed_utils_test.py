@@ -14,10 +14,9 @@
 import os
 from typing import Any
 
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.datum import DatumManager
-from nvflare.fuel.utils.fobs.fobs import register_custom_folder
+from nvflare.fuel.utils.fobs.fobs import register_custom_folder, registrar
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.utils.job_launcher_utils import extract_job_image
 
@@ -49,9 +48,8 @@ class TestFedUtils:
     def test_custom_fobs_initialize(self):
         pwd = os.path.dirname(os.path.realpath(__file__))
         register_custom_folder(pwd)
-        decomposer = ExampleTestClassDecomposer()
-        decomposers = fobs.fobs._decomposers
-        assert decomposer in list(decomposers.values())
+        decomposer_name = "fed_utils_test.ExampleTestClassDecomposer"
+        assert registrar.registered(decomposer_name)
 
     def test_extract_participants(self):
         participants = ["site-1", "site-2"]

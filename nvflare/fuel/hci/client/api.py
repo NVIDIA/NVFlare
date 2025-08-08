@@ -29,7 +29,6 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.streaming import ConsumerFactory, ObjectProducer, StreamableEngine, StreamContext
-from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.streamers.file_streamer import FileStreamer
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.cellnet.cell import Cell
@@ -386,8 +385,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             credentials[DriverParams.CONNECTION_SECURITY.value] = conn_sec
             if conn_sec == ConnectionSecurity.CLEAR:
                 secure_conn = False
-
-        flare_decomposers.register()
 
         self.debug(f"Creating cell: {my_fqcn=} {root_url=} {secure_conn=} {credentials=}")
 

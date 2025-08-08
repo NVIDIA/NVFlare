@@ -17,20 +17,16 @@ This module contains all the decomposers used to run NVFlare.
 The decomposers are registered at server/client startup.
 
 """
-import os
-from argparse import Namespace
+import logging
 from typing import Any
 
-from nvflare.apis.client import Client
 from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_snapshot import RunSnapshot
-from nvflare.apis.shareable import Shareable
-from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumRef
-from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer, Externalizer, Internalizer
+from nvflare.fuel.utils.fobs.datum import DatumManager
+from nvflare.fuel.utils.fobs.decomposer import Decomposer, Externalizer, Internalizer
+
+log = logging.getLogger(__name__)
 
 
 # The __init__ initializes logger so generic decomposers can't be used
@@ -76,18 +72,5 @@ class DXODecomposer(Decomposer):
 
 
 def register():
-    if register.registered:
-        return
-
-    fobs.register(DictDecomposer(Shareable))
-
-    fobs.register(DXODecomposer)
-
-    fobs.register_data_classes(Client, RunSnapshot, Signal, Namespace, Datum, DatumRef)
-
-    fobs.register_folder(os.path.dirname(__file__), __package__)
-
-    register.registered = True
-
-
-register.registered = False
+    # Deprecated
+    log.warning("register() call is not needed anymore")

@@ -28,9 +28,7 @@ from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, FLMetaKey, Job
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobLauncherSpec
-from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
@@ -39,7 +37,6 @@ from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.fobs import register_custom_folder
 from nvflare.private.defs import RequestHeader, SSLConstants
 from nvflare.private.event import fire_event
-from nvflare.private.fed.utils.decomposers import private_decomposers
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
@@ -226,8 +223,6 @@ def get_scope_info():
 
 
 def fobs_initialize(workspace: Workspace = None, job_id: str = None):
-    nvflare_fobs_initialize()
-
     custom_fobs_initialize(workspace, job_id)
 
 
@@ -243,12 +238,6 @@ def custom_fobs_initialize(workspace: Workspace = None, job_id: str = None):
             decomposer_dir = os.path.join(app_custom_dir, ConfigVarName.DECOMPOSER_MODULE)
             if os.path.exists(decomposer_dir):
                 register_custom_folder(decomposer_dir)
-
-
-def nvflare_fobs_initialize():
-    flare_decomposers.register()
-    common_decomposers.register()
-    private_decomposers.register()
 
 
 def register_ext_decomposers(decomposer_module: Union[str, List[str]]):
@@ -300,7 +289,7 @@ def create_stats_pool_files_for_job(workspace: Workspace, job_id: str, prefix=No
     return err
 
 
-def split_gpus(gpus) -> [str]:
+def split_gpus(gpus) -> List[str]:
     gpus = gpus.replace(" ", "")
     lefts = find_char_positions(gpus, "[")
     rights = find_char_positions(gpus, "]")

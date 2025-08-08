@@ -66,6 +66,7 @@ class FedJobConfig:
         self.fed_apps: Dict[str, FedAppConfig] = {}
         self.deploy_map: Dict[str, str] = {}
         self.resource_specs: Dict[str, Dict] = {}
+        self.decomposers = []
 
         self.custom_modules = []
         self.logger = get_obj_logger(self)
@@ -116,6 +117,9 @@ class FedJobConfig:
 
         self.resource_specs[site_name] = resource_spec
 
+    def add_decomposers(self, *decomposers):
+        self.decomposers.extend(decomposers)
+
     def _generate_meta(self, job_dir):
         """generate the job meta.json
 
@@ -131,6 +135,9 @@ class FedJobConfig:
         }
         if self.mandatory_clients:
             meta_json["mandatory_clients"] = self.mandatory_clients
+
+        if self.decomposers:
+            meta_json["decomposers"] = self.decomposers
 
         if self.meta_props:
             meta_json.update(self.meta_props)
