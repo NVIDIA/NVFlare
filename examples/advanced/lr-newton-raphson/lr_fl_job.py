@@ -65,14 +65,5 @@ if __name__ == "__main__":
         )
         job.to(runner, f"site-{i + 1}")
 
-        runner = ScriptRunner(
-            script="src/newton_raphson_train.py",
-            script_args="--data_root /tmp/flare/dataset/heart_disease_data",
-            launch_external_process=True,
-            framework=FrameworkType.RAW,
-            server_expected_format=ExchangeFormat.RAW,
-        )
-        job.to_clients(runner)
-
     job.export_job("/tmp/nvflare/jobs/job_config")
     job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

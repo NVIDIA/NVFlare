@@ -26,7 +26,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
-from nvflare.app_common.lr.np_persistor import LRModelPersistor
+from nvflare.app_common.workflows.lr.np_persistor import LRModelPersistor
 
 
 class FedAvgLR(BaseFedAvg):

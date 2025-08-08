@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,13 +20,13 @@ from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 
 class LRModelPersistor(NPModelPersistor):
     """
-    This class defines the persistor for Newton Raphson model.
+    This class defines the persistor for Logistics Regression model.
 
     A persistor controls the logic behind initializing, loading
     and saving of the model / parameters for each round of a
     federated learning process.
 
-    In the 2nd order Newton Raphson case, a model is just a
+    In the Logistics Regression with Newton Raphson, a model is just a
     1-D numpy vector containing the parameters for logistic
     regression. The length of the parameter vector is defined
     by the number of features in the dataset.
@@ -53,7 +53,7 @@ class LRModelPersistor(NPModelPersistor):
         self.n_features = n_features
 
         # A default model is loaded when no local model is available.
-        # This happen when training starts.
+        # This happens when training starts.
         #
         # A `model` for a binary logistic regression is just a matrix,
         # with shape (n_features + 1, 1).
