@@ -14,9 +14,6 @@
 
 import argparse
 
-from et_task_processor import Cifar10ETTaskProcessor
-from model import TrainingNet
-
 from nvflare.edge.tools.et_recipe import (
     DeviceManagerConfig,
     ETRecipe,
@@ -26,18 +23,53 @@ from nvflare.edge.tools.et_recipe import (
 )
 from nvflare.recipe.simulation_env import SimulationExecEnv
 
-dataset_root = "/tmp/nvflare/cifar10"
-BATCH_SIZE = 4
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--export_job", action="store_true")
+parser.add_argument("--dataset", type=str, default="cifar10")
 args = parser.parse_args()
 
+
+if args.dataset == "cifar10":
+    from cifar10_et_task_processor import Cifar10ETTaskProcessor
+    from cifar10_model import TrainingNet
+
+    dataset_root = "/tmp/nvflare/cifar10"
+    job_name = "cifar10_et"
+    device_model = TrainingNet()
+    batch_size = 4
+    input_shape = (batch_size, 3, 32, 32)
+    output_shape = (batch_size,)
+    task_processor = Cifar10ETTaskProcessor(
+        data_path=dataset_root,
+        training_config={
+            "batch_size": batch_size,
+            "shuffle": True,
+            "num_workers": 0,
+        },
+        subset_size=100,
+    )
+    evaluator_config = EvaluatorConfig(
+        torchvision_dataset={"name": "CIFAR10", "path": dataset_root},
+        eval_frequency=1,
+    )
+elif args.dataset == "xor":
+    from xor_et_task_processor import XorETTaskProcessor
+    from xor_model import TrainingNet
+
+    job_name = "xor_et"
+    device_model = TrainingNet()
+    batch_size = 1
+    input_shape = (batch_size, 2)
+    output_shape = (batch_size,)
+    task_processor = XorETTaskProcessor()
+    evaluator_config = None
+
+
 recipe = ETRecipe(
-    job_name="cifar10_et",
-    device_model=TrainingNet(),
-    input_shape=(BATCH_SIZE, 3, 32, 32),
-    output_shape=(BATCH_SIZE,),
+    job_name=job_name,
+    device_model=device_model,
+    input_shape=input_shape,
+    output_shape=output_shape,
     model_manager_config=ModelManagerConfig(
         # max_num_active_model_versions=1,
         max_model_version=1,
@@ -49,20 +81,9 @@ recipe = ETRecipe(
         device_selection_size=5,
         min_hole_to_fill=5,
     ),
-    evaluator_config=EvaluatorConfig(
-        torchvision_dataset={"name": "CIFAR10", "path": dataset_root},
-        eval_frequency=1,
-    ),
+    evaluator_config=evaluator_config,
     simulation_config=SimulationConfig(
-        task_processor=Cifar10ETTaskProcessor(
-            data_path=dataset_root,
-            training_config={
-                "batch_size": BATCH_SIZE,
-                "shuffle": True,
-                "num_workers": 0,
-            },
-            subset_size=100,
-        ),
+        task_processor=task_processor,
         num_devices=5,
     ),
     device_training_params={"epoch": 3, "lr": 0.0001},

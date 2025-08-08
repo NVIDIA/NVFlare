@@ -14,7 +14,6 @@
 
 from typing import Tuple
 
-import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
@@ -24,17 +23,11 @@ from nvflare.edge.simulation.et_task_processor import ETTaskProcessor
 class XorDataset(Dataset):
     """XOR Dataset following PyTorch conventions."""
 
-    def __init__(self, csv_path: str):
-        """Initialize XOR dataset.
+    def __init__(self):
+        """Initialize XOR dataset."""
 
-        Args:
-            csv_path: Path to CSV file containing XOR data
-        """
-        # Load data from CSV
-        df = pd.DataFrame(pd.read_csv(csv_path))
-
-        self.X = torch.tensor(df[["x1", "x2"]].values, dtype=torch.float32)
-        self.Y = torch.tensor(df["y"].values, dtype=torch.int64)
+        self.X = torch.tensor([[1, 0], [0, 1], [1, 1], [0, 0]], dtype=torch.float32)
+        self.Y = torch.tensor([[1], [1], [0], [0]], dtype=torch.int64)
 
         self._verify_data()
 
@@ -68,5 +61,8 @@ class XorDataset(Dataset):
 class XorETTaskProcessor(ETTaskProcessor):
     """Task processor for XOR dataset."""
 
+    def __init__(self, data_path: str = "", training_config: dict = None):
+        super().__init__(data_path=data_path, training_config=training_config)
+
     def create_dataset(self, data_path: str) -> Dataset:
-        return XorDataset(data_path)
+        return XorDataset()
