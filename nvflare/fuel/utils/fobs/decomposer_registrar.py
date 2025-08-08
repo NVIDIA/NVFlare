@@ -264,7 +264,6 @@ class DecomposerRegistrar:
             except Exception as e:
                 self.logger.error(f"Can't load decomposer {decomposer_name}: {e}")
 
-
     def register_type(
         self,
         type_name: str,
