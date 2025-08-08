@@ -245,7 +245,7 @@ class DecomposerRegistrar:
                     continue
 
                 if dot in self.dot_mapping:
-                    self.logger.warning(f"Duplicate registration for DOT {dot}: {self.dot_mapping[dot]}")
+                    self.logger.debug(f"Duplicate registration for DOT {dot}: {self.dot_mapping[dot]}")
                     continue
 
                 self.dot_cache[dot] = instance
@@ -258,8 +258,12 @@ class DecomposerRegistrar:
             decomposer_names : List of decomposer names
         """
         for decomposer_name in decomposer_names:
-            decomposer_class = load_class(decomposer_name)
-            self.register(decomposer_class)
+            try:
+                decomposer_class = load_class(decomposer_name)
+                self.register(decomposer_class)
+            except Exception as e:
+                self.logger.error(f"Can't load decomposer {decomposer_name}: {e}")
+
 
     def register_type(
         self,

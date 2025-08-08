@@ -32,6 +32,7 @@ BUILTIN_DECOMPOSERS: dict[str, str] = {
     "nvflare.apis.dxo.DXO": "nvflare.apis.utils.decomposers.flare_decomposers.DXODecomposer",
     "nvflare.apis.fl_context.FLContext": "nvflare.apis.utils.decomposers.flare_decomposers.ContextDecomposer",
     "nvflare.apis.fl_snapshot.RunSnapshot": "nvflare.fuel.utils.fobs.decomposer.DataClassDecomposer",
+    "nvflare.apis.job_def.JobMetaKey": "nvflare.fuel.utils.fobs.decomposer.EnumTypeDecomposer",
     "nvflare.apis.shareable.Shareable": "nvflare.fuel.utils.fobs.decomposer.DictDecomposer",
     "nvflare.apis.signal.Signal": "nvflare.fuel.utils.fobs.decomposer.DataClassDecomposer",
     "nvflare.apis.workspace.FLModel": "nvflare.app_common.decomposers.common_decomposers.FLModelDecomposer",
