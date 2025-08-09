@@ -37,8 +37,8 @@ class ProdExecEnv(ExecEnv):
 
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
-                job.export_job(temp_dir.name)
-                job_path = os.path.join(temp_dir.name, job.name)
+                job.export_job(temp_dir)
+                job_path = os.path.join(temp_dir, job.name)
                 job_id = sess.submit_job(job_path)
                 print(f"submitted job: {job_id}")
 
