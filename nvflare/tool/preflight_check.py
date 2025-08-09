@@ -25,6 +25,7 @@ from nvflare.tool.package_checker import (
 
 def define_preflight_check_parser(parser):
     parser.add_argument("-p", "--package_path", required=True, type=str, help="path to specific package")
+    parser.add_argument("--json", action="store_true", help="output results in JSON format for easier parsing")
 
 
 def check_packages(args):
@@ -43,8 +44,13 @@ def check_packages(args):
         ClientPackageChecker(),
         NVFlareConsolePackageChecker(),
     ]
+
+    json_mode = hasattr(args, "json") and args.json
+
     for p in package_checkers:
         p.init(package_path=package_path)
+        if json_mode:
+            p.set_json_output(True)
         ret_code = 0
         if p.should_be_checked():
             ret_code = p.check()

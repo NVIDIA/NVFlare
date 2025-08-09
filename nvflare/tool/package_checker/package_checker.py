@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import signal
 from abc import ABC, abstractmethod
@@ -30,7 +31,11 @@ class PackageChecker(ABC):
         self.fix_len = len("How to fix")
         self.dry_run_timeout = 5
         self.package_path = None
-        self.rules = []
+        self._json_output = False  # Flag for JSON output mode
+
+    def set_json_output(self, enabled: bool):
+        """Enable or disable JSON output format."""
+        self._json_output = enabled
 
     @abstractmethod
     def init_rules(self, package_path: str):
@@ -162,6 +167,25 @@ class PackageChecker(ABC):
         self.check_len = max(self.check_len, len(check_name))
         self.fix_len = max(self.fix_len, len(fix_text))
 
+    def get_report_data(self) -> dict:
+        """Get report data as structured dictionary."""
+        result = {}
+        for package_path, results in self.report.items():
+            checks = []
+            for check_name, problem, solution in results:
+                checks.append(
+                    {"name": check_name, "status": problem, "solution": solution, "passed": problem == CHECK_PASSED}
+                )
+
+            result[package_path] = {
+                "package_path": package_path,
+                "checks": checks,
+                "all_passed": all(check["passed"] for check in checks),
+                "failed_count": sum(1 for check in checks if not check["passed"]),
+                "total_count": len(checks),
+            }
+        return result
+
     def _print_line(self):
         print("|" + "-" * (self.check_len + self.problem_len + self.fix_len + 8) + "|")
 
@@ -178,6 +202,13 @@ class PackageChecker(ABC):
         )
 
     def print_report(self):
+        if self._json_output:
+            # Print JSON format
+            data = self.get_report_data()
+            print(json.dumps(data, indent=2))
+            return
+
+        # Original table format
         total_width = self.check_len + self.problem_len + self.fix_len + 10
         for package_path, results in self.report.items():
             print("Checking Package: " + package_path)
