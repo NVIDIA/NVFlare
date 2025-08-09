@@ -15,8 +15,6 @@
 import os
 
 from nvflare.apis.fl_constant import WorkspaceConstants
-from nvflare.apis.utils.decomposers import flare_decomposers
-from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.utils import fobs
 
 from .job_result_validator import FinishJobResultValidator
@@ -36,9 +34,6 @@ class TFModelValidator(FinishJobResultValidator):
             return False
 
         try:
-            flare_decomposers.register()
-            common_decomposers.register()
-
             data = fobs.load(open(model_path, "rb"))
             self.logger.info(f"Data loaded: {data}.")
             assert "weights" in data

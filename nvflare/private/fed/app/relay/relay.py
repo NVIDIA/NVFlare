@@ -22,7 +22,6 @@ import threading
 from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, ReservedKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -154,8 +153,6 @@ def main(args):
     else:
         my_fqcn = FQCN.join([parent_fqcn, my_identity])
         root_url = None
-
-    flare_decomposers.register()
 
     cell = Cell(
         fqcn=my_fqcn,

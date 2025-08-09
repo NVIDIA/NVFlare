@@ -59,24 +59,15 @@ class TestFobs:
 
     def test_decomposers(self):
         test_class = ExampleClass(TestFobs.NUMBER)
-        fobs.register(ExampleClassDecomposer)
+        # ExampleClass's decomposer is registered as built-in, no registration is required
         buf = fobs.dumps(test_class)
-        new_class = fobs.loads(buf)
-        assert new_class.number == TestFobs.NUMBER
-
-    def test_no_registration(self):
-        test_class = ExampleClass(TestFobs.NUMBER)
-        fobs.register(ExampleClassDecomposer)
-        buf = fobs.dumps(test_class)
-        # Clear registration before deserializing
-        fobs.reset()
         new_class = fobs.loads(buf)
         assert new_class.number == TestFobs.NUMBER
 
     def test_auto_registration(self):
         fobs.reset()
         test_class = ExampleDataClass(TestFobs.NAME)
-        # No decomposer is registered for ExampleDataClass
+        # No decomposer is registered for ExampleDataClass, but it qualifies as a data class
         buf = fobs.dumps(test_class)
         new_class = fobs.loads(buf)
         assert new_class.name == TestFobs.NAME

@@ -20,6 +20,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -27,9 +28,11 @@ from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
+from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.job_utils import build_client_hierarchy
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.tbi import TBI
+from nvflare.private.fed.utils.fed_utils import get_job_meta_from_workspace
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
@@ -179,6 +182,13 @@ class ServerRunner(TBI):
     def run(self):
         with self.engine.new_context() as fl_ctx:
             ReliableMessage.enable(fl_ctx)
+
+            job_meta = get_job_meta_from_workspace(fl_ctx.get_workspace(), self.job_id)
+            if job_meta:
+                decomposers = job_meta.get(JobMetaKey.DECOMPOSERS)
+                if decomposers:
+                    fobs.registrar.register_decomposers(decomposers)
+
             self.log_info(fl_ctx, "Server runner starting ...")
             self.log_debug(fl_ctx, "firing event EventType.START_RUN")
             fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.abort_signal, private=True, sticky=True)

@@ -68,7 +68,6 @@ from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import (
     custom_fobs_initialize,
     get_simulator_app_root,
-    nvflare_fobs_initialize,
     register_ext_decomposers,
     split_gpus,
 )
@@ -196,7 +195,6 @@ class SimulatorRunner(FLComponent):
         if not os.path.exists(self.args.workspace):
             os.makedirs(self.args.workspace)
         os.chdir(self.args.workspace)
-        nvflare_fobs_initialize()
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.the_auditor = SimulatorAuditor()
 

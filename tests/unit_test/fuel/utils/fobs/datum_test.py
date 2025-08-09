@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
 
@@ -30,7 +29,6 @@ class TestDatum:
     }
 
     def test_datum(self):
-        flare_decomposers.register()
         manager = DatumManager(BLOB_SIZE)
         buf = fobs.serialize(TestDatum.test_data, manager)
         assert len(buf) < BLOB_SIZE

@@ -28,7 +28,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import Datum
 
@@ -39,10 +38,6 @@ class TestFlareDecomposers:
 
     ID1 = "abc"
     ID2 = "xyz"
-
-    @classmethod
-    def setup_class(cls):
-        flare_decomposers.register()
 
     def test_nested_shareable(self):
         shareable = Shareable()

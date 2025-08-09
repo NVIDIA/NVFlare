@@ -11,3 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.fuel.utils.fobs import dots
+from nvflare.fuel.utils.fobs.fobs import registrar
+
+# Register type/dots hints for FOBS
+registrar.register_type("torch.tensor", "nvflare.app_opt.pt.decomposers.TensorDecomposer")
+registrar.register_dot(dots.TENSOR_BYTES, "nvflare.app_opt.pt.decomposers.TensorDecomposer")
+registrar.register_dot(dots.TENSOR_FILE, "nvflare.app_opt.pt.decomposers.TensorDecomposer")

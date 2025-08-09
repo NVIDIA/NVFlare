@@ -13,16 +13,15 @@
 # limitations under the License.
 
 """Decomposers for types from app_common and Machine Learning libraries."""
-import os
+import logging
 from typing import Any
 
 from nvflare.app_common.abstract.fl_model import FLModel
-from nvflare.app_common.abstract.learnable import Learnable
-from nvflare.app_common.abstract.model import ModelLearnable
-from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import DatumManager
-from nvflare.fuel.utils.fobs.decomposer import DictDecomposer, Externalizer, Internalizer
+from nvflare.fuel.utils.fobs.decomposer import Externalizer, Internalizer
+
+log = logging.getLogger(__name__)
 
 
 class FLModelDecomposer(fobs.Decomposer):
@@ -59,22 +58,5 @@ class FLModelDecomposer(fobs.Decomposer):
 
 
 def register():
-    if register.registered:
-        return
-
-    fobs.register(DictDecomposer(Learnable))
-    fobs.register(DictDecomposer(ModelLearnable))
-    fobs.register(FLModelDecomposer)
-
-    fobs.register_data_classes(
-        _CtxPropReq,
-        _EventReq,
-        _EventStats,
-    )
-
-    fobs.register_folder(os.path.dirname(__file__), __package__)
-
-    register.registered = True
-
-
-register.registered = False
+    # Deprecated
+    log.warning("register() call is not needed anymore")
