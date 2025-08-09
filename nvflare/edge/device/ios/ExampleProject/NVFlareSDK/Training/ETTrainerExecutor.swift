@@ -106,7 +106,7 @@ public class ETTrainerExecutor: NSObject, NVFlareExecutor, ComponentCreator {
         
         // Convert result to DXO format
         return NVFlareDXO(
-            dataKind: "model",
+            dataKind: "et_tensor_diff",
             data: result,
             meta: [
                 "training_completed": true,
