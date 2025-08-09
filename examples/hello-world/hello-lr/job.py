@@ -43,14 +43,16 @@ def main():
     controller = FedAvgLR(num_clients=n_clients, num_rounds=num_rounds, damping_factor=0.8)
     job.to(controller, "server")
 
-    runner = ScriptRunner(
-        script="client.py",
-        script_args="--data_root /tmp/flare/dataset/heart_disease_data",
-        # launch_external_process= True,
-        framework=FrameworkType.RAW,
-        server_expected_format=ExchangeFormat.RAW,
-    )
-    job.to_clients(runner)
+    # Add clients
+    for i in range(n_clients):
+        runner = ScriptRunner(
+            script="client.py",
+            script_args="--data_root /tmp/flare/dataset/heart_disease_data",
+            # launch_external_process=True,
+            framework=FrameworkType.RAW,
+            server_expected_format=ExchangeFormat.RAW,
+        )
+        job.to(runner, f"site-{i + 1}")
 
     job.export_job("/tmp/nvflare/jobs/job_config")
     print("running simulator")

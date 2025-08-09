@@ -107,7 +107,7 @@ FL system, such as receiving and send `FLModel`.
 
 ## Server Side
 We leverage a builtin FLARE logistic regression with Newton Raphson method. 
-the server side fedavg class is located at `nvflare.app_opt.lr.fedavg.FedAvgLR`
+the server side fedavg class is located at `nvflare.app_common.workflows.lr.fedavg.FedAvgLR`
 
 ## Job 
     toddo
