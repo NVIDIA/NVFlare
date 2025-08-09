@@ -20,7 +20,7 @@ from nvflare.job_config.api import FedJob
 from .spec import ExecEnv
 
 
-class ProdExecEnv(ExecEnv):
+class ProdEnv(ExecEnv):
 
     def __init__(
         self,

@@ -11,32 +11,45 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Optional, List, Any
+
+from pydantic import BaseModel, PositiveInt
+
 from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
-class FedAvgRecipe(Recipe):
+class FedAvgRecipe(BaseModel, Recipe):
+    name: str = "fedavg"
+    initial_model: Any = None
+    clients: Optional[List[str]] = None
+    num_clients: Optional[PositiveInt] = None
+    min_clients: int = 0
+    num_rounds: int = 2
+    train_script: str
+    train_args: str = ""
+    # aggregate_fn: Optional[Callable] = None
 
-    def __init__(
-        self,
-        name: str,
-        initial_model,
-        num_rounds: int,
-        min_clients: int,
-        train_script: str,
-        train_args: dict = None,
-    ):
+    def model_post_init(self, __context):
+        # Extra setup logic after validation & parsing
+        if self.clients:
+            if self.num_clients is None:
+                self.num_clients = len(self.clients)
+            elif len(self.clients) != self.min_clients:
+                raise ValueError(" inconsistent number of clients")
+
         job = FedAvgJob(
-            name=name,
+            name=self.name,
             n_clients=0,  # for all clients
-            min_clients=min_clients,
-            num_rounds=num_rounds,
-            initial_model=initial_model,
+            min_clients=self.min_clients,
+            num_rounds=self.num_rounds,
+            initial_model=self.initial_model,
         )
-        if not train_args:
-            train_args = {}
-
-        executor = ScriptRunner(script=train_script, **train_args)
-        job.to_clients(executor)
-        Recipe.__init__(self, job)
+        executor = ScriptRunner(script=self.train_script, script_args= self.train_args)
+        if self.clients is None:
+            job.to_clients(executor)
+        else:
+            for client in self.clients:
+                job.to(executor, client)
+        self.job = job
