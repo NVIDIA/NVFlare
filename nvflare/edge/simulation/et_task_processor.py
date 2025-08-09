@@ -227,9 +227,9 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
             diff_dict = self.run_training(et_model)
             log.info("Training completed successfully")
             dxo_dict = {
-              "meta": payload.meta,
-              "data": diff_dict,
-              "kind": "et_tensor_diff",
+                "meta": payload.meta,
+                "data": diff_dict,
+                "kind": "et_tensor_diff",
             }
             return dxo_dict
         except Exception as e:
