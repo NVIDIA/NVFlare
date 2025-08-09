@@ -64,14 +64,15 @@ public class NVFlareConnection: ObservableObject {
         }.joined(separator: "&")
     }
     
-    func fetchJob() async throws -> JobResponse {
+    func fetchJob(jobName: String) async throws -> JobResponse {
         guard let url = URL(string: "\(scheme)://\(hostname):\(port)/\(jobEndpoint)") else {
             throw NVFlareError.jobFetchFailed
         }
         
         // Prepare request body
         let requestBody: [String: Any] = [
-            "capabilities": self.capabilities
+            "capabilities": ["methods": [jobName]],
+            "job_name": jobName,
         ]
         
         let body = try JSONSerialization.data(withJSONObject: requestBody)

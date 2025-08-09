@@ -38,72 +38,23 @@ struct ContentView: View {
             .background(Color.gray.opacity(0.1))
             .cornerRadius(8)
             
-            // Supported Jobs
+            // Job Selection
             VStack(alignment: .leading, spacing: 10) {
-                Text("Supported Jobs")
+                Text("Select Training Job")
                     .font(.headline)
                 
-                HStack {
-                    JobToggleButton(
-                        job: "CIFAR-10",
-                        isSupported: trainerController.supportedJobs.contains(.cifar10),
-                        action: { trainerController.toggleJob(.cifar10) }
-                    )
-                    
-                    JobToggleButton(
-                        job: "XOR", 
-                        isSupported: trainerController.supportedJobs.contains(.xor),
-                        action: { trainerController.toggleJob(.xor) }
-                    )
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(SupportedJob.allCases, id: \.rawValue) { job in
+                        JobSelectionRow(
+                            job: job,
+                            isSelected: trainerController.selectedJob == job,
+                            action: { trainerController.setJob(job) }
+                        )
+                    }
                 }
             }
             .padding()
             .background(Color.gray.opacity(0.1))
-            .cornerRadius(8)
-            
-            // C++ Dataset Status
-            VStack(alignment: .leading, spacing: 10) {
-                Text("High-Performance C++ Datasets")
-                    .font(.headline)
-                
-                HStack {
-                    Image(systemName: "cpu.fill")
-                        .foregroundColor(.blue)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("CIFAR10 Dataset")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("Native C++ • Direct ExecutorTorch • Zero overhead")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    if trainerController.supportedJobs.contains(.cifar10) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                    }
-                }
-                
-                HStack {
-                    Image(systemName: "function")
-                        .foregroundColor(.purple)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("XOR Dataset")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("Native C++ • Optimized tensors • Minimal memory")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    if trainerController.supportedJobs.contains(.xor) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                    }
-                }
-            }
-            .padding()
-            .background(Color.blue.opacity(0.1))
             .cornerRadius(8)
             
             // Training Status
@@ -152,20 +103,63 @@ struct ContentView: View {
     }
 }
 
-struct JobToggleButton: View {
-    let job: String
-    let isSupported: Bool
+struct JobSelectionRow: View {
+    let job: SupportedJob
+    let isSelected: Bool
     let action: () -> Void
+    
+    private var iconColor: Color {
+        switch job.iconColor {
+        case "blue": return .blue
+        case "purple": return .purple
+        default: return .gray
+        }
+    }
     
     var body: some View {
         Button(action: action) {
-            Text(job.uppercased())
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(isSupported ? Color.blue : Color.gray.opacity(0.3))
-                .foregroundColor(isSupported ? .white : .gray)
-                .cornerRadius(6)
+            HStack(spacing: 12) {
+                // Radio button
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                    .foregroundColor(isSelected ? .blue : .gray)
+                    .font(.title2)
+                
+                // Dataset icon
+                Image(systemName: job.iconName)
+                    .foregroundColor(iconColor)
+                    .font(.title2)
+                
+                // Job info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(job.displayName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                    
+                    Text(job.datasetDescription)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.title3)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Color.blue : Color.gray.opacity(0.3), lineWidth: 1)
+            )
         }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 

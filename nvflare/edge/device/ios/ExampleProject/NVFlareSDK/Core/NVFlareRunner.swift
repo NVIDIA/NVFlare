@@ -26,9 +26,6 @@ public class NVFlareRunner: ObservableObject {
     public let appInFilters: [NVFlareFilter]?
     public let appOutFilters: [NVFlareFilter]?
     
-    // MARK: - Job Support (for backward compatibility)
-    public var supportedJobs: [String] = []
-    
     // MARK: - Internal State
     public var resolverRegistry: [String: ComponentCreator.Type] = [:]
     public var jobId: String?
@@ -46,7 +43,6 @@ public class NVFlareRunner: ObservableObject {
         jobTimeout: TimeInterval,
         hostname: String = "",
         port: Int = 0,
-        supportedJobs: [String] = [],
         inFilters: [NVFlareFilter]? = nil,
         outFilters: [NVFlareFilter]? = nil,
         resolverRegistry: [String: ComponentCreator.Type]? = nil
@@ -56,7 +52,6 @@ public class NVFlareRunner: ObservableObject {
         self.deviceInfo = deviceInfo
         self.userInfo = userInfo
         self.jobTimeout = jobTimeout
-        self.supportedJobs = supportedJobs
         self.appInFilters = inFilters
         self.appOutFilters = outFilters
         self.connection = NVFlareConnection(hostname: hostname, port: port, deviceInfo: deviceInfo)
@@ -69,8 +64,6 @@ public class NVFlareRunner: ObservableObject {
             self.resolverRegistry.merge(resolverRegistry) { _, new in new }
         }
         
-        // Set up capabilities for backward compatibility with server
-        setupCapabilities()
     }
     
     // MARK: - Main Run Loop
@@ -89,51 +82,24 @@ public class NVFlareRunner: ObservableObject {
     public func stop() {
         abortSignal.trigger(true)
     }
-    
-    /// Update supported jobs and refresh capabilities
-    public func updateSupportedJobs(_ jobs: [String]) {
-        supportedJobs = jobs
-        setupCapabilities()
-    }
+
     
     // MARK: - iOS-Specific Implementation
     
-    /// Add ExecutorTorch-specific resolvers  
+    /// Add ExecuTorch-specific resolvers  
     private func addBuiltinResolvers() {
         resolverRegistry.merge([
             "ETTrainer": ETTrainerExecutor.self,
+            "Trainer.DLTrainer": ETTrainerExecutor.self,  // Map server trainer type to ETTrainer
         ]) { _, new in new }
     }
     
-    /// Set up capabilities for backward compatibility with server
-    private func setupCapabilities() {
-        // Map job names to method names for backward compatibility
-        let methods = supportedJobs.compactMap { jobName -> String? in
-            switch jobName {
-            case "CIFAR10":
-                return "cnn"
-            case "XOR":
-                return "xor"
-            default:
-                return jobName.lowercased() // fallback
-            }
-        }
-        
-        let capabilities: [String: Any] = [
-            "methods": methods,                    // Legacy support
-            "supported_jobs": supportedJobs,      // New approach
-            "device_info": deviceInfo
-        ]
-        
-        connection.setCapabilities(capabilities)
-        print("NVFlareRunner: Set capabilities - methods: \(methods), jobs: \(supportedJobs)")
-    }
     
     /// iOS implementation of job fetching
     private func getJob(ctx: NVFlareContext, abortSignal: NVFlareSignal) async -> NVFlareJob? {
         while !abortSignal.triggered {
             do {
-                let jobResponse = try await connection.fetchJob()
+                let jobResponse = try await connection.fetchJob(jobName: self.jobName)
                 
                 if jobResponse.status == "stopped" || jobResponse.status == "DONE" {
                     return nil
@@ -178,7 +144,7 @@ public class NVFlareRunner: ObservableObject {
                             taskId: taskId,
                             taskName: taskName,
                             taskData: [
-                                "data_kind": taskData.kind,
+                                "kind": taskData.kind,
                                 "data": ["model": taskData.data],
                                 "meta": taskData.meta.jsonObject
                             ],
@@ -319,7 +285,13 @@ public class NVFlareRunner: ObservableObject {
                 self.cookie = task.cookie
                 let taskName = task.taskName
                 let taskData = task.taskData
-                let taskDXO = NVFlareDXO.fromDict(taskData)!
+                
+                // Convert task data to DXO (should work now with correct "kind" key)
+                guard let taskDXO = NVFlareDXO.fromDict(taskData) else {
+                    print("NVFlareRunner: FATAL ERROR - Failed to create DXO from task data: \(taskData)")
+                    print("NVFlareRunner: This indicates a serious protocol mismatch. Stopping training.")
+                    return true  // Stop the session
+                }
                 
                 // Find the right executor
                 guard let executor = trainConfig.findExecutor(taskName: taskName) else {

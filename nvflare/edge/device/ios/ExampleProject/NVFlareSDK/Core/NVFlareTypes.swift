@@ -104,14 +104,14 @@ public class NVFlareDXO: NSObject {
     
     public func toDict() -> [String: Any] {
         return [
-            "data_kind": dataKind,
+            "kind": dataKind,
             "data": data,
             "meta": meta
         ]
     }
     
     public static func fromDict(_ dict: [String: Any]) -> NVFlareDXO? {
-        guard let dataKind = dict["data_kind"] as? String,
+        guard let dataKind = dict["kind"] as? String,
               let data = dict["data"] as? [String: Any] else {
             return nil
         }
