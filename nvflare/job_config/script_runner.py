@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from enum import Enum
 from typing import Optional, Type, Union
 
 from nvflare.apis.fl_constant import SystemVarName
@@ -30,7 +30,7 @@ from nvflare.fuel.utils.validation_utils import check_str
 from .api import FedJob, validate_object_for_job
 
 
-class FrameworkType:
+class FrameworkType(str, Enum):
     RAW = "raw"
     NUMPY = "numpy"
     PYTORCH = "pytorch"
@@ -58,7 +58,7 @@ class BaseScriptRunner:
         launch_external_process: bool = False,
         command: str = "python3 -u",
         server_expected_format: str = ExchangeFormat.NUMPY,
-        framework: str = FrameworkType.PYTORCH,
+        framework: FrameworkType = FrameworkType.PYTORCH,
         params_transfer_type: str = TransferType.FULL,
         executor: Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None] = None,
         task_pipe: Optional[Pipe] = None,

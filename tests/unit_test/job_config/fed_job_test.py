@@ -18,10 +18,10 @@ import tempfile
 
 import pytest
 
+from nvflare import FedJob
 from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.executors.model_learner_executor import ModelLearnerExecutor
 from nvflare.app_common.workflows.fedavg import FedAvg
-from nvflare.job_config.api import FedJob
 
 
 class TestFedJob:
