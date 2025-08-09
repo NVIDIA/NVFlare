@@ -92,9 +92,10 @@ class ETEdgeModelExecutor(EdgeModelExecutor):
     def _convert_to_tensor_dxo(self, result_dict: dict, fl_ctx: FLContext):
         """Convert the result_dict to a tensor DXO"""
         d = {}
+        d["meta"] = result_dict["meta"]
         d["kind"] = DataKind.WEIGHT_DIFF
         tensor_dict = {}
-        for key, value in result_dict.items():
+        for key, value in result_dict["data"].items():
             tensor = torch.Tensor(value["data"]).reshape(value["sizes"]).cpu().numpy()
             tensor_dict[key] = tensor
 
