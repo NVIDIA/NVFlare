@@ -19,15 +19,15 @@ import argparse
 
 from model import SimpleNetwork
 
-from nvflare.app_opt.pt.recipes.fed_avg import FedAvgRecipe
+from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe.sim_env import SimEnv
 
 
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=2)
-    parser.add_argument("--num_rounds", type=int, default=5)
-    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--num_rounds", type=int, default=2)
+    parser.add_argument("--batch_size", type=int, default=16)
 
     return parser.parse_args()
 
