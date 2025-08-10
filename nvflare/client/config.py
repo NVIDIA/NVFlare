@@ -21,14 +21,14 @@ from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
-class ExchangeFormat (str, Enum):
+class ExchangeFormat(str, Enum):
     RAW = "raw"
     PYTORCH = "pytorch"
     NUMPY = "numpy"
     KERAS_LAYER_WEIGHTS = "keras_layer_weights"
 
 
-class TransferType (str, Enum):
+class TransferType(str, Enum):
     FULL = "FULL"
     DIFF = "DIFF"
 

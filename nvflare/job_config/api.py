@@ -572,13 +572,13 @@ class FedJob:
         self.job.generate_job_config(job_root)
 
     def simulator_run(
-            self,
-            workspace: str,
-            n_clients: Optional[int] = None,
-            clients : Optional[List[str]] = None,
-            threads: Optional[int]= None,
-            gpu: Optional[str] = None,
-            log_config: Optional[str] = None
+        self,
+        workspace: str,
+        n_clients: Optional[int] = None,
+        clients: Optional[List[str]] = None,
+        threads: Optional[int] = None,
+        gpu: Optional[str] = None,
+        log_config: Optional[str] = None,
     ):
         """Run the job with the simulator with the `workspace` using `clients` and `threads`.
         For end users.

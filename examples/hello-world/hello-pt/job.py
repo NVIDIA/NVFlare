@@ -45,11 +45,12 @@ def main():
         num_rounds=num_rounds,
         initial_model=SimpleNetwork(),
         train_script="client.py",
-        train_args=f"--batch_size {batch_size}"
+        train_args=f"--batch_size {batch_size}",
     )
 
-    env = SimEnv(num_clients= n_clients, num_threads= n_clients)
-    recipe.execute(env = env)
+    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    recipe.execute(env=env)
+
 
 if __name__ == "__main__":
     main()

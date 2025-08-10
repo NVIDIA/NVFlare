@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional, List, Any
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, PositiveInt
 
@@ -40,17 +40,17 @@ class _FedAvgValidator(BaseModel):
 
 class FedAvgRecipe(Recipe):
     def __init__(
-            self,
-            *,
-            name: str = "fedavg",
-            initial_model: Any = None,
-            clients: Optional[List[str]] = None,
-            num_clients: Optional[int] = None,
-            min_clients: int = 0,
-            num_rounds: int = 2,
-            train_script: str,
-            train_args: str = "",
-            # aggregate_fn: Optional[Callable] = None
+        self,
+        *,
+        name: str = "fedavg",
+        initial_model: Any = None,
+        clients: Optional[List[str]] = None,
+        num_clients: Optional[int] = None,
+        min_clients: int = 0,
+        num_rounds: int = 2,
+        train_script: str,
+        train_args: str = "",
+        # aggregate_fn: Optional[Callable] = None
     ):
         # Validate inputs internally
         v = _FedAvgValidator(

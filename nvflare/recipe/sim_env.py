@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os.path
-from typing import Optional, List
+from typing import List, Optional
 
 from pydantic import BaseModel
 
 from nvflare.job_config.api import FedJob
+
 from .spec import ExecEnv
 
 WORKSPACE_ROOT = "/tmp/nvflare/simulation"
@@ -30,6 +31,7 @@ class _SimEnvValidator(BaseModel):
     gpu_config: Optional[str]
     log_config: Optional[str]
 
+
 class SimEnv(ExecEnv):
     def __init__(
         self,
@@ -40,11 +42,13 @@ class SimEnv(ExecEnv):
         gpu_config: str = None,
         log_config: str = None,
     ):
-        v = _SimEnvValidator(num_clients=num_clients,
-                             clients=clients,
-                             num_threads=num_threads,
-                             gpu_config=gpu_config,
-                             log_config=log_config)
+        v = _SimEnvValidator(
+            num_clients=num_clients,
+            clients=clients,
+            num_threads=num_threads,
+            gpu_config=gpu_config,
+            log_config=log_config,
+        )
 
         self.num_clients = v.num_clients
         self.num_threads = v.num_threads
@@ -56,7 +60,7 @@ class SimEnv(ExecEnv):
         job.simulator_run(
             workspace=os.path.join(WORKSPACE_ROOT, job.name),
             n_clients=self.num_clients,
-            clients= self.clients,
+            clients=self.clients,
             threads=self.num_threads,
             gpu=self.gpu_config,
             log_config=self.log_config,

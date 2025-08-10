@@ -428,9 +428,7 @@ def print_logger_hierarchy(package_name="nvflare", level_colors=ANSIColor.DEFAUL
     print_hierarchy(package_name)
 
 
-def center_message(message: str,
-                   boarder_str="=",
-                   line_width=80):
+def center_message(message: str, boarder_str="=", line_width=80):
     if not message:
         return
 

@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .base_fedavg import BaseFedAvg
 from ...fuel.utils.log_utils import center_message
+from .base_fedavg import BaseFedAvg
 
 
 class FedAvg(BaseFedAvg):
@@ -33,14 +33,14 @@ class FedAvg(BaseFedAvg):
     """
 
     def run(self) -> None:
-        self.info(center_message(f"Start FedAvg."))
+        self.info(center_message("Start FedAvg."))
 
         model = self.load_model()
         model.start_round = self.start_round
         model.total_rounds = self.num_rounds
 
         for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
-            self.info(center_message(message = f"Round {self.current_round} started.", boarder_str="-"))
+            self.info(center_message(message=f"Round {self.current_round} started.", boarder_str="-"))
 
             model.current_round = self.current_round
 
@@ -57,4 +57,3 @@ class FedAvg(BaseFedAvg):
             self.save_model(model)
 
         self.info(center_message("Finished FedAvg."))
-
