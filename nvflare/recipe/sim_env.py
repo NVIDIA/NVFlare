@@ -14,22 +14,43 @@
 import os.path
 from typing import Optional, List
 
-from pydantic import BaseModel, field_validator
-from pydantic import PositiveInt
+from pydantic import BaseModel
 
 from nvflare.job_config.api import FedJob
-
 from .spec import ExecEnv
 
 WORKSPACE_ROOT = "/tmp/nvflare/simulation"
 
-class SimEnv(ExecEnv, BaseModel):
-    num_clients: Optional[PositiveInt] = None,
-    clients: Optional[List[str]]= None
-    num_threads: Optional[PositiveInt] = None,
-    gpu_config: Optional[str] = None,
-    log_config: Optional[str] = None,
 
+# Internal — not part of the public API
+class _SimEnvValidator(BaseModel):
+    num_clients: int
+    clients: Optional[List[str]]
+    num_threads: int
+    gpu_config: Optional[str]
+    log_config: Optional[str]
+
+class SimEnv(ExecEnv):
+    def __init__(
+        self,
+        *,
+        num_clients: int = 0,
+        clients: Optional[List[str]] = None,
+        num_threads: int = 0,
+        gpu_config: str = None,
+        log_config: str = None,
+    ):
+        v = _SimEnvValidator(num_clients=num_clients,
+                             clients=clients,
+                             num_threads=num_threads,
+                             gpu_config=gpu_config,
+                             log_config=log_config)
+
+        self.num_clients = v.num_clients
+        self.num_threads = v.num_threads
+        self.gpu_config = v.gpu_config
+        self.log_config = v.log_config
+        self.clients = v.clients
 
     def deploy(self, job: FedJob):
         job.simulator_run(

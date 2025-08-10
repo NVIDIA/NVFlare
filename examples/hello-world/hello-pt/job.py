@@ -43,7 +43,7 @@ def main():
         name="hello-pt",
         min_clients=n_clients,
         num_rounds=num_rounds,
-        model=SimpleNetwork(),
+        initial_model=SimpleNetwork(),
         train_script="client.py",
         train_args=f"--batch_size {batch_size}"
     )

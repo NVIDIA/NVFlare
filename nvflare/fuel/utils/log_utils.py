@@ -39,7 +39,8 @@ with open(os.path.join(os.path.dirname(__file__), DEFAULT_LOG_JSON), "r") as f:
     default_log_dict = json.load(f)
 
 concise_log_dict = copy.deepcopy(default_log_dict)
-concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+# concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+concise_log_dict["formatters"]["consoleFormatter"]["fmt"] = "%(asctime)s - %(levelname)s - %(message)s"
 concise_log_dict["handlers"]["consoleHandler"]["filters"] = ["FLFilter"]
 
 verbose_log_dict = copy.deepcopy(default_log_dict)
@@ -425,3 +426,14 @@ def print_logger_hierarchy(package_name="nvflare", level_colors=ANSIColor.DEFAUL
                 print_hierarchy(name, indent_level + 1)
 
     print_hierarchy(package_name)
+
+
+def center_message(message: str,
+                   boarder_str="=",
+                   line_width=80):
+    if not message:
+        return
+
+    boarder = f"\n{boarder_str * line_width}\n" if boarder_str else "\n"
+    centered_message = message.center(line_width)
+    return f"{boarder}{centered_message}{boarder}"

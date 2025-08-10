@@ -14,20 +14,21 @@
 
 import json
 import os
+from enum import Enum
 from typing import Dict, Optional
 
 from nvflare.apis.fl_constant import ConnPropKey, FLMetaKey
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
-class ExchangeFormat:
+class ExchangeFormat (str, Enum):
     RAW = "raw"
     PYTORCH = "pytorch"
     NUMPY = "numpy"
     KERAS_LAYER_WEIGHTS = "keras_layer_weights"
 
 
-class TransferType:
+class TransferType (str, Enum):
     FULL = "FULL"
     DIFF = "DIFF"
 
