@@ -23,6 +23,7 @@ from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
 import msgpack
 
 from nvflare.fuel.utils.class_loader import get_class_name, load_class
+from nvflare.fuel.utils.fobs.builtin_decomposers import BUILTIN_DECOMPOSERS
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposer import (
     DataClassDecomposer,
@@ -155,6 +156,11 @@ class Packer:
         if type_name not in _decomposers:
             registered = False
             decomposer_name = obj.get(FOBS_DECOMPOSER)
+
+            # For security reason, only builtin decomposers are allowed without registration
+            if decomposer_name not in BUILTIN_DECOMPOSERS:
+                raise ValueError(f"Decomposer {decomposer_name} must be registered")
+
             cls = load_class(type_name)
             if not decomposer_name:
                 # Maintaining backward compatibility with auto enum registration
