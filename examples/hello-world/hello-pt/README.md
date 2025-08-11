@@ -33,7 +33,6 @@ hello-pt
 |-- job.py            # job recipe that defines client and server configurations
 |-- requirements.txt  # dependencies
 ```
-doc.py is this file, it is used for documentation generation, it is not part of the fl code.
 
 ## Data
 This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset
