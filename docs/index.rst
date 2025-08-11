@@ -12,8 +12,14 @@ NVIDIA FLARE
    Installation <installation>
    getting_started
    Quickstart <quickstart>
-   
    whats_new
+
+.. toctree::
+   :caption: Quickstart
+   :maxdepth: 2
+
+   Overview <quickstart>
+   Hello World <quickstart_series/hello-world/index>
 
 .. toctree::
    :maxdepth: -1
@@ -36,6 +42,7 @@ NVIDIA FLARE
    contributing
    API <apidocs/modules>
    glossary
+
 
 NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows
 researchers and data scientists to adapt existing ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables

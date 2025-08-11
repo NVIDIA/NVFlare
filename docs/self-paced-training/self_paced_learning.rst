@@ -1,14 +1,14 @@
-.. _self-paced-training:
+.. _self-paced-learning:
 
-#####################
-Self-Paced Training
-#####################
+####################
+Self-Paced Learning
+####################
 
 Accelerate your federated learning (FL) journey with NVIDIA FLARE’s self-paced resources:
 
----------------------
+------------------
 What You'll Learn
----------------------
+------------------
 - Fundamentals of federated learning and decentralized training (Part 1)
 - NVIDIA FLARE system architecture, deployment, and user interaction (Part 2)
 - Privacy and security challenges and solutions in federated learning (Part 3)
@@ -28,9 +28,9 @@ DLI Courses
   Free, hands-on with AWS instances (CPU only).
 - **Course 3: Coming soon.** Advanced hands-on (paid, CPU+GPU): advanced federated learning algorithms, peer-to-peer, privacy, LLMs, XGBoost, and industry use cases with NVIDIA FLARE.
 
-============================
+===========================
 Self-Paced Tutorial Series
-============================
+===========================
 
 - **[Federated Learning with NVIDIA FLARE](https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/self-paced-training)**
 - **Videos:** Coming soon.
@@ -46,9 +46,9 @@ This 12-chapter course covers:
   - Each notebook can be run independently, but sequential learning is recommended.
   - Over 100 notebooks and 88+ videos included.
 
-================
+===============
 Course Outline
-================
+===============
 
 - **Part 1: Introduction to Federated Learning**  
   Running and developing federated learning applications using the NVIDIA FLARE simulator.  
