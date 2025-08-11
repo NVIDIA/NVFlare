@@ -1,9 +1,9 @@
 package com.nvidia.nvflare.app.data
 
-import com.nvidia.nvflare.sdk.defs.Context
-import com.nvidia.nvflare.sdk.defs.DataSource
-import com.nvidia.nvflare.sdk.defs.Dataset
-import com.nvidia.nvflare.sdk.defs.Batch
+import com.nvidia.nvflare.sdk.core.Context
+import com.nvidia.nvflare.sdk.core.DataSource
+import com.nvidia.nvflare.sdk.core.Dataset
+import com.nvidia.nvflare.sdk.core.Batch
 import com.nvidia.nvflare.app.data.XORDataset
 import com.nvidia.nvflare.app.data.CIFAR10Dataset
 import android.content.Context as AndroidContext

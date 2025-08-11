@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.sdk.defs
+package com.nvidia.nvflare.sdk.core
 
 /**
  * Signal for handling abort/stop operations in the edge SDK.

@@ -9,7 +9,7 @@ import org.mockito.Mock
 import org.mockito.MockitoAnnotations
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
-import com.nvidia.nvflare.sdk.defs.SimpleBatch
+import com.nvidia.nvflare.sdk.core.SimpleBatch
 
 /**
  * Test class for CIFAR10Dataset to verify it matches iOS functionality.

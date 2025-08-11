@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.sdk.defs
+package com.nvidia.nvflare.sdk.core
 
 import android.util.Log
 

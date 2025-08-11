@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.sdk.defs
+package com.nvidia.nvflare.sdk.core
 
 /**
  * Standard keys used in the Context for accessing common components and data.

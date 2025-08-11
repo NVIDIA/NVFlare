@@ -1,12 +1,12 @@
-package com.nvidia.nvflare.sdk.network
+package com.nvidia.nvflare.sdk.core
 
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
-import com.nvidia.nvflare.sdk.network.JobResponse
-import com.nvidia.nvflare.sdk.network.TaskResponse
-import com.nvidia.nvflare.sdk.network.ResultResponse
-import com.nvidia.nvflare.sdk.network.NVFlareError
+import com.nvidia.nvflare.sdk.core.JobResponse
+import com.nvidia.nvflare.sdk.core.TaskResponse
+import com.nvidia.nvflare.sdk.core.ResultResponse
+import com.nvidia.nvflare.sdk.core.NVFlareError
 import com.nvidia.nvflare.sdk.utils.JSONValue
 import okhttp3.OkHttpClient
 import okhttp3.Request

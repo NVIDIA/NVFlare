@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.sdk.defs
+package com.nvidia.nvflare.sdk.core
 
 /**
  * Base EventHandler implementation that matches the Python reference.

@@ -158,6 +158,12 @@ object TaskHeaderKey {
     const val CONTRIBUTION_ROUND = "contribution_round"
 }
 
+// Job
+data class Job(
+    val id: String,
+    val status: String
+)
+
 // Training Task
 data class TrainingTask(
     val id: String,

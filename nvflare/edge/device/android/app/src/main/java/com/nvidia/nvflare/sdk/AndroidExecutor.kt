@@ -1,10 +1,10 @@
 package com.nvidia.nvflare.sdk
 
 import android.util.Log
-import com.nvidia.nvflare.sdk.defs.DXO
-import com.nvidia.nvflare.sdk.defs.Context
-import com.nvidia.nvflare.sdk.defs.Signal
-import com.nvidia.nvflare.sdk.defs.Executor
+import com.nvidia.nvflare.sdk.core.DXO
+import com.nvidia.nvflare.sdk.core.Context
+import com.nvidia.nvflare.sdk.core.Signal
+import com.nvidia.nvflare.sdk.core.Executor
 import com.nvidia.nvflare.sdk.training.Trainer
 import com.nvidia.nvflare.sdk.training.ETTrainerWrapper
 import com.nvidia.nvflare.sdk.models.TrainingConfig

@@ -1,7 +1,7 @@
 package com.nvidia.nvflare.sdk.training
 
 import android.util.Log
-import com.nvidia.nvflare.sdk.network.NVFlareError
+import com.nvidia.nvflare.sdk.core.NVFlareError
 import com.nvidia.nvflare.sdk.models.TrainingConfig
 import com.nvidia.nvflare.sdk.training.ETTrainer
 import kotlinx.coroutines.Dispatchers

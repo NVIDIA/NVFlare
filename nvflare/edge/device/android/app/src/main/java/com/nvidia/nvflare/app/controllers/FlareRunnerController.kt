@@ -5,10 +5,10 @@ import android.util.Log
 import com.nvidia.nvflare.app.data.AndroidDataSource
 import com.nvidia.nvflare.app.data.DatasetError
 import com.nvidia.nvflare.sdk.AndroidFlareRunner
-import com.nvidia.nvflare.sdk.defs.Context as FlareContext
-import com.nvidia.nvflare.sdk.defs.DataSource
-import com.nvidia.nvflare.sdk.defs.Signal
-import com.nvidia.nvflare.sdk.defs.Dataset
+import com.nvidia.nvflare.sdk.core.Context as FlareContext
+import com.nvidia.nvflare.sdk.core.DataSource
+import com.nvidia.nvflare.sdk.core.Signal
+import com.nvidia.nvflare.sdk.core.Dataset
 import com.nvidia.nvflare.sdk.trainers.ETTrainerFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

@@ -1,9 +1,9 @@
 package com.nvidia.nvflare.sdk.config
 
 import android.util.Log
-import com.nvidia.nvflare.sdk.defs.Context
-import com.nvidia.nvflare.sdk.defs.Filter
-import com.nvidia.nvflare.sdk.defs.EventHandler
+import com.nvidia.nvflare.sdk.core.Context
+import com.nvidia.nvflare.sdk.core.Filter
+import com.nvidia.nvflare.sdk.core.EventHandler
 import com.nvidia.nvflare.sdk.AndroidExecutorFactory
 
 /**

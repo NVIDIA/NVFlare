@@ -1,15 +1,15 @@
-package com.nvidia.nvflare.sdk
+package com.nvidia.nvflare.sdk.core
 
 import android.util.Log
 import com.nvidia.nvflare.sdk.config.processTrainConfig
-import com.nvidia.nvflare.sdk.defs.Context
-import com.nvidia.nvflare.sdk.defs.Signal
-import com.nvidia.nvflare.sdk.defs.ContextKey
-import com.nvidia.nvflare.sdk.defs.DataSource
-import com.nvidia.nvflare.sdk.defs.Filter
-import com.nvidia.nvflare.sdk.defs.DXO
-import com.nvidia.nvflare.sdk.defs.EventType
-import com.nvidia.nvflare.sdk.defs.Executor
+import com.nvidia.nvflare.sdk.core.Context
+import com.nvidia.nvflare.sdk.core.Signal
+import com.nvidia.nvflare.sdk.core.ContextKey
+import com.nvidia.nvflare.sdk.core.DataSource
+import com.nvidia.nvflare.sdk.core.Filter
+import com.nvidia.nvflare.sdk.core.DXO
+import com.nvidia.nvflare.sdk.core.EventType
+import com.nvidia.nvflare.sdk.core.Executor
 
 /**
  * Main orchestrator for federated learning on edge devices.

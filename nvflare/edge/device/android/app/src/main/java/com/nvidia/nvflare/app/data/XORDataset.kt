@@ -1,8 +1,8 @@
 package com.nvidia.nvflare.app.data
 
-import com.nvidia.nvflare.sdk.defs.Dataset
-import com.nvidia.nvflare.sdk.defs.Batch
-import com.nvidia.nvflare.sdk.defs.SimpleBatch
+import com.nvidia.nvflare.sdk.core.Dataset
+import com.nvidia.nvflare.sdk.core.Batch
+import com.nvidia.nvflare.sdk.core.SimpleBatch
 import android.util.Log
 
 /**

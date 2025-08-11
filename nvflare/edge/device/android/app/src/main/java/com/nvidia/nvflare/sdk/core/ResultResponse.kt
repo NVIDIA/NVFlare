@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.sdk.network
+package com.nvidia.nvflare.sdk.core
 
 import com.google.gson.annotations.SerializedName
 import com.google.gson.JsonObject

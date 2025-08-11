@@ -1,23 +1,23 @@
-package com.nvidia.nvflare.sdk
+package com.nvidia.nvflare.sdk.core
 
 import android.content.Context as AndroidContext
 import android.util.Log
-import com.nvidia.nvflare.sdk.network.Connection
-import com.nvidia.nvflare.sdk.network.JobResponse
-import com.nvidia.nvflare.sdk.network.TaskResponse
-import com.nvidia.nvflare.sdk.network.ResultResponse
-import com.nvidia.nvflare.sdk.network.NVFlareError
+import com.nvidia.nvflare.sdk.core.Connection
+import com.nvidia.nvflare.sdk.core.JobResponse
+import com.nvidia.nvflare.sdk.core.TaskResponse
+import com.nvidia.nvflare.sdk.core.ResultResponse
+import com.nvidia.nvflare.sdk.core.NVFlareError
 import com.nvidia.nvflare.sdk.utils.asMap
-import com.nvidia.nvflare.sdk.defs.Context
-import com.nvidia.nvflare.sdk.defs.Signal
-import com.nvidia.nvflare.sdk.defs.ContextKey
-import com.nvidia.nvflare.sdk.defs.DataSource
-import com.nvidia.nvflare.sdk.defs.Filter
-import com.nvidia.nvflare.sdk.defs.NoOpFilter
-import com.nvidia.nvflare.sdk.defs.NoOpEventHandler
-import com.nvidia.nvflare.sdk.defs.NoOpTransform
-import com.nvidia.nvflare.sdk.defs.SimpleBatch
-import com.nvidia.nvflare.sdk.defs.DXO
+import com.nvidia.nvflare.sdk.core.Context
+import com.nvidia.nvflare.sdk.core.Signal
+import com.nvidia.nvflare.sdk.core.ContextKey
+import com.nvidia.nvflare.sdk.core.DataSource
+import com.nvidia.nvflare.sdk.core.Filter
+import com.nvidia.nvflare.sdk.core.NoOpFilter
+import com.nvidia.nvflare.sdk.core.NoOpEventHandler
+import com.nvidia.nvflare.sdk.core.NoOpTransform
+import com.nvidia.nvflare.sdk.core.SimpleBatch
+import com.nvidia.nvflare.sdk.core.DXO
 import com.nvidia.nvflare.sdk.trainers.ETTrainerFactory
 
 import kotlinx.coroutines.runBlocking

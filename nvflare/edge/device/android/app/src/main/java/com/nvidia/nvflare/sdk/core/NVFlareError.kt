@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.sdk.network
+package com.nvidia.nvflare.sdk.core
 
 sealed class NVFlareError : Exception() {
     // Network related

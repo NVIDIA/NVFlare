@@ -2,7 +2,7 @@ package com.nvidia.nvflare.app.data
 
 import org.junit.Test
 import org.junit.Assert.*
-import com.nvidia.nvflare.sdk.defs.SimpleBatch
+import com.nvidia.nvflare.sdk.core.SimpleBatch
 
 /**
  * Test class for XORDataset to verify it matches iOS functionality.
