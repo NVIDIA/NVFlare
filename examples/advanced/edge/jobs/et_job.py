@@ -30,8 +30,8 @@ args = parser.parse_args()
 
 
 if args.dataset == "cifar10":
-    from cifar10_et_task_processor import Cifar10ETTaskProcessor
-    from cifar10_model import TrainingNet
+    from processors.cifar10_et_task_processor import Cifar10ETTaskProcessor
+    from processors.models.cifar10_model import TrainingNet
 
     dataset_root = "/tmp/nvflare/cifar10"
     job_name = "cifar10_et"
@@ -53,8 +53,8 @@ if args.dataset == "cifar10":
         eval_frequency=1,
     )
 elif args.dataset == "xor":
-    from xor_et_task_processor import XorETTaskProcessor
-    from xor_model import TrainingNet
+    from processors.models.xor_model import TrainingNet
+    from processors.xor_et_task_processor import XorETTaskProcessor
 
     job_name = "xor_et"
     device_model = TrainingNet()
