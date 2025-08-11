@@ -545,7 +545,7 @@ class StaticFileBuilder(Builder):
     def prepare_admin_config(self, admin: Participant, ctx: ProvisionContext):
         project = ctx.get_project()
         server = project.get_server()
-        conn_sec = server.get_prop_fb(PropKey.CONN_SECURITY)
+        conn_sec = admin.get_prop_fb(PropKey.CONN_SECURITY)
         if not conn_sec:
             conn_sec = ConnSecurity.MTLS
 
