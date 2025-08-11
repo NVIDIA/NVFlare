@@ -72,7 +72,7 @@ recipe = ETRecipe(
     output_shape=output_shape,
     model_manager_config=ModelManagerConfig(
         # max_num_active_model_versions=1,
-        max_model_version=1,
+        max_model_version=3,
         update_timeout=1000.0,
         num_updates_for_model=5,
         # max_model_history=1,
@@ -84,12 +84,12 @@ recipe = ETRecipe(
     evaluator_config=evaluator_config,
     simulation_config=SimulationConfig(
         task_processor=task_processor,
-        num_devices=5,
+        num_devices=1,
     ),
     device_training_params={"epoch": 3, "lr": 0.0001},
 )
 if args.export_job:
-    recipe.export(job_dir="./job")
+    recipe.export(job_dir="/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer")
 else:
     env = SimulationExecEnv(num_clients=1)
     recipe.execute(env)

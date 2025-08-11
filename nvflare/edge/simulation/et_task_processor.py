@@ -159,7 +159,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         for epoch in range(total_epochs):
             log.info(f"Epoch {epoch + 1}/{total_epochs}")
 
-            for batch_idx, batch in enumerate(self.dataloader):
+            for batch_idx, batch in enumerate(dataloader):
                 x, y = batch
                 loss, pred = et_model.forward_backward("forward", (x, y))
 
@@ -226,7 +226,12 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
         try:
             diff_dict = self.run_training(et_model)
             log.info("Training completed successfully")
-            return diff_dict
+            dxo_dict = {
+                "meta": payload.meta,
+                "data": diff_dict,
+                "kind": "et_tensor_diff",
+            }
+            return dxo_dict
         except Exception as e:
             log.error(f"Training failed with unexpected error: {e}")
             raise RuntimeError("Training failed unexpectedly") from e
