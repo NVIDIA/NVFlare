@@ -1,9 +1,9 @@
 package com.nvidia.nvflare.sdk.trainers
 
-import com.nvidia.nvflare.app.training.ETTrainerWrapper
-import com.nvidia.nvflare.app.training.Trainer
+import com.nvidia.nvflare.sdk.training.ETTrainerWrapper
+import com.nvidia.nvflare.sdk.training.Trainer
 import com.nvidia.nvflare.sdk.TrainerRegistry
-import com.nvidia.nvflare.sdk.training.TrainingConfig
+import com.nvidia.nvflare.sdk.models.TrainingConfig
 
 /**
  * Factory for creating ETTrainer instances.

@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.models
+package com.nvidia.nvflare.sdk.models
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonArray

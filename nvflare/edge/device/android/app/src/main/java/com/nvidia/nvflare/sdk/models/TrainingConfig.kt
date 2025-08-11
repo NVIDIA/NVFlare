@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.sdk.training
+package com.nvidia.nvflare.sdk.models
 
 import com.nvidia.nvflare.sdk.utils.DatasetType
 import com.nvidia.nvflare.sdk.utils.MetaKey

@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName
 import com.nvidia.nvflare.sdk.utils.TrainingTask
 import com.nvidia.nvflare.sdk.utils.asMap
 import com.nvidia.nvflare.sdk.utils.asList
-import com.nvidia.nvflare.sdk.training.TrainingConfig
+import com.nvidia.nvflare.sdk.models.TrainingConfig
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import com.google.gson.JsonArray

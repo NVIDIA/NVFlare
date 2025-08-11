@@ -4,7 +4,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonPrimitive
-import com.nvidia.nvflare.sdk.training.TrainingConfig
+import com.nvidia.nvflare.sdk.models.TrainingConfig
 
 // JSON Value Types
 sealed class JSONValue {

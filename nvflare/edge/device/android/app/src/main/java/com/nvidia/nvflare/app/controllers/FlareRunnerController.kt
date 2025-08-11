@@ -203,9 +203,23 @@ class FlareRunnerController(
     }
     
     fun stopTraining() {
-        status = TrainingStatus.STOPPING
+        Log.d(TAG, "FlareRunnerController: Stopping training and cleaning up resources")
+        
+        // Stop the flare runner
         flareRunner?.stop()
+        flareRunner = null
+        
+        // Cancel the current job
         currentJob?.cancel()
+        currentJob = null
+        
+        // Clear the dataset reference
+        currentDataset = null
+        
+        // Reset status to IDLE so training can be started again
+        status = TrainingStatus.IDLE
+        
+        Log.d(TAG, "FlareRunnerController: Training stopped and resources cleaned up")
     }
     
     private fun createConnection(): com.nvidia.nvflare.sdk.network.Connection {

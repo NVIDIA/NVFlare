@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.models
+package com.nvidia.nvflare.sdk.models
 
 data class Job(
     val id: String,

@@ -19,38 +19,58 @@ torch.manual_seed(42)
 torch.cuda.manual_seed(42)
 np.random.seed(42)
 
-class DeterministicSimpleCNN(nn.Module):
-    """Deterministic simplified CNN with fixed weights for testing.
-    Uses minimal architecture to ensure reproducible results.
+class DeterministicCIFAR10CNN(nn.Module):
+    """Deterministic CIFAR-10 CNN matching ExecutorTorch architecture with fixed weights for testing.
+    Uses the same architecture as the ExecutorTorch CIFAR example.
     """
     def __init__(self):
         super().__init__()
-        # Simplified CNN: 1 conv layer + 1 linear layer
-        self.conv1 = nn.Conv2d(3, 2, kernel_size=2, stride=1, padding=0)  # 3x32x32 -> 2x31x31
-        self.pool = nn.MaxPool2d(2, 2)  # 2x31x31 -> 2x15x15
-        self.fc1 = nn.Linear(2 * 15 * 15, 2)  # 450 -> 2 classes
+        # CIFAR-10 CNN architecture matching ExecutorTorch implementation
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),   # 32x32x3 -> 32x32x32
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),        # 32x32x32 -> 16x16x32
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),  # 16x16x32 -> 16x16x64
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),        # 16x16x64 -> 8x8x64
+            nn.Conv2d(64, 128, kernel_size=3, padding=1), # 8x8x64 -> 8x8x128
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2),        # 8x8x128 -> 4x4x128
+        )
+        
+        self.classifier = nn.Sequential(
+            nn.Linear(128 * 4 * 4, 512),                 # 2048 -> 512
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(512, 10),                          # 512 -> 10 classes
+        )
         
         # Set fixed weights for deterministic behavior
         with torch.no_grad():
-            # Fixed conv weights
-            self.conv1.weight.data = torch.tensor([
-                [[[0.1, 0.2], [0.3, 0.4]]],  # First filter
-                [[[0.5, 0.6], [0.7, 0.8]]]   # Second filter
-            ], dtype=torch.float32).repeat(3, 1, 1, 1)  # Repeat for 3 input channels
-            self.conv1.bias.data = torch.tensor([0.1, 0.2], dtype=torch.float32)
+            # Fixed conv1 weights (3 -> 32)
+            self.features[0].weight.data.normal_(0.0, 0.1)
+            self.features[0].bias.data.fill_(0.01)
             
-            # Fixed linear weights
-            self.fc1.weight.data = torch.tensor([
-                [0.1] * 450,  # First output neuron
-                [0.2] * 450   # Second output neuron
-            ], dtype=torch.float32)
-            self.fc1.bias.data = torch.tensor([0.1, 0.2], dtype=torch.float32)
+            # Fixed conv2 weights (32 -> 64)
+            self.features[3].weight.data.normal_(0.0, 0.1)
+            self.features[3].bias.data.fill_(0.01)
+            
+            # Fixed conv3 weights (64 -> 128)
+            self.features[6].weight.data.normal_(0.0, 0.1)
+            self.features[6].bias.data.fill_(0.01)
+            
+            # Fixed linear1 weights (2048 -> 512)
+            self.classifier[0].weight.data.normal_(0.0, 0.01)
+            self.classifier[0].bias.data.fill_(0.01)
+            
+            # Fixed linear2 weights (512 -> 10)
+            self.classifier[3].weight.data.normal_(0.0, 0.01)
+            self.classifier[3].bias.data.fill_(0.01)
 
     def forward(self, x):
-        x = torch.relu(self.conv1(x))
-        x = self.pool(x)
+        x = self.features(x)
         x = torch.flatten(x, 1)
-        x = self.fc1(x)
+        x = self.classifier(x)
         return x
 
 class DeterministicDeviceModel(nn.Module):
@@ -77,40 +97,28 @@ def export_model(net, input_tensor_example, label_tensor_example):
     return ep
 
 def create_deterministic_cnn_model():
-    """Create a deterministic CNN model with fixed weights."""
-    print("Creating DETERMINISTIC simplified CNN model...")
+    """Create a deterministic CIFAR-10 CNN model with fixed weights."""
+    print("Creating DETERMINISTIC CIFAR-10 CNN model...")
     print("Using fixed weights for reproducible results...")
     
-    # Create the simplified CNN with fixed weights
-    cnn_net = DeterministicSimpleCNN()
+    # Create the CIFAR-10 CNN with fixed weights
+    cnn_net = DeterministicCIFAR10CNN()
     
     # Create the training wrapper
     training_net = DeterministicDeviceModel(cnn_net)
     training_net.train()
     
+    # Set deterministic seed BEFORE generating any random data
+    torch.manual_seed(42)
+    np.random.seed(42)
+    
     # Create FIXED example inputs for export (deterministic)
-    # Small input: 2 samples, 3 channels, 8x8 images (simplified for testing)
-    example_input = torch.tensor([
-        # Sample 1: Simple pattern
-        [[[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
-          [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-          [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-          [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1],
-          [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2],
-          [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3],
-          [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4],
-          [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5]]] * 3,  # Repeat for 3 channels
-        
-        # Sample 2: Different pattern
-        [[[0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2],
-          [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1],
-          [0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0],
-          [0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1],
-          [0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2],
-          [0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3],
-          [0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4],
-          [0.2, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5]]] * 3  # Repeat for 3 channels
-    ], dtype=torch.float32)
+    # CIFAR-10 input: 2 samples, 3 channels, 32x32 images
+    # Generate deterministic "random" input that will be exactly the same every time
+    example_input = torch.randn(2, 3, 32, 32, dtype=torch.float32)
+    
+    # Normalize to [0, 1] range like CIFAR-10
+    example_input = torch.clamp(example_input * 0.5 + 0.5, 0, 1)
     
     example_label = torch.tensor([0, 1], dtype=torch.long)
     
@@ -118,15 +126,15 @@ def create_deterministic_cnn_model():
     print(f"Fixed example label shape: {example_label.shape}")
     
     # Export the model to ExecuTorch format
-    print("Exporting deterministic CNN model to ExecuTorch format...")
+    print("Exporting deterministic CIFAR-10 CNN model to ExecuTorch format...")
     exported_program = export_model(training_net, example_input, example_label)
     
     # Save the model
-    model_path = "deterministic_cnn_test_model.pte"
+    model_path = "deterministic_cifar10_cnn_test_model.pte"
     with open(model_path, "wb") as f:
         f.write(exported_program.buffer)
     
-    print(f"Deterministic CNN model saved to {model_path}")
+    print(f"Deterministic CIFAR-10 CNN model saved to {model_path}")
     return model_path
 
 def convert_model_to_base64(model_path):
@@ -221,25 +229,55 @@ def create_deterministic_cnn_test_config(model_base64):
                     "result": {
                         "kind": "model",
                         "data": {
-                            "conv1.weight": {
-                                "sizes": [2, 3, 2, 2],
-                                "strides": [12, 4, 2, 1],
-                                "data": [0.001, -0.002, 0.003, 0.004, 0.005, -0.006, 0.007, 0.008, 0.009, -0.010, 0.011, 0.012, 0.013, -0.014, 0.015, 0.016, 0.017, -0.018, 0.019, 0.020, 0.021, -0.022, 0.023, 0.024]
+                            "features.0.weight": {
+                                "sizes": [32, 3, 3, 3],
+                                "strides": [27, 9, 3, 1],
+                                "data": [0.001] * (32 * 3 * 3 * 3)  # Conv1 weights
                             },
-                            "conv1.bias": {
-                                "sizes": [2],
+                            "features.0.bias": {
+                                "sizes": [32],
                                 "strides": [1],
-                                "data": [0.001, -0.002]
+                                "data": [0.001] * 32
                             },
-                            "fc1.weight": {
-                                "sizes": [2, 450],
-                                "strides": [450, 1],
-                                "data": [0.001] * 900  # Simplified for testing
+                            "features.3.weight": {
+                                "sizes": [64, 32, 3, 3],
+                                "strides": [288, 9, 3, 1],
+                                "data": [0.001] * (64 * 32 * 3 * 3)  # Conv2 weights
                             },
-                            "fc1.bias": {
-                                "sizes": [2],
+                            "features.3.bias": {
+                                "sizes": [64],
                                 "strides": [1],
-                                "data": [0.001, -0.002]
+                                "data": [0.001] * 64
+                            },
+                            "features.6.weight": {
+                                "sizes": [128, 64, 3, 3],
+                                "strides": [576, 9, 3, 1],
+                                "data": [0.001] * (128 * 64 * 3 * 3)  # Conv3 weights
+                            },
+                            "features.6.bias": {
+                                "sizes": [128],
+                                "strides": [1],
+                                "data": [0.001] * 128
+                            },
+                            "classifier.0.weight": {
+                                "sizes": [512, 2048],
+                                "strides": [2048, 1],
+                                "data": [0.001] * (512 * 2048)  # FC1 weights
+                            },
+                            "classifier.0.bias": {
+                                "sizes": [512],
+                                "strides": [1],
+                                "data": [0.001] * 512
+                            },
+                            "classifier.3.weight": {
+                                "sizes": [10, 512],
+                                "strides": [512, 1],
+                                "data": [0.001] * (10 * 512)  # FC2 weights
+                            },
+                            "classifier.3.bias": {
+                                "sizes": [10],
+                                "strides": [1],
+                                "data": [0.001] * 10
                             }
                         }
                     },
@@ -279,27 +317,27 @@ def create_deterministic_cnn_test_config(model_base64):
     print("  - Small, predictable parameter updates")
 
 def main():
-    """Main function to create deterministic CNN test model and config."""
+    """Main function to create deterministic CIFAR-10 CNN test model and config."""
     print("="*60)
-    print("Creating DETERMINISTIC CNN Test PyTorch Model")
+    print("Creating DETERMINISTIC CIFAR-10 CNN Test PyTorch Model")
     print("="*60)
-    print("This model uses fixed weights and simplified architecture")
-    print("for reproducible CNN testing results.")
+    print("This model uses fixed weights and full CIFAR-10 CNN architecture")
+    print("for reproducible CIFAR-10 testing results.")
     print()
     
     model_path = create_deterministic_cnn_model()
     
-    print("\nConverting deterministic CNN model to base64...")
+    print("\nConverting deterministic CIFAR-10 CNN model to base64...")
     model_base64 = convert_model_to_base64(model_path)
     
-    print("\nCreating deterministic CNN test configuration...")
+    print("\nCreating deterministic CIFAR-10 CNN test configuration...")
     create_deterministic_cnn_test_config(model_base64)
     
     print("\n" + "="*60)
-    print("DETERMINISTIC CNN Test Setup Complete!")
+    print("DETERMINISTIC CIFAR-10 CNN Test Setup Complete!")
     print("="*60)
     print("Files created:")
-    print(f"  - {model_path} (Deterministic CNN PyTorch model)")
+    print(f"  - {model_path} (Deterministic CIFAR-10 CNN PyTorch model)")
     print(f"  - proto_test_config_deterministic_cnn.json (Test configuration)")
     print("\nUsage:")
     print("  python -m nvflare.edge.web.routing_proxy 4321 lcp_map.json rootCA.pem proto_test_config_deterministic_cnn.json")
@@ -308,10 +346,11 @@ def main():
     print("  - Fixed learning rate (0.01)")
     print("  - Fixed batch size (2)")
     print("  - Fixed epochs (3)")
-    print("  - Simplified architecture (1 conv + 1 linear)")
-    print("  - Small input size (8x8)")
+    print("  - Full CIFAR-10 CNN architecture (3 conv + 2 linear layers)")
+    print("  - Standard CIFAR-10 input size (32x32x3)")
+    print("  - Compatible with ExecutorTorch CIFAR example")
     print("  - Predictable tensor differences")
-    print("\nThis ensures reproducible CNN testing!")
+    print("\nThis ensures reproducible CIFAR-10 CNN testing!")
 
 if __name__ == "__main__":
     main() 

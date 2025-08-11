@@ -1,9 +1,9 @@
-package com.nvidia.nvflare.app.training
+package com.nvidia.nvflare.sdk.training
 
 import android.content.Context
 import android.util.Log
-import com.nvidia.nvflare.sdk.training.TrainingConfig
-import com.nvidia.nvflare.app.training.Trainer
+import com.nvidia.nvflare.sdk.models.TrainingConfig
+import com.nvidia.nvflare.sdk.training.Trainer
 import com.nvidia.nvflare.app.data.CIFAR10Dataset
 import com.nvidia.nvflare.app.data.XORDataset
 import org.pytorch.executorch.Tensor

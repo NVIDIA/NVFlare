@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.app.utils
+package com.nvidia.nvflare.sdk.training
 
 import android.content.Context
 import android.util.Log
