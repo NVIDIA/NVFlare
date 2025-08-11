@@ -11,25 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional
-
-from pydantic import PositiveInt
-
 from nvflare.job_config.api import FedJob
 from nvflare.recipe.spec import ExecEnv
 
 
-class POCEnv(ExecEnv):
+class POCExecEnv(ExecEnv):
 
-    num_clients: Optional[PositiveInt] = None
-    clients: Optional[List[str]] = None
-    num_threads: Optional[PositiveInt] = (None,)
-    log_config: Optional[str] = (None,)
+    def __init__(self, num_clients: int = 2):
+        self.num_clients = num_clients
 
     def deploy(self, job: FedJob):
-        if self.clients is None:
-            self.num_clients = 2
         # TBD
-        # first launch a POC system; if the POC is not yet started
+        # first launch a POC system;
         # then submit job to it.
         pass
