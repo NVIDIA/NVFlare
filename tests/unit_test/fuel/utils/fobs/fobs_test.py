@@ -68,10 +68,13 @@ class TestFobs:
         test_class = ExampleClass(TestFobs.NUMBER)
         fobs.register(ExampleClassDecomposer)
         buf = fobs.dumps(test_class)
-        # Clear registration before deserializing
+        # Unregister the decomposer
         fobs.reset()
-        new_class = fobs.loads(buf)
-        assert new_class.number == TestFobs.NUMBER
+
+        # ExampleClassDecomposer is not builtin, not allowed
+        with pytest.raises(ValueError):
+            new_class = fobs.loads(buf)
+            assert new_class.number == TestFobs.NUMBER
 
     def test_auto_registration(self):
         fobs.reset()
