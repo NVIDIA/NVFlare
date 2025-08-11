@@ -14,7 +14,7 @@
 import os.path
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from nvflare.job_config.api import FedJob
 
@@ -25,11 +25,20 @@ WORKSPACE_ROOT = "/tmp/nvflare/simulation"
 
 # Internal — not part of the public API
 class _SimEnvValidator(BaseModel):
-    num_clients: int
-    clients: Optional[List[str]]
+    num_clients: int  # num_clients is always an integer
+    clients: Optional[List[str]] = None
     num_threads: int
-    gpu_config: Optional[str]
-    log_config: Optional[str]
+    gpu_config: Optional[str] = None
+    log_config: Optional[str] = None
+
+    @model_validator(mode="after")
+    def check_num_clients_consistency(self):
+        if self.num_clients and self.clients and len(self.clients) != self.num_clients:
+            raise ValueError(
+                f"Inconsistent number of clients: num_clients={self.num_clients} "
+                f"but clients list has {len(self.clients)} entries."
+            )
+        return self
 
 
 class SimEnv(ExecEnv):
