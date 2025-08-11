@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from nvflare.fuel.utils.log_utils import center_message
+
 from .base_fedavg import BaseFedAvg
 
 
