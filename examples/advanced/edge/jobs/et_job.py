@@ -21,7 +21,7 @@ from nvflare.edge.tools.et_recipe import (
     ModelManagerConfig,
     SimulationConfig,
 )
-from nvflare.recipe.simulation_env import SimulationExecEnv
+from nvflare.recipe.simulation_env import SimEnv
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--export_job", action="store_true")
@@ -91,5 +91,5 @@ recipe = ETRecipe(
 if args.export_job:
     recipe.export(job_dir="/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer")
 else:
-    env = SimulationExecEnv(num_clients=1)
+    env = SimEnv(num_clients=1)
     recipe.execute(env)

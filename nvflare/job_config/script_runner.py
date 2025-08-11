@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from enum import Enum
 from typing import Optional, Type, Union
 
 from nvflare.apis.fl_constant import SystemVarName
@@ -30,14 +30,14 @@ from nvflare.fuel.utils.validation_utils import check_str
 from .api import FedJob, validate_object_for_job
 
 
-class FrameworkType:
+class FrameworkType(str, Enum):
     RAW = "raw"
     NUMPY = "numpy"
     PYTORCH = "pytorch"
     TENSORFLOW = "tensorflow"
 
 
-class PipeConnectType:
+class PipeConnectType(str, Enum):
     VIA_ROOT = "via_root"
     VIA_CP = "via_cp"
     VIA_RELAY = "via_relay"
@@ -57,9 +57,9 @@ class BaseScriptRunner:
         script_args: str = "",
         launch_external_process: bool = False,
         command: str = "python3 -u",
-        server_expected_format: str = ExchangeFormat.NUMPY,
-        framework: str = FrameworkType.PYTORCH,
-        params_transfer_type: str = TransferType.FULL,
+        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        framework: FrameworkType = FrameworkType.PYTORCH,
+        params_transfer_type: TransferType = TransferType.FULL,
         executor: Union[ClientAPILauncherExecutor, InProcessClientAPIExecutor, None] = None,
         task_pipe: Optional[Pipe] = None,
         launcher: Optional[Launcher] = None,
@@ -298,9 +298,9 @@ class ScriptRunner(BaseScriptRunner):
         launch_external_process: bool = False,
         command: str = "python3 -u",
         framework: FrameworkType = FrameworkType.PYTORCH,
-        server_expected_format: str = ExchangeFormat.NUMPY,
-        params_transfer_type: str = TransferType.FULL,
-        pipe_connect_type: str = PipeConnectType.VIA_CP,
+        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        params_transfer_type: TransferType = TransferType.FULL,
+        pipe_connect_type: PipeConnectType = PipeConnectType.VIA_CP,
     ):
         """ScriptRunner is used with FedJob API to run or launch a script.
 
