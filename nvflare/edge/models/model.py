@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import torch
 import torch.nn as nn
 from executorch.exir import to_edge
 from torch.export import export
 from torch.export.experimental import _export_forward_backward
-from torch.nn import functional as F
 
 
 def export_model_to_bytes(net: nn.Module, input_shape, output_shape):
@@ -72,44 +70,11 @@ def export_model(net: nn.Module, input_tensor_example, label_tensor_example):
     return ep
 
 
-class Cifar10ConvNet(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=6, kernel_size=5, stride=2)
-        # self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(in_channels=6, out_channels=16, kernel_size=5, stride=2)
-        self.fc1 = nn.Linear(in_features=16 * 5 * 5, out_features=120)
-        self.fc2 = nn.Linear(in_features=120, out_features=84)
-        self.fc3 = nn.Linear(in_features=84, out_features=10)
-
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-
-class XorNet(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear1 = nn.Linear(2, 4)
-        self.sigmoid_1 = nn.Sigmoid()
-        self.linear2 = nn.Linear(4, 2)
-
-    def forward(self, x):
-        x = self.linear1(x)
-        x = self.sigmoid_1(x)
-        x = self.linear2(x)
-        return x
-
-
 # On device training requires the loss to be embedded in the model (and be the first output).
-# We wrap the original model here and add the loss calculation. This will be the model we export.
 class DeviceModel(nn.Module):
-    def __init__(self, net):
+    """Model wrapper for classification with CrossEntropyLoss."""
+
+    def __init__(self, net: nn.Module):
         super().__init__()
         self.net = net
         self.loss = nn.CrossEntropyLoss()

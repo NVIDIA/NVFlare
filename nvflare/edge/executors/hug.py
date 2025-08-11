@@ -315,8 +315,14 @@ class HierarchicalUpdateGatherer(Executor):
                 break
 
             if rc != ReturnCode.OK:
-                self.log_error(fl_ctx, f"error updating parent {self._parent_name}: {rc}")
-                break
+                if rc == ReturnCode.TIMEOUT and self._task_done:
+                    self.log_info(
+                        fl_ctx, f"parent update timeout after task {task_info.seq} completion - this is expected"
+                    )
+                    break
+                else:
+                    self.log_error(fl_ctx, f"error updating parent {self._parent_name}: {rc}")
+                    break
 
             parent_task_seq = reply.get_header(EdgeTaskHeaderKey.TASK_SEQ, task_info.seq)
             if parent_task_seq != task_info.seq:

@@ -61,9 +61,9 @@ if __name__ == "__main__":
             script_args="--data_root /tmp/flare/dataset/heart_disease_data",
             launch_external_process=True,
             framework=FrameworkType.RAW,
-            params_exchange_format=ExchangeFormat.RAW,
+            server_expected_format=ExchangeFormat.RAW,
         )
         job.to(runner, f"site-{i + 1}")
 
     job.export_job("/tmp/nvflare/jobs/job_config")
-    # job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")
+    job.simulator_run("/tmp/nvflare/jobs/workdir", gpu="0")

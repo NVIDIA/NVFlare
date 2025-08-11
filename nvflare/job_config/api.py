@@ -203,6 +203,18 @@ class FedJob:
         self._deployed = False
         self._components = {}
 
+    def set_app_packages(self, app_packages: List[str]):
+        """Set app packages.
+        When generating job config, code from these packages will not be included into "custom" folder.
+
+        Args:
+            app_packages: app packages to be set
+
+        Returns: None
+
+        """
+        self.job.set_app_packages(app_packages)
+
     def set_up_client(self, target: str):
         """Setup routine called by FedJob when first sending object to a client target.
 
