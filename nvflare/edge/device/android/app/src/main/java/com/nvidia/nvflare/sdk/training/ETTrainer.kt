@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.nvidia.nvflare.sdk.models.TrainingConfig
 import com.nvidia.nvflare.sdk.training.Trainer
+import com.nvidia.nvflare.sdk.core.Dataset
 import com.nvidia.nvflare.app.data.CIFAR10Dataset
 import com.nvidia.nvflare.app.data.XORDataset
 import org.pytorch.executorch.Tensor
@@ -32,7 +33,7 @@ class ETTrainer(
     
     // CRITICAL: Strong reference to keep dataset alive during training
     // This prevents the dataset from being deallocated while ExecuTorch still references it
-    private var currentDataset: com.nvidia.nvflare.sdk.defs.Dataset? = null
+    private var currentDataset: com.nvidia.nvflare.sdk.core.Dataset? = null
     
     private val artifactManager = TrainingArtifactManager(context, meta)
 
@@ -220,7 +221,7 @@ class ETTrainer(
      */
     private fun performTraining(
         model: TrainingModule,
-        dataset: com.nvidia.nvflare.sdk.defs.Dataset,
+        dataset: com.nvidia.nvflare.sdk.core.Dataset,
         method: String,
         epochs: Int,
         batchSize: Int,

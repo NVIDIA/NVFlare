@@ -4,11 +4,13 @@ import android.content.Context
 import android.util.Log
 import com.nvidia.nvflare.app.data.AndroidDataSource
 import com.nvidia.nvflare.app.data.DatasetError
-import com.nvidia.nvflare.sdk.AndroidFlareRunner
+import com.nvidia.nvflare.sdk.models.TrainingStatus
+import com.nvidia.nvflare.sdk.core.AndroidFlareRunner
 import com.nvidia.nvflare.sdk.core.Context as FlareContext
 import com.nvidia.nvflare.sdk.core.DataSource
 import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.Dataset
+import com.nvidia.nvflare.sdk.core.Connection
 import com.nvidia.nvflare.sdk.trainers.ETTrainerFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,11 +18,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class TrainingStatus {
-    IDLE,
-    TRAINING,
-    STOPPING
-}
 
 sealed class TrainingError : Exception() {
     object DATASET_CREATION_FAILED : TrainingError()
@@ -222,8 +219,8 @@ class FlareRunnerController(
         Log.d(TAG, "FlareRunnerController: Training stopped and resources cleaned up")
     }
     
-    private fun createConnection(): com.nvidia.nvflare.sdk.network.Connection {
-        val connection = com.nvidia.nvflare.sdk.network.Connection(context)
+    private fun createConnection(): com.nvidia.nvflare.sdk.core.Connection {
+        val connection = com.nvidia.nvflare.sdk.core.Connection(context)
         connection.hostname.value = serverHost
         connection.port.value = serverPort
         connection.setCapabilities(capabilities)

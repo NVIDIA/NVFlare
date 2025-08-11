@@ -6,7 +6,7 @@ import com.nvidia.nvflare.sdk.core.Context
 import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.Executor
 import com.nvidia.nvflare.sdk.training.Trainer
-import com.nvidia.nvflare.sdk.training.ETTrainerWrapper
+import com.nvidia.nvflare.sdk.training.ETTrainer
 import com.nvidia.nvflare.sdk.models.TrainingConfig
 import kotlinx.coroutines.runBlocking
 

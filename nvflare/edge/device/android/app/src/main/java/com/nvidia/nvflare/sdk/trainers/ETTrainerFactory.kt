@@ -1,6 +1,6 @@
 package com.nvidia.nvflare.sdk.trainers
 
-import com.nvidia.nvflare.sdk.training.ETTrainerWrapper
+import com.nvidia.nvflare.sdk.training.ETTrainer
 import com.nvidia.nvflare.sdk.training.Trainer
 import com.nvidia.nvflare.sdk.TrainerRegistry
 import com.nvidia.nvflare.sdk.models.TrainingConfig
@@ -11,6 +11,6 @@ import com.nvidia.nvflare.sdk.models.TrainingConfig
  */
 class ETTrainerFactory : TrainerRegistry.TrainerFactory {
     override fun createTrainer(context: android.content.Context, modelData: String, meta: TrainingConfig): Trainer {
-        return ETTrainerWrapper(context, modelData, meta)
+        return ETTrainer(context, modelData, meta.toMap())
     }
 } 

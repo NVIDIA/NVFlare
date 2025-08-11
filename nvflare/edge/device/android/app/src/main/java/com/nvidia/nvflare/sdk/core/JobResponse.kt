@@ -1,7 +1,7 @@
 package com.nvidia.nvflare.sdk.core
 
 import com.google.gson.annotations.SerializedName
-import com.nvidia.nvflare.sdk.utils.Job
+import com.nvidia.nvflare.sdk.models.Job
 import com.google.gson.JsonObject
 
 data class JobResponse(

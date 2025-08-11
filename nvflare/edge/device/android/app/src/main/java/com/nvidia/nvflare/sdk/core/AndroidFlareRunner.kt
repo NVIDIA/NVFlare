@@ -19,6 +19,8 @@ import com.nvidia.nvflare.sdk.core.NoOpTransform
 import com.nvidia.nvflare.sdk.core.SimpleBatch
 import com.nvidia.nvflare.sdk.core.DXO
 import com.nvidia.nvflare.sdk.trainers.ETTrainerFactory
+import com.nvidia.nvflare.sdk.AndroidExecutor
+import com.nvidia.nvflare.sdk.TrainerRegistry
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay

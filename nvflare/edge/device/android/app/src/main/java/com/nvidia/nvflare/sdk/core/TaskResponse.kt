@@ -1,7 +1,7 @@
 package com.nvidia.nvflare.sdk.core
 
 import com.google.gson.annotations.SerializedName
-import com.nvidia.nvflare.sdk.utils.TrainingTask
+import com.nvidia.nvflare.sdk.models.TrainingTask
 import com.nvidia.nvflare.sdk.utils.asMap
 import com.nvidia.nvflare.sdk.utils.asList
 import com.nvidia.nvflare.sdk.models.TrainingConfig

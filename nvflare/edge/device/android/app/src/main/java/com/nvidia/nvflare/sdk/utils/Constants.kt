@@ -1,19 +1,5 @@
 package com.nvidia.nvflare.sdk.utils
 
-// Dataset Types
-object DatasetType {
-    const val CIFAR10 = "cifar10"
-    const val XOR = "xor"
-}
-
-// Meta Keys
-object MetaKey {
-    const val DATASET_TYPE = "dataset_type"
-    const val BATCH_SIZE = "batch_size"
-    const val LEARNING_RATE = "learning_rate"
-    const val TOTAL_EPOCHS = "total_epochs"
-    const val DATASET_SHUFFLE = "dataset_shuffle"
-}
 
 // Model Exchange Format Constants
 object ModelExchangeFormat {
@@ -21,34 +7,6 @@ object ModelExchangeFormat {
     const val MODEL_BUFFER_TYPE = "model_buffer_type"
     const val MODEL_BUFFER_NATIVE_FORMAT = "model_buffer_native_format"
     const val MODEL_BUFFER_ENCODING = "model_buffer_encoding"
-}
-
-// Training Types
-enum class TrainerType {
-    EXECUTORCH
-}
-
-enum class MethodType(val displayName: String) {
-    CNN("cnn"),
-    XOR("xor");
-
-    val requiredDataset: String
-        get() = when (this) {
-            CNN -> "cifar10"
-            XOR -> "xor"
-        }
-
-    companion object {
-        fun fromString(value: String): MethodType? {
-            return values().find { it.displayName.equals(value, ignoreCase = true) }
-        }
-    }
-}
-
-enum class TrainingStatus {
-    IDLE,
-    TRAINING,
-    STOPPING
 }
 
 // Model Buffer Types
