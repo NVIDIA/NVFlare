@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ...fuel.utils.log_utils import center_message
+from nvflare.fuel.utils.log_utils import center_message
 from .base_fedavg import BaseFedAvg
 
 
