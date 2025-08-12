@@ -28,6 +28,26 @@ from nvflare.recipe.spec import Recipe
 
 
 class ModelManagerConfig:
+    """Configuration class for the model manager in federated learning.
+
+    This class configures how the model manager handles model updates, versioning,
+    and aggregation strategies for federated learning workflow.
+
+    Attributes:
+        max_num_active_model_versions: Maximum number of active model versions
+            that can be processed for the current model version. Default: 3
+        max_model_version: Maximum model version number before stopping training.
+            Default: 20
+        update_timeout: Timeout in seconds for waiting for model updates.
+            Default: 5.0
+        num_updates_for_model: Number of received updates required before generating
+            a new global model. Default: 100
+        max_model_history: Maximum number of model versions to keep in history
+            for staleness calculations and update aggregation. Default: 10
+        staleness_weight: Whether to apply staleness weighting to model updates.
+            Default: False
+        global_lr: Global learning rate for model aggregation. Default: 0.01
+    """
 
     def __init__(
         self,
@@ -37,7 +57,7 @@ class ModelManagerConfig:
         num_updates_for_model: int = 100,
         max_model_history: int = 10,
         staleness_weight: bool = False,
-        global_lr: float = 0.0001,
+        global_lr: float = 0.01,
     ):
         self.max_num_active_model_versions = max_num_active_model_versions
         self.max_model_version = max_model_version
@@ -49,6 +69,21 @@ class ModelManagerConfig:
 
 
 class DeviceManagerConfig:
+    """Configuration class for the device manager in federated learning.
+
+    This class configures how the device manager selects and manages devices
+    for participation in federated learning workflow.
+
+    Attributes:
+        device_selection_size: Number of devices to select for each training round.
+            Default: 100
+        min_hole_to_fill: Minimum number of model updates to wait for before
+            sampling the next batch of devices. Default: 1 (immediately dispatch the current global model)
+        device_reuse: Whether to allow devices to participate in multiple rounds.
+            Default: True (always reuse / include the existing devices for further learning)
+        const_selection: Whether to use constant device selection across rounds.
+            Default: False
+    """
 
     def __init__(
         self,
@@ -64,6 +99,19 @@ class DeviceManagerConfig:
 
 
 class SimulationConfig:
+    """Configuration class for simulation settings in federated learning.
+
+    This class configures the simulated devices for testing federated learning
+    pipelines.
+
+    Attributes:
+        task_processor: Task processor for handling device training simulation.
+        job_timeout: Timeout in seconds for the entire job execution. Default: 60.0
+        num_devices: Total number of simulated devices for each leaf node. Default: 1000
+        num_workers: Number of worker processes for parallel device simulation on each leaf node.
+            Default: 10
+    """
+
     def __init__(
         self,
         task_processor: Optional[DeviceTaskProcessor],
@@ -78,6 +126,18 @@ class SimulationConfig:
 
 
 class EvaluatorConfig:
+    """Configuration class for the global evaluator.
+
+    This class configures how the global model is evaluated during training,
+    including dataset selection and evaluation frequency.
+
+    Attributes:
+        eval_frequency: Frequency of global model evaluation (every N new model versions).
+            Default: 1
+        torchvision_dataset: Configuration for torchvision datasets. Should be a
+            dict with 'name' and 'path' keys. Default: None
+        custom_dataset: Configuration for custom datasets. Default: None
+    """
 
     def __init__(
         self,
@@ -91,6 +151,49 @@ class EvaluatorConfig:
 
 
 class EdgeRecipe(Recipe):
+    """Recipe class for cross-edge federated learning using NVFlare's hierarchical edge system.
+
+    This class provides a high-level interface for configuring cross-edge
+    federated learning jobs. It configures the necessary components
+    including model managers, device managers, evaluators, and device simulation settings.
+
+    The recipe supports both real device connections and simulated device training,
+    making it suitable for both production deployment and prototyping/testing.
+
+    Example usage:
+        ```python
+        # Basic configuration
+        model_manager_config = ModelManagerConfig(
+            global_lr=0.1,
+            num_updates_for_model=20,
+            max_model_version=300,
+            max_model_history=100
+        )
+
+        device_manager_config = DeviceManagerConfig(
+            device_selection_size=200,
+            min_hole_to_fill=10,
+            device_reuse=False
+        )
+
+        recipe = EdgeRecipe(
+            job_name="my_edge_job",
+            model=MyModel(),
+            model_manager_config=model_manager_config,
+            device_manager_config=device_manager_config
+        )
+        ```
+
+    Attributes:
+        job_name: Name of the federated learning job
+        method_name: Method type, always set to "edge"
+        model: PyTorch neural network model to be trained
+        model_manager_config: Configuration for the model manager
+        device_manager_config: Configuration for the device manager
+        evaluator_config: Configuration for the global evaluator (optional)
+        simulation_config: Configuration for simulated devices settings (optional)
+        custom_source_root: Path to custom source code (optional)
+    """
 
     def __init__(
         self,
@@ -121,9 +224,23 @@ class EdgeRecipe(Recipe):
         Recipe.__init__(self, job)
 
     def create_job(self) -> EdgeJob:
+        """Create a new EdgeJob instance for cross-edge federated learning.
+
+        Returns:
+            EdgeJob: A configured edge job instance
+        """
         return EdgeJob(name=self.job_name, edge_method=self.method_name)
 
     def _configure_job(self, job: EdgeJob):
+        """Configure the edge job with all necessary components.
+
+        This method sets up the job with evaluators, simulation settings,
+        client configurations, and server-side components including model
+        managers, device managers, and assessors.
+
+        Args:
+            job: The EdgeJob instance to configure
+        """
         if self.evaluator_config:
             evaluator = GlobalEvaluator(
                 model_path=self.model,

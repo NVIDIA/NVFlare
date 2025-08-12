@@ -34,7 +34,17 @@ DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 class Cifar10PTTaskProcessor(DeviceTaskProcessor):
 
-    def __init__(self, data_root: str, subset_size: int, communication_delay: dict, device_speed: dict):
+    def __init__(
+        self,
+        data_root: str,
+        subset_size: int,
+        communication_delay: dict,
+        device_speed: dict,
+        local_batch_size: int = 4,
+        local_epochs: int = 4,
+        local_lr: float = 0.001,
+        local_momentum: float = 0.9,
+    ):
         DeviceTaskProcessor.__init__(self)
         self.data_root = data_root
         self.subset_size = subset_size

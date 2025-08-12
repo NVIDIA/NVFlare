@@ -224,18 +224,23 @@ python3 jobs/pt_job_adv.py
 This will generate a job configuration for cross-device federated learning with the following parameters:
 
 -   devices_per_leaf: 10000, so in total we have 40000 devices across all leaf nodes.
--   device_selection_size: 100, every round we will randomly select 100 devices for each leaf nodes to execute local training.
+-   device_selection_size: 200, every round we will randomly select 200 devices in total to execute local training.
 -   subset_size: 100, each device will only use a subset of 100 samples for local training.
--   num_updates_for_model: 100, server will generate a new global model after receiving 100 model updates from the devices.
--   max_model_version: 500, server will generate in total 500 global models before stopping the training.
--   max_model_history: 10, staleness beyond 10 model versions will be ignored.
+-   num_updates_for_model: 20, server will generate a new global model after receiving 20 model updates from the devices.
+-   max_model_version: 300, server will generate in total 300 global models before stopping the training.
+-   max_model_history: 100, staleness beyond 100 model versions will be ignored.
 -   min_hole_to_fill: 10, so the server will wait for at least 10 model updates before sampling the next batch of devices and dispatching the current global model for training.
-
+-   local training parameters: local_batch_size 32, local_epochs 1, local_lr 0.1, and local_momentum = 0.0 
 These settings will simulate a realistic cross-device federated learning scenario, where devices are sampled from a large pool of devices, and only a subset of devices is selected for each round of training. As it is much more complex than the previous experiments, we call it advanced (`_adv`) recipe. Users can further customize the parameters to simulate different scenarios.
-
+In admin console, submit the job:
+```
+submit_job pt_job_adv
+```
 Upon finishing, we can visualize the results in TensorBoard as before:
 ```commandline
 tensorboard --logdir=/tmp/nvflare/
 ```
 You will see the following results:
 <img src="./figs/cifar10_adv_acc.png" alt="Cifar10 Advanced Results" width="800" >
+
+As shown, due to the large number of devices and the limited number of samples for each device, the training process can be much slower than the previous experiments, and the accuracy converges to a lower level. 
