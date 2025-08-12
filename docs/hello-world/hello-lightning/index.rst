@@ -1,22 +1,8 @@
-.. _hello-world_hello-lightning:
-
-`hello Pytorch <../hello-pt/doc.html>`_ ||
-**Hello lightning** ||
-`hello tensorflow <../hello-tf/doc.html>`_ ||
-`hello LR <../hello-lr/doc.html>`_ ||
-`hello KMeans <../hello-kmeans/doc.html>`_ ||
-`hello KM <../hello-km/doc.html>`_ ||
-`hello stats <../hello-stats/doc.html>`_ ||
-`hello cyclic <../hello-cyclic/doc.html>`_ ||
-`hello-xgboost <../hello-xgboost/doc.html>`_ ||
-`hello-flower <../hello-flower/doc.html>`_ ||
-
-
 Hello Pytorch Lightning
 ======================
 
 This example demonstrates how to use NVIDIA FLARE with PyTorch lightning to train an image classifier using
-federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-lightning/>`_.
+federated averaging (FedAvg).The complete example code can be found in the`hello-lightning directory <examples/hello-world/hello-lightning/>`_.
 It is recommended to create a virtual environment and run everything within a virtualenv.
 
 
@@ -36,7 +22,7 @@ Code Structure
 
 first get the example code from github:
 git clone https://github.com/NVIDIA/NVFlare.git
-then navigate to the hello-pt directory:
+then navigate to the hello-lightning directory:
 
 .. code-block:: text
 
