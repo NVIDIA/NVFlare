@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import gc
 import random
 import threading
 import time
@@ -94,6 +95,9 @@ class Gatherer(FLComponent):
             except:
                 self.log_error(fl_ctx, f"exception gathering: {secure_format_traceback()}")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            finally:
+                # force garbage collection after each gather
+                gc.collect()
 
     def _do_gather(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> Shareable:
         result_round = result.get_header(AppConstants.CURRENT_ROUND)
