@@ -32,6 +32,8 @@ from nvflare.tool.poc.poc_commands import (
 
 from .spec import ExecEnv
 
+STOP_POC_TIMEOUT = 10
+
 
 class POCEnv(ExecEnv):
     """Proof of Concept execution environment for local testing and development.
@@ -42,70 +44,66 @@ class POCEnv(ExecEnv):
 
     def __init__(
         self,
+        *,
         poc_workspace: Optional[str] = None,
         num_clients: int = 2,
+        clients: Optional[List[str]] = None,
         gpu_ids: Optional[List[int]] = None,
         auto_stop: bool = True,
-        auto_clean: bool = True,
         monitor_duration: int = 0,
     ):
         """Initialize POC execution environment.
 
         Args:
-            poc_workspace: POC workspace directory. If None, uses default from environment.
-            num_clients: Number of clients to use in POC mode.
-            gpu_ids: List of GPU IDs to assign to clients. If None, uses CPU only.
-            auto_stop: Whether to automatically stop POC services after job completion.
-            auto_clean: Whether to automatically clean POC workspace after job completion (implies auto_stop).
-            monitor_duration: Duration to monitor job execution (in seconds). 0 means wait until completion, negative means no monitoring.
+            poc_workspace (str, optional): POC workspace directory. If None, uses default from environment.
+            num_clients (int, optional): Number of clients to use in POC mode. Defaults to 2.
+            clients (List[str], optional): List of client names. If None, will generate site-1, site-2, etc. Defaults to None.
+            gpu_ids (List[int], optional): List of GPU IDs to assign to clients. If None, uses CPU only. Defaults to None.
+            auto_stop (bool, optional): Whether to automatically stop POC services after job completion. Defaults to True.
+            monitor_duration (int, optional): Duration to monitor job execution (in seconds). 0 means wait until completion, negative means no monitoring. Defaults to 0.
         """
+        # Validate client configuration
+        if clients is not None:
+            if len(clients) == 0:
+                raise ValueError("clients list cannot be empty")
+            if num_clients > 0 and len(clients) != num_clients:
+                raise ValueError(f"Inconsistent: num_clients={num_clients} but clients list has {len(clients)} entries")
+        else:
+            if num_clients <= 0:
+                raise ValueError("num_clients must be greater than 0")
+
+        self.clients = clients
+        self.num_clients = len(clients) if clients is not None else num_clients
         self.poc_workspace = poc_workspace or get_poc_workspace()
-        self.num_clients = num_clients
         self.gpu_ids = gpu_ids or []
         self.auto_stop = auto_stop
-        self.auto_clean = auto_clean
         self.monitor_duration = monitor_duration
-        self._poc_started_by_us = False
 
     def deploy(self, job: FedJob):
         """Deploy a FedJob to the POC environment.
 
         Args:
-            job: The FedJob to deploy.
+            job (FedJob): The FedJob to deploy.
 
         Returns:
             str: Job ID or deployment result.
         """
         try:
-            # Check if POC is running, prepare and start if needed
-            if not self.is_running():
-                print("POC services not running")
-                # Only prepare workspace if POC is not running
-                self._ensure_poc_workspace()
-                print("Starting POC services...")
-                self._start_poc_services()
-                self._poc_started_by_us = True
-            else:
-                print("POC services already running")
+            # For POC, always start clean to ensure correct client configuration
+            if self.is_running():
+                print("POC services already running, stopping and cleaning to ensure fresh environment...")
+                self._stop_and_clean_poc()
+
+            print("Preparing and starting fresh POC services...")
+            self._ensure_poc_workspace()
+            self._start_poc_services()
 
             # Submit job using Flare API like ProdEnv
             with tempfile.TemporaryDirectory() as temp_dir:
                 job.export_job(temp_dir)
                 job_path = os.path.join(temp_dir, job.name)
 
-                # Submit job via Flare API
-                job_id = self._submit_job_via_api(job_path)
-                print(f"Submitted job '{job.name}' with ID: {job_id}")
-
-                # Monitor job based on duration setting
-                if self.monitor_duration >= 0:
-                    if self.monitor_duration == 0:
-                        print("Monitoring job until completion...")
-                    else:
-                        print(f"Monitoring job for {self.monitor_duration} seconds...")
-                    self._monitor_job(job_id, self.monitor_duration)
-                else:
-                    print("Job submitted, not monitoring (monitor_duration < 0)")
+                job_id = self._submit_and_monitor_job(job_path, job.name)
 
                 return job_id
 
@@ -113,25 +111,9 @@ class POCEnv(ExecEnv):
             print(f"Error deploying job to POC environment: {e}")
             raise
         finally:
-            # Handle cleanup if we started the services
-            if self._poc_started_by_us:
-                # Stop services if auto_stop OR auto_clean (cleaning requires stopping)
-                if self.auto_stop or self.auto_clean:
-                    self._stop_poc_services()
-
-                # Clean workspace if requested
-                if self.auto_clean:
-                    # Wait for services to shut down with timeout
-                    timeout = 10  # Maximum 10 seconds
-                    for i in range(timeout):
-                        if not self.is_running():
-                            self._clean_poc_workspace()
-                            break
-                        time.sleep(1)
-                    else:
-                        print(
-                            f"Warning: POC still running after {timeout} seconds, cannot clean workspace. Skipping cleanup."
-                        )
+            # Stop and clean if auto_stop is enabled (we always start our own POC)
+            if self.auto_stop:
+                self._stop_and_clean_poc()
 
     def _ensure_poc_workspace(self):
         """Ensure POC workspace exists and is properly configured."""
@@ -154,18 +136,14 @@ class POCEnv(ExecEnv):
     def _prepare_poc_workspace(self):
         """Prepare POC workspace by running poc prepare (non-interactive)."""
         try:
-            # Generate client names if not provided
-            clients = [f"site-{i + 1}" for i in range(self.num_clients)]
-
-            # Use non-interactive prepare_poc_provision instead of _prepare_poc
             prepare_poc_provision(
-                clients=clients,
+                clients=self.clients or [],  # Empty list if None, let prepare_clients generate
                 number_of_clients=self.num_clients,
                 workspace=self.poc_workspace,
-                docker_image=None,  # Use default
-                use_he=False,  # No homomorphic encryption by default
-                project_conf_path="",  # Use default project config
-                examples_dir=None,  # No examples directory
+                docker_image=None,
+                use_he=False,
+                project_conf_path="",
+                examples_dir=None,
             )
             print(f"POC workspace prepared successfully at: {self.poc_workspace}")
 
@@ -205,6 +183,28 @@ class POCEnv(ExecEnv):
         except Exception as e:
             print(f"Warning: Failed to stop POC services cleanly: {e}")
 
+    def _stop_and_clean_poc(self):
+        """Stop POC services and clean workspace with proper wait logic."""
+        try:
+            self._stop_poc_services()
+
+            # Wait for services to stop before cleaning
+            for _ in range(STOP_POC_TIMEOUT):
+                if not self.is_running():
+                    break
+                time.sleep(1)
+            else:
+                print(
+                    f"Warning: POC still running after {STOP_POC_TIMEOUT} seconds, cannot clean workspace. Skipping cleanup."
+                )
+                return
+
+            # Clean workspace once services are stopped
+            self._clean_poc_workspace()
+
+        except Exception as e:
+            print(f"Warning: Failed to stop and clean POC: {e}")
+
     def _clean_poc_workspace(self):
         """Clean up POC workspace by removing all generated files."""
         try:
@@ -215,11 +215,12 @@ class POCEnv(ExecEnv):
         except Exception as e:
             print(f"Warning: Failed to clean POC workspace: {e}")
 
-    def _submit_job_via_api(self, job_path: str) -> str:
-        """Submit job via Flare API to POC environment.
+    def _submit_and_monitor_job(self, job_path: str, job_name: str) -> str:
+        """Submit and monitor job via Flare API using a single session.
 
         Args:
             job_path: Path to the exported job directory.
+            job_name: Name of the job for logging.
 
         Returns:
             str: Job ID returned by the system.
@@ -228,7 +229,7 @@ class POCEnv(ExecEnv):
             # Get the admin startup kit path for POC
             admin_dir = self._get_admin_startup_kit_path()
 
-            # Create secure session with POC admin
+            # Create secure session with POC admin (reuse for both submit and monitor)
             sess = new_secure_session(
                 username="admin@nvidia.com",  # Default POC admin user
                 startup_kit_location=admin_dir,
@@ -237,36 +238,27 @@ class POCEnv(ExecEnv):
             try:
                 # Submit the job
                 job_id = sess.submit_job(job_path)
+                print(f"Submitted job '{job_name}' with ID: {job_id}")
+
+                # Monitor job based on duration setting
+                if self.monitor_duration >= 0:
+                    if self.monitor_duration == 0:
+                        print("Monitoring job until completion...")
+                    else:
+                        print(f"Monitoring job for {self.monitor_duration} seconds...")
+
+                    result = sess.monitor_job(job_id, timeout=self.monitor_duration)
+                    print(f"Job monitoring completed: {result}")
+                else:
+                    print("Job submitted, not monitoring (monitor_duration < 0)")
+
                 return job_id
+
             finally:
                 sess.close()
 
         except Exception as e:
-            raise RuntimeError(f"Failed to submit job via Flare API: {e}")
-
-    def _monitor_job(self, job_id: str, duration: int):
-        """Monitor job progress for specified duration.
-
-        Args:
-            job_id: The job ID to monitor.
-            duration: Duration to monitor in seconds.
-        """
-        try:
-            admin_dir = self._get_admin_startup_kit_path()
-            sess = new_secure_session(
-                username="admin@nvidia.com",
-                startup_kit_location=admin_dir,
-            )
-
-            try:
-                # Monitor job with timeout
-                result = sess.monitor_job(job_id, timeout=duration)
-                print(f"Job monitoring completed: {result}")
-            finally:
-                sess.close()
-
-        except Exception as e:
-            print(f"Warning: Failed to monitor job: {e}")
+            raise RuntimeError(f"Failed to submit/monitor job via Flare API: {e}")
 
     def _get_admin_startup_kit_path(self) -> str:
         """Get the path to the admin startup kit for POC.
@@ -293,7 +285,6 @@ class POCEnv(ExecEnv):
         """Manually start POC services."""
         if not self.is_running():
             self._start_poc_services()
-            self._poc_started_by_us = True
 
     def stop_services(self):
         """Manually stop POC services."""
