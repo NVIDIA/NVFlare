@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import gc
 import time
 
 from nvflare.apis.controller_spec import Task
@@ -78,7 +79,9 @@ class CrossSiteEvalClientController(ClientSideController):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.eval_task_name:
             # server assigned task
-            return self._do_eval(shareable, fl_ctx, abort_signal)
+            result = self._do_eval(shareable, fl_ctx, abort_signal)
+            gc.collect()
+            return result
 
         elif task_name == self.prep_model_task_name:
             # server assigned task
