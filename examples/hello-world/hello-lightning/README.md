@@ -98,7 +98,8 @@ In federated averaging, the server code is responsible for aggregating model upd
 The job recipe code is used to define the client and server configurations.
 
 ## Run FL Job
-This section provides the command to execute the federated learning job using the job recipe defined above. Run this command in your terminal. First, you need to remember to download the data
+This section provides the command to execute the federated learning job using the job recipe defined above. Run this command in your terminal. First, run the following command to download the data:
+
 ```
 ./prepare_data.sh
 ```

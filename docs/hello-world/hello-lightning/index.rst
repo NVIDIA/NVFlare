@@ -214,7 +214,7 @@ Run FL Job
 
 This section provides the command to execute the federated learning job
 using the job recipe defined above. Run this command in your terminal.
-First, you need to remember to download the data
+First, run the following command to download the data:
 
 .. code-block:: text
 
