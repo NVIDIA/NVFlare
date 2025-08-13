@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import gc
 import threading
 import time
 from abc import abstractmethod
@@ -461,6 +462,9 @@ class ClientSideController(Executor, TaskController):
                     self.do_learn_task(t.task_name, t.task_data, t.fl_ctx, t.abort_signal)
                 except:
                     self.logger.log(f"exception from do_learn_task: {secure_format_traceback()}")
+                finally:
+                    # force garbage collection
+                    gc.collect()
                 self.learn_task = None
             time.sleep(self.learn_task_check_interval)
 
