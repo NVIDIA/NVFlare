@@ -37,6 +37,7 @@ class ModelManagerConfig:
         max_num_active_model_versions: Maximum number of active model versions
             that can be processed for the current model version. Default: 3
         max_model_version: Maximum model version number before stopping training.
+            We start with version 1 initial model, so the minimum for this arg is 2 to have at least one local update phase.
             Default: 20
         update_timeout: Timeout in seconds for waiting for model updates.
             Default: 5.0
@@ -61,6 +62,10 @@ class ModelManagerConfig:
     ):
         self.max_num_active_model_versions = max_num_active_model_versions
         self.max_model_version = max_model_version
+        # check if max_model_version is greater than 2
+        if max_model_version < 2:
+            raise ValueError("max_model_version needs to be greater than 2 to have at least one local update phase")
+
         self.update_timeout = update_timeout
         self.num_updates_for_model = num_updates_for_model
         self.max_model_history = max_model_history
@@ -78,8 +83,15 @@ class DeviceManagerConfig:
         device_selection_size: Number of devices to select for each training round.
             Default: 100
         min_hole_to_fill: Minimum number of model updates to wait for before
-            sampling the next batch of devices. Default: 1 (immediately dispatch the current global model)
+            sampling the next batch of devices and dispatching the current global model.
+            - If set to 1, the server immediately dispatch the current global model to a sampled device.
+            - Higher values cause the server to wait for more updates before dispatching.
+            - If set to device_selection_size, we will have synchronous training since all devices' responses need to be collected before dispatching the next global model.
+            This parameter works with num_updates_for_model from model manager to achieve trade-off between global model versioning and local execution.
+            Default: 1 (immediately dispatch the current global model)
         device_reuse: Whether to allow devices to participate in multiple rounds.
+            if False, devices will be selected only once, which could be realistic for real-world scenarios where the
+            device pool is huge while participation is random.
             Default: True (always reuse / include the existing devices for further learning)
         const_selection: Whether to use constant device selection across rounds.
             Default: False
@@ -94,6 +106,9 @@ class DeviceManagerConfig:
     ):
         self.device_selection_size = device_selection_size
         self.min_hole_to_fill = min_hole_to_fill
+        # check if min_hole_to_fill is smaller than device_selection_size
+        if min_hole_to_fill > device_selection_size:
+            raise ValueError("min_hole_to_fill needs to be smaller than device_selection_size")
         self.device_reuse = device_reuse
         self.const_selection = const_selection
 
@@ -186,7 +201,6 @@ class EdgeRecipe(Recipe):
 
     Attributes:
         job_name: Name of the federated learning job
-        method_name: Method type, always set to "edge"
         model: PyTorch neural network model to be trained
         model_manager_config: Configuration for the model manager
         device_manager_config: Configuration for the device manager
@@ -219,6 +233,12 @@ class EdgeRecipe(Recipe):
         self.evaluator_config = evaluator_config
         self.simulation_config = simulation_config
         self.custom_source_root = custom_source_root
+        # check if model_manager_config.num_updates_for_model is smaller than device_manager_config.device_selection_size
+        if model_manager_config.num_updates_for_model < device_manager_config.device_selection_size:
+            raise ValueError(
+                "model_manager_config.num_updates_for_model needs to be smaller than device_manager_config.device_selection_size, otherwise the server will never have enough updates to update the global model"
+            )
+
         job = self.create_job()
         self._configure_job(job)
         Recipe.__init__(self, job)
