@@ -36,12 +36,12 @@ def main():
     device_speed = {"mean": [0.0], "std": [0.0]}
     global_lr = 0.1
     num_updates_for_model = 20
-    max_model_version = 300
+    max_model_version = 200
     max_model_history = 100
     min_hole_to_fill = 10
     eval_frequency = 1
-    local_batch_size = 32
-    local_epochs = 1
+    local_batch_size = 10
+    local_epochs = 4
     local_lr = 0.1
     local_momentum = 0.0
 

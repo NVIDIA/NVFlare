@@ -108,7 +108,7 @@ class DeviceManagerConfig:
         self.min_hole_to_fill = min_hole_to_fill
         # check if min_hole_to_fill is smaller than device_selection_size
         if min_hole_to_fill > device_selection_size:
-            raise ValueError("min_hole_to_fill needs to be smaller than device_selection_size")
+            raise ValueError("min_hole_to_fill needs to be smaller than or equal to device_selection_size")
         self.device_reuse = device_reuse
         self.const_selection = const_selection
 
