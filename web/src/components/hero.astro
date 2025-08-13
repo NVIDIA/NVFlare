@@ -48,42 +48,27 @@ const base_url = import.meta.env.BASE_URL;
                   >What's new</span
                 >
               </a>
-              <a
-                href="flareDay"
-                class="inline-flex space-x-6">
-                <span
-                  class="inline-flex items-center space-x-1 text-base font-medium text-gray-200 hover:text-gray-100">
-                  <span class="border-b-2 border-nvidia">NVIDIA FLARE DAY 2024</span>
-                  <svg
-                    class="h-8 w-8 text-gray-400"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true">
-                    <path
-                      fill-rule="evenodd"
-                      d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
-                      clip-rule="evenodd"></path>
-                  </svg>
+              <!-- FLARE Day Dropdown -->
+              <button id="dropdownFlareDayButton" data-dropdown-toggle="flare-day-dropdown" class="text-gray-200 m-0.5 hover:bg-gray-700 rounded-lg py-1 px-2.5 inline-flex items-center justify-center bg-clear border-gray-300 border">
+                <span class="inline-flex items-center text-left">
+                    <span class="text-base font-medium border-b-2 border-nvidia">NVIDIA FLARE DAY</span>
+                    <svg class="w-2.5 h-2.5 ml-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
+                      <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 4 4 4-4"/>
+                    </svg>
                 </span>
-              </a>
-              <a
-                href="https://developer.nvidia.com/flare-summer-of-code-2025"
-                class="inline-flex space-x-6">
-                <span
-                  class="rounded-full bg-nvidia/20 px-3 py-1 text-sm font-semibold leading-6 text-nvidia ring-1 ring-inset ring-nvidia/10 inline-flex items-center space-x-1">
-                  <span>SUMMER OF CODE 2025</span>
-                  <svg
-                    class="h-4 w-4 text-nvidia"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true">
-                    <path
-                      fill-rule="evenodd"
-                      d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
-                      clip-rule="evenodd"></path>
-                  </svg>
-                </span>
-              </a>
+              </button>
+
+              <!-- FLARE Day Dropdown Options -->
+              <div id="flare-day-dropdown" class="z-10 hidden bg-gray-200 divide-y divide-gray-100 rounded-lg shadow-lg m-0.5 px-2.5 text-left">
+                <ul class="flex-column h-fit space-y -mb-px py-2 text-sm text-gray-500 w-full">
+                  <li>
+                      <a href="flareDay" class="rounded-lg block px-4 py-2 hover:text-gray-900">2024</a>
+                  </li>
+                  <li>
+                      <a href="https://developer.nvidia.com/flare-day-2025" class="rounded-lg block px-4 py-2 hover:text-gray-900">2025</a>
+                  </li>
+                </ul>
+              </div>
             </div>
             <img class="mt-6 flex items-center w-1/2" src={NvidiaLogo.src} alt="NVIDIA logo">
             <h1
