@@ -121,7 +121,7 @@ Assuming the previous steps are completed, we can now run the end-to-end example
 Again, if the system is not up running yet, we first start the system, open a terminal window and run the following command:
 ```commandline
 cd /tmp/nvflare/workspaces/edge_example/prod_00/
-bash start_all.sh
+bash start_all.sh 
 ```  
 
 #### Step2: Generate Job Configs using the EdgeRecipe API
