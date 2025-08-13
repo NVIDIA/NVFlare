@@ -25,20 +25,25 @@ from nvflare.edge.tools.edge_recipe import (
 
 
 def main():
-    # FL recipe parameters
+    # FL global and local parameters
     devices_per_leaf = 10000
-    device_selection_size = 400
+    device_selection_size = 200
+    num_leaf_nodes = 4
     output_dir = "/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer"
     dataset_root = "/tmp/nvflare/datasets/cifar10"
     subset_size = 100
     communication_delay = {"mean": 0.0, "std": 0.0}
     device_speed = {"mean": [0.0], "std": [0.0]}
-    global_lr = 0.001
-    num_updates_for_model = 100
-    max_model_version = 50
-    max_model_history = 20
-    min_hole_to_fill = 40
+    global_lr = 0.1
+    num_updates_for_model = 20
+    max_model_version = 200
+    max_model_history = 100
+    min_hole_to_fill = 10
     eval_frequency = 1
+    local_batch_size = 10
+    local_epochs = 4
+    local_lr = 0.1
+    local_momentum = 0.0
 
     print("Creating federated learning recipe...")
     # Task processor for device training simulation
@@ -47,6 +52,10 @@ def main():
         subset_size=subset_size,
         communication_delay=communication_delay,
         device_speed=device_speed,
+        local_batch_size=local_batch_size,
+        local_epochs=local_epochs,
+        local_lr=local_lr,
+        local_momentum=local_momentum,
     )
 
     # Model manager and device manager configurations
@@ -76,7 +85,10 @@ def main():
             torchvision_dataset={"name": "CIFAR10", "path": dataset_root}, eval_frequency=eval_frequency
         ),
         simulation_config=SimulationConfig(
-            task_processor=task_processor, job_timeout=20.0, num_workers=10, num_devices=devices_per_leaf
+            task_processor=task_processor,
+            job_timeout=20.0,
+            num_workers=device_selection_size // num_leaf_nodes + 1,
+            num_devices=devices_per_leaf,
         ),
         custom_source_root=None,
     )
