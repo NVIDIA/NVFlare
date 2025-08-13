@@ -17,13 +17,15 @@ import ssl
 
 from application import init_app
 
+from nvflare.dashboard.utils import EnvVar, get_web_root
+
 app = init_app()
 
 if __name__ == "__main__":
-    web_root = os.environ.get("NVFL_WEB_ROOT", "/var/tmp/nvflare/dashboard")
+    web_root = get_web_root()
     web_crt = os.path.join(web_root, "cert", "web.crt")
     web_key = os.path.join(web_root, "cert", "web.key")
-    port = os.environ.get("NVFL_WEB_PORT", "8443")
+    port = os.environ.get(EnvVar.WEB_PORT, "8443")
     if os.path.exists(web_crt) and os.path.exists(web_key):
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ssl_context.load_cert_chain(web_crt, web_key)
