@@ -17,6 +17,8 @@ import json
 import os
 from datetime import timedelta
 
+import yaml
+
 from nvflare.dashboard.utils import EnvVar, get_web_root
 from nvflare.lighter.utils import generate_password
 
@@ -39,12 +41,17 @@ class PropertyManager:
 
     def __init__(self):
         web_root = get_web_root()
-        prop_file = os.path.join(web_root, "properties.json")
-        if os.path.exists(prop_file):
-            with open(prop_file, "r") as f:
+        self.props = {}
+        yml_file = os.path.join(web_root, "properties.yml")
+        if os.path.exists(yml_file):
+            with open(yml_file, "r") as f:
+                self.props = yaml.safe_load(f)
+            return
+
+        json_file = os.path.join(web_root, "properties.json")
+        if os.path.exists(json_file):
+            with open(json_file, "r") as f:
                 self.props = json.load(f)
-        else:
-            self.props = {}
 
     def get_project_props(self):
         return self.props.get("project", {})
