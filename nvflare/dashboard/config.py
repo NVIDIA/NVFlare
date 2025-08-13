@@ -13,21 +13,63 @@
 # limitations under the License.
 
 """Flask configuration variables."""
+import json
 import os
 from datetime import timedelta
 
+from nvflare.dashboard.utils import EnvVar, get_web_root
 from nvflare.lighter.utils import generate_password
 
 
 class Config:
     # General Config
-    SECRET_KEY = os.environ.get("SECRET_KEY", generate_password(16))
+    SECRET_KEY = os.environ.get(EnvVar.SECRET_KEY, generate_password(16))
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
 
     # Database
-    web_root = os.environ.get("NVFL_WEB_ROOT", "/var/tmp/nvflare/dashboard")
+    web_root = get_web_root()
     default_sqlite_file = os.path.join(web_root, "db.sqlite")
     default_sqlite_url = f"sqlite:///{default_sqlite_file}"
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", default_sqlite_url)
+    SQLALCHEMY_DATABASE_URI = os.environ.get(EnvVar.DATABASE_URL, default_sqlite_url)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = False
+
+
+class PropertyManager:
+
+    def __init__(self):
+        web_root = get_web_root()
+        prop_file = os.path.join(web_root, "properties.json")
+        if os.path.exists(prop_file):
+            with open(prop_file, "r") as f:
+                self.props = json.load(f)
+        else:
+            self.props = {}
+
+    def get_project_props(self):
+        return self.props.get("project", {})
+
+    def get_project_prop(self, key, default=None):
+        props = self.get_project_props()
+        return props.get(key, default)
+
+    def get_client_props(self):
+        return self.props.get("client", {})
+
+    def get_client_prop(self, key, default=None):
+        props = self.get_client_props()
+        return props.get(key, default)
+
+    def get_server_props(self):
+        return self.props.get("server", {})
+
+    def get_server_prop(self, key, default=None):
+        props = self.get_server_props()
+        return props.get(key, default)
+
+    def get_admin_props(self):
+        return self.props.get("admin", {})
+
+    def get_admin_prop(self, key, default=None):
+        props = self.get_admin_props()
+        return props.get(key, default)

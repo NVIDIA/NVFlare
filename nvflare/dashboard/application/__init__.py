@@ -18,14 +18,16 @@ from flask import Flask
 from flask_jwt_extended import JWTManager
 from flask_sqlalchemy import SQLAlchemy
 
+from nvflare.dashboard.utils import EnvVar, get_web_root
+
 db = SQLAlchemy()
 jwt = JWTManager()
 
 
 def init_app():
-    web_root = os.environ.get("NVFL_WEB_ROOT", "/var/tmp/nvflare/dashboard")
+    web_root = get_web_root()
     os.makedirs(web_root, exist_ok=True)
-    static_folder = os.environ.get("NVFL_DASHBOARD_STATIC_FOLDER", "static")
+    static_folder = os.environ.get(EnvVar.DASHBOARD_STATIC_FOLDER, "static")
     app = Flask(__name__, static_url_path="", static_folder=static_folder)
     app.config.from_object("nvflare.dashboard.config.Config")
     db.init_app(app)
@@ -36,13 +38,13 @@ def init_app():
 
         db.create_all()
         if not Store.ready():
-            credential = os.environ.get("NVFL_CREDENTIAL")
+            credential = os.environ.get(EnvVar.CREDENTIAL)
             if credential is None:
-                print("Please set env var NVFL_CREDENTIAL")
+                print(f"Please set env var {EnvVar.CREDENTIAL}")
                 exit(1)
             parts = credential.split(":")
             if len(parts) != 3:
-                print(f"Invalid value '{credential}' for env var NVFL_CREDENTIAL: it must be email:password:org")
+                print(f"Invalid value '{credential}' for env var {EnvVar.CREDENTIAL}: it must be email:password:org")
             email = parts[0]
             pwd = parts[1]
             org = parts[2]
