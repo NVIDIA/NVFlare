@@ -234,9 +234,9 @@ class EdgeRecipe(Recipe):
         self.simulation_config = simulation_config
         self.custom_source_root = custom_source_root
         # check if model_manager_config.num_updates_for_model is smaller than device_manager_config.device_selection_size
-        if model_manager_config.num_updates_for_model < device_manager_config.device_selection_size:
+        if model_manager_config.num_updates_for_model > device_manager_config.device_selection_size:
             raise ValueError(
-                "model_manager_config.num_updates_for_model needs to be smaller than device_manager_config.device_selection_size, otherwise the server will never have enough updates to update the global model"
+                "model_manager_config.num_updates_for_model needs to be smaller than or equal to device_manager_config.device_selection_size, otherwise the server will never have enough updates to update the global model"
             )
 
         job = self.create_job()
