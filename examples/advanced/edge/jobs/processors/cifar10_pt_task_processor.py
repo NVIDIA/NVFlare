@@ -34,7 +34,17 @@ DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 class Cifar10PTTaskProcessor(DeviceTaskProcessor):
 
-    def __init__(self, data_root: str, subset_size: int, communication_delay: dict, device_speed: dict):
+    def __init__(
+        self,
+        data_root: str,
+        subset_size: int,
+        communication_delay: dict,
+        device_speed: dict,
+        local_batch_size: int = 4,
+        local_epochs: int = 4,
+        local_lr: float = 0.001,
+        local_momentum: float = 0.9,
+    ):
         DeviceTaskProcessor.__init__(self)
         self.data_root = data_root
         self.subset_size = subset_size
@@ -45,6 +55,10 @@ class Cifar10PTTaskProcessor(DeviceTaskProcessor):
         # it is set to None initially and will be randomly assigned when the device is initialized
         mean_speed = self.device_speed.get("mean")
         self.device_speed_type = random.randint(0, len(mean_speed) - 1)
+        self.local_batch_size = local_batch_size
+        self.local_epochs = local_epochs
+        self.local_lr = local_lr
+        self.local_momentum = local_momentum
 
     def setup(self, job: JobResponse) -> None:
         pass
@@ -55,7 +69,7 @@ class Cifar10PTTaskProcessor(DeviceTaskProcessor):
     def _pytorch_training(self, global_model):
         # Data loading code
         transform = transforms.Compose([transforms.ToTensor()])
-        batch_size = 4
+        batch_size = self.local_batch_size
 
         # Add file lock to prevent multiple simultaneous downloads
         lock_file = os.path.join(self.data_root, "cifar10.lock")
@@ -78,12 +92,12 @@ class Cifar10PTTaskProcessor(DeviceTaskProcessor):
         net = Cifar10ConvNet()
         net.load_state_dict(global_model)
         criterion = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+        optimizer = torch.optim.SGD(net.parameters(), lr=self.local_lr, momentum=self.local_momentum)
         net.to(DEVICE)
 
         # Training loop
         # Let's do 4 local epochs
-        for epoch in range(4):
+        for epoch in range(self.local_epochs):
             for i, data in enumerate(train_loader, 0):
                 # get the inputs; data is a list of [inputs, labels]
                 inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
@@ -96,10 +110,6 @@ class Cifar10PTTaskProcessor(DeviceTaskProcessor):
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
-
-                # print the loss every ${subset_size / batch_size}/10 iterations
-                # if i % (self.subset_size / batch_size / 10) == 0:
-                #    print(f"Epoch {epoch}, Step {i}, Loss: {loss.item()}")
 
         # Calculate the model param diff
         diff_dict = {}
