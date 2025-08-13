@@ -64,7 +64,7 @@ class ModelManagerConfig:
         self.max_model_version = max_model_version
         # check if max_model_version is greater than 2
         if max_model_version < 2:
-            raise ValueError("max_model_version needs to be greater than 2 to have at least one local update phase")
+            raise ValueError("max_model_version needs to be at least 2 to have at least one local update phase")
 
         self.update_timeout = update_timeout
         self.num_updates_for_model = num_updates_for_model
