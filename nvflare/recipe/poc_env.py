@@ -18,6 +18,8 @@ import tempfile
 import time
 from typing import List, Optional
 
+from pydantic import BaseModel, model_validator
+
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.job_config.api import FedJob
 from nvflare.tool.poc.poc_commands import (
@@ -36,6 +38,36 @@ from .spec import ExecEnv
 
 STOP_POC_TIMEOUT = 10
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
+
+
+# Internal — not part of the public API
+class _PocEnvValidator(BaseModel):
+    num_clients: int
+    clients: Optional[List[str]] = None
+    gpu_ids: Optional[List[int]] = None
+    auto_stop: bool = True
+    monitor_duration: int = 0
+    use_he: bool = False
+    docker_image: Optional[str] = None
+    project_conf_path: str = ""
+
+    @model_validator(mode="after")
+    def check_client_configuration(self):
+        # Check if clients list is empty
+        if self.clients is not None and len(self.clients) == 0:
+            raise ValueError("clients list cannot be empty")
+
+        # Check if both num_clients and clients are specified and inconsistent
+        if self.clients is not None and self.num_clients > 0 and len(self.clients) != self.num_clients:
+            raise ValueError(
+                f"Inconsistent: num_clients={self.num_clients} but clients list has {len(self.clients)} entries"
+            )
+
+        # Check if num_clients is valid when clients is None
+        if self.clients is None and self.num_clients <= 0:
+            raise ValueError("num_clients must be greater than 0")
+
+        return self
 
 
 class POCEnv(ExecEnv):
@@ -71,25 +103,26 @@ class POCEnv(ExecEnv):
             project_conf_path (str, optional): Path to the project configuration file. Defaults to "".
                 If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
         """
-        # Validate client configuration
-        if clients is not None:
-            if len(clients) == 0:
-                raise ValueError("clients list cannot be empty")
-            if num_clients > 0 and len(clients) != num_clients:
-                raise ValueError(f"Inconsistent: num_clients={num_clients} but clients list has {len(clients)} entries")
-        else:
-            if num_clients <= 0:
-                raise ValueError("num_clients must be greater than 0")
+        v = _PocEnvValidator(
+            num_clients=num_clients,
+            clients=clients,
+            gpu_ids=gpu_ids,
+            auto_stop=auto_stop,
+            monitor_duration=monitor_duration,
+            use_he=use_he,
+            docker_image=docker_image,
+            project_conf_path=project_conf_path,
+        )
 
-        self.clients = clients
-        self.num_clients = len(clients) if clients is not None else num_clients
+        self.clients = v.clients
+        self.num_clients = len(v.clients) if v.clients is not None else v.num_clients
         self.poc_workspace = get_poc_workspace()
-        self.gpu_ids = gpu_ids or []
-        self.auto_stop = auto_stop
-        self.monitor_duration = monitor_duration
-        self.use_he = use_he
-        self.project_conf_path = project_conf_path
-        self.docker_image = docker_image
+        self.gpu_ids = v.gpu_ids or []
+        self.auto_stop = v.auto_stop
+        self.monitor_duration = v.monitor_duration
+        self.use_he = v.use_he
+        self.project_conf_path = v.project_conf_path
+        self.docker_image = v.docker_image
 
     def _try_to_stop_and_clean_existing_poc(self):
         """Try to stop and clean existing POC if it is running."""
