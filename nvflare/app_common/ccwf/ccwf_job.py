@@ -79,6 +79,9 @@ class SwarmClientConfig:
         final_result_ack_timeout=Constant.FINAL_RESULT_ACK_TIMEOUT,
         min_responses_required: int = 1,
         wait_time_after_min_resps_received: float = 10.0,
+        request_to_submit_result_msg_timeout=5.0,
+        request_to_submit_result_max_wait=None,
+        max_concurrent_submissions: int = 1,
     ):
         # the executor could be a wrapper object that adds real Executor when added to job!
         validate_object_for_job("executor", executor, Executor)
@@ -105,6 +108,9 @@ class SwarmClientConfig:
         self.final_result_ack_timeout = final_result_ack_timeout
         self.min_responses_required = min_responses_required
         self.wait_time_after_min_resps_received = wait_time_after_min_resps_received
+        self.request_to_submit_result_msg_timeout = request_to_submit_result_msg_timeout
+        self.request_to_submit_result_max_wait = request_to_submit_result_max_wait
+        self.max_concurrent_submissions = max_concurrent_submissions
 
 
 class CyclicServerConfig:
@@ -260,6 +266,9 @@ class CCWFJob(FedJob):
             final_result_ack_timeout=client_config.final_result_ack_timeout,
             min_responses_required=client_config.min_responses_required,
             wait_time_after_min_resps_received=client_config.wait_time_after_min_resps_received,
+            request_to_submit_result_msg_timeout=client_config.request_to_submit_result_msg_timeout,
+            request_to_submit_result_max_wait=client_config.request_to_submit_result_max_wait,
+            max_concurrent_submissions=client_config.max_concurrent_submissions,
         )
         self.to_clients(client_controller, tasks=["swarm_*"])
         if not self.executor:

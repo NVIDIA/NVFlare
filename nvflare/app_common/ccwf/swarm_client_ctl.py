@@ -37,7 +37,9 @@ from nvflare.security.logging import secure_format_traceback
 class _TrainerStatus:
     def __init__(self, name: str):
         self.name = name
-        self.reply_time = None
+        self.last_submit_req_time = None  # the last time this trainer requested to submit result
+        self.busy = False  # whether this trainer is busy
+        self.reply_time = None  # the time this trainer's result is received
 
 
 class Gatherer(FLComponent):
@@ -54,6 +56,7 @@ class Gatherer(FLComponent):
         min_responses_required: int,
         wait_time_after_min_resps_received: float,
         timeout,
+        max_concurrent_submissions: int = 1,
     ):
         FLComponent.__init__(self)
         self.fl_ctx = fl_ctx
@@ -66,6 +69,7 @@ class Gatherer(FLComponent):
         self.trainer_statuses = {}
         self.start_time = time.time()
         self.timeout = timeout
+        self.max_concurrent_submissions = max_concurrent_submissions
 
         for t in trainers:
             self.trainer_statuses[t] = _TrainerStatus(t)
@@ -75,6 +79,7 @@ class Gatherer(FLComponent):
         self.wait_time_after_min_resps_received = wait_time_after_min_resps_received
         self.min_resps_received_time = None
         self.lock = threading.Lock()
+        self.perm_lock = threading.Lock()
         self.current_best_client = task_data.get_header(Constant.CLIENT)
         self.current_best_global_metric = task_data.get_header(Constant.METRIC)
         self.current_best_round = task_data.get_header(Constant.ROUND)
@@ -96,8 +101,47 @@ class Gatherer(FLComponent):
                 self.log_error(fl_ctx, f"exception gathering: {secure_format_traceback()}")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             finally:
+                with self.perm_lock:
+                    client_status = self.trainer_statuses.get(client_name)
+                    if client_status:
+                        client_status.busy = False
+
                 # force garbage collection after each gather
                 gc.collect()
+
+    def can_accept_submission(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> str:
+        with self.perm_lock:
+            result_round = result.get_header(AppConstants.CURRENT_ROUND)
+            client_status = self.trainer_statuses.get(client_name)
+            if not client_status:
+                self.log_error(
+                    fl_ctx, f"submission request from {client_name} for round {result_round}, but it is not a trainer"
+                )
+                return ReturnCode.MODEL_UNRECOGNIZED
+
+            client_status.last_submit_req_time = time.time()
+            if client_status.busy:
+                # we already granted permission
+                self.log_info(fl_ctx, f"already granted permission to client {client_name}")
+                return ReturnCode.OK
+
+            # how many are busy now?
+            busy = 0
+            for ts in self.trainer_statuses.values():
+                if ts.busy:
+                    busy += 1
+
+            if busy >= self.max_concurrent_submissions:
+                self.log_info(
+                    fl_ctx,
+                    f"asked client {client_name} to wait: busy clients {busy} >= {self.max_concurrent_submissions}",
+                )
+                return ReturnCode.SERVICE_UNAVAILABLE
+            else:
+                # we can accept
+                client_status.busy = True
+                self.log_info(fl_ctx, f"OK to accept submission from {client_name}")
+                return ReturnCode.OK
 
     def _do_gather(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> Shareable:
         result_round = result.get_header(AppConstants.CURRENT_ROUND)
@@ -242,11 +286,18 @@ class SwarmClientController(ClientSideController):
         final_result_ack_timeout=Constant.FINAL_RESULT_ACK_TIMEOUT,
         min_responses_required: int = 1,
         wait_time_after_min_resps_received: float = 10.0,
+        request_to_submit_result_max_wait=None,
+        request_to_submit_result_msg_timeout=5.0,
+        max_concurrent_submissions: int = 1,
     ):
         check_non_empty_str("learn_task_name", learn_task_name)
         check_non_empty_str("persistor_id", persistor_id)
         check_non_empty_str("shareable_generator_id", shareable_generator_id)
         check_non_empty_str("aggregator_id", aggregator_id)
+        check_positive_number("request_to_submit_result_msg_timeout", request_to_submit_result_msg_timeout)
+        check_positive_int("max_concurrent_submissions", max_concurrent_submissions)
+        if request_to_submit_result_max_wait:
+            check_positive_number("request_to_submit_result_max_wait", request_to_submit_result_max_wait)
 
         if metric_comparator_id:
             check_non_empty_str("metric_comparator_id", metric_comparator_id)
@@ -271,6 +322,12 @@ class SwarmClientController(ClientSideController):
         self.metric_comparator_id = metric_comparator_id
         self.metric_comparator = None
         self.report_learn_result_task_name = make_task_name(task_name_prefix, Constant.BASENAME_REPORT_LEARN_RESULT)
+        self.request_to_submit_learn_result_task_name = make_task_name(
+            task_name_prefix, Constant.BASENAME_REQUEST_TO_SUBMIT_LEARN_RESULT
+        )
+        self.max_concurrent_submissions = max_concurrent_submissions
+        self.request_to_submit_result_max_wait = request_to_submit_result_max_wait
+        self.request_to_submit_result_msg_timeout = request_to_submit_result_msg_timeout
         self.learn_task_timeout = learn_task_timeout
         self.min_responses_required = min_responses_required
         self.wait_time_after_min_resps_received = wait_time_after_min_resps_received
@@ -300,6 +357,11 @@ class SwarmClientController(ClientSideController):
         self.engine.register_aux_message_handler(
             topic=self.topic_for_my_workflow(Constant.TOPIC_SHARE_RESULT),
             message_handle_func=self._process_share_result,
+        )
+
+        self.engine.register_aux_message_handler(
+            topic=self.request_to_submit_learn_result_task_name,
+            message_handle_func=self._process_submission_request,
         )
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -497,6 +559,41 @@ class SwarmClientController(ClientSideController):
         self.log_info(fl_ctx, "distributing last result")
         self.broadcast_final_result(fl_ctx, ResultType.LAST, self.last_result, round_num=self.last_round)
 
+    def _process_submission_request(self, topic: str, request: Shareable, fl_ctx: FLContext):
+        peer_ctx = fl_ctx.get_peer_context()
+        assert isinstance(peer_ctx, FLContext)
+        client_name = peer_ctx.get_identity_name()
+        current_round = request.get_header(AppConstants.CURRENT_ROUND)
+        self.log_info(fl_ctx, f"got result submission request {topic} from {client_name} for round {current_round}")
+
+        gatherer = self.gatherer
+        if not gatherer:
+            # this could be from a fast client before I even create the waiter;
+            # or from a late client after I already finished gathering.
+            if current_round <= self.last_aggr_round_done:
+                # late client case - drop the result
+                self.log_info(fl_ctx, f"reject from late {client_name} for round {current_round}")
+                return make_reply(ReturnCode.MODEL_UNRECOGNIZED)
+
+            # case of fast client - ask to try again
+            self.log_info(
+                fl_ctx, f"got submission result from {client_name} for round {current_round} before gatherer setup"
+            )
+            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+
+        assert isinstance(gatherer, Gatherer)
+        if gatherer.for_round != current_round:
+            self.log_warning(
+                fl_ctx,
+                f"Got submission request from {client_name} for round {current_round}, "
+                f"but I'm waiting for round {gatherer.for_round}",
+            )
+
+        # check whether this client is permitted to submit result
+        rc = gatherer.can_accept_submission(client_name, request, fl_ctx)
+        self.log_info(fl_ctx, f"got permission from gatherer: {rc}")
+        return make_reply(rc)
+
     def _process_learn_result(self, request: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         try:
             peer_ctx = fl_ctx.get_peer_context()
@@ -601,6 +698,7 @@ class SwarmClientController(ClientSideController):
                 aggregator=self.aggregator,
                 executor=self,
                 task_data=task_data,
+                max_concurrent_submissions=self.max_concurrent_submissions,
             )
             self.gatherer_waiter.set()
 
@@ -614,6 +712,73 @@ class SwarmClientController(ClientSideController):
                 self.log_error(fl_ctx, f"learn executor failed: {rc}")
                 self.update_status(action="learner_execution", error=rc)
                 return
+
+            # ask permission to submit result to the aggr client repeatedly until permitted
+            self.log_info(fl_ctx, f"asking permission to submit result to the aggregation client {aggr}")
+            submission_req = Shareable()
+            submission_req.set_header(AppConstants.CURRENT_ROUND, current_round)
+
+            req_start_time = time.time()
+            engine = fl_ctx.get_engine()
+            max_wait = self.request_to_submit_result_max_wait
+            while True:
+                if abort_signal.triggered:
+                    self.log_info(
+                        fl_ctx, f"giving up result submission to {aggr} for round {current_round}: job aborted"
+                    )
+                    return
+
+                if max_wait and time.time() - req_start_time > max_wait:
+                    self.log_error(
+                        fl_ctx, f"giving up result submission to {aggr} for round {current_round} after {max_wait} secs"
+                    )
+                    return
+
+                resp = engine.send_aux_request(
+                    targets=[aggr],
+                    topic=self.request_to_submit_learn_result_task_name,
+                    request=submission_req,
+                    timeout=self.request_to_submit_result_msg_timeout,
+                    fl_ctx=fl_ctx,
+                    secure=False,
+                )
+                self.log_debug(fl_ctx, f"got request_to_submit response from {aggr}: {resp}")
+
+                reply = resp.get(aggr)
+                if not reply:
+                    self.log_error(
+                        fl_ctx, f"failed to receive reply for submission request from aggregation client: {aggr}"
+                    )
+                    self.update_status(action="receive_permission_reply", error=ReturnCode.EXECUTION_EXCEPTION)
+                    return
+
+                if not isinstance(reply, Shareable):
+                    self.log_error(
+                        fl_ctx, f"bad reply from aggregation client {aggr}: expect Shareable but got {type(reply)}"
+                    )
+                    self.update_status(action="receive_permission_reply", error=ReturnCode.EXECUTION_EXCEPTION)
+                    return
+
+                rc = reply.get_return_code(ReturnCode.OK)
+                if rc == ReturnCode.OK:
+                    # permission granted
+                    time_taken = time.time() - req_start_time
+                    self.log_info(
+                        fl_ctx,
+                        f"got permission from {aggr} to submit round {current_round} result in {time_taken} secs",
+                    )
+                    break
+                elif rc == ReturnCode.MODEL_UNRECOGNIZED:
+                    # aggr client doesn't want me to submit the result!
+                    self.log_info(fl_ctx, f"{aggr} does not want me to submit learn result!")
+                    self.update_status(action="receive_learn_result_reply", error=rc)
+                    return
+
+                elif rc != ReturnCode.SERVICE_UNAVAILABLE:
+                    self.log_warning(fl_ctx, f"got unexpected RC {rc} for submission request from {aggr}")
+
+                # aggr client is not ready - need try again
+                time.sleep(1.0)
 
             # send the result to the aggr
             self.log_info(fl_ctx, f"sending training result to aggregation client {aggr}")
