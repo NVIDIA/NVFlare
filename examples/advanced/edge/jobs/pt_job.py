@@ -82,7 +82,6 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
             min_hole_to_fill=total_devices,
             # always reuse the same devices for federated learning
             device_reuse=True,
-            const_selection=True,
         )
         eval_frequency = 1
     else:  # async mode
@@ -114,7 +113,6 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
             min_hole_to_fill=1,
             # always reuse the same devices for federated learning
             device_reuse=True,
-            const_selection=True,
         )
         eval_frequency = total_devices
 

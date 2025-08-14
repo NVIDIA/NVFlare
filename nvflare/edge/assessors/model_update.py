@@ -128,6 +128,9 @@ class ModelUpdateAssessor(Assessor):
             for model_update in report.model_updates.values():
                 if model_update:
                     self.device_manager.remove_devices_from_selection(set(model_update.devices.keys()), fl_ctx)
+                    # if reuse, remove devices from used devices
+                    if self.device_manager.device_reuse:
+                        self.device_manager.remove_devices_from_used(set(model_update.devices.keys()), fl_ctx)
 
             # Handle device selection
             if self.device_manager.should_fill_selection(fl_ctx):

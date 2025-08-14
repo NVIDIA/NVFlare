@@ -149,7 +149,8 @@ class AsyncNumAssessor(Assessor):
                     f"processed child update V{model_version} with {len(model_update.devices)} devices: {accepted=}",
                 )
 
-                # remove reported devices from selection
+                # remove reported devices from selection, and from used devices if device_reuse is enabled
+                # indicating that the reported devices becomes available again for reuse
                 for k in model_update.devices.keys():
                     if k not in self.current_selection:
                         self.log_warning(
@@ -157,6 +158,8 @@ class AsyncNumAssessor(Assessor):
                             f"got update from device {k} but it's not in device selection, verify if this is expected",
                         )
                     self.current_selection.pop(k, None)
+                    if self.device_reuse:
+                        self.used_devices.pop(k, None)
 
             current_model_state = self.updates.get(self.current_model_version)
             if not isinstance(current_model_state, _ModelState):
@@ -204,15 +207,8 @@ class AsyncNumAssessor(Assessor):
         self.log_info(fl_ctx, f"filling {num_holes} holes in selection list")
         if num_holes > 0:
             self.current_selection_version += 1
-            if not self.device_reuse:
-                # remove all used devices from available devices
-                usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
-            else:
-                # remove only the devices that are associated with the current model version
-                usable_devices = set(self.available_devices.keys()) - set(
-                    k for k, v in self.used_devices.items() if v == self.current_model_version
-                )
-
+            # remove all used devices from available devices
+            usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
             if usable_devices:
                 for _ in range(num_holes):
                     device_id = random.choice(list(usable_devices))
@@ -221,7 +217,10 @@ class AsyncNumAssessor(Assessor):
                     self.used_devices[device_id] = self.current_model_version
                     if not usable_devices:
                         break
-        self.log_info(fl_ctx, f"current selection: V{self.current_selection_version}; {self.current_selection}")
+        self.log_info(
+            fl_ctx,
+            f"current selection with {len(self.current_selection)} items: V{self.current_selection_version}; {self.current_selection}",
+        )
 
     def assess(self, fl_ctx: FLContext) -> Assessment:
         if self.current_model_version >= self.max_model_version:
