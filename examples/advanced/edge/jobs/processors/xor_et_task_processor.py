@@ -27,7 +27,7 @@ class XorDataset(Dataset):
         """Initialize XOR dataset."""
 
         self.X = torch.tensor([[1, 0], [0, 1], [1, 1], [0, 0]], dtype=torch.float32)
-        self.Y = torch.tensor([[1], [1], [0], [0]], dtype=torch.int64)
+        self.Y = torch.tensor([1, 1, 0, 0], dtype=torch.int64)
 
         self._verify_data()
 

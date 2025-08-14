@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import os
 
 from nvflare.edge.tools.et_recipe import (
     DeviceManagerConfig,
@@ -21,13 +22,22 @@ from nvflare.edge.tools.et_recipe import (
     ModelManagerConfig,
     SimulationConfig,
 )
-from nvflare.recipe.simulation_env import SimEnv
+from nvflare.recipe.prod_env import ProdEnv
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--export_job", action="store_true")
 parser.add_argument("--dataset", type=str, default="cifar10")
+parser.add_argument("--workspace_dir", type=str, default="/tmp/nvflare/workspaces")
+parser.add_argument("--project_name", type=str, default="edge_example")
+parser.add_argument("--total_num_of_devices", type=int, default=4)
+parser.add_argument("--num_of_simulated_devices_on_each_leaf", type=int, default=1)
 args = parser.parse_args()
 
+# TODO: work with tree_prov.py changes to make more general
+prod_dir = os.path.join(args.workspace_dir, args.project_name, "prod_00")
+admin_startup_kit_dir = os.path.join(prod_dir, "admin@nvidia.com")
+total_num_of_devices = args.total_num_of_devices
+num_of_simulated_devices_on_each_leaf = args.num_of_simulated_devices_on_each_leaf
 
 if args.dataset == "cifar10":
     from processors.cifar10_et_task_processor import Cifar10ETTaskProcessor
@@ -61,7 +71,13 @@ elif args.dataset == "xor":
     batch_size = 1
     input_shape = (batch_size, 2)
     output_shape = (batch_size,)
-    task_processor = XorETTaskProcessor()
+    task_processor = XorETTaskProcessor(
+        training_config={
+            "batch_size": batch_size,
+            "shuffle": True,
+            "num_workers": 0,
+        },
+    )
     evaluator_config = None
 
 
@@ -74,22 +90,26 @@ recipe = ETRecipe(
         # max_num_active_model_versions=1,
         max_model_version=3,
         update_timeout=1000.0,
-        num_updates_for_model=5,
+        num_updates_for_model=total_num_of_devices,
         # max_model_history=1,
     ),
     device_manager_config=DeviceManagerConfig(
-        device_selection_size=5,
-        min_hole_to_fill=5,
+        device_selection_size=total_num_of_devices,
+        min_hole_to_fill=total_num_of_devices,
     ),
     evaluator_config=evaluator_config,
-    simulation_config=SimulationConfig(
-        task_processor=task_processor,
-        num_devices=1,
+    simulation_config=(
+        SimulationConfig(
+            task_processor=task_processor,
+            num_devices=num_of_simulated_devices_on_each_leaf,
+        )
+        if num_of_simulated_devices_on_each_leaf > 0
+        else None
     ),
     device_training_params={"epoch": 3, "lr": 0.0001},
 )
 if args.export_job:
-    recipe.export(job_dir="/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer")
+    recipe.export(job_dir=os.path.join(admin_startup_kit_dir, "transfer"))
 else:
-    env = SimEnv(num_clients=1)
+    env = ProdEnv(startup_kit_dir=admin_startup_kit_dir)
     recipe.execute(env)
