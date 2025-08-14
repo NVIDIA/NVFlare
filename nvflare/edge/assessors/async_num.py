@@ -152,7 +152,10 @@ class AsyncNumAssessor(Assessor):
                 # remove reported devices from selection
                 for k in model_update.devices.keys():
                     if k not in self.current_selection:
-                        self.log_error(fl_ctx, f"got update from device {k} but it's not in device selection")
+                        self.log_warning(
+                            fl_ctx,
+                            f"got update from device {k} but it's not in device selection, verify if this is expected",
+                        )
                     self.current_selection.pop(k, None)
 
             current_model_state = self.updates.get(self.current_model_version)
