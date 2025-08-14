@@ -33,7 +33,15 @@ class _SimEnvValidator(BaseModel):
 
     @model_validator(mode="after")
     def check_num_clients_consistency(self):
-        if self.num_clients and self.clients and len(self.clients) != self.num_clients:
+        # Check if both num_clients and clients are not specified (invalid)
+        if self.num_clients == 0 and (self.clients is None or len(self.clients) == 0):
+            raise ValueError(
+                "Either 'num_clients' must be > 0 or 'clients' list must be provided. "
+                "Cannot run simulation with no clients."
+            )
+
+        # Check if both are specified and inconsistent
+        if self.num_clients > 0 and self.clients and len(self.clients) != self.num_clients:
             raise ValueError(
                 f"Inconsistent number of clients: num_clients={self.num_clients} "
                 f"but clients list has {len(self.clients)} entries."
@@ -51,6 +59,15 @@ class SimEnv(ExecEnv):
         gpu_config: str = None,
         log_config: str = None,
     ):
+        """Initialize simulation execution environment.
+
+        Args:
+            num_clients (int, optional): Number of simulated clients. Defaults to 0.
+            clients (List[str], optional): List of client names. Defaults to None.
+            num_threads (int, optional): Number of threads per client. Defaults to 0.
+            gpu_config (str, optional): GPU configuration string. Defaults to None.
+            log_config (str, optional): Log configuration string. Defaults to None.
+        """
         v = _SimEnvValidator(
             num_clients=num_clients,
             clients=clients,
