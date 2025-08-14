@@ -153,9 +153,9 @@ class AsyncNumAssessor(Assessor):
                 # indicating that the reported devices becomes available again for reuse
                 for k in model_update.devices.keys():
                     if k not in self.current_selection:
-                        self.log_warning(
+                        self.log_error(
                             fl_ctx,
-                            f"got update from device {k} but it's not in device selection, verify if this is expected",
+                            f"got update from device {k} but it's not in device selection",
                         )
                     self.current_selection.pop(k, None)
                     if self.device_reuse:
