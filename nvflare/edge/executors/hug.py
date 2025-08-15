@@ -116,7 +116,7 @@ class HierarchicalUpdateGatherer(Executor):
         my_name = fl_ctx.get_identity_name()
         my_node = client_hierarchy.nodes.get(my_name)
         if not isinstance(my_node, Node):
-            self.system_panic(f"cannot get my node from client hierarchy: expect Noe but got {type(my_node)}", fl_ctx)
+            self.system_panic(f"cannot get my node from client hierarchy: expect Node but got {type(my_node)}", fl_ctx)
             return
 
         self._children = [n.obj.name for n in my_node.children]
