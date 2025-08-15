@@ -24,7 +24,6 @@ class BuffDeviceManager(DeviceManager):
         device_selection_size: int,
         min_hole_to_fill: int = 1,
         device_reuse: bool = True,
-        const_selection: bool = False,
     ):
         """Initialize the BuffDeviceManager.
         BuffDeviceManager is responsible for managing the selection of devices for model training.
@@ -34,18 +33,15 @@ class BuffDeviceManager(DeviceManager):
             - An empty slot is created when any device reports its update back.
             - To fill a slot, a new device is selected from the available device pool.
         The device_reuse flag indicates whether devices can be reused across different model versions, if False, we will always select new devices when filling holes.
-        The const_selection flag indicates whether the same devices should be selected across different model versions, if True, we will always select the same concurrent devices.
         Args:
             device_selection_size (int): Number of devices to select for each model update round.
             min_hole_to_fill (int): Minimum number of empty slots in device selection before refilling. Defaults to 1 - once received an update, immediately sample a new device and send the current task to it.
             device_reuse (bool): Whether to allow reusing devices across different model versions. Defaults to True.
-            const_selection (bool): Whether to use constant device selection across rounds. Defaults to False.
         """
         super().__init__()
         self.device_selection_size = device_selection_size
         self.min_hole_to_fill = min_hole_to_fill
         self.device_reuse = device_reuse
-        self.const_selection = const_selection
         # also keep track of the current selection version and used devices
         self.current_selection_version = 0
         self.used_devices = {}
@@ -63,19 +59,8 @@ class BuffDeviceManager(DeviceManager):
         self.log_info(fl_ctx, f"filling {num_holes} holes in selection list")
         if num_holes > 0:
             self.current_selection_version += 1
-            if self.const_selection:
-                # if const_selection is True, we will always select the same devices
-                usable_devices = set(self.available_devices.keys())
-                self.log_info(fl_ctx, "constant selection enabled, use the same original set.")
-            else:
-                if not self.device_reuse:
-                    # remove all used devices from available devices
-                    usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
-                else:
-                    # remove only the devices that are associated with the current model version
-                    usable_devices = set(self.available_devices.keys()) - set(
-                        k for k, v in self.used_devices.items() if v == current_model_version
-                    )
+            # remove all used devices from available devices
+            usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
 
             if usable_devices:
                 for _ in range(num_holes):
@@ -87,12 +72,21 @@ class BuffDeviceManager(DeviceManager):
                         break
         self.log_info(
             fl_ctx,
-            f"current selection: V{self.current_selection_version}; {dict(sorted(self.current_selection.items()))}",
+            f"current selection with {len(self.current_selection)} items: V{self.current_selection_version}; {dict(sorted(self.current_selection.items()))}",
         )
+        if len(self.current_selection) < self.device_selection_size:
+            self.log_warning(
+                fl_ctx,
+                f"current selection has only {len(self.current_selection)} devices, which is less than the expected {self.device_selection_size} devices. Please check the configuration to make sure this is expected.",
+            )
 
     def remove_devices_from_selection(self, devices: Set[str], fl_ctx) -> None:
         for device_id in devices:
             self.current_selection.pop(device_id, None)
+
+    def remove_devices_from_used(self, devices: Set[str], fl_ctx) -> None:
+        for device_id in devices:
+            self.used_devices.pop(device_id, None)
 
     def has_enough_devices(self, fl_ctx) -> bool:
         return len(self.available_devices) >= self.device_selection_size

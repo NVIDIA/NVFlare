@@ -93,8 +93,6 @@ class DeviceManagerConfig:
             if False, devices will be selected only once, which could be realistic for real-world scenarios where the
             device pool is huge while participation is random.
             Default: True (always reuse / include the existing devices for further learning)
-        const_selection: Whether to use constant device selection across rounds.
-            Default: False
     """
 
     def __init__(
@@ -102,7 +100,6 @@ class DeviceManagerConfig:
         device_selection_size: int = 100,
         min_hole_to_fill: int = 1,
         device_reuse: bool = True,
-        const_selection: bool = False,
     ):
         self.device_selection_size = device_selection_size
         self.min_hole_to_fill = min_hole_to_fill
@@ -110,7 +107,6 @@ class DeviceManagerConfig:
         if min_hole_to_fill > device_selection_size:
             raise ValueError("min_hole_to_fill needs to be smaller than or equal to device_selection_size")
         self.device_reuse = device_reuse
-        self.const_selection = const_selection
 
 
 class SimulationConfig:
@@ -296,7 +292,6 @@ class EdgeRecipe(Recipe):
             device_selection_size=self.device_manager_config.device_selection_size,
             min_hole_to_fill=self.device_manager_config.min_hole_to_fill,
             device_reuse=self.device_manager_config.device_reuse,
-            const_selection=self.device_manager_config.const_selection,
         )
         device_manager_id = job.to_server(device_manager, id="device_manager")
 
