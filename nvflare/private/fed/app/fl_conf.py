@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FL Server / Client startup configer."""
+"""FL Server / Client startup configure."""
 
 import os
 import re
@@ -41,7 +41,7 @@ FL_MODULES = ["server", "client", "app_common", "private"]
 
 
 class FLServerStarterConfiger(JsonConfigurator):
-    """FL Server startup configer."""
+    """FL Server startup configure."""
 
     def __init__(self, workspace: Workspace, args, kv_list=None):
         """Init the FLServerStarterConfiger.
@@ -202,7 +202,7 @@ class FLServerStarterConfiger(JsonConfigurator):
 
 
 class FLClientStarterConfiger(JsonConfigurator):
-    """FL Client startup configer."""
+    """FL Client startup configure."""
 
     def __init__(self, workspace: Workspace, args, kv_list=None):
         """Init the FLClientStarterConfiger.
