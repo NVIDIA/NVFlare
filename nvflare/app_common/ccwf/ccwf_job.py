@@ -81,6 +81,7 @@ class SwarmClientConfig:
         wait_time_after_min_resps_received: float = 10.0,
         request_to_submit_result_msg_timeout=5.0,
         request_to_submit_result_max_wait=None,
+        request_to_submit_result_interval: float = 1.0,
         max_concurrent_submissions: int = 1,
     ):
         # the executor could be a wrapper object that adds real Executor when added to job!
@@ -110,6 +111,7 @@ class SwarmClientConfig:
         self.wait_time_after_min_resps_received = wait_time_after_min_resps_received
         self.request_to_submit_result_msg_timeout = request_to_submit_result_msg_timeout
         self.request_to_submit_result_max_wait = request_to_submit_result_max_wait
+        self.request_to_submit_result_interval = request_to_submit_result_interval
         self.max_concurrent_submissions = max_concurrent_submissions
 
 
@@ -268,6 +270,7 @@ class CCWFJob(FedJob):
             wait_time_after_min_resps_received=client_config.wait_time_after_min_resps_received,
             request_to_submit_result_msg_timeout=client_config.request_to_submit_result_msg_timeout,
             request_to_submit_result_max_wait=client_config.request_to_submit_result_max_wait,
+            request_to_submit_result_interval=client_config.request_to_submit_result_interval,
             max_concurrent_submissions=client_config.max_concurrent_submissions,
         )
         self.to_clients(client_controller, tasks=["swarm_*"])
