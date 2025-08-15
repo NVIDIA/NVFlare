@@ -68,7 +68,7 @@ Internally, `WandBWriter` leverages the NVFlare client API to send metrics and t
 
 In `wandb_job.py`, we configure the following components by default:
 
-  - The `ConvertToFedEvent` widget on the NVFlare client side, which transfroms the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`. This enables the event to be sent from the NVFlare client to the NVFlare server.
+  - The `ConvertToFedEvent` widget on the NVFlare client side, which transforms the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`. This enables the event to be sent from the NVFlare client to the NVFlare server.
 
   - The `WandBReceiver` on the NVFlare server side, which listens for `fed.analytix_log_stats` events and forwards the metric data to the WandB tracking server.
 

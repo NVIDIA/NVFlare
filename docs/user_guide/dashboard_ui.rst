@@ -253,7 +253,7 @@ Users will not be able to download their FLARE Console or any startup kits until
 Client Sites Dashboard
 ----------------------
 
-On the Client Sites Dashboard, the Project Admin can see the name and capacity sepecification for each client site in the system as well as the
+On the Client Sites Dashboard, the Project Admin can see the name and capacity specification for each client site in the system as well as the
 organization of the user that created the site, time of creation, approval status, and download count of that site's startup kit.
 
 .. figure:: ../resources/dashboard_sites_dashboard.png

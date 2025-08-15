@@ -46,7 +46,7 @@ class FedAvgNewtonRaphson(BaseFedAvg):
         second order Newton Raphson optimization.
 
         """
-        self.info("starting Federated Averaging Netwon Raphson ...")
+        self.info("starting Federated Averaging Newton Raphson ...")
 
         # First load the model and set up some training params.
         # A `persisitor` (NewtonRaphsonModelPersistor) will load
@@ -70,11 +70,11 @@ class FedAvgNewtonRaphson(BaseFedAvg):
 
             # Send training task and current global model to clients.
             #
-            # A `task` isntance will be created, and sent
+            # A `task` instance will be created, and sent
             # to clients, the model is first converted to a shareable
             # and is attached to the task.
             #
-            # After the task is finished, the result (shareable) recieved
+            # After the task is finished, the result (shareable) received
             # from the task is converted to FLModel, and is returned to the
             # server. The `results` below is a list with result (FLModel)
             # from all clients.
@@ -85,7 +85,7 @@ class FedAvgNewtonRaphson(BaseFedAvg):
             self.info("sending server side global model to clients")
             results = self.send_model_and_wait(targets=clients, data=model)
 
-            # Aggregate results receieved from clients.
+            # Aggregate results received from clients.
             aggregate_results = self.aggregate(results, aggregate_fn=self.newton_raphson_aggregator_fn)
 
             # Update global model based on the following formula:
@@ -112,7 +112,7 @@ class FedAvgNewtonRaphson(BaseFedAvg):
                 from a client. The field `params` is a dictionary that
                 contains values to be aggregated: the gradient and hessian.
         """
-        self.info("receieved results from clients: {}".format(results))
+        self.info("received results from clients: {}".format(results))
 
         # On client side the `NUM_STEPS_CURRENT_ROUND` key
         # is used to track the number of samples for each client.
