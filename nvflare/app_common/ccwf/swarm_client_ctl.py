@@ -288,13 +288,49 @@ class SwarmClientController(ClientSideController):
         wait_time_after_min_resps_received: float = 10.0,
         request_to_submit_result_max_wait=None,
         request_to_submit_result_msg_timeout=5.0,
+        request_to_submit_result_interval: float = 1.0,
         max_concurrent_submissions: int = 1,
     ):
+        """
+        Constructor of a ClientSideController object.
+
+        Args:
+            task_name_prefix: prefix of task names. All CCWF task names are prefixed with this.
+            learn_task_name: name for the Learning Task (LT)
+            persistor_id: ID of the persistor component
+            shareable_generator_id: ID of the shareable generator component
+            aggregator_id: ID of the aggregator
+            metric_comparator_id: ID of metric comparator to be used for determining best model.
+                If not specified, the default NumberMetricComparator is used.
+            learn_task_check_interval: interval for checking incoming Learning Task (LT)
+            learn_task_ack_timeout: timeout for sending the LT to other client(s)
+            learn_task_timeout: max time allowed for a training task
+            final_result_ack_timeout: timeout for sending final result to participating clients
+            learn_task_abort_timeout: time to wait for the LT to become stopped after aborting it
+            min_responses_required: minimum number of responses required for the aggregation
+            wait_time_after_min_resps_received: how long to wait after min responses (but not all responses)
+                are received.
+            request_to_submit_result_max_wait: max amount of time to wait for the permission from the
+                aggregation client. If the permission is not received within this period of time, the training
+                result will not be submitted. If this value is not specified (None), then the training client
+                will keep trying forever.
+            request_to_submit_result_msg_timeout: the timeout for "submission request" message.
+                Since submission req is a tiny message, this timeout value should be small.
+            request_to_submit_result_interval: interval between requests to submit result.
+            max_concurrent_submissions: max number of concurrent submissions allowed on the aggregation client.
+
+        Note that if the max_concurrent_submissions is set to 1, it practically means that all training results
+        will be submitted to the aggregation client sequentially. This lowers the resource pressure on
+        the aggr client, but makes the overall training process longer. The value of request_to_submit_result_max_wait,
+        if specified, should be long enough to allow the aggr client sufficient time to process training results.
+
+        """
         check_non_empty_str("learn_task_name", learn_task_name)
         check_non_empty_str("persistor_id", persistor_id)
         check_non_empty_str("shareable_generator_id", shareable_generator_id)
         check_non_empty_str("aggregator_id", aggregator_id)
         check_positive_number("request_to_submit_result_msg_timeout", request_to_submit_result_msg_timeout)
+        check_positive_number("request_to_submit_result_interval", request_to_submit_result_interval)
         check_positive_int("max_concurrent_submissions", max_concurrent_submissions)
         if request_to_submit_result_max_wait:
             check_positive_number("request_to_submit_result_max_wait", request_to_submit_result_max_wait)
@@ -328,6 +364,7 @@ class SwarmClientController(ClientSideController):
         self.max_concurrent_submissions = max_concurrent_submissions
         self.request_to_submit_result_max_wait = request_to_submit_result_max_wait
         self.request_to_submit_result_msg_timeout = request_to_submit_result_msg_timeout
+        self.request_to_submit_result_interval = request_to_submit_result_interval
         self.learn_task_timeout = learn_task_timeout
         self.min_responses_required = min_responses_required
         self.wait_time_after_min_resps_received = wait_time_after_min_resps_received
@@ -773,12 +810,11 @@ class SwarmClientController(ClientSideController):
                     self.log_info(fl_ctx, f"{aggr} does not want me to submit learn result!")
                     self.update_status(action="receive_learn_result_reply", error=rc)
                     return
-
                 elif rc != ReturnCode.SERVICE_UNAVAILABLE:
                     self.log_warning(fl_ctx, f"got unexpected RC {rc} for submission request from {aggr}")
 
                 # aggr client is not ready - need try again
-                time.sleep(1.0)
+                time.sleep(self.request_to_submit_result_interval)
 
             # send the result to the aggr
             self.log_info(fl_ctx, f"sending training result to aggregation client {aggr}")
