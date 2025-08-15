@@ -19,7 +19,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from net import Net
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -32,12 +31,32 @@ CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 DEVICE = "cuda" if torch.cuda.is_available() else "CPU"
 
 
+class SimpleTestModel(nn.Module):
+    """A simple PyTorch model for testing purposes."""
+
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 6, 5)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc1 = nn.Linear(16 * 5 * 5, 16)
+        self.fc2 = nn.Linear(16, 10)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_path", type=str, default=CIFAR10_ROOT, nargs="?")
-    parser.add_argument("--batch_size", type=int, default=4, nargs="?")
+    parser.add_argument("--batch_size", type=int, default=2, nargs="?")
     parser.add_argument("--num_workers", type=int, default=1, nargs="?")
-    parser.add_argument("--local_epochs", type=int, default=2, nargs="?")
+    parser.add_argument("--local_epochs", type=int, default=1, nargs="?")
     parser.add_argument("--model_path", type=str, default=f"{CIFAR10_ROOT}/cifar_net.pth", nargs="?")
     return parser.parse_args()
 
@@ -58,13 +77,13 @@ def main():
     testset = torchvision.datasets.CIFAR10(root=dataset_path, train=False, download=True, transform=transform)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
-    net = Net()
+    net = SimpleTestModel()
     best_accuracy = 0.0
 
     # wraps evaluation logic into a method to re-use for
     #       evaluation on both trained and received model
     def evaluate(input_weights):
-        net = Net()
+        net = SimpleTestModel()
         net.load_state_dict(input_weights)
         # (optional) use GPU to speed things up
         net.to(DEVICE)
@@ -138,6 +157,9 @@ def main():
                     if i % 2000 == 1999:  # print every 2000 mini-batches
                         print(f"({client_id}) [{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
                         running_loss = 0.0
+                        break
+
+                    if i == 2:
                         break
 
             print(f"({client_id}) Finished Training")

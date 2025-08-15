@@ -28,7 +28,7 @@ from nvflare.recipe.spec import Recipe
 # Internal — not part of the public API
 class _FedAvgValidator(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
-    
+
     name: str
     initial_model: Any
     clients: Optional[List[str]]
@@ -88,6 +88,8 @@ class FedAvgRecipe(Recipe):
         # Create BaseFedJob with initial model
         job = BaseFedJob(
             initial_model=self.initial_model,
+            name=self.name,
+            min_clients=self.min_clients,
         )
 
         # Define the controller and send to server

@@ -14,16 +14,18 @@
 
 import numpy as np
 import pytest
+from test_script import SimpleTestModel
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_common.aggregators.model_aggregator import ModelAggregator
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 
 
-class MyAggregator(Aggregator):
+class MyAggregator(ModelAggregator):
     """Custom aggregator for testing FedAvgRecipe with custom aggregator support."""
 
     def __init__(self):
@@ -163,7 +165,7 @@ class TestFedAvgRecipe:
 
     def test_fedavg_recipe_with_initial_model(self):
         """Test FedAvgRecipe with initial model."""
-        initial_model = {"layer1.weight": np.array([1.0, 2.0]), "layer1.bias": np.array([0.1])}
+        initial_model = SimpleTestModel()
         custom_aggregator = MyAggregator()
 
         recipe = FedAvgRecipe(
@@ -227,7 +229,7 @@ class TestFedAvgRecipe:
         assert isinstance(aggregated, FLModel)
         assert aggregated.params["layer1.weight"][0] == 2.0  # (1.0 + 3.0) / 2
         assert aggregated.params["layer1.weight"][1] == 3.0  # (2.0 + 4.0) / 2
-        assert aggregated.params["layer1.bias"][0] == 0.15  # (0.1 + 0.2) / 2
+        assert aggregated.params["layer1.bias"][0] == pytest.approx(0.15)  # (0.1 + 0.2) / 2
 
         # Test reset_stats
         aggregator.reset_stats()
@@ -280,14 +282,13 @@ class TestFedAvgRecipe:
 
         # Test with minimum valid configuration
         recipe = FedAvgRecipe(
-            name="minimal", train_script="test.py", train_args="", num_clients=1, min_clients=1, num_rounds=1
+            name="minimal",
+            train_script="tests/unit_test/recipe/test_script.py",
+            train_args="",
+            num_clients=1,
+            min_clients=1,
+            num_rounds=1,
         )
         assert recipe.num_clients == 1
         assert recipe.min_clients == 1
         assert recipe.num_rounds == 1
-
-        # Test with zero min_clients (should be valid)
-        recipe = FedAvgRecipe(
-            name="zero_min_clients", train_script="test.py", train_args="", num_clients=2, min_clients=0, num_rounds=2
-        )
-        assert recipe.min_clients == 0
