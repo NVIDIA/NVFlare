@@ -221,6 +221,11 @@ class AsyncNumAssessor(Assessor):
             fl_ctx,
             f"current selection with {len(self.current_selection)} items: V{self.current_selection_version}; {self.current_selection}",
         )
+        if len(self.current_selection) < self.device_selection_size:
+            self.log_warning(
+                fl_ctx,
+                f"current selection has only {len(self.current_selection)} devices, which is less than the expected {self.device_selection_size} devices. Please check the configuration to make sure this is expected.",
+            )
 
     def assess(self, fl_ctx: FLContext) -> Assessment:
         if self.current_model_version >= self.max_model_version:

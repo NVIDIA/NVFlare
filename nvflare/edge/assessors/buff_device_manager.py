@@ -74,6 +74,11 @@ class BuffDeviceManager(DeviceManager):
             fl_ctx,
             f"current selection with {len(self.current_selection)} items: V{self.current_selection_version}; {dict(sorted(self.current_selection.items()))}",
         )
+        if len(self.current_selection) < self.device_selection_size:
+            self.log_warning(
+                fl_ctx,
+                f"current selection has only {len(self.current_selection)} devices, which is less than the expected {self.device_selection_size} devices. Please check the configuration to make sure this is expected.",
+            )
 
     def remove_devices_from_selection(self, devices: Set[str], fl_ctx) -> None:
         for device_id in devices:
