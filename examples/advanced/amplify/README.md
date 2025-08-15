@@ -7,7 +7,7 @@ We explore two different scenarios:
 1. Federated multi-task fine-tuning (each client trains their own downstream task)
 2. Federated fine-tuning of all tasks (the clients jointly train all downstream tasks)
 
-# Prerequisits
+# Prerequisites
 First download the data and install the required dependencies.
 
 ## Dataset

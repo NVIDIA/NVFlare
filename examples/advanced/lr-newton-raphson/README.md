@@ -8,7 +8,7 @@ dataset](https://archive.ics.uci.edu/dataset/45/heart+disease) is
 used in this example. Scripts are provided to download and process the
 dataset as described
 [here](https://github.com/owkin/FLamby/tree/main/flamby/datasets/fed_heart_disease). This
-dataset contains samples from 4 sites, splitted into training and
+dataset contains samples from 4 sites, split into training and
 testing sets as described below:
 |site         | sample split                          |
 |-------------|---------------------------------------|

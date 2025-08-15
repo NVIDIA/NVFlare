@@ -24,7 +24,7 @@ To run the ExecuTorch simulated devices, you need to install the executorch pybi
 
 ### Provision the NVFlare System
 
-We are using `nvflare/edge/tools/tree_prov.py` to provision a hierachical NVFlare system:
+We are using `nvflare/edge/tools/tree_prov.py` to provision a hierarchical NVFlare system:
 
 ```commandline
 ./setup_nvflare.sh

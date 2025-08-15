@@ -77,7 +77,7 @@ This will cover baseline centralized training, federated xgboost run in the same
 (server and clients are running in different processes) with and without secure feature.
 
 > **_NOTE:_** In this example, we use the `mock` plugin to simulate the homomorphic encryption process.
-> The actual encyption plugin will be used in the next step.
+> The actual encryption plugin will be used in the next step.
 
 ## Federated Experiments with NVFlare
 We then run the federated XGBoost training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html), without and with homomorphic encryption.

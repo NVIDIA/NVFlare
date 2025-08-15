@@ -196,7 +196,7 @@ Event-based security plug-in
 We have introduced additional FL events that can be used to build plug-ins for job-level function authorizations.
 
 For more details, refer to the :ref:`site_specific_auth` documentation as well as the
-:github_nvflare_link:`custom authentication example <examples/advanced/custom_authentication>` for more details about these capabilites.
+:github_nvflare_link:`custom authentication example <examples/advanced/custom_authentication>` for more details about these capabilities.
 
 FL HUB: Hierarchical Unification Bridge
 =======================================

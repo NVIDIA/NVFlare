@@ -252,7 +252,7 @@ XGBoost parameters are defined here, https://xgboost.readthedocs.io/en/stable/py
 - **num_rounds**: Number of training rounds.
 - **data_split_mode**: Same as XGBoost data_split_mode parameter, 0 for row-split, 1 for column-split.
 - **secure_training**: If true, XGBoost will train in secure mode using the plugin.
-- **xgb_params**: The training parameters defined in this dict are passed to XGBoost as **params**, the boost paramter.
+- **xgb_params**: The training parameters defined in this dict are passed to XGBoost as **params**, the boost parameter.
 - **xgb_options**: This dict contains other optional parameters passed to XGBoost. Currently, only **early_stopping_rounds** is supported.
 - **client_ranks**: A dict that maps client name to rank.
 

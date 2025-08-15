@@ -5,7 +5,7 @@ Logging Configuration
 #####################
 
 FLARE uses python logging with the `dictConfig API <https://docs.python.org/3/library/logging.config.html#logging.config.dictConfig>`_ following the `configuration dictionary schema <https://docs.python.org/3/library/logging.config.html#configuration-dictionary-schema>`_.
-FLARE Loggers are designed to follow the package level hierarchy using dot separated logger names in order to faciliate granular control at different levels.
+FLARE Loggers are designed to follow the package level hierarchy using dot separated logger names in order to facilitate granular control at different levels.
 
 We provide a :ref:`Default Logging Configuration <default_logging_configuration>` file **log_config.json.default** for all NVFLARE sub-systems with pre-configured handlers for console level colors, logs, error logs, structured json logs, and fl training logs.
 
@@ -139,7 +139,7 @@ ColorFormatter
 The :class:`ColorFormatter<nvflare.fuel.utils.log_utils.ColorFormatter>` uses ANSI color codes to format log records based on log level and/or logger names.
 
 We provide the :class:`ANSIColor<nvflare.fuel.utils.log_utils.ANSIColor>` class for commonly used colors and default mappings for log levels.
-To customize the colors, use either string of a color name specifed in ANSIColor.COLORS, or an ANSI color code (semicolons can be used for additional ANSI arguments).
+To customize the colors, use either string of a color name specified in ANSIColor.COLORS, or an ANSI color code (semicolons can be used for additional ANSI arguments).
 
 - **level_colors**: dict of levelname: ANSI color. Defaults to ANSIColor.DEFAULT_LEVEL_COLORS.
 - **logger_colors**: dict of loggername: ANSI color. Defaults to {}.
@@ -274,7 +274,7 @@ We define the root logger with INFO level and add the desired handlers.
     }
 
 Given the hierarchical structure of loggers, specific loggers can be configured using their dot separated names.
-Furthermore, any intermediate logger parents are already created and are configureable.
+Furthermore, any intermediate logger parents are already created and are configurable.
 
 When creating loggers for custom code, we provide a user custom logger function:
 

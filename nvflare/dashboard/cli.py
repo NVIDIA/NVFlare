@@ -208,7 +208,7 @@ def define_dashboard_parser(parser):
     parser.add_argument(
         "--passphrase", help="Passphrase to encrypt/decrypt root CA private key.  !!! Do not share it with others. !!!"
     )
-    parser.add_argument("-e", "--env", action="append", help="additonal environment variables: var1=value1")
+    parser.add_argument("-e", "--env", action="append", help="additional environment variables: var1=value1")
     parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
     parser.add_argument("-i", "--image", help="set the container image name")
     parser.add_argument("--local", action="store_true", help="start dashboard locally without docker image")

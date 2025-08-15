@@ -199,7 +199,7 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
 def accumulate_hierarchical_metrics(
     metric: str, client_name: str, metrics: dict, global_metrics: dict, hierarchy_config: dict
 ) -> dict:
-    """Accumulate matrics at each hierarchical level.
+    """Accumulate metrics at each hierarchical level.
 
     Args:
         metric: Metric to accumulate.
@@ -222,7 +222,7 @@ def accumulate_hierarchical_metrics(
                     continue
                 if key == StC.NAME:
                     if org and value in org:
-                        # The client belongs to this org so update current global matrics before sending it further
+                        # The client belongs to this org so update current global metrics before sending it further
                         global_metrics[StC.GLOBAL][metric][dataset][feature] += metrics[dataset][feature]
                     elif value == client_name:
                         # This is a client local metrics update
@@ -284,7 +284,7 @@ def get_hierarchical_mins_or_maxs(
                     continue
                 if key == StC.NAME:
                     if org and value in org:
-                        # The client belongs to this org so update current global matrics before sending it further
+                        # The client belongs to this org so update current global metrics before sending it further
                         if global_metrics[StC.GLOBAL][metric][dataset][feature]:
                             global_metrics[StC.GLOBAL][metric][dataset][feature] = op(
                                 global_metrics[StC.GLOBAL][metric][dataset][feature], metrics[dataset][feature]
@@ -410,7 +410,7 @@ def get_hierarchical_histograms(
                     continue
                 if key == StC.NAME:
                     if org and value in org:
-                        # The client belongs to this org so update current global matrics before sending it further
+                        # The client belongs to this org so update current global metrics before sending it further
                         if (
                             feature not in global_metrics[StC.GLOBAL][metric][dataset]
                             or not global_metrics[StC.GLOBAL][metric][dataset][feature]
