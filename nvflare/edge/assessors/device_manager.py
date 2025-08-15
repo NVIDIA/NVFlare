@@ -77,7 +77,7 @@ class DeviceManager(FLComponent, ABC):
 
     @abstractmethod
     def remove_devices_from_used(self, devices: Any, fl_ctx: FLContext) -> None:
-        """Remove devices from the used selection.
+        """Remove devices from the used device set.
         update self.used_devices
 
         Args:
