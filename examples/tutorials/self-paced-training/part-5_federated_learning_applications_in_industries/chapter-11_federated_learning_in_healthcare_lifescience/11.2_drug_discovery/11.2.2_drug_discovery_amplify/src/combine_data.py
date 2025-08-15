@@ -148,6 +148,9 @@ def prepare_data(
         # Read the CSV file
         df = pd.read_csv(input_file)
 
+        if "fitness" not in df:  # skip files with missing metric
+            continue
+
         # Check if required columns exist
         if heavy_col not in df.columns:
             print(f"Warning: Column '{heavy_col}' not found in {input_file}. Skipping this file.")
@@ -158,6 +161,12 @@ def prepare_data(
 
         # Combine the columns with a '|' separator
         df[combined_col] = df[heavy_col].astype(str) + "|" + df[light_col].astype(str)
+
+        # select necessary columns 
+        df = df[[heavy_col, light_col, combined_col, "fitness"]]
+
+        # make sure fitness column is float
+        df["fitness"] = df["fitness"].astype(float)
 
         print(f"Added {len(df)} rows...")
         n_total += len(df)
