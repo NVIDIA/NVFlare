@@ -15,13 +15,20 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, PositiveInt
 
-from nvflare.app_opt.pt.job_config.fed_avg import FedAvgJob
+from nvflare.apis.dxo import DataKind
+from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
+from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
+from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
 # Internal — not part of the public API
 class _FedAvgValidator(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+    
     name: str
     initial_model: Any
     clients: Optional[List[str]]
@@ -30,6 +37,7 @@ class _FedAvgValidator(BaseModel):
     num_rounds: int
     train_script: str
     train_args: str
+    aggregator: Optional[Aggregator]
 
     def model_post_init(self, __context):
         if self.clients and self.num_clients is None:
@@ -50,7 +58,7 @@ class FedAvgRecipe(Recipe):
         num_rounds: int = 2,
         train_script: str,
         train_args: str = "",
-        # aggregate_fn: Optional[Callable] = None
+        aggregator: Optional[Aggregator] = None,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -62,6 +70,7 @@ class FedAvgRecipe(Recipe):
             num_rounds=num_rounds,
             train_script=train_script,
             train_args=train_args,
+            aggregator=aggregator,
         )
 
         self.name = v.name
@@ -74,14 +83,37 @@ class FedAvgRecipe(Recipe):
         self.clients = v.clients
         self.train_script = v.train_script
         self.train_args = v.train_args
+        self.aggregator = v.aggregator
 
-        job = FedAvgJob(
-            name=self.name,
-            n_clients=0,  # for all clients
-            min_clients=self.min_clients,
-            num_rounds=self.num_rounds,
+        # Create BaseFedJob with initial model
+        job = BaseFedJob(
             initial_model=self.initial_model,
         )
+
+        # Define the controller and send to server
+        if self.aggregator is None:
+            self.aggregator = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
+        else:
+            if not isinstance(self.aggregator, Aggregator):
+                raise ValueError(f"Invalid aggregator type: {type(self.aggregator)}. Expected type: {Aggregator}")
+
+        # Define the controller and send to server
+        shareable_generator = FullModelShareableGenerator()
+        shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
+        aggregator_id = job.to_server(self.aggregator, id="aggregator")
+
+        controller = ScatterAndGather(
+            min_clients=self.min_clients,
+            num_rounds=self.num_rounds,
+            wait_time_after_min_received=10,
+            aggregator_id=aggregator_id,
+            persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
+            shareable_generator_id=shareable_generator_id,
+        )
+        # Send the controller to the server
+        job.to_server(controller)
+
+        # Add clients
         executor = ScriptRunner(script=self.train_script, script_args=self.train_args)
         if self.clients is None:
             job.to_clients(executor)
