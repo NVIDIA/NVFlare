@@ -74,12 +74,12 @@ trustee_port: 8999
 cc_issuers:
   - id: snp_authorizer
     path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
-    token_expiration: 3600 # in seconds
+    token_expiration: 150 # in seconds, needs to be less than check_frequency
   - id: gpu_authorizer
     path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
-    token_expiration: 3600 # in seconds
+    token_expiration: 150 # in seconds, needs to be less than check_frequency
 
 cc_attestation:
-  check_frequency: 180 # in seconds
+  check_frequency: 300 # in seconds
 
 ```
