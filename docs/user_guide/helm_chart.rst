@@ -128,7 +128,7 @@ Allowing network traffic
 
 We have to change the cluster to allow incoming network traffic, such as those
 from admin consoles and NVIDIA FLARE clients, to enter the cluster.  After the network
-traffic enters the cluster, the cluster also needs to know how to route the traffice
+traffic enters the cluster, the cluster also needs to know how to route the traffic
 to the deployed services.
 
 

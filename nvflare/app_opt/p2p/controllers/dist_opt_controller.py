@@ -39,7 +39,7 @@ class DistOptController(Controller):
         self.config = config
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
-        # Send network config (aka neighors info) to each client
+        # Send network config (aka neighbors info) to each client
         for node in self.config.network.nodes:
             task = Task(
                 name="config",

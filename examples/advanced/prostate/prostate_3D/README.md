@@ -8,7 +8,7 @@ The [3D U-Net](https://arxiv.org/abs/1606.06650) model is trained to segment the
 ## Run automated experiments
 We use the NVFlare simulator to run FL training automatically, the 4 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx`
 ### Prepare local configs
-First, we copy the custom code to job folders, and add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
+First, we copy the custom code to job folders, and add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitrary path where the data locates.  
 ```
 for job in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
 do

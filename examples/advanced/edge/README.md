@@ -24,7 +24,7 @@ To run the ExecuTorch simulated devices, you need to install the executorch pybi
 
 ### Provision the NVFlare System
 
-We are using `nvflare/edge/tools/tree_prov.py` to provision a hierachical NVFlare system:
+We are using `nvflare/edge/tools/tree_prov.py` to provision a hierarchical NVFlare system:
 
 ```commandline
 ./setup_nvflare.sh
@@ -247,10 +247,10 @@ This will generate a job configuration for cross-device federated learning with 
 -   device_selection_size: 200, every round we will randomly select 200 devices in total to execute local training.
 -   subset_size: 100, each device will only use a subset of 100 samples for local training.
 -   num_updates_for_model: 20, server will generate a new global model after receiving 20 model updates from the devices.
--   max_model_version: 300, server will generate in total 300 global models before stopping the training.
+-   max_model_version: 200, server will generate in total 200 global models before stopping the training.
 -   max_model_history: 100, staleness beyond 100 model versions will be ignored.
 -   min_hole_to_fill: 10, so the server will wait for at least 10 model updates before sampling the next batch of devices and dispatching the current global model for training.
--   local training parameters: local_batch_size 32, local_epochs 1, local_lr 0.1, and local_momentum = 0.0 
+-   local training parameters: local_batch_size 10, local_epochs 4, local_lr 0.1, and local_momentum 0.0. 
 These settings will simulate a realistic cross-device federated learning scenario, where devices are sampled from a large pool of devices, and only a subset of devices is selected for each round of training. As it is much more complex than the previous experiments, we call it advanced (`_adv`) recipe. Users can further customize the parameters to simulate different scenarios.
 In admin console, submit the job:
 ```

@@ -71,7 +71,6 @@ def main():
         device_selection_size=device_selection_size,
         min_hole_to_fill=min_hole_to_fill,
         device_reuse=False,
-        const_selection=False,
     )
     eval_frequency = eval_frequency
 

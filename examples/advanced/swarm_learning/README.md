@@ -24,7 +24,7 @@ Other security concerns, such as firewall policies, must be handled by the site'
 ## Swarm Learning with FLARE
 
 Our implementation of swarm learning leverages the newly added Client Controlled Workflow (CCWF) framework in FLARE, which allows for secure peer-to-peer communication between clients.
-The server is simply responsible for the job lifecycle management (health of client sites and monitoring of job status), while the clients are now responsible for training logic and aggregration management (where tasks are assigned via peer-to-peer communication).
+The server is simply responsible for the job lifecycle management (health of client sites and monitoring of job status), while the clients are now responsible for training logic and aggregation management (where tasks are assigned via peer-to-peer communication).
 
 Algorithmically, swarm learning is identical to federated averaging with the main differences being that the server will no longer control the aggregation process and will not have access to any sensitive information, such as trained model weights.
 
@@ -32,8 +32,8 @@ In swarm learning, training and aggregation is done accoss multiple rounds. The 
 
 1. An aggregator client is randomly chosen from all clients.
 2. The training task is sent to all training clients on the current global model.
-3. The clients then send their training results to the selected client for aggregration.
-4. The aggregration client applies the results to the current global model, which then becomes the base for the next round of training.
+3. The clients then send their training results to the selected client for aggregation.
+4. The aggregation client applies the results to the current global model, which then becomes the base for the next round of training.
 
 <img src="./figs/swarm_learning.png" alt="swarm learning diagram" width="500"/>
 
@@ -59,7 +59,7 @@ In client-controlled cross-site evaluation, rather than sending client models to
 1. The initial config task contains information about who the evaluators and evaluatees are, and which client contains the global model.
 2. Next, the global models are evaluated if available and then the clients' local models are evaluated next.
 When evaluating an evaluatees' model, an `eval` task is sent to all evaluators.
-3. When an evalutor receives an `eval` task, they send a `get_model` task to the evaluatee client that owns the model, who in return obtains the model with `submit_model` and sends it back to the evaluator.
+3. When an evaluator receives an `eval` task, they send a `get_model` task to the evaluatee client that owns the model, who in return obtains the model with `submit_model` and sends it back to the evaluator.
 4. The evaluator then performs `validate` on the received model.
 4. All validation results are sent back to the server for easy access.
 

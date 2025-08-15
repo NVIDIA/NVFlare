@@ -96,7 +96,7 @@ class ModelDequantizer(DXOFilter):
                             quantized = values.cuda()
                             absmax = quant_state[param_name]["absmax"].cuda()
                             code = quant_state[param_name]["code"].cuda()
-                        # de-quanitze
+                        # de-quantize
                         dequantized = dequantize_blockwise(quantized, absmax=absmax, code=code)
                     else:
                         if source_data_format == "numpy":
@@ -121,7 +121,7 @@ class ModelDequantizer(DXOFilter):
                                 dtype=getattr(torch, quant_state[param_name]["dtype"]),
                                 shape=torch.Size(quant_state[param_name]["shape"]),
                             )
-                        # de-quanitze
+                        # de-quantize
                         if quantization_type == "float4":
                             dequantized = dequantize_4bit(quantized, quantize_state, quant_type="fp4")
                         else:
