@@ -26,3 +26,11 @@ def test_sim_env_validation():
     # Test with inconsistent number of clients
     with pytest.raises(ValueError, match="Inconsistent number of clients"):
         SimEnv(num_clients=2, clients=["client1", "client2", "client3"])
+
+    # Test with no clients specified (invalid)
+    with pytest.raises(ValueError, match="Either 'num_clients' must be > 0 or 'clients' list must be provided"):
+        SimEnv()
+
+    # Test with empty clients list and zero num_clients (invalid)
+    with pytest.raises(ValueError, match="Either 'num_clients' must be > 0 or 'clients' list must be provided"):
+        SimEnv(num_clients=0, clients=[])

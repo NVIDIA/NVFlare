@@ -11,8 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.job_config.api import FedJob
@@ -37,31 +38,45 @@ class Recipe(ABC):
         """
         self.job = job
 
-    def add_input_filter_to_clients(self, filter: Filter, tasks=None):
+    def add_client_input_filter(
+        self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
+    ):
         """Add a filter to clients for incoming tasks from the server.
 
         Args:
             filter: the filter to be added
             tasks: tasks that the filter applies to
+            clients: client names to add, if None, all clients will be added.
 
         Returns: None
 
         """
-        self.job.to_clients(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
+        if clients is None:
+            self.job.to_clients(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
+        else:
+            for client in clients:
+                self.job.to(filter, client, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
-    def add_output_filter_to_clients(self, filter: Filter, tasks=None):
+    def add_client_output_filter(
+        self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
+    ):
         """Add a filter to clients for outgoing result to server.
 
         Args:
             filter: the filter to be added
             tasks: tasks that the filter applies to
+            clients: client names to add, if None, all clients will be added.
 
         Returns: None
 
         """
-        self.job.to_clients(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
+        if clients is None:
+            self.job.to_clients(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
+        else:
+            for client in clients:
+                self.job.to(filter, client, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
-    def add_output_filter_to_server(self, filter: Filter, tasks=None):
+    def add_server_output_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
         """Add a filter to the server for outgoing tasks to clients.
 
         Args:
@@ -73,7 +88,7 @@ class Recipe(ABC):
         """
         self.job.to_server(filter, filter_type=FilterType.TASK_DATA, tasks=tasks)
 
-    def add_input_filter_to_server(self, filter: Filter, tasks=None):
+    def add_server_input_filter(self, filter: Filter, tasks: Optional[List[str]] = None):
         """Add a filter to server for incoming task result from clients. .
 
         Args:
