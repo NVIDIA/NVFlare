@@ -102,7 +102,7 @@ class PTFedAvgEarlyStopping(BaseFedAvg):
             else:
                 if self.patience:
                     self.info(
-                        f"No metric improvment, num of FL rounds without improvement: "
+                        f"No metric improvement, num of FL rounds without improvement: "
                         f"{self.num_fl_rounds_without_improvement}"
                     )
 
@@ -125,7 +125,7 @@ class PTFedAvgEarlyStopping(BaseFedAvg):
             return False
 
         if self.patience and (self.patience <= self.num_fl_rounds_without_improvement):
-            self.info(f"Exceeded the number of FL rounds ({self.patience}) without improvments")
+            self.info(f"Exceeded the number of FL rounds ({self.patience}) without improvements")
             return True
 
         key, target, op_fn = self.stop_condition
