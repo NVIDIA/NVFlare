@@ -11,7 +11,7 @@ environment.
 
 The provisioning tool of NVIDIA FLARE now includes a new
 builder ``DockerBuilder`` that can create ``compose.yaml`` and other information.  
-After provisioing, users can enter the result folder, normally in 
+After provisioning, users can enter the result folder, normally in 
 workspace/example_project/prod_NN, and type ``docker compose build`` 
 and ``docker compose up`` to start overseer, servers and clients 
 in the docker compose manner.

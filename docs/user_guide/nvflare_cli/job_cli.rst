@@ -192,7 +192,7 @@ Troubleshooting with the -debug flag
 ------------------------------------
 
 Since the ``nvflare job submit`` command does not overwrite the job folder configuration during submission, it has to use a temp job folder. 
-If you want to check the final configs submited to the server or simply want to see the stack trace of the exception, you can use the ``-debug`` flag. 
+If you want to check the final configs submitted to the server or simply want to see the stack trace of the exception, you can use the ``-debug`` flag. 
 
 With the ``-debug`` flag, the ``nvflare job submit`` command will not delete the temp job folder once it has finished job submission,
 and it will also print the exception stack trace in case of failure.

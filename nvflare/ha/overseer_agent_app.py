@@ -29,7 +29,7 @@ def setup_basic_info():
     parser.add_argument("-c", "--ca_path", type=str, help="root CA path")
     parser.add_argument("-o", "--overseer_url", type=str, help="Overseer URL")
     parser.add_argument("-t", "--cert_path", type=str, help="cert path")
-    parser.add_argument("-v", "--prv_key_path", type=str, help="priviate key path")
+    parser.add_argument("-v", "--prv_key_path", type=str, help="private key path")
 
     args = parser.parse_args()
 
