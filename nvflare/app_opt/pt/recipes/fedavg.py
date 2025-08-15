@@ -47,6 +47,56 @@ class _FedAvgValidator(BaseModel):
 
 
 class FedAvgRecipe(Recipe):
+    """A recipe for implementing Federated Averaging (FedAvg) in NVFlare.
+    
+    FedAvg is a fundamental federated learning algorithm that aggregates model updates
+    from multiple clients by computing a weighted average based on the amount of local
+    training data. This recipe sets up a complete federated learning workflow with
+    scatter-and-gather communication pattern.
+    
+    The recipe configures:
+    - A federated job with initial model (optional)
+    - Scatter-and-gather controller for coordinating training rounds
+    - Weighted aggregator for combining client model updates
+    - Script runners for client-side training execution
+    
+    Args:
+        name: Name of the federated learning job. Defaults to "fedavg".
+        initial_model: Initial model to start federated training with. If None,
+            clients will start with their own local models.
+        clients: List of client names to participate in training. If None,
+            all available clients will be used.
+        num_clients: Number of clients expected to participate. If clients is provided,
+            this will be set automatically to len(clients).
+        min_clients: Minimum number of clients required to start a training round.
+            Defaults to 0 (no minimum).
+        num_rounds: Number of federated training rounds to execute. Defaults to 2.
+        train_script: Path to the training script that will be executed on each client.
+        train_args: Command line arguments to pass to the training script.
+        aggregator: Custom aggregator for combining client updates. If None,
+            uses InTimeAccumulateWeightedAggregator with WEIGHTS data kind.
+    
+    Example:
+        ```python
+        recipe = FedAvgRecipe(
+            name="my_fedavg_job",
+            initial_model=pretrained_model,
+            num_clients=3,
+            min_clients=2,
+            num_rounds=10,
+            train_script="train.py",
+            train_args="--epochs 5 --batch_size 32"
+        )
+        ```
+    
+    Note:
+        By default, this recipe implements the standard FedAvg algorithm where model updates
+        are aggregated using weighted averaging based on the number of training
+        samples provided by each client.
+
+        If you want to use a custom aggregator, you can pass it in the aggregator parameter.
+        The custom aggregator must be a subclass of the Aggregator or ModelAggregator class.
+    """
     def __init__(
         self,
         *,
