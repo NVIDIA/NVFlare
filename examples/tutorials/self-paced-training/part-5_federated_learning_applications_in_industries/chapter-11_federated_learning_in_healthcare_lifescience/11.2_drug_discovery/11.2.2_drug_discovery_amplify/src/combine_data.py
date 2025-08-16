@@ -162,7 +162,7 @@ def prepare_data(
         # Combine the columns with a '|' separator
         df[combined_col] = df[heavy_col].astype(str) + "|" + df[light_col].astype(str)
 
-        # select necessary columns 
+        # select necessary columns
         df = df[[heavy_col, light_col, combined_col, "fitness"]]
 
         # make sure fitness column is float

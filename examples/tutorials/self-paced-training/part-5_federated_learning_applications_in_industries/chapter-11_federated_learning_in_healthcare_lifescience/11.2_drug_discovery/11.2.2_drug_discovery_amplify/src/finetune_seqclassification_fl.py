@@ -53,7 +53,9 @@ def parse_args():
     )
     # Hyper-parameters
     parser.add_argument("--n_epochs", type=int, default=30, help="Number of training epochs")
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for training")  # Use 64 for full training results
+    parser.add_argument(
+        "--batch_size", type=int, default=16, help="Batch size for training"
+    )  # Use 64 for full training results
     parser.add_argument("--trunk_lr", type=float, default=1e-4, help="Learning rate for the AMPLIFY trunk")
     parser.add_argument("--regressor_lr", type=float, default=1e-2, help="Learning rate for the regression layers")
     # Model architecture
