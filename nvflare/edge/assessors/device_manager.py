@@ -76,6 +76,19 @@ class DeviceManager(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def remove_devices_from_used(self, devices: Any, fl_ctx: FLContext) -> None:
+        """Remove devices from the used device set.
+        update self.used_devices
+
+        Args:
+            devices: Set of devices to remove
+            fl_ctx: FLContext object
+
+            Returns: none
+        """
+        pass
+
+    @abstractmethod
     def should_fill_selection(self, fl_ctx: FLContext) -> bool:
         """Determine if it is time to fill the device selection.
 

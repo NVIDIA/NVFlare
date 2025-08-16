@@ -27,6 +27,7 @@ class Constant:
     BASENAME_START = "start"
     BASENAME_LEARN = "learn"
     BASENAME_EVAL = "eval"
+    BASENAME_REQUEST_TO_SUBMIT_LEARN_RESULT = "req_to_submit_learn_result"
     BASENAME_REPORT_LEARN_RESULT = "report_learn_result"
     BASENAME_REPORT_FINAL_RESULT = "report_final_result"
     BASENAME_ASK_FOR_MODEL = "ask_for_model"
