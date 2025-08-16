@@ -1,4 +1,4 @@
-nvflare~=2.6rc
+nvflare
 scikit-learn>=1.0.0 
 seaborn
 tensorboard
