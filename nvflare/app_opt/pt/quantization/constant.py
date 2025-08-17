@@ -16,6 +16,7 @@
 # Message quantization is mainly for reducing the message that can be
 # significantly large, e.g. LLMs. Thus, the supported input data types
 # we consider are common ones during LLM training, including fp32, fp16, and bf16.
+
 DATA_TYPE = [
     "FLOAT32",
     "FLOAT16",

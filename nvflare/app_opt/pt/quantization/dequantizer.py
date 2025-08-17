@@ -49,7 +49,7 @@ class ModelDequantizer(DXOFilter):
         n_bytes_after = 0
         n_bytes_meta = 0
         n_quant_params = 0
-        for i, param_name in enumerate(params.keys()):
+        for param_name in params:
             source_data_type = source_datatype[param_name]
 
             # get the bits information
@@ -67,7 +67,7 @@ class ModelDequantizer(DXOFilter):
                 values = params[param_name]
                 n_bytes_before += values.nbytes
                 for item in quant_state[param_name].values():
-                    if isinstance(item, np.ndarray) or isinstance(item, torch.Tensor):
+                    if isinstance(item, (np.ndarray, torch.Tensor)):
                         n_bytes_meta += item.nbytes
 
                 if isinstance(values, np.ndarray):

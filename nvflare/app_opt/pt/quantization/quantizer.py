@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import re
-from typing import Union
+from typing import Optional
 
 import numpy as np
 import torch
@@ -65,7 +65,7 @@ class ModelQuantizer(DXOFilter):
         n_quant_params = 0
         quant_state = {}
         source_datatype = {}
-        for i, param_name in enumerate(params.keys()):
+        for param_name in params:
             values = params[param_name]
             quant_state[param_name] = {}
 
@@ -176,12 +176,12 @@ class ModelQuantizer(DXOFilter):
         self.log_info(
             fl_ctx,
             f"Quantized {n_quant_params}/{n_params} params."
-            f" Before quantization: {n_bytes_before / (1024 ** 2):.2f} MB."
-            f" After quantization: {n_bytes_after / (1024 ** 2):.2f} MB with meta: {n_bytes_meta / (1024 ** 2):.2f} MB.",
+            f" Before quantization: {n_bytes_before / (1024**2):.2f} MB."
+            f" After quantization: {n_bytes_after / (1024**2):.2f} MB with meta: {n_bytes_meta / (1024**2):.2f} MB.",
         )
         return params, quant_state, source_datatype
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Optional[DXO]:
         """Filter process apply to the Shareable object.
 
         Args:
