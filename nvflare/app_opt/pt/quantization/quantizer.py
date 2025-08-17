@@ -103,75 +103,74 @@ class ModelQuantizer(DXOFilter):
                     f"Skipping quantization for {param_name}, quantization bit {self.quantization_type} >= source data bit {source_data_type}",
                 )
                 continue
-            else:
-                n_quant_params += 1
-                if self.quantization_type == "float16":
-                    if source_data_format == "numpy":
-                        # first clamp the values to the range of float16
-                        values = np.clip(values, self.NP_FP16_MIN, self.NP_FP16_MAX)
-                        # then convert to float16
-                        values = values.astype(np.float16)
-                    elif source_data_format == "torch":
-                        # first clamp the values to the range of float16
-                        values = torch.clamp(values, self.TS_FP16_MIN, self.TS_FP16_MAX)
-                        # then convert to float16
-                        values = values.to(torch.float16)
-                    params[param_name] = values
-                elif self.quantization_type in ["blockwise8", "float4", "normfloat4"]:
-                    # use bitsandbytes to quantize the values
-                    # input is a tensor, output is a tuple of (quantized tensor, quantized_state)
+            n_quant_params += 1
+            if self.quantization_type == "float16":
+                if source_data_format == "numpy":
+                    # first clamp the values to the range of float16
+                    values = np.clip(values, self.NP_FP16_MIN, self.NP_FP16_MAX)
+                    # then convert to float16
+                    values = values.astype(np.float16)
+                elif source_data_format == "torch":
+                    # first clamp the values to the range of float16
+                    values = torch.clamp(values, self.TS_FP16_MIN, self.TS_FP16_MAX)
+                    # then convert to float16
+                    values = values.to(torch.float16)
+                params[param_name] = values
+            elif self.quantization_type in ["blockwise8", "float4", "normfloat4"]:
+                # use bitsandbytes to quantize the values
+                # input is a tensor, output is a tuple of (quantized tensor, quantized_state)
 
-                    # CPU has limited support for 8- and 4-bits quantization
-                    # For general purpose, here we use GPU
-                    if source_data_format == "numpy":
-                        # if numpy, first convert numpy array to tensor, need to use GPU
-                        values_tensor = torch.as_tensor(values).cuda()
-                    elif source_data_format == "torch":
-                        # if torch, directly use the tensor, need to use GPU
-                        values_tensor = values.cuda()
+                # CPU has limited support for 8- and 4-bits quantization
+                # For general purpose, here we use GPU
+                if source_data_format == "numpy":
+                    # if numpy, first convert numpy array to tensor, need to use GPU
+                    values_tensor = torch.as_tensor(values).cuda()
+                elif source_data_format == "torch":
+                    # if torch, directly use the tensor, need to use GPU
+                    values_tensor = values.cuda()
 
-                    if self.quantization_type == "blockwise8":
-                        # quantize the tensor
-                        quantized, quantized_state = quantize_blockwise(values_tensor)
-                        # add the quantization state and values, keep source data format
-                        if source_data_format == "numpy":
-                            quant_state[param_name]["absmax"] = quantized_state.absmax.cpu().numpy()
-                            quant_state[param_name]["code"] = quantized_state.code.cpu().numpy()
-                            values = quantized.cpu().numpy()
-                        elif source_data_format == "torch":
-                            quant_state[param_name]["absmax"] = quantized_state.absmax.cpu()
-                            quant_state[param_name]["code"] = quantized_state.code.cpu()
-                            values = quantized.cpu()
-                        n_bytes_meta += quant_state[param_name]["absmax"].nbytes
-                        n_bytes_meta += quant_state[param_name]["code"].nbytes
+                if self.quantization_type == "blockwise8":
+                    # quantize the tensor
+                    quantized, quantized_state = quantize_blockwise(values_tensor)
+                    # add the quantization state and values, keep source data format
+                    if source_data_format == "numpy":
+                        quant_state[param_name]["absmax"] = quantized_state.absmax.cpu().numpy()
+                        quant_state[param_name]["code"] = quantized_state.code.cpu().numpy()
+                        values = quantized.cpu().numpy()
+                    elif source_data_format == "torch":
+                        quant_state[param_name]["absmax"] = quantized_state.absmax.cpu()
+                        quant_state[param_name]["code"] = quantized_state.code.cpu()
+                        values = quantized.cpu()
+                    n_bytes_meta += quant_state[param_name]["absmax"].nbytes
+                    n_bytes_meta += quant_state[param_name]["code"].nbytes
+                else:
+                    # then quantize the tensor
+                    if self.quantization_type == "float4":
+                        quantized, quantized_state = quantize_4bit(values_tensor, quant_type="fp4")
                     else:
-                        # then quantize the tensor
-                        if self.quantization_type == "float4":
-                            quantized, quantized_state = quantize_4bit(values_tensor, quant_type="fp4")
+                        quantized, quantized_state = quantize_4bit(values_tensor, quant_type="nf4")
+                    # add the quantization state and values, keep source data format
+                    quantized_state = quantized_state.as_dict()
+                    # prepared the message
+                    for state_name, state in quantized_state.items():
+                        if isinstance(state, torch.Tensor):
+                            if source_data_format == "numpy":
+                                # if the state is a tensor, convert it to numpy array
+                                quant_state[param_name][state_name] = state.cpu().numpy()
+                            elif source_data_format == "torch":
+                                # if the state is a tensor, keep it as tensor
+                                quant_state[param_name][state_name] = state.cpu()
+                            n_bytes_meta += state.nbytes
                         else:
-                            quantized, quantized_state = quantize_4bit(values_tensor, quant_type="nf4")
-                        # add the quantization state and values, keep source data format
-                        quantized_state = quantized_state.as_dict()
-                        # prepared the message
-                        for state_name, state in quantized_state.items():
-                            if isinstance(state, torch.Tensor):
-                                if source_data_format == "numpy":
-                                    # if the state is a tensor, convert it to numpy array
-                                    quant_state[param_name][state_name] = state.cpu().numpy()
-                                elif source_data_format == "torch":
-                                    # if the state is a tensor, keep it as tensor
-                                    quant_state[param_name][state_name] = state.cpu()
-                                n_bytes_meta += state.nbytes
-                            else:
-                                quant_state[param_name][state_name] = state
-                        # add values
-                        if source_data_format == "numpy":
-                            values = quantized.cpu().numpy()
-                        elif source_data_format == "torch":
-                            values = quantized.cpu()
+                            quant_state[param_name][state_name] = state
+                    # add values
+                    if source_data_format == "numpy":
+                        values = quantized.cpu().numpy()
+                    elif source_data_format == "torch":
+                        values = quantized.cpu()
 
-                    params[param_name] = values
-                n_bytes_after += params[param_name].nbytes
+                params[param_name] = values
+            n_bytes_after += params[param_name].nbytes
 
         self.log_info(
             fl_ctx,
