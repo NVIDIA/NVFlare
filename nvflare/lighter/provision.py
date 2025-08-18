@@ -22,12 +22,12 @@ import sys
 from typing import Optional
 
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
-from nvflare.edge.tools.tree_prov import edge_provision
 from nvflare.lighter.constants import PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Project
+from nvflare.lighter.tree_prov import edge_provision
 from nvflare.lighter.utils import load_yaml
 
 adding_client_error_msg = """
