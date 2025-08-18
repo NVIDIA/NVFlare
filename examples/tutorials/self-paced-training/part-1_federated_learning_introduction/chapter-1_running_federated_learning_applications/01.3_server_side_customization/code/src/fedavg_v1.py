@@ -127,7 +127,7 @@ class FedAvgV1(BaseFedAvg):
             return False
 
         if self.patience and (self.patience <= self.num_fl_rounds_without_improvement):
-            self.info(f"Exceeded the number of FL rounds ({self.patience}) without improvments")
+            self.info(f"Exceeded the number of FL rounds ({self.patience}) without improvements")
             return True
 
         key, target, op_fn = self.stop_condition

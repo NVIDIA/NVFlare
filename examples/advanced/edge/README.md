@@ -2,28 +2,47 @@
 ## Overview
 This guide provides step-by-step instructions for cross-edge federated learning functionality using simulated/real devices with NVFlare's hierarchical edge system.
 
+This guide supports two distinct workflows:
+
+1. **ExecuTorch-based Cross-Edge Federated Learning** (real devices, hybrid, or simulated)
+2. **Pure PyTorch Simulated Cross-Edge Federated Learning** (no real devices)
+
+## Table of Contents
+- [Setup the NVFlare System](#setup-the-nvflare-system)
+- [Start the NVFlare System](#start-the-nvflare-system)
+- [1. ExecuTorch-based FL](#executorch-based-fl)
+- [2. Pure PyTorch Simulated Cross-Edge Federated Learning](#pure-pytorch-simulated-cross-edge-federated-learning-an-end-to-end-cifar10-example)
+
 ## Setup the NVFlare System
-### Create Environment
+### Install prerequisites
 After properly installing NVFlare, further install the required packages for this example:
 ```commandline
 pip install -r requirements.txt
 ```
 
-### Prepare the Workspace
+To run the ExecuTorch simulated devices, you need to install the executorch pybindings with training extension (please refer to [ExecuTorch GitHub](https://github.com/pytorch/executorch/issues/8990))
+
+### Provision the NVFlare System
+
+We are using `nvflare/edge/tools/tree_prov.py` to provision a hierarchical NVFlare system:
+
 ```commandline
 ./setup_nvflare.sh
 ```
-Note that in this setting, we specify `-d 1 -w 2`, indicating a hierarchy of depth 1 and width 2, which results in a topology as following:
+
+Note that in this example, we specify `-d 1 -w 2`, indicating a hierarchy of depth 1 and width 2, which results in a topology as following:
 <img src="./figs/edge_topo.png" alt="Edge Topology" width="800" >
 - `-d` (depth) indicates the number of levels in the hierarchy, in this case, we only have 1 layer of relays. 
 - `-w` (width) indicates the number of connections for each node, in this case, we have 2 relays connecting to the server, and each with 2 leaf clients.
 - There are two types of clints: leaf clients (C11, C12, C21, C22) and non-leaf clients (C1, C2). The leaf clients are the ones that will connect with real devices or run device simulations; while non-leaf clients are used for intermediate message updates through the hierarchy only.
 
-Therefore for edge-device connection, we only needs the information of the leaf nodes, let's check the lcp map:
+For edge-device connection, we only needs the information of the leaf nodes, let's check the lcp map:
 ```commandline
 cat /tmp/nvflare/workspaces/edge_example/prod_00/demo/lcp_map.json
 ```
-We can see the address and port of each leaf node, which will be used by the mobile devices to connect to the system.
+
+We can see the address and port of each leaf node, which can be used by the mobile devices to connect to the system.
+
 ```
 {
     "C11": {
@@ -48,51 +67,52 @@ We can see the address and port of each leaf node, which will be used by the mob
 
 To start the system, run the following command:
 ```commandline
-/tmp/nvflare/workspaces/edge_example/prod_00/start_all.sh
+cd /tmp/nvflare/workspaces/edge_example/prod_00/
+./start_all.sh
 ```    
 
-## Start the Mobile App
-Install the app from App store and open it.
+## ExecuTorch-based FL
+### ExecuTorch simulated devices
 
-You will see the following screen:
+After the startup of NVFlare system, we can start the job with:
+```
+python jobs/et_job.py --total_num_of_devices 4 --num_of_simulated_devices_on_each_leaf 1
+```
 
-<img src="./figs/screenshot.png" alt="App Screenshot" width="400" height="800">
+This is going to run 1 simulated device on each leaf client, so a total of 4 devices.
+
+### Run with the real device
+
+#### Submit the hybrid job
+We could submit the job to NVFlare system with:
+
+```
+python jobs/et_job.py --total_num_of_devices 5 --num_of_simulated_devices_on_each_leaf 1
+```
+
+Note that we are using 1 simulated_devices_on_each_leaf and we have 4 leaf clients, so total of 4 simulated devices but we set total_num_of_devices to be 5, the additional 1 is the real device.
+
+If you have more real devices you can adjust the number.
+
+#### Start the Mobile App
+To run on the real device, app developers need to integrate their applications with our edge device SDK (Android/iOS).
+
+You can get an example app from "nvflare/edge/device"
+
+It can be installed on your device and started.
 
 You need to configure the server PORT to be the PORT shown in lcp_map.json (for example: 9003).
 
 And you can find out the IP address of your machine and fill it there.
 
-Then click "Start Training". (This will be enhanced in the future by adding resource monitoring to auto start/stop training)
-
-## Prepare and Submit a Job
-
-We have prepared two jobs for you: [xor_mobile_et](./jobs/xor_mobile_et/) and [cifar10_mobile_et](./jobs/cifar10_mobile_et/).
-You can easily write your own components to replace any of the pre-configured ones. 
-
-First, copy the jobs to the admin console transfer folder:
-
-```commandline
-cp -r ./jobs/* /tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer
-```
-
-Start the admin console to interact with the NVFlare system:
-
-```commandline
-/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/startup/fl_admin.sh
-```
-
-Submit a job:
-
-```
-submit_job cifar10_mobile_et
-```
+Then click "Start Training".
 
 You will then see the device start receiving the model from the server and complete local training.
 The server will perform aggregation and proceed to the next round.
 After the configured rounds have finished, the training is complete!
 
-## [Optional] Local FL Experiment with Simulated Devices: an End-to-end Cifar10 Example 
-Above we show how to run the mobile example with the NVFlare system on an actual device. For prototyping and testing a cross-device FL pipeline, 
+## Pure PyTorch Simulated Cross-Edge Federated Learning: an End-to-end Cifar10 Example 
+Above we show how to run the cross-edge FL using NVFlare with actual devices. For prototyping and testing a cross-device FL pipeline, 
 we usually do not start with real devices. Therefore, NVFlare provides a mechanism to simulate devices for testing the FL process by directly running device processes on the leaf nodes.
 
 In the following, we will show how to run a simulated cross-device federated learning with the same NVFlare system we just started. The simulated devices will be 
@@ -121,7 +141,7 @@ Assuming the previous steps are completed, we can now run the end-to-end example
 Again, if the system is not up running yet, we first start the system, open a terminal window and run the following command:
 ```commandline
 cd /tmp/nvflare/workspaces/edge_example/prod_00/
-bash start_all.sh
+bash start_all.sh 
 ```  
 
 #### Step2: Generate Job Configs using the EdgeRecipe API
@@ -224,18 +244,23 @@ python3 jobs/pt_job_adv.py
 This will generate a job configuration for cross-device federated learning with the following parameters:
 
 -   devices_per_leaf: 10000, so in total we have 40000 devices across all leaf nodes.
--   device_selection_size: 100, every round we will randomly select 100 devices for each leaf nodes to execute local training.
+-   device_selection_size: 200, every round we will randomly select 200 devices in total to execute local training.
 -   subset_size: 100, each device will only use a subset of 100 samples for local training.
--   num_updates_for_model: 100, server will generate a new global model after receiving 100 model updates from the devices.
--   max_model_version: 500, server will generate in total 500 global models before stopping the training.
--   max_model_history: 10, staleness beyond 10 model versions will be ignored.
+-   num_updates_for_model: 20, server will generate a new global model after receiving 20 model updates from the devices.
+-   max_model_version: 200, server will generate in total 200 global models before stopping the training.
+-   max_model_history: 100, staleness beyond 100 model versions will be ignored.
 -   min_hole_to_fill: 10, so the server will wait for at least 10 model updates before sampling the next batch of devices and dispatching the current global model for training.
-
+-   local training parameters: local_batch_size 10, local_epochs 4, local_lr 0.1, and local_momentum 0.0. 
 These settings will simulate a realistic cross-device federated learning scenario, where devices are sampled from a large pool of devices, and only a subset of devices is selected for each round of training. As it is much more complex than the previous experiments, we call it advanced (`_adv`) recipe. Users can further customize the parameters to simulate different scenarios.
-
+In admin console, submit the job:
+```
+submit_job pt_job_adv
+```
 Upon finishing, we can visualize the results in TensorBoard as before:
 ```commandline
 tensorboard --logdir=/tmp/nvflare/
 ```
 You will see the following results:
 <img src="./figs/cifar10_adv_acc.png" alt="Cifar10 Advanced Results" width="800" >
+
+As shown, due to the large number of devices and the limited number of samples for each device, the training process can be much slower than the previous experiments, and the accuracy converges to a lower level. 

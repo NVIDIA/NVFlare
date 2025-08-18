@@ -425,7 +425,7 @@ def extract_participants(participants_list):
             sites = item.get(JobConstants.SITES)
             participants.extend(sites)
         else:
-            raise ValueError(f"Must be tye of str or dict, but got {type(item)}")
+            raise ValueError(f"Must be type of str or dict, but got {type(item)}")
     return participants
 
 

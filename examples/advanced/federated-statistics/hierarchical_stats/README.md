@@ -155,7 +155,7 @@ statistics: "count", "sum", "max", "min", "mean", "var", "stddev", and "histogra
 For example, Histogram statistic, we specify feature "Percentage" needs 4 bins and histogram range is within [0.0, 100.00), while for
 all other features ("*" indicate default feature), the bin is 2, range is within [0, 1].
 
-The `HierarchicalStatisticsController` takes `hierarchy_config.json` as input file specifying clients heirarchy.
+The `HierarchicalStatisticsController` takes `hierarchy_config.json` as input file specifying clients hierarchy.
 The client names are mapped to different hierarchical levels in the hierarchy. The `hierarchy_config.json` is a JSON file containing JSON
 object with a single key which contains an array of objects. This key represents the top level in the hierarchy. Each object in the array
 represents a next hierarchical level and has a set of key-value pairs that describe various aspects of that level. The keys and values of
