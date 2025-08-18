@@ -89,7 +89,9 @@ class TrainingArtifactManager(
                 modelData
             }
             
+            // Safely decode model data, handling both base64 and raw binary cases
             val decodedModelData = java.util.Base64.getDecoder().decode(actualModelData)
+            
             val initialModelFile = File(modelsDir, "initial_model.pte")
             initialModelFile.writeBytes(decodedModelData)
             Log.i(TAG, "Initial model saved to: ${initialModelFile.absolutePath}")

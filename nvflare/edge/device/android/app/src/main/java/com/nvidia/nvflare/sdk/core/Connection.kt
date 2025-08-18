@@ -100,15 +100,25 @@ class Connection(private val context: Context) {
 
         try {
             val response = httpClient.newCall(request).execute()
-            val responseBody = response.body?.string()
+            val responseBody = response.body
             Log.d(TAG, "Response Status Code: ${response.code}")
             Log.d(TAG, "Response Headers: ${response.headers}")
-            Log.d(TAG, "Response body: $responseBody")
-
+            
+            // Log response body info without corrupting data
+            val contentLength = response.headers["Content-Length"]?.toIntOrNull() ?: 0
+            Log.d(TAG, "Response Content-Length: $contentLength bytes")
+            
             // Check status code first like iOS
             when (response.code) {
                 200 -> {
-                    val jobResponse = gson.fromJson(responseBody, JobResponse::class.java)
+                    // Parse directly from response body using charStream to avoid string conversion corruption
+                    val jobResponse = if (responseBody != null) {
+                        val reader = responseBody.charStream()
+                        gson.fromJson(reader, JobResponse::class.java)
+                    } else {
+                        throw NVFlareError.JobFetchFailed("No response body")
+                    }
+                    
                     when (jobResponse.status) {
                         "OK" -> jobResponse
                         "RETRY" -> {
@@ -169,15 +179,24 @@ class Connection(private val context: Context) {
 
         try {
             val response = httpClient.newCall(request).execute()
-            val responseBody = response.body?.string()
+            val responseBody = response.body
             Log.d(TAG, "Response Status Code: ${response.code}")
             Log.d(TAG, "Response Headers: ${response.headers}")
-            Log.d(TAG, "Response body: $responseBody")
-
+            
+            // Log response body info without corrupting data
+            val contentLength = response.headers["Content-Length"]?.toIntOrNull() ?: 0
+            Log.d(TAG, "Response Content-Length: $contentLength bytes")
+            
             // Check status code first like iOS
             when (response.code) {
                 200 -> {
-                    val taskResponse = gson.fromJson(responseBody, TaskResponse::class.java)
+                    // Parse directly from response body using charStream to avoid string conversion corruption
+                    val taskResponse = if (responseBody != null) {
+                        val reader = responseBody.charStream()
+                        gson.fromJson(reader, TaskResponse::class.java)
+                    } else {
+                        throw NVFlareError.TaskFetchFailed("No response body")
+                    }
                     Log.d(TAG, "Parsed TaskResponse: $taskResponse")
                     
                     // Update cookie if present - convert JsonObject to JSONValue
@@ -222,7 +241,10 @@ class Connection(private val context: Context) {
         taskName: String,
         weightDiff: Map<String, Any>
     ): ResultResponse = withContext(Dispatchers.IO) {
+        Log.d(TAG, "sendResult: Starting to send result for job=$jobId, task=$taskId, name=$taskName")
+        
         if (!isValid) {
+            Log.e(TAG, "sendResult: Invalid hostname or port")
             throw NVFlareError.InvalidRequest("Invalid hostname or port")
         }
 
@@ -231,13 +253,15 @@ class Connection(private val context: Context) {
             .host(hostname.value ?: "")
             .port(port.value ?: 0)
             .addPathSegment("result")
+            .addQueryParameter("job_id", jobId)
+            .addQueryParameter("task_id", taskId)
+            .addQueryParameter("task_name", taskName)
             .build()
+
+        Log.d(TAG, "sendResult: Built URL: $url")
 
         // Prepare request body
         val requestBody = JsonObject().apply {
-            addProperty("job_id", jobId)
-            addProperty("task_id", taskId)
-            addProperty("task_name", taskName)
             add("result", gson.toJsonTree(weightDiff))
             if (currentCookie != null) {
                 add("cookie", gson.toJsonTree(currentCookie?.toAny()))
@@ -257,7 +281,10 @@ class Connection(private val context: Context) {
         Log.d(TAG, "Request body: $requestBody")
 
         try {
+            Log.d(TAG, "sendResult: Executing HTTP request...")
             val response = httpClient.newCall(request).execute()
+            Log.d(TAG, "sendResult: HTTP response received, status: ${response.code}")
+            
             val responseBody = response.body?.string()
             Log.d(TAG, "Response Status Code: ${response.code}")
             Log.d(TAG, "Response Headers: ${response.headers}")
@@ -266,23 +293,47 @@ class Connection(private val context: Context) {
             // Check status code first like iOS
             when (response.code) {
                 200 -> {
+                    Log.d(TAG, "sendResult: Parsing 200 response...")
                     val resultResponse = gson.fromJson(responseBody, ResultResponse::class.java)
+                    Log.d(TAG, "sendResult: Parsed ResultResponse: $resultResponse")
+                    
                     when (resultResponse.status) {
-                        "OK" -> resultResponse
-                        else -> throw NVFlareError.TrainingFailed(
-                            resultResponse.message ?: "Unknown error"
-                        )
+                        "OK" -> {
+                            Log.d(TAG, "sendResult: Result sent successfully")
+                            resultResponse
+                        }
+                        else -> {
+                            Log.e(TAG, "sendResult: Server returned error status: ${resultResponse.status}")
+                            throw NVFlareError.TrainingFailed(
+                                resultResponse.message ?: "Unknown error"
+                            )
+                        }
                     }
                 }
 
-                400 -> throw NVFlareError.InvalidRequest("Invalid request")
-                403 -> throw NVFlareError.AuthError("Authentication error")
-                500 -> throw NVFlareError.ServerError("Server error")
-                else -> throw NVFlareError.TrainingFailed("Result send failed")
+                400 -> {
+                    Log.e(TAG, "sendResult: Bad request (400)")
+                    throw NVFlareError.InvalidRequest("Invalid request")
+                }
+                403 -> {
+                    Log.e(TAG, "sendResult: Authentication error (403)")
+                    throw NVFlareError.AuthError("Authentication error")
+                }
+                500 -> {
+                    Log.e(TAG, "sendResult: Server error (500)")
+                    throw NVFlareError.ServerError("Server error")
+                }
+                else -> {
+                    Log.e(TAG, "sendResult: Unexpected status code: ${response.code}")
+                    throw NVFlareError.TrainingFailed("Result send failed")
+                }
             }
         } catch (e: IOException) {
-            Log.e(TAG, "Network error sending result", e)
+            Log.e(TAG, "sendResult: Network error sending result", e)
             throw NVFlareError.NetworkError("Network error")
+        } catch (e: Exception) {
+            Log.e(TAG, "sendResult: Unexpected error sending result", e)
+            throw e
         }
     }
 }

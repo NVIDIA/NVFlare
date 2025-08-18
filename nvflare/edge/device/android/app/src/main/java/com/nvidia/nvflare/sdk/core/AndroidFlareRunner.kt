@@ -164,11 +164,32 @@ class AndroidFlareRunner(
                 when (taskResponse.taskStatus) {
                     TaskResponse.TaskStatus.OK -> {
                         // Convert TaskResponse to the format expected by FlareRunner
+                        // Extract model data properly to avoid corruption
+                        val modelData = when (taskResponse.taskData?.data) {
+                            is com.google.gson.JsonPrimitive -> {
+                                // Try to get as string first, fallback to toString if it fails
+                                try {
+                                    taskResponse.taskData.data.asString
+                                } catch (e: Exception) {
+                                    // If asString fails, use toString (this might corrupt binary data)
+                                    taskResponse.taskData.data.toString()
+                                }
+                            }
+                            is com.google.gson.JsonObject -> {
+                                // For JSON objects, convert to string
+                                taskResponse.taskData.data.toString()
+                            }
+                            else -> {
+                                // For other types, try to get as string or fallback
+                                taskResponse.taskData?.data?.toString() ?: ""
+                            }
+                        }
+                        
                         val taskMap: Map<String, Any> = mapOf(
                             "task_id" to (taskResponse.taskId ?: ""),
                             "task_name" to (taskResponse.taskName ?: ""),
                             "task_data" to mapOf(
-                                "data" to mapOf("model" to (taskResponse.taskData?.data?.toString() ?: "")),
+                                "data" to mapOf("model" to modelData),
                                 "meta" to (taskResponse.taskData?.meta?.asMap() ?: emptyMap<String, Any>()),
                                 "kind" to (taskResponse.taskData?.kind ?: "")
                             ),
@@ -210,11 +231,26 @@ class AndroidFlareRunner(
     }
 
     override fun reportResult(ctx: Context, output: DXO): Boolean {
-        val jobId = currentJobId ?: return false
-        val taskId = ctx.get(ContextKey.TASK_ID) as? String ?: return false
-        val taskName = ctx.get(ContextKey.TASK_NAME) as? String ?: return false
+        Log.d(TAG, "reportResult: Starting to report result")
+        
+        val jobId = currentJobId ?: run {
+            Log.e(TAG, "reportResult: No current job ID")
+            return false
+        }
+        val taskId = ctx.get(ContextKey.TASK_ID) as? String ?: run {
+            Log.e(TAG, "reportResult: No task ID in context")
+            return false
+        }
+        val taskName = ctx.get(ContextKey.TASK_NAME) as? String ?: run {
+            Log.e(TAG, "reportResult: No task name in context")
+            return false
+        }
+        
+        Log.d(TAG, "reportResult: Reporting result for job=$jobId, task=$taskId, name=$taskName")
+        Log.d(TAG, "reportResult: Output DXO has ${output.toMap().size} keys: ${output.toMap().keys}")
         
         try {
+            Log.d(TAG, "reportResult: Calling connection.sendResult...")
             val resultResponse = runBlocking {
                 connection.sendResult(
                     jobId = jobId,
@@ -223,6 +259,8 @@ class AndroidFlareRunner(
                     weightDiff = output.toMap()
                 )
             }
+            
+            Log.d(TAG, "reportResult: Got response from sendResult: $resultResponse")
             
             when (resultResponse.status) {
                 "OK" -> {

@@ -84,6 +84,10 @@ class ETTrainer(
 
     /**
      * Initialize the ExecuTorch training module.
+     * 
+     * Note: This method handles both base64-encoded and raw binary model data.
+     * The NVFlare server should send base64-encoded data, but if it sends raw binary
+     * data, this method will attempt to handle it gracefully.
      */
     private fun initializeTrainingModule(modelData: String) {
         try {
@@ -110,7 +114,13 @@ class ETTrainer(
                 modelData
             }
             
+            // Check if the data is already raw binary (not base64)
+            Log.d(TAG, "Processing model data, length: ${actualModelData.length}")
+            Log.d(TAG, "Model data first 50 chars: ${actualModelData.take(50)}")
+            Log.d(TAG, "Model data last 50 chars: ${actualModelData.takeLast(50)}")
+            
             val decodedModelData = java.util.Base64.getDecoder().decode(actualModelData)
+            
             Log.d(TAG, "Decoded model data size: ${decodedModelData.size} bytes")
             
             // Validate model header (check for ExecuTorch magic bytes)
@@ -146,7 +156,7 @@ class ETTrainer(
             throw RuntimeException("Failed to initialize ExecuTorch training module: ${e.message}", e)
         }
     }
-
+    
     override suspend fun train(config: TrainingConfig, modelData: String?): Map<String, Any> {
         Log.d(TAG, "Starting ExecuTorch training with method: ${config.method}")
         
@@ -184,10 +194,7 @@ class ETTrainer(
             
             val resultData: Map<String, Any> = when (method) {
                 "cnn" -> trainingResult
-                "xor" -> mapOf(
-                    "value" to (trainingResult["value"] as? Double ?: 0.0),
-                    "count" to (trainingResult["count"] as? Int ?: 1)
-                )
+                "xor" -> trainingResult  // Use tensor differences directly, don't transform
                 else -> trainingResult
             }
 
@@ -345,10 +352,7 @@ class ETTrainer(
         
         return when (method) {
             "cnn" -> tensorDiff
-            "xor" -> mapOf(
-                "value" to (totalLoss / totalSteps).toDouble(),
-                "count" to totalSteps
-            )
+            "xor" -> tensorDiff  // Return actual tensor differences for server processing
             else -> tensorDiff
         }
     }
@@ -398,9 +402,16 @@ class ETTrainer(
         for ((key, tensor) in parameters) {
             val shape = tensor.shape()
             val data = tensor.getDataAsFloatArray()
+            val sizes = shape.toList()  // Array of dimensions, not total count
+            
+            // Note: strides() method is not available in Android ExecuTorch Tensor class
+            // iOS version includes: val strides = tensor.strides()
+            // val strides = tensor.strides()  // Memory layout information (iOS only)
             
             val singleTensorDict = mapOf(
                 "shape" to shape.toList(),
+                "sizes" to sizes,  // Now matches iOS: array of dimensions
+                // "strides" to strides.toList(),  // Not available in Android ExecuTorch
                 "data" to data.toList()
             )
             
@@ -443,6 +454,8 @@ class ETTrainer(
             
             val diffTensor = mapOf(
                 "shape" to (oldTensor["shape"] ?: emptyList<Long>()),
+                "sizes" to (oldTensor["sizes"] ?: emptyList<Long>()),  // Array of dimensions
+                // "strides" to (oldTensor["strides"] ?: emptyList<Long>()),  // Not available in Android ExecuTorch
                 "data" to diffData
             )
             

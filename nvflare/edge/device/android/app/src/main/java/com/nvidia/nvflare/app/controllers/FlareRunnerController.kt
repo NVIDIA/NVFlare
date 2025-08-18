@@ -108,6 +108,7 @@ class FlareRunnerController(
                 // Create dataset based on supported jobs
                 val dataset: Dataset
                 val dataSource = AndroidDataSource(context)
+                var jobName: String = "federated_learning"
                 
                 if (supportedJobs.contains(SupportedJob.CIFAR10)) {
                     try {
@@ -138,6 +139,7 @@ class FlareRunnerController(
                     val context = FlareContext()
                     context.put("dataset_name", "xor")
                     dataset = dataSource.getDataset("train", context)
+                    jobName = "xor_et"
                     Log.d(TAG, "FlareRunnerController: Created XOR dataset")
                     Log.d(TAG, "FlareRunnerController: XOR dataset size: ${dataset.size()}")
                 } else {
@@ -152,7 +154,7 @@ class FlareRunnerController(
                 val runner = AndroidFlareRunner(
                     context = context,
                     connection = connection,
-                    jobName = "federated_learning",
+                    jobName = jobName,
                     dataSource = dataSource,
                     deviceInfo = mapOf(
                         "device_id" to (android.provider.Settings.Secure.getString(
@@ -163,7 +165,7 @@ class FlareRunnerController(
                         "app_version" to context.packageManager.getPackageInfo(context.packageName, 0).versionName
                     ),
                     userInfo = emptyMap(),
-                    jobTimeout = 30.0f
+                    jobTimeout = 86400.0f  // 24 hours
                 )
                 
                 flareRunner = runner

@@ -226,7 +226,7 @@ abstract class FlareRunner(
             }
 
             // Report result
-            val result = reportResult(ctx, filteredOutput)
+            val result = reportResult(taskCtx, filteredOutput)
             if (!result) {
                 Log.e(TAG, "Failed to report result")
                 return true
