@@ -19,7 +19,6 @@ Based on the reference ExecuTorch training example.
 
 import base64
 import json
-import os
 
 import torch
 import torch.nn as nn
@@ -213,7 +212,7 @@ def main():
     print("=" * 50)
     print("Files created:")
     print(f"  - {model_path} (XOR PyTorch model)")
-    print(f"  - proto_test_config_xor.json (Test configuration)")
+    print("  - proto_test_config_xor.json (Test configuration)")
     print("\nUsage:")
     print("  python -m nvflare.edge.web.routing_proxy 4321 lcp_map.json rootCA.pem proto_test_config_xor.json")
     print("\nThe XOR model:")

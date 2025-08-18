@@ -18,7 +18,6 @@ This generates a simplified CNN with fixed weights for reproducible testing.
 
 import base64
 import json
-import os
 
 import numpy as np
 import torch
@@ -312,7 +311,7 @@ def main():
     print("=" * 60)
     print("Files created:")
     print(f"  - {model_path} (Deterministic CIFAR-10 CNN PyTorch model)")
-    print(f"  - proto_test_config_deterministic_cnn.json (Test configuration)")
+    print("  - proto_test_config_deterministic_cnn.json (Test configuration)")
     print("\nUsage:")
     print(
         "  python -m nvflare.edge.web.routing_proxy 4321 lcp_map.json rootCA.pem proto_test_config_deterministic_cnn.json"
