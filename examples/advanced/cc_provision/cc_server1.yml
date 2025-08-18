@@ -20,7 +20,7 @@ trustee_port: 8999
 cc_issuers:
   - id: snp_authorizer
     path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
-    token_expiration: 3600
+    token_expiration: 150 # needs to be less than check_frequency
 
 cc_attestation:
-  check_frequency: 180
+  check_frequency: 300
