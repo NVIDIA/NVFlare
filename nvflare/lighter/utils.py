@@ -285,7 +285,6 @@ def sign_all(content_folder, signing_pri_key):
 def load_yaml(file):
 
     root = os.path.split(file)[0]
-    yaml_data = None
     if isinstance(file, str) or isinstance(file, Path):
         with open(file, "r") as f:
             yaml_data = yaml.safe_load(f)

@@ -21,6 +21,7 @@ import sys
 import docker
 import nvflare
 from nvflare.apis.utils.format_check import name_check
+from nvflare.dashboard.utils import EnvVar
 from nvflare.lighter import tplt_utils, utils
 
 supported_csp = ("azure", "aws")
@@ -40,9 +41,9 @@ def start(args):
             environment[splitted[0]] = splitted[1]
     passphrase = args.passphrase
     if passphrase:
-        environment["NVFL_DASHBOARD_PP"] = passphrase
+        environment[EnvVar.DASHBOARD_PP] = passphrase
     if args.cred:
-        environment.update({"NVFL_CREDENTIAL": args.cred})
+        environment.update({EnvVar.CREDENTIAL: args.cred})
     elif not os.path.exists(os.path.join(folder, ".db_init_done")):
         need_email = True
         while need_email:
@@ -67,7 +68,7 @@ def start(args):
         print("generating random password")
         pwd = utils.generate_password(8)
         print(f"Project admin credential is {email} and the password is {pwd}")
-        environment.update({"NVFL_CREDENTIAL": f"{email}:{pwd}:{org_name}"})
+        environment.update({EnvVar.CREDENTIAL: f"{email}:{pwd}:{org_name}"})
     if args.local:
         return start_local(environment)
     try:
@@ -125,7 +126,7 @@ def start_local(env):
     file_dir_path = os.path.dirname(__file__)
     wsgi_location = os.path.join(file_dir_path, "wsgi.py")
     cmd = [sys.executable, wsgi_location]
-    env.update({"NVFL_WEB_ROOT": os.path.dirname(os.path.abspath(__file__))})
+    env.update({EnvVar.WEB_ROOT: os.path.dirname(os.path.abspath(__file__))})
     process_status = subprocess.run(args=cmd, env=env)
     return process_status
 
@@ -207,7 +208,7 @@ def define_dashboard_parser(parser):
     parser.add_argument(
         "--passphrase", help="Passphrase to encrypt/decrypt root CA private key.  !!! Do not share it with others. !!!"
     )
-    parser.add_argument("-e", "--env", action="append", help="additonal environment variables: var1=value1")
+    parser.add_argument("-e", "--env", action="append", help="additional environment variables: var1=value1")
     parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
     parser.add_argument("-i", "--image", help="set the container image name")
     parser.add_argument("--local", action="store_true", help="start dashboard locally without docker image")

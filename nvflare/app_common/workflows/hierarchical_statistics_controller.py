@@ -45,7 +45,7 @@ class HierarchicalStatisticsController(StatisticsController):
             statistic_configs: defines the input statistic to be computed and each statistic's configuration, see below for details.
             writer_id: ID for StatisticsWriter. The StatisticWriter will save the result to output specified by the
                StatisticsWriter
-            wait_time_after_min_received: numbers of seconds to wait after minimum numer of clients specified has received.
+            wait_time_after_min_received: numbers of seconds to wait after minimum number of clients specified has received.
             result_wait_timeout: numbers of seconds to wait until we received all results.
                Notice this is after the min_clients have arrived, and we wait for result process
                callback, this becomes important if the data size to be processed is large
