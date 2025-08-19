@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from unittest.mock import patch
+
 import pytest
 import torch.nn as nn
-from unittest.mock import patch
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
@@ -102,8 +103,8 @@ class InvalidAggregator:
 class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
-    @patch('os.path.isfile', return_value=True)
-    @patch('os.path.exists', return_value=True)
+    @patch("os.path.isfile", return_value=True)
+    @patch("os.path.exists", return_value=True)
     def test_fedavg_recipe_initialization_with_default_aggregator(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe initialization with default aggregator."""
         recipe = FedAvgRecipe(
@@ -125,8 +126,8 @@ class TestFedAvgRecipe:
         assert recipe.clients is None
         assert isinstance(recipe.aggregator, Aggregator)
 
-    @patch('os.path.isfile', return_value=True)
-    @patch('os.path.exists', return_value=True)
+    @patch("os.path.isfile", return_value=True)
+    @patch("os.path.exists", return_value=True)
     def test_fedavg_recipe_initialization_with_custom_aggregator(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe initialization with custom aggregator."""
         custom_aggregator = MyAggregator()
@@ -146,8 +147,8 @@ class TestFedAvgRecipe:
         assert isinstance(recipe.aggregator, MyAggregator)
         assert isinstance(recipe.aggregator, Aggregator)
 
-    @patch('os.path.isfile', return_value=True)
-    @patch('os.path.exists', return_value=True)
+    @patch("os.path.isfile", return_value=True)
+    @patch("os.path.exists", return_value=True)
     def test_fedavg_recipe_with_custom_clients(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe with custom client names."""
         custom_aggregator = MyAggregator()
@@ -167,8 +168,8 @@ class TestFedAvgRecipe:
         assert recipe.num_clients == 3
         assert recipe.min_clients == 2
 
-    @patch('os.path.isfile', return_value=True)
-    @patch('os.path.exists', return_value=True)
+    @patch("os.path.isfile", return_value=True)
+    @patch("os.path.exists", return_value=True)
     def test_fedavg_recipe_validation_inconsistent_clients(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe validation with inconsistent client configuration."""
         clients = ["client1", "client2"]
@@ -183,8 +184,8 @@ class TestFedAvgRecipe:
                 min_clients=1,
             )
 
-    @patch('os.path.isfile', return_value=True)
-    @patch('os.path.exists', return_value=True)
+    @patch("os.path.isfile", return_value=True)
+    @patch("os.path.exists", return_value=True)
     def test_fedavg_recipe_with_initial_model(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe with initial model."""
         initial_model = SimpleTestModel()
@@ -203,8 +204,8 @@ class TestFedAvgRecipe:
 
         assert recipe.initial_model == initial_model
 
-    @patch('os.path.isfile', return_value=True)
-    @patch('os.path.exists', return_value=True)
+    @patch("os.path.isfile", return_value=True)
+    @patch("os.path.exists", return_value=True)
     def test_fedavg_recipe_job_creation(self, mock_exists, mock_isfile):
         """Test that FedAvgRecipe creates a valid job structure."""
         custom_aggregator = MyAggregator()
@@ -223,8 +224,8 @@ class TestFedAvgRecipe:
         assert recipe.job is not None
         assert recipe.job.name == "test_fedavg_job"
 
-    @patch('os.path.isfile', return_value=True)
-    @patch('os.path.exists', return_value=True)
+    @patch("os.path.isfile", return_value=True)
+    @patch("os.path.exists", return_value=True)
     def test_fedavg_recipe_edge_cases(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe edge cases and boundary conditions."""
 
