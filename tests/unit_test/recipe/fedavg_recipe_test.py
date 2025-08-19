@@ -14,6 +14,7 @@
 
 import pytest
 import torch.nn as nn
+from unittest.mock import patch
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
@@ -101,11 +102,13 @@ class InvalidAggregator:
 class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
-    def test_fedavg_recipe_initialization_with_default_aggregator(self):
+    @patch('os.path.isfile', return_value=True)
+    @patch('os.path.exists', return_value=True)
+    def test_fedavg_recipe_initialization_with_default_aggregator(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe initialization with default aggregator."""
         recipe = FedAvgRecipe(
             name="test_fedavg",
-            train_script="tests/unit_test/recipe/mock_train_script.py",
+            train_script="mock_train_script.py",
             train_args="--epochs 10",
             num_clients=3,
             min_clients=2,
@@ -113,7 +116,7 @@ class TestFedAvgRecipe:
         )
 
         assert recipe.name == "test_fedavg"
-        assert recipe.train_script == "tests/unit_test/recipe/mock_train_script.py"
+        assert recipe.train_script == "mock_train_script.py"
         assert recipe.train_args == "--epochs 10"
         assert recipe.num_clients == 3
         assert recipe.min_clients == 2
@@ -122,13 +125,15 @@ class TestFedAvgRecipe:
         assert recipe.clients is None
         assert isinstance(recipe.aggregator, Aggregator)
 
-    def test_fedavg_recipe_initialization_with_custom_aggregator(self):
+    @patch('os.path.isfile', return_value=True)
+    @patch('os.path.exists', return_value=True)
+    def test_fedavg_recipe_initialization_with_custom_aggregator(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe initialization with custom aggregator."""
         custom_aggregator = MyAggregator()
 
         recipe = FedAvgRecipe(
             name="test_fedavg_custom",
-            train_script="tests/unit_test/recipe/mock_train_script.py",
+            train_script="mock_train_script.py",
             train_args="--epochs 10",
             num_clients=2,
             min_clients=1,
@@ -141,14 +146,16 @@ class TestFedAvgRecipe:
         assert isinstance(recipe.aggregator, MyAggregator)
         assert isinstance(recipe.aggregator, Aggregator)
 
-    def test_fedavg_recipe_with_custom_clients(self):
+    @patch('os.path.isfile', return_value=True)
+    @patch('os.path.exists', return_value=True)
+    def test_fedavg_recipe_with_custom_clients(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe with custom client names."""
         custom_aggregator = MyAggregator()
         clients = ["client1", "client2", "client3"]
 
         recipe = FedAvgRecipe(
             name="test_fedavg_clients",
-            train_script="tests/unit_test/recipe/mock_train_script.py",
+            train_script="mock_train_script.py",
             train_args="--epochs 10",
             clients=clients,
             min_clients=2,
@@ -160,28 +167,32 @@ class TestFedAvgRecipe:
         assert recipe.num_clients == 3
         assert recipe.min_clients == 2
 
-    def test_fedavg_recipe_validation_inconsistent_clients(self):
+    @patch('os.path.isfile', return_value=True)
+    @patch('os.path.exists', return_value=True)
+    def test_fedavg_recipe_validation_inconsistent_clients(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe validation with inconsistent client configuration."""
         clients = ["client1", "client2"]
 
         with pytest.raises(ValueError, match="inconsistent number of clients"):
             FedAvgRecipe(
                 name="test_fedavg_inconsistent",
-                train_script="tests/unit_test/recipe/mock_train_script.py",
+                train_script="mock_train_script.py",
                 train_args="--epochs 10",
                 clients=clients,
                 num_clients=3,  # Inconsistent with len(clients) = 2
                 min_clients=1,
             )
 
-    def test_fedavg_recipe_with_initial_model(self):
+    @patch('os.path.isfile', return_value=True)
+    @patch('os.path.exists', return_value=True)
+    def test_fedavg_recipe_with_initial_model(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe with initial model."""
         initial_model = SimpleTestModel()
         custom_aggregator = MyAggregator()
 
         recipe = FedAvgRecipe(
             name="test_fedavg_initial_model",
-            train_script="tests/unit_test/recipe/mock_train_script.py",
+            train_script="mock_train_script.py",
             train_args="--epochs 10",
             initial_model=initial_model,
             num_clients=2,
@@ -192,13 +203,15 @@ class TestFedAvgRecipe:
 
         assert recipe.initial_model == initial_model
 
-    def test_fedavg_recipe_job_creation(self):
+    @patch('os.path.isfile', return_value=True)
+    @patch('os.path.exists', return_value=True)
+    def test_fedavg_recipe_job_creation(self, mock_exists, mock_isfile):
         """Test that FedAvgRecipe creates a valid job structure."""
         custom_aggregator = MyAggregator()
 
         recipe = FedAvgRecipe(
             name="test_fedavg_job",
-            train_script="tests/unit_test/recipe/mock_train_script.py",
+            train_script="mock_train_script.py",
             train_args="--epochs 10",
             num_clients=2,
             min_clients=1,
@@ -210,13 +223,15 @@ class TestFedAvgRecipe:
         assert recipe.job is not None
         assert recipe.job.name == "test_fedavg_job"
 
-    def test_fedavg_recipe_edge_cases(self):
+    @patch('os.path.isfile', return_value=True)
+    @patch('os.path.exists', return_value=True)
+    def test_fedavg_recipe_edge_cases(self, mock_exists, mock_isfile):
         """Test FedAvgRecipe edge cases and boundary conditions."""
 
         # Test with minimum valid configuration
         recipe = FedAvgRecipe(
             name="minimal",
-            train_script="tests/unit_test/recipe/mock_train_script.py",
+            train_script="mock_train_script.py",
             train_args="",
             num_clients=1,
             min_clients=1,
