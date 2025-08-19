@@ -21,11 +21,13 @@ import shutil
 import sys
 from typing import Optional
 
+from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.lighter.constants import PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Project
+from nvflare.lighter.tree_prov import edge_provision
 from nvflare.lighter.utils import load_yaml
 
 adding_client_error_msg = """
@@ -50,6 +52,8 @@ role: $ROLE
 
 
 def define_provision_parser(parser):
+    parser.add_argument("-g", "--generate", action="store_true", default=False, help="generate a sample project.yml")
+    parser.add_argument("-e", "--edge", action="store_true", default=False, help="generate a sample edge project.yml")
     parser.add_argument("-p", "--project_file", type=str, default="project.yml", help="file to describe FL project")
     parser.add_argument("-w", "--workspace", type=str, default="workspace", help="directory used by provision")
     parser.add_argument("-c", "--custom_folder", type=str, default=".", help="additional folder to load python codes")
@@ -62,35 +66,36 @@ def has_no_arguments() -> bool:
     return last_item.endswith("provision") or last_item.endswith("provision.py")
 
 
-def handle_provision(args):
+def copy_project(project: str, dest: str):
     file_path = pathlib.Path(__file__).parent.absolute()
+    dummy_project = os.path.join(file_path, project)
+    shutil.copyfile(dummy_project, dest)
+    rel_path = os.path.relpath(dest)
+    print(
+        f"{dest} was generated.  Please edit it to fit your NVFlare configuration. "
+        + f"Once done please run 'nvflare provision -p {rel_path}' to perform the provisioning"
+    )
+
+
+def handle_provision(args):
     current_path = os.getcwd()
     custom_folder_path = os.path.join(current_path, args.custom_folder)
     sys.path.append(custom_folder_path)
 
+    if has_no_arguments():
+        raise CLIUnknownCmdException("missing options")
+
+    current_project_yml = os.path.join(current_path, "project.yml")
+    if args.generate:
+        copy_project("dummy_project.yml", current_project_yml)
+        return
+
+    if args.edge:
+        copy_project("edge_project.yml", current_project_yml)
+        return
+
     # main project file
     project_file = args.project_file
-    current_project_yml = os.path.join(current_path, "project.yml")
-
-    if has_no_arguments() and not os.path.exists(current_project_yml):
-        files = {"1": "ha_project.yml", "2": "dummy_project.yml", "3": None}
-        print("No project.yml found in current folder.\nThere are two types of templates for project.yml.")
-        print(
-            "1) project.yml for HA mode\n2) project.yml for non-HA mode\n3) Don't generate project.yml.  Exit this program."
-        )
-        answer = input(f"Which type of project.yml should be generated at {current_project_yml} for you? (1/2/3) ")
-        answer = answer.strip()
-        src_project = files.get(answer, None)
-        if src_project:
-            shutil.copyfile(os.path.join(file_path, src_project), current_project_yml)
-            print(
-                f"{current_project_yml} was created.  Please edit it to fit your FL configuration. "
-                + "Once done please run nvflare provision command again with newly edited project.yml file"
-            )
-
-        else:
-            print(f"{answer} was selected.  No project.yml was created.")
-        exit(0)
 
     workspace = args.workspace
     workspace_full_path = os.path.join(current_path, workspace)
@@ -109,6 +114,18 @@ def gen_default_project_config(src_project_name, dest_project_file):
     shutil.copyfile(os.path.join(file_path, src_project_name), dest_project_file)
 
 
+def provision_for_edge(params, project_dict):
+    api_version = project_dict.get(PropKey.API_VERSION)
+    project_name = project_dict.get(PropKey.NAME)
+    project_description = project_dict.get(PropKey.DESCRIPTION, "")
+    project = Project(name=project_name, description=project_description, props=project_dict)
+
+    participants = project_dict.get("participants")
+    admins = [participant_from_dict(p) for p in participants if p.get("type") == "admin"]
+    builders = prepare_builders(project_dict)
+    edge_provision(params, project, builders, admins)
+
+
 def provision(
     project_full_path: str,
     workspace_full_path: str,
@@ -116,6 +133,11 @@ def provision(
     add_client_full_path: Optional[str] = None,
 ):
     project_dict = load_yaml(project_full_path)
+    edge_params = project_dict.get("edge")
+    if edge_params:
+        provision_for_edge(edge_params, project_dict)
+        return
+
     project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
     builders = prepare_builders(project_dict)
     packager = prepare_packager(project_dict)
