@@ -15,12 +15,7 @@
 import argparse
 import os
 
-from nvflare.tool.package_checker import (
-    ClientPackageChecker,
-    NVFlareConsolePackageChecker,
-    OverseerPackageChecker,
-    ServerPackageChecker,
-)
+from nvflare.tool.package_checker import ClientPackageChecker, NVFlareConsolePackageChecker, ServerPackageChecker
 
 
 def define_preflight_check_parser(parser):
@@ -38,7 +33,6 @@ def check_packages(args):
         return
 
     package_checkers = [
-        OverseerPackageChecker(),
         ServerPackageChecker(),
         ClientPackageChecker(),
         NVFlareConsolePackageChecker(),

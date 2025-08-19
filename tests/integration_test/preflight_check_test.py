@@ -29,49 +29,31 @@ TEST_CASES = [
     {"project_yaml": "data/projects/dummy.yml", "admin_name": "super@test.org", "is_dummy_overseer": True},
 ]
 
-SERVER_OUTPUT_PASSED = (
-    "-----------------------------------------------------------------------------------------------------------------------------------\n"
-    "| Checks                          | Problems                                                                         | How to fix |\n"
-    "|---------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check overseer running          | PASSED                                                                           | N/A        |\n"
-    "|---------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check grpc port binding         | PASSED                                                                           | N/A        |\n"
-    "|---------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check admin port binding        | PASSED                                                                           | N/A        |\n"
-    "|---------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check snapshot storage writable | PASSED                                                                           | N/A        |\n"
-    "|---------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check job storage writable      | PASSED                                                                           | N/A        |\n"
-    "|---------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check dry run                   | PASSED                                                                           | N/A        |\n"
-    "-----------------------------------------------------------------------------------------------------------------------------------"
-)
+SERVER_OUTPUT_PASSED = [
+    "-----------------------------------------------------------------------------------------------------------------------------------",
+    "| Checks                          | Problems                                                                         | How to fix |",
+    "|---------------------------------------------------------------------------------------------------------------------------------|",
+    "| Check grpc port binding         | PASSED                                                                           | N/A        |",
+    "|---------------------------------------------------------------------------------------------------------------------------------|",
+    "| Check admin port binding        | PASSED                                                                           | N/A        |",
+    "|---------------------------------------------------------------------------------------------------------------------------------|",
+    "| Check snapshot storage writable | PASSED                                                                           | N/A        |",
+    "|---------------------------------------------------------------------------------------------------------------------------------|",
+    "| Check job storage writable      | PASSED                                                                           | N/A        |",
+    "|---------------------------------------------------------------------------------------------------------------------------------|",
+    "| Check dry run                   | PASSED                                                                           | N/A        |",
+    "-----------------------------------------------------------------------------------------------------------------------------------",
+]
 
-OVERSEER_OUTPUT_PASSED = (
-    "-------------------------------------------------------------------------------------------------------------------------------\n"
-    "| Checks                      | Problems                                                                         | How to fix |\n"
-    "|-----------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check overseer port binding | PASSED                                                                           | N/A        |\n"
-    "|-----------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check dry run               | PASSED                                                                           | N/A        |\n"
-    "-------------------------------------------------------------------------------------------------------------------------------"
-)
-
-CLIENT_OUTPUT_PASSED = (
-    "------------------------------------------------------------------------------------------------------------------------------------------------\n"
-    "| Checks                                       | Problems                                                                         | How to fix |\n"
-    "|----------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check overseer running                       | PASSED                                                                           | N/A        |\n"
-    "|----------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check service provider list available        | PASSED                                                                           | N/A        |\n"
-    "|----------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check primary SP's GRPC server available     | PASSED                                                                           | N/A        |\n"
-    "|----------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check non-primary SP's GRPC server available | PASSED                                                                           | N/A        |\n"
-    "|----------------------------------------------------------------------------------------------------------------------------------------------|\n"
-    "| Check dry run                                | PASSED                                                                           | N/A        |\n"
-    "------------------------------------------------------------------------------------------------------------------------------------------------"
-)
+CLIENT_OUTPUT_PASSED = [
+    "-------------------------------------------------------------------------------------------------------------------------------",
+    "| Checks                      | Problems                                                                         | How to fix |",
+    "|-----------------------------------------------------------------------------------------------------------------------------|",
+    "| Check GRPC server available | PASSED                                                                           | N/A        |",
+    "|-----------------------------------------------------------------------------------------------------------------------------|",
+    "| Check dry run               | PASSED                                                                           | N/A        |",
+    "-------------------------------------------------------------------------------------------------------------------------------",
+]
 
 # TODO: this is a hack to filter out the GRPC message
 #  "Other threads are currently calling into gRPC, skipping fork() handlers"
@@ -149,17 +131,6 @@ def setup_system(request):
 
 @pytest.mark.xdist_group(name="preflight_tests_group")
 class TestPreflightCheck:
-    def test_run_check_on_overseer(self, setup_system):
-        site_launcher, is_dummy_overseer, _ = setup_system
-        try:
-            # preflight-check on overseer
-            if is_dummy_overseer:
-                return
-            output = _run_preflight_check_command(package_path=site_launcher.overseer_properties.root_dir)
-            assert _filter_output(output) == OVERSEER_OUTPUT_PASSED.splitlines()
-        finally:
-            site_launcher.cleanup()
-
     def test_run_check_on_server_after_overseer_start(self, setup_system):
         site_launcher, is_dummy_overseer, _ = setup_system
         try:
@@ -168,7 +139,10 @@ class TestPreflightCheck:
             # preflight-check on server
             for server_name, server_props in site_launcher.server_properties.items():
                 output = _run_preflight_check_command(package_path=server_props.root_dir)
-                assert _filter_output(output) == SERVER_OUTPUT_PASSED.splitlines()
+                filtered_output = _filter_output(output)
+                # Replace the package path placeholder with actual path
+                expected_output = [line.format(package_path=server_props.root_dir) for line in SERVER_OUTPUT_PASSED]
+                assert filtered_output == expected_output
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
@@ -179,10 +153,16 @@ class TestPreflightCheck:
             # preflight-check on server
             for server_name, server_props in site_launcher.server_properties.items():
                 output = _run_preflight_check_command(package_path=server_props.root_dir)
+                filtered_output = _filter_output(output)
                 if is_dummy_overseer:
-                    assert _filter_output(output) == SERVER_OUTPUT_PASSED.splitlines()
+                    # Replace the package path placeholder with actual path
+                    expected_output = [line.format(package_path=server_props.root_dir) for line in SERVER_OUTPUT_PASSED]
+                    assert filtered_output == expected_output
                 else:
-                    assert _filter_output(output) != SERVER_OUTPUT_PASSED.splitlines()
+                    # Should not pass when overseer is not running
+                    assert filtered_output != [
+                        line.format(package_path=server_props.root_dir) for line in SERVER_OUTPUT_PASSED
+                    ]
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
@@ -201,7 +181,9 @@ class TestPreflightCheck:
                 output = _run_preflight_check_command(package_path=client_props.root_dir)
                 filtered_output = _filter_output(output)
                 print(filtered_output)
-                assert filtered_output == CLIENT_OUTPUT_PASSED.splitlines()
+                # Replace the package path placeholder with actual path
+                expected_output = [line.format(package_path=client_props.root_dir) for line in CLIENT_OUTPUT_PASSED]
+                assert filtered_output == expected_output
         except Exception:
             raise
         finally:
@@ -221,7 +203,9 @@ class TestPreflightCheck:
             output = _run_preflight_check_command(package_path=admin_folder_root)
             filtered_output = _filter_output(output)
             print(filtered_output)
-            assert filtered_output == CLIENT_OUTPUT_PASSED.splitlines()
+            # Replace the package path placeholder with actual path
+            expected_output = [line.format(package_path=admin_folder_root) for line in CLIENT_OUTPUT_PASSED]
+            assert filtered_output == expected_output
         except Exception:
             raise
         finally:

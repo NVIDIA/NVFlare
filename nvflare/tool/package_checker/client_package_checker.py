@@ -15,12 +15,7 @@
 import os
 import sys
 
-from .check_rule import (
-    CheckNonPrimarySPGRPCServerAvailable,
-    CheckOverseerRunning,
-    CheckPrimarySPGRPCServerAvailable,
-    CheckSPListInResponse,
-)
+from .check_rule import CheckGRPCServerAvailable
 from .package_checker import PackageChecker
 from .utils import NVFlareConfig, NVFlareRole
 
@@ -40,14 +35,7 @@ class ClientPackageChecker(PackageChecker):
 
     def init_rules(self, package_path):
         self.rules = [
-            [
-                CheckOverseerRunning(name="Check overseer running", role=self.NVF_ROLE),
-                CheckSPListInResponse(name="Check service provider list available"),
-                CheckPrimarySPGRPCServerAvailable(name="Check primary SP's GRPC server available"),
-                CheckNonPrimarySPGRPCServerAvailable(
-                    name="Check non-primary SP's GRPC server available", required=False
-                ),
-            ]
+            CheckGRPCServerAvailable(name="Check GRPC server available", role=self.NVF_ROLE),
         ]
 
     def get_dry_run_command(self) -> str:

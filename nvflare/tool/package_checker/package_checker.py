@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from subprocess import TimeoutExpired
 
-from nvflare.tool.package_checker.check_rule import CHECK_PASSED, CheckResult, CheckRule
+from nvflare.tool.package_checker.check_rule import CHECK_DISABLED, CHECK_PASSED, CheckResult, CheckRule
 from nvflare.tool.package_checker.utils import run_command_in_subprocess, split_by_len
 
 
@@ -94,25 +94,32 @@ class PackageChecker(ABC):
 
             # check dry run
             if all_passed:
-                ret_code = self.check_dry_run()
+                command = self.get_dry_run_command()
+                if command is None:
+                    # skip dry run if no command is provided
+                    return 0
+                ret_code = self.check_dry_run(command)
         except Exception as e:
             self.add_report(
                 "Package Error",
                 f"Exception happens in checking: {e}, this package is not in correct format.",
                 "Please download a new package.",
             )
+            ret_code = 2  # Set error return code for exceptions
         finally:
             return ret_code
 
-    def check_dry_run(self) -> int:
+    def check_dry_run(self, command: str) -> int:
         """Runs dry run command.
+
+        Args:
+            command: the command to run for dry run.
 
         Returns:
             0: if no process started.
             1: if the process is started and return code is 0.
             2: if the process is started and return code is not 0.
         """
-        command = self.get_dry_run_command()
         dry_run_input = self.get_dry_run_inputs()
         process = None
         try:
@@ -138,7 +145,7 @@ class PackageChecker(ABC):
             os.killpg(process.pid, signal.SIGTERM)
             # Assumption, preflight check is focused on the connectivity, so we assume all sub-systems should
             # behave as designed if configured correctly.
-            # In such case, a dry run for any of the sub systems (overseer, server(s), clients etc.) will
+            # In such case, a dry run for any of the sub systems (server, clients etc.) will
             # run as service forever once started, unless it is asked to stop. Therefore, we will get TimeoutExpired
             # with above assumption, we consider the sub-system as running in good condition if it is started running
             # in give timeout period
@@ -158,9 +165,10 @@ class PackageChecker(ABC):
                 return 0
 
     def add_report(self, check_name, problem_text: str, fix_text: str):
-        self.report[self.package_path].append((check_name, problem_text, fix_text))
-        self.check_len = max(self.check_len, len(check_name))
-        self.fix_len = max(self.fix_len, len(fix_text))
+        if problem_text != CHECK_DISABLED:
+            self.report[self.package_path].append((check_name, problem_text, fix_text))
+            self.check_len = max(self.check_len, len(check_name))
+            self.fix_len = max(self.fix_len, len(fix_text))
 
     def _print_line(self):
         print("|" + "-" * (self.check_len + self.problem_len + self.fix_len + 8) + "|")
