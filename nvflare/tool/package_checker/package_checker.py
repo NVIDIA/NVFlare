@@ -101,7 +101,6 @@ class PackageChecker(ABC):
                 f"Exception happens in checking: {e}, this package is not in correct format.",
                 "Please download a new package.",
             )
-            ret_code = 2  # Set error return code for exceptions
         finally:
             return ret_code
 
