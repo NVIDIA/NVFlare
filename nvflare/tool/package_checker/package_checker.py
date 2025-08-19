@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from subprocess import TimeoutExpired
 
-from nvflare.tool.package_checker.check_rule import CHECK_DISABLED, CHECK_PASSED, CheckResult, CheckRule
+from nvflare.tool.package_checker.check_rule import CHECK_PASSED, CheckResult, CheckRule
 from nvflare.tool.package_checker.utils import run_command_in_subprocess, split_by_len
 
 
@@ -94,11 +94,7 @@ class PackageChecker(ABC):
 
             # check dry run
             if all_passed:
-                command = self.get_dry_run_command()
-                if command is None:
-                    # skip dry run if no command is provided
-                    return 0
-                ret_code = self.check_dry_run(command)
+                ret_code = self.check_dry_run()
         except Exception as e:
             self.add_report(
                 "Package Error",
@@ -109,17 +105,15 @@ class PackageChecker(ABC):
         finally:
             return ret_code
 
-    def check_dry_run(self, command: str) -> int:
+    def check_dry_run(self) -> int:
         """Runs dry run command.
-
-        Args:
-            command: the command to run for dry run.
 
         Returns:
             0: if no process started.
             1: if the process is started and return code is 0.
             2: if the process is started and return code is not 0.
         """
+        command = self.get_dry_run_command()
         dry_run_input = self.get_dry_run_inputs()
         process = None
         try:
@@ -165,10 +159,9 @@ class PackageChecker(ABC):
                 return 0
 
     def add_report(self, check_name, problem_text: str, fix_text: str):
-        if problem_text != CHECK_DISABLED:
-            self.report[self.package_path].append((check_name, problem_text, fix_text))
-            self.check_len = max(self.check_len, len(check_name))
-            self.fix_len = max(self.fix_len, len(fix_text))
+        self.report[self.package_path].append((check_name, problem_text, fix_text))
+        self.check_len = max(self.check_len, len(check_name))
+        self.fix_len = max(self.fix_len, len(fix_text))
 
     def _print_line(self):
         print("|" + "-" * (self.check_len + self.problem_len + self.fix_len + 8) + "|")

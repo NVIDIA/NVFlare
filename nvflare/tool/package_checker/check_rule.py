@@ -26,7 +26,6 @@ from nvflare.tool.package_checker.utils import (
 )
 
 CHECK_PASSED = "PASSED"
-CHECK_DISABLED = "DISABLED"
 
 
 class CheckResult:
