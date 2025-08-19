@@ -13,14 +13,13 @@
 # limitations under the License.
 
 from pathlib import Path
-from typing import List
 
 from app.core.config import settings
 from app.utils.dependencies import validate_user
 from fastapi import APIRouter, Depends, HTTPException
 
 
-def get_subdirectories() -> List[str]:
+def get_subdirectories() -> list[str]:
     directory_path = settings.data_root
     root_dir = Path(directory_path)
     if not root_dir.is_dir():
@@ -37,7 +36,7 @@ def get_subdirectories() -> List[str]:
 router = APIRouter()
 
 
-@router.get("/", response_model=List[str])
+@router.get("/", response_model=list[str])
 async def get_apps(dep: None = Depends(validate_user)):
     """An API to get the list of registered applications for Holoscan Federated Analytics.
 

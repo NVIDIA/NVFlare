@@ -14,7 +14,6 @@
 
 import os
 from abc import ABC
-from typing import List
 
 from nvflare.app_common.app_constant import AppConstants
 
@@ -22,7 +21,7 @@ from .job_result_validator import FinishJobResultValidator
 
 
 class BaseCrossValResultValidator(FinishJobResultValidator, ABC):
-    def __init__(self, server_model_names: List[str]):
+    def __init__(self, server_model_names: list[str]):
         super().__init__()
         self.server_model_names = server_model_names
 

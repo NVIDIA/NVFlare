@@ -14,7 +14,7 @@
 
 import glob
 import os
-from typing import Dict, List, Optional
+from typing import Optional
 
 import numpy as np
 from monai.data import ITKReader, load_decathlon_datalist
@@ -74,13 +74,13 @@ class ImageStatistics(Statistics):
 
     def pre_run(
         self,
-        statistics: List[str],
-        num_of_bins: Optional[Dict[str, Optional[int]]],
-        bin_ranges: Optional[Dict[str, Optional[List[float]]]],
+        statistics: list[str],
+        num_of_bins: Optional[dict[str, Optional[int]]],
+        bin_ranges: Optional[dict[str, Optional[list[float]]]],
     ):
         return {}
 
-    def features(self) -> Dict[str, List[Feature]]:
+    def features(self) -> dict[str, list[Feature]]:
         return {"train": [Feature("intensity", DataType.FLOAT)]}
 
     def count(self, dataset_name: str, feature_name: str) -> int:
@@ -94,7 +94,7 @@ class ImageStatistics(Statistics):
     def histogram(
         self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
     ) -> Histogram:
-        histogram_bins: List[Bin] = []
+        histogram_bins: list[Bin] = []
         histogram = np.zeros((num_of_bins,), dtype=np.int64)
         bin_edges = []
         for i, entry in enumerate(self.data_list[dataset_name]):
