@@ -55,19 +55,13 @@ CLIENT_OUTPUT_PASSED = [
     "-------------------------------------------------------------------------------------------------------------------------------",
 ]
 
-# TODO: this is a hack to filter out the GRPC message
-#  "Other threads are currently calling into gRPC, skipping fork() handlers"
-GRPC_ERROR_MSG = "Other threads are currently calling into gRPC, skipping fork() handlers"
-
 SERVER_START_TIME = 15
 
 
 def _filter_output(output):
     lines = []
     for line in output.decode("utf-8").splitlines():
-        if GRPC_ERROR_MSG in line:
-            continue
-        elif "Checking Package" in line:
+        if "Checking Package" in line:
             continue
         elif "killing dry run process" in line:
             continue
@@ -83,6 +77,7 @@ def _run_preflight_check_command_in_subprocess(package_path: str):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
     print(f"Executing command {command} in subprocess")
     output = subprocess.check_output(shlex.split(command))
+    print(f"DEBUG: subprocess output: {output}")
     return output
 
 
@@ -140,9 +135,7 @@ class TestPreflightCheck:
             for server_name, server_props in site_launcher.server_properties.items():
                 output = _run_preflight_check_command(package_path=server_props.root_dir)
                 filtered_output = _filter_output(output)
-                # Replace the package path placeholder with actual path
-                expected_output = [line.format(package_path=server_props.root_dir) for line in SERVER_OUTPUT_PASSED]
-                assert filtered_output == expected_output
+                assert filtered_output == SERVER_OUTPUT_PASSED
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
@@ -155,14 +148,9 @@ class TestPreflightCheck:
                 output = _run_preflight_check_command(package_path=server_props.root_dir)
                 filtered_output = _filter_output(output)
                 if is_dummy_overseer:
-                    # Replace the package path placeholder with actual path
-                    expected_output = [line.format(package_path=server_props.root_dir) for line in SERVER_OUTPUT_PASSED]
-                    assert filtered_output == expected_output
+                    assert filtered_output == SERVER_OUTPUT_PASSED
                 else:
-                    # Should not pass when overseer is not running
-                    assert filtered_output != [
-                        line.format(package_path=server_props.root_dir) for line in SERVER_OUTPUT_PASSED
-                    ]
+                    assert filtered_output != SERVER_OUTPUT_PASSED
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
@@ -180,10 +168,7 @@ class TestPreflightCheck:
             for client_name, client_props in site_launcher.client_properties.items():
                 output = _run_preflight_check_command(package_path=client_props.root_dir)
                 filtered_output = _filter_output(output)
-                print(filtered_output)
-                # Replace the package path placeholder with actual path
-                expected_output = [line.format(package_path=client_props.root_dir) for line in CLIENT_OUTPUT_PASSED]
-                assert filtered_output == expected_output
+                assert filtered_output == CLIENT_OUTPUT_PASSED
         except Exception:
             raise
         finally:
@@ -202,10 +187,7 @@ class TestPreflightCheck:
             # preflight-check on admin console
             output = _run_preflight_check_command(package_path=admin_folder_root)
             filtered_output = _filter_output(output)
-            print(filtered_output)
-            # Replace the package path placeholder with actual path
-            expected_output = [line.format(package_path=admin_folder_root) for line in CLIENT_OUTPUT_PASSED]
-            assert filtered_output == expected_output
+            assert filtered_output == CLIENT_OUTPUT_PASSED
         except Exception:
             raise
         finally:
