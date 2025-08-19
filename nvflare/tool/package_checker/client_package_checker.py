@@ -61,7 +61,11 @@ class ClientPackageChecker(PackageChecker):
     def get_dry_run_command(self) -> str:
         uid = self.get_uid_from_startup_script()
         if not uid:
-            raise ValueError(f"Could not extract uid from {self.package_path}/startup/sub_start.sh")
+            raise ValueError(
+                f"Could not extract uid from {self.package_path}/startup/sub_start.sh. "
+                "Possible reasons: the file may be missing, unreadable, or not in the expected format. "
+                "Please check that the file exists, has the correct permissions, and contains a line with 'uid=<value>' in the Python command."
+            )
 
         command = (
             f"{sys.executable} -m {CLIENT_SCRIPT}"
