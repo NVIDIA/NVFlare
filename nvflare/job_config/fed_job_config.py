@@ -397,16 +397,16 @@ class FedJobConfig:
         args = {}
         if hasattr(component, "__dict__"):
             parameters = get_component_init_parameters(component)
+            attrs = component.__dict__
+
             for param in parameters:
                 if param in ["self", "args", "kwargs"]:
                     continue
 
-                try:
-                    attr_value = getattr(component, param)
-                except AttributeError:
-                    continue
+                attr_key = param if param in attrs.keys() else "_" + param
+                attr_value = getattr(component, attr_key)
 
-                if parameters[param].default != attr_value:
+                if attr_value is not None and parameters[param].default != attr_value:
                     if type(attr_value).__name__ in dir(builtins):
                         args[param] = attr_value
                     elif issubclass(attr_value.__class__, Enum):
