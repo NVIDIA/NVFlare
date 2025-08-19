@@ -54,7 +54,7 @@ class ClientPackageChecker(PackageChecker):
                 return match.group(1)
 
         except Exception as e:
-            print(f"Error reading sub_start.sh: {e}")
+            print(f"Error reading {sub_start_path}: {e}")
 
         return None
 
