@@ -37,8 +37,8 @@ struct TrainingConfig {
         self.totalEpochs = data[NVFlareConstants.metaKeyTotalEpochs] as? Int ?? 1
         self.batchSize = data[NVFlareConstants.metaKeyBatchSize] as? Int ?? 4
         self.learningRate = data[NVFlareConstants.metaKeyLearningRate] as? Float ?? 0.1
-        self.method = data["method"] as? String ?? TrainingConstants.datasetTypeXOR
-        self.dataSetType = data[NVFlareConstants.metaKeyDatasetType] as? String ?? TrainingConstants.datasetTypeXOR
+        self.method = data["method"] as? String ?? TrainingConstants.methodCNN
+        self.dataSetType = data[NVFlareConstants.metaKeyDatasetType] as? String ?? TrainingConstants.datasetTypeCIFAR10
     }
 }
 

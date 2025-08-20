@@ -108,7 +108,7 @@ std::optional<SwiftDatasetAdapter::BatchType> SwiftDatasetAdapter::getBatch(size
         }
         
         // Guard against division by zero
-        if (labelVec.size() == 0) {
+        if (labelVec.empty()) {
             NSLog(@"SwiftDatasetAdapter::getBatch() no labels in batch");
             return std::nullopt;
         }

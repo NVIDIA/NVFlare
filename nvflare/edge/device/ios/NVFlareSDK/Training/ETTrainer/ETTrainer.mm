@@ -11,6 +11,7 @@
 #import <executorch/extension/data_loader/file_data_loader.h>
 #import <executorch/extension/training/module/training_module.h>
 #import <executorch/extension/training/optimizer/sgd.h>
+#include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
@@ -240,16 +241,36 @@ using namespace ::executorch::extension;
         NSInteger totalEpochs = [_meta[kNVFlareMetaKeyTotalEpochs] integerValue];
         int totalSteps = 0;
         size_t datasetSize = _dataset->size();
-        size_t numBatchesPerEpoch = (datasetSize + batchSize - 1) / batchSize;  // Ceiling division
+        size_t numBatchesPerEpoch = datasetSize / batchSize;  // Floor division - drop incomplete batches
+        size_t samplesUsedPerEpoch = numBatchesPerEpoch * batchSize;
+        size_t droppedSamples = datasetSize - samplesUsedPerEpoch;
+        
+        NSLog(@"ETTrainer: Dataset size: %zu, Batch size: %d", datasetSize, batchSize);
+        NSLog(@"ETTrainer: Batches per epoch: %zu, Samples used: %zu, Dropped: %zu", 
+              numBatchesPerEpoch, samplesUsedPerEpoch, droppedSamples);
+              
+        if (numBatchesPerEpoch == 0) {
+            NSLog(@"ETTrainer: ERROR - Dataset too small for batch size! Need at least %d samples", batchSize);
+            return @{};
+        }
         
         for (int epoch = 0; epoch < totalEpochs; epoch++) {
             _dataset->reset(); // Reset dataset at the start of each epoch
+            size_t epochSamplesProcessed = 0;  // Track samples processed in current epoch
             
             for (size_t batchIdx = 0; batchIdx < numBatchesPerEpoch; batchIdx++) {
                 auto batchOpt = _dataset->getBatch(batchSize);
                 if (!batchOpt) break;  // End of dataset
                 
                 const auto& [input, label] = *batchOpt;
+                
+                // Ensure fixed batch size - drop incomplete batches
+                size_t actualBatchSize = input->sizes()[0];
+                if (actualBatchSize != batchSize) {
+                    NSLog(@"Dropping incomplete batch: expected %d samples, got %zu samples", 
+                          batchSize, actualBatchSize);
+                    break;  // Skip remaining incomplete batches in this epoch
+                }
                 const auto& results = _training_module->execute_forward_backward(
                     "forward",
                     {*input, *label}
@@ -260,11 +281,13 @@ using namespace ::executorch::extension;
                     return @{};
                 }
                 
-                size_t samplesProcessed = batchIdx * batchSize + input->sizes()[0];
+                // Track samples processed (all batches are now fixed size)
+                epochSamplesProcessed += batchSize;
+                
                 if (totalSteps % 500 == 0 || (epoch == totalEpochs - 1 && batchIdx == numBatchesPerEpoch - 1)) {
                     NSLog(@"Epoch %d/%lld, Progress %.1f%%, Step %d, Loss %f, Prediction %lld, Label %lld",
                         epoch + 1, (long long)totalEpochs,
-                        (float)samplesProcessed * 100 / datasetSize,
+                        (float)epochSamplesProcessed * 100 / samplesUsedPerEpoch,
                         totalSteps,
                         results.get()[0].toTensor().const_data_ptr<float>()[0],
                         results.get()[1].toTensor().const_data_ptr<int64_t>()[0],
