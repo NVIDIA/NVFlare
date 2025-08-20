@@ -250,4 +250,17 @@ class GlobalEvaluator(Widget):
     def __del__(self):
         """Cleanup thread pool on deletion."""
         if hasattr(self, "thread_pool"):
+    def shutdown(self):
+        """Cleanup thread pool and other resources."""
+        if hasattr(self, "thread_pool"):
             self.thread_pool.shutdown(wait=True)
+        if hasattr(self, "tb_writer"):
+            self.tb_writer.close()
+
+    def __enter__(self):
+        """Support context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Support context manager exit and cleanup."""
+        self.shutdown()
