@@ -220,7 +220,6 @@ class GlobalEvaluator(Widget):
                 while len(self._active_evaluations) >= self.max_workers:
                     # Wait a bit and check again
                     self._evaluation_lock.release()
-                    import time
                     time.sleep(0.1)
                     self._evaluation_lock.acquire()
 
