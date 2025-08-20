@@ -14,13 +14,19 @@ public class NVFlareRunner: ObservableObject {
     // MARK: - Public Properties
     @Published public private(set) var status: NVFlareStatus = .idle
     
-    // MARK: - Configuration Properties (using C++ datasets)
+    // MARK: - Configuration Properties  
     public var jobName: String
-    public let cppDataset: UnsafeMutableRawPointer  // C++ ETDataset*
+    private let swiftDataset: SwiftDataset           // Swift dataset protocol (keep alive!)
+    private let cppDataset: UnsafeMutableRawPointer  // Internal C++ ETDataset*
     public let deviceInfo: [String: String]
     public let userInfo: [String: String]
     public let jobTimeout: TimeInterval
     public let abortSignal = NVFlareSignal()
+    
+    /// Access to the Swift dataset (read-only)
+    public var dataset: SwiftDataset {
+        return swiftDataset
+    }
     
     // MARK: - Filter Properties
     public let appInFilters: [NVFlareFilter]?
@@ -34,10 +40,10 @@ public class NVFlareRunner: ObservableObject {
     // iOS-specific properties
     private let connection: NVFlareConnection
     
-    /// Primary initializer - using C++ datasets
+    /// Primary initializer - using Swift datasets  
     public init(
         jobName: String,
-        cppDataset: UnsafeMutableRawPointer,  // App's C++ ETDataset*
+        dataset: SwiftDataset,                // Swift dataset protocol
         deviceInfo: [String: String],
         userInfo: [String: String],
         jobTimeout: TimeInterval,
@@ -46,9 +52,32 @@ public class NVFlareRunner: ObservableObject {
         inFilters: [NVFlareFilter]? = nil,
         outFilters: [NVFlareFilter]? = nil,
         resolverRegistry: [String: ComponentCreator.Type]? = nil
-    ) {
+    ) throws {
         self.jobName = jobName
-        self.cppDataset = cppDataset
+        
+        // Store reference to Swift dataset to keep it alive (critical!)
+        self.swiftDataset = dataset
+        print("NVFlareRunner: Stored Swift dataset reference: \(dataset)")
+        
+        // Validate the dataset
+        do {
+            try dataset.validate()
+            print("NVFlareRunner: Dataset validation passed")
+            print("NVFlareRunner: Dataset size: \(dataset.size())")
+        } catch {
+            print("NVFlareRunner: Dataset validation failed: \(error)")
+            throw error
+        }
+        
+        // Convert Swift dataset to C++ using bridge
+        guard let cppDatasetPtr = SwiftDatasetBridge.createDatasetAdapter(dataset) else {
+            print("NVFlareRunner: Failed to create C++ dataset adapter!")
+            throw DatasetError.dataLoadFailed
+        }
+        
+        self.cppDataset = cppDatasetPtr
+        print("NVFlareRunner: Created C++ dataset adapter from Swift dataset")
+        
         self.deviceInfo = deviceInfo
         self.userInfo = userInfo
         self.jobTimeout = jobTimeout
@@ -64,6 +93,11 @@ public class NVFlareRunner: ObservableObject {
             self.resolverRegistry.merge(resolverRegistry) { _, new in new }
         }
         
+    }
+    
+    /// Cleanup - properly destroy the C++ dataset adapter
+    deinit {
+        SwiftDatasetBridge.destroyDatasetAdapter(cppDataset)
     }
     
     // MARK: - Main Run Loop
@@ -211,7 +245,8 @@ public class NVFlareRunner: ObservableObject {
         let ctx = NVFlareContext()
         ctx[NVFlareContextKey.runner] = self
         
-        print("NVFlareRunner: Storing dataset in context, pointer: \(String(describing: cppDataset))")
+        print("NVFlareRunner: Storing dataset in context (Swift dataset converted to C++)")
+        print("NVFlareRunner: Swift dataset size: \(swiftDataset.size())")
         ctx[NVFlareContextKey.dataset] = cppDataset
         
         // Try to get job
@@ -355,4 +390,4 @@ public enum NVFlareStatus {
     case idle
     case training
     case stopping
-} 
+}
