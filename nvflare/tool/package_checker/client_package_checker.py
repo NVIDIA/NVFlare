@@ -54,10 +54,10 @@ class ClientPackageChecker(PackageChecker):
                 return match.group(1)
 
         except Exception as e:
-            print(f"Error reading {sub_start_path}: {e}")
+            raise RuntimeError(f"Error reading {sub_start_path}: {e}")
 
         return None
-            raise RuntimeError(f"Error reading {sub_start_path}: {e}")
+
     def get_dry_run_command(self) -> str:
         uid = self.get_uid_from_startup_script()
         if not uid:
