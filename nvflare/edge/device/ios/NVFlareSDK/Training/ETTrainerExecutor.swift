@@ -53,8 +53,8 @@ public class ETTrainerExecutor: NSObject, NVFlareExecutor, ComponentCreator {
         
         // Get training parameters from merged config
         let epochs = finalConfig["num_epochs"] as? Int ?? 1
-        let batchSize = finalConfig["batch_size"] as? Int ?? 32
-        let learningRate = finalConfig["learning_rate"] as? Float ?? 0.01
+        let batchSize = finalConfig[NVFlareConstants.metaKeyBatchSize] as? Int ?? 32
+        let learningRate = finalConfig[NVFlareConstants.metaKeyLearningRate] as? Float ?? 0.01
         
         // Get C++ dataset from FlareRunner context (set during FlareRunner initialization)
         guard let cppDatasetPtr = ctx[NVFlareContextKey.dataset] as? UnsafeMutableRawPointer else {
@@ -72,10 +72,10 @@ public class ETTrainerExecutor: NSObject, NVFlareExecutor, ComponentCreator {
         // Create training configuration dictionary for C++ layer
         let trainingConfig: [String: Any] = [
             "num_epochs": epochs,
-            "batch_size": batchSize,
-            "learning_rate": learningRate,
-            "method": finalConfig["method"] as? String ?? "cnn",
-            "dataset_shuffle": finalConfig["dataset_shuffle"] as? Bool ?? true
+            NVFlareConstants.metaKeyBatchSize: batchSize,
+            NVFlareConstants.metaKeyLearningRate: learningRate,
+            "method": finalConfig["method"] as? String ?? TrainingConstants.methodCNN,
+            NVFlareConstants.metaKeyDatasetShuffle: finalConfig[NVFlareConstants.metaKeyDatasetShuffle] as? Bool ?? true
         ]
         
         // Direct approach - pass C++ dataset directly to ETTrainer
@@ -112,8 +112,8 @@ public class ETTrainerExecutor: NSObject, NVFlareExecutor, ComponentCreator {
                 "training_completed": true,
                 "timestamp": Date().timeIntervalSince1970,
                 "epochs": epochs,
-                "learning_rate": learningRate,
-                "batch_size": batchSize,
+                NVFlareConstants.metaKeyLearningRate: learningRate,
+                NVFlareConstants.metaKeyBatchSize: batchSize,
                 "dataset": "app_cpp_dataset",
                 "architecture": "executorch_native",
                 "config_args": trainerArgs.isEmpty ? "none" : trainerArgs.keys.sorted()

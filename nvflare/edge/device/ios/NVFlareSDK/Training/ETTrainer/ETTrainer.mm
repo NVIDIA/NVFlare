@@ -16,8 +16,8 @@
 #include <vector>
 #include <sstream>
 #include "ETDataset.h"
-#include "SwiftDatasetAdapter.h"
-#include "Constants.h"
+#include "../Bridge/SwiftDatasetAdapter.h"
+#import "../Bridge/NVFlareConstants.h"
 #include "ETDebugUtils.h"
 
 using namespace ::executorch::extension;
@@ -214,7 +214,7 @@ using namespace ::executorch::extension;
     }
 
     @try {
-        int batchSize = [_meta[kMetaKeyBatchSize] intValue];
+        int batchSize = [_meta[kNVFlareMetaKeyBatchSize] intValue];
         NSLog(@"ETTrainer: Using batch size: %d", batchSize);
         
         // Get initial parameters
@@ -232,12 +232,12 @@ using namespace ::executorch::extension;
         
 
         // Configure optimizer
-        float learningRate = [_meta[kMetaKeyLearningRate] floatValue];
+        float learningRate = [_meta[kNVFlareMetaKeyLearningRate] floatValue];
         training::optimizer::SGDOptions options{learningRate};
         training::optimizer::SGD optimizer(param_res.get(), options);
         
         // Train the model
-        NSInteger totalEpochs = [_meta[kMetaKeyTotalEpochs] integerValue];
+        NSInteger totalEpochs = [_meta[kNVFlareMetaKeyTotalEpochs] integerValue];
         int totalSteps = 0;
         size_t datasetSize = _dataset->size();
         size_t numBatchesPerEpoch = (datasetSize + batchSize - 1) / batchSize;  // Ceiling division
