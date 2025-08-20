@@ -14,7 +14,6 @@
 import importlib
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional, Union
 
 import torch
@@ -42,6 +41,7 @@ class GlobalEvaluator(Widget):
         torchvision_dataset: Optional[Dict] = None,
         custom_dataset: Optional[Dict] = None,
         max_workers: int = 2,
+        timeout: float = 10.0,
     ):
         """Initialize the evaluator with either a dataset path or custom dataset.
 
@@ -51,6 +51,7 @@ class GlobalEvaluator(Widget):
             torchvision_dataset: Torchvision dataset (for standard datasets like CIFAR10)
             custom_dataset: Dictionary containing 'data' and 'labels' tensors
             max_workers: Maximum number of concurrent evaluation threads
+            timeout: Timeout for waiting evaluations to complete
         """
         super().__init__()
         if torchvision_dataset is None and custom_dataset is None:
@@ -72,12 +73,16 @@ class GlobalEvaluator(Widget):
         self.data_loader = None
         self.tb_writer = None
         self.max_workers = max_workers
-        self.thread_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="Evaluator")
+        self.timeout = timeout
+
         self._evaluation_lock = threading.Lock()
         self._active_evaluations = set()
+        self._evaluation_threads = {}  # Track active evaluation threads
+        self._shutdown_event = threading.Event()  # Signal for shutdown
 
         self.register_event_handler(EventType.START_RUN, self._initialize)
         self.register_event_handler(AppEventType.GLOBAL_WEIGHTS_UPDATED, self.evaluate)
+        self.register_event_handler(EventType.END_RUN, self._handle_end_run)
 
     def _load_model(self, model_path: str, fl_ctx: FLContext) -> Any:
         """Load model from model path.
@@ -90,6 +95,7 @@ class GlobalEvaluator(Widget):
             model class instance
         """
         try:
+            self.logger.info(f"Loading model class from path: {model_path}")
             module_path, class_name = model_path.rsplit(".", 1)
             module = importlib.import_module(module_path)
             model_class = getattr(module, class_name)
@@ -121,6 +127,9 @@ class GlobalEvaluator(Widget):
             self.data_loader = torch.utils.data.DataLoader(
                 test_set, batch_size=self.batch_size, shuffle=False, num_workers=2
             )
+            self.logger.info(
+                f"Created torchvision data loader with {len(test_set)} samples, batch size {self.batch_size}"
+            )
         else:
             # For custom datasets (e.g., XOR)
             data = self.custom_dataset["data"]
@@ -135,9 +144,15 @@ class GlobalEvaluator(Widget):
             # if length of data smaller than batch size, set batch size to length of data
             if len(data) < self.batch_size:
                 self.batch_size = len(data)
+                self.logger.info(f"Adjusted batch size to {self.batch_size} (data size)")
             self.data_loader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size)
+            self.logger.info(f"Created custom data loader with {len(data)} samples, batch size {self.batch_size}")
 
     def _eval_model(self) -> Dict[str, float]:
+        if self.data_loader is None:
+            self.logger.warning("Data loader not available for evaluation")
+            return {"accuracy": 0.0}
+
         self.model.to(DEVICE)
         self.model.eval()
 
@@ -151,12 +166,19 @@ class GlobalEvaluator(Widget):
                 correct += (predicted == labels).sum().item()
                 total += labels.size(0)
 
-        accuracy = 100 * correct / total
+        accuracy = 100 * correct / total if total > 0 else 0.0
         return {"accuracy": accuracy}
 
     def _evaluate_async(self, global_weights: Dict, current_round: int, evaluation_id: str):
-        """Run evaluation in a thread pool."""
+        """Run evaluation in a separate thread."""
         try:
+            # Safety check for model
+            if self.model is None:
+                self.logger.warning(f"Model not available for evaluation round {current_round}")
+                return
+
+            self.logger.info(f"Starting evaluation {evaluation_id} for round {current_round}")
+
             # Load the model weights
             global_weights_tensors = {k: torch.tensor(v) for k, v in global_weights.items()}
             self.model.load_state_dict(global_weights_tensors)
@@ -164,23 +186,33 @@ class GlobalEvaluator(Widget):
             # Evaluate the model
             metrics = self._eval_model()
 
-            # Write metrics to tensorboard
-            for key, value in metrics.items():
-                self.tb_writer.add_scalar(key, value, current_round)
-
+            # Write metrics to tensorboard (with safety check)
+            if self.tb_writer:
+                for key, value in metrics.items():
+                    self.tb_writer.add_scalar(key, value, current_round)
         except Exception as e:
             # Log any errors that occur during evaluation
-            print(f"Error during evaluation for round {current_round}: {str(e)}")
+            self.logger.error(f"Error during evaluation for round {current_round}: {str(e)}")
         finally:
             # Remove this evaluation from active set when complete
             with self._evaluation_lock:
                 self._active_evaluations.discard(evaluation_id)
+                # Remove thread reference
+                if evaluation_id in self._evaluation_threads:
+                    del self._evaluation_threads[evaluation_id]
+            self.logger.info(f"Evaluation {evaluation_id} cleanup completed")
 
     def _initialize(self, _event_type: str, fl_ctx: FLContext):
         # Initialize the model
         if isinstance(self.model_path, str):
             # load the model
             model_class = self._load_model(self.model_path, fl_ctx)
+            if model_class is None:
+                self.system_panic(
+                    reason="Failed to load model class during initialization",
+                    fl_ctx=fl_ctx,
+                )
+                return
             self.model = model_class()
         else:
             # the model_path is nn.Module
@@ -192,7 +224,16 @@ class GlobalEvaluator(Widget):
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
         self.tb_writer = SummaryWriter(log_dir=app_root)
 
+    def _is_initialized(self) -> bool:
+        """Check if the evaluator is properly initialized."""
+        return self.model is not None and self.data_loader is not None and self.tb_writer is not None
+
     def evaluate(self, _event_type: str, fl_ctx: FLContext):
+        # Safety check - ensure we're initialized
+        if not self._is_initialized():
+            self.logger.warning("Evaluator not initialized, skipping evaluation")
+            return
+
         global_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
 
@@ -206,43 +247,79 @@ class GlobalEvaluator(Widget):
         # Create unique evaluation ID
         evaluation_id = f"eval_round_{current_round}"
 
-        # Check if we're at capacity and wait if necessary
-        with self._evaluation_lock:
-            while len(self._active_evaluations) >= self.max_workers:
-                # Release lock temporarily to allow other evaluations to complete
-                self._evaluation_lock.release()
-                time.sleep(0.1)
-                self._evaluation_lock.acquire()
-
-            # Add to active evaluations
-            self._active_evaluations.add(evaluation_id)
-
-        # Submit to thread pool
-        future = self.thread_pool.submit(self._evaluate_async, global_weights, current_round, evaluation_id)
-
-    def _handle_evaluation_completion(self, future, evaluation_id: str):
-        """Handle completion of an evaluation task."""
-        try:
-            # Get the result to catch any exceptions
-            future.result()
-        except Exception as e:
-            print(f"Evaluation {evaluation_id} failed with exception: {str(e)}")
-        finally:
-            # Ensure evaluation is removed from active set
+        # Wait for available slot if at capacity
+        while True:
             with self._evaluation_lock:
-                self._active_evaluations.discard(evaluation_id)
+                # Check if we have capacity
+                if len(self._active_evaluations) < self.max_workers:
+                    # Add to active evaluations
+                    self._active_evaluations.add(evaluation_id)
+                    break
+
+            # Wait a bit before checking again
+            time.sleep(0.1)
+
+        # Start evaluation in a separate thread
+        eval_thread = threading.Thread(
+            target=self._evaluate_async,
+            args=(global_weights, current_round, evaluation_id),
+            daemon=False,
+        )
+        eval_thread.start()
+
+        # Store thread reference for proper cleanup
+        with self._evaluation_lock:
+            self._evaluation_threads[evaluation_id] = eval_thread
+
+    def _handle_end_run(self, _event_type: str, fl_ctx: FLContext):
+        """Handle the END_RUN event to ensure proper cleanup."""
+        self.shutdown()
 
     def shutdown(self):
-        """Cleanup thread pool and other resources."""
-        if hasattr(self, "thread_pool"):
-            self.thread_pool.shutdown(wait=True)
-        if hasattr(self, "tb_writer"):
+        """Cleanup threads and other resources."""
+        # Prevent multiple shutdown calls
+        if self._shutdown_event.is_set():
+            return
+
+        self.logger.info("Starting shutdown process...")
+        # Signal shutdown to all evaluation threads
+        self._shutdown_event.set()
+
+        # Wait for all active evaluations to complete
+        evaluations_completed = self.wait_for_evaluations()
+
+        # Force cleanup of remaining evaluations if timeout occurred
+        if not evaluations_completed:
+            self.logger.warning(f"Force cleaning up {len(self._active_evaluations)} remaining evaluations")
+            with self._evaluation_lock:
+                self._active_evaluations.clear()
+                self._evaluation_threads.clear()
+
+        # Close tensorboard writer
+        if self.tb_writer:
             self.tb_writer.close()
+            self.logger.info("Tensorboard writer closed")
 
-    def __enter__(self):
-        """Support context manager entry."""
-        return self
+        self.logger.info("Shutdown process completed")
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Support context manager exit and cleanup."""
-        self.shutdown()
+    def wait_for_evaluations(self) -> bool:
+        """Wait for all active evaluations to complete.
+
+        Returns:
+            True if all evaluations completed, False if timeout occurred
+        """
+        if not self._active_evaluations:
+            return True
+
+        start_time = time.time()
+        self.logger.info(f"Waiting for {len(self._active_evaluations)} active evaluations to complete...")
+
+        while self._active_evaluations and (time.time() - start_time) < self.timeout:
+            time.sleep(0.1)
+
+        if self._active_evaluations:
+            self.logger.warning(f"Warning: {len(self._active_evaluations)} evaluations did not complete within timeout")
+            return False
+        else:
+            self.logger.info("All evaluations completed successfully")
+            return True
