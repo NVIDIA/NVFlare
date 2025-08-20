@@ -33,6 +33,7 @@ from nvflare.widgets.widget import Widget
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 POLLING_INTERVAL = 0.1
 
+
 class GlobalEvaluator(Widget):
     def __init__(
         self,
@@ -111,7 +112,7 @@ class GlobalEvaluator(Widget):
         if self.torchvision_dataset is not None:
             # Define transform
             transform = transforms.Compose([transforms.ToTensor()])
-            # For torchvision datasets (e.g., CIFAR10)
+            # For torchvision datasets (e.g., CIFAR10) that have a Bool `train` argument
             # first check the keys of "name" and "path"
             if "name" not in self.torchvision_dataset or "path" not in self.torchvision_dataset:
                 raise ValueError("torchvision_dataset must contain 'name' and 'path' keys")
@@ -317,7 +318,9 @@ class GlobalEvaluator(Widget):
             time.sleep(POLLING_INTERVAL)
 
         if self._active_evaluations:
-            self.logger.warning(f"Warning: {len(self._active_evaluations)} evaluations did not complete within timeout")
+            with self._evaluation_lock:
+                active_count = len(self._active_evaluations)
+            self.logger.warning(f"Warning: {active_count} evaluations did not complete within timeout")
             return False
         else:
             self.logger.info("All evaluations completed successfully")
