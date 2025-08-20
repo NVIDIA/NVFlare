@@ -248,7 +248,7 @@ Let's focus on the execution of the `"config"` task - for this we can just creat
 
 ```python
 from nvflare.apis.dxo import from_shareable
-from nvdo.types import LocalConfig, Neighbor
+from nvflare.app_opt.p2p.types import LocalConfig, Neighbor
 
 
 class SyncAlgorithmExecutor(Executor):
