@@ -13,6 +13,7 @@
 # limitations under the License.
 import importlib
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional, Union
 
@@ -175,12 +176,6 @@ class GlobalEvaluator(Widget):
             with self._evaluation_lock:
                 self._active_evaluations.discard(evaluation_id)
 
-        # Remove this evaluation from active set when complete, handling lock acquisition errors
-        try:
-            with self._evaluation_lock:
-                self._active_evaluations.discard(evaluation_id)
-        except Exception as cleanup_exception:
-            print(f"Error during cleanup for evaluation {evaluation_id}: {str(cleanup_exception)}")
     def _initialize(self, _event_type: str, fl_ctx: FLContext):
         # Initialize the model
         if isinstance(self.model_path, str):
@@ -211,29 +206,19 @@ class GlobalEvaluator(Widget):
         # Create unique evaluation ID
         evaluation_id = f"eval_round_{current_round}"
 
-        # Submit evaluation to thread pool
+        # Check if we're at capacity and wait if necessary
         with self._evaluation_lock:
-            # Check if we're at capacity
-            if len(self._active_evaluations) >= self.max_workers:
-                # If at capacity, wait for a slot to become available
-                # This ensures no evaluations are skipped
-                while len(self._active_evaluations) >= self.max_workers:
-                    # Wait a bit and check again
-                    self._evaluation_lock.release()
-                    time.sleep(0.1)
-        with self._evaluation_condition:
-            # Wait until there is capacity
             while len(self._active_evaluations) >= self.max_workers:
-                self._evaluation_condition.wait()
+                # Release lock temporarily to allow other evaluations to complete
+                self._evaluation_lock.release()
+                time.sleep(0.1)
+                self._evaluation_lock.acquire()
 
             # Add to active evaluations
             self._active_evaluations.add(evaluation_id)
 
-            # Submit to thread pool
-            future = self.thread_pool.submit(self._evaluate_async, global_weights, current_round, evaluation_id)
-
-            # Optional: Add callback to handle completion
-            # No need to add a callback; cleanup is handled in _evaluate_async
+        # Submit to thread pool
+        future = self.thread_pool.submit(self._evaluate_async, global_weights, current_round, evaluation_id)
 
     def _handle_evaluation_completion(self, future, evaluation_id: str):
         """Handle completion of an evaluation task."""
@@ -247,9 +232,6 @@ class GlobalEvaluator(Widget):
             with self._evaluation_lock:
                 self._active_evaluations.discard(evaluation_id)
 
-    def __del__(self):
-        """Cleanup thread pool on deletion."""
-        if hasattr(self, "thread_pool"):
     def shutdown(self):
         """Cleanup thread pool and other resources."""
         if hasattr(self, "thread_pool"):
