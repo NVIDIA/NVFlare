@@ -175,6 +175,12 @@ class GlobalEvaluator(Widget):
             with self._evaluation_lock:
                 self._active_evaluations.discard(evaluation_id)
 
+        # Remove this evaluation from active set when complete, handling lock acquisition errors
+        try:
+            with self._evaluation_lock:
+                self._active_evaluations.discard(evaluation_id)
+        except Exception as cleanup_exception:
+            print(f"Error during cleanup for evaluation {evaluation_id}: {str(cleanup_exception)}")
     def _initialize(self, _event_type: str, fl_ctx: FLContext):
         # Initialize the model
         if isinstance(self.model_path, str):
