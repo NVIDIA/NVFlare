@@ -221,7 +221,10 @@ class GlobalEvaluator(Widget):
                     # Wait a bit and check again
                     self._evaluation_lock.release()
                     time.sleep(0.1)
-                    self._evaluation_lock.acquire()
+        with self._evaluation_condition:
+            # Wait until there is capacity
+            while len(self._active_evaluations) >= self.max_workers:
+                self._evaluation_condition.wait()
 
             # Add to active evaluations
             self._active_evaluations.add(evaluation_id)
