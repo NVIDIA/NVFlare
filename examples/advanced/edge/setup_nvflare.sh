@@ -20,7 +20,7 @@ if [ -f "$WORKSPACE_DIR/project.yml" ]; then
     sed -i 's/name: example_project/name: edge_example/' "$WORKSPACE_DIR/project.yml"
     echo "Updated project.yml with name: edge_example"
 else
-    echo "Warning: project.yml not found at $WORKSPACE_DIR/$PROJECT_NAME/project.yml"
+    echo "Warning: project.yml not found at $WORKSPACE_DIR/project.yml"
 fi
 # Provision the actual project with the updated project.yml
 nvflare provision -p project.yml
