@@ -397,13 +397,19 @@ class FedJobConfig:
         args = {}
         if hasattr(component, "__dict__"):
             parameters = get_component_init_parameters(component)
-            attrs = component.__dict__
 
             for param in parameters:
                 if param in ["self", "args", "kwargs"]:
                     continue
 
-                attr_key = param if param in attrs.keys() else "_" + param
+                # Determine the correct attribute key by checking if the attribute actually exists
+                if hasattr(component, param):
+                    attr_key = param
+                elif hasattr(component, "_" + param):
+                    attr_key = "_" + param
+                else:
+                    continue  # Skip if neither attribute exists
+
                 attr_value = getattr(component, attr_key)
 
                 if attr_value is not None and parameters[param].default != attr_value:

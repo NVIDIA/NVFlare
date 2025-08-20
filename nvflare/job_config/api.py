@@ -322,18 +322,24 @@ class FedJob:
         # Check all arguments for ids referenced with .as_id()
         if hasattr(base_component, "__dict__"):
             parameters = get_component_init_parameters(base_component)
-            attrs = base_component.__dict__
+
             for param in parameters:
-                attr_key = param if param in attrs.keys() else "_" + param
-                if attr_key in attrs.keys():
-                    base_id = attrs[attr_key]
-                    if isinstance(base_id, str):  # could be id
-                        if base_id in self._components:
-                            self._deploy_map[target].add_component(self._components[base_id], base_id)
-                            # add any components referenced by this component
-                            self._add_referenced_components(self._components[base_id], target)
-                            # remove already added components from tracked components
-                            self._components.pop(base_id)
+                # Determine the correct attribute key by checking if the attribute actually exists
+                if hasattr(base_component, param):
+                    attr_key = param
+                elif hasattr(base_component, "_" + param):
+                    attr_key = "_" + param
+                else:
+                    continue  # Skip if neither attribute exists
+
+                base_id = getattr(base_component, attr_key)
+                if isinstance(base_id, str):  # could be id
+                    if base_id in self._components:
+                        self._deploy_map[target].add_component(self._components[base_id], base_id)
+                        # add any components referenced by this component
+                        self._add_referenced_components(self._components[base_id], target)
+                        # remove already added components from tracked components
+                        self._components.pop(base_id)
 
     def _get_app(self, ctx: JobCtx):
         app = self._deploy_map.get(ctx.target)

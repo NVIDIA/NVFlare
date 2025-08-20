@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
 import tempfile
 
@@ -40,3 +41,119 @@ class TestFedJobConfig:
         assert expected == job_config._trim_whitespace("site-0, site-1")
         assert expected == job_config._trim_whitespace(" site-0,site-1 ")
         assert expected == job_config._trim_whitespace(" site-0, site-1 ")
+
+    def test_get_args_instance_attributes(self):
+        """Test _get_args with components that have instance attributes in __dict__"""
+
+        class ComponentWithInstanceAttrs:
+            def __init__(self, param1: str = "default1", param2: int = 42):
+                self.param1 = param1
+                self.param2 = param2
+
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        component = ComponentWithInstanceAttrs("custom_value", 100)
+
+        args = job_config._get_args(component, custom_dir=".")
+
+        # Should extract both parameters since they differ from defaults
+        assert args["param1"] == "custom_value"
+        assert args["param2"] == 100
+
+    def test_get_args_instance_attributes_underscore(self):
+        """Test _get_args with components that have properties (not in __dict__)"""
+
+        class ComponentWithProperties:
+            def __init__(self, value: str = "default"):
+                self._value = value
+
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        component = ComponentWithProperties("test_value")
+
+        args = job_config._get_args(component, custom_dir=".")
+
+        assert args["value"] == "test_value"
+
+    def test_get_args_property_not_in_dict(self):
+        """Test _get_args with property attributes that won't appear in __dict__"""
+
+        class ComponentWithProperty:
+            def __init__(self, threshold: float = 0.5):
+                self._threshold = threshold
+
+            @property
+            def threshold(self) -> float:
+                """Property accessible via hasattr but not in __dict__"""
+                return self._threshold * 2  # Different from stored value to test property access
+
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        component = ComponentWithProperty(0.8)
+
+        args = job_config._get_args(component, custom_dir=".")
+
+        # With old __dict__ approach: threshold property would be missed
+        # With new hasattr approach: should find and access the property correctly
+        assert args["threshold"] == 1.6  # 0.8 * 2 from property logic
+
+    def test_get_args_class_attribute_fallback(self):
+        """Test _get_args with class-level attributes when instance attributes don't exist"""
+
+        class ComponentWithClassDefaults:
+            # Class-level defaults that won't be in instance __dict__
+            config_path: str = "/default/path"
+            batch_size: int = 32
+
+            def __init__(self, config_path: str = "/default/path", batch_size: int = 32):
+                # Only set attributes if they differ from class defaults
+                if config_path != "/default/path":
+                    self.config_path = config_path
+                if batch_size != 32:
+                    self.batch_size = batch_size
+
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        component = ComponentWithClassDefaults("/custom/path", 32)  # batch_size uses class default
+
+        args = job_config._get_args(component, custom_dir=".")
+
+        # Old __dict__ approach: would miss batch_size (not in instance __dict__)
+        # New hasattr approach: finds both via class attribute lookup
+        assert args["config_path"] == "/custom/path"
+        # batch_size should not be in args since it equals the default
+
+    def test_get_args_attribute_priority_param_vs_underscore(self):
+        """Test _get_args priority when both param and _param exist"""
+
+        class ComponentWithBothAttributes:
+            def __init__(self, model_name: str = "default_model"):
+                # Intentionally set both param and _param to test priority
+                self.model_name = "public_value"  # Direct parameter name
+                self._model_name = "private_value"  # Underscore version
+
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        component = ComponentWithBothAttributes()
+
+        args = job_config._get_args(component, custom_dir=".")
+
+        # Should prefer direct parameter name over underscore version
+        assert args["model_name"] == "public_value"
+
+    def test_get_args_edge_case_missing_attributes_graceful_handling(self):
+        """Test _get_args graceful handling when expected attributes are completely missing"""
+
+        class ComponentMissingExpectedAttrs:
+            def __init__(self, required_param: str = "default", optional_param: int = 100):
+                # Simulate a component that doesn't store its constructor parameters
+                # This could happen with custom __init__ logic or inheritance issues
+                self.some_other_attr = "exists"
+                # Notice: required_param and optional_param are NOT stored
+
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        component = ComponentMissingExpectedAttrs("test", 200)
+
+        # Old approach: might crash or behave unexpectedly
+        # New approach: should handle gracefully with continue statement
+        args = job_config._get_args(component, custom_dir=".")
+
+        # Should return empty dict since no expected parameters were found
+        assert args == {}
+        # Verify the component exists and our test setup is correct
+        assert hasattr(component, "some_other_attr")
