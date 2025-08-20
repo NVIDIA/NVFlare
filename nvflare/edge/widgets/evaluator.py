@@ -233,7 +233,7 @@ class GlobalEvaluator(Widget):
             future = self.thread_pool.submit(self._evaluate_async, global_weights, current_round, evaluation_id)
 
             # Optional: Add callback to handle completion
-            future.add_done_callback(lambda f: self._handle_evaluation_completion(f, evaluation_id))
+            # No need to add a callback; cleanup is handled in _evaluate_async
 
     def _handle_evaluation_completion(self, future, evaluation_id: str):
         """Handle completion of an evaluation task."""
