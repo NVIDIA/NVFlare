@@ -247,8 +247,7 @@ class GlobalEvaluator(Widget):
         # Create unique evaluation ID
         evaluation_id = f"eval_round_{current_round}"
 
-        # Wait for available slot if at capacity, with timeout
-        start_time = time.time()
+        # Wait for available slot if at capacity
         while True:
             with self._evaluation_lock:
                 # Check if we have capacity
@@ -256,11 +255,7 @@ class GlobalEvaluator(Widget):
                     # Add to active evaluations
                     self._active_evaluations.add(evaluation_id)
                     break
-
-            # Wait a bit before checking again, with timeout
-            if time.time() - start_time > self.timeout:
-                self.logger.warning(f"Timeout waiting for available slot for evaluation {evaluation_id}")
-                break
+            # Wait a bit before checking again
             time.sleep(POLLING_INTERVAL)
 
         # Start evaluation in a separate thread
