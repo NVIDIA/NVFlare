@@ -209,7 +209,13 @@ struct TaskResponse: Decodable {
             throw NVFlareError.taskFetchFailed("Missing required task data")
         }
         
-        let trainingConfig = TrainingConfig()
+        // Use server-provided training parameters from task_data.meta if available
+        let trainingConfig: TrainingConfig
+        if let metaDict = task_data.meta.asDictionary {
+            trainingConfig = TrainingConfig(from: metaDict)
+        } else {
+            trainingConfig = TrainingConfig()
+        }
         
         return TrainingTask(id: task_id,
                           name: task_name,
