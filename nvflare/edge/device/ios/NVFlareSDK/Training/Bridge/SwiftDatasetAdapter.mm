@@ -115,6 +115,10 @@ std::optional<SwiftDatasetAdapter::BatchType> SwiftDatasetAdapter::getBatch(size
         
         // Calculate input dimensions
         size_t batchSizeActual = labelVec.size();
+        if (batchSizeActual == 0 || inputVec.size() % batchSizeActual != 0) {
+            NSLog(@"SwiftDatasetAdapter::getBatch() input size %zu not evenly divisible by batch size %zu", inputVec.size(), batchSizeActual);
+            return std::nullopt;
+        }
         size_t inputDim = inputVec.size() / batchSizeActual;
         
         // Create tensors
