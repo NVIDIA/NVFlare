@@ -95,9 +95,9 @@ public class NVFlareRunner: ObservableObject {
         
     }
     
-    /// Cleanup - properly destroy the C++ dataset adapter
     deinit {
         SwiftDatasetBridge.destroyDatasetAdapter(cppDataset)
+        print("NVFlareRunner: Cleaned up C++ dataset adapter")
     }
     
     // MARK: - Main Run Loop
@@ -302,19 +302,15 @@ public class NVFlareRunner: ObservableObject {
                 
                 // Create new context for each task
                 let taskCtx = NVFlareContext()
-                // Copy all data from original context EXCEPT the dataset pointer
                 let enumerator = ctx.keyEnumerator()
                 while let key = enumerator.nextObject() {
                     if let value = ctx.object(forKey: key),
                        let copyableKey = key as? NSCopying {
-                        // Don't copy the dataset pointer - it gets deleted by ETTrainer
-                        if key as? String != NVFlareContextKey.dataset {
-                            taskCtx.setObject(value, forKey: copyableKey)
-                        }
+                        taskCtx.setObject(value, forKey: copyableKey)
                     }
                 }
                 
-                // Pass the dataset to the new task context
+                // Ensure dataset is available in task context (redundant but explicit)
                 taskCtx[NVFlareContextKey.dataset] = cppDataset
                 
                 self.cookie = task.cookie
