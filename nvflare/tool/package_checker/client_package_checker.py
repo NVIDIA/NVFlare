@@ -13,14 +13,10 @@
 # limitations under the License.
 
 import os
+import re
 import sys
 
-from .check_rule import (
-    CheckNonPrimarySPGRPCServerAvailable,
-    CheckOverseerRunning,
-    CheckPrimarySPGRPCServerAvailable,
-    CheckSPListInResponse,
-)
+from .check_rule import CheckGRPCServerAvailable
 from .package_checker import PackageChecker
 from .utils import NVFlareConfig, NVFlareRole
 
@@ -40,20 +36,40 @@ class ClientPackageChecker(PackageChecker):
 
     def init_rules(self, package_path):
         self.rules = [
-            [
-                CheckOverseerRunning(name="Check overseer running", role=self.NVF_ROLE),
-                CheckSPListInResponse(name="Check service provider list available"),
-                CheckPrimarySPGRPCServerAvailable(name="Check primary SP's GRPC server available"),
-                CheckNonPrimarySPGRPCServerAvailable(
-                    name="Check non-primary SP's GRPC server available", required=False
-                ),
-            ]
+            CheckGRPCServerAvailable(name="Check GRPC server available", role=self.NVF_ROLE),
         ]
 
+    def get_uid_from_startup_script(self) -> str:
+        """Extract uid from sub_start.sh"""
+
+        sub_start_path = os.path.join(self.package_path, "startup", "sub_start.sh")
+
+        try:
+            with open(sub_start_path, "r") as f:
+                content = f.read()
+
+            # Look for uid=value in the python command
+            match = re.search(r"uid=([^\s]+)", content)
+            if match:
+                return match.group(1)
+
+        except Exception as e:
+            raise RuntimeError(f"Error reading {sub_start_path}: {e}")
+
+        return None
+
     def get_dry_run_command(self) -> str:
+        uid = self.get_uid_from_startup_script()
+        if not uid:
+            raise ValueError(
+                f"Could not extract uid from {self.package_path}/startup/sub_start.sh. "
+                "Possible reasons: the file may be missing, unreadable, or not in the expected format. "
+                "Please check that the file exists, has the correct permissions, and contains a line with 'uid=<value>' in the Python command."
+            )
+
         command = (
             f"{sys.executable} -m {CLIENT_SCRIPT}"
             f" -m {self.package_path} -s {self.NVF_CONFIG}"
-            " --set secure_train=true uid=client config_folder=config"
+            f" --set secure_train=true uid={uid} config_folder=config"
         )
         return command
