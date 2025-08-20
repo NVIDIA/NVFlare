@@ -20,7 +20,7 @@ from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
-from nvflare.fuel.utils.class_utils import get_component_init_parameters
+from nvflare.fuel.utils.class_utils import get_component_init_parameters, resolve_component_attribute_key
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_int, check_str
 from nvflare.job_config.fed_app_config import ClientAppConfig, FedAppConfig, ServerAppConfig
 from nvflare.job_config.fed_job_config import FedJobConfig
@@ -320,26 +320,25 @@ class FedJob:
     def _add_referenced_components(self, base_component, target):
         """Adds any other components the object might have referenced via id"""
         # Check all arguments for ids referenced with .as_id()
-        if hasattr(base_component, "__dict__"):
-            parameters = get_component_init_parameters(base_component)
+        parameters = get_component_init_parameters(base_component)
 
-            for param in parameters:
-                # Determine the correct attribute key by checking if the attribute actually exists
-                if hasattr(base_component, param):
-                    attr_key = param
-                elif hasattr(base_component, "_" + param):
-                    attr_key = "_" + param
-                else:
-                    continue  # Skip if neither attribute exists
+        for param in parameters:
+            if param in ["self", "args", "kwargs"]:
+                continue
 
-                base_id = getattr(base_component, attr_key)
-                if isinstance(base_id, str):  # could be id
-                    if base_id in self._components:
-                        self._deploy_map[target].add_component(self._components[base_id], base_id)
-                        # add any components referenced by this component
-                        self._add_referenced_components(self._components[base_id], target)
-                        # remove already added components from tracked components
-                        self._components.pop(base_id)
+            # Use the centralized attribute resolution logic
+            attr_key = resolve_component_attribute_key(base_component, param)
+            if attr_key is None:
+                continue  # Skip if neither attribute exists
+
+            attr_value = getattr(base_component, attr_key)
+            if isinstance(attr_value, str):  # could be id
+                if attr_value in self._components:
+                    self._deploy_map[target].add_component(self._components[attr_value], attr_value)
+                    # add any components referenced by this component
+                    self._add_referenced_components(self._components[attr_value], target)
+                    # remove already added components from tracked components
+                    self._components.pop(attr_value)
 
     def _get_app(self, ctx: JobCtx):
         app = self._deploy_map.get(ctx.target)

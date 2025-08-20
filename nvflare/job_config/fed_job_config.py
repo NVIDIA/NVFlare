@@ -24,7 +24,7 @@ from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict, List
 
-from nvflare.fuel.utils.class_utils import get_component_init_parameters
+from nvflare.fuel.utils.class_utils import get_component_init_parameters, resolve_component_attribute_key
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
@@ -395,33 +395,29 @@ class FedJobConfig:
 
     def _get_args(self, component, custom_dir):
         args = {}
-        if hasattr(component, "__dict__"):
-            parameters = get_component_init_parameters(component)
+        parameters = get_component_init_parameters(component)
 
-            for param in parameters:
-                if param in ["self", "args", "kwargs"]:
-                    continue
+        for param in parameters:
+            if param in ["self", "args", "kwargs"]:
+                continue
 
-                # Determine the correct attribute key by checking if the attribute actually exists
-                if hasattr(component, param):
-                    attr_key = param
-                elif hasattr(component, "_" + param):
-                    attr_key = "_" + param
+            # Use the centralized attribute resolution logic
+            attr_key = resolve_component_attribute_key(component, param)
+            if attr_key is None:
+                continue  # Skip if neither attribute exists
+
+            attr_value = getattr(component, attr_key)
+
+            if parameters[param].default != attr_value:
+                if type(attr_value).__name__ in dir(builtins):
+                    args[param] = attr_value
+                elif issubclass(attr_value.__class__, Enum):
+                    args[param] = attr_value.value
                 else:
-                    continue  # Skip if neither attribute exists
-
-                attr_value = getattr(component, attr_key)
-
-                if attr_value is not None and parameters[param].default != attr_value:
-                    if type(attr_value).__name__ in dir(builtins):
-                        args[param] = attr_value
-                    elif issubclass(attr_value.__class__, Enum):
-                        args[param] = attr_value.value
-                    else:
-                        args[param] = {
-                            "path": self._get_class_path(attr_value, custom_dir),
-                            "args": self._get_args(attr_value, custom_dir),
-                        }
+                    args[param] = {
+                        "path": self._get_class_path(attr_value, custom_dir),
+                        "args": self._get_args(attr_value, custom_dir),
+                    }
 
         return args
 

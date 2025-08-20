@@ -15,6 +15,8 @@
 import os
 import tempfile
 
+import pytest
+
 from nvflare.job_config.fed_job_config import FedJobConfig
 
 
@@ -59,6 +61,22 @@ class TestFedJobConfig:
         assert args["param1"] == "custom_value"
         assert args["param2"] == 100
 
+    def test_get_args_instance_attributes_use_defaults(self):
+        """Test _get_args with components that have instance attributes in __dict__"""
+
+        class ComponentWithInstanceAttrs:
+            def __init__(self, param1: str = "default1", param2: int = 42):
+                self.param1 = param1
+                self.param2 = param2
+
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        component = ComponentWithInstanceAttrs()
+
+        args = job_config._get_args(component, custom_dir=".")
+
+        # Should extract both parameters since they differ from defaults
+        assert args == {}
+
     def test_get_args_instance_attributes_underscore(self):
         """Test _get_args with components that have properties (not in __dict__)"""
 
@@ -73,8 +91,8 @@ class TestFedJobConfig:
 
         assert args["value"] == "test_value"
 
-    def test_get_args_property_not_in_dict(self):
-        """Test _get_args with property attributes that won't appear in __dict__"""
+    def test_get_args_property_ambiguous(self):
+        """Test _get_args with property attribute that is also in __dict__"""
 
         class ComponentWithProperty:
             def __init__(self, threshold: float = 0.5):
@@ -82,17 +100,13 @@ class TestFedJobConfig:
 
             @property
             def threshold(self) -> float:
-                """Property accessible via hasattr but not in __dict__"""
-                return self._threshold * 2  # Different from stored value to test property access
+                return self._threshold * 2
 
         job_config = FedJobConfig(job_name="test_job", min_clients=1)
         component = ComponentWithProperty(0.8)
 
-        args = job_config._get_args(component, custom_dir=".")
-
-        # With old __dict__ approach: threshold property would be missed
-        # With new hasattr approach: should find and access the property correctly
-        assert args["threshold"] == 1.6  # 0.8 * 2 from property logic
+        with pytest.raises(ValueError, match="Ambiguous attribute naming.*both 'threshold' and '_threshold' exist"):
+            job_config._get_args(component, custom_dir=".")
 
     def test_get_args_class_attribute_fallback(self):
         """Test _get_args with class-level attributes when instance attributes don't exist"""
@@ -114,10 +128,7 @@ class TestFedJobConfig:
 
         args = job_config._get_args(component, custom_dir=".")
 
-        # Old __dict__ approach: would miss batch_size (not in instance __dict__)
-        # New hasattr approach: finds both via class attribute lookup
         assert args["config_path"] == "/custom/path"
-        # batch_size should not be in args since it equals the default
 
     def test_get_args_attribute_priority_param_vs_underscore(self):
         """Test _get_args priority when both param and _param exist"""
@@ -131,10 +142,8 @@ class TestFedJobConfig:
         job_config = FedJobConfig(job_name="test_job", min_clients=1)
         component = ComponentWithBothAttributes()
 
-        args = job_config._get_args(component, custom_dir=".")
-
-        # Should prefer direct parameter name over underscore version
-        assert args["model_name"] == "public_value"
+        with pytest.raises(ValueError, match="Ambiguous attribute naming.*both 'model_name' and '_model_name' exist"):
+            job_config._get_args(component, custom_dir=".")
 
     def test_get_args_edge_case_missing_attributes_graceful_handling(self):
         """Test _get_args graceful handling when expected attributes are completely missing"""
@@ -149,11 +158,71 @@ class TestFedJobConfig:
         job_config = FedJobConfig(job_name="test_job", min_clients=1)
         component = ComponentMissingExpectedAttrs("test", 200)
 
-        # Old approach: might crash or behave unexpectedly
-        # New approach: should handle gracefully with continue statement
         args = job_config._get_args(component, custom_dir=".")
 
         # Should return empty dict since no expected parameters were found
         assert args == {}
         # Verify the component exists and our test setup is correct
         assert hasattr(component, "some_other_attr")
+
+    def test_get_args_inherit_from_base_class(self):
+        """Test _get_args with components that inherit from base class"""
+
+        class BaseComponent:
+            def __init__(self, base_param: str = "default"):
+                self.base_param = base_param
+
+        class DerivedComponent(BaseComponent):
+            def __init__(self, derived_param: str = "derived", *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.derived_param = derived_param
+
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        component = DerivedComponent("derived_value", base_param="base_value")
+
+        args = job_config._get_args(component, custom_dir=".")
+
+        assert args["base_param"] == "base_value"
+        assert args["derived_param"] == "derived_value"
+
+    def test_get_args_inherit_from_base_class_with_new_default_in_derived(self):
+        """Test _get_args with components that inherit from base class"""
+
+        class BaseComponent:
+            def __init__(self, base_param: str = "default"):
+                self.base_param = base_param
+
+        class DerivedComponent(BaseComponent):
+            def __init__(self, derived_param: str = "derived", base_param: str = "new_default", *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.derived_param = derived_param
+                self.base_param = base_param
+
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        component = DerivedComponent("derived_value", base_param="base_value")
+
+        args = job_config._get_args(component, custom_dir=".")
+
+        assert args["base_param"] == "base_value"
+        assert args["derived_param"] == "derived_value"
+
+    def test_get_args_inherit_from_base_class_with_new_default(self):
+        """Test _get_args with components that inherit from base class"""
+
+        class BaseComponent:
+            def __init__(self, base_param: str = "default"):
+                self.base_param = base_param
+
+        class DerivedComponent(BaseComponent):
+            def __init__(self, derived_param: str = "derived", base_param: str = "new_default", *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.derived_param = derived_param
+                self.base_param = base_param
+
+        job_config = FedJobConfig(job_name="test_job", min_clients=1)
+        component = DerivedComponent("derived_value", base_param="new_default")
+
+        args = job_config._get_args(component, custom_dir=".")
+
+        assert "base_param" not in args
+        assert args["derived_param"] == "derived_value"
