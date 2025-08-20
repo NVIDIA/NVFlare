@@ -31,7 +31,7 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.widget import Widget
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+POLLING_INTERVAL = 0.1
 
 class GlobalEvaluator(Widget):
     def __init__(
@@ -247,7 +247,8 @@ class GlobalEvaluator(Widget):
         # Create unique evaluation ID
         evaluation_id = f"eval_round_{current_round}"
 
-        # Wait for available slot if at capacity
+        # Wait for available slot if at capacity, with timeout
+        start_time = time.time()
         while True:
             with self._evaluation_lock:
                 # Check if we have capacity
@@ -256,8 +257,11 @@ class GlobalEvaluator(Widget):
                     self._active_evaluations.add(evaluation_id)
                     break
 
-            # Wait a bit before checking again
-            time.sleep(0.1)
+            # Wait a bit before checking again, with timeout
+            if time.time() - start_time > self.timeout:
+                self.logger.warning(f"Timeout waiting for available slot for evaluation {evaluation_id}")
+                break
+            time.sleep(POLLING_INTERVAL)
 
         # Start evaluation in a separate thread
         eval_thread = threading.Thread(
@@ -315,7 +319,7 @@ class GlobalEvaluator(Widget):
         self.logger.info(f"Waiting for {len(self._active_evaluations)} active evaluations to complete...")
 
         while self._active_evaluations and (time.time() - start_time) < self.timeout:
-            time.sleep(0.1)
+            time.sleep(POLLING_INTERVAL)
 
         if self._active_evaluations:
             self.logger.warning(f"Warning: {len(self._active_evaluations)} evaluations did not complete within timeout")
