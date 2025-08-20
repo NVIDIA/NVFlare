@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import importlib
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional, Union
 
 import torch
@@ -38,13 +40,16 @@ class GlobalEvaluator(Widget):
         eval_frequency: int = 1,
         torchvision_dataset: Optional[Dict] = None,
         custom_dataset: Optional[Dict] = None,
+        max_workers: int = 2,
     ):
         """Initialize the evaluator with either a dataset path or custom dataset.
 
         Args:
             model_path: PyTorch model to evaluate
+            eval_frequency: Frequency of evaluation (evaluate every N rounds)
             torchvision_dataset: Torchvision dataset (for standard datasets like CIFAR10)
             custom_dataset: Dictionary containing 'data' and 'labels' tensors
+            max_workers: Maximum number of concurrent evaluation threads
         """
         super().__init__()
         if torchvision_dataset is None and custom_dataset is None:
@@ -65,6 +70,10 @@ class GlobalEvaluator(Widget):
         self.model = None
         self.data_loader = None
         self.tb_writer = None
+        self.max_workers = max_workers
+        self.thread_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="Evaluator")
+        self._evaluation_lock = threading.Lock()
+        self._active_evaluations = set()
 
         self.register_event_handler(EventType.START_RUN, self._initialize)
         self.register_event_handler(AppEventType.GLOBAL_WEIGHTS_UPDATED, self.evaluate)
@@ -144,6 +153,28 @@ class GlobalEvaluator(Widget):
         accuracy = 100 * correct / total
         return {"accuracy": accuracy}
 
+    def _evaluate_async(self, global_weights: Dict, current_round: int, evaluation_id: str):
+        """Run evaluation in a thread pool."""
+        try:
+            # Load the model weights
+            global_weights_tensors = {k: torch.tensor(v) for k, v in global_weights.items()}
+            self.model.load_state_dict(global_weights_tensors)
+
+            # Evaluate the model
+            metrics = self._eval_model()
+
+            # Write metrics to tensorboard
+            for key, value in metrics.items():
+                self.tb_writer.add_scalar(key, value, current_round)
+
+        except Exception as e:
+            # Log any errors that occur during evaluation
+            print(f"Error during evaluation for round {current_round}: {str(e)}")
+        finally:
+            # Remove this evaluation from active set when complete
+            with self._evaluation_lock:
+                self._active_evaluations.discard(evaluation_id)
+
     def _initialize(self, _event_type: str, fl_ctx: FLContext):
         # Initialize the model
         if isinstance(self.model_path, str):
@@ -163,13 +194,52 @@ class GlobalEvaluator(Widget):
     def evaluate(self, _event_type: str, fl_ctx: FLContext):
         global_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        # Load the model weights
+
+        # Check if evaluation should be performed
+        if current_round % self.eval_frequency != 0:
+            return
+
+        # Get the global weights
         global_weights = global_model[ModelLearnableKey.WEIGHTS]
-        # Convert weights from list to torch tensors
-        global_weights = {k: torch.tensor(v) for k, v in global_weights.items()}
-        self.model.load_state_dict(global_weights)
-        # Evaluate the model according to the evaluation frequency
-        if current_round % self.eval_frequency == 0:
-            metrics = self._eval_model()
-            for key, value in metrics.items():
-                self.tb_writer.add_scalar(key, value, current_round)
+
+        # Create unique evaluation ID
+        evaluation_id = f"eval_round_{current_round}"
+
+        # Submit evaluation to thread pool
+        with self._evaluation_lock:
+            # Check if we're at capacity
+            if len(self._active_evaluations) >= self.max_workers:
+                # If at capacity, wait for a slot to become available
+                # This ensures no evaluations are skipped
+                while len(self._active_evaluations) >= self.max_workers:
+                    # Wait a bit and check again
+                    self._evaluation_lock.release()
+                    import time
+                    time.sleep(0.1)
+                    self._evaluation_lock.acquire()
+
+            # Add to active evaluations
+            self._active_evaluations.add(evaluation_id)
+
+            # Submit to thread pool
+            future = self.thread_pool.submit(self._evaluate_async, global_weights, current_round, evaluation_id)
+
+            # Optional: Add callback to handle completion
+            future.add_done_callback(lambda f: self._handle_evaluation_completion(f, evaluation_id))
+
+    def _handle_evaluation_completion(self, future, evaluation_id: str):
+        """Handle completion of an evaluation task."""
+        try:
+            # Get the result to catch any exceptions
+            future.result()
+        except Exception as e:
+            print(f"Evaluation {evaluation_id} failed with exception: {str(e)}")
+        finally:
+            # Ensure evaluation is removed from active set
+            with self._evaluation_lock:
+                self._active_evaluations.discard(evaluation_id)
+
+    def __del__(self):
+        """Cleanup thread pool on deletion."""
+        if hasattr(self, "thread_pool"):
+            self.thread_pool.shutdown(wait=True)

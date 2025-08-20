@@ -24,21 +24,21 @@ To run the ExecuTorch simulated devices, you need to install the executorch pybi
 
 ### Provision the NVFlare System
 
-We are using `nvflare/edge/tools/tree_prov.py` to provision a hierarchical NVFlare system:
+We are using `nvflare provision -e` to provision a hierarchical NVFlare system for edge:
 
 ```commandline
 ./setup_nvflare.sh
 ```
 
-Note that in this example, we specify `-d 1 -w 2`, indicating a hierarchy of depth 1 and width 2, which results in a topology as following:
+Note that in this example, we specify `depth: 1, width: 2`, indicating a hierarchy with a topology as following:
 <img src="./figs/edge_topo.png" alt="Edge Topology" width="800" >
-- `-d` (depth) indicates the number of levels in the hierarchy, in this case, we only have 1 layer of relays. 
-- `-w` (width) indicates the number of connections for each node, in this case, we have 2 relays connecting to the server, and each with 2 leaf clients.
+- depth indicates the number of levels in the hierarchy, in this case, we only have 1 layer of relays. 
+- width indicates the number of connections for each node, in this case, we have 2 relays connecting to the server, and each with 2 leaf clients.
 - There are two types of clints: leaf clients (C11, C12, C21, C22) and non-leaf clients (C1, C2). The leaf clients are the ones that will connect with real devices or run device simulations; while non-leaf clients are used for intermediate message updates through the hierarchy only.
 
 For edge-device connection, we only needs the information of the leaf nodes, let's check the lcp map:
 ```commandline
-cat /tmp/nvflare/workspaces/edge_example/prod_00/demo/lcp_map.json
+cat /tmp/nvflare/workspaces/edge_example/prod_00/scripts/lcp_map.json
 ```
 
 We can see the address and port of each leaf node, which can be used by the mobile devices to connect to the system.
