@@ -174,7 +174,7 @@ struct TaskResponse: Decodable {
         case cookie = "cookie"
     }
     
-    enum TaskStatus: String {
+    public enum TaskStatus: String {
         case ok = "OK"
         case done = "DONE"
         case error = "ERROR"

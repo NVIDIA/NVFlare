@@ -8,6 +8,7 @@
 #import "SwiftDatasetAdapter.h"
 #include <executorch/extension/tensor/tensor.h>
 #include <algorithm>
+#include <stdexcept>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -257,8 +258,8 @@ size_t SwiftDatasetAdapter::inputDim() const {
                 return 0;
             }
         } else {
-            NSLog(@"SwiftDatasetAdapter::inputDim() object does not respond to getInputDimensions, returning default");
-            return 784; // Default for common use cases
+            NSLog(@"SwiftDatasetAdapter::inputDim() ERROR: object does not respond to getInputDimensions - this is required!");
+            throw std::runtime_error("Dataset must implement getInputDimensions method - cannot determine input dimensions");
         }
     }
 }
@@ -292,8 +293,8 @@ size_t SwiftDatasetAdapter::labelDim() const {
                 return 1;
             }
         } else {
-            NSLog(@"SwiftDatasetAdapter::labelDim() object does not respond to getOutputDimensions, returning default");
-            return 1;
+            NSLog(@"SwiftDatasetAdapter::labelDim() ERROR: object does not respond to getOutputDimensions - this is required!");
+            throw std::runtime_error("Dataset must implement getOutputDimensions method - cannot determine label dimensions");
         }
     }
 } 

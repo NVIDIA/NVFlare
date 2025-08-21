@@ -26,7 +26,7 @@ using namespace ::executorch::extension;
 @implementation ETTrainer {
     std::unique_ptr<training::TrainingModule> _training_module;
     NSDictionary<NSString *, id> *_meta;
-    ETDataset* _dataset;  // Non-owning raw pointer - dataset managed elsewhere
+    ETDataset* _dataset;  //// Non-owning raw pointer. The dataset object's lifetime must exceed that of the ETTrainer instance. The caller is responsible for ensuring the dataset remains valid for the duration of training.
 }
 
 // loadDataset method removed - dataset passed directly to initializer
@@ -250,7 +250,7 @@ using namespace ::executorch::extension;
               numBatchesPerEpoch, samplesUsedPerEpoch, droppedSamples);
               
         if (numBatchesPerEpoch == 0) {
-            NSLog(@"ETTrainer: ERROR - Dataset too small for batch size! Need at least %d samples", batchSize);
+            NSLog(@"ETTrainer: ERROR - Dataset too small for batch size! Dataset size: %zu, Batch size: %d. Need at least %d samples.", datasetSize, batchSize, batchSize);
             return @{};
         }
         

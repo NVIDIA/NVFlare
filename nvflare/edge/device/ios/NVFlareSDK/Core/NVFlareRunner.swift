@@ -129,7 +129,7 @@ public class NVFlareRunner: ObservableObject {
             do {
                 let jobResponse = try await connection.fetchJob(jobName: self.jobName)
                 
-                if jobResponse.status == "stopped" || jobResponse.status == "DONE" {
+                if jobResponse.status == JobStatus.stopped || jobResponse.status == JobStatus.done {
                     return nil
                 }
                 
@@ -159,11 +159,11 @@ public class NVFlareRunner: ObservableObject {
             do {
                 let taskResponse = try await connection.fetchTask(jobId: jobId)
                 
-                if taskResponse.status == "DONE" {
+                if taskResponse.taskStatus == .done {
                     return TaskResult.sessionDone()
                 }
                 
-                if taskResponse.status == "OK" {
+                if taskResponse.taskStatus.shouldContinueTraining {
                     if let taskId = taskResponse.task_id,
                        let taskName = taskResponse.task_name,
                        let taskData = taskResponse.task_data {

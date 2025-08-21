@@ -29,7 +29,6 @@ public:
     /// @param swiftObject Pointer from CFBridgingRetain - takes ownership
     SwiftDatasetAdapter(void* swiftObject);
 
-    /// Destructor to handle cleanup - releases swiftObjectPtr via CFBridgingRelease
     ~SwiftDatasetAdapter();
 
     // Required ETDataset interface methods
