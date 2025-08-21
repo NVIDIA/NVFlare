@@ -41,7 +41,6 @@ class GlobalEvaluator(Widget):
         torchvision_dataset: Optional[Dict] = None,
         custom_dataset: Optional[Dict] = None,
         max_workers: int = 1,
-        timeout: float = 30.0,
     ):
         """Initialize the evaluator with either a dataset path or custom dataset.
 
@@ -51,7 +50,6 @@ class GlobalEvaluator(Widget):
             torchvision_dataset: Torchvision dataset (for standard datasets like CIFAR10)
             custom_dataset: Dictionary containing 'data' and 'labels' tensors
             max_workers: Maximum number of concurrent evaluation threads (default 1: sequential)
-            timeout: Timeout for waiting evaluations to complete
         """
         super().__init__()
         if torchvision_dataset is None and custom_dataset is None:
@@ -73,7 +71,6 @@ class GlobalEvaluator(Widget):
         self.data_loader = None
         self.tb_writer = None
         self.max_workers = max_workers
-        self.timeout = timeout
 
         self._evaluation_lock = threading.Lock()
         self._thread_pool = None
