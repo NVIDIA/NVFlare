@@ -27,6 +27,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnableKey
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.fuel.utils.validation_utils import check_positive_int
 from nvflare.widgets.widget import Widget
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -61,6 +62,10 @@ class GlobalEvaluator(Widget):
         elif not isinstance(model_path, str):
             raise ValueError(f"model_path must be either a Pytorch model or class path, but got {type(model_path)}")
 
+        # Validate eval_frequency and max_workers, both must be positive integers
+        check_positive_int("eval_frequency", eval_frequency)
+        check_positive_int("max_workers", max_workers)
+
         self.model_path = model_path
         self.eval_frequency = eval_frequency
         self.torchvision_dataset = torchvision_dataset
@@ -69,10 +74,11 @@ class GlobalEvaluator(Widget):
         self.model = None
         self.data_loader = None
         self.tb_writer = None
-        self.max_workers = max_workers
 
-        self._thread_pool = None
+        # Initialize thread pool
+        self._thread_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="GlobalEvaluator")
 
+        # Register event handlers
         self.register_event_handler(EventType.START_RUN, self._initialize)
         self.register_event_handler(AppEventType.GLOBAL_WEIGHTS_UPDATED, self.evaluate)
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
@@ -179,10 +185,10 @@ class GlobalEvaluator(Widget):
             # Evaluate the model
             metrics = self._eval_model()
 
-            # Write metrics to tensorboard (with safety check)
+            # Write metrics to tensorboard, starting from 0
             if self.tb_writer:
                 for key, value in metrics.items():
-                    self.tb_writer.add_scalar(key, value, current_round)
+                    self.tb_writer.add_scalar(key, value, current_round - 1)
 
             self.logger.info(f"Evaluation {evaluation_id} for round {current_round} completed with metrics: {metrics}")
         except Exception as e:
@@ -212,9 +218,6 @@ class GlobalEvaluator(Widget):
         # Initialize the tensorboard writer
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
         self.tb_writer = SummaryWriter(log_dir=app_root)
-
-        # Initialize thread pool
-        self._thread_pool = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="GlobalEvaluator")
 
     def _is_initialized(self) -> bool:
         """Check if the evaluator is properly initialized."""
