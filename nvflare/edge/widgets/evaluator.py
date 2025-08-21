@@ -72,7 +72,6 @@ class GlobalEvaluator(Widget):
         self.tb_writer = None
         self.max_workers = max_workers
 
-        self._evaluation_lock = threading.Lock()
         self._thread_pool = None
 
         self.register_event_handler(EventType.START_RUN, self._initialize)
