@@ -138,7 +138,7 @@ class PackageChecker(ABC):
             os.killpg(process.pid, signal.SIGTERM)
             # Assumption, preflight check is focused on the connectivity, so we assume all sub-systems should
             # behave as designed if configured correctly.
-            # In such case, a dry run for any of the sub systems (overseer, server(s), clients etc.) will
+            # In such case, a dry run for any of the sub systems (server, clients etc.) will
             # run as service forever once started, unless it is asked to stop. Therefore, we will get TimeoutExpired
             # with above assumption, we consider the sub-system as running in good condition if it is started running
             # in give timeout period
