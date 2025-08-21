@@ -280,10 +280,6 @@ class CertBuilder(Builder):
         ctx[CtxKey.ROOT_CERT] = self.root_cert
         ctx[CtxKey.ROOT_PRI_KEY] = self.pri_key
 
-        overseer = project.get_overseer()
-        if overseer:
-            self._build_write_cert_pair(overseer, CertFileBasename.OVERSEER, ctx)
-
         server = project.get_server()
         if server:
             self._build_write_cert_pair(server, CertFileBasename.SERVER, ctx)
