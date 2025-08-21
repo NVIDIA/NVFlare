@@ -129,13 +129,17 @@ public class NVFlareRunner: ObservableObject {
             do {
                 let jobResponse = try await connection.fetchJob(jobName: self.jobName)
                 
-                if jobResponse.status == JobStatus.stopped || jobResponse.status == JobStatus.done {
+                // Check for terminal states - no job for me
+                if jobResponse.jobStatus.isTerminalState {
                     return nil
                 }
                 
-                return jobResponse.toNVFlareJob()
+                // Check if we have a valid job to return
+                if jobResponse.jobStatus.hasValidJob {
+                    return jobResponse.toNVFlareJob()
+                }
                 
-                // Wait before retrying
+                // For retry/error/unknown status, wait and continue loop
                 let retryWait = jobResponse.retryWait ?? 5
                 try await Task.sleep(nanoseconds: UInt64(retryWait) * 1_000_000_000)
                 

@@ -27,6 +27,50 @@ struct JobResponse: Decodable {
         case message
         case details
     }
+    
+    public enum JobStatus: String {
+        case ok = "OK"
+        case stopped = "stopped"
+        case done = "DONE"
+        case running = "RUNNING"
+        case submitted = "SUBMITTED"
+        case approved = "APPROVED"
+        case dispatched = "DISPATCHED"
+        case error = "ERROR"
+        case retry = "RETRY"
+        case unknown
+        
+        var isTerminalState: Bool {
+            switch self {
+            case .stopped, .done:
+                return true
+            case .ok, .running, .submitted, .approved, .dispatched, .error, .retry, .unknown:
+                return false
+            }
+        }
+        
+        var hasValidJob: Bool {
+            switch self {
+            case .ok, .running, .submitted, .approved, .dispatched:
+                return true
+            case .stopped, .done, .error, .retry, .unknown:
+                return false
+            }
+        }
+        
+        var shouldRetry: Bool {
+            switch self {
+            case .retry, .unknown:
+                return true
+            case .ok, .stopped, .done, .running, .submitted, .approved, .dispatched, .error:
+                return false
+            }
+        }
+    }
+    
+    var jobStatus: JobStatus {
+        return JobStatus(rawValue: self.status) ?? .unknown
+    }
 }
 
 

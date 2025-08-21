@@ -26,7 +26,7 @@ using namespace ::executorch::extension;
 @implementation ETTrainer {
     std::unique_ptr<training::TrainingModule> _training_module;
     NSDictionary<NSString *, id> *_meta;
-    ETDataset* _dataset;  //// Non-owning raw pointer. The dataset object's lifetime must exceed that of the ETTrainer instance. The caller is responsible for ensuring the dataset remains valid for the duration of training.
+    ETDataset* _dataset;  // Non-owning raw pointer. The dataset object's lifetime must exceed that of the ETTrainer instance. The caller is responsible for ensuring the dataset remains valid for the duration of training.
 }
 
 // loadDataset method removed - dataset passed directly to initializer

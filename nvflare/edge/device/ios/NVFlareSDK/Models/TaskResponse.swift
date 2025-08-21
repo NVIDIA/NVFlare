@@ -145,6 +145,15 @@ enum JSONValue: Codable {
             return dict.mapValues { $0.jsonObject }
         }
     }
+    
+    var asDictionary: [String: Any]? {
+        switch self {
+        case .dictionary(let dict):
+            return dict.mapValues { $0.jsonObject }
+        default:
+            return nil
+        }
+    }
 }
 
 struct TaskResponse: Decodable {
