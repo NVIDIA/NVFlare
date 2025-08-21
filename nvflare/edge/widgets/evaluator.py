@@ -13,7 +13,7 @@
 # limitations under the License.
 import importlib
 import threading
-import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional, Union
 
 import torch
@@ -31,7 +31,6 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.widget import Widget
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-POLLING_INTERVAL = 0.1
 
 
 class GlobalEvaluator(Widget):
@@ -41,8 +40,8 @@ class GlobalEvaluator(Widget):
         eval_frequency: int = 1,
         torchvision_dataset: Optional[Dict] = None,
         custom_dataset: Optional[Dict] = None,
-        max_workers: int = 2,
-        timeout: float = 10.0,
+        max_workers: int = 1,
+        timeout: float = 30.0,
     ):
         """Initialize the evaluator with either a dataset path or custom dataset.
 
@@ -51,7 +50,7 @@ class GlobalEvaluator(Widget):
             eval_frequency: Frequency of evaluation (evaluate every N rounds)
             torchvision_dataset: Torchvision dataset (for standard datasets like CIFAR10)
             custom_dataset: Dictionary containing 'data' and 'labels' tensors
-            max_workers: Maximum number of concurrent evaluation threads
+            max_workers: Maximum number of concurrent evaluation threads (default 1: sequential)
             timeout: Timeout for waiting evaluations to complete
         """
         super().__init__()
@@ -77,9 +76,7 @@ class GlobalEvaluator(Widget):
         self.timeout = timeout
 
         self._evaluation_lock = threading.Lock()
-        self._active_evaluations = set()
-        self._evaluation_threads = {}  # Track active evaluation threads
-        self._shutdown_event = threading.Event()  # Signal for shutdown
+        self._thread_pool = None
 
         self.register_event_handler(EventType.START_RUN, self._initialize)
         self.register_event_handler(AppEventType.GLOBAL_WEIGHTS_UPDATED, self.evaluate)
@@ -191,16 +188,12 @@ class GlobalEvaluator(Widget):
             if self.tb_writer:
                 for key, value in metrics.items():
                     self.tb_writer.add_scalar(key, value, current_round)
+
+            self.logger.info(f"Evaluation {evaluation_id} for round {current_round} completed with metrics: {metrics}")
         except Exception as e:
             # Log any errors that occur during evaluation
             self.logger.error(f"Error during evaluation for round {current_round}: {str(e)}")
         finally:
-            # Remove this evaluation from active set when complete
-            with self._evaluation_lock:
-                self._active_evaluations.discard(evaluation_id)
-                # Remove thread reference
-                if evaluation_id in self._evaluation_threads:
-                    del self._evaluation_threads[evaluation_id]
             self.logger.info(f"Evaluation {evaluation_id} cleanup completed")
 
     def _initialize(self, _event_type: str, fl_ctx: FLContext):
@@ -225,9 +218,17 @@ class GlobalEvaluator(Widget):
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
         self.tb_writer = SummaryWriter(log_dir=app_root)
 
+        # Initialize thread pool
+        self._thread_pool = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="GlobalEvaluator")
+
     def _is_initialized(self) -> bool:
         """Check if the evaluator is properly initialized."""
-        return self.model is not None and self.data_loader is not None and self.tb_writer is not None
+        return (
+            self.model is not None
+            and self.data_loader is not None
+            and self.tb_writer is not None
+            and self._thread_pool is not None
+        )
 
     def evaluate(self, _event_type: str, fl_ctx: FLContext):
         # Safety check - ensure we're initialized
@@ -248,52 +249,16 @@ class GlobalEvaluator(Widget):
         # Create unique evaluation ID
         evaluation_id = f"eval_round_{current_round}"
 
-        # Wait for available slot if at capacity
-        while True:
-            with self._evaluation_lock:
-                # Check if we have capacity
-                if len(self._active_evaluations) < self.max_workers:
-                    # Add to active evaluations
-                    self._active_evaluations.add(evaluation_id)
-                    break
-            # Wait a bit before checking again
-            time.sleep(POLLING_INTERVAL)
-
-        # Start evaluation in a separate thread
-        eval_thread = threading.Thread(
-            target=self._evaluate_async,
-            args=(global_weights, current_round, evaluation_id),
-            daemon=False,
-        )
-        eval_thread.start()
-
-        # Store thread reference for proper cleanup
-        with self._evaluation_lock:
-            self._evaluation_threads[evaluation_id] = eval_thread
+        # Submit evaluation to thread pool
+        future = self._thread_pool.submit(self._evaluate_async, global_weights, current_round, evaluation_id)
+        self.logger.info(f"Submitted evaluation {evaluation_id} for round {current_round}")
 
     def _handle_end_run(self, _event_type: str, fl_ctx: FLContext):
         """Handle the END_RUN event to ensure proper cleanup."""
-        self.shutdown()
-
-    def shutdown(self):
-        """Cleanup threads and other resources."""
-        # Prevent multiple shutdown calls
-        if self._shutdown_event.is_set():
-            return
-
-        self.logger.info("Starting shutdown process...")
-        # Signal shutdown to all evaluation threads
-        self._shutdown_event.set()
-
-        # Wait for all active evaluations to complete
-        evaluations_completed = self.wait_for_evaluations()
-
-        # Force cleanup of remaining evaluations if timeout occurred
-        if not evaluations_completed:
-            self.logger.warning(f"Force cleaning up {len(self._active_evaluations)} remaining evaluations")
-            with self._evaluation_lock:
-                self._active_evaluations.clear()
-                self._evaluation_threads.clear()
+        self.logger.info("END_RUN Event received, starting shutdown process...")
+        self.logger.info("Waiting for all evaluations to complete...")
+        self._thread_pool.shutdown(wait=True)
+        self.logger.info("Thread pool shutdown completed")
 
         # Close tensorboard writer
         if self.tb_writer:
@@ -301,27 +266,3 @@ class GlobalEvaluator(Widget):
             self.logger.info("Tensorboard writer closed")
 
         self.logger.info("Shutdown process completed")
-
-    def wait_for_evaluations(self) -> bool:
-        """Wait for all active evaluations to complete.
-
-        Returns:
-            True if all evaluations completed, False if timeout occurred
-        """
-        if not self._active_evaluations:
-            return True
-
-        start_time = time.time()
-        self.logger.info(f"Waiting for {len(self._active_evaluations)} active evaluations to complete...")
-
-        while self._active_evaluations and (time.time() - start_time) < self.timeout:
-            time.sleep(POLLING_INTERVAL)
-
-        if self._active_evaluations:
-            with self._evaluation_lock:
-                active_count = len(self._active_evaluations)
-            self.logger.warning(f"Warning: {active_count} evaluations did not complete within timeout")
-            return False
-        else:
-            self.logger.info("All evaluations completed successfully")
-            return True

@@ -7,7 +7,7 @@ description: NVFlare edge project yaml file for example
 edge:
   analyze: false
   lcp_only: false
-  root_dir: .
+  root_dir: /tmp/nvflare/workspaces
   depth: 1
   width: 2
   max_sites: 100
