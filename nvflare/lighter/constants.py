@@ -132,8 +132,6 @@ class TemplateSectionKey:
     DOCKER_CLIENT_SH = "docker_cln_sh"
     DOCKER_LAUNCHER_CLIENT_SH = "docker_launcher_cln_sh"
     DOCKER_ADMIN_SH = "docker_adm_sh"
-    GUNICORN_CONF_PY = "gunicorn_conf_py"
-    START_OVERSEER_SH = "start_ovsr_sh"
     FED_SERVER = "fed_server"
     FED_CLIENT = "fed_client"
     SUB_START_SH = "sub_start_sh"
@@ -177,7 +175,6 @@ class ProvFileName:
     DOCKER_BUILD_SH = "docker_build.sh"
     DOCKER_SH = "docker.sh"
     DOCKER_LAUNCHER_SH = "docker_launcher.sh"
-    GUNICORN_CONF_PY = "gunicorn.conf.py"
     FED_SERVER_JSON = "fed_server.json"
     FED_CLIENT_JSON = "fed_client.json"
     STOP_FL_SH = "stop_fl.sh"
@@ -216,7 +213,6 @@ class ProvFileName:
 class CertFileBasename:
     CLIENT = "client"
     SERVER = "server"
-    OVERSEER = "overseer"
 
 
 class CommConfigArg:
