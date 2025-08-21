@@ -91,13 +91,14 @@ extension JobResponse {
     }
     
     /// Convert JobResponse to data suitable for ConfigProcessor
+    /// Now uses ComponentResolver system instead of hardcoded mappings
     func toConfigData(from jobData: [String: JSONValue]?) -> [String: Any] {
         guard let jobData = jobData else {
-            // Fallback if no job data
+            // Fallback if no job data - create default ETTrainer config
             return [
                 "components": [
                     [
-                        "type": "ETTrainer",
+                        "type": "Trainer.DLTrainer",  // Use server type, let resolver handle mapping
                         "name": "trainer", 
                         "args": [:]
                     ]
@@ -105,81 +106,46 @@ extension JobResponse {
             ]
         }
         
-        // Parse the actual server configuration
-        var configData: [String: Any] = [:]
-        
-        // Extract components from server config
-        if case .dictionary(let config) = jobData["config"],
-           case .array(let components) = config["components"] {
-            
-            var parsedComponents: [[String: Any]] = []
-            
-            for component in components {
-                if case .dictionary(let componentDict) = component {
-                    var parsedComponent: [String: Any] = [:]
-                    
-                    // Extract component name
-                    if case .string(let name) = componentDict["name"] {
-                        parsedComponent["name"] = name
-                    }
-                    
-                    // Extract and map component type (Trainer.DLTrainer -> ETTrainer)
-                    if case .string(let type) = componentDict["type"] {
-                        parsedComponent["type"] = (type == "Trainer.DLTrainer") ? "ETTrainer" : type
-                    }
-                    
-                    // Extract and convert component args
-                    if case .dictionary(let args) = componentDict["args"] {
-                        var convertedArgs: [String: Any] = [:]
-                        
-                        for (key, value) in args {
-                            switch value {
-                            case .int(let intVal):
-                                // Map server parameter names to ETTrainer format
-                                if key == "epoch" {
-                                    convertedArgs["num_epochs"] = intVal
-                                } else {
-                                    convertedArgs[key] = intVal
-                                }
-                            case .double(let doubleVal):
-                                // Map server parameter names to ETTrainer format  
-                                if key == "lr" {
-                                    convertedArgs[NVFlareProtocolConstants.metaKeyLearningRate] = Float(doubleVal)
-                                } else {
-                                    convertedArgs[key] = doubleVal
-                                }
-                            case .string(let stringVal):
-                                convertedArgs[key] = stringVal
-                            case .bool(let boolVal):
-                                convertedArgs[key] = boolVal
-                            default:
-                                break
-                            }
-                        }
-                        
-                        parsedComponent["args"] = convertedArgs
-                    }
-                    
-                    parsedComponents.append(parsedComponent)
-                }
-            }
-            
-            configData["components"] = parsedComponents
+        // Parse server configuration and convert JSONValue to standard types
+        guard case .dictionary(let config) = jobData["config"] else {
+            print("JobResponse: No config found in job data")
+            return [:]
         }
         
-        // Extract executors mapping if present
-        if case .dictionary(let config) = jobData["config"],
-           case .dictionary(let executors) = config["executors"] {
-            
-            var parsedExecutors: [String: Any] = [:]
-            for (key, value) in executors {
-                if case .string(let stringVal) = value {
-                    parsedExecutors[key] = stringVal
-                }
-            }
-            configData["executors"] = parsedExecutors
+        let serverConfig = convertJSONValueToStandardTypes(config)
+        
+        // Use ConfigProcessor to handle all component resolution and mapping
+        return ConfigProcessor.processServerConfig(serverConfig)
+    }
+    
+    /// Convert JSONValue dictionary to standard Swift types for ConfigProcessor
+    private func convertJSONValueToStandardTypes(_ jsonDict: [String: JSONValue]) -> [String: Any] {
+        var result: [String: Any] = [:]
+        
+        for (key, jsonValue) in jsonDict {
+            result[key] = convertJSONValue(jsonValue)
         }
         
-        return configData
+        return result
+    }
+    
+    /// Recursively convert JSONValue to standard Swift types
+    private func convertJSONValue(_ jsonValue: JSONValue) -> Any {
+        switch jsonValue {
+        case .int(let intVal):
+            return intVal
+        case .double(let doubleVal):
+            return doubleVal
+        case .string(let stringVal):
+            return stringVal
+        case .bool(let boolVal):
+            return boolVal
+        case .array(let arrayVal):
+            return arrayVal.map { convertJSONValue($0) }
+        case .dictionary(let dictVal):
+            return convertJSONValueToStandardTypes(dictVal)
+        case .null:
+            return NSNull()
+        }
     }
 } 

@@ -42,6 +42,16 @@ struct TrainingConfig {
     }
 }
 
+
+/// Represents a training task assigned to the device, including its configuration and model data.
+/// 
+/// `TrainingTask` is used to encapsulate all information required to execute a training job locally,
+/// such as the task's unique identifier, job association, model data, and training configuration.
+/// 
+/// This struct is typically used when a new training task is received and needs to be processed by the device.
+/// In contrast, `TaskResponse` is used to represent the response sent back to the server after task execution,
+/// including results and status. Use `TrainingTask` for incoming task details, and `TaskResponse` for outgoing results.
+
 struct TrainingTask {
     let id: String
     let name: String
