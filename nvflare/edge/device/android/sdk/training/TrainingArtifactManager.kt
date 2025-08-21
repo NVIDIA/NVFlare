@@ -222,7 +222,6 @@ class TrainingArtifactManager(
                 ${tensorDiff.entries.joinToString("\n") { "  ${it.key}: ${it.value["data"]?.let { data -> if (data is List<*>) "size=${data.size}" else "unknown" } ?: "unknown"}" }}
                 
                 Artifacts Location: ${artifactsDir.absolutePath}
-                Session Duration: ${System.currentTimeMillis() - timestamp.hashCode()} ms
                 
                 ========================================
                 

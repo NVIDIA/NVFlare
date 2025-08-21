@@ -28,6 +28,18 @@ object TrainerRegistry {
     }
 
     /**
+     * Register a trainer using a lambda function for a specific method name.
+     */
+    fun registerTrainer(method: String, factory: (android.content.Context, String, TrainingConfig) -> Trainer) {
+        Log.d(TAG, "Registering trainer for method: $method")
+        trainerFactories[method.lowercase()] = object : TrainerFactory {
+            override fun createTrainer(context: android.content.Context, modelData: String, meta: TrainingConfig): Trainer {
+                return factory(context, modelData, meta)
+            }
+        }
+    }
+
+    /**
      * Create a trainer instance for the specified method.
      */
     fun createTrainer(context: android.content.Context, method: String, modelData: String, meta: TrainingConfig): Trainer {

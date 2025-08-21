@@ -20,13 +20,20 @@ import kotlin.jvm.Throws
 
 /**
  * Android ExecuTorch trainer implementation that matches iOS functionality.
- * Uses proper ExecuTorch patterns from the CIFAR-10 example.
+ * Implements AutoCloseable for proper resource management.
+ * 
+ * Usage:
+ * ```
+ * ETTrainer(context, modelData, meta).use { trainer ->
+ *     val result = trainer.train(config, modelData)
+ * }
+ * ```
  */
 class ETTrainer(
     private val context: Context,
     private val modelData: String, 
     private val meta: Map<String, Any>
-) : Trainer {
+) : Trainer, AutoCloseable {
     private val TAG = "ETTrainer"
     private var tModule: TrainingModule? = null
     private var isInitialized = false
@@ -116,8 +123,6 @@ class ETTrainer(
             
             // Check if the data is already raw binary (not base64)
             Log.d(TAG, "Processing model data, length: ${actualModelData.length}")
-            Log.d(TAG, "Model data first 50 chars: ${actualModelData.take(50)}")
-            Log.d(TAG, "Model data last 50 chars: ${actualModelData.takeLast(50)}")
             
             val decodedModelData = java.util.Base64.getDecoder().decode(actualModelData)
             
@@ -472,8 +477,9 @@ class ETTrainer(
 
     /**
      * Cleanup resources when the trainer is no longer needed.
+     * This method is called automatically when using try-with-resources or when close() is called.
      */
-    fun cleanup() {
+    override fun close() {
         if (isInitialized) {
             try {
                 tModule = null
@@ -487,10 +493,4 @@ class ETTrainer(
         Log.d(TAG, "Dataset reference released")
     }
 
-    /**
-     * Destructor to ensure cleanup
-     */
-    protected fun finalize() {
-        cleanup()
-    }
 }

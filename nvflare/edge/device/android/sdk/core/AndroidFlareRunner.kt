@@ -18,9 +18,9 @@ import com.nvidia.nvflare.sdk.core.NoOpEventHandler
 import com.nvidia.nvflare.sdk.core.NoOpTransform
 import com.nvidia.nvflare.sdk.core.SimpleBatch
 import com.nvidia.nvflare.sdk.core.DXO
-import com.nvidia.nvflare.sdk.trainers.ETTrainerFactory
 import com.nvidia.nvflare.sdk.AndroidExecutor
 import com.nvidia.nvflare.sdk.TrainerRegistry
+import com.nvidia.nvflare.sdk.training.ETTrainer
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
@@ -67,8 +67,12 @@ class AndroidFlareRunner(
         ))
         
         // Register trainer implementations in the dynamic registry
-        TrainerRegistry.registerTrainer("cnn", ETTrainerFactory())
-        TrainerRegistry.registerTrainer("xor", ETTrainerFactory())
+        TrainerRegistry.registerTrainer("cnn") { context, modelData, meta ->
+            ETTrainer(context, modelData, meta.toMap())
+        }
+        TrainerRegistry.registerTrainer("xor") { context, modelData, meta ->
+            ETTrainer(context, modelData, meta.toMap())
+        }
         // Future trainers can be added here without code changes to AndroidExecutorFactory
         
         // Note: datasource resolver is provided by the app

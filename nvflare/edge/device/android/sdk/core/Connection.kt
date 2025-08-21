@@ -38,26 +38,47 @@ class Connection(private val context: Context) {
 
     // Device info matching iOS exactly
     private val deviceId: String =
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toString()
-        } else {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionCode.toString()
+        try {
+            // Use ANDROID_ID which is unique per app installation
+            val androidId = android.provider.Settings.Secure.getString(
+                context.contentResolver, 
+                android.provider.Settings.Secure.ANDROID_ID
+            ) ?: "unknown"
+            "NVFlare_Android-$androidId"
+        } catch (e: Exception) {
+            // Fallback to a combination of device info
+            "NVFlare_Android-${android.os.Build.MANUFACTURER}-${android.os.Build.MODEL}-${android.os.Build.SERIAL}"
         }
-    private val deviceInfo: Map<String, String> = mapOf(
+    private var deviceInfo: Map<String, String> = mapOf(
         "device_id" to deviceId,
-        "app_name" to "test",
+        "app_name" to context.packageManager.getPackageInfo(context.packageName, 0).applicationInfo.loadLabel(context.packageManager).toString(),
         "app_version" to context.packageManager.getPackageInfo(context.packageName, 0).versionName,
-        "platform" to "android",
-        "platform_version" to "1.2.2"
+        "platform" to "android"
     )
     
-    // User info to match protocol test configuration
-    private val userInfo: Map<String, String> = mapOf(
-        "user_id" to "xyz"
+    // User info - configurable with sensible default
+    private var userInfo: Map<String, String> = mapOf(
+        "user_id" to "default_user"
     )
 
     fun setCapabilities(capabilities: Map<String, Any>) {
         this.capabilities = capabilities
+    }
+
+    fun setUserInfo(userInfo: Map<String, String>) {
+        this.userInfo = userInfo
+    }
+
+    fun getUserInfo(): Map<String, String> = userInfo
+
+    fun getDeviceInfo(): Map<String, String> = deviceInfo
+
+    fun setDeviceInfo(deviceInfo: Map<String, String>) {
+        this.deviceInfo = deviceInfo
+    }
+
+    fun addDeviceInfo(key: String, value: String) {
+        this.deviceInfo = this.deviceInfo + (key to value)
     }
 
     fun resetCookie() {
