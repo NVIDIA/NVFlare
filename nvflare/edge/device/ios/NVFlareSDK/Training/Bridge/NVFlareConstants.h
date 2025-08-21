@@ -2,14 +2,14 @@
 //  NVFlareConstants.h
 //  NVFlare iOS SDK
 //
-//  Objective-C constants that mirror the Swift constants for C++ code access
+//  Objective-C constants that mirror Swift constants for C++ code access
 //
 
 #import <Foundation/Foundation.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-// Meta Keys - These should match the values in NVFlareConstants.swift
+// Protocol Meta Keys - These should match the values in NVFlareProtocolConstants.swift
 extern NSString * const kNVFlareMetaKeyBatchSize;
 extern NSString * const kNVFlareMetaKeyLearningRate;
 extern NSString * const kNVFlareMetaKeyTotalEpochs;

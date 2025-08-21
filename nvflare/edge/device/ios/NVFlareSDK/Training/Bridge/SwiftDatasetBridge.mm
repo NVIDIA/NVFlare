@@ -15,24 +15,29 @@
 
 @implementation SwiftDatasetBridge
 
-+ (void*)createDatasetAdapter:(id)swiftDataset {
-    NSLog(@"SwiftDatasetBridge: Creating adapter for Swift dataset: %@", swiftDataset);
++ (void*)createDatasetAdapter:(id)nvflareDataset {
+    NSLog(@"SwiftDatasetBridge: Creating adapter for NVFlareDataset: %@", nvflareDataset);
     
-    // Validate the Swift dataset first
-    if (!swiftDataset) {
-        NSLog(@"SwiftDatasetBridge: Swift dataset is nil!");
+    // Validate the NVFlareDataset first
+    if (!nvflareDataset) {
+        NSLog(@"SwiftDatasetBridge: NVFlareDataset is nil!");
         return nullptr;
     }
     
     // Test if the object responds to required methods
-    if (![swiftDataset respondsToSelector:@selector(size)]) {
-        NSLog(@"SwiftDatasetBridge: Swift dataset does not respond to size selector!");
+    if (![nvflareDataset respondsToSelector:@selector(size)]) {
+        NSLog(@"SwiftDatasetBridge: NVFlareDataset does not respond to size selector!");
+        return nullptr;
+    }
+    
+    if (![nvflareDataset respondsToSelector:@selector(getNextBatchWithBatchSize:)]) {
+        NSLog(@"SwiftDatasetBridge: NVFlareDataset does not respond to getNextBatchWithBatchSize selector!");
         return nullptr;
     }
     
     // Test the size method before creating the adapter
     @try {
-        NSInteger testSize = ((NSInteger (*)(id, SEL))objc_msgSend)(swiftDataset, @selector(size));
+        NSInteger testSize = ((NSInteger (*)(id, SEL))objc_msgSend)(nvflareDataset, @selector(size));
         NSLog(@"SwiftDatasetBridge: Test size call successful: %ld", (long)testSize);
     } @catch (NSException *exception) {
         NSLog(@"SwiftDatasetBridge: Test size call failed: %@", exception);
@@ -40,7 +45,7 @@
     }
     
     // Standard ARC approach - store strong reference
-    id retainedDataset = swiftDataset;
+    id retainedDataset = nvflareDataset;
     
     // Create the C++ adapter with proper retained reference
     void* retainedPtr = (void*)CFBridgingRetain(retainedDataset);
@@ -53,7 +58,7 @@
     
     SwiftDatasetAdapter* adapter = new SwiftDatasetAdapter(retainedPtr);
     
-    NSLog(@"SwiftDatasetBridge: Created C++ dataset adapter at %p for Swift dataset", adapter);
+    NSLog(@"SwiftDatasetBridge: Created C++ dataset adapter at %p for NVFlareDataset", adapter);
     return static_cast<void*>(adapter);
 }
 

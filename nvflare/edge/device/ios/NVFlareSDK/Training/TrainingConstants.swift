@@ -2,19 +2,20 @@
 //  TrainingConstants.swift
 //  NVFlare iOS SDK
 //
-//  Training-specific constants and dataset types
+//  iOS SDK-specific training implementation constants
 //
 
 import Foundation
 
-/// Training-specific constants for dataset types and training configurations
+/// iOS SDK-specific constants for training implementations, dataset types, and methods
+/// Protocol constants (meta keys) are in NVFlareProtocolConstants.swift
 public struct TrainingConstants {
     
-    // MARK: - Dataset Types
+    // MARK: - Dataset Types (iOS SDK-specific implementations)
     public static let datasetTypeCIFAR10 = "cifar10"
     public static let datasetTypeXOR = "xor"
     
-    // MARK: - Training Method Types
+    // MARK: - Training Method Types (iOS SDK-specific implementations)
     public static let methodCNN = "cnn"
     public static let methodMLP = "mlp"
     

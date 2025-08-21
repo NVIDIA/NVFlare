@@ -100,7 +100,7 @@ extension JobResponse {
                             case .double(let doubleVal):
                                 // Map server parameter names to ETTrainer format  
                                 if key == "lr" {
-                                    convertedArgs[NVFlareConstants.metaKeyLearningRate] = Float(doubleVal)
+                                    convertedArgs[NVFlareProtocolConstants.metaKeyLearningRate] = Float(doubleVal)
                                 } else {
                                     convertedArgs[key] = doubleVal
                                 }

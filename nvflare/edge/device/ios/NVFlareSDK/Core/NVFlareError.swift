@@ -7,7 +7,8 @@
 
 import Foundation
 
-enum NVFlareError: Error {
+/// NVFlare SDK error types
+public enum NVFlareError: Error {
     // Network related
     case jobFetchFailed
     case taskFetchFailed(String)
@@ -20,4 +21,12 @@ enum NVFlareError: Error {
     case invalidModelData(String)
     case trainingFailed(String)
     case serverRequestedStop
+}
+
+/// Dataset-related error types
+public enum DatasetError: Error {
+    case noDataFound
+    case dataLoadFailed
+    case invalidDatasetType(String)
+    case bridgeCreationFailed
 } 

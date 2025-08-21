@@ -7,7 +7,7 @@
 
 #import "NVFlareConstants.h"
 
-// Meta Keys - These values MUST match NVFlareConstants.swift
+// Protocol Meta Keys - These values MUST match NVFlareProtocolConstants.swift
 NSString * const kNVFlareMetaKeyBatchSize = @"batch_size";
 NSString * const kNVFlareMetaKeyLearningRate = @"learning_rate";
 NSString * const kNVFlareMetaKeyTotalEpochs = @"total_epochs";

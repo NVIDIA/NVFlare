@@ -63,33 +63,49 @@ std::optional<SwiftDatasetAdapter::BatchType> SwiftDatasetAdapter::getBatch(size
     }
     
     @autoreleasepool {
-        id swiftDataset = (__bridge id)swiftObjectPtr;
-        if (!swiftDataset) {
+        id nvflareDataset = (__bridge id)swiftObjectPtr;
+        if (!nvflareDataset) {
             NSLog(@"SwiftDatasetAdapter::getBatch() bridged object is nil");
             return std::nullopt;
         }
         
-        SEL getBatchSelector = @selector(getBatchWithSize:);
-        if (![swiftDataset respondsToSelector:getBatchSelector]) {
-            NSLog(@"SwiftDatasetAdapter::getBatch() object does not respond to getBatchWithSize:");
+        SEL getNextBatchSelector = @selector(getNextBatchWithBatchSize:);
+        if (![nvflareDataset respondsToSelector:getNextBatchSelector]) {
+            NSLog(@"SwiftDatasetAdapter::getBatch() object does not respond to getNextBatchWithBatchSize:");
             return std::nullopt;
         }
         
-        // Safer casting for objc_msgSend
-        typedef NSArray* (*GetBatchFunc)(id, SEL, NSInteger);
-        GetBatchFunc getBatchFunc = (GetBatchFunc)objc_msgSend;
+        // Get NVFlareBatch from NVFlareDataset
+        typedef id (*GetNextBatchFunc)(id, SEL, NSInteger);
+        GetNextBatchFunc getNextBatchFunc = (GetNextBatchFunc)objc_msgSend;
         
-        NSArray *result = getBatchFunc(swiftDataset, getBatchSelector, (NSInteger)batchSize);
-        if (!result || result.count != 2) {
-            NSLog(@"SwiftDatasetAdapter::getBatch() invalid result from Swift");
+        id nvflareBatch = getNextBatchFunc(nvflareDataset, getNextBatchSelector, (NSInteger)batchSize);
+        if (!nvflareBatch) {
+            NSLog(@"SwiftDatasetAdapter::getBatch() no more batches available");
             return std::nullopt;
         }
         
-        NSArray<NSNumber *> *inputs = result[0];
-        NSArray<NSNumber *> *labels = result[1];
+        // Extract input and label from NVFlareBatch
+        if (![nvflareBatch respondsToSelector:@selector(getInput)] || 
+            ![nvflareBatch respondsToSelector:@selector(getLabel)]) {
+            NSLog(@"SwiftDatasetAdapter::getBatch() batch does not respond to getInput/getLabel");
+            return std::nullopt;
+        }
         
-        if (!inputs || !labels) {
-            NSLog(@"SwiftDatasetAdapter::getBatch() null inputs or labels");
+        id inputData = ((id (*)(id, SEL))objc_msgSend)(nvflareBatch, @selector(getInput));
+        id labelData = ((id (*)(id, SEL))objc_msgSend)(nvflareBatch, @selector(getLabel));
+        
+        if (!inputData || !labelData) {
+            NSLog(@"SwiftDatasetAdapter::getBatch() null input or label data from batch");
+            return std::nullopt;
+        }
+        
+        // Convert to arrays
+        NSArray<NSNumber *> *inputs = (NSArray<NSNumber *> *)inputData;
+        NSArray<NSNumber *> *labels = (NSArray<NSNumber *> *)labelData;
+        
+        if (![inputs isKindOfClass:[NSArray class]] || ![labels isKindOfClass:[NSArray class]]) {
+            NSLog(@"SwiftDatasetAdapter::getBatch() input/label data is not NSArray");
             return std::nullopt;
         }
         
@@ -146,17 +162,17 @@ void SwiftDatasetAdapter::reset() {
     }
     
     @autoreleasepool {
-        id swiftDataset = (__bridge id)swiftObjectPtr;
-        if (!swiftDataset) {
+        id nvflareDataset = (__bridge id)swiftObjectPtr;
+        if (!nvflareDataset) {
             NSLog(@"SwiftDatasetAdapter::reset() bridged object is nil");
             return;
         }
         
         SEL resetSelector = @selector(reset);
-        if ([swiftDataset respondsToSelector:resetSelector]) {
+        if ([nvflareDataset respondsToSelector:resetSelector]) {
             typedef void (*ResetFunc)(id, SEL);
             ResetFunc resetFunc = (ResetFunc)objc_msgSend;
-            resetFunc(swiftDataset, resetSelector);
+            resetFunc(nvflareDataset, resetSelector);
             NSLog(@"SwiftDatasetAdapter::reset() completed");
         } else {
             NSLog(@"SwiftDatasetAdapter::reset() object does not respond to reset");
@@ -167,28 +183,9 @@ void SwiftDatasetAdapter::reset() {
 void SwiftDatasetAdapter::setShuffle(bool shuffle) {
     NSLog(@"SwiftDatasetAdapter::setShuffle() called with %s", shuffle ? "true" : "false");
     
-    if (isDestroyed || !swiftObjectPtr) {
-        NSLog(@"SwiftDatasetAdapter::setShuffle() object is destroyed or null");
-        return;
-    }
-    
-    @autoreleasepool {
-        id swiftDataset = (__bridge id)swiftObjectPtr;
-        if (!swiftDataset) {
-            NSLog(@"SwiftDatasetAdapter::setShuffle() bridged object is nil");
-            return;
-        }
-        
-        SEL setShuffleSelector = @selector(setShuffle:);
-        if ([swiftDataset respondsToSelector:setShuffleSelector]) {
-            typedef void (*SetShuffleFunc)(id, SEL, BOOL);
-            SetShuffleFunc setShuffleFunc = (SetShuffleFunc)objc_msgSend;
-            setShuffleFunc(swiftDataset, setShuffleSelector, shuffle ? YES : NO);
-            NSLog(@"SwiftDatasetAdapter::setShuffle() completed");
-        } else {
-            NSLog(@"SwiftDatasetAdapter::setShuffle() object does not respond to setShuffle:");
-        }
-    }
+    // NVFlareDataset protocol doesn't include setShuffle - this is a no-op
+    // Shuffling should be handled internally by the dataset implementation
+    NSLog(@"SwiftDatasetAdapter::setShuffle() NVFlareDataset protocol doesn't support setShuffle - no-op");
 }
 
 size_t SwiftDatasetAdapter::size() const {
@@ -200,21 +197,21 @@ size_t SwiftDatasetAdapter::size() const {
     }
     
     if (!swiftObjectPtr) {
-        NSLog(@"SwiftDatasetAdapter::size() Swift object pointer is null!");
+        NSLog(@"SwiftDatasetAdapter::size() NVFlareDataset object pointer is null!");
         return 0;
     }
     
-    NSLog(@"SwiftDatasetAdapter::size() calling Swift object at %p", swiftObjectPtr);
+    NSLog(@"SwiftDatasetAdapter::size() calling NVFlareDataset object at %p", swiftObjectPtr);
     
     @autoreleasepool {
-        id swiftDataset = (__bridge id)swiftObjectPtr;
-        if (!swiftDataset) {
+        id nvflareDataset = (__bridge id)swiftObjectPtr;
+        if (!nvflareDataset) {
             NSLog(@"SwiftDatasetAdapter::size() bridged object is nil!");
             return 0;
         }
         
         SEL sizeSelector = @selector(size);
-        if (![swiftDataset respondsToSelector:sizeSelector]) {
+        if (![nvflareDataset respondsToSelector:sizeSelector]) {
             NSLog(@"SwiftDatasetAdapter::size() object does not respond to size selector");
             return 0;
         }
@@ -225,7 +222,7 @@ size_t SwiftDatasetAdapter::size() const {
         typedef NSInteger (*SizeFunc)(id, SEL);
         SizeFunc sizeFunc = (SizeFunc)objc_msgSend;
         
-        NSInteger result = sizeFunc(swiftDataset, sizeSelector);
+        NSInteger result = sizeFunc(nvflareDataset, sizeSelector);
         NSLog(@"SwiftDatasetAdapter::size() result: %ld", (long)result);
         return static_cast<size_t>(result);
     }
@@ -240,22 +237,28 @@ size_t SwiftDatasetAdapter::inputDim() const {
     }
     
     @autoreleasepool {
-        id swiftDataset = (__bridge id)swiftObjectPtr;
-        if (!swiftDataset) {
+        id nvflareDataset = (__bridge id)swiftObjectPtr;
+        if (!nvflareDataset) {
             NSLog(@"SwiftDatasetAdapter::inputDim() bridged object is nil");
             return 0;
         }
         
-        SEL inputDimSelector = @selector(inputDim);
-        if ([swiftDataset respondsToSelector:inputDimSelector]) {
-            typedef NSInteger (*InputDimFunc)(id, SEL);
-            InputDimFunc inputDimFunc = (InputDimFunc)objc_msgSend;
-            NSInteger result = inputDimFunc(swiftDataset, inputDimSelector);
-            NSLog(@"SwiftDatasetAdapter::inputDim() result: %ld", (long)result);
-            return static_cast<size_t>(result);
+        SEL getInputDimensionsSelector = @selector(getInputDimensions);
+        if ([nvflareDataset respondsToSelector:getInputDimensionsSelector]) {
+            typedef NSArray* (*GetInputDimensionsFunc)(id, SEL);
+            GetInputDimensionsFunc getInputDimensionsFunc = (GetInputDimensionsFunc)objc_msgSend;
+            NSArray *dimensions = getInputDimensionsFunc(nvflareDataset, getInputDimensionsSelector);
+            if (dimensions && dimensions.count > 0) {
+                NSInteger firstDim = [[dimensions firstObject] integerValue];
+                NSLog(@"SwiftDatasetAdapter::inputDim() result: %ld", (long)firstDim);
+                return static_cast<size_t>(firstDim);
+            } else {
+                NSLog(@"SwiftDatasetAdapter::inputDim() empty or null dimensions array");
+                return 0;
+            }
         } else {
-            NSLog(@"SwiftDatasetAdapter::inputDim() object does not respond to inputDim");
-            return 0;
+            NSLog(@"SwiftDatasetAdapter::inputDim() object does not respond to getInputDimensions, returning default");
+            return 784; // Default for common use cases
         }
     }
 }
@@ -269,21 +272,27 @@ size_t SwiftDatasetAdapter::labelDim() const {
     }
     
     @autoreleasepool {
-        id swiftDataset = (__bridge id)swiftObjectPtr;
-        if (!swiftDataset) {
+        id nvflareDataset = (__bridge id)swiftObjectPtr;
+        if (!nvflareDataset) {
             NSLog(@"SwiftDatasetAdapter::labelDim() bridged object is nil");
             return 1;
         }
         
-        SEL labelDimSelector = @selector(labelDim);
-        if ([swiftDataset respondsToSelector:labelDimSelector]) {
-            typedef NSInteger (*LabelDimFunc)(id, SEL);
-            LabelDimFunc labelDimFunc = (LabelDimFunc)objc_msgSend;
-            NSInteger result = labelDimFunc(swiftDataset, labelDimSelector);
-            NSLog(@"SwiftDatasetAdapter::labelDim() result: %ld", (long)result);
-            return static_cast<size_t>(result);
+        SEL getOutputDimensionsSelector = @selector(getOutputDimensions);
+        if ([nvflareDataset respondsToSelector:getOutputDimensionsSelector]) {
+            typedef NSArray* (*GetOutputDimensionsFunc)(id, SEL);
+            GetOutputDimensionsFunc getOutputDimensionsFunc = (GetOutputDimensionsFunc)objc_msgSend;
+            NSArray *dimensions = getOutputDimensionsFunc(nvflareDataset, getOutputDimensionsSelector);
+            if (dimensions && dimensions.count > 0) {
+                NSInteger firstDim = [[dimensions firstObject] integerValue];
+                NSLog(@"SwiftDatasetAdapter::labelDim() result: %ld", (long)firstDim);
+                return static_cast<size_t>(firstDim);
+            } else {
+                NSLog(@"SwiftDatasetAdapter::labelDim() empty or null dimensions array");
+                return 1;
+            }
         } else {
-            NSLog(@"SwiftDatasetAdapter::labelDim() object does not respond to labelDim");
+            NSLog(@"SwiftDatasetAdapter::labelDim() object does not respond to getOutputDimensions, returning default");
             return 1;
         }
     }

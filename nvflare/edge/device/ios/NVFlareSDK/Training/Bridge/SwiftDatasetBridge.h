@@ -9,13 +9,13 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Bridge to create C++ dataset adapters from Swift datasets
+/// Bridge to create C++ dataset adapters from NVFlare datasets
 @interface SwiftDatasetBridge : NSObject
 
-/// Create a C++ dataset adapter from a Swift dataset
-/// @param swiftDataset The Swift dataset object
+/// Create a C++ dataset adapter from an NVFlareDataset
+/// @param nvflareDataset The NVFlareDataset object
 /// @return Pointer to C++ ETDataset* that can be used with ETTrainer
-+ (void*)createDatasetAdapter:(id)swiftDataset;
++ (void*)createDatasetAdapter:(id)nvflareDataset;
 
 /// Destroy a C++ dataset adapter
 /// @param dataset Pointer to C++ ETDataset* created by createDatasetAdapter

@@ -16,11 +16,11 @@ struct TrainingConfig {
     
     var dictionary: [String: Any] {
         return [
-            NVFlareConstants.metaKeyTotalEpochs: totalEpochs,
-            NVFlareConstants.metaKeyBatchSize: batchSize,
-            NVFlareConstants.metaKeyLearningRate: learningRate,
+            NVFlareProtocolConstants.metaKeyTotalEpochs: totalEpochs,
+            NVFlareProtocolConstants.metaKeyBatchSize: batchSize,
+            NVFlareProtocolConstants.metaKeyLearningRate: learningRate,
             "method": method,
-            NVFlareConstants.metaKeyDatasetType: dataSetType
+            NVFlareProtocolConstants.metaKeyDatasetType: dataSetType
         ]
     }
 
@@ -34,11 +34,11 @@ struct TrainingConfig {
     }
     
     init(from data: [String: Any]) {
-        self.totalEpochs = data[NVFlareConstants.metaKeyTotalEpochs] as? Int ?? 1
-        self.batchSize = data[NVFlareConstants.metaKeyBatchSize] as? Int ?? 4
-        self.learningRate = data[NVFlareConstants.metaKeyLearningRate] as? Float ?? 0.1
+        self.totalEpochs = data[NVFlareProtocolConstants.metaKeyTotalEpochs] as? Int ?? 1
+        self.batchSize = data[NVFlareProtocolConstants.metaKeyBatchSize] as? Int ?? 4
+        self.learningRate = data[NVFlareProtocolConstants.metaKeyLearningRate] as? Float ?? 0.1
         self.method = data["method"] as? String ?? TrainingConstants.methodCNN
-        self.dataSetType = data[NVFlareConstants.metaKeyDatasetType] as? String ?? TrainingConstants.datasetTypeCIFAR10
+        self.dataSetType = data[NVFlareProtocolConstants.metaKeyDatasetType] as? String ?? TrainingConstants.datasetTypeCIFAR10
     }
 }
 
