@@ -30,11 +30,13 @@ We are using `nvflare provision` to provision a hierarchical NVFlare system for 
 nvflare provision -p project.yml
 ```
 
-Note that in this example, we specify `depth: 1, width: 2`, indicating a hierarchy with a topology as following:
+Note that in this example, we specify `depth: 1, width: 2` and `clients: 2`, indicating a hierarchy with a topology as following:
 <img src="./figs/edge_topo.png" alt="Edge Topology" width="800" >
 - depth indicates the number of levels in the hierarchy, in this case, we only have 1 layer of relays. 
-- width indicates the number of connections for each node, in this case, we have 2 relays connecting to the server, and each with 2 leaf clients.
-- There are two types of clints: leaf clients (C11, C12, C21, C22) and non-leaf clients (C1, C2). The leaf clients are the ones that will connect with real devices or run device simulations; while non-leaf clients are used for intermediate message updates through the hierarchy only.
+- width indicates the number of connections for each node, in this case, we have 2 relays connecting to the server.
+- clients indicates the number of leaf clients on each relay, in this case, we have 2 leaf clients connecting to each relay.
+
+There are two types of clints: leaf clients (C11, C12, C21, C22) and non-leaf clients (C1, C2). The leaf clients are the ones that will connect with real devices or run device simulations; while non-leaf clients are used for intermediate message updates through the hierarchy only.
 
 For edge-device connection, we only needs the information of the leaf nodes, let's check the lcp map:
 ```commandline
