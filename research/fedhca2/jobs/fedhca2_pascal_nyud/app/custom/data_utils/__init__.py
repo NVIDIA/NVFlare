@@ -1,3 +1,0 @@
-# NVFLARE data utilities
-
-
