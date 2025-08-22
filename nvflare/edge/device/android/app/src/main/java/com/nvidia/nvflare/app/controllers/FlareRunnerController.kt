@@ -11,7 +11,7 @@ import com.nvidia.nvflare.sdk.core.DataSource
 import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.Dataset
 import com.nvidia.nvflare.sdk.core.Connection
-import com.nvidia.nvflare.sdk.trainers.ETTrainerFactory
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -226,6 +226,14 @@ class FlareRunnerController(
         connection.hostname.value = serverHost
         connection.port.value = serverPort
         connection.setCapabilities(capabilities)
+        
+        // Set user info - use device ID as user ID for now, can be made configurable later
+        val userId = android.provider.Settings.Secure.getString(
+            context.contentResolver, 
+            android.provider.Settings.Secure.ANDROID_ID
+        ) ?: "unknown_user"
+        connection.setUserInfo(mapOf("user_id" to userId))
+        
         return connection
     }
 } 

@@ -47,9 +47,16 @@ class AndroidExecutor(
                 throw RuntimeException("No model data found in task data")
             }
             
-            // Execute training using the Trainer interface with model data
+            // Create appropriate dataset based on training method
+            val dataset = when (trainingConfig.method) {
+                "xor" -> com.nvidia.nvflare.app.data.XORDataset("train")
+                "cnn" -> com.nvidia.nvflare.app.data.CIFAR10Dataset(ctx.getAndroidContext())
+                else -> throw IllegalArgumentException("Unsupported training method: ${trainingConfig.method}")
+            }
+            
+            // Execute training using the Trainer interface with dataset and model data
             val result = runBlocking {
-                trainer.train(trainingConfig, modelData)
+                trainer.train(trainingConfig, dataset, modelData)
             }
             
             Log.d(TAG, "Training completed successfully")
