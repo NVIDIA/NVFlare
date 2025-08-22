@@ -3,9 +3,9 @@ package com.nvidia.nvflare.sdk.core
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
-import com.nvidia.nvflare.sdk.core.JobResponse
-import com.nvidia.nvflare.sdk.core.TaskResponse
-import com.nvidia.nvflare.sdk.core.ResultResponse
+import com.nvidia.nvflare.sdk.models.JobResponse
+import com.nvidia.nvflare.sdk.models.TaskResponse
+import com.nvidia.nvflare.sdk.models.ResultResponse
 import com.nvidia.nvflare.sdk.core.NVFlareError
 import com.nvidia.nvflare.sdk.models.JSONValue
 import okhttp3.OkHttpClient
@@ -22,9 +22,53 @@ import okhttp3.HttpUrl
 import com.google.gson.JsonPrimitive
 
 class Connection(private val context: Context) {
+    companion object {
+        // API endpoints
+        private const val ENDPOINT_JOB = "job"
+        private const val ENDPOINT_TASK = "task"
+        private const val ENDPOINT_RESULT = "result"
+        
+        // Query parameter names
+        private const val PARAM_JOB_ID = "job_id"
+        private const val PARAM_TASK_ID = "task_id"
+        private const val PARAM_TASK_NAME = "task_name"
+        
+        // HTTP headers
+        private const val HEADER_DEVICE_ID = "X-Flare-Device-ID"
+        private const val HEADER_DEVICE_INFO = "X-Flare-Device-Info"
+        private const val HEADER_USER_INFO = "X-Flare-User-Info"
+        
+        // HTTP status codes
+        private const val HTTP_OK = 200
+        private const val HTTP_BAD_REQUEST = 400
+        private const val HTTP_FORBIDDEN = 403
+        private const val HTTP_SERVER_ERROR = 500
+        
+        // Response status values
+        private const val STATUS_OK = "OK"
+        private const val STATUS_RETRY = "RETRY"
+        private const val STATUS_STOPPED = "stopped"
+        
+        // Content types
+        private const val CONTENT_TYPE_JSON = "application/json"
+        
+        // HTTP scheme
+        private const val HTTP_SCHEME = "http"
+        
+        // JSON field names
+        private const val FIELD_JOB_NAME = "job_name"
+        private const val FIELD_CAPABILITIES = "capabilities"
+        private const val FIELD_COOKIE = "cookie"
+        private const val FIELD_RESULT = "result"
+        private const val FIELD_METHODS = "methods"
+        
+        // HTTP response headers
+        private const val HEADER_CONTENT_LENGTH = "Content-Length"
+    }
+    
     private val TAG = "Connection"
     private var currentCookie: JSONValue? = null
-    private var capabilities: Map<String, Any> = mapOf("methods" to emptyList<String>())
+    private var capabilities: Map<String, Any> = mapOf(FIELD_METHODS to emptyList<String>())
     private val gson = Gson()
     private val httpClient = OkHttpClient()
 
@@ -36,19 +80,11 @@ class Connection(private val context: Context) {
         get() = hostname.value?.isNotEmpty() == true && (port.value ?: 0) > 0 && (port.value
             ?: 0) <= 65535
 
+    // Generate a stable installation ID that persists for this app installation
+    private val installationId = java.util.UUID.randomUUID().toString()
+    
     // Device info matching iOS exactly
-    private val deviceId: String =
-        try {
-            // Use ANDROID_ID which is unique per app installation
-            val androidId = android.provider.Settings.Secure.getString(
-                context.contentResolver, 
-                android.provider.Settings.Secure.ANDROID_ID
-            ) ?: "unknown"
-            "NVFlare_Android-$androidId"
-        } catch (e: Exception) {
-            // Fallback to a combination of device info
-            "NVFlare_Android-${android.os.Build.MANUFACTURER}-${android.os.Build.MODEL}-${android.os.Build.SERIAL}"
-        }
+    private val deviceId: String = "NVFlare_Android-$installationId"
     private var deviceInfo: Map<String, String> = mapOf(
         "device_id" to deviceId,
         "app_name" to context.packageManager.getPackageInfo(context.packageName, 0).applicationInfo.loadLabel(context.packageManager).toString(),
@@ -95,24 +131,24 @@ class Connection(private val context: Context) {
         }
 
         val url = HttpUrl.Builder()
-            .scheme("http")
+            .scheme(HTTP_SCHEME)
             .host(hostname.value ?: "")
             .port(port.value ?: 0)
-            .addPathSegment("job")
+            .addPathSegment(ENDPOINT_JOB)
             .build()
 
         // Prepare request body with job_name and capabilities
         val requestBody = JsonObject().apply {
-            add("job_name", JsonPrimitive(jobName))
-            add("capabilities", gson.toJsonTree(capabilities))
+            add(FIELD_JOB_NAME, JsonPrimitive(jobName))
+            add(FIELD_CAPABILITIES, gson.toJsonTree(capabilities))
         }
 
         val request = Request.Builder()
             .url(url)
-            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-            .header("X-Flare-Device-ID", deviceId)
-            .header("X-Flare-Device-Info", infoToQueryString(deviceInfo))
-            .header("X-Flare-User-Info", infoToQueryString(userInfo))
+            .post(requestBody.toString().toRequestBody(CONTENT_TYPE_JSON.toMediaType()))
+            .header(HEADER_DEVICE_ID, deviceId)
+            .header(HEADER_DEVICE_INFO, infoToQueryString(deviceInfo))
+            .header(HEADER_USER_INFO, infoToQueryString(userInfo))
             .build()
 
         Log.d(TAG, "Sending request: ${request.method} ${request.url}")
@@ -126,12 +162,12 @@ class Connection(private val context: Context) {
             Log.d(TAG, "Response Headers: ${response.headers}")
             
             // Log response body info without corrupting data
-            val contentLength = response.headers["Content-Length"]?.toIntOrNull() ?: 0
+            val contentLength = response.headers[HEADER_CONTENT_LENGTH]?.toIntOrNull() ?: 0
             Log.d(TAG, "Response Content-Length: $contentLength bytes")
             
             // Check status code first like iOS
             when (response.code) {
-                200 -> {
+                HTTP_OK -> {
                     // Parse directly from response body using charStream to avoid string conversion corruption
                     val jobResponse = if (responseBody != null) {
                         val reader = responseBody.charStream()
@@ -141,8 +177,8 @@ class Connection(private val context: Context) {
                     }
                     
                     when (jobResponse.status) {
-                        "OK" -> jobResponse
-                        "RETRY" -> {
+                        STATUS_OK -> jobResponse
+                        STATUS_RETRY -> {
                             val retryWait = jobResponse.retryWait ?: 5000
                             Log.d(TAG, "Retrying job fetch after $retryWait ms")
                             delay(retryWait.toLong())
@@ -153,9 +189,9 @@ class Connection(private val context: Context) {
                     }
                 }
 
-                400 -> throw NVFlareError.InvalidRequest("Invalid request")
-                403 -> throw NVFlareError.AuthError("Authentication error")
-                500 -> throw NVFlareError.ServerError("Server error")
+                HTTP_BAD_REQUEST -> throw NVFlareError.InvalidRequest("Invalid request")
+                HTTP_FORBIDDEN -> throw NVFlareError.AuthError("Authentication error")
+                HTTP_SERVER_ERROR -> throw NVFlareError.ServerError("Server error")
                 else -> throw NVFlareError.JobFetchFailed("Job fetch failed")
             }
         } catch (e: IOException) {
@@ -170,17 +206,17 @@ class Connection(private val context: Context) {
         }
 
         val url = HttpUrl.Builder()
-            .scheme("http")
+            .scheme(HTTP_SCHEME)
             .host(hostname.value ?: "")
             .port(port.value ?: 0)
-            .addPathSegment("task")
-            .addQueryParameter("job_id", jobId)
+            .addPathSegment(ENDPOINT_TASK)
+            .addQueryParameter(PARAM_JOB_ID, jobId)
             .build()
 
         // Prepare request body with cookie
         val requestBody = if (currentCookie != null) {
             JsonObject().apply {
-                add("cookie", gson.toJsonTree(currentCookie?.toAny()))
+                add(FIELD_COOKIE, gson.toJsonTree(currentCookie?.toAny()))
             }
         } else {
             JsonObject() // Empty JSON object like iOS
@@ -188,10 +224,10 @@ class Connection(private val context: Context) {
 
         val request = Request.Builder()
             .url(url)
-            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-            .header("X-Flare-Device-ID", deviceId)
-            .header("X-Flare-Device-Info", infoToQueryString(deviceInfo))
-            .header("X-Flare-User-Info", infoToQueryString(userInfo))
+            .post(requestBody.toString().toRequestBody(CONTENT_TYPE_JSON.toMediaType()))
+            .header(HEADER_DEVICE_ID, deviceId)
+            .header(HEADER_DEVICE_INFO, infoToQueryString(deviceInfo))
+            .header(HEADER_USER_INFO, infoToQueryString(userInfo))
             .build()
 
         Log.d(TAG, "Sending request: ${request.method} ${request.url}")
@@ -205,12 +241,12 @@ class Connection(private val context: Context) {
             Log.d(TAG, "Response Headers: ${response.headers}")
             
             // Log response body info without corrupting data
-            val contentLength = response.headers["Content-Length"]?.toIntOrNull() ?: 0
+            val contentLength = response.headers[HEADER_CONTENT_LENGTH]?.toIntOrNull() ?: 0
             Log.d(TAG, "Response Content-Length: $contentLength bytes")
             
             // Check status code first like iOS
             when (response.code) {
-                200 -> {
+                HTTP_OK -> {
                     // Parse directly from response body using charStream to avoid string conversion corruption
                     val taskResponse = if (responseBody != null) {
                         val reader = responseBody.charStream()
@@ -245,9 +281,9 @@ class Connection(private val context: Context) {
                     }
                 }
 
-                400 -> throw NVFlareError.InvalidRequest("Invalid request")
-                403 -> throw NVFlareError.AuthError("Authentication error")
-                500 -> throw NVFlareError.ServerError("Server error")
+                HTTP_BAD_REQUEST -> throw NVFlareError.InvalidRequest("Invalid request")
+                HTTP_FORBIDDEN -> throw NVFlareError.AuthError("Authentication error")
+                HTTP_SERVER_ERROR -> throw NVFlareError.ServerError("Server error")
                 else -> throw NVFlareError.TaskFetchFailed("Task fetch failed")
             }
         } catch (e: IOException) {
@@ -270,31 +306,31 @@ class Connection(private val context: Context) {
         }
 
         val url = HttpUrl.Builder()
-            .scheme("http")
+            .scheme(HTTP_SCHEME)
             .host(hostname.value ?: "")
             .port(port.value ?: 0)
-            .addPathSegment("result")
-            .addQueryParameter("job_id", jobId)
-            .addQueryParameter("task_id", taskId)
-            .addQueryParameter("task_name", taskName)
+            .addPathSegment(ENDPOINT_RESULT)
+            .addQueryParameter(PARAM_JOB_ID, jobId)
+            .addQueryParameter(PARAM_TASK_ID, taskId)
+            .addQueryParameter(PARAM_TASK_NAME, taskName)
             .build()
 
         Log.d(TAG, "sendResult: Built URL: $url")
 
         // Prepare request body
         val requestBody = JsonObject().apply {
-            add("result", gson.toJsonTree(weightDiff))
+            add(FIELD_RESULT, gson.toJsonTree(weightDiff))
             if (currentCookie != null) {
-                add("cookie", gson.toJsonTree(currentCookie?.toAny()))
+                add(FIELD_COOKIE, gson.toJsonTree(currentCookie?.toAny()))
             }
         }
 
         val request = Request.Builder()
             .url(url)
-            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-            .header("X-Flare-Device-ID", deviceId)
-            .header("X-Flare-Device-Info", infoToQueryString(deviceInfo))
-            .header("X-Flare-User-Info", infoToQueryString(userInfo))
+            .post(requestBody.toString().toRequestBody(CONTENT_TYPE_JSON.toMediaType()))
+            .header(HEADER_DEVICE_ID, deviceId)
+            .header(HEADER_DEVICE_INFO, infoToQueryString(deviceInfo))
+            .header(HEADER_USER_INFO, infoToQueryString(userInfo))
             .build()
 
         Log.d(TAG, "Sending request: ${request.method} ${request.url}")
@@ -313,13 +349,13 @@ class Connection(private val context: Context) {
 
             // Check status code first like iOS
             when (response.code) {
-                200 -> {
+                HTTP_OK -> {
                     Log.d(TAG, "sendResult: Parsing 200 response...")
                     val resultResponse = gson.fromJson(responseBody, ResultResponse::class.java)
                     Log.d(TAG, "sendResult: Parsed ResultResponse: $resultResponse")
                     
                     when (resultResponse.status) {
-                        "OK" -> {
+                        STATUS_OK -> {
                             Log.d(TAG, "sendResult: Result sent successfully")
                             resultResponse
                         }
@@ -332,15 +368,15 @@ class Connection(private val context: Context) {
                     }
                 }
 
-                400 -> {
+                HTTP_BAD_REQUEST -> {
                     Log.e(TAG, "sendResult: Bad request (400)")
                     throw NVFlareError.InvalidRequest("Invalid request")
                 }
-                403 -> {
+                HTTP_FORBIDDEN -> {
                     Log.e(TAG, "sendResult: Authentication error (403)")
                     throw NVFlareError.AuthError("Authentication error")
                 }
-                500 -> {
+                HTTP_SERVER_ERROR -> {
                     Log.e(TAG, "sendResult: Server error (500)")
                     throw NVFlareError.ServerError("Server error")
                 }

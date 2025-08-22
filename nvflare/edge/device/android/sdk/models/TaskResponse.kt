@@ -1,14 +1,15 @@
-package com.nvidia.nvflare.sdk.core
+package com.nvidia.nvflare.sdk.models
 
 import com.google.gson.annotations.SerializedName
-import com.nvidia.nvflare.sdk.models.TrainingTask
+import com.nvidia.nvflare.sdk.training.TrainingTask
 import com.nvidia.nvflare.sdk.utils.asMap
 import com.nvidia.nvflare.sdk.utils.asList
-import com.nvidia.nvflare.sdk.models.TrainingConfig
+import com.nvidia.nvflare.sdk.training.TrainingConfig
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
+import com.nvidia.nvflare.sdk.core.NVFlareError
 
 data class TaskResponse(
     @SerializedName("status")
@@ -115,4 +116,4 @@ data class TaskResponse(
             trainingConfig = TrainingConfig.fromMap(metaWithKind)
         )
     }
-} 
+}

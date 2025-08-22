@@ -2,11 +2,9 @@ package com.nvidia.nvflare.sdk.training
 
 import android.content.Context
 import android.util.Log
-import com.nvidia.nvflare.sdk.models.TrainingConfig
-import com.nvidia.nvflare.sdk.training.Trainer
+import com.nvidia.nvflare.sdk.training.TrainingConfig
+
 import com.nvidia.nvflare.sdk.core.Dataset
-import com.nvidia.nvflare.app.data.CIFAR10Dataset
-import com.nvidia.nvflare.app.data.XORDataset
 import org.pytorch.executorch.Tensor
 import org.pytorch.executorch.EValue
 import org.pytorch.executorch.TrainingModule
@@ -25,22 +23,33 @@ import kotlin.jvm.Throws
  * Usage:
  * ```
  * ETTrainer(context, modelData, meta).use { trainer ->
- *     val result = trainer.train(config, modelData)
+ *     val dataset = XORDataset("train")  // or CIFAR10Dataset(context)
+ *     val result = trainer.train(config, dataset, modelData)
  * }
  * ```
  */
 class ETTrainer(
-    private val context: Context,
+    private val context: android.content.Context,
     private val modelData: String, 
     private val meta: Map<String, Any>
-) : Trainer, AutoCloseable {
+) : AutoCloseable {
     private val TAG = "ETTrainer"
     private var tModule: TrainingModule? = null
     private var isInitialized = false
     
-    // CRITICAL: Strong reference to keep dataset alive during training
-    // This prevents the dataset from being deallocated while ExecuTorch still references it
-    private var currentDataset: com.nvidia.nvflare.sdk.core.Dataset? = null
+    companion object {
+        private const val EXECUTORCH_HEADER_SIZE = 8
+        private const val EXECUTORCH_HEADER_PREFIX = "PAAAAEVU"
+        private const val BUFFER_SIZE = 4 * 1024  // 4KB buffer for file operations
+        private const val PROGRESS_LOG_INTERVAL = 500  // Log progress every 500 steps
+        private const val DEFAULT_MOMENTUM = 0.9f
+        private const val SGD_WEIGHT_DECAY = 0.0
+        private const val SGD_NESTEROV = true
+        private const val LOSS_TENSOR_INDEX = 0
+        private const val PREDICTIONS_TENSOR_INDEX = 1
+    }
+    
+
     
     private val artifactManager = TrainingArtifactManager(context, meta)
 
@@ -54,6 +63,23 @@ class ETTrainer(
     private fun setupArtifactDirectories() {
         // Artifact setup is now handled by TrainingArtifactManager
         Log.d(TAG, "Artifact directories setup complete")
+    }
+
+    /**
+     * Create dataset internally based on training method (iOS-style).
+     */
+    private fun createDataset(method: String, config: TrainingConfig): com.nvidia.nvflare.sdk.core.Dataset {
+        return when (method) {
+            "xor" -> {
+                Log.d(TAG, "Creating XOR dataset for training")
+                com.nvidia.nvflare.app.data.XORDataset("train")
+            }
+            "cnn" -> {
+                Log.d(TAG, "Creating CIFAR-10 dataset for training")
+                com.nvidia.nvflare.app.data.CIFAR10Dataset(context)
+            }
+            else -> throw IllegalArgumentException("Unsupported training method: $method")
+        }
     }
 
     /**
@@ -71,17 +97,17 @@ class ETTrainer(
             return file.absolutePath
         }
 
-        try {
-            context.resources.assets.open(assetName).use { inputStream ->
-                FileOutputStream(file).use { outputStream ->
-                    val buffer = ByteArray(4 * 1024)
-                    var read: Int
-                    while (inputStream.read(buffer).also { read = it } != -1) {
-                        outputStream.write(buffer, 0, read)
+                    try {
+                context.resources.assets.open(assetName).use { inputStream ->
+                    FileOutputStream(file).use { outputStream ->
+                        val buffer = ByteArray(BUFFER_SIZE)
+                        var read: Int
+                        while (inputStream.read(buffer).also { read = it } != -1) {
+                            outputStream.write(buffer, 0, read)
+                        }
+                        outputStream.flush()
                     }
-                    outputStream.flush()
                 }
-            }
             return file.absolutePath
         } catch (e: IOException) {
             Log.e(TAG, "Error copying asset $assetName: ${e.message}")
@@ -129,10 +155,10 @@ class ETTrainer(
             Log.d(TAG, "Decoded model data size: ${decodedModelData.size} bytes")
             
             // Validate model header (check for ExecuTorch magic bytes)
-            if (decodedModelData.size >= 8) {
-                val header = String(decodedModelData.take(8).toByteArray())
+            if (decodedModelData.size >= EXECUTORCH_HEADER_SIZE) {
+                val header = String(decodedModelData.take(EXECUTORCH_HEADER_SIZE).toByteArray())
                 Log.d(TAG, "Model header: $header")
-                if (!header.startsWith("PAAAAEVU")) {
+                if (!header.startsWith(EXECUTORCH_HEADER_PREFIX)) {
                     Log.w(TAG, "Warning: Model header doesn't match expected ExecuTorch format")
                 }
             }
@@ -162,7 +188,7 @@ class ETTrainer(
         }
     }
     
-    override suspend fun train(config: TrainingConfig, modelData: String?): Map<String, Any> {
+    suspend fun train(config: TrainingConfig, modelData: String?): Map<String, Any> {
         Log.d(TAG, "Starting ExecuTorch training with method: ${config.method}")
         
         // Model data should be provided separately (like iOS)
@@ -177,19 +203,16 @@ class ETTrainer(
             val epochs = config.totalEpochs
             val batchSize = config.batchSize
             val learningRate = config.learningRate
-            val momentum = 0.9f
+            val momentum = DEFAULT_MOMENTUM
             
             Log.d(TAG, "Training parameters - method: $method, epochs: $epochs, batchSize: $batchSize, lr: $learningRate")
             
-            currentDataset = when (method) {
-                "cnn" -> CIFAR10Dataset(context)
-                "xor" -> XORDataset()
-                else -> throw IllegalArgumentException("Unsupported method: $method")
-            }
-
+            // Create dataset based on method
+            val dataset = createDataset(method, config)
+            
             val trainingResult = performTraining(
                 tModule!!,
-                currentDataset!!,
+                dataset,
                 method,
                 epochs,
                 batchSize,
@@ -197,11 +220,7 @@ class ETTrainer(
                 momentum
             )
             
-            val resultData: Map<String, Any> = when (method) {
-                "cnn" -> trainingResult
-                "xor" -> trainingResult  // Use tensor differences directly, don't transform
-                else -> trainingResult
-            }
+            val resultData: Map<String, Any> = trainingResult
 
             val expectedKind = config.kind ?: "number"
             Log.d(TAG, "Expected kind from config: $expectedKind")
@@ -218,12 +237,10 @@ class ETTrainer(
             )
 
             Log.d(TAG, "Training completed successfully, returning DXO with ${resultData.keys.size} keys")
-            currentDataset = null
             return dxo
 
         } catch (e: Exception) {
             Log.e(TAG, "Training failed", e)
-            currentDataset = null
             throw RuntimeException("ExecuTorch training failed: ${e.message}", e)
         }
     }
@@ -260,79 +277,39 @@ class ETTrainer(
             var epochLoss = 0.0f
             var epochSteps = 0
             
-            // For XOR, process individual samples like the reference implementation
-            if (method == "xor") {
-                val xorData = listOf(
-                    floatArrayOf(1.0f, 1.0f) to 0L,
-                    floatArrayOf(0.0f, 0.0f) to 0L,
-                    floatArrayOf(1.0f, 0.0f) to 1L,
-                    floatArrayOf(0.0f, 1.0f) to 1L
-                )
+            // Unified training loop that works with any dataset
+            while (true) {
+                val batch = dataset.getNextBatch(batchSize)
+                if (batch == null) break
                 
-                repeat(batchSize) { // Process batchSize iterations through the XOR data
-                    xorData.forEach { (inputData, label) ->
-                        // Create individual tensors like the reference
-                        val inputTensor = Tensor.fromBlob(inputData, longArrayOf(1L, 2L))
-                        val labelTensor = Tensor.fromBlob(longArrayOf(label), longArrayOf(1L))
-                        
-                        val inputEValues = arrayOf(EValue.from(inputTensor), EValue.from(labelTensor))
-                        val outputEValues = model.executeForwardBackward("forward", *inputEValues)
-                            ?: throw IllegalStateException("Execution module is not loaded.")
-                        
-                        val loss = outputEValues[0].toTensor().getDataAsFloatArray()[0]
-                        
-                        epochLoss += loss
-                        totalLoss += loss
-                        epochSteps++
-                        totalSteps++
-                        
-                        val parameters: Map<String, Tensor> = model.namedParameters("forward")
-                        val sgd = SGD.create(parameters, learningRate.toDouble(), momentum.toDouble(), 0.0, 0.0, true)
-                        val gradients: Map<String, Tensor> = model.namedGradients("forward")
-                        sgd.step(gradients)
-                        
-                        if (totalSteps % 500 == 0 || (epoch == epochs && epochSteps == 0)) {
-                            val progressPercent = (epochSteps.toFloat() * 100 / (xorData.size * batchSize)).toInt()
-                            artifactManager.logTrainingProgress(epoch, epochs, totalSteps, loss, progressPercent, method)
-                            Log.d(TAG, "Epoch $epoch/$epochs, Progress $progressPercent%, Step $totalSteps, Loss: $loss")
-                        }
-                    }
-                }
-            } else {
-                // For other methods (like CNN), use batch processing
-                while (true) {
-                    val batch = dataset.getNextBatch(batchSize)
-                    if (batch == null) break
-                    
-                    val inputData = batch.getInput() as FloatArray
-                    val labelData = batch.getLabel() as FloatArray
-                    
-                    val inputTensor = createInputTensor(inputData, method, batchSize)
-                    val labelTensor = createLabelTensor(labelData, batchSize)
-                    
-                    val inputEValues = arrayOf(EValue.from(inputTensor), EValue.from(labelTensor))
-                    val outputEValues = model.executeForwardBackward("forward", *inputEValues)
-                        ?: throw IllegalStateException("Execution module is not loaded.")
-                    
-                    val loss = outputEValues[0].toTensor().getDataAsFloatArray()[0]
-                    val predictions = outputEValues[1].toTensor().getDataAsLongArray()
-                    
-                    epochLoss += loss
-                    totalLoss += loss
-                    epochSteps++
-                    totalSteps++
-                    
-                    val parameters: Map<String, Tensor> = model.namedParameters("forward")
-                    val sgd = SGD.create(parameters, learningRate.toDouble(), momentum.toDouble(), 0.0, 0.0, true)
-                    val gradients: Map<String, Tensor> = model.namedGradients("forward")
-                    sgd.step(gradients)
-                    
-                    val samplesProcessed = epochSteps * batchSize
-                    if (totalSteps % 500 == 0 || (epoch == epochs && epochSteps == 0)) {
-                        val progressPercent = (samplesProcessed.toFloat() * 100 / dataset.size()).toInt()
-                        artifactManager.logTrainingProgress(epoch, epochs, totalSteps, loss, progressPercent, method)
-                        Log.d(TAG, "Epoch $epoch/$epochs, Progress $progressPercent%, Step $totalSteps, Loss: $loss")
-                    }
+                val inputData = batch.getInput() as FloatArray
+                val labelData = batch.getLabel() as FloatArray
+                
+                val inputTensor = createInputTensor(inputData, method, batchSize)
+                val labelTensor = createLabelTensor(labelData, batchSize)
+                
+                val inputEValues = arrayOf(EValue.from(inputTensor), EValue.from(labelTensor))
+                val outputEValues = model.executeForwardBackward("forward", *inputEValues)
+                    ?: throw IllegalStateException("Execution module is not loaded.")
+                
+                val loss = outputEValues[LOSS_TENSOR_INDEX].toTensor().getDataAsFloatArray()[0]
+                val predictions = outputEValues[PREDICTIONS_TENSOR_INDEX].toTensor().getDataAsLongArray()
+                
+                epochLoss += loss
+                totalLoss += loss
+                epochSteps++
+                totalSteps++
+                
+                val parameters: Map<String, Tensor> = model.namedParameters("forward")
+                val sgd = SGD.create(parameters, learningRate.toDouble(), momentum.toDouble(), SGD_WEIGHT_DECAY, SGD_WEIGHT_DECAY, SGD_NESTEROV)
+                val gradients: Map<String, Tensor> = model.namedGradients("forward")
+                sgd.step(gradients)
+                
+                val samplesProcessed = epochSteps * batchSize
+                if (totalSteps % PROGRESS_LOG_INTERVAL == 0 || (epoch == epochs && epochSteps == 0)) {
+                    val progressPercent = (samplesProcessed.toFloat() * 100 / dataset.size()).toInt()
+                    artifactManager.logTrainingProgress(epoch, epochs, totalSteps, loss, progressPercent, method)
+                    Log.d(TAG, "Epoch $epoch/$epochs, Progress $progressPercent%, Step $totalSteps, Loss: $loss")
                 }
             }
             
@@ -489,8 +466,7 @@ class ETTrainer(
             }
             isInitialized = false
         }
-        currentDataset = null
-        Log.d(TAG, "Dataset reference released")
+        Log.d(TAG, "Training module cleaned up")
     }
 
 }

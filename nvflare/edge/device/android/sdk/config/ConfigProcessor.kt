@@ -4,7 +4,7 @@ import android.util.Log
 import com.nvidia.nvflare.sdk.core.Context
 import com.nvidia.nvflare.sdk.core.Filter
 import com.nvidia.nvflare.sdk.core.EventHandler
-import com.nvidia.nvflare.sdk.AndroidExecutorFactory
+import com.nvidia.nvflare.sdk.ETTrainerExecutorFactory
 
 /**
  * Configuration keys used in training configuration.
@@ -167,13 +167,13 @@ private fun processComponents(
             }
             
             private fun resolveExecutor(args: Map<String, Any>?): Any? {
-                // Extract required arguments for AndroidExecutorFactory
+                // Extract required arguments for ETTrainerExecutorFactory
                 val method = args?.get("method") as? String ?: "cnn"
                 val modelData = args?.get("model_data") as? String ?: ""
                 val meta = args?.get("meta") as? Map<String, Any> ?: emptyMap()
                 
-                // Use AndroidExecutorFactory to create the executor
-                return AndroidExecutorFactory.createExecutor(context, method, modelData, meta)
+                // Use ETTrainerExecutorFactory to create the executor
+                return ETTrainerExecutorFactory.createExecutor(context, method, modelData, meta)
             }
             
             private fun resolveTrainer(args: Map<String, Any>?): Any? {
@@ -193,8 +193,8 @@ private fun processComponents(
                     "loss" to loss
                 )
                 
-                // Use AndroidExecutorFactory with the method from args
-                return AndroidExecutorFactory.createExecutor(context, method, "", meta)
+                // Use ETTrainerExecutorFactory with the method from args
+                return ETTrainerExecutorFactory.createExecutor(context, method, "", meta)
             }
         }
 
