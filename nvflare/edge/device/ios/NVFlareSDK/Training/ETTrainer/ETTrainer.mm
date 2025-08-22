@@ -245,6 +245,10 @@ using namespace ::executorch::extension;
         NSInteger totalEpochs = [_meta[kNVFlareMetaKeyTotalEpochs] integerValue];
         int totalSteps = 0;
         size_t datasetSize = _dataset->size();
+        if (datasetSize < (size_t)batchSize) {
+            NSLog(@"ETTrainer: ERROR - Dataset too small for batch size! Dataset size: %zu, Batch size: %d. Need at least %d samples.", datasetSize, batchSize, batchSize);
+            return @{};
+        }
         size_t numBatchesPerEpoch = datasetSize / batchSize;  // Floor division - drop incomplete batches
         size_t samplesUsedPerEpoch = numBatchesPerEpoch * batchSize;
         size_t droppedSamples = datasetSize - samplesUsedPerEpoch;
