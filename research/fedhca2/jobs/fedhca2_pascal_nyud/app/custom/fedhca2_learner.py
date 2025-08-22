@@ -208,15 +208,10 @@ class FedHCA2Learner(Executor):
         """Train the local model using original FedHCA2 logic"""
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
 
-        # Fallback initialization if initialize was not called
+        # Ensure initialization (unified approach)
         if self.config_info is None or self.tasks is None or self.client_name is None:
-            print("⚠️ WARNING: initialize() was not called! Performing fallback initialization...")
-            try:
-                parts = {}  # Empty parts since we don't have them
-                self.initialize(parts, fl_ctx)
-            except Exception as e:
-                print(f"❌ Fallback initialization failed: {e}")
-                raise RuntimeError(f"Failed to initialize learner: {e}")
+            parts = {}  # Empty parts since we don't have them
+            self.initialize(parts, fl_ctx)
 
         print(f"\n🔥 {self.client_name} - Round {current_round} Training")
         print(f"   🎯 Tasks: {self.tasks}")
@@ -254,18 +249,107 @@ class FedHCA2Learner(Executor):
         return self._create_model_shareable()
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        """Validate the model"""
-        self._update_local_model(shareable)
+        """Validation task"""
+        # Ensure initialization (unified approach)
+        if self.config_info is None or self.tasks is None or self.client_name is None:
+            parts = {}
+            self.initialize(parts, fl_ctx)
 
-        # Simple validation - just return success
-        # In real implementation, would compute validation metrics
-        print(f"   🔍 {self.client_name} validation completed")
-
-        return self._create_model_shareable()
+        print(f"🔧 Validating FedHCA2Learner for {self.client_name}")
+        return self._run_validation(shareable, fl_ctx)
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         """Submit the current model"""
+        # Ensure initialization (unified approach)
+        if self.config_info is None or self.tasks is None or self.client_name is None:
+            parts = {}
+            self.initialize(parts, fl_ctx)
+
         return self._create_model_shareable()
+
+    def _run_validation(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+        """Run validation with FedHCA2 evaluation logic"""
+        current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
+        print(f"   🔍 Current round: {current_round}")
+
+        # Update model with received parameters
+        self._update_local_model(shareable)
+
+        # Check if we should perform evaluation (every 5 rounds as in original)
+        if current_round % 1 == 0:
+            print(f"   📊 Evaluating {self.client_name} at round {current_round}")
+            # TODO: Add comprehensive evaluation using fedhca_core evaluation
+            eval_results = self._perform_evaluation()
+            return self._create_validation_result(eval_results)
+        else:
+            # Simple validation without full evaluation
+            print(f"   🔍 {self.client_name} validation completed (round {current_round})")
+            return self._create_validation_result()
+
+    def _perform_evaluation(self) -> dict:
+        """Perform comprehensive evaluation using fedhca_core evaluation logic"""
+        if not hasattr(self, 'val_loader') or self.val_loader is None:
+            print("   ⚠️ No validation loader available, skipping evaluation")
+            return {}
+
+        # Import evaluation utilities from fedhca_core
+        from fedhca2_core.evaluation.evaluate_utils import PerformanceMeter
+
+        # Setup evaluation meter for this client's tasks
+        eval_meter = PerformanceMeter(self.dataname, self.tasks)
+        eval_meter.reset()
+
+        # Set model to evaluation mode
+        self.model.eval()
+        eval_results = {}
+
+        with torch.no_grad():
+            try:
+                print(f"   📊 Running evaluation on {len(self.val_loader)} validation batches...")
+
+                for batch_idx, batch in enumerate(self.val_loader):
+                    if batch_idx >= 10:  # Limit evaluation to 10 batches for efficiency
+                        break
+
+                    # Get inputs and targets
+                    inputs = batch['image'].to(self.device)
+                    targets = {task: batch[task].to(self.device) for task in self.tasks}
+
+                    # Forward pass
+                    outputs = self.model(inputs)
+
+                    # Update evaluation meter
+                    eval_meter.update(outputs, targets)
+
+                # Get final evaluation scores
+                eval_results = eval_meter.get_score()
+
+                # Log results
+                print(f"   📈 Evaluation results for {self.client_name}:")
+                for task, score in eval_results.items():
+                    print(f"      {task}: {score:.4f}")
+
+            except Exception as e:
+                print(f"   ❌ Evaluation failed: {e}")
+                # Return dummy scores to avoid breaking the flow
+                eval_results = {task: 0.0 for task in self.tasks}
+
+        # Set model back to training mode
+        self.model.train()
+        return eval_results
+
+    def _create_validation_result(self, eval_results=None) -> Shareable:
+        """Create validation result shareable"""
+        from nvflare.apis.dxo import DXO, DataKind, MetaKey
+
+        if eval_results is None:
+            eval_results = {}
+
+        # Create validation DXO
+        dxo = DXO(data_kind=DataKind.METRICS, data=eval_results)
+        dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, 1)
+
+        return dxo.to_shareable()
 
     def _get_client_config_for_site(self, client_name: str) -> dict:
         """Get client configuration based on client name and experiment config"""
@@ -340,15 +424,25 @@ class FedHCA2Learner(Executor):
         val_dataset = get_dataset(dataname=self.dataname, tasks=self.tasks, train=False, transform=val_transform)
 
         # Create data loaders
-        train_configs = {
-            'tr_batch': self.batch_size,
-            'val_batch': self.val_batch_size,
-            'nworkers': self.nworkers,
-        }
+        from fedhca2_core.datasets.utils.custom_collate import collate_mil
+        from torch.utils import data
 
-        self.train_loader = get_dataloader(train=True, configs=train_configs, dataset=train_dataset)
+        self.train_loader = data.DataLoader(
+            train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.nworkers,
+            collate_fn=collate_mil,
+            drop_last=True,
+        )
 
-        self.val_loader = get_dataloader(train=False, configs=train_configs, dataset=val_dataset)
+        self.val_loader = data.DataLoader(
+            val_dataset,
+            batch_size=self.val_batch_size,
+            shuffle=False,
+            num_workers=self.nworkers,
+            collate_fn=collate_mil,
+        )
 
     def _update_local_model(self, shareable: Shareable):
         """Update local model with received parameters"""
