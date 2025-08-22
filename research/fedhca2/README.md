@@ -83,8 +83,13 @@ Run the default experiment with 6 clients (5 single-task + 1 multi-task):
 cd research/fedhca2
 conda activate fedhca2_nvflare
 
-# Run FedHCA² simulation
+# Run FedHCA² simulation (output to terminal)
 nvflare simulator jobs/fedhca2 -w /tmp/fedhca2_workspace -n 6 -t 6 --gpu 0
+```
+
+### Save Training And Evaluation Results to File
+```
+nvflare simulator jobs/fedhca2 -w /tmp/fedhca2_workspace -n 6 -t 6 --gpu 0 2>&1 | tee fedhca2_results.log
 ```
 
 
