@@ -65,7 +65,15 @@ public class NVFlareRunner: ObservableObject {
         
         // Convert NVFlareDataset to C++ using bridge
         guard let cppDatasetPtr = SwiftDatasetBridge.createDatasetAdapter(dataset) else {
-            print("NVFlareRunner: Failed to create C++ dataset adapter!")
+            var errorMessage = "NVFlareRunner: Failed to create C++ dataset adapter!"
+            // Attempt to get more info from SwiftDatasetBridge if available
+            if let bridgeType = SwiftDatasetBridge.self as? AnyObject,
+               let lastError = (bridgeType.value(forKey: "lastErrorMessage") as? String), !lastError.isEmpty {
+                errorMessage += " Reason: \(lastError)"
+            } else {
+                errorMessage += " Dataset type: \(type(of: dataset)), size: \(dataset.size())"
+            }
+            print(errorMessage)
             throw DatasetError.dataLoadFailed
         }
         
