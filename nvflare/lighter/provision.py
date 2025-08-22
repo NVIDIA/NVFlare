@@ -21,7 +21,6 @@ import shutil
 import sys
 from typing import Optional
 
-from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.lighter.constants import PropKey
 from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
@@ -52,18 +51,17 @@ role: $ROLE
 
 
 def define_provision_parser(parser):
-    parser.add_argument("-g", "--generate", action="store_true", default=False, help="generate a sample project.yml")
-    parser.add_argument("-e", "--edge", action="store_true", default=False, help="generate a sample edge project.yml")
-    parser.add_argument("-p", "--project_file", type=str, default="project.yml", help="file to describe FL project")
+    # Create mutually exclusive group for the main action
+    action_group = parser.add_mutually_exclusive_group(required=True)
+    action_group.add_argument("-g", "--generate", action="store_true", help="generate a sample project.yml")
+    action_group.add_argument("-e", "--edge", action="store_true", help="generate a sample edge project.yml")
+    action_group.add_argument("-p", "--project_file", type=str, help="file to describe FL project")
+
+    # Optional arguments
     parser.add_argument("-w", "--workspace", type=str, default="workspace", help="directory used by provision")
     parser.add_argument("-c", "--custom_folder", type=str, default=".", help="additional folder to load python codes")
     parser.add_argument("--add_user", type=str, default="", help="yaml file for added user")
     parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
-
-
-def has_no_arguments() -> bool:
-    last_item = sys.argv[-1]
-    return last_item.endswith("provision") or last_item.endswith("provision.py")
 
 
 def copy_project(project: str, dest: str):
@@ -81,9 +79,6 @@ def handle_provision(args):
     current_path = os.getcwd()
     custom_folder_path = os.path.join(current_path, args.custom_folder)
     sys.path.append(custom_folder_path)
-
-    if has_no_arguments():
-        raise CLIUnknownCmdException("missing options")
 
     current_project_yml = os.path.join(current_path, "project.yml")
     if args.generate:
