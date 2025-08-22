@@ -11,7 +11,7 @@ class MyPath(object):
     @staticmethod
     def db_root_dir(database=''):
         # Use absolute path to avoid issues with NVFLARE workspace copying
-        db_root = '/home/suizhi/NVFlare/research/fedhca2_nvflare/data'
+        db_root = '/home/suizhi/NVFlare/research/fedhca2/data'
 
         db_names = {'PASCALContext', 'NYUDv2'}
 
