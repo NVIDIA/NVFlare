@@ -12,7 +12,7 @@
 		49DF57EA2E32F83C00C655DE /* ExampleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF57E02E32F83C00C655DE /* ExampleApp.swift */; };
 		49DF57EB2E32F83C00C655DE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF57DF2E32F83C00C655DE /* ContentView.swift */; };
 		49DF57EC2E32F83C00C655DE /* TrainerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF57E12E32F83C00C655DE /* TrainerController.swift */; };
-		49DF580A2E32F84300C655DE /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 49DF58082E32F84300C655DE /* README.md */; };
+
 		49DF580B2E32F84300C655DE /* NVFlareRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF57F02E32F84300C655DE /* NVFlareRunner.swift */; };
 		49DF580C2E32F84300C655DE /* ETTrainer.mm in Sources */ = {isa = PBXBuildFile; fileRef = 49DF58012E32F84300C655DE /* ETTrainer.mm */; };
 		49DF580D2E32F84300C655DE /* ETTrainerExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF58062E32F84300C655DE /* ETTrainerExecutor.swift */; };
@@ -53,7 +53,7 @@
 		49DF58002E32F84300C655DE /* ETTrainer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ETTrainer.h; sourceTree = "<group>"; };
 		49DF58012E32F84300C655DE /* ETTrainer.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ETTrainer.mm; sourceTree = "<group>"; };
 		49DF58062E32F84300C655DE /* ETTrainerExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ETTrainerExecutor.swift; sourceTree = "<group>"; };
-		49DF58082E32F84300C655DE /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+
 		49DF58642E3377C600C655DE /* ETDataset.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ETDataset.h; sourceTree = "<group>"; };
 		49DF587D2E376F3B00C655DE /* SwiftDatasetAdapter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SwiftDatasetAdapter.h; sourceTree = "<group>"; };
 		49DF587E2E376F3B00C655DE /* SwiftDatasetAdapter.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = SwiftDatasetAdapter.mm; sourceTree = "<group>"; };
@@ -186,7 +186,6 @@
 				49DF57F22E32F84300C655DE /* Core */,
 				49DF57F92E32F84300C655DE /* Models */,
 				49DF58072E32F84300C655DE /* Training */,
-				49DF58082E32F84300C655DE /* README.md */,
 			);
 			path = NVFlareSDK;
 			sourceTree = "<group>";
@@ -265,7 +264,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				49DF580A2E32F84300C655DE /* README.md in Resources */,
 				49DF57E82E32F83C00C655DE /* Assets.xcassets in Resources */,
 				49DF57E92E32F83C00C655DE /* Preview Assets.xcassets in Resources */,
 			);
