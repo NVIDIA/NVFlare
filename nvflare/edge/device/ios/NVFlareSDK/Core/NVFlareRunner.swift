@@ -18,7 +18,7 @@ public class NVFlareRunner: ObservableObject {
     public var jobName: String
     private let dataSource: NVFlareDataSource        // Standard data source protocol
     private let dataset: NVFlareDataset              // Current dataset instance
-    private let cppDataset: UnsafeMutableRawPointer  // Internal C++ ETDataset*
+    private let cppDataset: UnsafeMutableRawPointer?  // Internal C++ ETDataset* (optional for safety)
     public let deviceInfo: [String: String]
     public let userInfo: [String: String]
     public let jobTimeout: TimeInterval
@@ -98,8 +98,12 @@ public class NVFlareRunner: ObservableObject {
     }
     
     deinit {
-        SwiftDatasetBridge.destroyDatasetAdapter(cppDataset)
-        print("NVFlareRunner: Cleaned up C++ dataset adapter")
+        if let cppDataset = cppDataset {
+            SwiftDatasetBridge.destroyDatasetAdapter(cppDataset)
+            print("NVFlareRunner: Cleaned up C++ dataset adapter")
+        } else {
+            print("NVFlareRunner: No C++ dataset adapter to clean up (initialization may have failed)")
+        }
     }
     
     // MARK: - Main Run Loop
@@ -253,6 +257,12 @@ public class NVFlareRunner: ObservableObject {
         
         print("NVFlareRunner: Storing dataset in context (NVFlareDataset converted to C++)")
         print("NVFlareRunner: NVFlareDataset size: \(dataset.size())")
+        
+        guard let cppDataset = cppDataset else {
+            print("NVFlareRunner: ERROR - No C++ dataset available (initialization failed)")
+            return true  // Cannot continue without dataset
+        }
+        
         ctx[NVFlareContextKey.dataset] = cppDataset
         
         // Try to get job
@@ -316,7 +326,7 @@ public class NVFlareRunner: ObservableObject {
                     }
                 }
                 
-                // Ensure dataset is available in task context (redundant but explicit)
+                // Ensure dataset is available in task context
                 taskCtx[NVFlareContextKey.dataset] = cppDataset
                 
                 self.cookie = task.cookie

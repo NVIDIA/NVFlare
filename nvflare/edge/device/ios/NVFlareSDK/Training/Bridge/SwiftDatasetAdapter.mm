@@ -23,13 +23,15 @@ SwiftDatasetAdapter::SwiftDatasetAdapter(void* swiftObject)
 SwiftDatasetAdapter::~SwiftDatasetAdapter() {
     NSLog(@"SwiftDatasetAdapter destructor called for %p", this);
     
-    if (isDestroyed) {
-        NSLog(@"SwiftDatasetAdapter: Already destroyed! Double deletion detected!");
+    // Thread-safe check: atomically try to set isDestroyed from false to true
+    bool expected = false;
+    if (!isDestroyed.compare_exchange_strong(expected, true)) {
+        // Another thread already destroyed this object
+        NSLog(@"SwiftDatasetAdapter: Already destroyed by another thread! (expected=%s)", expected ? "true" : "false");
         return;
     }
     
-    NSLog(@"SwiftDatasetAdapter: Setting isDestroyed flag");
-    isDestroyed = true;
+    NSLog(@"SwiftDatasetAdapter: Successfully acquired destruction lock, proceeding with cleanup");
     
     if (swiftObjectPtr) {
         NSLog(@"SwiftDatasetAdapter: About to release retained Swift object at %p", swiftObjectPtr);
@@ -44,7 +46,6 @@ SwiftDatasetAdapter::~SwiftDatasetAdapter() {
             
         } @catch (NSException *exception) {
             NSLog(@"SwiftDatasetAdapter: Exception during CFBridgingRelease: %@", exception);
-            swiftObjectPtr = nullptr;
         }
         
         NSLog(@"SwiftDatasetAdapter: Swift object pointer cleared");
@@ -58,7 +59,7 @@ SwiftDatasetAdapter::~SwiftDatasetAdapter() {
 std::optional<SwiftDatasetAdapter::BatchType> SwiftDatasetAdapter::getBatch(size_t batchSize) {
     NSLog(@"SwiftDatasetAdapter::getBatch() called with size %zu", batchSize);
     
-    if (isDestroyed || !swiftObjectPtr) {
+    if (isDestroyed.load() || !swiftObjectPtr) {
         NSLog(@"SwiftDatasetAdapter::getBatch() object is destroyed or null");
         return std::nullopt;
     }
@@ -156,7 +157,7 @@ std::optional<SwiftDatasetAdapter::BatchType> SwiftDatasetAdapter::getBatch(size
 void SwiftDatasetAdapter::reset() {
     NSLog(@"SwiftDatasetAdapter::reset() called");
     
-    if (isDestroyed || !swiftObjectPtr) {
+    if (isDestroyed.load() || !swiftObjectPtr) {
         NSLog(@"SwiftDatasetAdapter::reset() object is destroyed or null");
         return;
     }
@@ -191,7 +192,7 @@ void SwiftDatasetAdapter::setShuffle(bool shuffle) {
 size_t SwiftDatasetAdapter::size() const {
     NSLog(@"SwiftDatasetAdapter::size() called on %p", this);
     
-    if (isDestroyed) {
+    if (isDestroyed.load()) {
         NSLog(@"SwiftDatasetAdapter::size() called on destroyed object!");
         return 0;
     }
@@ -231,7 +232,7 @@ size_t SwiftDatasetAdapter::size() const {
 size_t SwiftDatasetAdapter::inputDim() const {
     NSLog(@"SwiftDatasetAdapter::inputDim() called");
     
-    if (isDestroyed || !swiftObjectPtr) {
+    if (isDestroyed.load() || !swiftObjectPtr) {
         NSLog(@"SwiftDatasetAdapter::inputDim() object is destroyed or null");
         return 0;
     }
@@ -266,7 +267,7 @@ size_t SwiftDatasetAdapter::inputDim() const {
 size_t SwiftDatasetAdapter::labelDim() const {
     NSLog(@"SwiftDatasetAdapter::labelDim() called");
     
-    if (isDestroyed || !swiftObjectPtr) {
+    if (isDestroyed.load() || !swiftObjectPtr) {
         NSLog(@"SwiftDatasetAdapter::labelDim() object is destroyed or null");
         return 1; // Default to single label
     }

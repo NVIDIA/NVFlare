@@ -72,6 +72,7 @@
     
     @try {
         SwiftDatasetAdapter* adapter = static_cast<SwiftDatasetAdapter*>(dataset);
+        
         NSLog(@"SwiftDatasetBridge: About to delete adapter at %p", adapter);
         
         delete adapter;

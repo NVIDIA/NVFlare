@@ -10,6 +10,7 @@
 #include "ETDataset.h"
 #include <optional>
 #include <vector>
+#include <atomic>
 
 /// C++ adapter that wraps Swift dataset callbacks
 /// This allows Swift datasets to be used with the C++ ETTrainer
@@ -20,9 +21,8 @@ private:
     // DO NOT pass unretained (__bridge) Swift objects here.
     void* swiftObjectPtr;
 
-    // Flag to prevent double deletion
-    // Note: Not thread-safe; access must be synchronized if used concurrently.
-    mutable bool isDestroyed;
+    // Thread-safe flag to prevent double deletion
+    mutable std::atomic<bool> isDestroyed;
 
 public:
     /// Constructor with Swift object
