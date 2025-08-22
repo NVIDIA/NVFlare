@@ -1,6 +1,5 @@
 import torch
-
-from losses import BalancedBCELoss
+from fedhca2_core.losses import BalancedBCELoss
 
 
 class EdgeMeter(object):
@@ -21,11 +20,11 @@ class EdgeMeter(object):
     @torch.no_grad()
     def update(self, pred, gt):
         pred, gt = pred.squeeze(), gt.squeeze()
-        valid_mask = (gt != self.ignore_index)
+        valid_mask = gt != self.ignore_index
         pred = pred[valid_mask]
         gt = gt[valid_mask]
 
-        pred = pred.float().squeeze() / 255.
+        pred = pred.float().squeeze() / 255.0
         loss = self.loss_function(pred, gt).item()
         numel = gt.numel()
         self.n += numel

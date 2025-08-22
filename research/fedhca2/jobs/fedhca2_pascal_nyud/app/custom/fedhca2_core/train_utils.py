@@ -31,10 +31,10 @@ def local_train(
         # Set epoch for sampler if it exists and has set_epoch method
         if hasattr(train_dl, 'sampler') and hasattr(train_dl.sampler, 'set_epoch'):
             train_dl.sampler.set_epoch(cr * local_epochs + epoch)
-        
+
         for batch in tqdm(
             train_dl,
-            desc="CR %d Local Epoch %d Net %d Task: %s" % (cr, epoch, idx, ",".join(tasks)),
+            desc="CR %d Local Epoch %d Net %d Task: %s" % (cr, epoch + 1, idx + 1, ",".join(tasks)),
             disable=(local_rank != 0),
         ):
             optimizer.zero_grad()

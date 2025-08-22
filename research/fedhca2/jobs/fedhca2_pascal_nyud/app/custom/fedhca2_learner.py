@@ -206,7 +206,10 @@ class FedHCA2Learner(Executor):
 
     def train(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         """Train the local model using original FedHCA2 logic"""
-        current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
+        # Get round information from shareable header
+        current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
+        if current_round is None:
+            current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND, 0)
 
         # Ensure initialization (unified approach)
         if self.config_info is None or self.tasks is None or self.client_name is None:
@@ -245,6 +248,19 @@ class FedHCA2Learner(Executor):
         for task, loss_meter in self.train_loss.items():
             print(f"      {task}: {loss_meter.avg:.4f}")
 
+        # Perform evaluation every 5 rounds (as in original FedHCA2)
+        if current_round is not None and current_round % 5 == 0:
+            print(f"   📊 Evaluating {self.client_name} at round {current_round}")
+            eval_results = self._perform_evaluation()
+            if eval_results:
+                print(f"   📈 Evaluation results:")
+                for task, task_metrics in eval_results.items():
+                    if isinstance(task_metrics, dict):
+                        for metric_name, metric_value in task_metrics.items():
+                            print(f"      {task}_{metric_name}: {metric_value:.4f}")
+                    else:
+                        print(f"      {task}: {task_metrics:.4f}")
+
         # Return model parameters
         return self._create_model_shareable()
 
@@ -269,16 +285,18 @@ class FedHCA2Learner(Executor):
 
     def _run_validation(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         """Run validation with FedHCA2 evaluation logic"""
-        current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
+        # Get round information from shareable header
+        current_round = shareable.get_header(AppConstants.CURRENT_ROUND) + 1
+        if current_round is None:
+            current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND, 0) + 1
         print(f"   🔍 Current round: {current_round}")
 
         # Update model with received parameters
         self._update_local_model(shareable)
 
         # Check if we should perform evaluation (every 5 rounds as in original)
-        if current_round % 1 == 0:
+        if current_round is not None and current_round % 5 == 0:
             print(f"   📊 Evaluating {self.client_name} at round {current_round}")
-            # TODO: Add comprehensive evaluation using fedhca_core evaluation
             eval_results = self._perform_evaluation()
             return self._create_validation_result(eval_results)
         else:
@@ -297,7 +315,11 @@ class FedHCA2Learner(Executor):
 
         # Setup evaluation meter for this client's tasks
         eval_meter = PerformanceMeter(self.dataname, self.tasks)
-        eval_meter.reset()
+        try:
+            eval_meter.reset()
+        except AttributeError:
+            # Some meters may not have reset method, just initialize fresh
+            eval_meter = PerformanceMeter(self.dataname, self.tasks)
 
         # Set model to evaluation mode
         self.model.eval()
@@ -311,23 +333,40 @@ class FedHCA2Learner(Executor):
                     if batch_idx >= 10:  # Limit evaluation to 10 batches for efficiency
                         break
 
-                    # Get inputs and targets
-                    inputs = batch['image'].to(self.device)
-                    targets = {task: batch[task].to(self.device) for task in self.tasks}
+                    # Move batch to device (following original FedHCA2 pattern)
+                    from fedhca2_core.utils import get_output, to_cuda
+
+                    batch = to_cuda(batch)
+                    inputs = batch['image']
 
                     # Forward pass
                     outputs = self.model(inputs)
 
-                    # Update evaluation meter
-                    eval_meter.update(outputs, targets)
+                    # Transform outputs using get_output (as in original FedHCA2)
+                    processed_outputs = {t: get_output(outputs[t], t) for t in self.tasks}
+
+                    # Update evaluation meter with error handling (following original pattern)
+                    try:
+                        eval_meter.update(processed_outputs, batch)
+                    except (RuntimeError, ValueError) as e:
+                        print(f"      ⚠️ Evaluation update failed for batch {batch_idx}: {str(e)[:100]}...")
+                        continue  # Skip this batch but continue evaluation
 
                 # Get final evaluation scores
-                eval_results = eval_meter.get_score()
+                try:
+                    eval_results = eval_meter.get_score()
 
-                # Log results
-                print(f"   📈 Evaluation results for {self.client_name}:")
-                for task, score in eval_results.items():
-                    print(f"      {task}: {score:.4f}")
+                    # Log results (eval_results[task] is a dict like {'mIoU': 85.2})
+                    print(f"   📈 Evaluation results for {self.client_name}:")
+                    for task, task_metrics in eval_results.items():
+                        if isinstance(task_metrics, dict):
+                            for metric_name, metric_value in task_metrics.items():
+                                print(f"      {task}_{metric_name}: {metric_value:.4f}")
+                        else:
+                            print(f"      {task}: {task_metrics:.4f}")
+                except Exception as e:
+                    print(f"   ⚠️ Could not get evaluation scores: {e}")
+                    eval_results = {task: 0.0 for task in self.tasks}
 
             except Exception as e:
                 print(f"   ❌ Evaluation failed: {e}")
