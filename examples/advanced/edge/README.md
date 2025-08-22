@@ -24,7 +24,9 @@ To run the ExecuTorch simulated devices, you need to install the executorch pybi
 
 ### Provision the NVFlare System
 
-We are using `nvflare provision` to provision a hierarchical NVFlare system for edge:
+We are using `nvflare provision` to provision a hierarchical NVFlare system for edge, in this example, we have a pre-defined project file `project.yml` for provisioning.
+
+***Note: if starting from scratch, please first run `nvflare provision -e` to create a project yaml, update the settings, then run the following.***
 
 ```commandline
 nvflare provision -p project.yml

@@ -40,7 +40,6 @@ class GlobalEvaluator(Widget):
         eval_frequency: int = 1,
         torchvision_dataset: Optional[Dict] = None,
         custom_dataset: Optional[Dict] = None,
-        max_workers: int = 1,
     ):
         """Initialize the evaluator with either a dataset path or custom dataset.
 
@@ -49,7 +48,6 @@ class GlobalEvaluator(Widget):
             eval_frequency: Frequency of evaluation (evaluate every N rounds)
             torchvision_dataset: Torchvision dataset (for standard datasets like CIFAR10)
             custom_dataset: Dictionary containing 'data' and 'labels' tensors
-            max_workers: Maximum number of concurrent evaluation threads (default 1: sequential)
         """
         super().__init__()
         if torchvision_dataset is None and custom_dataset is None:
@@ -62,9 +60,8 @@ class GlobalEvaluator(Widget):
         elif not isinstance(model_path, str):
             raise ValueError(f"model_path must be either a Pytorch model or class path, but got {type(model_path)}")
 
-        # Validate eval_frequency and max_workers, both must be positive integers
+        # Validate eval_frequency - positive integer
         check_positive_int("eval_frequency", eval_frequency)
-        check_positive_int("max_workers", max_workers)
 
         self.model_path = model_path
         self.eval_frequency = eval_frequency
@@ -75,8 +72,9 @@ class GlobalEvaluator(Widget):
         self.data_loader = None
         self.tb_writer = None
 
-        # Initialize thread pool
-        self._thread_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="GlobalEvaluator")
+        # Initialize thread pool, single worker to ensure evaluations are sequential
+        # to avoid model version conflicts / extra GPU memory usage to sync multiple models
+        self._thread_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="GlobalEvaluator")
 
         # Register event handlers
         self.register_event_handler(EventType.START_RUN, self._initialize)
