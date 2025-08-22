@@ -83,7 +83,7 @@ using namespace ::executorch::extension;
         NSLog(@"ETTrainer: cppDataset pointer = %p", cppDataset);
         
         // Safely cast to our expected C++ dataset type with runtime type checking
-        ETDataset* dataset = dynamic_cast<ETDataset*>(reinterpret_cast<ETDataset*>(cppDataset));
+        ETDataset* dataset = dynamic_cast<ETDataset*>(cppDataset);
         if (!dataset) {
             NSLog(@"ETTrainer: cppDataset is not an ETDataset instance (dynamic_cast failed)");
             return nil;
