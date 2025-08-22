@@ -31,7 +31,8 @@ import kotlin.jvm.Throws
 class ETTrainer(
     private val context: android.content.Context,
     private val modelData: String, 
-    private val meta: Map<String, Any>
+    private val meta: Map<String, Any>,
+    private var dataset: com.nvidia.nvflare.sdk.core.Dataset? = null
 ) : AutoCloseable {
     private val TAG = "ETTrainer"
     private var tModule: TrainingModule? = null
@@ -56,6 +57,15 @@ class ETTrainer(
     init {
         setupArtifactDirectories()
     }
+    
+    /**
+     * Set the dataset for training.
+     * This method allows the executor to set the dataset from context.
+     */
+    fun setDataset(dataset: com.nvidia.nvflare.sdk.core.Dataset) {
+        this.dataset = dataset
+        Log.d(TAG, "Dataset set: ${dataset.javaClass.simpleName}, size: ${dataset.size()}")
+    }
 
     /**
      * Setup artifact directories.
@@ -65,22 +75,7 @@ class ETTrainer(
         Log.d(TAG, "Artifact directories setup complete")
     }
 
-    /**
-     * Create dataset internally based on training method (iOS-style).
-     */
-    private fun createDataset(method: String, config: TrainingConfig): com.nvidia.nvflare.sdk.core.Dataset {
-        return when (method) {
-            "xor" -> {
-                Log.d(TAG, "Creating XOR dataset for training")
-                com.nvidia.nvflare.app.data.XORDataset("train")
-            }
-            "cnn" -> {
-                Log.d(TAG, "Creating CIFAR-10 dataset for training")
-                com.nvidia.nvflare.app.data.CIFAR10Dataset(context)
-            }
-            else -> throw IllegalArgumentException("Unsupported training method: $method")
-        }
-    }
+
 
     /**
      * Extract asset file to internal storage for native access.
@@ -207,12 +202,13 @@ class ETTrainer(
             
             Log.d(TAG, "Training parameters - method: $method, epochs: $epochs, batchSize: $batchSize, lr: $learningRate")
             
-            // Create dataset based on method
-            val dataset = createDataset(method, config)
+            // Use dataset provided by user through constructor
+            val trainingDataset = dataset ?: throw IllegalStateException("No dataset provided to ETTrainer")
+            Log.d(TAG, "Using user-provided dataset: ${trainingDataset.javaClass.simpleName}")
             
             val trainingResult = performTraining(
                 tModule!!,
-                dataset,
+                trainingDataset,
                 method,
                 epochs,
                 batchSize,
@@ -260,6 +256,24 @@ class ETTrainer(
         
         Log.d(TAG, "Starting training loop for $epochs epochs")
         
+        // Validate dataset size against batch size (iOS pattern)
+        val datasetSize = dataset.size()
+        if (datasetSize < batchSize) {
+            throw IllegalStateException("Dataset too small for batch size! Dataset size: $datasetSize, Batch size: $batchSize. Need at least $batchSize samples.")
+        }
+        
+        // Calculate batches per epoch (floor division - drop incomplete batches like iOS)
+        val numBatchesPerEpoch = datasetSize / batchSize
+        val samplesUsedPerEpoch = numBatchesPerEpoch * batchSize
+        val droppedSamples = datasetSize - samplesUsedPerEpoch
+        
+        Log.d(TAG, "Dataset size: $datasetSize, Batch size: $batchSize")
+        Log.d(TAG, "Batches per epoch: $numBatchesPerEpoch, Samples used: $samplesUsedPerEpoch, Dropped: $droppedSamples")
+        
+        if (numBatchesPerEpoch == 0) {
+            throw IllegalStateException("Dataset too small for batch size! Dataset size: $datasetSize, Batch size: $batchSize. Need at least $batchSize samples.")
+        }
+        
         val initialParameters: Map<String, Tensor> = model.namedParameters("forward")
         val oldParams = toTensorDictionary(initialParameters)
         Log.d(TAG, "Captured initial parameters with ${oldParams.size} tensors")
@@ -276,14 +290,24 @@ class ETTrainer(
             
             var epochLoss = 0.0f
             var epochSteps = 0
+            var epochSamplesProcessed = 0
             
-            // Unified training loop that works with any dataset
-            while (true) {
+            // Process only complete batches (iOS pattern)
+            for (batchIdx in 0 until numBatchesPerEpoch) {
                 val batch = dataset.getNextBatch(batchSize)
                 if (batch == null) break
                 
                 val inputData = batch.getInput() as FloatArray
                 val labelData = batch.getLabel() as FloatArray
+                
+                // Ensure fixed batch size - drop incomplete batches (iOS pattern)
+                val actualBatchSize = labelData.size
+                if (actualBatchSize != batchSize) {
+                    Log.w(TAG, "Dropping incomplete batch: expected $batchSize samples, got $actualBatchSize samples")
+                    break  // Skip remaining incomplete batches in this epoch
+                }
+                
+                Log.d(TAG, "Processing batch - requested batchSize: $batchSize, actual inputData.size: ${inputData.size}, actual labelData.size: ${labelData.size}")
                 
                 val inputTensor = createInputTensor(inputData, method, batchSize)
                 val labelTensor = createLabelTensor(labelData, batchSize)
@@ -305,9 +329,10 @@ class ETTrainer(
                 val gradients: Map<String, Tensor> = model.namedGradients("forward")
                 sgd.step(gradients)
                 
-                val samplesProcessed = epochSteps * batchSize
-                if (totalSteps % PROGRESS_LOG_INTERVAL == 0 || (epoch == epochs && epochSteps == 0)) {
-                    val progressPercent = (samplesProcessed.toFloat() * 100 / dataset.size()).toInt()
+                // Track samples processed (all batches are now fixed size)
+                epochSamplesProcessed += batchSize
+                if (totalSteps % PROGRESS_LOG_INTERVAL == 0 || (epoch == epochs && batchIdx == numBatchesPerEpoch - 1)) {
+                    val progressPercent = (epochSamplesProcessed.toFloat() * 100 / samplesUsedPerEpoch).toInt()
                     artifactManager.logTrainingProgress(epoch, epochs, totalSteps, loss, progressPercent, method)
                     Log.d(TAG, "Epoch $epoch/$epochs, Progress $progressPercent%, Step $totalSteps, Loss: $loss")
                 }
@@ -343,6 +368,8 @@ class ETTrainer(
      * Create input tensor based on method and batch size.
      */
     private fun createInputTensor(inputData: FloatArray, method: String, batchSize: Int): Tensor {
+        Log.d(TAG, "Creating input tensor - method: $method, inputData.size: ${inputData.size}, requested batchSize: $batchSize")
+        
         return when (method) {
             "cnn" -> {
                 // CIFAR-10: [batch, channels, height, width] = [batch, 3, 32, 32]
@@ -371,6 +398,7 @@ class ETTrainer(
      * Create label tensor.
      */
     private fun createLabelTensor(labelData: FloatArray, batchSize: Int): Tensor {
+        Log.d(TAG, "Creating label tensor - labelData.size: ${labelData.size}, requested batchSize: $batchSize")
         val batchLabelBuffer = LongArray(batchSize) { labelData[it].toLong() }
         return Tensor.fromBlob(batchLabelBuffer, longArrayOf(batchSize.toLong()))
     }

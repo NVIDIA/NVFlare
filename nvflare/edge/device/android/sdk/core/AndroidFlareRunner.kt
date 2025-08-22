@@ -121,6 +121,16 @@ class AndroidFlareRunner(
         ctx[ContextKey.RUNNER] = this
         ctx[ContextKey.DATA_SOURCE] = dataSource
 
+        // Get dataset from data source and store in context (iOS pattern)
+        val dataset = try {
+            dataSource.getDataset(jobName, ctx)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get dataset for job: $jobName", e)
+            return true  // Cannot continue without dataset
+        }
+        ctx[ContextKey.DATASET] = dataset
+        Log.d(TAG, "Got dataset from data source for job: $jobName, size: ${dataset.size()}")
+
         // Try to get a job
         val job = getJob(ctx, abortSignal)
         if (job == null) {

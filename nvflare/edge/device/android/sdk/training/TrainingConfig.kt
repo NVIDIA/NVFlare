@@ -141,14 +141,29 @@ data class TrainingConfig(
     val dataSetType: String = DatasetType.CIFAR10,
     val kind: String? = null
 ) {
+    init {
+        // Validate that batch size is appropriate for the method/dataset
+        if (method == "xor" && batchSize > 4) {
+            throw IllegalArgumentException("XOR method requires batch size <= 4 (dataset has only 4 samples)")
+        }
+    }
     companion object {
         fun fromMap(data: Map<String, Any>): TrainingConfig {
+            val method = data["method"] as? String ?: "xor"
+            val dataSetType = data[MetaKey.DATASET_TYPE] as? String ?: DatasetType.XOR
+            
+            // Use batch size 1 for XOR (small dataset), 4 for CNN (larger dataset)
+            val defaultBatchSize = when {
+                method == "xor" || dataSetType == DatasetType.XOR -> 1
+                else -> 4
+            }
+            
             return TrainingConfig(
                 totalEpochs = (data[MetaKey.TOTAL_EPOCHS] as? Number)?.toInt() ?: 1,
-                batchSize = (data[MetaKey.BATCH_SIZE] as? Number)?.toInt() ?: 4,
+                batchSize = (data[MetaKey.BATCH_SIZE] as? Number)?.toInt() ?: defaultBatchSize,
                 learningRate = (data[MetaKey.LEARNING_RATE] as? Number)?.toFloat() ?: 0.1f,
-                method = data["method"] as? String ?: "xor",
-                dataSetType = data[MetaKey.DATASET_TYPE] as? String ?: DatasetType.XOR,
+                method = method,
+                dataSetType = dataSetType,
                 kind = data["kind"] as? String
             )
         }

@@ -47,6 +47,15 @@ class ETTrainerExecutor(
                 throw RuntimeException("No model data found in task data")
             }
             
+            // Get dataset from context (iOS pattern)
+            val dataset = ctx[ContextKey.DATASET] as? com.nvidia.nvflare.sdk.core.Dataset
+                ?: throw RuntimeException("No dataset found in context")
+            
+            Log.d(TAG, "Retrieved dataset from context: ${dataset.javaClass.simpleName}, size: ${dataset.size()}")
+            
+            // Set dataset on trainer
+            trainer.setDataset(dataset)
+            
             // Execute training using ETTrainer directly
             val result = runBlocking {
                 trainer.train(trainingConfig, modelData)
@@ -84,8 +93,8 @@ object ETTrainerExecutorFactory {
      */
     fun createExecutor(context: android.content.Context, method: String, modelData: String, meta: Map<String, Any>): ETTrainerExecutor {
         val trainingConfig = TrainingConfig.fromMap(meta)
-        
-        // Create ETTrainer directly instead of using generic Trainer interface
+
+        // Create ETTrainer without dataset - it will be provided by the executor from context
         val trainer = ETTrainer(context, modelData, meta)
         
         return ETTrainerExecutor(trainer)
