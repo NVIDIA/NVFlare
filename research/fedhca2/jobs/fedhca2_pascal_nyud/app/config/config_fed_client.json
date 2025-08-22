@@ -2,18 +2,16 @@
   "format_version": 2,
   "executors": [
     {
-      "tasks": ["train", "validate", "submit_model"],
+      "tasks": [
+        "train",
+        "validate",
+        "submit_model"
+      ],
       "executor": {
         "path": "fedhca2_learner.FedHCA2Learner",
         "args": {
-          "lr": 0.0001,
-          "weight_decay": 0.0001,
-          "local_epochs": 1,
-          "batch_size": 4,
-          "warmup_epochs": 5,
-          "fp16": true,
-          "backbone_type": "swin-t",
-          "backbone_pretrained": true
+          "train_config_filename": "config_train.json",
+          "aggregation_epochs": 1
         }
       }
     }
@@ -22,5 +20,3 @@
   "task_data_filters": [],
   "components": []
 }
-
-

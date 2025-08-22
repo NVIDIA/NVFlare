@@ -38,26 +38,32 @@ class FedHCA2Learner(Executor):
 
     def __init__(
         self,
-        lr=0.0001,
-        weight_decay=0.0001,
-        local_epochs=1,
-        batch_size=4,
-        warmup_epochs=5,
-        fp16=True,
-        backbone_type="swin-t",
-        backbone_pretrained=True,
+        train_config_filename="config_train.json",
+        aggregation_epochs=1,
     ):
         super().__init__()
 
-        # Training hyperparameters
-        self.lr = lr
-        self.weight_decay = weight_decay
-        self.local_epochs = local_epochs
-        self.batch_size = batch_size
-        self.warmup_epochs = warmup_epochs
-        self.fp16 = fp16
-        self.backbone_type = backbone_type
-        self.backbone_pretrained = backbone_pretrained
+        # Config settings
+        self.train_config_filename = train_config_filename
+        self.aggregation_epochs = aggregation_epochs
+
+        # Training configuration (loaded from config_train.json)
+        self.config_info = None
+
+        # Training hyperparameters (loaded from config)
+        self.lr = None
+        self.weight_decay = None
+        self.local_epochs = None
+        self.batch_size = None
+        self.val_batch_size = None
+        self.warmup_epochs = None
+        self.optimizer_name = None
+        self.nworkers = None
+        self.fp16 = None
+
+        # Model config (loaded from config)
+        self.backbone_type = None
+        self.backbone_pretrained = None
 
         # Will be initialized in initialize()
         self.device = None
@@ -76,26 +82,46 @@ class FedHCA2Learner(Executor):
         self.dataname = None
         self.client_config = None
 
+        # NVFLARE-specific
+        self.device = None
+        self.model = None
+        self.optimizer = None
+        self.scheduler = None
+        self.criterion = None
+        self.scaler = None
+        self.train_loader = None
+        self.val_loader = None
+        self.train_loss = None
+
     def initialize(self, parts: dict, fl_ctx: FLContext):
         """Initialize the learner with client-specific configuration"""
-        # Note: Executor may not have an initialize method, so we skip super() call
-
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.client_name = fl_ctx.get_identity_name()
 
         print(f"🔧 Initializing FedHCA2Learner for {self.client_name}")
-        print(f"   🔧 Initialize method called successfully!")
 
-        # Load client configuration from experiment config
+        # Load training configuration using standard NVFLARE pattern
+        self.train_config(fl_ctx)
+
+        # Load client-specific configuration
         print(f"   🔍 Client name: '{self.client_name}'")
-        self.client_config = self._load_client_config(fl_ctx)
+        self.client_config = self._get_client_config_for_site(self.client_name)
         print(f"   📋 Client config: {self.client_config}")
 
-        if self.client_config is None:
-            raise ValueError(f"Failed to load configuration for client: {self.client_name}")
-
+        # Extract client info
         self.tasks = self.client_config.get('tasks')
         self.dataname = self.client_config.get('dataname')
+
+        # Load client-specific training hyperparameters
+        self.lr = self.client_config.get('learning_rate', 0.0001)
+        self.weight_decay = self.client_config.get('weight_decay', 0.0001)
+        self.local_epochs = self.client_config.get('local_epochs', 1)
+        self.batch_size = self.client_config.get('batch_size', 4)
+        self.val_batch_size = self.batch_size
+        self.warmup_epochs = self.client_config.get('warmup_epochs', 5)
+        self.optimizer_name = self.client_config.get('optimizer', 'adamw')
+        self.nworkers = self.client_config.get('nworkers', 4)
+        self.fp16 = self.client_config.get('fp16', True)
 
         if self.tasks is None:
             raise ValueError(f"Tasks not found in config for client: {self.client_name}")
@@ -104,6 +130,8 @@ class FedHCA2Learner(Executor):
 
         print(f"   📋 Tasks: {self.tasks}")
         print(f"   📁 Dataset: {self.dataname}")
+        print(f"   ⚙️ Training config: lr={self.lr}, wd={self.weight_decay}, epochs={self.local_epochs}")
+        print(f"   🏗️ Model config: {self.backbone_type}, pretrained={self.backbone_pretrained}")
 
         # Build model
         self.model = build_model(
@@ -141,6 +169,30 @@ class FedHCA2Learner(Executor):
 
         print(f"   ✅ {self.client_name} initialized successfully")
 
+    def train_config(self, fl_ctx: FLContext):
+        """Load training configuration using standard NVFLARE pattern"""
+        # Load training configurations json
+        engine = fl_ctx.get_engine()
+        ws = engine.get_workspace()
+        app_config_dir = ws.get_app_config_dir(fl_ctx.get_job_id())
+        train_config_file_path = os.path.join(app_config_dir, self.train_config_filename)
+
+        if not os.path.isfile(train_config_file_path):
+            raise FileNotFoundError(f"Training configuration file does not exist at {train_config_file_path}")
+
+        with open(train_config_file_path) as file:
+            self.config_info = json.load(file)
+
+        # Note: Training hyperparameters are loaded per-client in _get_client_config_for_site
+        # This allows different hyperparameters for different clients
+
+        # Load model configuration
+        model_config = self.config_info["model"]
+        self.backbone_type = model_config["backbone_type"]
+        self.backbone_pretrained = model_config["backbone_pretrained"]
+
+        print(f"   📁 Loaded training config: lr={self.lr}, epochs={self.local_epochs}")
+
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal) -> Shareable:
         """Execute different tasks"""
         if task_name == "train":
@@ -157,70 +209,14 @@ class FedHCA2Learner(Executor):
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
 
         # Fallback initialization if initialize was not called
-        if self.tasks is None or self.client_name is None:
+        if self.config_info is None or self.tasks is None or self.client_name is None:
             print("⚠️ WARNING: initialize() was not called! Performing fallback initialization...")
             try:
                 parts = {}  # Empty parts since we don't have them
                 self.initialize(parts, fl_ctx)
             except Exception as e:
                 print(f"❌ Fallback initialization failed: {e}")
-                # Manual initialization as last resort
-                self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                self.client_name = fl_ctx.get_identity_name()
-                self.client_config = self._load_client_config(fl_ctx)
-                self.tasks = self.client_config.get('tasks', ['semseg'])
-                self.dataname = self.client_config.get('dataname', 'pascalcontext')
-
-                print(f"   🆘 Manual initialization: {self.client_name}, tasks: {self.tasks}")
-
-                # Build model
-                if self.model is None:
-                    print(f"      🏗️ Building model...")
-                    self.model = build_model(
-                        tasks=self.tasks,
-                        dataname=self.dataname,
-                        backbone_type=self.backbone_type,
-                        backbone_pretrained=self.backbone_pretrained,
-                    ).to(self.device)
-
-                # Build optimizer
-                if self.optimizer is None:
-                    print(f"      ⚙️ Building optimizer...")
-                    self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-
-                # Build scheduler
-                if self.scheduler is None:
-                    print(f"      📅 Building scheduler...")
-                    max_epochs = 100 * self.local_epochs  # Approximate total
-                    self.scheduler = CosineLRScheduler(
-                        optimizer=self.optimizer,
-                        t_initial=max_epochs - self.warmup_epochs,
-                        lr_min=1.25e-6,
-                        warmup_t=self.warmup_epochs,
-                        warmup_lr_init=1.25e-7,
-                        warmup_prefix=True,
-                    )
-
-                # Build criterion
-                if self.criterion is None:
-                    print(f"      🎯 Building criterion...")
-                    self.criterion = get_criterion(self.dataname, self.tasks).to(self.device)
-
-                # Build scaler
-                if self.scaler is None:
-                    print(f"      🚀 Building scaler...")
-                    self.scaler = torch.cuda.amp.GradScaler(enabled=self.fp16)
-
-                # Build data loaders (real implementation)
-                if self.train_loader is None:
-                    print(f"      📊 Building data loaders...")
-                    self._setup_data_loaders(fl_ctx)
-
-                # Initialize training loss meters
-                if self.train_loss is None:
-                    self.train_loss = {task: RunningMeter() for task in self.tasks}
-
-                print(f"   ✅ Manual initialization completed successfully")
+                raise RuntimeError(f"Failed to initialize learner: {e}")
 
         print(f"\n🔥 {self.client_name} - Round {current_round} Training")
         print(f"   🎯 Tasks: {self.tasks}")
@@ -271,31 +267,56 @@ class FedHCA2Learner(Executor):
         """Submit the current model"""
         return self._create_model_shareable()
 
-    def _load_client_config(self, fl_ctx):
-        """Load client-specific configuration"""
-        # Extract client configuration based on client name
-        # For now, use hardcoded config based on client name pattern
+    def _get_client_config_for_site(self, client_name: str) -> dict:
+        """Get client configuration based on client name and experiment config"""
 
-        if "site-1" in self.client_name:
-            return {'dataname': 'pascalcontext', 'tasks': ['semseg'], 'is_single_task': True, 'client_id': 0}
-        elif "site-2" in self.client_name:
-            return {'dataname': 'pascalcontext', 'tasks': ['human_parts'], 'is_single_task': True, 'client_id': 1}
-        elif "site-3" in self.client_name:
-            return {'dataname': 'pascalcontext', 'tasks': ['normals'], 'is_single_task': True, 'client_id': 2}
-        elif "site-4" in self.client_name:
-            return {'dataname': 'pascalcontext', 'tasks': ['edge'], 'is_single_task': True, 'client_id': 3}
-        elif "site-5" in self.client_name:
-            return {'dataname': 'pascalcontext', 'tasks': ['sal'], 'is_single_task': True, 'client_id': 4}
-        elif "site-6" in self.client_name:
-            return {
-                'dataname': 'nyud',
-                'tasks': ['semseg', 'normals', 'edge', 'depth'],
-                'is_single_task': False,
-                'client_id': 5,
-            }
+        # Get base configurations from ST_Datasets and MT_Datasets
+        st_config = self.config_info["ST_Datasets"][0]  # Pascal context config
+        mt_config = self.config_info["MT_Datasets"][0]  # NYU depth config
+
+        # Extract client configuration based on client name pattern
+        if "site-1" in client_name:
+            config = st_config.copy()
+            config.update({'tasks': ['semseg'], 'is_single_task': True, 'client_id': 0})
+            return config
+        elif "site-2" in client_name:
+            config = st_config.copy()
+            config.update({'tasks': ['human_parts'], 'is_single_task': True, 'client_id': 1})
+            return config
+        elif "site-3" in client_name:
+            config = st_config.copy()
+            config.update({'tasks': ['normals'], 'is_single_task': True, 'client_id': 2})
+            return config
+        elif "site-4" in client_name:
+            config = st_config.copy()
+            config.update({'tasks': ['edge'], 'is_single_task': True, 'client_id': 3})
+            return config
+        elif "site-5" in client_name:
+            config = st_config.copy()
+            config.update({'tasks': ['sal'], 'is_single_task': True, 'client_id': 4})
+            return config
+        elif "site-6" in client_name:
+            config = mt_config.copy()
+            config.update(
+                {
+                    'tasks': ['semseg', 'normals', 'edge', 'depth'],
+                    'is_single_task': False,
+                    'client_id': 5,
+                }
+            )
+            return config
         else:
             # Default configuration
-            return {'dataname': 'pascalcontext', 'tasks': ['semseg'], 'is_single_task': True, 'client_id': 0}
+            config = st_config.copy()
+            config.update({'tasks': ['semseg'], 'is_single_task': True, 'client_id': 0})
+            return config
+
+    def _get_experiment_config_from_training_config(self) -> dict:
+        """Extract experiment config from training config"""
+        return {
+            "ST_Datasets": self.config_info["ST_Datasets"],
+            "MT_Datasets": self.config_info["MT_Datasets"],
+        }
 
     def _setup_data_loaders(self, fl_ctx):
         """Setup data loaders with client-specific partitioning"""
@@ -304,7 +325,7 @@ class FedHCA2Learner(Executor):
         val_transform = get_transformations(TEST_SCALE[self.dataname], train=False)
 
         # Get experiment config for data partitioning
-        exp_config = self._load_experiment_config(fl_ctx)
+        exp_config = self._get_experiment_config_from_training_config()
 
         # Get client-specific data partition
         data_indices = get_client_data_partition(self.client_config['client_id'], self.client_config, exp_config)
@@ -321,31 +342,13 @@ class FedHCA2Learner(Executor):
         # Create data loaders
         train_configs = {
             'tr_batch': self.batch_size,
-            'val_batch': self.batch_size,
-            'nworkers': 0,  # Set to 0 for compatibility
+            'val_batch': self.val_batch_size,
+            'nworkers': self.nworkers,
         }
 
         self.train_loader = get_dataloader(train=True, configs=train_configs, dataset=train_dataset)
 
         self.val_loader = get_dataloader(train=False, configs=train_configs, dataset=val_dataset)
-
-
-
-    def _load_experiment_config(self, fl_ctx):
-        """Load experiment configuration"""
-        # For now, return hardcoded configuration
-        # In real implementation, would load from config file
-        return {
-            "ST_Datasets": [
-                {
-                    "dataname": "pascalcontext",
-                    "task_dict": {"semseg": 1, "human_parts": 1, "normals": 1, "edge": 1, "sal": 1},
-                }
-            ],
-            "MT_Datasets": [
-                {"dataname": "nyud", "client_num": 1, "task_dict": {"semseg": 1, "normals": 1, "edge": 1, "depth": 1}}
-            ],
-        }
 
     def _update_local_model(self, shareable: Shareable):
         """Update local model with received parameters"""

@@ -3,6 +3,8 @@ FedHCA2 NVFLARE Aggregator - Clean wrapper around original FedHCA2 aggregation l
 """
 
 import copy
+import json
+import os
 
 import torch
 import torch.optim as optim
@@ -26,22 +28,25 @@ class FedHCA2Aggregator(Aggregator):
 
     def __init__(
         self,
-        encoder_agg="conflict_averse",
-        decoder_agg="cross_attention",
-        ca_c=0.4,
-        enc_alpha_init=0.1,
-        dec_beta_init=0.1,
-        hyperweight_lr=0.01,
+        train_config_filename="config_train.json",
     ):
         super().__init__()
 
-        # FedHCA2 algorithm parameters
-        self.encoder_agg = encoder_agg
-        self.decoder_agg = decoder_agg
-        self.ca_c = ca_c
-        self.enc_alpha_init = enc_alpha_init
-        self.dec_beta_init = dec_beta_init
-        self.hyperweight_lr = hyperweight_lr
+        # Config settings
+        self.train_config_filename = train_config_filename
+        
+        # Training configuration (loaded from config_train.json)
+        self.config_info = None
+        
+        # FedHCA2 algorithm parameters (loaded from config)
+        self.encoder_agg = None
+        self.decoder_agg = None
+        self.ca_c = None
+        self.enc_alpha_init = None
+        self.dec_beta_init = None
+        self.hyperweight_lr = None
+        self.backbone_type = None
+        self.backbone_pretrained = None
 
         # State management
         self.submissions = {}
@@ -77,6 +82,12 @@ class FedHCA2Aggregator(Aggregator):
 
             # Initialize on first round
             if not self.initialized:
+                # Load configuration on first use
+                if self.config_info is None:
+                    self._load_train_config(fl_ctx)
+                    print(f"   ⚙️ Loaded hyperweight lr: {self.hyperweight_lr}")
+                    print(f"   🏗️ Loaded model config: {self.backbone_type}, pretrained={self.backbone_pretrained}")
+                
                 self._initialize_fedhca2()
                 self.initialized = True
 
@@ -238,7 +249,7 @@ class FedHCA2Aggregator(Aggregator):
         model = build_model(
             tasks=tasks,
             dataname=dataname,
-            backbone_type="swin-t",
+            backbone_type=self.backbone_type,
             backbone_pretrained=False,  # Don't load pretrained weights here
         )
 
@@ -248,7 +259,7 @@ class FedHCA2Aggregator(Aggregator):
         """Create real model and load state dict"""
         from fedhca2_core.models.build_models import build_model
 
-        model = build_model(tasks=tasks, dataname=dataname, backbone_type="swin-t", backbone_pretrained=False)
+        model = build_model(tasks=tasks, dataname=dataname, backbone_type=self.backbone_type, backbone_pretrained=False)
 
         # Load the state dict
         model.load_state_dict(state_dict, strict=False)
@@ -259,7 +270,7 @@ class FedHCA2Aggregator(Aggregator):
         from fedhca2_core.models.build_models import build_model
 
         # Build a minimal model to get decoder structure
-        model = build_model(tasks=tasks, dataname=dataname, backbone_type="swin-t", backbone_pretrained=False)
+        model = build_model(tasks=tasks, dataname=dataname, backbone_type=self.backbone_type, backbone_pretrained=False)
 
         # Return the decoder part
         return model.decoders[tasks[0]]  # Use first task's decoder as template
@@ -315,3 +326,34 @@ class FedHCA2Aggregator(Aggregator):
         result = {k: v.cpu().numpy() if isinstance(v, torch.Tensor) else v for k, v in avg_params.items()}
 
         return result
+
+    def _load_train_config(self, fl_ctx: FLContext):
+        """Load training configuration using standard NVFLARE pattern"""
+        # Load training configurations json
+        engine = fl_ctx.get_engine()
+        ws = engine.get_workspace()
+        app_config_dir = ws.get_app_config_dir(fl_ctx.get_job_id())
+        train_config_file_path = os.path.join(app_config_dir, self.train_config_filename)
+        
+        if not os.path.isfile(train_config_file_path):
+            raise FileNotFoundError(f"Training configuration file does not exist at {train_config_file_path}")
+            
+        with open(train_config_file_path) as file:
+            self.config_info = json.load(file)
+            
+        # Load FedHCA2 algorithm parameters
+        algorithm_config = self.config_info["algorithm"]
+        self.encoder_agg = algorithm_config["encoder_agg"]
+        self.decoder_agg = algorithm_config["decoder_agg"]
+        self.ca_c = algorithm_config["ca_c"]
+        self.enc_alpha_init = algorithm_config["enc_alpha_init"]
+        self.dec_beta_init = algorithm_config["dec_beta_init"]
+        
+        # Load hyperweight configuration
+        hyperweight_config = self.config_info["hyperweight"]
+        self.hyperweight_lr = hyperweight_config["learning_rate"]
+        
+        # Load model configuration
+        model_config = self.config_info["model"]
+        self.backbone_type = model_config["backbone_type"]
+        self.backbone_pretrained = model_config["backbone_pretrained"]
