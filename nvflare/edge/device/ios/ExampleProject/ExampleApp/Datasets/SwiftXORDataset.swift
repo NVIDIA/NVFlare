@@ -8,7 +8,7 @@
 import Foundation
 
 /// Swift implementation of XOR dataset
-public class SwiftXORDataset: SwiftDataset {
+public class SwiftXORDataset: NSObject, NVFlareDataset {
     private let xorTable: [(inputs: [Float], label: Int)] = [
         ([1.0, 1.0], 0),
         ([0.0, 0.0], 0),
@@ -23,16 +23,26 @@ public class SwiftXORDataset: SwiftDataset {
     public init(shuffle: Bool = false) {
         self.indices = Array(0..<xorTable.count)
         self.shouldShuffle = shuffle
+        super.init()
         reset()
     }
     
-    public func getBatch(size: Int) -> [Any]? {
+    @objc(getNextBatchWithBatchSize:) public func getNextBatch(batchSize: Int) -> NVFlareBatch {
+        // Check if we've reached the end of the dataset
         if currentIndex >= xorTable.count {
-            return nil
+            print("SwiftXORDataset: Reached end of dataset, resetting for next epoch")
+            reset()
         }
         
-        let endIndex = min(currentIndex + size, xorTable.count)
-        let actualBatchSize = endIndex - currentIndex
+        // Calculate actual batch size (may be smaller for the last batch)
+        let remainingSamples = xorTable.count - currentIndex
+        let actualBatchSize = min(batchSize, remainingSamples)
+        
+        if actualBatchSize == 0 {
+            return NVFlareDataBatch(input: NSArray(), label: NSArray(), batchSize: 0)
+        }
+        
+        let endIndex = currentIndex + actualBatchSize
         
         var inputs: [NSNumber] = []
         var labels: [NSNumber] = []
@@ -47,7 +57,14 @@ public class SwiftXORDataset: SwiftDataset {
         }
         
         currentIndex = endIndex
-        return [NSArray(array: inputs), NSArray(array: labels)]
+        
+        print("SwiftXORDataset: Returning batch with \(actualBatchSize) samples (requested: \(batchSize), remaining: \(xorTable.count - currentIndex))")
+        
+        return NVFlareDataBatch(
+            input: NSArray(array: inputs),
+            label: NSArray(array: labels),
+            batchSize: actualBatchSize
+        )
     }
     
     @objc public func reset() {
@@ -63,16 +80,18 @@ public class SwiftXORDataset: SwiftDataset {
         return xorTable.count
     }
     
-    @objc public func inputDim() -> Int {
-        return 2
-    }
-    
-    @objc public func labelDim() -> Int {
-        return 1
-    }
-    
     @objc public func setShuffle(_ shuffle: Bool) {
         shouldShuffle = shuffle
         reset()
+    }
+    
+    // MARK: - NVFlareDataset Protocol Methods
+    
+    @objc(getInputDimensions) public func getInputDimensions() -> [Int] {
+        return [2] // XOR has 2 input features
+    }
+    
+    @objc(getOutputDimensions) public func getOutputDimensions() -> [Int] {
+        return [1] // XOR has 1 output (binary classification)
     }
 } 

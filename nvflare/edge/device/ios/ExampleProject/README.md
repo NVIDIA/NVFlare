@@ -28,26 +28,27 @@ cp -r build/apple_framework/* /path/to/your/app/Frameworks/
 ### 2. NVFlareSDK
 ```bash
 # Copy the NVFlareSDK folder into your app
-cp -r nvflare/edge/device/ios/ExampleProject/NVFlareSDK /path/to/your/app/
+cp -r nvflare/edge/device/ios/NVFlareSDK nvflare/edge/device/ios/ExampleProject
 ```
 
 ## Project Structure
 
 ```
-ExampleApp/
-├── Frameworks/           # ExecutorTorch frameworks go here
+ExampleProject/
+├── Frameworks/              # ExecutorTorch frameworks go here
 │   ├── ExecutorTorch.xcframework
 │   └── ...
-├── NVFlareSDK/          # Copied from this example
+├── NVFlareSDK/              # Copied from nvflare/edge/device/ios/NVFlareSDK
 │   ├── Core/
-│   ├── Executors/
+│   ├── Models/
 │   └── ...
-├── TrainerController.swift  # Main FL coordinator
-├── ContentView.swift        # UI
-└── ExampleApp.swift         # App entry point
+├── ExampleApp/              # App code
+│   ├── ContentView.swift    # UI
+│   ├── TrainerController    # Use NVFlareRunner to enable FL training
+│   └── Datasets             # Implement NVFlareDataset interface to feed your own device data
 ```
 
-## Features
+## App Features
 
 ### Server Configuration
 - Set NVFlare server hostname and port
@@ -62,106 +63,4 @@ ExampleApp/
 - Start/stop federated learning
 - Real-time status updates
 - Error handling and recovery
-
-## Usage
-
-### Basic Setup
-```swift
-@StateObject private var trainer = TrainerController()
-
-// Configure server
-trainer.serverHost = "192.168.6.101"
-trainer.serverPort = 4321
-
-// Select training methods
-trainer.supportedJobs = [.cifar10, .xor]
-```
-
-### Start Training
-```swift
-Button("Start Training") {
-    Task {
-        try await trainer.startTraining()
-    }
-}
-```
-
-### Monitor Status
-```swift
-switch trainer.status {
-case .idle:
-    Text("Ready to train")
-case .training:
-    Text("Training in progress...")
-case .stopping:
-    Text("Stopping...")
-}
-```
-
-## Development
-
-### Requirements
-- iOS 14.0+
-- Xcode 14.0+
-- Swift 5.9+
-
-### Building
-1. Ensure ExecutorTorch frameworks are in `Frameworks/` folder
-2. Verify NVFlareSDK folder is copied to your app
-3. Open project in Xcode
-4. Build and run (⌘R)
-
-## Customization
-
-### Add Your Own Dataset
-```swift
-// In Swift - just implement the SwiftDataset protocol
-class MyCustomDataset: SwiftDataset {
-    private let myData: [MyDataPoint]
-    private var currentIndex = 0
-    
-    init(data: [MyDataPoint]) {
-        self.myData = data
-    }
-    
-    func getBatch(size: Int) -> [NSNumber]? {
-        // Convert your data to training format
-        let endIndex = min(currentIndex + size, myData.count)
-        let batchData = myData[currentIndex..<endIndex]
-        
-        let inputs = batchData.flatMap { $0.features }.map { NSNumber(value: $0) }
-        let labels = batchData.map { NSNumber(value: $0.label) }
-        
-        currentIndex = endIndex
-        return [NSArray(array: inputs), NSArray(array: labels)]
-    }
-    
-    func reset() { currentIndex = 0 }
-    func size() -> Int { return myData.count }
-    func inputDim() -> Int { return myData.first?.features.count ?? 0 }
-    func labelDim() -> Int { return 1 }
-    func setShuffle(_ shuffle: Bool) { /* implement if needed */ }
-}
-
-// Use it
-let myDataset = MyCustomDataset(data: myData)
-trainer.startTraining(with: myDataset)
-```
-
-### Modify Supported Jobs
-```swift
-enum SupportedJob: String, CaseIterable {
-    case cifar10 = "CIFAR10"
-    case xor = "XOR"
-    case myCustom = "MY_CUSTOM"  // Add your own
-    
-    var displayName: String {
-        switch self {
-        case .cifar10: return "CIFAR-10"
-        case .xor: return "XOR"
-        case .myCustom: return "My Custom"
-        }
-    }
-}
-```
 

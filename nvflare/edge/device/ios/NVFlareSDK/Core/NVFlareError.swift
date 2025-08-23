@@ -29,4 +29,6 @@ public enum DatasetError: Error {
     case dataLoadFailed
     case invalidDatasetType(String)
     case bridgeCreationFailed
+    case invalidDataFormat
+    case emptyDataset
 } 

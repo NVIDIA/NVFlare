@@ -3,5 +3,5 @@
 //
 
 #import "../NVFlareSDK/Training/ETTrainer/ETTrainer.h"
-#import "../NVFlareSDK/Models/Common/Constants.h"
-#import "../NVFlareSDK/Core/SwiftDatasetBridge.h"
+#import "../NVFlareSDK/Training/Bridge/NVFlareConstants.h"
+#import "../NVFlareSDK/Training/Bridge/SwiftDatasetBridge.h"

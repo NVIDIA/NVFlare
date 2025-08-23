@@ -9,7 +9,7 @@ import Foundation
 import UIKit
 
 /// Swift implementation of CIFAR10 dataset
-public class SwiftCIFAR10Dataset: SwiftDataset {
+public class SwiftCIFAR10Dataset: NSObject, NVFlareDataset {
     private struct CIFARImage {
         let label: Int
         let data: [Float]
@@ -25,22 +25,36 @@ public class SwiftCIFAR10Dataset: SwiftDataset {
     private let imageHeight = 32
     private let channels = 3
     private let imageSize = 32 * 32 * 3 // 3072 bytes per image
-    private let maxImages = 16 // Demo limit
+    private let maxImages = 1000 // Demo limit - use more samples for meaningful training
     
     public init(shuffle: Bool = false) throws {
         self.images = try Self.loadCIFAR10Data()
         self.indices = Array(0..<images.count)
         self.shouldShuffle = shuffle
+        super.init()
         reset()
     }
     
-    public func getBatch(size: Int) -> [Any]? {
+    @objc(getNextBatchWithBatchSize:) public func getNextBatch(batchSize: Int) -> NVFlareBatch {
+        // Check if we've reached the end of the dataset
         if currentIndex >= images.count {
-            return nil
+            print("SwiftCIFAR10Dataset: Reached end of dataset, resetting for next epoch")
+            reset()
+            // If still no data after reset, return empty batch
+            if images.count == 0 {
+                return NVFlareDataBatch(input: NSArray(), label: NSArray(), batchSize: 0)
+            }
         }
         
-        let endIndex = min(currentIndex + size, images.count)
-        let actualBatchSize = endIndex - currentIndex
+        // Calculate actual batch size (may be smaller for the last batch)
+        let remainingSamples = images.count - currentIndex
+        let actualBatchSize = min(batchSize, remainingSamples)
+        
+        if actualBatchSize == 0 {
+            return NVFlareDataBatch(input: NSArray(), label: NSArray(), batchSize: 0)
+        }
+        
+        let endIndex = currentIndex + actualBatchSize
         
         var inputs: [NSNumber] = []
         var labels: [NSNumber] = []
@@ -55,7 +69,14 @@ public class SwiftCIFAR10Dataset: SwiftDataset {
         }
         
         currentIndex = endIndex
-        return [NSArray(array: inputs), NSArray(array: labels)]
+        
+        print("SwiftCIFAR10Dataset: Returning batch with \(actualBatchSize) samples (requested: \(batchSize), remaining: \(images.count - currentIndex))")
+        
+        return NVFlareDataBatch(
+            input: NSArray(array: inputs),
+            label: NSArray(array: labels),
+            batchSize: actualBatchSize
+        )
     }
     
     @objc public func reset() {
@@ -71,17 +92,19 @@ public class SwiftCIFAR10Dataset: SwiftDataset {
         return images.count
     }
     
-    @objc public func inputDim() -> Int {
-        return imageSize
-    }
-    
-    @objc public func labelDim() -> Int {
-        return 1
-    }
-    
     @objc public func setShuffle(_ shuffle: Bool) {
         shouldShuffle = shuffle
         reset()
+    }
+    
+    // MARK: - NVFlareDataset Protocol Methods
+    
+    @objc(getInputDimensions) public func getInputDimensions() -> [Int] {
+        return [imageWidth, imageHeight, channels] // CIFAR-10: 32x32x3
+    }
+    
+    @objc(getOutputDimensions) public func getOutputDimensions() -> [Int] {
+        return [10] // CIFAR-10 has 10 classes
     }
     
     // MARK: - Private Methods
