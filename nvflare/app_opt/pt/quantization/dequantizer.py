@@ -25,6 +25,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.pt.quantization.constant import QUANTIZATION_TYPE
 
+from .ada_quant import AdaQuantizer
+
 
 class ModelDequantizer(DXOFilter):
     def __init__(self):
@@ -57,16 +59,22 @@ class ModelDequantizer(DXOFilter):
         for param_name in params:
             source_data_type = source_datatype[param_name]
 
-            # get the bits information
-            source_date_bits = int(re.findall(r"\d+", source_data_type)[0])
-            quantization_bits = int(re.findall(r"\d+", quantization_type)[0])
+            if quantization_type != "adaquant":
+                # get the bits information
+                source_date_bits = int(re.findall(r"\d+", source_data_type)[0])
+                quantization_bits = int(re.findall(r"\d+", quantization_type)[0])
 
-            # only dequantize if the quantization type is lower than the source data type
-            if quantization_bits >= source_date_bits:
-                self.log_info(
-                    fl_ctx,
-                    f"Skipping dequantization for {param_name}, quantization bit {quantization_type} >= source data bit {source_data_type}",
-                )
+                # only dequantize if the quantization type is lower than the source data type
+                if quantization_bits >= source_date_bits:
+                    self.log_info(
+                        fl_ctx,
+                        f"Skipping dequantization for {param_name}, quantization bit {quantization_type} >= source data bit {source_data_type}",
+                    )
+                    continue
+            values = params[param_name]
+            n_bytes_before += values.nbytes
+            if param_name not in quant_state:
+                n_bytes_after += values.nbytes
                 continue
             values = params[param_name]
             n_bytes_before += values.nbytes
@@ -102,6 +110,12 @@ class ModelDequantizer(DXOFilter):
                 else:
                     dequantized = dequantize_4bit(quantized, quant_state=quantized_state)
 
+            elif quantization_type == "ada_quant":
+                values_tensor = self.to_torch_tensor(values)
+                if param_name not in quant_state:
+                    dequantized = values_tensor
+                else:
+                    dequantized = AdaQuantizer().dequantized(values_tensor, quant_state[param_name])
                 params[param_name] = self.to_source_data(dequantized, source_data_format)
 
             # assign back
