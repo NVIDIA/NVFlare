@@ -168,6 +168,4 @@ audit.log
 # python
 __pycache__
 .pyc
-research/FedHCA2/
-research/fedhca2/data/
 
