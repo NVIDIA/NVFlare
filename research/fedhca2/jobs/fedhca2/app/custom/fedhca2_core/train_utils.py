@@ -33,6 +33,7 @@ def local_train(
     train_loss,
     local_rank,
     fp16,
+    writer=None,
     **args,
 ):
     """
@@ -68,6 +69,11 @@ def local_train(
             scaler.scale(loss_dict['total']).backward()
             scaler.step(optimizer)
             scaler.update()
+
+        # Log epoch losses to TensorBoard
+        if writer is not None:
+            for task in tasks:
+                writer.add_scalar(f"train_loss_epoch/{task}", train_loss[task].avg, cr * local_epochs + epoch)
 
         scheduler.step(cr * local_epochs + epoch)
 

@@ -44,11 +44,13 @@ class FedHCA2Learner(Executor):
         self,
         train_config_filename="config_train.json",
         aggregation_epochs=1,
+        analytic_sender_id="analytic_sender",
     ):
         super().__init__()
 
         self.train_config_filename = train_config_filename
         self.aggregation_epochs = aggregation_epochs
+        self.analytic_sender_id = analytic_sender_id
 
         # Configuration
         self.config_info = None
@@ -79,6 +81,7 @@ class FedHCA2Learner(Executor):
         self.train_loader = None
         self.val_loader = None
         self.train_loss = None
+        self.writer = None
 
         # Client information
         self.client_name = None
@@ -151,6 +154,16 @@ class FedHCA2Learner(Executor):
         # Build data loaders
         self._setup_data_loaders(fl_ctx)
 
+        # Initialize TensorBoard writer
+        self.writer = parts.get(self.analytic_sender_id)  # Use NVFLARE AnalyticsSender if available
+        if not self.writer:  # Fallback to local TensorBoard writer
+            from torch.utils.tensorboard import SummaryWriter
+
+            engine = fl_ctx.get_engine()
+            ws = engine.get_workspace()
+            app_dir = ws.get_app_dir(fl_ctx.get_job_id())
+            self.writer = SummaryWriter(app_dir)
+
         # Initialize loss meters
         self.train_loss = {task: RunningMeter() for task in self.tasks}
 
@@ -219,11 +232,17 @@ class FedHCA2Learner(Executor):
             train_loss=self.train_loss,
             local_rank=0,
             fp16=self.fp16,
+            writer=self.writer,
         )
 
         # Log training results
         for task, loss_meter in self.train_loss.items():
             print(f"{task} loss: {loss_meter.avg:.4f}")
+            # Log to TensorBoard
+            if self.writer:
+                self.writer.add_scalar(
+                    f"train_loss/{task}", loss_meter.avg, current_round if current_round is not None else 0
+                )
 
         # Perform evaluation every 5 rounds
         if current_round is not None and current_round % 5 == 0:
@@ -235,8 +254,14 @@ class FedHCA2Learner(Executor):
                     if isinstance(task_metrics, dict):
                         for metric_name, metric_value in task_metrics.items():
                             print(f"{task}_{metric_name}: {metric_value:.4f}")
+                            # Log to TensorBoard
+                            if self.writer:
+                                self.writer.add_scalar(f"eval/{task}_{metric_name}", metric_value, current_round)
                     else:
                         print(f"{task}: {task_metrics:.4f}")
+                        # Log to TensorBoard
+                        if self.writer:
+                            self.writer.add_scalar(f"eval/{task}", task_metrics, current_round)
 
         return self._create_model_shareable()
 
@@ -266,6 +291,14 @@ class FedHCA2Learner(Executor):
         # Check if we should perform evaluation (every 5 rounds)
         if current_round is not None and current_round % 5 == 0:
             eval_results = self._perform_evaluation()
+            # Log validation results to TensorBoard
+            if eval_results and self.writer:
+                for task, task_metrics in eval_results.items():
+                    if isinstance(task_metrics, dict):
+                        for metric_name, metric_value in task_metrics.items():
+                            self.writer.add_scalar(f"val/{task}_{metric_name}", metric_value, current_round)
+                    else:
+                        self.writer.add_scalar(f"val/{task}", task_metrics, current_round)
             return self._create_validation_result(eval_results)
         else:
             return self._create_validation_result()

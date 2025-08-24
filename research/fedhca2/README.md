@@ -352,6 +352,44 @@ The implementation includes automatic evaluation every 5 rounds using the origin
 
 Evaluation results are logged during training and can be found in the simulation logs.
 
+## TensorBoard Visualization
+
+FedHCA² includes comprehensive TensorBoard integration for monitoring federated multi-task learning progress.
+
+### What's Tracked
+
+The implementation automatically logs:
+
+- **Training Losses** (`train_loss/{task}`): Per-task losses averaged over each federated round
+- **Epoch Training Details** (`train_loss_epoch/{task}`): Detailed epoch-level loss tracking during local training  
+- **Evaluation Metrics** (`eval/{task}_{metric}`): Task-specific performance metrics every 5 rounds
+  - Semantic Segmentation: `mIoU` (mean Intersection over Union)
+  - Human Parts: `mIoU` for body part segmentation
+  - Surface Normals: `mErr` (mean angular error)
+  - Edge Detection: `loss` and `F-measure`
+  - Saliency: `maxF` (max F-measure)
+  - Depth Estimation: Various error metrics
+
+### Viewing TensorBoard
+
+After running the simulation, TensorBoard events are created for each client:
+
+```bash
+# View all clients together for comparison recommanded
+python -m tensorboard.main --logdir /tmp/fedhca2_workspace --port=6006
+
+# View individual client (e.g., site-1 semantic segmentation)
+python -m tensorboard.main --logdir /tmp/fedhca2_workspace/site-1/simulate_job/app_site-1 --port=6006
+
+# View multi-task client (site-6) with most comprehensive data
+python -m tensorboard.main --logdir /tmp/fedhca2_workspace/site-6/simulate_job/app_site-6 --port=6006
+```
+
+Then open your browser and navigate to: `http://localhost:6006`
+
+
+### Example Visualization result
+
 
 ## Citation
 
