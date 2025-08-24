@@ -86,13 +86,8 @@ Run the default experiment with 6 clients (5 single-task + 1 multi-task):
 cd research/fedhca2
 conda activate fedhca2_nvflare
 
-# Run FedHCA² simulation (output to terminal)
+# Run FedHCA² simulation
 nvflare simulator jobs/fedhca2 -w /tmp/fedhca2_workspace -n 6 -t 6 --gpu 0
-```
-
-### Save Training And Evaluation Results to File
-```
-nvflare simulator jobs/fedhca2 -w /tmp/fedhca2_workspace -n 6 -t 6 --gpu 0 2>&1 | tee fedhca2_results.log
 ```
 
 
@@ -375,7 +370,7 @@ The implementation automatically logs:
 After running the simulation, TensorBoard events are created for each client:
 
 ```bash
-# View all clients together for comparison recommanded
+# View all clients together for comparison (recommanded)
 python -m tensorboard.main --logdir /tmp/fedhca2_workspace --port=6006
 
 # View individual client (e.g., site-1 semantic segmentation)
@@ -389,7 +384,7 @@ Then open your browser and navigate to: `http://localhost:6006`
 
 
 ### Example Visualization result
-
+An example result is shown below. Here we present the result of 5 single-task client working on PascalContext and 1 multi-task client working on NYUDv2 (which is the setting for the main table in the paper). `train_loss/{task}`, `train_loss_epoch/{task}` and `eval/{task}_{metric}` are shown separately. ![Trainloss](./fig/trainloss.png) ![Trainlossepoch](./fig/trainlossepoch.png) ![Eval](./fig/eval.png)
 
 ## Citation
 
