@@ -25,6 +25,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.pt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
 
+from .ada_quant import AdaQuantizer
+
 
 class ModelQuantizer(DXOFilter):
     def __init__(
@@ -47,8 +49,8 @@ class ModelQuantizer(DXOFilter):
         quantization_type = quantization_type.lower()
         if quantization_type.upper() not in QUANTIZATION_TYPE:
             raise ValueError(f"Invalid quantization type: {quantization_type}, valid: {QUANTIZATION_TYPE}")
-        else:
-            self.quantization_type = quantization_type
+
+        self.quantization_type = quantization_type
 
         # quantization constants
         self.NP_FP16_MIN = np.finfo(np.float16).min
@@ -63,48 +65,47 @@ class ModelQuantizer(DXOFilter):
         n_bytes_after = 0
         n_bytes_meta = 0
         n_quant_params = 0
-        quant_state = {}
+        quant_state: dict = {}
         source_datatype = {}
-        for i, param_name in enumerate(params.keys()):
+        for param_name in params:
             values = params[param_name]
             quant_state[param_name] = {}
 
-            # check the data type, numpy or torch
+            # check the data format, numpy or torch, and get dtype
             # otherwise error
             if isinstance(values, np.ndarray):
                 # if numpy, convert to torch
                 source_data_format = "numpy"
+                source_data_type = values.dtype.name
             elif isinstance(values, torch.Tensor):
                 source_data_format = "torch"
+                source_data_type = str(values.dtype).split(".")[1]
             else:
                 raise ValueError(f"Invalid source data type: {type(values)}, valid: numpy or torch")
-
-            # get the data type of the values
-            if source_data_format == "numpy":
-                source_data_type = values.dtype.name
-            elif source_data_format == "torch":
-                source_data_type = str(values.dtype).split(".")[1]
-            source_datatype[param_name] = source_data_type
 
             # check if the data type is valid
             if source_data_type.upper() not in DATA_TYPE:
                 raise ValueError(f"Invalid source data type: {source_data_type}, valid: {DATA_TYPE}")
 
-            # get the bits information
-            source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
-            quantization_bits = int(re.findall(r"\d+", self.quantization_type)[0])
+            source_datatype[param_name] = source_data_type
 
+            if self.quantization_type != "adaquant":
+                # get the bits information
+                source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
+                quantization_bits = int(re.findall(r"\d+", self.quantization_type)[0])
+
+                # only quantize if the quantization type is lower than the source data type
+                if quantization_bits >= source_data_bits:
+                    self.log_info(
+                        fl_ctx,
+                        f"Skipping quantization for {param_name}, quantization bit {self.quantization_type} >= source data bit {source_data_type}",
+                    )
+                    continue
             # add the number of bytes of the values
             n_bytes_before += values.nbytes
-            # only quantize if the quantization type is lower than the source data type
-            if quantization_bits >= source_data_bits:
-                self.log_info(
-                    fl_ctx,
-                    f"Skipping quantization for {param_name}, quantization bit {self.quantization_type} >= source data bit {source_data_type}",
-                )
-                continue
-            else:
-                n_quant_params += 1
+            n_quant_params += 1
+
+            if self.quantization_type != "adaquant":
                 if self.quantization_type == "float16":
                     if source_data_format == "numpy":
                         # first clamp the values to the range of float16
@@ -169,9 +170,19 @@ class ModelQuantizer(DXOFilter):
                             values = quantized.cpu().numpy()
                         elif source_data_format == "torch":
                             values = quantized.cpu()
+            else:
+                # if numpy, first convert numpy array to tensor
+                values_tensor = self.to_torch_tensor(values).cpu()
+                quantized, quantized_state_dict = AdaQuantizer().quantize(values_tensor)
+                params[param_name] = self.to_source_data(quantized, source_data_format)
 
-                    params[param_name] = values
-                n_bytes_after += params[param_name].nbytes
+                if quantized_state_dict:
+                    quant_state[param_name] = quantized_state_dict
+
+                for state_name, state in quantized_state_dict.items():
+                    if isinstance(state, (torch.Tensor, np.ndarray)):
+                        n_bytes_meta += state.nbytes
+            n_bytes_after += params[param_name].nbytes
 
         self.log_info(
             fl_ctx,
@@ -180,6 +191,16 @@ class ModelQuantizer(DXOFilter):
             f" After quantization: {n_bytes_after / (1024 ** 2):.2f} MB with meta: {n_bytes_meta / (1024 ** 2):.2f} MB.",
         )
         return params, quant_state, source_datatype
+
+    def to_torch_tensor(self, data: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+        if isinstance(data, np.ndarray):
+            return torch.as_tensor(data)
+        return data
+
+    def to_source_data(self, tensor: torch.Tensor, source_data_format: str) -> Union[np.ndarray, torch.Tensor]:
+        if source_data_format == "numpy":
+            return tensor.numpy()
+        return tensor.cpu()
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Filter process apply to the Shareable object.
