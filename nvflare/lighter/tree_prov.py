@@ -315,12 +315,21 @@ def main():
 
     parser.add_argument("--project_name", "-p", type=str, help="project name", required=True)
     parser.add_argument("--depth", "-d", type=int, help="depth of the relay tree", required=True)
-    parser.add_argument("--width", "-w", type=int, help="width of each tree", required=False, default=2)
+    parser.add_argument(
+        "--width",
+        "-w",
+        type=int,
+        help="width of the relay tree, the number of children for each relay node",
+        required=True,
+        default=2,
+    )
+    parser.add_argument(
+        "--clients", "-c", type=int, help="number of clients per leaf relay node", required=True, default=2
+    )
 
     # number of sites will go up exponentially when depth goes up.
     # do not do provision if the number of sites exceeds max_sites
     parser.add_argument("--max_sites", "-m", type=int, help="max number sites", required=False, default=100)
-    parser.add_argument("--clients", "-c", type=int, help="number of clients per leaf node", required=False, default=2)
 
     parser.add_argument("--rp", "-rp", type=int, help="routing proxy port", required=False, default=4321)
 
