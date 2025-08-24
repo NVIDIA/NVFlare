@@ -20,7 +20,7 @@
   </p>
 </p>
 
-This directory contains an NVFLARE implementation of the FedHCA² algorithm for federated multi-task learning with heterogeneous clients, as described in:
+This directory contains an NVFLARE implementation of the FedHCA² algorithm for federated multi-task learning with heterogeneous clients.
 
 ## Overview
 
@@ -31,6 +31,9 @@ FedHCA² addresses the challenge of federated learning across heterogeneous clie
 - **Learnable Hyperweights**: Dynamic client contribution weighting
 - **Heterogeneous Client Support**: Mixed single-task and multi-task clients
 - **Flexible Configuration**: Easy modification of client setups and hyperparameters
+- 
+## License
+This project is open-sourced under the Apache v2 License. The codebase builds upon the initial work shared at [FedHCA2](https://github.com/innovator-zero/FedHCA2).
 
 ## Requirements
 
@@ -40,8 +43,8 @@ Create a conda environment with the required dependencies:
 
 ```bash
 # Create environment
-conda create -n fedhca2_nvflare python=3.10
-conda activate fedhca2_nvflare
+conda create -n fedhca2 python=3.10
+conda activate fedhca2
 
 # Install PyTorch and related packages
 pip install -r requirements.txt
