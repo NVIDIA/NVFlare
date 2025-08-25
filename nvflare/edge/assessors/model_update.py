@@ -143,6 +143,41 @@ class ModelUpdateAssessor(Assessor):
         with self.update_lock:
             return self._do_child_update(update, fl_ctx)
 
+    def _device_wait_countdown(self, fl_ctx: FLContext):
+        # Start timing if we haven't started yet
+        if self.device_wait_start_time is None:
+            self.device_wait_start_time = time.time()
+
+        # Check if we've exceeded the timeout
+        if self._check_device_timeout(fl_ctx):
+            usable_devices = set(self.device_manager.available_devices.keys()) - set(
+                self.device_manager.used_devices.keys()
+            )
+            self.log_error(
+                fl_ctx,
+                f"Device wait timeout ({self.device_wait_timeout}s) exceeded. "
+                f"Total devices: {len(self.device_manager.available_devices)}, usable: {len(usable_devices)}, expected: {self.device_manager.device_selection_size}. "
+                f"Device_reuse flag is set to: {self.device_manager.device_reuse}. "
+                "Not enough devices joining, please adjust the server params. Stopping the job.",
+            )
+            # Stop the job due to insufficient devices
+            self.should_stop_job = True
+            # Prepare an empty reply
+            reply = StateUpdateReply(
+                model_version=0,
+                model=None,
+                device_selection_version=self.device_manager.current_selection_version,
+                device_selection=self.device_manager.get_selection(fl_ctx),
+            )
+            return False, reply.to_shareable()
+        else:
+            remaining_time = self._get_remaining_timeout()
+
+            self.log_info(
+                fl_ctx,
+                f"Not enough available devices, waiting for more: " f"Timeout in {remaining_time:.1f} seconds",
+            )
+
     def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
         report = StateUpdateReport.from_shareable(update)
 
@@ -155,37 +190,8 @@ class ModelUpdateAssessor(Assessor):
                 self.should_stop_job = False  # Reset stop job flag
                 self.log_info(fl_ctx, "Sufficient devices now available, resetting wait timer and stop job flag")
 
-        # check if we have enough devices
-        if not self.device_manager.has_enough_devices(fl_ctx):
-            # Start timing if we haven't started yet
-            if self.device_wait_start_time is None:
-                self.device_wait_start_time = time.time()
-
-            # Check if we've exceeded the timeout
-            if self._check_device_timeout(fl_ctx):
-                self.log_error(
-                    fl_ctx,
-                    f"Device wait timeout ({self.device_wait_timeout}s) exceeded. "
-                    f"Available devices: {len(self.device_manager.available_devices)} out of {self.device_manager.device_selection_size}. "
-                    "Not enough devices joining, please adjust the server params. Stopping the job.",
-                )
-                # Stop the job due to insufficient devices
-                self.should_stop_job = True
-                # Prepare an empty reply
-                reply = StateUpdateReply(
-                    model_version=0,
-                    model=None,
-                    device_selection_version=self.device_manager.current_selection_version,
-                    device_selection=self.device_manager.get_selection(fl_ctx),
-                )
-                return False, reply.to_shareable()
-            else:
-                remaining_time = self._get_remaining_timeout()
-                self.log_info(
-                    fl_ctx,
-                    f"Not enough available devices, waiting for more: {len(self.device_manager.available_devices)} out of {self.device_manager.device_selection_size}. "
-                    f"Timeout in {remaining_time:.1f} seconds",
-                )
+        if self.device_wait_start_time is not None:
+            self._device_wait_countdown(fl_ctx)
 
         accepted = True
         if report.model_updates:
@@ -205,8 +211,12 @@ class ModelUpdateAssessor(Assessor):
 
             # Handle device selection
             if self.device_manager.should_fill_selection(fl_ctx):
-                self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
-
+                # check if we have enough devices to fill selection
+                if self.device_manager.has_enough_devices(fl_ctx):
+                    self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
+                else:
+                    self.log_info(fl_ctx, "not enough devices to fill selection, waiting for more devices")
+                    self.device_wait_start_time = time.time()
         else:
             self.log_debug(fl_ctx, "no model updates")
 
@@ -220,6 +230,8 @@ class ModelUpdateAssessor(Assessor):
                 self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
                 # Reset wait timer since we have enough devices
                 self.device_wait_start_time = None
+            else:
+                self.device_wait_start_time = time.time()
 
         # Prepare reply
         model = None
