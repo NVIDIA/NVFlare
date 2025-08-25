@@ -34,9 +34,8 @@ class TestProject:
 
     def test_single_overseer(self):
         p1 = Participant(name="name1", org="org", type="overseer")
-        p2 = Participant(name="name2", org="org", type="overseer")
-        with pytest.raises(ValueError, match=r".* overseer already exists"):
-            _ = Project("name", "description", [p1, p2])
+        with pytest.raises(ValueError, match=r".* overseer is removed"):
+            _ = Project("name", "description", [p1])
 
     def test_get_clients(self):
         p = create_participants(type="client", number=3, org="org", name="name")

@@ -1,0 +1,37 @@
+api_version: 3
+name: edge_example
+description: NVFlare edge project yaml file for example
+
+# For edge project, the participants are created automatically
+# and organized in a tree hierarchy.
+edge:
+  analyze: false
+  lcp_only: false
+  root_dir: /tmp/nvflare/workspaces
+  depth: 1
+  width: 2
+  max_sites: 100
+  clients: 2
+  rp: 4321
+
+# The participants are ignored for edge provisioning except admins
+participants:
+  - name: admin@nvidia.com
+    type: admin
+    org: nvidia
+    role: project_admin
+
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file:
+        - master_template.yml
+        - aws_template.yml
+        - azure_template.yml
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      # config_folder can be set to inform NVIDIA FLARE where to get configuration
+      config_folder: config
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
+  - path: nvflare.lighter.impl.edge.EdgeBuilder

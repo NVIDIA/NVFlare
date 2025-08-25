@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+from enum import Enum
 from typing import List, Union
 
 from nvflare.apis.fl_constant import FLMetaKey
@@ -20,7 +21,7 @@ from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.utils import fobs
 
 
-class DataKind(object):
+class DataKind(str, Enum):
     FL_MODEL = "FL_MODEL"
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"

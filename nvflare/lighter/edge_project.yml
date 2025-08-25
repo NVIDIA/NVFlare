@@ -1,0 +1,48 @@
+# NVFlare Sample Edge Project Configuration
+#
+# This YAML file defines the configuration for an NVFlare sample edge project. It automates the provisioning of participants
+# in a hierarchical structure of relays and clients, primarily for testing and simulation purposes within an edge environment.
+# This configuration is not intended for production use and should be used for experiments or validation.
+
+# Project Metadata
+api_version: 3               # Version of the API to use
+name: example_project        # Name of the project
+description: NVFlare sample project yaml file for edge
+
+# Edge Hierarchy Configuration
+# The edge section defines the settings for automatically creating participants and structuring them hierarchically.
+edge:
+  analyze: false    # If true, only analyzes and outputs stats without generating startup kits
+  lcp_only: false   # If true, generates only the LCPs (Leaf Client Parent), skipping relays and associated CPs
+  root_dir: .       # Root directory for generated provisioning files
+  depth: 2          # Depth of the relay tree (levels of hierarchy)
+  width: 2          # Width of each node in the relay tree (number of child nodes per relay)
+  clients: 3        # Number of clients to create for each leaf relay node
+  max_sites: 100    # Maximum number of sites allowed for provisioning
+  rp: 4321          # Port number for the routing proxy
+
+# Edge Participant Settings
+# The list below specifies participants of the project. The edge provisioning automatically creates relays and clients,
+# ignoring manually specified participants except for admins.
+participants:
+  - name: admin@nvidia.com    # Admin participant information
+    type: admin
+    org: nvidia
+    role: project_admin
+
+# Builder Plugins
+# Defines the builders used for provisioning, responsible for preparing workspaces, generating necessary files, certificates,
+# and signatures required for operations in the edge environment.
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file:          # Templates to include for workspace provisioning
+        - master_template.yml
+        - aws_template.yml
+        - azure_template.yml
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      config_folder: config   # Configuration folder for setting up project details
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder
+  - path: nvflare.lighter.impl.edge.EdgeBuilder
