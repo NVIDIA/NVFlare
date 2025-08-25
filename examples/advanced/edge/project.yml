@@ -7,7 +7,7 @@ description: NVFlare edge project yaml file for example
 edge:
   analyze: false
   lcp_only: false
-  root_dir: /tmp/nvflare/workspaces
+  root_dir: ./workspaces
   depth: 1
   width: 2
   max_sites: 100
@@ -34,3 +34,4 @@ builders:
       config_folder: config
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
+  - path: nvflare.lighter.impl.edge.EdgeBuilder
