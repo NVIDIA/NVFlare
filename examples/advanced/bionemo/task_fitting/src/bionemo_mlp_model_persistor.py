@@ -14,7 +14,6 @@
 
 import os
 import pickle
-from typing import Dict
 
 import numpy as np
 from sklearn.neural_network import MLPClassifier
@@ -165,7 +164,7 @@ class BioNeMoMLPModelPersistor(PTFileModelPersistor):
             self.log_exception(fl_ctx, "error loading checkpoint from {}".format(model_file))
             return {}
 
-    def get_model_inventory(self, fl_ctx: FLContext) -> Dict[str, ModelDescriptor]:
+    def get_model_inventory(self, fl_ctx: FLContext) -> dict[str, ModelDescriptor]:
         model_inventory = {}
         location = os.path.join(self.log_dir, self.global_model_file_name)
         if os.path.exists(location):

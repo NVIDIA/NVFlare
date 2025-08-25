@@ -20,7 +20,6 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict
 from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
 
@@ -94,7 +93,7 @@ def create_test_code(tmp_path):
     return zip_path
 
 
-def create_test_app_structure(base_path: Path, meta_content: Dict):
+def create_test_app_structure(base_path: Path, meta_content: dict):
     """Helper to create test application structure."""
     app_dir = base_path / "application"
     app_dir.mkdir(parents=True, exist_ok=True)

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from argparse import Namespace
-from typing import List
 
 import pytest
 
@@ -38,7 +37,7 @@ TEST_CASES = [
 
 class TestListJobCmdParser:
     @pytest.mark.parametrize("args, expected_args", TEST_CASES)
-    def test_parse_args(self, args: List[str], expected_args):
+    def test_parse_args(self, args: list[str], expected_args):
         parser = _create_list_job_cmd_parser()
         parsed_args = parser.parse_args(args)
         assert parsed_args == expected_args

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -29,7 +28,7 @@ class CustomSecurityHandler(FLComponent):
                 fl_ctx.set_prop(FLContextKey.AUTHORIZATION_RESULT, False, sticky=False)
                 fl_ctx.set_prop(FLContextKey.AUTHORIZATION_REASON, reason, sticky=False)
 
-    def authorize(self, fl_ctx: FLContext) -> Tuple[bool, str]:
+    def authorize(self, fl_ctx: FLContext) -> tuple[bool, str]:
         command = fl_ctx.get_prop(FLContextKey.COMMAND_NAME)
         if command in ["check_resources"]:
             security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS)

@@ -16,7 +16,7 @@ import logging
 import os
 import signal
 from abc import ABC, abstractmethod
-from typing import Dict, Optional
+from typing import Optional
 
 from .utils import run_command_in_subprocess
 
@@ -50,8 +50,8 @@ class SiteLauncher(ABC):
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.overseer_properties: Optional[SiteProperties] = None
-        self.server_properties: Dict[str, ServerProperties] = {}
-        self.client_properties: Dict[str, SiteProperties] = {}
+        self.server_properties: dict[str, ServerProperties] = {}
+        self.client_properties: dict[str, SiteProperties] = {}
 
     @abstractmethod
     def prepare_workspace(self) -> str:

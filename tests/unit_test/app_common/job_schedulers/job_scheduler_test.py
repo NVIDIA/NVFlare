@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 from unittest.mock import Mock
 
 import pytest
@@ -72,7 +72,7 @@ class Site:
 
 
 class MockServerEngine(ServerEngineSpec):
-    def __init__(self, clients: Dict[str, Site], run_name="exp1"):
+    def __init__(self, clients: dict[str, Site], run_name="exp1"):
         self.fl_ctx_mgr = FLContextManager(
             engine=self,
             identity_name="__mock_engine",
@@ -91,7 +91,7 @@ class MockServerEngine(ServerEngineSpec):
     def sync_clients_from_main_process(self):
         pass
 
-    def validate_targets(self, client_names: List[str]):
+    def validate_targets(self, client_names: list[str]):
         pass
 
     def new_context(self):
@@ -138,8 +138,8 @@ class MockServerEngine(ServerEngineSpec):
         pass
 
     def check_client_resources(
-        self, job: Job, resource_reqs: Dict[str, dict], fl_ctx: FLContext
-    ) -> Dict[str, Tuple[bool, Optional[str]]]:
+        self, job: Job, resource_reqs: dict[str, dict], fl_ctx: FLContext
+    ) -> dict[str, tuple[bool, Optional[str]]]:
         result = {}
         with self.new_context() as fl_ctx:
             for site_name, requirements in resource_reqs.items():
@@ -150,7 +150,7 @@ class MockServerEngine(ServerEngineSpec):
         return self.clients.get(token)
 
     def cancel_client_resources(
-        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict], fl_ctx: FLContext
+        self, resource_check_results: dict[str, tuple[bool, str]], resource_reqs: dict[str, dict], fl_ctx: FLContext
     ):
         # with self.new_context() as fl_ctx:
         for site_name, result in resource_check_results.items():
@@ -164,7 +164,7 @@ class MockServerEngine(ServerEngineSpec):
         pass
 
 
-def create_servers(server_num, sites: List[Site]):
+def create_servers(server_num, sites: list[Site]):
     servers = []
     for i in range(server_num):
         engine = MockServerEngine(clients={s.name: s for s in sites})
@@ -430,7 +430,7 @@ class TestDefaultJobScheduler:
         max_jobs_allow = 4
         resource_on_each_site = {"gpu": [0, 1]}
 
-        sites: Dict[str, Site] = {
+        sites: dict[str, Site] = {
             f"site{i}": Site(
                 name=f"site{i}",
                 resources=resource_on_each_site,

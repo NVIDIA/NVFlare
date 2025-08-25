@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-from typing import Dict
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.workflows.model_controller import ModelController
@@ -39,7 +38,7 @@ class KM(ModelController):
         results = self.send_model_and_wait(data=model)
         return results
 
-    def aggr_hist(self, sag_result: Dict[str, Dict[str, FLModel]]):
+    def aggr_hist(self, sag_result: dict[str, dict[str, FLModel]]):
         self.logger.info("aggregate histogram \n")
 
         if not sag_result:

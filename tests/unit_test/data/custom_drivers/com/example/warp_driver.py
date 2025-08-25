@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Dict, List
+from typing import Any
 
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.connector_info import ConnectorInfo
@@ -25,11 +25,11 @@ class WarpDriver(BaseDriver):
         super().__init__()
 
     @staticmethod
-    def supported_transports() -> List[str]:
+    def supported_transports() -> list[str]:
         return ["warp"]
 
     @staticmethod
-    def capabilities() -> Dict[str, Any]:
+    def capabilities() -> dict[str, Any]:
         return {DriverCap.SEND_HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: False}
 
     def listen(self, connector: ConnectorInfo):

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
 
 import pytest
 
@@ -66,7 +65,7 @@ class TestNumericStats:
             "site-2": {"train": {"Age": 1}, "test": {"Age": 3}},
         }
 
-        global_statistics: Dict[str, Dict[str, int]] = {}
+        global_statistics: dict[str, dict[str, int]] = {}
         for client in client_statistics:
             statistics = client_statistics[client]
             print("get_min_or_max_values =", global_statistics)
@@ -74,7 +73,7 @@ class TestNumericStats:
 
         assert global_statistics == {"test": {"Age": 0}, "train": {"Age": 0}}
 
-        global_statistics: Dict[str, Dict[str, int]] = {}
+        global_statistics: dict[str, dict[str, int]] = {}
         for client in client_statistics:
             statistics = client_statistics[client]
             print("get_min_or_max_values =", global_statistics)
