@@ -96,7 +96,7 @@ class FedAvgRecipe(Recipe):
             num_clients=3,
             min_clients=2,
             num_rounds=10,
-            train_script="train.py",
+            train_script="client.py",
             train_args="--epochs 5 --batch_size 32"
         )
         ```

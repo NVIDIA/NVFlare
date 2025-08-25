@@ -48,6 +48,47 @@ class _FedAvgValidator(BaseModel):
 
 
 class FedAvgLrRecipe(Recipe):
+    """A recipe for implementing Federated Averaging (FedAvg) for Logistics Regression with Newton Raphson.
+    FedAvg is a fundamental federated learning algorithm that aggregates model updates
+    from multiple clients by computing a weighted average based on the amount of local
+    training data. This recipe sets up a complete federated learning workflow with
+    scatter-and-gather communication pattern.
+
+    The recipe configures:
+    - A federated job with initial model (optional)
+    - Weighted aggregator for combining client model updates (or custom aggregator)
+    - Script runners for client-side training execution
+
+    Args:
+        name: Name of the federated learning job. Defaults to "lr_fedavg".
+        initial_model: Initial model to start federated training with. If None,
+            clients will start with their own local models.
+        clients: List of selected client names to participate in training. If None,
+            all available clients will be used.
+        num_clients: Number of sampled clients expected to participate. If clients is provided,
+            this will be set automatically to len(clients).
+        min_clients: Minimum number of clients required to start a training round.
+            Defaults to 0 (no minimum).
+        num_rounds: Number of federated training rounds to execute. Defaults to 2.
+        damping_factor: default to 0.8
+        train_script: Path to the training script that will be executed on each client.
+        train_args: Command line arguments to pass to the training script.
+        launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
+        command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
+
+    Example:
+        ```python
+        recipe = FedAvgLrRecipe(
+            name="lr_fedavg",
+            initial_model=pretrained_model,
+            num_clients=3,
+            min_clients=2,
+            num_rounds=10,
+            train_script="client.py",
+        )
+        ```
+    """
+
     def __init__(
         self,
         *,
