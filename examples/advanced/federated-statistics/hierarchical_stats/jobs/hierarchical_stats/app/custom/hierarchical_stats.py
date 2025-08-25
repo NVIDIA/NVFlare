@@ -15,7 +15,7 @@
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,7 @@ class HierarchicalStats(Statistics):
     def __init__(self):
         super().__init__()
         self.data_root_dir = "/tmp/nvflare/data/hierarchical_stats/"
-        self.data: Optional[Dict[str, pd.DataFrame]] = None
+        self.data: Optional[dict[str, pd.DataFrame]] = None
         self.data_features = [
             "Pass",
             "Fail",
@@ -38,7 +38,7 @@ class HierarchicalStats(Statistics):
         ]
         self.skip_rows = {}
 
-    def load_data(self, fl_ctx: FLContext) -> Dict[str, pd.DataFrame]:
+    def load_data(self, fl_ctx: FLContext) -> dict[str, pd.DataFrame]:
         client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Load data for client {client_name}")
         try:
@@ -57,8 +57,8 @@ class HierarchicalStats(Statistics):
         if self.data is None:
             raise ValueError("Data is not loaded. make sure the data is loaded")
 
-    def features(self) -> Dict[str, List[Feature]]:
-        results: Dict[str, List[Feature]] = {}
+    def features(self) -> dict[str, list[Feature]]:
+        results: dict[str, list[Feature]] = {}
         for ds_name in self.data:
             df = self.data[ds_name]
             results[ds_name] = []

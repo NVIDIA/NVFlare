@@ -16,7 +16,7 @@
 
 import shutil
 from pathlib import Path
-from typing import List, Optional, Tuple, Type
+from typing import Optional
 
 from bionemo.core.utils.dtypes import PrecisionTypes, get_autocast_dtype
 from bionemo.esm2.data.tokenizer import get_tokenizer
@@ -77,7 +77,7 @@ def train_model(
     wandb_entity: Optional[str] = None,
     wandb_project: Optional[str] = None,
     wandb_offline: bool = False,
-    wandb_tags: Optional[List[str]] = None,
+    wandb_tags: Optional[list[str]] = None,
     wandb_group: Optional[str] = None,
     wandb_id: Optional[str] = None,
     wandb_anonymous: Optional[bool] = False,
@@ -92,17 +92,17 @@ def train_model(
     nsys_profiling: bool = False,
     nsys_start_step: int = 0,
     nsys_end_step: Optional[int] = None,
-    nsys_ranks: List[int] = [0],
-    dataset_class: Type[InMemoryProteinDataset] = InMemorySingleValueDataset,
-    config_class: Type[BioBertConfig] = ESM2FineTuneSeqConfig,
+    nsys_ranks: list[int] = [0],
+    dataset_class: type[InMemoryProteinDataset] = InMemorySingleValueDataset,
+    config_class: type[BioBertConfig] = ESM2FineTuneSeqConfig,
     metric_tracker: Callback | None = None,
     overlap_grad_reduce: bool = False,  # Default to False to avoid communication issue in gradient synchronization step
     overlap_param_gather: bool = True,
     average_in_collective: bool = True,
     grad_reduce_in_fp32: bool = False,
     label_column: str = "labels",
-    classes: List[str] = None,
-) -> Tuple[Path, Callback | None, nl.Trainer]:
+    classes: list[str] = None,
+) -> tuple[Path, Callback | None, nl.Trainer]:
     """Train an ESM2 model on UR data.
 
     Args:
@@ -296,7 +296,7 @@ def train_model(
     valid_dataset = dataset_class.from_csv(valid_data_path, task_type=task_type, label_column=label_column)
     if task_type == "classification":
         if classes:
-            if not isinstance(classes, List):
+            if not isinstance(classes, list):
                 raise ValueError(f"classes is expected to be list of strings but received {type(classes)}: {classes}")
             train_dataset.label_tokenizer.build_vocab([classes])
             print(f"Build custom label tokenizer based on label classes: {classes}")

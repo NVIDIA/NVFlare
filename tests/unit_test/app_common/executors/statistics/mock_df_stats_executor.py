@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Optional
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,7 @@ from nvflare.app_common.abstract.statistics_spec import (
 from nvflare.app_common.statistics.numpy_utils import get_std_histogram_buckets
 
 
-def load_data() -> Dict[str, pd.DataFrame]:
+def load_data() -> dict[str, pd.DataFrame]:
     try:
         train_data = [["tom", 10], ["nick", 15], ["juli", 14], ["tom2", 10], ["nick1", 25], ["juli1", 24]]
         test_data = [["john", 100], ["mary", 25], ["rose", 34], ["tom1", 20], ["nick2", 35], ["juli1", 34]]
@@ -47,16 +47,16 @@ class MockDFStatistics(Statistics):
     def __init__(self, data_path):
         super().__init__()
         self.data_path = data_path
-        self.data: Optional[Dict[str, pd.DataFrame]] = None
+        self.data: Optional[dict[str, pd.DataFrame]] = None
 
     def initialize(self, fl_ctx: FLContext):
         self.data = load_data()
         if self.data is None:
             raise ValueError("data is not loaded. make sure the data is loaded")
 
-    def features(self) -> Dict[str, List[Feature]]:
+    def features(self) -> dict[str, list[Feature]]:
         features = [Feature("Name", DataType.STRING), Feature("Age", DataType.INT)]
-        results: Dict[str, List[Feature]] = {"train": features, "test": features}
+        results: dict[str, list[Feature]] = {"train": features, "test": features}
         return results
 
     def count(self, dataset_name: str, feature_name: str) -> int:

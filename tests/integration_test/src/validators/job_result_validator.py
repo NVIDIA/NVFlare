@@ -15,14 +15,13 @@
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import List
 
 from tests.integration_test.src import SiteProperties
 
 
 class JobResultValidator(ABC):
     @abstractmethod
-    def validate_results(self, job_result, client_props: List[SiteProperties]) -> bool:
+    def validate_results(self, job_result, client_props: list[SiteProperties]) -> bool:
         pass
 
 
