@@ -144,10 +144,6 @@ class ModelUpdateAssessor(Assessor):
             return self._do_child_update(update, fl_ctx)
 
     def _device_wait_countdown(self, fl_ctx: FLContext):
-        # Start timing if we haven't started yet
-        if self.device_wait_start_time is None:
-            self.device_wait_start_time = time.time()
-
         # Check if we've exceeded the timeout
         if self._check_device_timeout(fl_ctx):
             usable_devices = set(self.device_manager.available_devices.keys()) - set(
@@ -190,6 +186,7 @@ class ModelUpdateAssessor(Assessor):
                 self.should_stop_job = False  # Reset stop job flag
                 self.log_info(fl_ctx, "Sufficient devices now available, resetting wait timer and stop job flag")
 
+        # Check for device wait timeout if we are waiting for devices
         if self.device_wait_start_time is not None:
             self._device_wait_countdown(fl_ctx)
 
@@ -223,8 +220,9 @@ class ModelUpdateAssessor(Assessor):
                 # Reset wait timer since we have enough devices
                 self.device_wait_start_time = None
             else:
-                self.log_info(fl_ctx, "not enough devices to fill selection, waiting for more devices")
-                self.device_wait_start_time = time.time()
+                # Start or continue wait timer since we don't have enough devices
+                if self.device_wait_start_time is None:
+                    self.device_wait_start_time = time.time()
 
         # Prepare reply
         model = None
