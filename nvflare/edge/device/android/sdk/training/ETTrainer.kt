@@ -126,7 +126,6 @@ class ETTrainer(
             }
             
             // Extract model_buffer from JSON if needed
-            Log.d(TAG, "Model data starts with '{': ${modelData.startsWith("{")}")
             val actualModelData = if (modelData.startsWith("{")) {
                 // Parse JSON and extract model_buffer
                 Log.d(TAG, "Parsing JSON model data")

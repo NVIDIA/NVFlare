@@ -1,11 +1,9 @@
-package com.nvidia.nvflare.sdk.models
+package com.nvidia.nvflare.sdk.utils
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonPrimitive
-import java.util.Base64
-import com.google.gson.annotations.SerializedName
 
 // JSON Value Types - Used for web communication protocol
 sealed class JSONValue {
@@ -72,4 +70,4 @@ sealed class JSONValue {
             is NullValue -> Unit  // Return Unit instead of null to match Any type
         }
     }
-} 
+}
