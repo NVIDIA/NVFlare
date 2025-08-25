@@ -22,7 +22,7 @@ from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
 from nvflare.app_common.workflows.lr.np_persistor import LRModelPersistor
 from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import ScriptRunner, FrameworkType
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -49,19 +49,19 @@ class _FedAvgValidator(BaseModel):
 
 class FedAvgLrRecipe(Recipe):
     def __init__(
-            self,
-            *,
-            name: str = "lr_fedavg",
-            initial_model: Any = None,
-            clients: Optional[List[str]] = None,
-            num_clients: Optional[int] = None,
-            min_clients: int = 0,
-            num_rounds: int = 2,
-            damping_factor=0.8,
-            train_script: str,
-            train_args: str = "",
-            launch_external_process=False,
-            command: str = "python3 -u",
+        self,
+        *,
+        name: str = "lr_fedavg",
+        initial_model: Any = None,
+        clients: Optional[List[str]] = None,
+        num_clients: Optional[int] = None,
+        min_clients: int = 0,
+        num_rounds: int = 2,
+        damping_factor=0.8,
+        train_script: str,
+        train_args: str = "",
+        launch_external_process=False,
+        command: str = "python3 -u",
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -75,7 +75,7 @@ class FedAvgLrRecipe(Recipe):
             train_script=train_script,
             train_args=train_args,
             launch_external_process=launch_external_process,
-            command=command
+            command=command,
         )
 
         self.name = v.name
@@ -130,7 +130,7 @@ class FedAvgLrRecipe(Recipe):
                 command=self.command,
                 framework=FrameworkType.RAW,
                 server_expected_format=ExchangeFormat.RAW,
-                params_transfer_type=TransferType.FULL
+                params_transfer_type=TransferType.FULL,
             )
             job.to(runner, client)
 

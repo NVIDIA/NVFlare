@@ -22,7 +22,7 @@ from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.job_config.script_runner import ScriptRunner, FrameworkType
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -40,10 +40,10 @@ class _FedAvgValidator(BaseModel):
     train_args: str
     aggregator: Optional[Aggregator]
     aggregator_data_kind: Optional[DataKind]
-    launch_external_process: bool = False,
-    command: str = "python3 -u",
-    server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
-    params_transfer_type: TransferType = TransferType.FULL,
+    launch_external_process: bool = (False,)
+    command: str = ("python3 -u",)
+    server_expected_format: ExchangeFormat = (ExchangeFormat.NUMPY,)
+    params_transfer_type: TransferType = (TransferType.FULL,)
 
     def model_post_init(self, __context):
         if self.clients and self.num_clients is None:
@@ -140,10 +140,10 @@ class FedAvgRecipe(Recipe):
             train_args=train_args,
             aggregator=aggregator,
             aggregator_data_kind=aggregator_data_kind,
-            launch_external_process  = launch_external_process,
-            command = command,
-            server_expected_format = server_expected_format,
-            params_transfer_type = params_transfer_type,
+            launch_external_process=launch_external_process,
+            command=command,
+            server_expected_format=server_expected_format,
+            params_transfer_type=params_transfer_type,
         )
 
         self.name = v.name
@@ -158,9 +158,9 @@ class FedAvgRecipe(Recipe):
         self.train_args = v.train_args
         self.aggregator = v.aggregator
         self.aggregator_data_kind = v.aggregator_data_kind
-        self.launch_external_process  = v.launch_external_process
+        self.launch_external_process = v.launch_external_process
         self.command = v.command
-        self.server_expected_format : ExchangeFormat= v.server_expected_format
+        self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
 
         # Create BaseFedJob with initial model
@@ -194,14 +194,15 @@ class FedAvgRecipe(Recipe):
         job.to_server(controller)
 
         # Add clients
-        executor = ScriptRunner(script=self.train_script,
-                                script_args=self.train_args,
-                                launch_external_process = self.launch_external_process,
-                                command = self.command,
-                                framework = FrameworkType.PYTORCH,
-                                server_expected_format = self.server_expected_format,
-                                params_transfer_type = self.params_transfer_type
-                                )
+        executor = ScriptRunner(
+            script=self.train_script,
+            script_args=self.train_args,
+            launch_external_process=self.launch_external_process,
+            command=self.command,
+            framework=FrameworkType.PYTORCH,
+            server_expected_format=self.server_expected_format,
+            params_transfer_type=self.params_transfer_type,
+        )
         if self.clients is None:
             job.to_clients(executor)
         else:
