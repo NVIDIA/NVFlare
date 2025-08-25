@@ -106,9 +106,6 @@ and the new way with FLARE API.
     restart,restart,2.4.0,
     shutdown,shutdown,2.4.0,
     set_timeout,set_timeout,2.4.0,changed to session-based
-    list_sp,list_sp,2.4.0,
-    get_active_sp,get_active_sp,2.4.0,
-    promote_sp,promote_sp,2.4.0,
     get_available_apps_to_upload,get_available_apps_to_upload,2.4.0,
     shutdown_system,shutdown_system,2.4.0,
     ls_target,ls_target,2.4.0,
