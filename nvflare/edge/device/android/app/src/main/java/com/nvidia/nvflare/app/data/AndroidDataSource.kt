@@ -1,5 +1,6 @@
 package com.nvidia.nvflare.app.data
 
+import android.util.Log
 import com.nvidia.nvflare.sdk.core.Context
 import com.nvidia.nvflare.sdk.core.DataSource
 import com.nvidia.nvflare.sdk.core.Dataset
@@ -15,14 +16,18 @@ import android.content.Context as AndroidContext
 class AndroidDataSource(private val context: AndroidContext) : DataSource {
     
     override fun getDataset(datasetType: String, ctx: Context): Dataset {
-        // datasetType should be one of: "train", "evaluate", "test"
-        val phase = datasetType.lowercase()
-        if (phase !in listOf("train", "evaluate", "test")) {
-            throw IllegalArgumentException("Unsupported dataset phase: $datasetType. Must be one of: train, evaluate, test")
+        // datasetType is the job name (e.g., "xor_et", "cifar10_et")
+        // Extract the actual dataset type from the job name
+        val datasetName = when {
+            datasetType.lowercase().contains("xor") -> "xor"
+            datasetType.lowercase().contains("cifar") || datasetType.lowercase().contains("cnn") -> "cifar10"
+            else -> "xor" // Default to XOR if unknown
         }
         
-        // Get the actual dataset name from context (e.g., "cifar10", "xor")
-        val datasetName = ctx.get("dataset_name") as? String ?: "xor" // Default to XOR if not specified
+        // Always use "train" phase for federated learning
+        val phase = "train"
+        
+        Log.d("AndroidDataSource", "Job: $datasetType -> Dataset: $datasetName, Phase: $phase")
         
         return when (datasetName.lowercase()) {
             "cifar10" -> CIFAR10Dataset(context, phase)

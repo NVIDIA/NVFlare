@@ -16,12 +16,4 @@ abstract class Transform {
     abstract fun transform(batch: Batch, ctx: Context, abortSignal: Signal): Batch
 }
 
-/**
- * No-op transform that passes batches through unchanged.
- * Useful as a default or placeholder transform.
- */
-class NoOpTransform : Transform() {
-    override fun transform(batch: Batch, ctx: Context, abortSignal: Signal): Batch {
-        return batch
-    }
-} 
+ 

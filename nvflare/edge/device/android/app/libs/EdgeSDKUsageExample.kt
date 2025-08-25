@@ -84,7 +84,7 @@ class EdgeSDKUsageExample {
      * Flow:
      * 1. FlareRunnerController creates AndroidFlareRunner
      * 2. AndroidFlareRunner fetches jobs and tasks from server
-      * 3. AndroidExecutor receives task data and creates ETTrainer
+      * 3. ETTrainerExecutor receives task data and creates ETTrainer
  * 4. ETTrainer.train() is called directly
      * 5. ETTrainer returns trivial results (no real training)
      * 6. Results are sent back to server
@@ -93,9 +93,9 @@ class EdgeSDKUsageExample {
         /*
         Edge SDK Flow with Trivial Trainer:
         
-        Server Request → FlareRunnerController → AndroidFlareRunner → AndroidExecutor → ETTrainer
+        Server Request → FlareRunnerController → AndroidFlareRunner → ETTrainerExecutor → ETTrainer
         
-        ETTrainer Response → AndroidExecutor → AndroidFlareRunner → Server
+        ETTrainer Response → ETTrainerExecutor → AndroidFlareRunner → Server
         
         Key Points:
         - The trivial trainer (ETTrainer) is completely unchanged

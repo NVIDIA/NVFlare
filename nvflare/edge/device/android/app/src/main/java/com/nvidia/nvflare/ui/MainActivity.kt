@@ -15,7 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.nvidia.nvflare.app.controllers.FlareRunnerController
-import com.nvidia.nvflare.sdk.models.TrainingStatus
+import com.nvidia.nvflare.sdk.training.TrainingStatus
 import com.nvidia.nvflare.app.controllers.SupportedJob
 import com.nvidia.nvflare.ui.theme.NVFlareTheme
 import kotlinx.coroutines.launch

@@ -1,8 +1,9 @@
-package com.nvidia.nvflare.sdk.core
+package com.nvidia.nvflare.sdk.models
 
 import com.google.gson.annotations.SerializedName
-import com.nvidia.nvflare.sdk.models.Job
+import com.nvidia.nvflare.sdk.training.Job
 import com.google.gson.JsonObject
+import com.nvidia.nvflare.sdk.core.NVFlareError
 
 data class JobResponse(
     @SerializedName("status")
@@ -35,4 +36,4 @@ data class JobResponse(
         }
         return Job(id = jobId, status = "running")
     }
-} 
+}

@@ -3,9 +3,9 @@ package com.nvidia.nvflare.sdk.core
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
-import com.nvidia.nvflare.sdk.core.JobResponse
-import com.nvidia.nvflare.sdk.core.TaskResponse
-import com.nvidia.nvflare.sdk.core.ResultResponse
+import com.nvidia.nvflare.sdk.models.JobResponse
+import com.nvidia.nvflare.sdk.models.TaskResponse
+import com.nvidia.nvflare.sdk.models.ResultResponse
 import com.nvidia.nvflare.sdk.core.NVFlareError
 import com.nvidia.nvflare.sdk.models.JSONValue
 import okhttp3.OkHttpClient

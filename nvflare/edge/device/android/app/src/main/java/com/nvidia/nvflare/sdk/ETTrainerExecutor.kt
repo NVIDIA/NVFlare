@@ -3,21 +3,21 @@ package com.nvidia.nvflare.sdk
 import android.util.Log
 import com.nvidia.nvflare.sdk.core.DXO
 import com.nvidia.nvflare.sdk.core.Context
+import com.nvidia.nvflare.sdk.core.ContextKey
 import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.Executor
-import com.nvidia.nvflare.sdk.training.Trainer
 import com.nvidia.nvflare.sdk.training.ETTrainer
-import com.nvidia.nvflare.sdk.models.TrainingConfig
+import com.nvidia.nvflare.sdk.training.TrainingConfig
 import kotlinx.coroutines.runBlocking
 
 /**
- * Android-specific implementation of Executor.
- * Bridges the old Trainer interface with the new SDK architecture.
+ * ExecuTorch-specific implementation of Executor.
+ * Handles ET training execution with dataset creation and result conversion.
  */
-class AndroidExecutor(
-    private val trainer: Trainer
+class ETTrainerExecutor(
+    private val trainer: ETTrainer
 ) : Executor {
-    private val TAG = "AndroidExecutor"
+    private val TAG = "ETTrainerExecutor"
 
     override fun execute(taskData: DXO, ctx: Context, abortSignal: Signal): DXO {
         if (abortSignal.isTriggered) {
@@ -47,16 +47,18 @@ class AndroidExecutor(
                 throw RuntimeException("No model data found in task data")
             }
             
-            // Create appropriate dataset based on training method
-            val dataset = when (trainingConfig.method) {
-                "xor" -> com.nvidia.nvflare.app.data.XORDataset("train")
-                "cnn" -> com.nvidia.nvflare.app.data.CIFAR10Dataset(ctx.getAndroidContext())
-                else -> throw IllegalArgumentException("Unsupported training method: ${trainingConfig.method}")
-            }
+            // Get dataset from context (iOS pattern)
+            val dataset = ctx[ContextKey.DATASET] as? com.nvidia.nvflare.sdk.core.Dataset
+                ?: throw RuntimeException("No dataset found in context")
             
-            // Execute training using the Trainer interface with dataset and model data
+            Log.d(TAG, "Retrieved dataset from context: ${dataset.javaClass.simpleName}, size: ${dataset.size()}")
+            
+            // Set dataset on trainer
+            trainer.setDataset(dataset)
+            
+            // Execute training using ETTrainer directly
             val result = runBlocking {
-                trainer.train(trainingConfig, dataset, modelData)
+                trainer.train(trainingConfig, modelData)
             }
             
             Log.d(TAG, "Training completed successfully")
@@ -82,19 +84,19 @@ class AndroidExecutor(
 }
 
 /**
- * Factory for creating AndroidExecutor instances.
+ * Factory for creating ETTrainerExecutor instances.
  */
-object AndroidExecutorFactory {
+object ETTrainerExecutorFactory {
     
     /**
-     * Create an AndroidExecutor based on the training method and model data.
+     * Create an ETTrainerExecutor based on the training method and model data.
      */
-    fun createExecutor(context: android.content.Context, method: String, modelData: String, meta: Map<String, Any>): AndroidExecutor {
+    fun createExecutor(context: android.content.Context, method: String, modelData: String, meta: Map<String, Any>): ETTrainerExecutor {
         val trainingConfig = TrainingConfig.fromMap(meta)
+
+        // Create ETTrainer without dataset - it will be provided by the executor from context
+        val trainer = ETTrainer(context, modelData, meta)
         
-        // Use dynamic trainer registry instead of hardcoded when block
-        val trainer = TrainerRegistry.createTrainer(context, method, modelData, trainingConfig)
-        
-        return AndroidExecutor(trainer)
+        return ETTrainerExecutor(trainer)
     }
-} 
+}

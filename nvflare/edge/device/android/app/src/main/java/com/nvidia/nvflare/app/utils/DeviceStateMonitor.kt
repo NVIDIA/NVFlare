@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.training
+package com.nvidia.nvflare.app.utils
 
 import android.content.Context
 import android.os.BatteryManager
@@ -9,6 +9,10 @@ import android.os.SystemClock
 import android.os.storage.StorageManager
 import java.io.File
 
+/**
+ * Monitors device state conditions to determine if training should proceed.
+ * Moved to app layer as it's application-specific functionality.
+ */
 class DeviceStateMonitor(private val context: Context) {
     private val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
     private val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as StorageManager

@@ -3,9 +3,9 @@ package com.nvidia.nvflare.sdk.core
 import android.content.Context as AndroidContext
 import android.util.Log
 import com.nvidia.nvflare.sdk.core.Connection
-import com.nvidia.nvflare.sdk.core.JobResponse
-import com.nvidia.nvflare.sdk.core.TaskResponse
-import com.nvidia.nvflare.sdk.core.ResultResponse
+import com.nvidia.nvflare.sdk.models.JobResponse
+import com.nvidia.nvflare.sdk.models.TaskResponse
+import com.nvidia.nvflare.sdk.models.ResultResponse
 import com.nvidia.nvflare.sdk.core.NVFlareError
 import com.nvidia.nvflare.sdk.utils.asMap
 import com.nvidia.nvflare.sdk.core.Context
@@ -15,11 +15,10 @@ import com.nvidia.nvflare.sdk.core.DataSource
 import com.nvidia.nvflare.sdk.core.Filter
 import com.nvidia.nvflare.sdk.core.NoOpFilter
 import com.nvidia.nvflare.sdk.core.NoOpEventHandler
-import com.nvidia.nvflare.sdk.core.NoOpTransform
+
 import com.nvidia.nvflare.sdk.core.SimpleBatch
 import com.nvidia.nvflare.sdk.core.DXO
-import com.nvidia.nvflare.sdk.AndroidExecutor
-import com.nvidia.nvflare.sdk.TrainerRegistry
+import com.nvidia.nvflare.sdk.ETTrainerExecutor
 import com.nvidia.nvflare.sdk.training.ETTrainer
 import com.nvidia.nvflare.sdk.config.processTrainConfig
 import com.nvidia.nvflare.sdk.core.EventType
@@ -27,6 +26,7 @@ import com.nvidia.nvflare.sdk.core.Executor
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
+import java.util.HashMap
 
 /**
  * Main orchestrator for federated learning on Android edge devices.
@@ -51,7 +51,7 @@ class AndroidFlareRunner(
     private var cookie: Any? = null
     private var currentJobId: String? = null
 
-    private val resolverRegistryMap = mutableMapOf<String, Class<*>()
+    private val resolverRegistryMap: MutableMap<String, Class<*>> = HashMap()
 
     init {
         // Add built-in resolvers
@@ -70,22 +70,15 @@ class AndroidFlareRunner(
         // Add Android-specific component resolvers here
         // Follow the Python pattern: component_type -> class_reference
         resolverRegistryMap.putAll(mapOf(
-            "Executor.AndroidExecutor" to AndroidExecutor::class.java,
-            "Trainer.DLTrainer" to AndroidExecutor::class.java,  // Map Trainer.DLTrainer to AndroidExecutor
+            "Executor.ETTrainerExecutor" to ETTrainerExecutor::class.java,
+            "Trainer.DLTrainer" to ETTrainerExecutor::class.java,  // Map Trainer.DLTrainer to ETTrainerExecutor
             "Filter.NoOpFilter" to NoOpFilter::class.java,
             "EventHandler.NoOpEventHandler" to NoOpEventHandler::class.java,
-            "Transform.NoOpTransform" to NoOpTransform::class.java,
             "Batch.SimpleBatch" to SimpleBatch::class.java
         ))
         
-        // Register trainer implementations in the dynamic registry
-        TrainerRegistry.registerTrainer("cnn") { context, modelData, meta ->
-            ETTrainer(context, modelData, meta.toMap())
-        }
-        TrainerRegistry.registerTrainer("xor") { context, modelData, meta ->
-            ETTrainer(context, modelData, meta.toMap())
-        }
-        // Future trainers can be added here without code changes to AndroidExecutorFactory
+        // Note: ETTrainer instances are created directly by ETTrainerExecutorFactory
+        // Future training methods can be added there without code changes to this class
         
         // Note: datasource resolver is provided by the app
     }
@@ -127,6 +120,16 @@ class AndroidFlareRunner(
         val ctx = Context()
         ctx[ContextKey.RUNNER] = this
         ctx[ContextKey.DATA_SOURCE] = dataSource
+
+        // Get dataset from data source and store in context (iOS pattern)
+        val dataset = try {
+            dataSource.getDataset(jobName, ctx)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get dataset for job: $jobName", e)
+            return true  // Cannot continue without dataset
+        }
+        ctx[ContextKey.DATASET] = dataset
+        Log.d(TAG, "Got dataset from data source for job: $jobName, size: ${dataset.size()}")
 
         // Try to get a job
         val job = getJob(ctx, abortSignal)
@@ -233,6 +236,7 @@ class AndroidFlareRunner(
             taskCtx[ContextKey.TASK_NAME] = taskName ?: ""
             taskCtx[ContextKey.TASK_DATA] = taskData ?: emptyMap<String, Any>()
             taskCtx[ContextKey.EXECUTOR] = executor
+            taskCtx[ContextKey.ANDROID_CONTEXT] = getAndroidContext()
 
             // Apply input filters
             var filteredTaskDxo = applyFilters(taskDxo, inputFilters, taskCtx)

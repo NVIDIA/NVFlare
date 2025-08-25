@@ -1,32 +1,5 @@
 package com.nvidia.nvflare.sdk.utils
 
-
-// Model Exchange Format Constants
-object ModelExchangeFormat {
-    const val MODEL_BUFFER = "model_buffer"
-    const val MODEL_BUFFER_TYPE = "model_buffer_type"
-    const val MODEL_BUFFER_NATIVE_FORMAT = "model_buffer_native_format"
-    const val MODEL_BUFFER_ENCODING = "model_buffer_encoding"
-}
-
-// Model Buffer Types
-enum class ModelBufferType {
-    EXECUTORCH,
-    PYTORCH,
-    TENSORFLOW,
-    UNKNOWN;
-
-    companion object {
-        fun fromString(value: String): ModelBufferType {
-            return try {
-                valueOf(value.uppercase())
-            } catch (e: IllegalArgumentException) {
-                UNKNOWN
-            }
-        }
-    }
-}
-
 // Model Native Formats
 enum class ModelNativeFormat {
     BINARY,

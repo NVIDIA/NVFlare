@@ -12,4 +12,6 @@ object ContextKey {
     const val TASK_NAME = "task_name"
     const val TASK_ID = "task_id"
     const val TASK_DATA = "task_data"
+    const val ANDROID_CONTEXT = "android_context"
+    const val DATASET = "dataset"  // Store dataset in context (iOS pattern)
 } 

@@ -1,4 +1,4 @@
-package com.nvidia.nvflare.sdk.training
+package com.nvidia.nvflare.app.utils
 
 import android.content.Context
 import android.util.Log
@@ -9,9 +9,10 @@ import java.util.*
 /**
  * Utility class to help access and manage training artifacts.
  * Provides easy access to saved models, logs, and training data.
+ * Moved to app layer as it's application-specific functionality.
  */
-class TrainingArtifactsHelper(private val context: Context) {
-    private val TAG = "TrainingArtifactsHelper"
+class TrainingArtifacts(private val context: Context) {
+    private val TAG = "TrainingArtifacts"
     
     /**
      * Get all training artifact directories.
@@ -177,9 +178,9 @@ class TrainingArtifactsHelper(private val context: Context) {
                 val epochsLine = lines.find { it.contains("Epochs:") }
                 val lossLine = lines.find { it.contains("Average Loss:") }
                 
-                if (methodLine != null) Log.i(TAG, "    $methodLine.trim()")
-                if (epochsLine != null) Log.i(TAG, "    $epochsLine.trim()")
-                if (lossLine != null) Log.i(TAG, "    $lossLine.trim()")
+                if (methodLine != null) Log.i(TAG, "    ${methodLine.trim()}")
+                if (epochsLine != null) Log.i(TAG, "    ${epochsLine.trim()}")
+                if (lossLine != null) Log.i(TAG, "    ${lossLine.trim()}")
             }
             
             Log.i(TAG, "")
@@ -286,4 +287,4 @@ class TrainingArtifactsHelper(private val context: Context) {
             }
         }
     }
-} 
+}

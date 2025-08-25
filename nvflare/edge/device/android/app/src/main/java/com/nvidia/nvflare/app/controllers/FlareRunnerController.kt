@@ -4,7 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.nvidia.nvflare.app.data.AndroidDataSource
 import com.nvidia.nvflare.app.data.DatasetError
-import com.nvidia.nvflare.sdk.models.TrainingStatus
+import com.nvidia.nvflare.sdk.training.TrainingStatus
 import com.nvidia.nvflare.sdk.core.AndroidFlareRunner
 import com.nvidia.nvflare.sdk.core.Context as FlareContext
 import com.nvidia.nvflare.sdk.core.DataSource
@@ -112,9 +112,9 @@ class FlareRunnerController(
                 
                 if (supportedJobs.contains(SupportedJob.CIFAR10)) {
                     try {
-                        val context = FlareContext()
-                        context.put("dataset_name", "cifar10")
-                        dataset = dataSource.getDataset("train", context)
+                        // Use job name pattern (iOS style) instead of hardcoded "train" phase
+                        jobName = "cifar10_et"
+                        dataset = dataSource.getDataset(jobName, FlareContext())
                         Log.d(TAG, "FlareRunnerController: Created CIFAR-10 dataset")
                         
                         // Validate dataset using SDK's standardized validation
@@ -136,10 +136,9 @@ class FlareRunnerController(
                         throw TrainingError.DATASET_CREATION_FAILED
                     }
                 } else if (supportedJobs.contains(SupportedJob.XOR)) {
-                    val context = FlareContext()
-                    context.put("dataset_name", "xor")
-                    dataset = dataSource.getDataset("train", context)
+                    // Use job name pattern (iOS style) instead of hardcoded "train" phase
                     jobName = "xor_et"
+                    dataset = dataSource.getDataset(jobName, FlareContext())
                     Log.d(TAG, "FlareRunnerController: Created XOR dataset")
                     Log.d(TAG, "FlareRunnerController: XOR dataset size: ${dataset.size()}")
                 } else {

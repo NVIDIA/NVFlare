@@ -12,7 +12,7 @@ import java.util.*
  * Keeps the main trainer logic clean and focused.
  */
 class TrainingArtifactManager(
-    private val context: Context,
+    private val context: android.content.Context,
     private val meta: Map<String, Any>
 ) {
     private val TAG = "TrainingArtifactManager"
