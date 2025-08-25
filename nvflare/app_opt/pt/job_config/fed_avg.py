@@ -21,14 +21,14 @@ from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 
 class FedAvgJob(BaseFedJob):
     def __init__(
-            self,
-            initial_model: nn.Module,
-            n_clients: int,
-            num_rounds: int,
-            name: str = "fed_job",
-            min_clients: int = 1,
-            mandatory_clients: Optional[List[str]] = None,
-            key_metric: str = "accuracy",
+        self,
+        initial_model: nn.Module,
+        n_clients: int,
+        num_rounds: int,
+        name: str = "fed_job",
+        min_clients: int = 1,
+        mandatory_clients: Optional[List[str]] = None,
+        key_metric: str = "accuracy",
     ):
         """PyTorch FedAvg Job.
 
