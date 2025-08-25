@@ -132,8 +132,7 @@ def def_pre_install_parser(sub_cmd):
         # using try catch to avoid hard dependency on nvflare.tool.code_pre_installer
         from nvflare.tool.code_pre_installer.pre_install_cmd import def_pre_install_parser
 
-        pre_install_parser = def_pre_install_parser(cmd, sub_cmd)
-        return {cmd: pre_install_parser}
+        return def_pre_install_parser(cmd, sub_cmd)
     except Exception as e:
         print(f"Error: {str(e)}")
         sys.exit(1)
