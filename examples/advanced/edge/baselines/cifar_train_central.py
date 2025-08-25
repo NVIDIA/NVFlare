@@ -13,10 +13,31 @@
 # limitations under the License.
 
 import torch
+import torch.nn as nn
+from torch.nn import functional as F
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 
-from nvflare.edge.models.model import Cifar10ConvNet
+
+class Cifar10ConvNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=6, kernel_size=5, stride=2)
+        # self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(in_channels=6, out_channels=16, kernel_size=5, stride=2)
+        self.fc1 = nn.Linear(in_features=16 * 5 * 5, out_features=120)
+        self.fc2 = nn.Linear(in_features=120, out_features=84)
+        self.fc3 = nn.Linear(in_features=84, out_features=10)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
 
 CIFAR10_ROOT = "/tmp/nvflare/datasets/cifar10"
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -60,6 +81,12 @@ def main():
     # Training loop
     for epoch in range(10):
         print(f"Epoch: {epoch}")
+
+        # Evaluate global model
+        acc = evaluate(net.state_dict())
+        tb_writer.add_scalar("accuracy", acc, epoch)
+        print(f"Epoch {epoch} accuracy: {acc}")
+
         running_loss = 0.0
         for i, data in enumerate(train_loader, 0):
             # get the inputs; data is a list of [inputs, labels]
@@ -81,11 +108,6 @@ def main():
                 tb_writer.add_scalar("loss", running_loss / 250, epoch * len(train_loader) + i)
                 print(f"[{epoch}, {i}] loss: {running_loss / 250}")
                 running_loss = 0.0
-
-        # Evaluate global model
-        acc = evaluate(net.state_dict())
-        tb_writer.add_scalar("accuracy", acc, epoch)
-        print(f"Epoch {epoch} accuracy: {acc}")
 
     # Save the final model
     model_name = "cifar_net.pth"
