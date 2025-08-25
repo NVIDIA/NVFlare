@@ -49,19 +49,19 @@ class _FedAvgValidator(BaseModel):
 
 class FedAvgLrRecipe(Recipe):
     def __init__(
-        self,
-        *,
-        name: str = "lr_fedavg",
-        initial_model: Any = None,
-        clients: Optional[List[str]] = None,
-        num_clients: Optional[int] = None,
-        min_clients: int = 0,
-        num_rounds: int = 2,
-        damping_factor = 0.8,
-        train_script: str,
-        train_args: str = "",
-        launch_external_process = False,
-        command: str = "python3 -u",
+            self,
+            *,
+            name: str = "lr_fedavg",
+            initial_model: Any = None,
+            clients: Optional[List[str]] = None,
+            num_clients: Optional[int] = None,
+            min_clients: int = 0,
+            num_rounds: int = 2,
+            damping_factor=0.8,
+            train_script: str,
+            train_args: str = "",
+            launch_external_process=False,
+            command: str = "python3 -u",
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -71,11 +71,11 @@ class FedAvgLrRecipe(Recipe):
             num_clients=num_clients,
             min_clients=min_clients,
             num_rounds=num_rounds,
-            damping_factor = damping_factor,
+            damping_factor=damping_factor,
             train_script=train_script,
             train_args=train_args,
-            launch_external_process = launch_external_process,
-            command = command
+            launch_external_process=launch_external_process,
+            command=command
         )
 
         self.name = v.name
@@ -92,10 +92,9 @@ class FedAvgLrRecipe(Recipe):
         self.launch_external_process = v.launch_external_process
         self.command = v.command
 
-
         # Create FedJob.
         job = FedJob(name=self.name)
-        persistor_id = job.to_server(LRModelPersistor(n_features=13), id = "lr_persistor")
+        persistor_id = job.to_server(LRModelPersistor(n_features=13), id="lr_persistor")
 
         # Send custom controller to server
         controller = FedAvgLR(
@@ -118,7 +117,7 @@ class FedAvgLrRecipe(Recipe):
 
         # Add clients
         if self.clients is None:
-            clients = [f"site-{i + 1}"   for i in range(self.num_clients) ]
+            clients = [f"site-{i + 1}" for i in range(self.num_clients)]
         else:
             clients = self.clients
 
@@ -128,10 +127,10 @@ class FedAvgLrRecipe(Recipe):
                 script=self.train_script,
                 script_args=self.train_args,
                 launch_external_process=self.launch_external_process,
-                command = self.command,
+                command=self.command,
                 framework=FrameworkType.RAW,
                 server_expected_format=ExchangeFormat.RAW,
-                params_transfer_type = TransferType.FULL
+                params_transfer_type=TransferType.FULL
             )
             job.to(runner, client)
 
