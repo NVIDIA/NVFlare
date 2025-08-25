@@ -209,28 +209,21 @@ class ModelUpdateAssessor(Assessor):
                     if self.device_manager.device_reuse:
                         self.device_manager.remove_devices_from_used(set(model_update.devices.keys()), fl_ctx)
 
-            # Handle device selection
-            if self.device_manager.should_fill_selection(fl_ctx):
-                # check if we have enough devices to fill selection
-                if self.device_manager.has_enough_devices(fl_ctx):
-                    self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
-                else:
-                    self.log_info(fl_ctx, "not enough devices to fill selection, waiting for more devices")
-                    self.device_wait_start_time = time.time()
         else:
             self.log_debug(fl_ctx, "no model updates")
 
-        # Handle initial model generation
-        if self.model_manager.current_model_version == 0:
+        # Handle device selection
+        if self.device_manager.should_fill_selection(fl_ctx):
+            # check if we have enough devices to fill selection
             if self.device_manager.has_enough_devices(fl_ctx):
-                self.log_info(
-                    fl_ctx, f"got {len(self.device_manager.available_devices)} devices - generate initial model"
-                )
-                self.model_manager.generate_new_model(fl_ctx)
+                if self.model_manager.current_model_version == 0:
+                    self.log_info(fl_ctx, "Generate initial model and fill selection")
+                    self.model_manager.generate_new_model(fl_ctx)
                 self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
                 # Reset wait timer since we have enough devices
                 self.device_wait_start_time = None
             else:
+                self.log_info(fl_ctx, "not enough devices to fill selection, waiting for more devices")
                 self.device_wait_start_time = time.time()
 
         # Prepare reply
