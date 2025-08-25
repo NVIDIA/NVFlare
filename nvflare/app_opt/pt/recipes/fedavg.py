@@ -40,10 +40,10 @@ class _FedAvgValidator(BaseModel):
     train_args: str
     aggregator: Optional[Aggregator]
     aggregator_data_kind: Optional[DataKind]
-    launch_external_process: bool = (False,)
-    command: str = ("python3 -u",)
-    server_expected_format: ExchangeFormat = (ExchangeFormat.NUMPY,)
-    params_transfer_type: TransferType = (TransferType.FULL,)
+    launch_external_process: bool = False
+    command: str = "python3 -u"
+    server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
+    params_transfer_type: TransferType = TransferType.FULL
 
     def model_post_init(self, __context):
         if self.clients and self.num_clients is None:
