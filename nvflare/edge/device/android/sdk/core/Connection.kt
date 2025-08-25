@@ -7,7 +7,7 @@ import com.nvidia.nvflare.sdk.models.JobResponse
 import com.nvidia.nvflare.sdk.models.TaskResponse
 import com.nvidia.nvflare.sdk.models.ResultResponse
 import com.nvidia.nvflare.sdk.core.NVFlareError
-import com.nvidia.nvflare.sdk.models.JSONValue
+import com.nvidia.nvflare.sdk.utils.JSONValue
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody

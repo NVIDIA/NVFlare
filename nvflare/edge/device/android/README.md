@@ -56,3 +56,45 @@ cp ./extension/android/executorch_android/build/outputs/aar/executorch_android-d
 
 Copy nvflare/edge/ios/NVFlareMobile/NVFlareMobile/Assets.xcassets/cifar10/data_batch_1.dataset/data_batch_1.bin to nvflare/edge/device/android/app/src/main/assets/data_batch_1.bin
 
+## ⚠️ Important: SDK Copy Requirement
+
+**Critical Setup Step**: The NVFlare Android SDK contents must be copied to the app's source directory for the app to build and function correctly.
+
+### SDK Source Location
+The SDK source code is located at: `nvflare/edge/device/android/sdk/`
+
+This directory contains:
+- `core/` - Core SDK functionality
+- `training/` - Training-related components  
+- `utils/` - Utility functions
+- `models/` - Model definitions
+- `config/` - Configuration files
+- `ETTrainerExecutor.kt` - Main training executor
+
+### Required Action: Copy SDK to App
+**You must copy the contents of the SDK directory to the app's source directory:**
+
+```bash
+# Copy all SDK contents to the app's java source directory
+cp -r nvflare/edge/device/android/sdk/* nvflare/edge/device/android/app/src/main/java/
+```
+
+### Why This Is Required
+The app code in `nvflare/edge/device/android/app/src/main/java/` does not contain the SDK code. The SDK is maintained separately in the `sdk/` directory, but its contents must be copied to the app's source directory during the build process.
+
+### What Happens If SDK Is Not Copied
+If the SDK contents are not copied to the app's source directory:
+- The app will fail to compile with missing class errors
+- Runtime errors will occur when trying to access SDK functionality
+- Training operations will fail with `TrainingError.DATASET_CREATION_FAILED` or similar errors
+
+### Verification
+To ensure the SDK is properly set up:
+1. Verify the `sdk/` directory exists at `nvflare/edge/device/android/sdk/`
+2. Copy the SDK contents to `nvflare/edge/device/android/app/src/main/java/`
+3. Check that all required SDK files are now present in the app's source directory
+4. Ensure the app can compile successfully
+5. Test that the app can import and use SDK classes
+
+**Note**: The SDK contents must be copied to the app's source directory before building. This is a manual step that must be performed when setting up the development environment.
+
