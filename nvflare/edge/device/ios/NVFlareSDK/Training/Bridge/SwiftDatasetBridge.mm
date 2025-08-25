@@ -25,19 +25,21 @@
     }
     
     // Test if the object responds to required methods
-    if (![nvflareDataset respondsToSelector:@selector(size)]) {
+    SEL sizeSelector = sel_registerName("size");
+    if (![nvflareDataset respondsToSelector:sizeSelector]) {
         NSLog(@"SwiftDatasetBridge: NVFlareDataset does not respond to size selector!");
         return nullptr;
     }
     
-    if (![nvflareDataset respondsToSelector:@selector(getNextBatchWithBatchSize:)]) {
+    SEL getNextBatchSelector = sel_registerName("getNextBatchWithBatchSize:");
+    if (![nvflareDataset respondsToSelector:getNextBatchSelector]) {
         NSLog(@"SwiftDatasetBridge: NVFlareDataset does not respond to getNextBatchWithBatchSize selector!");
         return nullptr;
     }
     
     // Test the size method before creating the adapter
     @try {
-        NSInteger testSize = ((NSInteger (*)(id, SEL))objc_msgSend)(nvflareDataset, @selector(size));
+        NSInteger testSize = ((NSInteger (*)(id, SEL))objc_msgSend)(nvflareDataset, sizeSelector);
         NSLog(@"SwiftDatasetBridge: Test size call successful: %ld", (long)testSize);
     } @catch (NSException *exception) {
         NSLog(@"SwiftDatasetBridge: Test size call failed: %@", exception);

@@ -1,13 +1,13 @@
 //
-//  NVFlareMobileApp.swift
-//  NVFlareMobile
+//  ExampleApp.swift
+//  ExampleApp
 //
 //
 
 import SwiftUI
 
 @main
-struct NVFlareMobileApp: App {
+struct ExampleApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
