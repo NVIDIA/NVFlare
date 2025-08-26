@@ -23,19 +23,47 @@ class DockerImageBuilder(Builder):
     def __init__(
         self,
         base_dockerfile="Dockerfile",
-        nvflare_url="2.6.0",
         image_name="nvflare/nvflare",
+        requirement: str = None,
+        requirements_txt_path: str = None,
     ):
-        """DockerImageBuilder generates a separate Dockefile and build script for each site.
+        """Initializes a DockerImageBuilder.
+
+        This builder generates a Dockefile and build script for each site.
+        It does NOT perform the actual Docker image build.
+
+        You can specify Python dependencies using either:
+
+        1. A single pip-style requirement string (e.g., "nvflare==2.7.0")
+        2. A full requirements.txt file for more complex environments.
+
+        Only one of `requirement` or `requirements_txt_path` should be provided.
 
         Args:
-            base_dockerfile (str): Path to the base Dockerfile to use as a starting point.
-            nvflare_url (str): URL or version string compatible with pip (e.g., a version or
-                "git+https://github.com/NVIDIA/NVFlare.git@main").
-            image_name (str): Name of the Docker image to be built.
+            base_dockerfile (str): Path to a base Dockerfile template used for generating site-specific Dockerfiles.
+            image_name (str): Name (and optionally tag) to assign to the Docker image (used in the generated build script).
+            requirement (str, optional): A single pip-style requirement string (e.g., "nvflare==2.7.0").
+            requirements_txt_path (str, optional): Path to a `requirements.txt` file listing dependencies to install.
+
+
+        Raises:
+            ValueError: If both or neither of `requirement` and `requirements_txt_path` are provided.
+
+        Example:
+            DockerImageBuilder(requirement="nvflare==2.7.0")
+
+            DockerImageBuilder(requirements_txt_path="env/requirements.txt")
         """
+        if requirement and requirements_txt_path:
+            raise ValueError("Specify either `requirement` or `requirements_txt_path`, not both.")
+        if not requirement and not requirements_txt_path:
+            raise ValueError("You must specify either `requirement` or `requirements_txt_path`.")
+        if requirements_txt_path and not os.path.exists(requirements_txt_path):
+            raise ValueError(f"{requirements_txt_path=} does not exist.")
+
+        self.requirement = requirement
+        self.requirements_txt_path = os.path.abspath(requirements_txt_path) if requirements_txt_path else None
         self.base_dockerfile = base_dockerfile
-        self.nvflare_url = nvflare_url
         self.image_name = image_name
 
     def _build_dockerfile(self, entity, ctx: ProvisionContext):
@@ -49,7 +77,10 @@ class DockerImageBuilder(Builder):
         startup_script = self._determine_startup_script(entity, ctx)
         shutil.copy(self.base_dockerfile, dockerfile_path)
         with open(dockerfile_path, "a") as f:
-            f.write(f"RUN pip install {self.nvflare_url}\n")
+            if self.requirement:
+                f.write(f"RUN pip install {self.requirement}\n")
+            elif self.requirements_txt_path:
+                f.write(f"RUN pip install -r {self.requirements_txt_path}\n")
             for p in relative_paths:
                 f.write(f"COPY {p} /opt/nvflare/{p}\n")
             f.write(f'ENTRYPOINT ["/opt/nvflare/startup/{startup_script}"]\n')
@@ -60,6 +91,7 @@ class DockerImageBuilder(Builder):
         with open(build_script_path, "w") as f:
             f.write("#!/bin/bash\n")
             f.write(f"docker build -t {image_tag} -f {ProvFileName.DOCKERFILE} .\n")
+        os.chmod(build_script_path, 0o755)
 
     def _determine_startup_script(self, participant, ctx):
         if participant.type == "admin":
