@@ -51,7 +51,7 @@ source .venv/bin/activate
 # Create libs directory in NVFlare Android app
 mkdir -p nvflare/edge/device/android/app/libs
 
-# Copy the ExecuTorch AAR
+# Copy the ExecuTorch AAR - make sure the app directory is what you are actually using
 cp ./extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar nvflare/edge/device/android/app/libs/executorch.aar
 
 Copy nvflare/edge/ios/NVFlareMobile/NVFlareMobile/Assets.xcassets/cifar10/data_batch_1.dataset/data_batch_1.bin to nvflare/edge/device/android/app/src/main/assets/data_batch_1.bin
@@ -75,8 +75,8 @@ This directory contains:
 **You must copy the contents of the SDK directory to the app's source directory:**
 
 ```bash
-# Copy all SDK contents to the app's java source directory
-cp -r nvflare/edge/device/android/sdk/* nvflare/edge/device/android/app/src/main/java/
+# Copy the SDK directory to the proper package structure
+cp -r nvflare/edge/device/android/sdk nvflare/edge/device/android/app/src/main/java/com/nvidia/nvflare
 ```
 
 ### Why This Is Required
@@ -91,8 +91,8 @@ If the SDK contents are not copied to the app's source directory:
 ### Verification
 To ensure the SDK is properly set up:
 1. Verify the `sdk/` directory exists at `nvflare/edge/device/android/sdk/`
-2. Copy the SDK contents to `nvflare/edge/device/android/app/src/main/java/`
-3. Check that all required SDK files are now present in the app's source directory
+2. Copy the SDK directory to `nvflare/edge/device/android/app/src/main/java/com/nvidia/nvflare`
+3. Check that all required SDK files are now present at `nvflare/edge/device/android/app/src/main/java/com/nvidia/nvflare/sdk/`
 4. Ensure the app can compile successfully
 5. Test that the app can import and use SDK classes
 
