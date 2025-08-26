@@ -95,6 +95,31 @@ class TrainerController: ObservableObject {
         selectedJob = job
     }
     
+    private func createDataset(for jobType: SupportedJob) throws -> NVFlareDataset {
+        switch jobType {
+        case .cifar10:
+            do {
+                let dataset = try SwiftCIFAR10Dataset()
+                print("CIFAR-10 dataset loaded: \(dataset.size()) samples")
+                return dataset
+            } catch {
+                print("CIFAR-10 failed to load: \(error)")
+                throw TrainingError.datasetCreationFailed
+            }
+            
+        case .xor:
+            do {    
+                let dataset = try SwiftXORDataset()
+                print("XOR dataset ready: \(dataset.size()) samples")
+                return dataset
+            } catch {
+                print("XOR failed to load: \(error)")
+                throw TrainingError.datasetCreationFailed
+            }
+            return dataset
+        }
+    }
+    
     func startTraining() async throws {
         guard status == .idle else { return }
         guard let selectedJob = selectedJob else {
@@ -109,39 +134,10 @@ class TrainerController: ObservableObject {
 
                 let swiftDataset: NVFlareDataset
 
-                switch selectedJob {
-                case .cifar10:
-                    do {
-                        swiftDataset = try SwiftCIFAR10Dataset()
-                                print("TrainerController: Created Swift CIFAR-10 dataset")
-        print("TrainerController: CIFAR-10 dataset size: \(swiftDataset.size())")
-                        
-                        // Reset dataset to ensure we start from the beginning
-                        swiftDataset.reset()
-                        print("TrainerController: Reset CIFAR-10 dataset for new task")
-                    } catch DatasetError.noDataFound {
-                        print("TrainerController: CIFAR-10 data not found in app bundle")
-                        throw TrainingError.datasetCreationFailed
-                    } catch DatasetError.invalidDataFormat {
-                        print("TrainerController: CIFAR-10 data format is invalid")
-                        throw TrainingError.datasetCreationFailed
-                    } catch DatasetError.emptyDataset {
-                        print("TrainerController: CIFAR-10 dataset is empty")
-                        throw TrainingError.datasetCreationFailed
-                    } catch {
-                        print("TrainerController: Failed to create CIFAR-10 dataset: \(error)")
-                        throw TrainingError.datasetCreationFailed
-                    }
-
-                case .xor:
-                    swiftDataset = SwiftXORDataset()
-                    print("TrainerController: Created Swift XOR dataset")
-                    print("TrainerController: XOR dataset size: \(swiftDataset.size())")
-                    
-                    // Reset dataset to ensure we start from the beginning
-                    swiftDataset.reset()
-                    print("TrainerController: Reset XOR dataset for new task")
-                }
+                // Create dataset based on selected job
+                swiftDataset = try createDataset(for: selectedJob)
+                swiftDataset.reset()
+                print("TrainerController: Dataset ready with \(swiftDataset.size()) samples")
 
                 // Store reference to keep it alive
                 self.currentSwiftDataset = swiftDataset
