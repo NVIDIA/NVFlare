@@ -11,13 +11,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os.path
 import tempfile
+from typing import Optional
+
+from pydantic import BaseModel, PositiveFloat, conint, model_validator
 
 from nvflare.fuel.flare_api.flare_api import new_insecure_session
 from nvflare.job_config.api import FedJob
 
 from .spec import ExecEnv
+
+
+# Internal — not part of the public API
+class _ProdEnvValidator(BaseModel):
+    startup_kit_dir: str
+    login_timeout: PositiveFloat = 5.0
+    monitor_duration: Optional[conint(ge=0)] = None  # must be zero or positive if specified
+
+    @model_validator(mode="after")
+    def check_startup_kit_dir_exists(self) -> "_ProdEnvValidator":
+        if not os.path.exists(self.startup_kit_dir):
+            raise ValueError(f"startup_kit_dir path does not exist: {self.startup_kit_dir}")
+        return self
 
 
 class ProdEnv(ExecEnv):
@@ -26,27 +43,46 @@ class ProdEnv(ExecEnv):
         self,
         startup_kit_dir: str,
         login_timeout: float = 5.0,
-        monitor_job_duration: int = None,
+        monitor_duration: Optional[int] = 0,
     ):
-        self.startup_kit_dir = startup_kit_dir
-        self.login_timeout = login_timeout
-        self.monitor_job_duration = monitor_job_duration
+        """Production execution environment for submitting and monitoring NVFlare jobs.
+
+        This environment uses the startup kit of an NVFlare deployment to submit jobs via the Flare API.
+
+        Args:
+            startup_kit_dir (str): Path to the admin's startup kit directory.
+            login_timeout (float): Timeout (in seconds) for logging into the Flare API session. Must be > 0.
+            monitor_duration (int, optional): Duration (in seconds) to monitor job execution.
+                If 0 or None, monitoring is skipped. Must be >= 0.
+        """
+        v = _ProdEnvValidator(
+            startup_kit_dir=startup_kit_dir,
+            login_timeout=login_timeout,
+            monitor_duration=monitor_duration,
+        )
+
+        self.startup_kit_dir = v.startup_kit_dir
+        self.login_timeout = v.login_timeout
+        self.monitor_duration = v.monitor_duration
 
     def deploy(self, job: FedJob):
-        sess = new_insecure_session(startup_kit_location=self.startup_kit_dir, timeout=self.login_timeout)
-
+        sess = None
         try:
+            sess = new_insecure_session(startup_kit_location=self.startup_kit_dir, timeout=self.login_timeout)
             with tempfile.TemporaryDirectory() as temp_dir:
                 job.export_job(temp_dir)
                 job_path = os.path.join(temp_dir, job.name)
                 job_id = sess.submit_job(job_path)
-                print(f"submitted job: {job_id}")
+                print(f"Submitted job '{job.name}' with ID: {job_id}")
 
             # monitor job until done.
-            if self.monitor_job_duration:
-                rc = sess.monitor_job(job_id, timeout=self.monitor_job_duration)
+            if self.monitor_duration:
+                rc = sess.monitor_job(job_id, timeout=self.monitor_duration)
                 print(f"job monitor done: {rc=}")
 
             return job_id
+        except Exception as e:
+            raise RuntimeError(f"Failed to submit/monitor job via Flare API: {e}")
         finally:
-            sess.close()
+            if sess:
+                sess.close()

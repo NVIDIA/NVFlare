@@ -16,9 +16,9 @@ import os
 import shutil
 import tempfile
 import time
-from typing import List, Optional
+from typing import Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, conint, model_validator
 
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.job_config.api import FedJob
@@ -42,11 +42,11 @@ DEFAULT_ADMIN_USER = "admin@nvidia.com"
 
 # Internal — not part of the public API
 class _PocEnvValidator(BaseModel):
-    num_clients: int
-    clients: Optional[List[str]] = None
-    gpu_ids: Optional[List[int]] = None
+    num_clients: Optional[conint(gt=0)] = None
+    clients: Optional[list[str]] = None
+    gpu_ids: Optional[list[int]] = None
     auto_stop: bool = True
-    monitor_duration: int = 0
+    monitor_duration: Optional[conint(ge=0)] = None  # must be zero or positive if specified
     use_he: bool = False
     docker_image: Optional[str] = None
     project_conf_path: str = ""
@@ -80,11 +80,11 @@ class POCEnv(ExecEnv):
     def __init__(
         self,
         *,
-        num_clients: int = 2,
-        clients: Optional[List[str]] = None,
-        gpu_ids: Optional[List[int]] = None,
+        num_clients: Optional[int] = 2,
+        clients: Optional[list[str]] = None,
+        gpu_ids: Optional[list[int]] = None,
         auto_stop: bool = True,
-        monitor_duration: int = 0,
+        monitor_duration: Optional[int] = 0,
         use_he: bool = False,
         docker_image: str = None,
         project_conf_path: str = "",
@@ -93,11 +93,12 @@ class POCEnv(ExecEnv):
 
         Args:
             num_clients (int, optional): Number of clients to use in POC mode. Defaults to 2.
-            clients (List[str], optional): List of client names. If None, will generate site-1, site-2, etc. Defaults to None.
+            clients (list[str], optional): List of client names. If None, will generate site-1, site-2, etc. Defaults to None.
                 If specified, number_of_clients argument will be ignored.
-            gpu_ids (List[int], optional): List of GPU IDs to assign to clients. If None, uses CPU only. Defaults to None.
+            gpu_ids (list[int], optional): List of GPU IDs to assign to clients. If None, uses CPU only. Defaults to None.
             auto_stop (bool, optional): Whether to automatically stop POC services after job completion. Defaults to True.
-            monitor_duration (int, optional): Duration to monitor job execution (in seconds). 0 means wait until completion, negative means no monitoring. Defaults to 0.
+            monitor_duration (int, optional): Duration (in seconds) to monitor job execution.
+                If 0 or None, monitoring is skipped. Must be >= 0.
             use_he (bool, optional): Whether to use HE. Defaults to False.
             docker_image (str, optional): Docker image to use for POC. Defaults to None.
             project_conf_path (str, optional): Path to the project configuration file. Defaults to "".
@@ -229,6 +230,7 @@ class POCEnv(ExecEnv):
         Returns:
             str: Job ID returned by the system.
         """
+        sess = None
         try:
             # Get the admin startup kit path for POC
             admin_dir = self._get_admin_startup_kit_path()
@@ -239,30 +241,22 @@ class POCEnv(ExecEnv):
                 startup_kit_location=admin_dir,
             )
 
-            try:
-                # Submit the job
-                job_id = sess.submit_job(job_path)
-                print(f"Submitted job '{job_name}' with ID: {job_id}")
+            # Submit the job
+            job_id = sess.submit_job(job_path)
+            print(f"Submitted job '{job_name}' with ID: {job_id}")
 
-                # Monitor job based on duration setting
-                if self.monitor_duration >= 0:
-                    if self.monitor_duration == 0:
-                        print("Monitoring job until completion...")
-                    else:
-                        print(f"Monitoring job for {self.monitor_duration} seconds...")
+            # monitor job until done.
+            if self.monitor_duration:
+                rc = sess.monitor_job(job_id, timeout=self.monitor_duration)
+                print(f"job monitor done: {rc=}")
 
-                    result = sess.monitor_job(job_id, timeout=self.monitor_duration)
-                    print(f"Job monitoring completed: {result}")
-                else:
-                    print("Job submitted, not monitoring (monitor_duration < 0)")
-
-                return job_id
-
-            finally:
-                sess.close()
-
+            return job_id
         except Exception as e:
             raise RuntimeError(f"Failed to submit/monitor job via Flare API: {e}")
+
+        finally:
+            if sess:
+                sess.close()
 
     def _get_admin_startup_kit_path(self) -> str:
         """Get the path to the admin startup kit for POC.
