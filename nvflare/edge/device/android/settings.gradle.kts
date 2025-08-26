@@ -20,4 +20,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "nvflare-android-executorch-demo"
-include(":app") 
+include(":app")
