@@ -33,7 +33,6 @@ parser.add_argument("--total_num_of_devices", type=int, default=4)
 parser.add_argument("--num_of_simulated_devices_on_each_leaf", type=int, default=1)
 args = parser.parse_args()
 
-# TODO: work with tree_prov.py changes to make more general
 prod_dir = os.path.join(args.workspace_dir, args.project_name, "prod_00")
 admin_startup_kit_dir = os.path.join(prod_dir, "admin@nvidia.com")
 total_num_of_devices = args.total_num_of_devices
@@ -106,7 +105,7 @@ recipe = ETRecipe(
         if num_of_simulated_devices_on_each_leaf > 0
         else None
     ),
-    device_training_params={"epoch": 3, "lr": 0.0001},
+    device_training_params={"epoch": 3, "lr": 0.0001, "batch_size": batch_size},
 )
 if args.export_job:
     recipe.export(job_dir=os.path.join(admin_startup_kit_dir, "transfer"))
