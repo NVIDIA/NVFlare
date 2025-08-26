@@ -46,7 +46,6 @@ class _PocEnvValidator(BaseModel):
     clients: Optional[list[str]] = None
     gpu_ids: Optional[list[int]] = None
     auto_stop: bool = True
-    monitor_job_duration: Optional[conint(ge=0)] = None  # must be zero or positive if specified
     use_he: bool = False
     docker_image: Optional[str] = None
     project_conf_path: str = ""
@@ -84,7 +83,6 @@ class POCEnv(ExecEnv):
         clients: Optional[list[str]] = None,
         gpu_ids: Optional[list[int]] = None,
         auto_stop: bool = True,
-        monitor_job_duration: Optional[int] = None,
         use_he: bool = False,
         docker_image: str = None,
         project_conf_path: str = "",
@@ -97,8 +95,6 @@ class POCEnv(ExecEnv):
                 If specified, number_of_clients argument will be ignored.
             gpu_ids (list[int], optional): List of GPU IDs to assign to clients. If None, uses CPU only. Defaults to None.
             auto_stop (bool, optional): Whether to automatically stop POC services after job completion. Defaults to True.
-            monitor_job_duration (int, optional): Duration (in seconds) to monitor job execution.
-                If None, monitoring is skipped. If 0, will wait for the job to complete. Must be >= 0.
             use_he (bool, optional): Whether to use HE. Defaults to False.
             docker_image (str, optional): Docker image to use for POC. Defaults to None.
             project_conf_path (str, optional): Path to the project configuration file. Defaults to "".
@@ -109,7 +105,6 @@ class POCEnv(ExecEnv):
             clients=clients,
             gpu_ids=gpu_ids,
             auto_stop=auto_stop,
-            monitor_job_duration=monitor_job_duration,
             use_he=use_he,
             docker_image=docker_image,
             project_conf_path=project_conf_path,
@@ -120,7 +115,6 @@ class POCEnv(ExecEnv):
         self.poc_workspace = get_poc_workspace()
         self.gpu_ids = v.gpu_ids or []
         self.auto_stop = v.auto_stop
-        self.monitor_job_duration = v.monitor_job_duration
         self.use_he = v.use_he
         self.project_conf_path = v.project_conf_path
         self.docker_image = v.docker_image
@@ -245,9 +239,9 @@ class POCEnv(ExecEnv):
             job_id = sess.submit_job(job_path)
             print(f"Submitted job '{job_name}' with ID: {job_id}")
 
-            if self.monitor_job_duration is not None:
-                rc = sess.monitor_job(job_id, timeout=self.monitor_job_duration)
-                print(f"job monitor done: {rc=}")
+            # wait for completion in POC
+            rc = sess.monitor_job(job_id, timeout=0)
+            print(f"job monitor done: {rc=}")
 
             return job_id
         except Exception as e:

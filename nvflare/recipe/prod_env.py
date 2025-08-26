@@ -43,7 +43,7 @@ class ProdEnv(ExecEnv):
         self,
         startup_kit_dir: str,
         login_timeout: float = 5.0,
-        monitor_job_duration: Optional[int] = 0,
+        monitor_job_duration: Optional[int] = None,
     ):
         """Production execution environment for submitting and monitoring NVFlare jobs.
 
