@@ -68,4 +68,3 @@ if __name__ == "__main__":
     app.json = FilteredJSONProvider(app)
     app.register_blueprint(feg_bp)
     app.run(host="0.0.0.0", port=proxy_port, debug=False)
-    
