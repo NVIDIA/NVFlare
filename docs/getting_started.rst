@@ -33,7 +33,7 @@ Welcome to NVIDIA FLARE! This guide will help you get started, explore key featu
 5. Research Topics
 ====================
 - Deepen your understanding with NVIDIA FLARE's research resources:
-  - **[NVIDIA FLARE Research Algorithms & Implementations](https://github.com/NVIDIA/NVFlare/tree/main/research)**
+  - `NVIDIA FLARE Research Algorithms & Implementations <https://github.com/NVIDIA/NVFlare/tree/main/research>`_
     - Wide range of FL research projects, algorithms, and experimental features.
     - Ideal for advanced FL techniques and custom solutions.
 
