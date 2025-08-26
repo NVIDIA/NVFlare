@@ -82,6 +82,7 @@ def run_command(command, cwd=None):
             text=True,
             check=True,  # Raises CalledProcessError on non-zero return
         )
+        print(f"Process succeeded with return code {result.returncode}")
         print(f"STDOUT:\n{result.stdout}")
         print(f"STDERR:\n{result.stderr}")
         return result.stdout
@@ -124,6 +125,10 @@ class OnPremPackager(Packager):
         with open(log_config_path, "w") as f:
             json.dump(updated_config, f, indent=4)
 
+    def _build_docker_image(self, participant: Participant, dest_dir: str):
+        command = ["sudo", "/bin/bash", f"{dest_dir}/{participant.name}/docker_build.sh"]
+        run_command(command, cwd=f"{dest_dir}/{participant.name}")
+
     def _package_for_participant(self, participant: Participant, ctx: ProvisionContext):
         """Package the startup kit for the participant."""
         if not participant.get_prop(self.cc_config_key):
@@ -133,6 +138,9 @@ class OnPremPackager(Packager):
 
         log_config_path = dest_dir / participant.name / "local" / ProvFileName.LOG_CONFIG_DEFAULT
         self._change_log_dir(log_config_path)
+
+        # Build docker image for each
+        self._build_docker_image(participant, dest_dir)
 
         # Build CC image
         tar_file_path = self._build_cc_image(participant.get_prop(self.cc_config_key), participant.name, str(dest_dir))
