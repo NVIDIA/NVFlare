@@ -199,16 +199,31 @@ struct TaskResponse: Decodable {
         case error = "ERROR"
         case retry = "RETRY"
         case unknown
+        case noJob = "NO_JOB"
+        case noTask = "NO_TASK"
+        case invalid = "INVALID"
         
         var isSuccess: Bool {
             switch self {
             case .ok, .done: return true
-            case .error, .retry, .unknown: return false
+            case .error, .retry, .unknown, .noJob, .noTask, .invalid: return false
             }
         }
         
         var shouldContinueTraining: Bool {
             return self == .ok
+        }
+        
+        var shouldLookForNewJob: Bool {
+            return self == .noJob
+        }
+        
+        var shouldRetryTask: Bool {
+            return self == .retry || self == .noTask
+        }
+        
+        var isTerminal: Bool {
+            return self == .done || self == .invalid || self == .error
         }
 
     }
