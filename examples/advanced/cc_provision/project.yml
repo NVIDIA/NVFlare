@@ -61,7 +61,7 @@ builders:
   - path: nvflare.lighter.impl.docker_image_builder.DockerImageBuilder
     args:
       base_dockerfile: Dockerfile.base
-      nvflare_url: git+https://github.com/YuanTingHsieh/NVFlare.git@enhance_cc_provision
+      requirement: git+https://github.com/NVIDIA/NVFlare.git@main
 packager:
   path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
   args:

@@ -14,6 +14,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -84,11 +85,13 @@ def run_command(command, cwd=None):
         print(f"Process succeeded with return code {result.returncode}")
         print(f"STDOUT:\n{result.stdout}")
         print(f"STDERR:\n{result.stderr}")
+        return result.stdout
 
     except subprocess.CalledProcessError as e:
         print(f"Process failed with return code {e.returncode}")
         print(f"STDOUT:\n{e.stdout}")
         print(f"STDERR:\n{e.stderr}")
+        raise
 
 
 class OnPremPackager(Packager):
@@ -132,6 +135,7 @@ class OnPremPackager(Packager):
             return
 
         dest_dir = Path(ctx.get_result_location())
+
         log_config_path = dest_dir / participant.name / "local" / ProvFileName.LOG_CONFIG_DEFAULT
         self._change_log_dir(log_config_path)
 
