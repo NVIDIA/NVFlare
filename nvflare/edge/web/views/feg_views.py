@@ -24,7 +24,6 @@ from nvflare.edge.web.models.result_report import ResultReport
 from nvflare.edge.web.models.selection_request import SelectionRequest
 from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.user_info import UserInfo
-from nvflare.edge.web.service.proto_exe import ProtoExecutor
 from nvflare.edge.web.service.query import Query
 
 
@@ -33,7 +32,6 @@ class APIQuery:
     def __init__(self):
         self.lcp_mapping_file = None
         self.ca_cert_file = None
-        self.proto_test_file = None
         self.query = None
 
     def set_lcp_mapping(self, file_name: str):
@@ -42,14 +40,8 @@ class APIQuery:
     def set_ca_cert(self, file_name: str):
         self.ca_cert_file = file_name
 
-    def set_proto_test(self, file_name: str):
-        self.proto_test_file = file_name
-
     def start(self):
-        if self.proto_test_file:
-            self.query = ProtoExecutor(self.proto_test_file)
-        else:
-            self.query = Query(lcp_mapping_file=self.lcp_mapping_file, ca_cert_file=self.ca_cert_file)
+        self.query = Query(lcp_mapping_file=self.lcp_mapping_file, ca_cert_file=self.ca_cert_file)
 
     def __call__(self, req: Union[TaskRequest, JobRequest, SelectionRequest, ResultReport]):
         return self.query(req)
