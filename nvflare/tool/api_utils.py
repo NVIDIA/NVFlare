@@ -48,7 +48,6 @@ def shutdown_system_by_session(sess: Session, timeout_in_sec: int = 20):
         abort_jobs(sess, active_job_ids)
     print("shutdown NVFLARE")
     sess.api.do_command("shutdown all")
-    wait_for_system_shutdown(sess, timeout_in_sec=timeout_in_sec)
 
 
 def get_running_job_ids(jobs: list) -> List[str]:
@@ -66,26 +65,6 @@ def abort_jobs(sess, job_ids):
         except JobNotFound:
             # ignore invalid job id
             pass
-
-
-def wait_for_system_shutdown(sess: Session, timeout_in_sec: int = 30):
-    start = time.time()
-    duration = 0
-    cnt = 0
-    status = None
-    while (status is None or status == "started") and duration < timeout_in_sec:
-        try:
-            sys_info = sess.get_system_info()
-            status = sys_info.server_info.status
-            curr = time.time()
-            duration = curr - start
-            if cnt % 25 == 0:
-                print("waiting system to shutdown")
-            cnt += 1
-            time.sleep(0.2)
-        except Exception:
-            # Server is already shutdown
-            return
 
 
 def wait_for_system_start(
