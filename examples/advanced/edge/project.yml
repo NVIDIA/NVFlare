@@ -34,3 +34,4 @@ builders:
       config_folder: config
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
+  - path: nvflare.lighter.impl.edge.EdgeBuilder
