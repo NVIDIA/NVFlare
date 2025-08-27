@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Set
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -56,6 +56,18 @@ class ModelManager(FLComponent, ABC):
         """Generate a new model version based on accumulated updates.
 
         Args:
+            fl_ctx: FLContext object
+
+            Returns: none
+        """
+        pass
+
+    @abstractmethod
+    def keep_model_versions(self, versions_to_keep: Set[int], fl_ctx: FLContext) -> None:
+        """Keep the model versions that are still active, remove the ones that are not.
+
+        Args:
+            versions_to_keep: Set of model versions to keep
             fl_ctx: FLContext object
 
             Returns: none

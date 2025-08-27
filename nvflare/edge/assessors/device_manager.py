@@ -32,9 +32,11 @@ class DeviceManager(FLComponent, ABC):
         DeviceManager keeps track of two dicts: 
         - current_selection for devices of current task distribution
         - available_devices containing all devices that are available for selection
+        - used_devices dict kept for record keeping, containing all devices that have participated
         """
         self.current_selection = {}
         self.available_devices = {}
+        self.used_devices = {}
 
     @abstractmethod
     def update_available_devices(self, devices: Dict, fl_ctx: FLContext) -> None:
