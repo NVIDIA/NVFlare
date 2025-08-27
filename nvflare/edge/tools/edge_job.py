@@ -118,9 +118,9 @@ class EdgeJob(FedJob):
         if max_model_versions <= 0:
             raise ValueError("max_model_versions must be a positive integer or float('inf')")
         elif max_model_versions == float("inf"):
-            self.max_model_versions = float("inf")
+            max_model_versions = float("inf")
         else:
-            self.max_model_versions = int(max_model_versions)
+            max_model_versions = int(max_model_versions)
 
         check_object_type("aggregator_factory", aggregator_factory, AggregatorFactory)
         check_positive_number("update_timeout", update_timeout)
