@@ -14,8 +14,6 @@
 
 import argparse
 import logging
-import os
-import sys
 from typing import Any
 
 from flask import Flask, jsonify
@@ -53,34 +51,16 @@ def parse_args():
         description="Run proxy server with specified port, mapping file, and CA cert file."
     )
     # Required positional arguments
-    parser.add_argument(
-        "port",
-        type=int,
-        help="Port number to run the proxy server on."
-    )
-    parser.add_argument(
-        "lcp_mapping_file",
-        type=str,
-        help="Path to the mapping file."
-    )
-    parser.add_argument(
-        "ca_cert_file",
-        type=str,
-        help="Path to the CA certificate file."
-    )
+    parser.add_argument("port", type=int, help="Port number to run the proxy server on.")
+    parser.add_argument("lcp_mapping_file", type=str, help="Path to the mapping file.")
+    parser.add_argument("ca_cert_file", type=str, help="Path to the CA certificate file.")
 
     # Optional SSL self-signed cert/key
     parser.add_argument(
-        "--ssl-cert",
-        type=str,
-        default=None,
-        help="Path to self-signed SSL certificate file (optional)."
+        "--ssl-cert", type=str, default=None, help="Path to self-signed SSL certificate file (optional)."
     )
     parser.add_argument(
-        "--ssl-key",
-        type=str,
-        default=None,
-        help="Path to self-signed SSL private key file (optional)."
+        "--ssl-key", type=str, default=None, help="Path to self-signed SSL private key file (optional)."
     )
 
     args = parser.parse_args()
