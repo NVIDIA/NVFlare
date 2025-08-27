@@ -186,7 +186,7 @@ class BuffModelManager(ModelManager):
             if not model_state:
                 self.log_error(fl_ctx, f"bad child update version {model_version}: no such model version")
                 continue
-            
+
             accepted = model_state.accept(model_update, fl_ctx)
             self.log_info(
                 fl_ctx,
