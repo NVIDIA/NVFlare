@@ -22,17 +22,11 @@ struct ContentView: View {
                     .font(.headline)
                 
                 HStack {
-                    Text("Host:")
-                    TextField("Hostname", text: $trainerController.serverHost)
+                    Text("URL:")
+                    TextField("Hostname", text: $trainerController.serverURL)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                 }
-                
-                HStack {
-                    Text("Port:")
-                    TextField("Port", value: $trainerController.serverPort, formatter: NumberFormatter())
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .keyboardType(.numberPad)
-                }
+
             }
             .padding()
             .background(Color.gray.opacity(0.1))

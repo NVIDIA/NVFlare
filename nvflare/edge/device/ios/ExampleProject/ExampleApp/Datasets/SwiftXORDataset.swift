@@ -20,7 +20,7 @@ public class SwiftXORDataset: NSObject, NVFlareDataset {
     private var currentIndex: Int = 0
     private var shouldShuffle: Bool = false
     
-    public init(shuffle: Bool = false) {
+    public init(shuffle: Bool = false) throws {
         self.indices = Array(0..<xorTable.count)
         self.shouldShuffle = shuffle
         super.init()

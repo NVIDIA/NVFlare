@@ -43,8 +43,8 @@ public class NVFlareRunner: ObservableObject {
         deviceInfo: [String: String],
         userInfo: [String: String],
         jobTimeout: TimeInterval,
-        hostname: String = "",
-        port: Int = 0,
+        serverURL: String,
+        allowSelfSignedCerts: Bool = false,
         inFilters: [NVFlareFilter]? = nil,
         outFilters: [NVFlareFilter]? = nil,
         resolverRegistry: [String: ComponentCreator.Type]? = nil
@@ -79,7 +79,7 @@ public class NVFlareRunner: ObservableObject {
         self.jobTimeout = jobTimeout
         self.appInFilters = inFilters
         self.appOutFilters = outFilters
-        self.connection = NVFlareConnection(hostname: hostname, port: port, deviceInfo: deviceInfo)
+        self.connection = NVFlareConnection(serverURL: serverURL, deviceInfo: deviceInfo, allowSelfSignedCerts: allowSelfSignedCerts)
         
         // Add built-in resolvers
         addBuiltinResolvers()

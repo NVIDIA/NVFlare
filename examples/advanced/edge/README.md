@@ -83,6 +83,22 @@ cd /tmp/nvflare/workspaces/edge_example/prod_00/scripts/
 
 By default, it will start listening on port 4321, feel free to adjust that.
 
+
+## Enable HTTPS with self-signed certs
+You can use OpenSSL to generate a cert, for example:
+
+```
+openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 \
+  -subj "/C=US/ST=State/L=City/O=YourOrg/CN=localhost"
+```
+
+Then please modify the start_rp.sh to the following:
+```
+python -m nvflare.edge.web.routing_proxy 443 lcp_map.json rootCA.pem --ssl-cert cert.pem --ssl-key key.pem
+```
+
+Remember to enable allow self signed certs from the device SDK side.
+
 ## ExecuTorch-based FL
 ### ExecuTorch simulated devices
 
