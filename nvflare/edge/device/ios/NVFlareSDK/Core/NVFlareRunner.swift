@@ -129,9 +129,16 @@ public class NVFlareRunner: ObservableObject {
     }
     
     
-    /// iOS implementation of job fetching
-    private func getJob(ctx: NVFlareContext, abortSignal: NVFlareSignal) async -> NVFlareJob? {
+    /// iOS implementation of job fetching with timeout
+    private func getJob(ctx: NVFlareContext, abortSignal: NVFlareSignal, sessionStartTime: Date) async -> NVFlareJob? {
         while !abortSignal.triggered {
+            // Check job timeout
+            let elapsedTime = Date().timeIntervalSince(sessionStartTime)
+            if elapsedTime >= jobTimeout {
+                print("NVFlareRunner: Job timeout exceeded (\(jobTimeout)s), stopping session")
+                return nil
+            }
+            
             do {
                 let jobResponse = try await connection.fetchJob(jobName: self.jobName)
                 
@@ -282,6 +289,9 @@ public class NVFlareRunner: ObservableObject {
         let ctx = NVFlareContext()
         ctx[NVFlareContextKey.runner] = self
         
+        // Start job session timer
+        let sessionStartTime = Date()
+        
         print("NVFlareRunner: Storing dataset in context (NVFlareDataset converted to C++)")
         print("NVFlareRunner: NVFlareDataset size: \(dataset.size())")
         
@@ -292,9 +302,9 @@ public class NVFlareRunner: ObservableObject {
         
         ctx[NVFlareContextKey.dataset] = cppDataset
         
-        // Try to get job
-        guard let job = await getJob(ctx: ctx, abortSignal: abortSignal) else {
-            return true // No job for me
+        // Try to get job with timeout
+        guard let job = await getJob(ctx: ctx, abortSignal: abortSignal, sessionStartTime: sessionStartTime) else {
+            return true // No job for me or timeout exceeded
         }
         
         guard !job.jobName.isEmpty else {
