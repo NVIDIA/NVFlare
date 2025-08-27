@@ -60,6 +60,15 @@ public class NVFlareConfigProcessor {
     public static func processTrainConfig(config: [String: Any], 
                                         resolverRegistry: [String: ComponentCreator.Type]) throws -> NVFlareTrainConfig {
         
+        print("NVFlareConfigProcessor: Processing config with keys: \(config.keys)")
+        print("NVFlareConfigProcessor: Available resolvers: \(resolverRegistry.keys)")
+        if let components = config[NVFlareConfigKey.components] {
+            print("NVFlareConfigProcessor: Found components of type: \(type(of: components))")
+            print("NVFlareConfigProcessor: Components value: \(components)")
+        } else {
+            print("NVFlareConfigProcessor: No components found in config")
+        }
+        
         guard let components = config[NVFlareConfigKey.components] as? [[String: Any]] else {
             throw NVFlareConfigError.missingComponents
         }
