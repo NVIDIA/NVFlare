@@ -52,7 +52,7 @@ class BuffModelManager(ModelManager):
         The staleness_weight can be enabled to apply staleness weighting to model updates.
 
         Special cases for max_model_history:
-        - If inf: Keep every model versions, only remove a version when all devices processing it reports back (version no longer related with any device_id in the used_devices from device_manager).
+        - If inf: Keep every model versions, only remove a version when all devices processing it reports back (version no longer related with any device_id in the current_selection from device_manager).
 
         Args:
             num_updates_for_model (int): Number of updates required before generating a new model version.
@@ -183,6 +183,10 @@ class BuffModelManager(ModelManager):
 
             # Accept the update and aggregate it to the corresponding model version
             model_state = self.updates.get(model_version)
+            if not model_state:
+                self.log_error(fl_ctx, f"bad child update version {model_version}: no such model version")
+                continue
+            
             accepted = model_state.accept(model_update, fl_ctx)
             self.log_info(
                 fl_ctx,
