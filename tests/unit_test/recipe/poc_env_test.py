@@ -28,7 +28,6 @@ def test_poc_env_initialization():
     assert env.num_clients == 2
     assert env.gpu_ids == []
     assert env.auto_stop is True
-    assert env.monitor_duration == 0
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
@@ -40,23 +39,21 @@ def test_poc_env_initialization_with_custom_values(mock_get_workspace):
             num_clients=3,
             gpu_ids=[0, 1],
             auto_stop=False,
-            monitor_duration=30,
         )
         assert env.poc_workspace == temp_dir
         assert env.num_clients == 3
         assert env.gpu_ids == [0, 1]
         assert env.auto_stop is False
-        assert env.monitor_duration == 30
 
 
 def test_poc_env_validation():
     """Test POCEnv validation for invalid configurations."""
     # Test with zero clients (invalid)
-    with pytest.raises(ValueError, match="num_clients must be greater than 0"):
+    with pytest.raises(ValueError, match="Input should be greater than 0"):
         POCEnv(num_clients=0)
 
     # Test with negative clients (invalid)
-    with pytest.raises(ValueError, match="num_clients must be greater than 0"):
+    with pytest.raises(ValueError, match="Input should be greater than 0"):
         POCEnv(num_clients=-1)
 
     # Test with empty clients list (invalid)
@@ -133,7 +130,7 @@ def test_submit_and_monitor_job(mock_session):
     mock_sess.monitor_job.return_value = "completed"
     mock_session.return_value = mock_sess
 
-    env = POCEnv(monitor_duration=30)
+    env = POCEnv()
 
     with patch.object(env, "_get_admin_startup_kit_path", return_value="/fake/admin/dir"):
         result = env._submit_and_monitor_job("/fake/job/path", "test_job")
@@ -141,7 +138,7 @@ def test_submit_and_monitor_job(mock_session):
         assert result == "job_12345"
         mock_session.assert_called_once_with(username="admin@nvidia.com", startup_kit_location="/fake/admin/dir")
         mock_sess.submit_job.assert_called_once_with("/fake/job/path")
-        mock_sess.monitor_job.assert_called_once_with("job_12345", timeout=30)
+        mock_sess.monitor_job.assert_called_once_with("job_12345", timeout=0)
         mock_sess.close.assert_called_once()
 
 
@@ -167,7 +164,7 @@ def test_deploy_job_integration(mock_start_poc, mock_prepare, mock_is_running, m
     mock_job.name = "test_job"
     mock_job.export_job = MagicMock()
 
-    env = POCEnv(monitor_duration=5)
+    env = POCEnv()
 
     with patch.object(env, "_submit_and_monitor_job", return_value="job_12345"):
         result = env.deploy(mock_job)
