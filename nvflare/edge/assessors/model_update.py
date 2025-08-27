@@ -217,6 +217,9 @@ class ModelUpdateAssessor(Assessor):
                     self.log_info(fl_ctx, "Generate initial model and fill selection")
                     self.model_manager.generate_new_model(fl_ctx)
                 self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
+                # drop old model versions that are no longer active
+                active_model_versions = set(self.device_manager.current_selection.values())
+                self.model_manager.keep_model_versions(active_model_versions, fl_ctx)
                 # Reset wait timer since we have enough devices
                 self.device_wait_start_time = None
             else:

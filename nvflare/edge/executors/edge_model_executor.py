@@ -34,10 +34,22 @@ from nvflare.security.logging import secure_format_exception
 
 class EdgeModelExecutor(EdgeTaskExecutor):
 
-    def __init__(self, aggr_factory_id: str, max_model_versions: int, update_timeout=60):
+    def __init__(
+        self,
+        aggr_factory_id: str,
+        max_model_versions: float = float("inf"),  # float to support inf, default is inf
+        update_timeout=60.0,
+    ):
         EdgeTaskExecutor.__init__(self, "", update_timeout)
         self.aggr_factory_id = aggr_factory_id
-        self.max_model_versions = max_model_versions
+        # check the validity of max_model_versions and convert to int if it is a positive integer
+        if max_model_versions <= 0:
+            raise ValueError("max_model_versions must be a positive integer or float('inf')")
+        elif max_model_versions == float("inf"):
+            self.max_model_versions = float("inf")
+        else:
+            self.max_model_versions = int(max_model_versions)
+
         self.cvt_lock = threading.Lock()
 
     def get_updater(self, fl_ctx: FLContext):

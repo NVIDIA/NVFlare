@@ -24,6 +24,7 @@ from nvflare.edge.assessors.model_update import ModelUpdateAssessor
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.tools.edge_job import EdgeJob
 from nvflare.edge.widgets.evaluator import GlobalEvaluator
+from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
 from nvflare.recipe.spec import Recipe
 
 
@@ -52,15 +53,28 @@ class ModelManagerConfig:
 
     def __init__(
         self,
-        max_num_active_model_versions: int = 3,
+        max_num_active_model_versions: float = float("inf"),
         max_model_version: int = 20,
         update_timeout: int = 5.0,
         num_updates_for_model: int = 100,
-        max_model_history: int = 10,
+        max_model_history: float = float("inf"),
         staleness_weight: bool = False,
         global_lr: float = 0.01,
     ):
-        self.max_num_active_model_versions = max_num_active_model_versions
+
+        check_positive_int("max_model_version", max_model_version)
+        check_positive_int("num_updates_for_model", num_updates_for_model)
+        check_positive_number("update_timeout", update_timeout)
+        check_positive_number("global_lr", global_lr)
+
+        # check the validity of max_num_active_model_versions and convert to int if it is a positive integer
+        if max_num_active_model_versions <= 0:
+            raise ValueError("max_num_active_model_versions must be a positive integer or float('inf')")
+        elif max_num_active_model_versions == float("inf"):
+            self.max_num_active_model_versions = float("inf")
+        else:
+            self.max_num_active_model_versions = int(max_num_active_model_versions)
+
         self.max_model_version = max_model_version
         # check if max_model_version is greater than 2
         if max_model_version < 2:
@@ -68,7 +82,14 @@ class ModelManagerConfig:
 
         self.update_timeout = update_timeout
         self.num_updates_for_model = num_updates_for_model
-        self.max_model_history = max_model_history
+
+        # check the validity of max_model_history and convert to int if it is a positive integer
+        if max_model_history <= 0:
+            raise ValueError("max_model_history must be a positive integer or float('inf')")
+        elif max_model_history == float("inf"):
+            self.max_model_history = float("inf")
+        else:
+            self.max_model_history = int(max_model_history)
         self.staleness_weight = staleness_weight
         self.global_lr = global_lr
 
