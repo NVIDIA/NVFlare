@@ -35,7 +35,6 @@ class AdaQuantizer:
         self.compression = compression
 
     def quantize(self, values_tensor: torch.Tensor) -> tuple[Union[torch.Tensor, np.ndarray], dict]:
-        values_tensor = values_tensor.cpu()
         old_values_tensor = values_tensor
 
         old_tensor_shape = list(old_values_tensor.shape)
