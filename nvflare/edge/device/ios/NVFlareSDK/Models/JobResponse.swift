@@ -114,8 +114,8 @@ extension JobResponse {
         
         let serverConfig = convertJSONValueToStandardTypes(config)
         
-        // Use ConfigProcessor to handle all component resolution and mapping
-        return ConfigProcessor.processServerConfig(serverConfig)
+        // Return the server config directly - let NVFlareConfigProcessor handle component resolution
+        return serverConfig
     }
     
     /// Convert JSONValue dictionary to standard Swift types for ConfigProcessor

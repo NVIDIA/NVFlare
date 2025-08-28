@@ -124,21 +124,47 @@ public class NVFlareDXO: NSObject {
 
 /// Batch protocol for training data batches
 @objc public protocol NVFlareBatch {
-    func getInput() -> Any
-    func getLabel() -> Any
+    @objc(getInput) func getInput() -> Any
+    @objc(getLabel) func getLabel() -> Any
     /// Optional: batch size for verification
-    func getBatchSize() -> Int
+    @objc(getBatchSize) func getBatchSize() -> Int
+}
+
+/// Concrete implementation of NVFlareBatch
+public class NVFlareDataBatch: NSObject, NVFlareBatch {
+    private let input: Any
+    private let label: Any
+    private let batchSize: Int
+    
+    public init(input: Any, label: Any, batchSize: Int) {
+        self.input = input
+        self.label = label
+        self.batchSize = batchSize
+        super.init()
+    }
+    
+    @objc(getInput) public func getInput() -> Any {
+        return input
+    }
+    
+    @objc(getLabel) public func getLabel() -> Any {
+        return label
+    }
+    
+    @objc(getBatchSize) public func getBatchSize() -> Int {
+        return batchSize
+    }
 }
 
 /// Dataset protocol for training datasets  
 @objc public protocol NVFlareDataset {
     func size() -> Int
-    func getNextBatch(batchSize: Int) -> NVFlareBatch
+    @objc(getNextBatchWithBatchSize:) func getNextBatch(batchSize: Int) -> NVFlareBatch
     func reset()
     /// Optional: get input dimensions (width, height, channels, etc.)
-    func getInputDimensions() -> [Int]
-    /// Optional: get number of classes/output dimensions
-    func getOutputDimensions() -> [Int]
+    @objc(getInputDimensions) optional func getInputDimensions() -> [Int]
+    /// Optional: get number of classes/output dimensions  
+    @objc(getOutputDimensions) optional func getOutputDimensions() -> [Int]
 }
 
 /// DataSource protocol for providing datasets
@@ -199,24 +225,38 @@ public struct NVFlareTask {
     }
 }
 
+/// Result from reportResult that indicates next FSM state
+public enum ReportResultState {
+    case continueTask        // OK/NO_TASK -> continue to getTask
+    case lookForNewJob      // NO_JOB -> go back to getJob  
+    case sessionDone        // DONE/INVALID/ERROR -> END
+}
+
 /// Task result that includes both task data and session status
 public struct TaskResult {
     public let task: NVFlareTask?
     public let sessionDone: Bool
+    public let jobCompleted: Bool
     
-    public init(task: NVFlareTask?, sessionDone: Bool) {
+    public init(task: NVFlareTask?, sessionDone: Bool, jobCompleted: Bool = false) {
         self.task = task
         self.sessionDone = sessionDone
+        self.jobCompleted = jobCompleted
     }
     
     /// Convenience initializer for session done with no task
     public static func sessionDone() -> TaskResult {
-        return TaskResult(task: nil, sessionDone: true)
+        return TaskResult(task: nil, sessionDone: true, jobCompleted: false)
+    }
+    
+    /// Convenience initializer for job completed (look for new jobs)
+    public static func jobCompleted() -> TaskResult {
+        return TaskResult(task: nil, sessionDone: false, jobCompleted: true)
     }
     
     /// Convenience initializer for continuing with a task
     public static func continuing(with task: NVFlareTask) -> TaskResult {
-        return TaskResult(task: task, sessionDone: false)
+        return TaskResult(task: task, sessionDone: false, jobCompleted: false)
     }
 }
 

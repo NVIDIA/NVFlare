@@ -200,7 +200,7 @@ public class NVFlareConnection: ObservableObject {
         }
     }
     
-    func sendResult(jobId: String, taskId: String, taskName: String, weightDiff: [String: Any]) async throws {
+    func sendResult(jobId: String, taskId: String, taskName: String, weightDiff: [String: Any]) async throws -> ResultResponse {
         var urlComponents = URLComponents()
         urlComponents.scheme = scheme
         urlComponents.host = hostname
@@ -258,8 +258,14 @@ public class NVFlareConnection: ObservableObject {
             print("Response Body: \(responseString)")
         }
         
-        guard httpResponse.statusCode == 200 else {
-            throw NVFlareError.trainingFailed("HTTP \(httpResponse.statusCode)")
+        // Parse the response regardless of status code - FSM needs to handle different statuses
+        do {
+            let resultResponse = try JSONDecoder().decode(ResultResponse.self, from: data)
+            print("Decoded ResultResponse: \(resultResponse)")
+            return resultResponse
+        } catch {
+            print("Failed to decode ResultResponse: \(error)")
+            throw NVFlareError.trainingFailed("decode error: \(error)")
         }
     }
 } 

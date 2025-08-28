@@ -21,7 +21,8 @@ from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
-from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
 
@@ -39,6 +40,10 @@ class _FedAvgValidator(BaseModel):
     train_args: str
     aggregator: Optional[Aggregator]
     aggregator_data_kind: Optional[DataKind]
+    launch_external_process: bool = False
+    command: str = "python3 -u"
+    server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
+    params_transfer_type: TransferType = TransferType.FULL
 
     def model_post_init(self, __context):
         if self.clients and self.num_clients is None:
@@ -77,6 +82,11 @@ class FedAvgRecipe(Recipe):
         aggregator: Aggregator for combining client updates. If None,
             uses InTimeAccumulateWeightedAggregator with aggregator_data_kind.
         aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
+        launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
+        command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
+        server_expected_format (str): What format to exchange the parameters between server and client.
+        params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
+        DIFF means that only the difference is sent. Defaults to TransferType.FULL.
 
     Example:
         ```python
@@ -86,7 +96,7 @@ class FedAvgRecipe(Recipe):
             num_clients=3,
             min_clients=2,
             num_rounds=10,
-            train_script="train.py",
+            train_script="client.py",
             train_args="--epochs 5 --batch_size 32"
         )
         ```
@@ -113,6 +123,10 @@ class FedAvgRecipe(Recipe):
         train_args: str = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
+        launch_external_process: bool = False,
+        command: str = "python3 -u",
+        server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
+        params_transfer_type: TransferType = TransferType.FULL,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -126,6 +140,10 @@ class FedAvgRecipe(Recipe):
             train_args=train_args,
             aggregator=aggregator,
             aggregator_data_kind=aggregator_data_kind,
+            launch_external_process=launch_external_process,
+            command=command,
+            server_expected_format=server_expected_format,
+            params_transfer_type=params_transfer_type,
         )
 
         self.name = v.name
@@ -139,7 +157,11 @@ class FedAvgRecipe(Recipe):
         self.train_script = v.train_script
         self.train_args = v.train_args
         self.aggregator = v.aggregator
-        self.aggregator_data_kind = aggregator_data_kind
+        self.aggregator_data_kind = v.aggregator_data_kind
+        self.launch_external_process = v.launch_external_process
+        self.command = v.command
+        self.server_expected_format: ExchangeFormat = v.server_expected_format
+        self.params_transfer_type: TransferType = v.params_transfer_type
 
         # Create BaseFedJob with initial model
         job = BaseFedJob(
@@ -172,7 +194,15 @@ class FedAvgRecipe(Recipe):
         job.to_server(controller)
 
         # Add clients
-        executor = ScriptRunner(script=self.train_script, script_args=self.train_args)
+        executor = ScriptRunner(
+            script=self.train_script,
+            script_args=self.train_args,
+            launch_external_process=self.launch_external_process,
+            command=self.command,
+            framework=FrameworkType.PYTORCH,
+            server_expected_format=self.server_expected_format,
+            params_transfer_type=self.params_transfer_type,
+        )
         if self.clients is None:
             job.to_clients(executor)
         else:

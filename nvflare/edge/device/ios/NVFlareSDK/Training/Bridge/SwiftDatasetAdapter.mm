@@ -13,6 +13,9 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 
+// Selector names for Swift methods with @objc annotations
+// These will be initialized at runtime using sel_registerName
+
 using namespace executorch::extension;
 
 SwiftDatasetAdapter::SwiftDatasetAdapter(void* swiftObject) 
@@ -71,7 +74,7 @@ std::optional<SwiftDatasetAdapter::BatchType> SwiftDatasetAdapter::getBatch(size
             return std::nullopt;
         }
         
-        SEL getNextBatchSelector = @selector(getNextBatchWithBatchSize:);
+        SEL getNextBatchSelector = sel_registerName("getNextBatchWithBatchSize:");
         if (![nvflareDataset respondsToSelector:getNextBatchSelector]) {
             NSLog(@"SwiftDatasetAdapter::getBatch() object does not respond to getNextBatchWithBatchSize:");
             return std::nullopt;
@@ -88,14 +91,16 @@ std::optional<SwiftDatasetAdapter::BatchType> SwiftDatasetAdapter::getBatch(size
         }
         
         // Extract input and label from NVFlareBatch
-        if (![nvflareBatch respondsToSelector:@selector(getInput)] || 
-            ![nvflareBatch respondsToSelector:@selector(getLabel)]) {
+        SEL getInputSelector = sel_registerName("getInput");
+        SEL getLabelSelector = sel_registerName("getLabel");
+        if (![nvflareBatch respondsToSelector:getInputSelector] || 
+            ![nvflareBatch respondsToSelector:getLabelSelector]) {
             NSLog(@"SwiftDatasetAdapter::getBatch() batch does not respond to getInput/getLabel");
             return std::nullopt;
         }
         
-        id inputData = ((id (*)(id, SEL))objc_msgSend)(nvflareBatch, @selector(getInput));
-        id labelData = ((id (*)(id, SEL))objc_msgSend)(nvflareBatch, @selector(getLabel));
+        id inputData = ((id (*)(id, SEL))objc_msgSend)(nvflareBatch, getInputSelector);
+        id labelData = ((id (*)(id, SEL))objc_msgSend)(nvflareBatch, getLabelSelector);
         
         if (!inputData || !labelData) {
             NSLog(@"SwiftDatasetAdapter::getBatch() null input or label data from batch");
@@ -169,7 +174,7 @@ void SwiftDatasetAdapter::reset() {
             return;
         }
         
-        SEL resetSelector = @selector(reset);
+        SEL resetSelector = sel_registerName("reset");
         if ([nvflareDataset respondsToSelector:resetSelector]) {
             typedef void (*ResetFunc)(id, SEL);
             ResetFunc resetFunc = (ResetFunc)objc_msgSend;
@@ -211,7 +216,7 @@ size_t SwiftDatasetAdapter::size() const {
             return 0;
         }
         
-        SEL sizeSelector = @selector(size);
+        SEL sizeSelector = sel_registerName("size");
         if (![nvflareDataset respondsToSelector:sizeSelector]) {
             NSLog(@"SwiftDatasetAdapter::size() object does not respond to size selector");
             return 0;
@@ -244,7 +249,7 @@ size_t SwiftDatasetAdapter::inputDim() const {
             return 0;
         }
         
-        SEL getInputDimensionsSelector = @selector(getInputDimensions);
+        SEL getInputDimensionsSelector = sel_registerName("getInputDimensions");
         if ([nvflareDataset respondsToSelector:getInputDimensionsSelector]) {
             typedef NSArray* (*GetInputDimensionsFunc)(id, SEL);
             GetInputDimensionsFunc getInputDimensionsFunc = (GetInputDimensionsFunc)objc_msgSend;
@@ -279,7 +284,7 @@ size_t SwiftDatasetAdapter::labelDim() const {
             return 1;
         }
         
-        SEL getOutputDimensionsSelector = @selector(getOutputDimensions);
+        SEL getOutputDimensionsSelector = sel_registerName("getOutputDimensions");
         if ([nvflareDataset respondsToSelector:getOutputDimensionsSelector]) {
             typedef NSArray* (*GetOutputDimensionsFunc)(id, SEL);
             GetOutputDimensionsFunc getOutputDimensionsFunc = (GetOutputDimensionsFunc)objc_msgSend;

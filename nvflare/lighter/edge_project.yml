@@ -45,3 +45,4 @@ builders:
       config_folder: config   # Configuration folder for setting up project details
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
+  - path: nvflare.lighter.impl.edge.EdgeBuilder

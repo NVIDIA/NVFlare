@@ -58,18 +58,7 @@ commands shown as examples of how they may be run with a description.
     ,``restart server``,Restarts the server. Clients will also be restarted. Note that the admin client will need to log in again after the server restarts.
     shutdown,``shutdown client``,Shuts down all of the clients. Individual clients can be shutdown by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
     ,``shutdown server``,Shuts down the active server. Clients must be shut down first before the server is shut down. Note this will not shut down the Overseer or other SPs.
-    get_active_sp,``get_active_sp``,Get information on the active SP (service provider or FL server).
-    list_sp,``list_sp``,Get data from last heartbeat of the active and available SP endpoint information.
-    promote_sp,``promote_sp sp_end_point``,promote a specified SP to become the active SP (promote_sp example1.com:8002:8003)
     shutdown_system,``shutdown_system``,Shut down entire system by setting the system state to shutdown through the overseer
-
-
-.. note::
-
-   The commands ``promote_sp`` and ``shutdown_system`` both go to the Overseer and have a different mechanism of
-   authorization than the other commands sent to the FL server. The Overseer keeps track of a list of privileged users,
-   configured to be admin users with the role of "super". Only users owning certificates whose cn is in the privileged
-   user list can call these commands.
 
 .. tip::
 

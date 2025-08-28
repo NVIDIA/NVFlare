@@ -27,6 +27,6 @@ public enum NVFlareError: Error {
 public enum DatasetError: Error {
     case noDataFound
     case dataLoadFailed
-    case invalidDatasetType(String)
-    case bridgeCreationFailed
+    case invalidDataFormat
+    case emptyDataset
 } 

@@ -8,13 +8,6 @@
 
 import Foundation
 
-/// Protocol for creating components from server configuration
-/// Equivalent to Python's ComponentResolver concept
-public protocol ComponentCreator {
-    /// Create a component instance from configuration
-    static func create(name: String, args: [String: Any]) -> Any
-}
-
 /// Registry that maps server component types to iOS component creators
 public class ComponentRegistry {
     private var creators: [String: ComponentCreator.Type] = [:]
@@ -35,6 +28,11 @@ public class ComponentRegistry {
     /// Get creator for a server component type
     public func getCreator(for serverType: String) -> ComponentCreator.Type? {
         return creators[serverType]
+    }
+    
+    /// Get all registered server types (for debugging)
+    public func getRegisteredTypes() -> [String] {
+        return Array(creators.keys)
     }
     
     /// Register default component mappings
@@ -91,7 +89,8 @@ public class ConfigProcessor {
             let args = component["args"] as? [String: Any]
             
             guard let resolver = ComponentResolver(serverType: type, name: name, args: args) else {
-                print("ConfigProcessor: Failed to create resolver for \(type)")
+                print("ConfigProcessor: Failed to create resolver for type '\(type)' name '\(name)'")
+                print("ConfigProcessor: Available resolvers: \(ComponentRegistry.shared.getRegisteredTypes())")
                 continue
             }
             

@@ -8,17 +8,10 @@
 import Foundation
 
 /// ExecutorTorch implementation of NVFlareExecutor
-/// Supports both direct instantiation and config-based creation via ComponentCreator
 /// Clean architecture: Swift coordination → Direct C++ ExecutorTorch integration
-public class ETTrainerExecutor: NSObject, NVFlareExecutor, ComponentCreator {
+/// Note: Component creation is handled by ETTrainerComponentResolver for proper parameter mapping
+public class ETTrainerExecutor: NSObject, NVFlareExecutor {
     private let trainerArgs: [String: Any]
-    
-    // MARK: - ComponentCreator (Resolver)
-    
-    /// Creates ETTrainerExecutor instances from config
-    public static func create(name: String, args: [String: Any]) -> Any {
-        return ETTrainerExecutor(args: args)
-    }
     
     // MARK: - Initializers
     

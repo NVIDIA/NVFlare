@@ -73,7 +73,15 @@ To start the system, run the following command:
 ```commandline
 cd /tmp/nvflare/workspaces/edge_example/prod_00/
 ./start_all.sh
-```    
+```
+
+To run with real device, we also need to start the proxy:
+```commandline
+cd /tmp/nvflare/workspaces/edge_example/prod_00/scripts/
+./start_rp.sh
+```
+
+By default, it will start listening on port 4321, feel free to adjust that.
 
 ## ExecuTorch-based FL
 ### ExecuTorch simulated devices
