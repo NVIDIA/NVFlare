@@ -55,13 +55,11 @@ def parse_args():
     parser.add_argument("lcp_mapping_file", type=str, help="Path to the mapping file.")
     parser.add_argument("ca_cert_file", type=str, help="Path to the CA certificate file.")
 
-    # Optional SSL self-signed cert/key
+    # Optional SSL cert/key
     parser.add_argument(
-        "--ssl-cert", type=str, default=None, help="Path to self-signed SSL certificate file (optional)."
+        "--ssl-cert", type=str, default=None, help="Path to SSL certificate file (optional, self-signed or CA-signed)."
     )
-    parser.add_argument(
-        "--ssl-key", type=str, default=None, help="Path to self-signed SSL private key file (optional)."
-    )
+    parser.add_argument("--ssl-key", type=str, default=None, help="Path to SSL private key file (optional).")
 
     args = parser.parse_args()
 
@@ -86,11 +84,11 @@ if __name__ == "__main__":
 
     ssl_context = None
     if args.ssl_cert and args.ssl_key:
-        print(f"Using self-signed SSL cert: {args.ssl_cert}")
-        print(f"Using self-signed SSL key: {args.ssl_key}")
+        print(f"Using SSL cert: {args.ssl_cert}")
+        print(f"Using SSL key: {args.ssl_key}")
         ssl_context = (args.ssl_cert, args.ssl_key)
     else:
-        print("No self-signed SSL cert/key provided, running without SSL")
+        print("No SSL cert/key provided, running without SSL")
 
     api_query.set_lcp_mapping(lcp_mapping_file)
     api_query.set_ca_cert(ca_cert_file)
