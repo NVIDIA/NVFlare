@@ -13,7 +13,7 @@
 # limitations under the License.
 import argparse
 
-from df_statistics import DFStatistics
+from adult_statistics import AdultStatistics
 
 from nvflare.recipe.fedstats import FedStatsRecipe
 from nvflare.recipe.sim_env import SimEnv
@@ -44,7 +44,7 @@ def main():
         "quantile": {"*": [0.1, 0.5, 0.9], "Age": [0.1, 0.5, 0.9]},
     }
     # define local stats generator
-    df_stats_generator = DFStatistics(filename="data.csv", data_root_dir=data_root_dir)
+    df_stats_generator = AdultStatistics(filename="data.csv", data_root_dir=data_root_dir)
 
     sites = [f"site-{i + 1}" for i in range(n_clients)]
 
