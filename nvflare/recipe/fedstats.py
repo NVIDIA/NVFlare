@@ -43,6 +43,10 @@ class FedStatsRecipe(Recipe):
         stats_generator (Statistics): An instance of a Statistics class that
             implements the actual statistics computation logic. This object
             must implement the Statistics interface.
+        min_count (int): The minimum number of samples required to compute a statistic.
+        min_noise_level (float): The minimum noise level for the statistics.
+        max_noise_level (float): The maximum noise level for the statistics.
+        max_bins_percent (float): The maximum percentage of bins for the statistics.
 
     Example:
         >>> from nvflare.recipe.fedstats import FedStatsRecipe
@@ -71,12 +75,20 @@ class FedStatsRecipe(Recipe):
         sites: List[str],
         statistic_configs: Dict[str, Any],
         stats_generator: Statistics,
+        min_count: int = 10,
+        min_noise_level: float = 0.1,
+        max_noise_level: float = 0.3,
+        max_bins_percent: float = 10,
     ):
         job = StatsJob(
             job_name=name,
             statistic_configs=statistic_configs,
             stats_generator=stats_generator,
             output_path=stats_output_path,
+            min_count=min_count,
+            min_noise_level=min_noise_level,
+            max_noise_level=max_noise_level,
+            max_bins_percent=max_bins_percent,
         )
 
         job.setup_clients(sites)
