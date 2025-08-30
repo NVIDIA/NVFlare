@@ -14,9 +14,8 @@
 
 import os.path
 import tempfile
-from typing import Optional
 
-from pydantic import BaseModel, PositiveFloat, conint, model_validator
+from pydantic import BaseModel, PositiveFloat, model_validator
 
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.job_config.api import FedJob
@@ -44,7 +43,6 @@ def status_monitor_cb(session: Session, job_id: str, job_meta, *cb_args, **cb_kw
 class _ProdEnvValidator(BaseModel):
     startup_kit_dir: str
     login_timeout: PositiveFloat = 5.0
-    monitor_job_duration: Optional[conint(ge=0)] = None  # must be zero or positive if specified
 
     @model_validator(mode="after")
     def check_startup_kit_dir_exists(self) -> "_ProdEnvValidator":
@@ -58,7 +56,6 @@ class ProdEnv(ExecEnv):
         self,
         startup_kit_dir: str,
         login_timeout: float = 5.0,
-        monitor_job_duration: Optional[int] = None,
     ):
         """Production execution environment for submitting and monitoring NVFlare jobs.
 
@@ -67,18 +64,14 @@ class ProdEnv(ExecEnv):
         Args:
             startup_kit_dir (str): Path to the admin's startup kit directory.
             login_timeout (float): Timeout (in seconds) for logging into the Flare API session. Must be > 0.
-            monitor_job_duration (int, optional): Duration (in seconds) to monitor job execution.
-                If None, monitoring is skipped. If 0, will wait for the job to complete. Must be >= 0.
         """
         v = _ProdEnvValidator(
             startup_kit_dir=startup_kit_dir,
             login_timeout=login_timeout,
-            monitor_job_duration=monitor_job_duration,
         )
 
         self.startup_kit_dir = v.startup_kit_dir
         self.login_timeout = v.login_timeout
-        self.monitor_job_duration = v.monitor_job_duration
         self.admin_user = os.path.basename(startup_kit_dir)
 
     def deploy(self, job: FedJob):
@@ -93,10 +86,6 @@ class ProdEnv(ExecEnv):
                 job_id = sess.submit_job(job_path)
                 print(f"Submitted job '{job.name}' with ID: {job_id}")
 
-            if self.monitor_job_duration is not None:
-                rc = sess.monitor_job(job_id, cb=status_monitor_cb, timeout=self.monitor_job_duration)
-                print(f"job monitor done: {rc=}")
-
             return job_id
         except Exception as e:
             raise RuntimeError(f"Failed to submit/monitor job via Flare API: {e}")
@@ -109,6 +98,5 @@ class ProdEnv(ExecEnv):
             "env_type": "prod",
             "startup_kit_dir": self.startup_kit_dir,
             "login_timeout": self.login_timeout,
-            "monitor_job_duration": self.monitor_job_duration,
             "admin_user": self.admin_user,
         }
