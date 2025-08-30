@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, List, Optional
+
+from typing import Any, Optional
 
 from pydantic import BaseModel, PositiveInt
 
@@ -20,8 +21,9 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
@@ -32,7 +34,7 @@ class _FedAvgValidator(BaseModel):
 
     name: str
     initial_model: Any
-    clients: Optional[List[str]]
+    clients: Optional[list[str]]
     num_clients: Optional[PositiveInt]
     min_clients: int
     num_rounds: int
@@ -42,6 +44,7 @@ class _FedAvgValidator(BaseModel):
     aggregator_data_kind: Optional[DataKind]
     launch_external_process: bool = False
     command: str = "python3 -u"
+    framework: FrameworkType = FrameworkType.TENSORFLOW
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
 
@@ -70,7 +73,7 @@ class FedAvgRecipe(Recipe):
         name: Name of the federated learning job. Defaults to "fedavg".
         initial_model: Initial model to start federated training with. If None,
             clients will start with their own local models.
-        clients: List of client names to participate in training. If None,
+        clients: list of client names to participate in training. If None,
             all available clients will be used.
         num_clients: Number of clients expected to participate. If clients is provided,
             this will be set automatically to len(clients).
@@ -83,6 +86,7 @@ class FedAvgRecipe(Recipe):
         aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
+        framework (str): The framework to use for the training script. Defaults to FrameworkType.TENSORFLOW.
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
         DIFF means that only the difference is sent. Defaults to TransferType.FULL.
@@ -114,7 +118,7 @@ class FedAvgRecipe(Recipe):
         *,
         name: str = "fedavg",
         initial_model: Any = None,
-        clients: Optional[List[str]] = None,
+        clients: Optional[list[str]] = None,
         num_clients: Optional[int] = None,
         min_clients: int,
         num_rounds: int = 2,
@@ -124,6 +128,7 @@ class FedAvgRecipe(Recipe):
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
         command: str = "python3 -u",
+        framework: FrameworkType = FrameworkType.TENSORFLOW,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
     ):
@@ -141,6 +146,7 @@ class FedAvgRecipe(Recipe):
             aggregator_data_kind=aggregator_data_kind,
             launch_external_process=launch_external_process,
             command=command,
+            framework=framework,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
         )
@@ -159,6 +165,7 @@ class FedAvgRecipe(Recipe):
         self.aggregator_data_kind = v.aggregator_data_kind
         self.launch_external_process = v.launch_external_process
         self.command = v.command
+        self.framework = v.framework
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
 
@@ -198,7 +205,7 @@ class FedAvgRecipe(Recipe):
             script_args=self.train_args,
             launch_external_process=self.launch_external_process,
             command=self.command,
-            framework=FrameworkType.PYTORCH,
+            framework=self.framework,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
         )
@@ -209,3 +216,23 @@ class FedAvgRecipe(Recipe):
                 job.to(executor, client)
 
         Recipe.__init__(self, job)
+
+    def enable_experiment_tracking(self, tracking_type: str, tracking_config: dict = None):
+        """Enable experiment tracking.
+
+        Args:
+            tracking_type: the type of tracking to enable
+            tracking_config: the configuration for the tracking
+        """
+        tracking_config = tracking_config or {}
+        if tracking_type == "mlflow":
+            _, flag = optional_import("mlflow")
+            if flag:
+                from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
+
+                mlflow_receiver = MLflowReceiver(**tracking_config)
+                self.job.to_server(mlflow_receiver)
+            else:
+                raise ValueError("mlflow is not installed. Please install it using `pip install nvflare[mlflow]`")
+        else:
+            raise ValueError(f"Invalid tracking type: {tracking_type}")

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import tensorflow as tf
-from tf_net import TFNet
+from model import TFNet
 
 import nvflare.client as flare
 
