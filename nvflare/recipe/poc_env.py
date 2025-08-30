@@ -37,6 +37,7 @@ from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 from .spec import ExecEnv
 
 STOP_POC_TIMEOUT = 10
+SERVICE_START_TIMEOUT = 3
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
 
 
@@ -49,6 +50,7 @@ class _PocEnvValidator(BaseModel):
     use_he: bool = False
     docker_image: Optional[str] = None
     project_conf_path: str = ""
+    admin_user: str = DEFAULT_ADMIN_USER
 
     @model_validator(mode="after")
     def check_client_configuration(self):
@@ -82,10 +84,11 @@ class POCEnv(ExecEnv):
         num_clients: Optional[int] = 2,
         clients: Optional[list[str]] = None,
         gpu_ids: Optional[list[int]] = None,
-        auto_stop: bool = True,
+        auto_stop: bool = False,
         use_he: bool = False,
         docker_image: str = None,
         project_conf_path: str = "",
+        admin_user: str = DEFAULT_ADMIN_USER,
     ):
         """Initialize POC execution environment.
 
@@ -99,6 +102,7 @@ class POCEnv(ExecEnv):
             docker_image (str, optional): Docker image to use for POC. Defaults to None.
             project_conf_path (str, optional): Path to the project configuration file. Defaults to "".
                 If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
+            admin_user (str, optional): Admin user. Defaults to "admin@nvidia.com".
         """
         v = _PocEnvValidator(
             num_clients=num_clients,
@@ -108,6 +112,7 @@ class POCEnv(ExecEnv):
             use_he=use_he,
             docker_image=docker_image,
             project_conf_path=project_conf_path,
+            admin_user=admin_user,
         )
 
         self.clients = v.clients
@@ -118,23 +123,20 @@ class POCEnv(ExecEnv):
         self.use_he = v.use_he
         self.project_conf_path = v.project_conf_path
         self.docker_image = v.docker_image
+        self.admin_user = v.admin_user
 
-    def _try_to_stop_and_clean_existing_poc(self):
-        """Try to stop and clean existing POC if it is running."""
-        try:
-            project_config, service_config = setup_service_config(self.poc_workspace)
-        except Exception as e:
-            # POC workspace is not initialized yet, so we don't need to stop and clean it
-            pass
-
-        try:
-            if is_poc_running(self.poc_workspace, service_config, project_config):
-                print("POC services already running, stopping and cleaning to ensure fresh environment...")
-                self._stop_and_clean_poc()
-        except Exception as e:
-            print(f"Warning: Failed to stop and clean existing POC: {e}")
-        print(f"Removing POC workspace: {self.poc_workspace}")
-        shutil.rmtree(self.poc_workspace, ignore_errors=True)
+    def get_env_info(self) -> dict:
+        return {
+            "env_type": "poc",
+            "startup_kit_dir": self._get_admin_startup_kit_path(),
+            "num_clients": self.num_clients,
+            "gpu_ids": self.gpu_ids,
+            "auto_stop": self.auto_stop,
+            "use_he": self.use_he,
+            "docker_image": self.docker_image,
+            "project_conf_path": self.project_conf_path,
+            "admin_user": self.admin_user,
+        }
 
     def deploy(self, job: FedJob):
         """Deploy a FedJob to the POC environment.
@@ -146,7 +148,7 @@ class POCEnv(ExecEnv):
             str: Job ID or deployment result.
         """
         try:
-            self._try_to_stop_and_clean_existing_poc()
+            self._cleanup_poc_if_running()
 
             print("Preparing and starting fresh POC services...")
             prepare_poc_provision(
@@ -162,57 +164,71 @@ class POCEnv(ExecEnv):
             _start_poc(
                 poc_workspace=self.poc_workspace,
                 gpu_ids=self.gpu_ids,
-                excluded=[DEFAULT_ADMIN_USER],
+                excluded=[self.admin_user],
                 services_list=[],
             )
             print("POC services started successfully")
 
             # Give services time to start up
-            time.sleep(3)
+            time.sleep(SERVICE_START_TIMEOUT)
 
             # Submit job using Flare API like ProdEnv
             with tempfile.TemporaryDirectory() as temp_dir:
                 job.export_job(temp_dir)
                 job_path = os.path.join(temp_dir, job.name)
 
-                job_id = self._submit_and_monitor_job(job_path, job.name)
-
-                return job_id
+                return self._submit_and_monitor_job(job_path, job.name)
 
         except Exception as e:
             print(f"Error deploying job to POC environment: {e}")
             raise
         finally:
-            # Stop and clean if auto_stop is enabled (we always start our own POC)
+            # Stop POC if auto_stop is enabled (we always start our own POC)
             if self.auto_stop:
-                self._stop_and_clean_poc()
+                _stop_poc(
+                    poc_workspace=self.poc_workspace,
+                    excluded=[self.admin_user],  # Exclude admin console (consistent with start)
+                    services_list=[],
+                )
 
-    def _stop_and_clean_poc(self):
-        """Stop POC services and clean workspace with proper wait logic."""
+    def _cleanup_poc_if_running(self):
+        """Try to stop and clean existing POC if it is running."""
         try:
             project_config, service_config = setup_service_config(self.poc_workspace)
+        except Exception as e:
+            # POC workspace is not initialized yet, so we don't need to stop and clean it
+            return
 
+        if not is_poc_running(self.poc_workspace, service_config, project_config):
+            return
+
+        try:
+            print("Stopping existing POC services...")
             _stop_poc(
                 poc_workspace=self.poc_workspace,
-                excluded=[DEFAULT_ADMIN_USER],  # Exclude admin console (consistent with start)
+                excluded=[self.admin_user],  # Exclude admin console (consistent with start)
                 services_list=[],
             )
-
-            # Wait for services to stop before cleaning
-            for _ in range(STOP_POC_TIMEOUT):
+            count = 0
+            poc_running = True
+            while count < STOP_POC_TIMEOUT:
                 if not is_poc_running(self.poc_workspace, service_config, project_config):
+                    poc_running = False
                     break
                 time.sleep(1)
-            else:
+                count += 1
+
+            if poc_running:
                 print(
                     f"Warning: POC still running after {STOP_POC_TIMEOUT} seconds, cannot clean workspace. Skipping cleanup."
                 )
                 return
 
             _clean_poc(self.poc_workspace)
-
         except Exception as e:
-            print(f"Warning: Failed to stop and clean POC: {e}")
+            print(f"Warning: Failed to stop and clean existing POC: {e}")
+        print(f"Removing POC workspace: {self.poc_workspace}")
+        shutil.rmtree(self.poc_workspace, ignore_errors=True)
 
     def _submit_and_monitor_job(self, job_path: str, job_name: str) -> str:
         """Submit and monitor job via Flare API using a single session.
@@ -231,17 +247,12 @@ class POCEnv(ExecEnv):
 
             # Create secure session with POC admin (reuse for both submit and monitor)
             sess = new_secure_session(
-                username=DEFAULT_ADMIN_USER,  # Default POC admin user
+                username=self.admin_user,
                 startup_kit_location=admin_dir,
             )
 
             # Submit the job
             job_id = sess.submit_job(job_path)
-            print(f"Submitted job '{job_name}' with ID: {job_id}")
-
-            # wait for completion in POC
-            rc = sess.monitor_job(job_id, timeout=0)
-            print(f"job monitor done: {rc=}")
 
             return job_id
         except Exception as e:
