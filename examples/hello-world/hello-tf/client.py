@@ -65,7 +65,6 @@ def main():
         for k, v in input_model.params.items():
             model.get_layer(k).set_weights(v)
 
-        test_images = 2
         _, test_global_acc = model.evaluate(test_images, test_labels, verbose=2)
         print(
             f"Accuracy of the received model on round {input_model.current_round} on the test images: {test_global_acc * 100} %"

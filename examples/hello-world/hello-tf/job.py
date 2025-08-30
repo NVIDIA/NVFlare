@@ -19,7 +19,7 @@ from nvflare.recipe import SimEnv
 
 if __name__ == "__main__":
     n_clients = 2
-    num_rounds = 2
+    num_rounds = 3
     train_script = "client.py"
 
     recipe = FedAvgRecipe(

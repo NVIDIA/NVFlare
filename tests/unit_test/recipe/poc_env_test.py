@@ -27,7 +27,6 @@ def test_poc_env_initialization():
     env = POCEnv()
     assert env.num_clients == 2
     assert env.gpu_ids == []
-    assert env.auto_stop is True
 
 
 @patch("nvflare.recipe.poc_env.get_poc_workspace")
@@ -38,12 +37,10 @@ def test_poc_env_initialization_with_custom_values(mock_get_workspace):
         env = POCEnv(
             num_clients=3,
             gpu_ids=[0, 1],
-            auto_stop=False,
         )
         assert env.poc_workspace == temp_dir
         assert env.num_clients == 3
         assert env.gpu_ids == [0, 1]
-        assert env.auto_stop is False
 
 
 def test_poc_env_validation():
@@ -124,10 +121,9 @@ def test_get_admin_startup_kit_path_not_found(mock_setup, mock_get_prod_dir, moc
 
 @patch("nvflare.recipe.poc_env.new_secure_session")
 def test_submit_and_monitor_job(mock_session):
-    """Test job submission and monitoring via single Flare API session."""
+    """Test job submission via single Flare API session."""
     mock_sess = MagicMock()
     mock_sess.submit_job.return_value = "job_12345"
-    mock_sess.monitor_job.return_value = "completed"
     mock_session.return_value = mock_sess
 
     env = POCEnv()
@@ -138,26 +134,18 @@ def test_submit_and_monitor_job(mock_session):
         assert result == "job_12345"
         mock_session.assert_called_once_with(username="admin@nvidia.com", startup_kit_location="/fake/admin/dir")
         mock_sess.submit_job.assert_called_once_with("/fake/job/path")
-        mock_sess.monitor_job.assert_called_once_with("job_12345", timeout=0)
         mock_sess.close.assert_called_once()
 
 
 @patch("nvflare.recipe.poc_env.tempfile.TemporaryDirectory")
-@patch("nvflare.recipe.poc_env.setup_service_config")
-@patch("nvflare.recipe.poc_env.is_poc_running")
-@patch("nvflare.recipe.poc_env.prepare_poc_provision")
-@patch("nvflare.recipe.poc_env._start_poc")
-def test_deploy_job_integration(mock_start_poc, mock_prepare, mock_is_running, mock_setup, mock_temp_dir):
+@patch("nvflare.recipe.poc_env.time.sleep")
+def test_deploy_job_integration(mock_sleep, mock_temp_dir):
     """Test complete job deployment flow."""
     # Mock temporary directory
     mock_temp_dir_obj = MagicMock()
     mock_temp_dir_obj.__enter__.return_value = "/tmp/temp_dir"
     mock_temp_dir_obj.__exit__.return_value = None
     mock_temp_dir.return_value = mock_temp_dir_obj
-
-    # Mock POC setup
-    mock_setup.return_value = ({"name": "test"}, {"server": "server"})
-    mock_is_running.return_value = False  # POC not running initially
 
     # Mock job
     mock_job = MagicMock()
@@ -166,7 +154,12 @@ def test_deploy_job_integration(mock_start_poc, mock_prepare, mock_is_running, m
 
     env = POCEnv()
 
-    with patch.object(env, "_submit_and_monitor_job", return_value="job_12345"):
+    with (
+        patch.object(env, "_check_poc_running", return_value=False),
+        patch("nvflare.recipe.poc_env.prepare_poc_provision") as mock_prepare,
+        patch("nvflare.recipe.poc_env._start_poc") as mock_start_poc,
+        patch.object(env, "_submit_and_monitor_job", return_value="job_12345"),
+    ):
         result = env.deploy(mock_job)
 
         assert result == "job_12345"
@@ -179,53 +172,51 @@ def test_deploy_job_integration(mock_start_poc, mock_prepare, mock_is_running, m
 
 
 @patch("nvflare.recipe.poc_env.tempfile.TemporaryDirectory")
-@patch("nvflare.recipe.poc_env.setup_service_config")
-@patch("nvflare.recipe.poc_env.is_poc_running")
-@patch("nvflare.recipe.poc_env.prepare_poc_provision")
-@patch("nvflare.recipe.poc_env._start_poc")
-def test_deploy_job_with_auto_stop(mock_start_poc, mock_prepare, mock_is_running, mock_setup, mock_temp_dir):
-    """Test job deployment with auto stop enabled."""
+@patch("nvflare.recipe.poc_env.time.sleep")
+def test_deploy_job_with_existing_poc(mock_sleep, mock_temp_dir):
+    """Test job deployment when POC is already running."""
     # Mock temporary directory
     mock_temp_dir_obj = MagicMock()
     mock_temp_dir_obj.__enter__.return_value = "/tmp/temp_dir"
     mock_temp_dir_obj.__exit__.return_value = None
     mock_temp_dir.return_value = mock_temp_dir_obj
 
-    # Mock POC setup - return True initially (existing POC), then proceed
-    mock_setup.return_value = ({"name": "test"}, {"server": "server"})
-    mock_is_running.return_value = True  # POC already running
-
     # Mock job
     mock_job = MagicMock()
     mock_job.name = "test_job"
     mock_job.export_job = MagicMock()
 
-    env = POCEnv(auto_stop=True)
+    env = POCEnv()
 
     with (
+        patch.object(env, "_check_poc_running", return_value=True),  # POC already running
+        patch.object(env, "stop") as mock_stop,  # Should stop existing POC
+        patch("nvflare.recipe.poc_env.prepare_poc_provision") as mock_prepare,
+        patch("nvflare.recipe.poc_env._start_poc") as mock_start_poc,
         patch.object(env, "_submit_and_monitor_job", return_value="job_12345"),
-        patch.object(env, "_stop_and_clean_poc") as mock_stop_and_clean,
     ):
         result = env.deploy(mock_job)
 
         assert result == "job_12345"
-        # Should be called twice: once at start (existing POC) and once at end (auto_stop)
-        assert mock_stop_and_clean.call_count == 2
+        # Should stop existing POC before starting fresh one
+        mock_stop.assert_called_once()
 
 
 @patch("nvflare.recipe.poc_env.setup_service_config")
 @patch("nvflare.recipe.poc_env._stop_poc")
 @patch("nvflare.recipe.poc_env._clean_poc")
 @patch("nvflare.recipe.poc_env.is_poc_running")
-def test_stop_and_clean_poc(mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup):
+@patch("nvflare.recipe.poc_env.shutil.rmtree")
+def test_stop_poc(mock_rmtree, mock_is_running, mock_clean_poc, mock_stop_poc, mock_setup):
     """Test stop and clean POC functionality."""
     mock_setup.return_value = ({"name": "test"}, {"server": "server"})
     mock_is_running.return_value = False  # POC stops successfully
 
     env = POCEnv()
-    env._stop_and_clean_poc()
+    env.stop(clean_poc=True)
 
     mock_stop_poc.assert_called_once_with(
         poc_workspace=env.poc_workspace, excluded=["admin@nvidia.com"], services_list=[]
     )
     mock_clean_poc.assert_called_once_with(env.poc_workspace)
+    mock_rmtree.assert_called_once_with(env.poc_workspace, ignore_errors=True)

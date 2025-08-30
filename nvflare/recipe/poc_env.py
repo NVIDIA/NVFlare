@@ -46,7 +46,6 @@ class _PocEnvValidator(BaseModel):
     num_clients: Optional[conint(gt=0)] = None
     clients: Optional[list[str]] = None
     gpu_ids: Optional[list[int]] = None
-    auto_stop: bool = True
     use_he: bool = False
     docker_image: Optional[str] = None
     project_conf_path: str = ""
@@ -84,7 +83,6 @@ class POCEnv(ExecEnv):
         num_clients: Optional[int] = 2,
         clients: Optional[list[str]] = None,
         gpu_ids: Optional[list[int]] = None,
-        auto_stop: bool = False,
         use_he: bool = False,
         docker_image: str = None,
         project_conf_path: str = "",
@@ -97,7 +95,6 @@ class POCEnv(ExecEnv):
             clients (list[str], optional): List of client names. If None, will generate site-1, site-2, etc. Defaults to None.
                 If specified, number_of_clients argument will be ignored.
             gpu_ids (list[int], optional): List of GPU IDs to assign to clients. If None, uses CPU only. Defaults to None.
-            auto_stop (bool, optional): Whether to automatically stop POC services after job completion. Defaults to True.
             use_he (bool, optional): Whether to use HE. Defaults to False.
             docker_image (str, optional): Docker image to use for POC. Defaults to None.
             project_conf_path (str, optional): Path to the project configuration file. Defaults to "".
@@ -108,7 +105,6 @@ class POCEnv(ExecEnv):
             num_clients=num_clients,
             clients=clients,
             gpu_ids=gpu_ids,
-            auto_stop=auto_stop,
             use_he=use_he,
             docker_image=docker_image,
             project_conf_path=project_conf_path,
@@ -119,7 +115,6 @@ class POCEnv(ExecEnv):
         self.num_clients = len(v.clients) if v.clients is not None else v.num_clients
         self.poc_workspace = get_poc_workspace()
         self.gpu_ids = v.gpu_ids or []
-        self.auto_stop = v.auto_stop
         self.use_he = v.use_he
         self.project_conf_path = v.project_conf_path
         self.docker_image = v.docker_image
@@ -131,7 +126,6 @@ class POCEnv(ExecEnv):
             "startup_kit_dir": self._get_admin_startup_kit_path(),
             "num_clients": self.num_clients,
             "gpu_ids": self.gpu_ids,
-            "auto_stop": self.auto_stop,
             "use_he": self.use_he,
             "docker_image": self.docker_image,
             "project_conf_path": self.project_conf_path,
@@ -147,60 +141,57 @@ class POCEnv(ExecEnv):
         Returns:
             str: Job ID or deployment result.
         """
-        try:
-            self._cleanup_poc_if_running()
+        if self._check_poc_running():
+            self.stop(clean_poc=True)
 
-            print("Preparing and starting fresh POC services...")
-            prepare_poc_provision(
-                clients=self.clients or [],  # Empty list if None, let prepare_clients generate
-                number_of_clients=self.num_clients,
-                workspace=self.poc_workspace,
-                docker_image=self.docker_image,
-                use_he=self.use_he,
-                project_conf_path=self.project_conf_path,
-                examples_dir=None,
-            )
+        print("Preparing and starting fresh POC services...")
+        prepare_poc_provision(
+            clients=self.clients or [],  # Empty list if None, let prepare_clients generate
+            number_of_clients=self.num_clients,
+            workspace=self.poc_workspace,
+            docker_image=self.docker_image,
+            use_he=self.use_he,
+            project_conf_path=self.project_conf_path,
+            examples_dir=None,
+        )
 
-            _start_poc(
-                poc_workspace=self.poc_workspace,
-                gpu_ids=self.gpu_ids,
-                excluded=[self.admin_user],
-                services_list=[],
-            )
-            print("POC services started successfully")
+        _start_poc(
+            poc_workspace=self.poc_workspace,
+            gpu_ids=self.gpu_ids,
+            excluded=[self.admin_user],
+            services_list=[],
+        )
+        print("POC services started successfully")
 
-            # Give services time to start up
-            time.sleep(SERVICE_START_TIMEOUT)
+        # Give services time to start up
+        time.sleep(SERVICE_START_TIMEOUT)
 
-            # Submit job using Flare API like ProdEnv
-            with tempfile.TemporaryDirectory() as temp_dir:
-                job.export_job(temp_dir)
-                job_path = os.path.join(temp_dir, job.name)
+        # Submit job using Flare API like ProdEnv
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job.export_job(temp_dir)
+            job_path = os.path.join(temp_dir, job.name)
 
-                return self._submit_and_monitor_job(job_path, job.name)
+            return self._submit_and_monitor_job(job_path, job.name)
 
-        except Exception as e:
-            print(f"Error deploying job to POC environment: {e}")
-            raise
-        finally:
-            # Stop POC if auto_stop is enabled (we always start our own POC)
-            if self.auto_stop:
-                _stop_poc(
-                    poc_workspace=self.poc_workspace,
-                    excluded=[self.admin_user],  # Exclude admin console (consistent with start)
-                    services_list=[],
-                )
-
-    def _cleanup_poc_if_running(self):
-        """Try to stop and clean existing POC if it is running."""
+    def _check_poc_running(self) -> bool:
         try:
             project_config, service_config = setup_service_config(self.poc_workspace)
         except Exception as e:
             # POC workspace is not initialized yet, so we don't need to stop and clean it
-            return
+            return False
 
         if not is_poc_running(self.poc_workspace, service_config, project_config):
-            return
+            return False
+
+        return True
+
+    def stop(self, clean_poc: bool = False):
+        """Try to stop and clean existing POC.
+
+        Args:
+            clean_poc (bool, optional): Whether to clean the POC workspace. Defaults to False.
+        """
+        project_config, service_config = setup_service_config(self.poc_workspace)
 
         try:
             print("Stopping existing POC services...")
@@ -218,13 +209,13 @@ class POCEnv(ExecEnv):
                 time.sleep(1)
                 count += 1
 
-            if poc_running:
-                print(
-                    f"Warning: POC still running after {STOP_POC_TIMEOUT} seconds, cannot clean workspace. Skipping cleanup."
-                )
-                return
-
-            _clean_poc(self.poc_workspace)
+            if clean_poc:
+                if poc_running:
+                    print(
+                        f"Warning: POC still running after {STOP_POC_TIMEOUT} seconds, cannot clean workspace. Skipping cleanup."
+                    )
+                else:
+                    _clean_poc(self.poc_workspace)
         except Exception as e:
             print(f"Warning: Failed to stop and clean existing POC: {e}")
         print(f"Removing POC workspace: {self.poc_workspace}")
