@@ -34,7 +34,7 @@ pip3 install nvflare
 Run the script using the job API to create the job and run it with the simulator:
 
 ```bash
-TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 fedavg_script_runner_tf.py
+TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async python3 job.py
 ```
 
 ## Access the logs and results

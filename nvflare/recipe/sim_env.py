@@ -17,6 +17,7 @@ from typing import List, Optional
 from pydantic import BaseModel, model_validator
 
 from nvflare.job_config.api import FedJob
+from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 from .spec import ExecEnv
 
@@ -30,6 +31,7 @@ class _SimEnvValidator(BaseModel):
     num_threads: int
     gpu_config: Optional[str] = None
     log_config: Optional[str] = None
+    workspace_root: str = WORKSPACE_ROOT
 
     @model_validator(mode="after")
     def check_num_clients_consistency(self):
@@ -58,6 +60,7 @@ class SimEnv(ExecEnv):
         num_threads: int = 0,
         gpu_config: str = None,
         log_config: str = None,
+        workspace_root: str = WORKSPACE_ROOT,
     ):
         """Initialize simulation execution environment.
 
@@ -67,6 +70,7 @@ class SimEnv(ExecEnv):
             num_threads (int, optional): Number of threads per client. Defaults to 0.
             gpu_config (str, optional): GPU configuration string. Defaults to None.
             log_config (str, optional): Log configuration string. Defaults to None.
+            workspace_root (str, optional): Root directory for simulation workspace. Defaults to WORKSPACE_ROOT.
         """
         v = _SimEnvValidator(
             num_clients=num_clients,
@@ -74,6 +78,7 @@ class SimEnv(ExecEnv):
             num_threads=num_threads,
             gpu_config=gpu_config,
             log_config=log_config,
+            workspace_root=workspace_root,
         )
 
         self.num_clients = v.num_clients
@@ -81,6 +86,7 @@ class SimEnv(ExecEnv):
         self.gpu_config = v.gpu_config
         self.log_config = v.log_config
         self.clients = v.clients
+        self.workspace_root = v.workspace_root
 
     def deploy(self, job: FedJob):
         job.simulator_run(
@@ -91,3 +97,15 @@ class SimEnv(ExecEnv):
             gpu=self.gpu_config,
             log_config=self.log_config,
         )
+        return SimulatorConstants.JOB_NAME
+
+    def get_env_info(self) -> dict:
+        return {
+            "env_type": "sim",
+            "workspace_root": self.workspace_root,
+            "num_clients": self.num_clients,
+            "num_threads": self.num_threads,
+            "gpu_config": self.gpu_config,
+            "log_config": self.log_config,
+            "clients": self.clients,
+        }
