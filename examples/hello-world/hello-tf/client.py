@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import tensorflow as tf
-from model import TFNet
+from model import Net
 
 import nvflare.client as flare
 
@@ -26,7 +26,7 @@ def main():
     sys_info = flare.system_info()
     print(f"system info is: {sys_info}", flush=True)
 
-    model = TFNet()
+    model = Net()
     model.build(input_shape=(None, 28, 28))
     model.compile(
         optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]

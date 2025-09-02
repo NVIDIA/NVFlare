@@ -19,7 +19,7 @@ from pydantic import BaseModel, model_validator
 from nvflare.job_config.api import FedJob
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
-from .spec import ExecEnv
+from .spec import ExecEnv, ExecEnvType
 
 WORKSPACE_ROOT = "/tmp/nvflare/simulation"
 
@@ -97,11 +97,11 @@ class SimEnv(ExecEnv):
             gpu=self.gpu_config,
             log_config=self.log_config,
         )
-        return SimulatorConstants.JOB_NAME
+        return job.name
 
     def get_env_info(self) -> dict:
         return {
-            "env_type": "sim",
+            "env_type": ExecEnvType.SIM,
             "workspace_root": self.workspace_root,
             "num_clients": self.num_clients,
             "num_threads": self.num_threads,

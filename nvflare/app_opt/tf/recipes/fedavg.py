@@ -14,7 +14,7 @@
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, PositiveInt
+from pydantic import BaseModel
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -23,7 +23,6 @@ from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
-from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
 
@@ -34,8 +33,6 @@ class _FedAvgValidator(BaseModel):
 
     name: str
     initial_model: Any
-    clients: Optional[list[str]]
-    num_clients: Optional[PositiveInt]
     min_clients: int
     num_rounds: int
     train_script: str
@@ -47,12 +44,6 @@ class _FedAvgValidator(BaseModel):
     framework: FrameworkType = FrameworkType.TENSORFLOW
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
-
-    def model_post_init(self, __context):
-        if self.clients and self.num_clients is None:
-            self.num_clients = len(self.clients)
-        elif self.clients and len(self.clients) != self.min_clients:
-            raise ValueError("inconsistent number of clients")
 
 
 class FedAvgRecipe(Recipe):
@@ -73,10 +64,6 @@ class FedAvgRecipe(Recipe):
         name: Name of the federated learning job. Defaults to "fedavg".
         initial_model: Initial model to start federated training with. If None,
             clients will start with their own local models.
-        clients: list of client names to participate in training. If None,
-            all available clients will be used.
-        num_clients: Number of clients expected to participate. If clients is provided,
-            this will be set automatically to len(clients).
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
@@ -96,7 +83,6 @@ class FedAvgRecipe(Recipe):
         recipe = FedAvgRecipe(
             name="my_fedavg_job",
             initial_model=pretrained_model,
-            num_clients=3,
             min_clients=2,
             num_rounds=10,
             train_script="client.py",
@@ -118,8 +104,6 @@ class FedAvgRecipe(Recipe):
         *,
         name: str = "fedavg",
         initial_model: Any = None,
-        clients: Optional[list[str]] = None,
-        num_clients: Optional[int] = None,
         min_clients: int,
         num_rounds: int = 2,
         train_script: str,
@@ -136,8 +120,6 @@ class FedAvgRecipe(Recipe):
         v = _FedAvgValidator(
             name=name,
             initial_model=initial_model,
-            clients=clients,
-            num_clients=num_clients,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -153,12 +135,9 @@ class FedAvgRecipe(Recipe):
 
         self.name = v.name
         self.initial_model = v.initial_model
-        self.clients = v.clients
-        self.num_clients = v.num_clients
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
         self.initial_model = v.initial_model
-        self.clients = v.clients
         self.train_script = v.train_script
         self.train_args = v.train_args
         self.aggregator = v.aggregator
@@ -209,30 +188,6 @@ class FedAvgRecipe(Recipe):
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
         )
-        if self.clients is None:
-            job.to_clients(executor)
-        else:
-            for client in self.clients:
-                job.to(executor, client)
+        job.to_clients(executor)
 
         Recipe.__init__(self, job)
-
-    def enable_experiment_tracking(self, tracking_type: str, tracking_config: dict = None):
-        """Enable experiment tracking.
-
-        Args:
-            tracking_type: the type of tracking to enable
-            tracking_config: the configuration for the tracking
-        """
-        tracking_config = tracking_config or {}
-        if tracking_type == "mlflow":
-            _, flag = optional_import("mlflow")
-            if flag:
-                from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
-
-                mlflow_receiver = MLflowReceiver(**tracking_config)
-                self.job.to_server(mlflow_receiver)
-            else:
-                raise ValueError("mlflow is not installed. Please install it using `pip install nvflare[mlflow]`")
-        else:
-            raise ValueError(f"Invalid tracking type: {tracking_type}")

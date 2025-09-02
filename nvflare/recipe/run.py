@@ -15,7 +15,7 @@
 import os
 
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
-from nvflare.fuel.flare_api.flare_api import new_secure_session
+from nvflare.fuel.flare_api.flare_api import basic_cb_with_print, new_secure_session
 
 
 class Run:
@@ -39,14 +39,16 @@ class Run:
         """
         env_type = self.env_info.get("env_type")
         if env_type == "sim":
-            print("Simulation environment, please check the log inside the workspace returned by get_result()")
+            print(
+                "get_status will always return completed in a simulation environment, please check the log inside the workspace returned by get_result()"
+            )
             return "completed"
         else:
             sess = None
             try:
                 sess = new_secure_session(
-                    startup_kit_location=self.env_info.get("startup_kit_dir"),
-                    username=self.env_info.get("admin_user"),
+                    startup_kit_location=self.env_info.get("startup_kit_location"),
+                    username=self.env_info.get("username"),
                 )
                 return sess.get_job_status(self.job_id)
             except Exception as e:
@@ -65,10 +67,12 @@ class Run:
         sess = None
         try:
             sess = new_secure_session(
-                startup_kit_location=self.env_info.get("startup_kit_dir"),
-                username=self.env_info.get("admin_user"),
+                startup_kit_location=self.env_info.get("startup_kit_location"),
+                username=self.env_info.get("username"),
+                timeout=self.env_info.get("login_timeout", 10),
             )
-            rc = sess.monitor_job(self.job_id, timeout=timeout)
+            cb_run_counter = {"count": 0}
+            rc = sess.monitor_job(self.job_id, timeout=timeout, cb=basic_cb_with_print, cb_run_counter=cb_run_counter)
             print(f"job monitor done: {rc=}")
             if rc == MonitorReturnCode.JOB_FINISHED:
                 return sess.download_job_result(self.job_id)
@@ -93,3 +97,22 @@ class Run:
         env_type = self.env_info.get("env_type")
 
         return self.handlers[env_type](timeout=timeout)
+
+    def abort(self):
+        if self.env_info.get("env_type") == "sim":
+            print("abort is not supported in a simulation environment, it will always run to completion.")
+            return
+        else:
+            sess = None
+            try:
+                sess = new_secure_session(
+                    startup_kit_location=self.env_info.get("startup_kit_location"),
+                    username=self.env_info.get("username"),
+                    timeout=self.env_info.get("login_timeout", 10),
+                )
+                sess.abort_job(self.job_id)
+            except Exception as e:
+                raise RuntimeError(f"Failed to abort job: {e}")
+            finally:
+                if sess:
+                    sess.close()

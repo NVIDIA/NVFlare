@@ -20,7 +20,7 @@ from pydantic import BaseModel, PositiveFloat, model_validator
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.job_config.api import FedJob
 
-from .spec import ExecEnv
+from .spec import ExecEnv, ExecEnvType
 
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
 
@@ -41,44 +41,48 @@ def status_monitor_cb(session: Session, job_id: str, job_meta, *cb_args, **cb_kw
 
 # Internal — not part of the public API
 class _ProdEnvValidator(BaseModel):
-    startup_kit_dir: str
+    startup_kit_location: str
     login_timeout: PositiveFloat = 5.0
+    username: str = DEFAULT_ADMIN_USER
 
     @model_validator(mode="after")
-    def check_startup_kit_dir_exists(self) -> "_ProdEnvValidator":
-        if not os.path.exists(self.startup_kit_dir):
-            raise ValueError(f"startup_kit_dir path does not exist: {self.startup_kit_dir}")
+    def check_startup_kit_location_exists(self) -> "_ProdEnvValidator":
+        if not os.path.exists(self.startup_kit_location):
+            raise ValueError(f"startup_kit_location path does not exist: {self.startup_kit_location}")
         return self
 
 
 class ProdEnv(ExecEnv):
     def __init__(
         self,
-        startup_kit_dir: str,
+        startup_kit_location: str,
         login_timeout: float = 5.0,
+        username: str = DEFAULT_ADMIN_USER,
     ):
         """Production execution environment for submitting and monitoring NVFlare jobs.
 
         This environment uses the startup kit of an NVFlare deployment to submit jobs via the Flare API.
 
         Args:
-            startup_kit_dir (str): Path to the admin's startup kit directory.
+            startup_kit_location (str): Path to the admin's startup kit directory.
             login_timeout (float): Timeout (in seconds) for logging into the Flare API session. Must be > 0.
+            username (str): Username to log in with.
         """
         v = _ProdEnvValidator(
-            startup_kit_dir=startup_kit_dir,
+            startup_kit_location=startup_kit_location,
             login_timeout=login_timeout,
+            username=username,
         )
 
-        self.startup_kit_dir = v.startup_kit_dir
+        self.startup_kit_location = v.startup_kit_location
         self.login_timeout = v.login_timeout
-        self.admin_user = os.path.basename(startup_kit_dir)
+        self.username = v.username
 
     def deploy(self, job: FedJob):
         sess = None
         try:
             sess = new_secure_session(
-                username=self.admin_user, startup_kit_location=self.startup_kit_dir, timeout=self.login_timeout
+                username=self.username, startup_kit_location=self.startup_kit_location, timeout=self.login_timeout
             )
             with tempfile.TemporaryDirectory() as temp_dir:
                 job.export_job(temp_dir)
@@ -95,8 +99,8 @@ class ProdEnv(ExecEnv):
 
     def get_env_info(self) -> dict:
         return {
-            "env_type": "prod",
-            "startup_kit_dir": self.startup_kit_dir,
+            "env_type": ExecEnvType.PROD,
+            "startup_kit_location": self.startup_kit_location,
             "login_timeout": self.login_timeout,
-            "admin_user": self.admin_user,
+            "username": self.username,
         }
