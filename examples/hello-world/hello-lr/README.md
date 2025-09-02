@@ -107,10 +107,21 @@ FL system, such as receiving and send `FLModel`.
 
 ## Server Side
 We leverage a builtin FLARE logistic regression with Newton Raphson method. 
-the server side fedavg class is located at `nvflare.app_commons.workflows.lr.fedavg.FedAvgLR`
+the server side fedavg class is located at `nvflare.app_common.workflows.lr.fedavg.FedAvgLR`
 
-## Job 
-    toddo
+## Job
+```
+  recipe = FedAvgLrRecipe(
+  num_rounds=num_rounds,
+  damping_factor=0.8,
+  num_features=13,
+  train_script="client.py",
+  train_args=f"--data_root {data_root}",
+  )
+  env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+  run = recipe.execute(env)
+  # run.get_result()
+```
 
 ## Download and prepare data
 
