@@ -13,9 +13,10 @@
 # limitations under the License.
 import argparse
 
-from adult_statistics import AdultStatistics
+from client import AdultStatistics
 
-from nvflare.job_config.stats_job import StatsJob
+from nvflare.recipe.fedstats import FedStatsRecipe
+from nvflare.recipe.sim_env import SimEnv
 
 
 def define_parser():
@@ -23,9 +24,6 @@ def define_parser():
     parser.add_argument("-n", "--n_clients", type=int, default=2)
     parser.add_argument("-d", "--data_root_dir", type=str, nargs="?", default="/tmp/nvflare/df_stats/data")
     parser.add_argument("-o", "--stats_output_path", type=str, nargs="?", default="statistics/adults_stats.json")
-    parser.add_argument("-j", "--job_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/stats_df")
-    parser.add_argument("-w", "--work_dir", type=str, nargs="?", default="/tmp/nvflare/jobs/stats_df/work_dir")
-    parser.add_argument("-co", "--export_config", action="store_true", help="config only mode, export config")
 
     return parser.parse_args()
 
@@ -36,9 +34,6 @@ def main():
     n_clients = args.n_clients
     data_root_dir = args.data_root_dir
     output_path = args.stats_output_path
-    job_dir = args.job_dir
-    work_dir = args.work_dir
-    export_config = args.export_config
 
     statistic_configs = {
         "count": {},
@@ -51,21 +46,18 @@ def main():
     # define local stats generator
     df_stats_generator = AdultStatistics(filename="data.csv", data_root_dir=data_root_dir)
 
-    job = StatsJob(
-        job_name="stats_df",
+    sites = [f"site-{i + 1}" for i in range(n_clients)]
+
+    recipe = FedStatsRecipe(
+        name="stats_df",
+        stats_output_path=output_path,
+        sites=sites,
         statistic_configs=statistic_configs,
         stats_generator=df_stats_generator,
-        output_path=output_path,
     )
 
-    sites = [f"site-{i + 1}" for i in range(n_clients)]
-    job.setup_clients(sites)
-
-    if export_config:
-        print("Exporting job config...", job_dir)
-        job.export_job(job_dir)
-    else:
-        job.simulator_run(work_dir)
+    env = SimEnv(clients=sites, num_threads=n_clients)
+    recipe.execute(env=env)
 
 
 if __name__ == "__main__":
