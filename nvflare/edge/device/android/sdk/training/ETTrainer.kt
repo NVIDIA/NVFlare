@@ -7,8 +7,8 @@ import com.nvidia.nvflare.sdk.training.TrainingConfig
 import com.nvidia.nvflare.sdk.core.Dataset
 import org.pytorch.executorch.Tensor
 import org.pytorch.executorch.EValue
-import org.pytorch.executorch.TrainingModule
-import org.pytorch.executorch.SGD
+import org.pytorch.executorch.training.TrainingModule
+import org.pytorch.executorch.training.SGD
 import com.facebook.soloader.nativeloader.NativeLoader
 import com.facebook.soloader.nativeloader.SystemDelegate
 import java.io.File
