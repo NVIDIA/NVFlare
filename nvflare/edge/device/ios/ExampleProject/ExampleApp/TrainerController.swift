@@ -88,8 +88,7 @@ class TrainerController: ObservableObject {
     private var currentSwiftDataset: NVFlareDataset?
     
     // Server configuration
-    @Published var serverHost = "192.168.6.101"
-    @Published var serverPort = 4321
+    @Published var serverURL = "https://192.168.6.101:443"
     
     func setJob(_ job: SupportedJob) {
         selectedJob = job
@@ -116,7 +115,7 @@ class TrainerController: ObservableObject {
                 print("XOR failed to load: \(error)")
                 throw TrainingError.datasetCreationFailed
             }
-            return dataset
+
         }
     }
     
@@ -156,8 +155,8 @@ class TrainerController: ObservableObject {
                     ],
                     userInfo: [:],
                     jobTimeout: 30.0,
-                    hostname: serverHost,
-                    port: serverPort
+                    serverURL: serverURL,
+                    allowSelfSignedCerts: true
                 )
                 
                 self.flareRunner = runner

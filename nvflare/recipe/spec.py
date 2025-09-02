@@ -13,17 +13,35 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.defs import FilterType
+from nvflare.recipe.run import Run
 
 
 class ExecEnv(ABC):
 
     @abstractmethod
-    def deploy(self, job: FedJob):
+    def deploy(self, job: FedJob) -> str:
+        """Deploy a FedJob and return an execution response.
+
+        Args:
+            job: The FedJob to deploy.
+
+        Returns:
+            str: The job ID.
+        """
+        pass
+
+    @abstractmethod
+    def get_env_info(self) -> dict:
+        """Get the environment information.
+
+        Returns:
+            dict: The environment information.
+        """
         pass
 
 
@@ -119,7 +137,7 @@ class Recipe(ABC):
 
         self.job.export_job(job_dir)
 
-    def execute(self, env: ExecEnv, server_exec_params: dict = None, client_exec_params: dict = None) -> Any:
+    def execute(self, env: ExecEnv, server_exec_params: dict = None, client_exec_params: dict = None) -> Run:
         """Execute the recipe in a specified execution environment.
 
         Args:
@@ -127,7 +145,7 @@ class Recipe(ABC):
             server_exec_params: execution params for the server
             client_exec_params: execution params for clients
 
-        Returns: result returned from the execution environment's deployment
+        Returns: Run to get job ID and execution results
 
         """
         if server_exec_params:
@@ -136,4 +154,6 @@ class Recipe(ABC):
         if client_exec_params:
             self.job.to_clients(client_exec_params)
 
-        return env.deploy(self.job)
+        job_id = env.deploy(self.job)
+        run = Run(env.get_env_info(), job_id)
+        return run
