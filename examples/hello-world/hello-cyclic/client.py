@@ -21,17 +21,17 @@ WEIGHTS_PATH = "./tf_model.weights.h5"
 
 
 def main():
+    flare.init()
+
+    sys_info = flare.system_info()
+    print(f"system info is: {sys_info}", flush=True)
+
     model = Net()
     model.build(input_shape=(None, 28, 28))
     model.compile(
         optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
     )
     model.summary()
-
-    flare.init()
-
-    sys_info = flare.system_info()
-    print(f"system info is: {sys_info}", flush=True)
 
     (train_images, train_labels), (
         test_images,
