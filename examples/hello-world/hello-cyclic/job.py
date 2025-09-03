@@ -11,16 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-This script demonstrates how to run the cyclic script runner for federated learning.
-"""
 
 from model import Net
 
 from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.job_config.script_runner import FrameworkType
+from nvflare.recipe import SimEnv
 from nvflare.recipe.cyclic_recipe import CyclicRecipe
-from nvflare.recipe.sim_env import SimEnv
 
 if __name__ == "__main__":
     n_clients = 2
@@ -32,8 +29,11 @@ if __name__ == "__main__":
         num_rounds=num_rounds,
         initial_model=TFModel(Net()),
         train_script=train_script,
-        train_args="",
     )
 
     env = SimEnv(num_clients=n_clients)
-    recipe.execute(env=env)
+    run = recipe.execute(env=env)
+    print()
+    print("Result can be found in :", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()

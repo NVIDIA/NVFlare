@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from model import TFNet
+from model import Net
 
 from nvflare.app_opt.tf.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, add_experiment_tracking
 
 if __name__ == "__main__":
     n_clients = 2
@@ -25,14 +25,14 @@ if __name__ == "__main__":
     recipe = FedAvgRecipe(
         name="hello-tf_fedavg",
         num_rounds=num_rounds,
-        initial_model=TFNet(),
+        initial_model=Net(),
         min_clients=n_clients,
         train_script=train_script,
     )
-    recipe.enable_experiment_tracking(tracking_type="mlflow")
+    add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     env = SimEnv(num_clients=n_clients)
-    run = recipe.execute(env)
+    run = recipe.execute(env=env)
     print()
     print("Result can be found in :", run.get_result())
     print("Job Status is:", run.get_status())

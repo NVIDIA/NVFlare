@@ -34,7 +34,7 @@ from nvflare.tool.poc.poc_commands import (
 )
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
-from .spec import ExecEnv
+from .spec import ExecEnv, ExecEnvType
 
 STOP_POC_TIMEOUT = 10
 SERVICE_START_TIMEOUT = 3
@@ -49,7 +49,7 @@ class _PocEnvValidator(BaseModel):
     use_he: bool = False
     docker_image: Optional[str] = None
     project_conf_path: str = ""
-    admin_user: str = DEFAULT_ADMIN_USER
+    username: str = DEFAULT_ADMIN_USER
 
     @model_validator(mode="after")
     def check_client_configuration(self):
@@ -86,7 +86,7 @@ class POCEnv(ExecEnv):
         use_he: bool = False,
         docker_image: str = None,
         project_conf_path: str = "",
-        admin_user: str = DEFAULT_ADMIN_USER,
+        username: str = DEFAULT_ADMIN_USER,
     ):
         """Initialize POC execution environment.
 
@@ -99,7 +99,7 @@ class POCEnv(ExecEnv):
             docker_image (str, optional): Docker image to use for POC. Defaults to None.
             project_conf_path (str, optional): Path to the project configuration file. Defaults to "".
                 If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
-            admin_user (str, optional): Admin user. Defaults to "admin@nvidia.com".
+            username (str, optional): Admin user. Defaults to "admin@nvidia.com".
         """
         v = _PocEnvValidator(
             num_clients=num_clients,
@@ -108,7 +108,7 @@ class POCEnv(ExecEnv):
             use_he=use_he,
             docker_image=docker_image,
             project_conf_path=project_conf_path,
-            admin_user=admin_user,
+            username=username,
         )
 
         self.clients = v.clients
@@ -118,18 +118,18 @@ class POCEnv(ExecEnv):
         self.use_he = v.use_he
         self.project_conf_path = v.project_conf_path
         self.docker_image = v.docker_image
-        self.admin_user = v.admin_user
+        self.username = v.username
 
     def get_env_info(self) -> dict:
         return {
-            "env_type": "poc",
-            "startup_kit_dir": self._get_admin_startup_kit_path(),
+            "env_type": ExecEnvType.POC,
+            "startup_kit_location": self._get_admin_startup_kit_path(),
             "num_clients": self.num_clients,
             "gpu_ids": self.gpu_ids,
             "use_he": self.use_he,
             "docker_image": self.docker_image,
             "project_conf_path": self.project_conf_path,
-            "admin_user": self.admin_user,
+            "username": self.username,
         }
 
     def deploy(self, job: FedJob):
@@ -158,7 +158,7 @@ class POCEnv(ExecEnv):
         _start_poc(
             poc_workspace=self.poc_workspace,
             gpu_ids=self.gpu_ids,
-            excluded=[self.admin_user],
+            excluded=[self.username],
             services_list=[],
         )
         print("POC services started successfully")
@@ -197,7 +197,7 @@ class POCEnv(ExecEnv):
             print("Stopping existing POC services...")
             _stop_poc(
                 poc_workspace=self.poc_workspace,
-                excluded=[self.admin_user],  # Exclude admin console (consistent with start)
+                excluded=[self.username],  # Exclude admin console (consistent with start)
                 services_list=[],
             )
             count = 0
@@ -238,7 +238,7 @@ class POCEnv(ExecEnv):
 
             # Create secure session with POC admin (reuse for both submit and monitor)
             sess = new_secure_session(
-                username=self.admin_user,
+                username=self.username,
                 startup_kit_location=admin_dir,
             )
 
