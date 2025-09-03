@@ -100,144 +100,100 @@ class InvalidAggregator:
         pass
 
 
+@pytest.fixture
+def mock_file_system():
+    """Mock file system operations for all tests."""
+    with patch("os.path.isfile", return_value=True), patch("os.path.exists", return_value=True):
+        yield
+
+
+@pytest.fixture
+def custom_aggregator():
+    """Create a custom aggregator for testing."""
+    return MyAggregator()
+
+
+@pytest.fixture
+def simple_model():
+    """Create a simple test model."""
+    return SimpleTestModel()
+
+
+@pytest.fixture
+def base_recipe_params():
+    """Base parameters for creating FedAvgRecipe instances."""
+    return {
+        "train_script": "mock_train_script.py",
+        "train_args": "--epochs 10",
+        "min_clients": 2,
+        "num_rounds": 5,
+    }
+
+
+def assert_recipe_basics(recipe, expected_name, expected_params):
+    """Helper to assert basic recipe properties."""
+    assert recipe.name == expected_name
+    assert recipe.train_script == expected_params.get("train_script", "mock_train_script.py")
+    assert recipe.train_args == expected_params.get("train_args", "--epochs 10")
+    assert recipe.min_clients == expected_params.get("min_clients", 2)
+    assert recipe.num_rounds == expected_params.get("num_rounds", 5)
+    assert recipe.job is not None
+    assert recipe.job.name == expected_name
+
+
 class TestFedAvgRecipe:
     """Test cases for FedAvgRecipe class."""
 
-    @patch("os.path.isfile", return_value=True)
-    @patch("os.path.exists", return_value=True)
-    def test_fedavg_recipe_initialization_with_default_aggregator(self, mock_exists, mock_isfile):
+    def test_default_aggregator_initialization(self, mock_file_system, base_recipe_params):
         """Test FedAvgRecipe initialization with default aggregator."""
-        recipe = FedAvgRecipe(
-            name="test_fedavg",
-            train_script="mock_train_script.py",
-            train_args="--epochs 10",
-            num_clients=3,
-            min_clients=2,
-            num_rounds=5,
-        )
+        recipe = FedAvgRecipe(name="test_fedavg", **base_recipe_params)
 
-        assert recipe.name == "test_fedavg"
-        assert recipe.train_script == "mock_train_script.py"
-        assert recipe.train_args == "--epochs 10"
-        assert recipe.num_clients == 3
-        assert recipe.min_clients == 2
-        assert recipe.num_rounds == 5
+        assert_recipe_basics(recipe, "test_fedavg", base_recipe_params)
         assert recipe.initial_model is None
-        assert recipe.clients is None
         assert isinstance(recipe.aggregator, Aggregator)
 
-    @patch("os.path.isfile", return_value=True)
-    @patch("os.path.exists", return_value=True)
-    def test_fedavg_recipe_initialization_with_custom_aggregator(self, mock_exists, mock_isfile):
+    def test_custom_aggregator_initialization(self, mock_file_system, base_recipe_params, custom_aggregator):
         """Test FedAvgRecipe initialization with custom aggregator."""
-        custom_aggregator = MyAggregator()
+        params = {**base_recipe_params, "min_clients": 1, "num_rounds": 3}
+        recipe = FedAvgRecipe(name="test_fedavg_custom", aggregator=custom_aggregator, **params)
 
-        recipe = FedAvgRecipe(
-            name="test_fedavg_custom",
-            train_script="mock_train_script.py",
-            train_args="--epochs 10",
-            num_clients=2,
-            min_clients=1,
-            num_rounds=3,
-            aggregator=custom_aggregator,
-        )
-
-        assert recipe.name == "test_fedavg_custom"
+        assert_recipe_basics(recipe, "test_fedavg_custom", params)
         assert recipe.aggregator is custom_aggregator
         assert isinstance(recipe.aggregator, MyAggregator)
         assert isinstance(recipe.aggregator, Aggregator)
 
-    @patch("os.path.isfile", return_value=True)
-    @patch("os.path.exists", return_value=True)
-    def test_fedavg_recipe_with_custom_clients(self, mock_exists, mock_isfile):
-        """Test FedAvgRecipe with custom client names."""
-        custom_aggregator = MyAggregator()
-        clients = ["client1", "client2", "client3"]
-
-        recipe = FedAvgRecipe(
-            name="test_fedavg_clients",
-            train_script="mock_train_script.py",
-            train_args="--epochs 10",
-            clients=clients,
-            min_clients=2,
-            num_rounds=3,
-            aggregator=custom_aggregator,
-        )
-
-        assert recipe.clients == clients
-        assert recipe.num_clients == 3
-        assert recipe.min_clients == 2
-
-    @patch("os.path.isfile", return_value=True)
-    @patch("os.path.exists", return_value=True)
-    def test_fedavg_recipe_validation_inconsistent_clients(self, mock_exists, mock_isfile):
-        """Test FedAvgRecipe validation with inconsistent client configuration."""
-        clients = ["client1", "client2"]
-
-        with pytest.raises(ValueError, match="inconsistent number of clients"):
-            FedAvgRecipe(
-                name="test_fedavg_inconsistent",
-                train_script="mock_train_script.py",
-                train_args="--epochs 10",
-                clients=clients,
-                num_clients=3,  # Inconsistent with len(clients) = 2
-                min_clients=1,
-            )
-
-    @patch("os.path.isfile", return_value=True)
-    @patch("os.path.exists", return_value=True)
-    def test_fedavg_recipe_with_initial_model(self, mock_exists, mock_isfile):
+    def test_initial_model_configuration(self, mock_file_system, base_recipe_params, custom_aggregator, simple_model):
         """Test FedAvgRecipe with initial model."""
-        initial_model = SimpleTestModel()
-        custom_aggregator = MyAggregator()
-
+        params = {**base_recipe_params, "min_clients": 1, "num_rounds": 3}
         recipe = FedAvgRecipe(
-            name="test_fedavg_initial_model",
-            train_script="mock_train_script.py",
-            train_args="--epochs 10",
-            initial_model=initial_model,
-            num_clients=2,
-            min_clients=1,
-            num_rounds=3,
-            aggregator=custom_aggregator,
+            name="test_fedavg_initial_model", initial_model=simple_model, aggregator=custom_aggregator, **params
         )
 
-        assert recipe.initial_model == initial_model
+        assert_recipe_basics(recipe, "test_fedavg_initial_model", params)
+        assert recipe.initial_model == simple_model
 
-    @patch("os.path.isfile", return_value=True)
-    @patch("os.path.exists", return_value=True)
-    def test_fedavg_recipe_job_creation(self, mock_exists, mock_isfile):
-        """Test that FedAvgRecipe creates a valid job structure."""
-        custom_aggregator = MyAggregator()
-
+    @pytest.mark.parametrize(
+        "min_clients,num_rounds,train_args",
+        [
+            (1, 1, ""),  # Minimum configuration
+            (2, 3, "--epochs 5"),  # Standard configuration
+            (5, 10, "--lr 0.01 --batch_size 32"),  # Complex configuration
+        ],
+    )
+    def test_recipe_configurations(self, mock_file_system, min_clients, num_rounds, train_args):
+        """Test various FedAvgRecipe configurations using parametrized tests."""
         recipe = FedAvgRecipe(
-            name="test_fedavg_job",
+            name=f"test_config_{min_clients}_{num_rounds}",
             train_script="mock_train_script.py",
-            train_args="--epochs 10",
-            num_clients=2,
-            min_clients=1,
-            num_rounds=3,
-            aggregator=custom_aggregator,
+            train_args=train_args,
+            min_clients=min_clients,
+            num_rounds=num_rounds,
         )
 
-        # Verify job was created
-        assert recipe.job is not None
-        assert recipe.job.name == "test_fedavg_job"
-
-    @patch("os.path.isfile", return_value=True)
-    @patch("os.path.exists", return_value=True)
-    def test_fedavg_recipe_edge_cases(self, mock_exists, mock_isfile):
-        """Test FedAvgRecipe edge cases and boundary conditions."""
-
-        # Test with minimum valid configuration
-        recipe = FedAvgRecipe(
-            name="minimal",
-            train_script="mock_train_script.py",
-            train_args="",
-            num_clients=1,
-            min_clients=1,
-            num_rounds=1,
-        )
-        assert recipe.num_clients == 1
-        assert recipe.min_clients == 1
-        assert recipe.num_rounds == 1
+        expected_params = {
+            "train_script": "mock_train_script.py",
+            "train_args": train_args,
+            "min_clients": min_clients,
+            "num_rounds": num_rounds,
+        }
+        assert_recipe_basics(recipe, f"test_config_{min_clients}_{num_rounds}", expected_params)

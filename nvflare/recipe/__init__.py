@@ -16,5 +16,6 @@ from .poc_env import POCEnv
 from .prod_env import ProdEnv
 from .run import Run
 from .sim_env import SimEnv
+from .utils import add_experiment_tracking
 
-__all__ = ["SimEnv", "POCEnv", "ProdEnv", "Run"]
+__all__ = ["SimEnv", "POCEnv", "ProdEnv", "Run", "add_experiment_tracking"]

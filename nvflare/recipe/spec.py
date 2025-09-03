@@ -13,12 +13,19 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.defs import FilterType
 from nvflare.recipe.run import Run
+
+
+class ExecEnvType(str, Enum):
+    SIM = "sim"
+    POC = "poc"
+    PROD = "prod"
 
 
 class ExecEnv(ABC):
