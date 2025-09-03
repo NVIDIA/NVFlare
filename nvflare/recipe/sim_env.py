@@ -11,13 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os.path
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel, model_validator
 
 from nvflare.job_config.api import FedJob
-from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 from .spec import ExecEnv, ExecEnvType
 
@@ -26,9 +26,9 @@ WORKSPACE_ROOT = "/tmp/nvflare/simulation"
 
 # Internal — not part of the public API
 class _SimEnvValidator(BaseModel):
-    num_clients: int  # num_clients is always an integer
-    clients: Optional[List[str]] = None
-    num_threads: int
+    num_clients: int
+    clients: Optional[list[str]] = None
+    num_threads: Optional[int] = None
     gpu_config: Optional[str] = None
     log_config: Optional[str] = None
     workspace_root: str = WORKSPACE_ROOT
@@ -56,8 +56,8 @@ class SimEnv(ExecEnv):
         self,
         *,
         num_clients: int = 0,
-        clients: Optional[List[str]] = None,
-        num_threads: int = 0,
+        clients: Optional[list[str]] = None,
+        num_threads: Optional[int] = None,
         gpu_config: str = None,
         log_config: str = None,
         workspace_root: str = WORKSPACE_ROOT,
@@ -66,8 +66,9 @@ class SimEnv(ExecEnv):
 
         Args:
             num_clients (int, optional): Number of simulated clients. Defaults to 0.
-            clients (List[str], optional): List of client names. Defaults to None.
-            num_threads (int, optional): Number of threads per client. Defaults to 0.
+            clients (list[str], optional): List of client names. Defaults to None.
+            num_threads (int, optional): Number of threads to run simulator. Defaults to None.
+                If not provided, the number of threads will be set to the number of clients.
             gpu_config (str, optional): GPU configuration string. Defaults to None.
             log_config (str, optional): Log configuration string. Defaults to None.
             workspace_root (str, optional): Root directory for simulation workspace. Defaults to WORKSPACE_ROOT.
@@ -82,7 +83,7 @@ class SimEnv(ExecEnv):
         )
 
         self.num_clients = v.num_clients
-        self.num_threads = v.num_threads
+        self.num_threads = v.num_threads if v.num_threads is not None else v.num_clients
         self.gpu_config = v.gpu_config
         self.log_config = v.log_config
         self.clients = v.clients

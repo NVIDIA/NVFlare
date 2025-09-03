@@ -133,7 +133,6 @@ class FedAvgRecipe(Recipe):
         self.initial_model = v.initial_model
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
-        self.initial_model = v.initial_model
         self.train_script = v.train_script
         self.train_args = v.train_args
         self.aggregator = v.aggregator

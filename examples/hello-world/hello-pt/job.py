@@ -49,7 +49,7 @@ def main():
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
-    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
     print()
     print("Result can be found in :", run.get_result())

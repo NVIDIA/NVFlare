@@ -16,8 +16,8 @@ from model import Net
 
 from nvflare.app_opt.tf.job_config.model import TFModel
 from nvflare.job_config.script_runner import FrameworkType
-from nvflare.recipe.cyclic_recipe import CyclicRecipe
 from nvflare.recipe import SimEnv
+from nvflare.recipe.cyclic_recipe import CyclicRecipe
 
 if __name__ == "__main__":
     n_clients = 2
@@ -31,7 +31,7 @@ if __name__ == "__main__":
         train_script=train_script,
     )
 
-    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env=env)
     print()
     print("Result can be found in :", run.get_result())
