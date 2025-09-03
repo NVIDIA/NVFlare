@@ -37,7 +37,7 @@ class StatsJob(FedJob):
         max_noise_level=0.3,
         max_bins_percent=10,
     ):
-        super().__init__()
+        super().__init__(name=job_name)
         self.writer_id = "stats_writer"
         self.stats_generator_id_prefix = "stats_generator"
         self.job_name = job_name
