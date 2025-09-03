@@ -62,6 +62,8 @@ class ModelUpdateAssessor(Assessor):
         self.should_stop_job = False
         self.timeout_future = None
         self.thread_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="DeviceTimeout")
+        self.timeout_wait_event = threading.Event()
+        self.timeout_thread_active = False
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
 
     def _check_device_timeout(self, fl_ctx: FLContext) -> bool:
@@ -119,68 +121,89 @@ class ModelUpdateAssessor(Assessor):
                     self._last_status_log_time = current_time
 
     def _start_timeout_tracking(self, fl_ctx: FLContext):
-        """Start independent timeout tracking using thread pool."""
-        if self.timeout_future is not None and not self.timeout_future.done():
-            # Cancel existing timeout if still running
-            self.timeout_future.cancel()
+        """Start timeout tracking using long-lived thread."""
+        if not self.timeout_thread_active:
+            # Start the long-lived timeout thread if not already running
+            self.timeout_future = self.thread_pool.submit(self._timeout_tracker, fl_ctx)
+            self.timeout_thread_active = True
+            self.log_debug(fl_ctx, f"Started device wait timeout tracking for {self.device_wait_timeout}s")
 
-        # Submit new timeout task to thread pool
-        self.timeout_future = self.thread_pool.submit(self._timeout_tracker, fl_ctx)
-        self.log_debug(fl_ctx, f"Started device wait timeout tracking for {self.device_wait_timeout}s")
+        # Signal the thread to start monitoring
+        self.timeout_wait_event.set()
 
     def _stop_timeout_tracking(self):
         """Stop timeout tracking."""
-        if self.timeout_future is not None and not self.timeout_future.done():
-            self.timeout_future.cancel()
-            self.timeout_future = None
+        # Clear the wait event to signal the thread to stop monitoring
+        self.timeout_wait_event.clear()
 
     def _timeout_tracker(self, fl_ctx: FLContext):
-        """Independent timeout tracker that runs in thread pool."""
+        """Long-lived timeout tracker that runs in thread pool."""
         try:
-            # Periodic logging during countdown to keep users informed
-            check_interval = 10.0  # Log every 10 seconds
-            elapsed = 0
+            while True:
+                # Wait for the event to be set (indicating we should start monitoring)
+                if not self.timeout_wait_event.wait(timeout=1.0):
+                    # Timeout on wait - check if we should exit the thread
+                    if self.should_stop_job:
+                        break
+                    continue
 
-            while (
-                self.device_wait_start_time is not None
-                and not self.should_stop_job
-                and elapsed < self.device_wait_timeout
-            ):
+                # Event was set, start monitoring timeout
+                if self.device_wait_start_time is None:
+                    # No timeout to monitor, clear event and continue
+                    self.timeout_wait_event.clear()
+                    continue
 
-                time.sleep(min(check_interval, self.device_wait_timeout - elapsed))
-                elapsed += check_interval
+                # Periodic logging during countdown to keep users informed
+                check_interval = 10.0  # Log every 10 seconds
+                elapsed = 0
 
-                # Check if we should stop monitoring
-                if self.device_wait_start_time is None or self.should_stop_job:
-                    return
-
-                # Log periodic status update
-                if elapsed < self.device_wait_timeout:
-                    remaining = self.device_wait_timeout - elapsed
-                    self.log_info(fl_ctx, f"Device wait countdown: {remaining:.1f} seconds remaining")
-
-            # Check if we're still waiting for devices and timeout exceeded
-            with self.update_lock:
-                if (
+                while (
                     self.device_wait_start_time is not None
                     and not self.should_stop_job
-                    and self._check_device_timeout(fl_ctx)
+                    and elapsed < self.device_wait_timeout
+                    and self.timeout_wait_event.is_set()  # Continue only if still monitoring
                 ):
+                    time.sleep(min(check_interval, self.device_wait_timeout - elapsed))
+                    elapsed += check_interval
 
-                    # Timeout exceeded, set the stop flag
-                    self.should_stop_job = True
-                    self.log_error(
-                        fl_ctx,
-                        f"Device wait timeout ({self.device_wait_timeout}s) exceeded. "
-                        f"Setting stop job flag to terminate workflow.",
-                    )
+                    # Check if we should stop monitoring
+                    if (
+                        self.device_wait_start_time is None
+                        or self.should_stop_job
+                        or not self.timeout_wait_event.is_set()
+                    ):
+                        break
+
+                    # Log periodic status update
+                    if elapsed < self.device_wait_timeout:
+                        remaining = self.device_wait_timeout - elapsed
+                        self.log_info(fl_ctx, f"Device wait countdown: {remaining:.1f} seconds remaining")
+
+                # Check if we're still waiting for devices and timeout exceeded
+                with self.update_lock:
+                    if (
+                        self.device_wait_start_time is not None
+                        and not self.should_stop_job
+                        and self._check_device_timeout(fl_ctx)
+                        and self.timeout_wait_event.is_set()
+                    ):
+                        # Timeout exceeded, set the stop flag
+                        self.should_stop_job = True
+                        self.log_error(
+                            fl_ctx,
+                            f"Device wait timeout ({self.device_wait_timeout}s) exceeded. "
+                            f"Setting stop job flag to terminate workflow.",
+                        )
+
+                # Clear the event to stop monitoring
+                self.timeout_wait_event.clear()
 
         except Exception as e:
             # Log error but don't crash the thread
             self.log_error(fl_ctx, f"Error in timeout tracker: {e}")
         finally:
-            # Clean up
-            self.timeout_future = None
+            # Mark thread as inactive
+            self.timeout_thread_active = False
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -342,4 +365,8 @@ class ModelUpdateAssessor(Assessor):
     def __del__(self):
         """Cleanup thread pool on destruction."""
         if hasattr(self, "thread_pool"):
+            # Signal the timeout thread to exit
+            self.should_stop_job = True
+            if hasattr(self, "timeout_wait_event"):
+                self.timeout_wait_event.set()
             self.thread_pool.shutdown(wait=False)
