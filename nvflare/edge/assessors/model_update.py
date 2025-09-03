@@ -161,7 +161,7 @@ class ModelUpdateAssessor(Assessor):
                     self.device_wait_start_time is not None
                     and not self.should_stop_job
                     and elapsed < self.device_wait_timeout
-                    and self.timeout_wait_event.is_set()  # Continue only if still monitoring
+                    and self.timeout_wait_event.is_set()
                 ):
                     time.sleep(min(check_interval, self.device_wait_timeout - elapsed))
                     elapsed += check_interval
@@ -180,20 +180,19 @@ class ModelUpdateAssessor(Assessor):
                         self.log_info(fl_ctx, f"Device wait countdown: {remaining:.1f} seconds remaining")
 
                 # Check if we're still waiting for devices and timeout exceeded
-                with self.update_lock:
-                    if (
-                        self.device_wait_start_time is not None
-                        and not self.should_stop_job
-                        and self._check_device_timeout(fl_ctx)
-                        and self.timeout_wait_event.is_set()
-                    ):
-                        # Timeout exceeded, set the stop flag
-                        self.should_stop_job = True
-                        self.log_error(
-                            fl_ctx,
-                            f"Device wait timeout ({self.device_wait_timeout}s) exceeded. "
-                            f"Setting stop job flag to terminate workflow.",
-                        )
+                if (
+                    self.device_wait_start_time is not None
+                    and not self.should_stop_job
+                    and self._check_device_timeout(fl_ctx)
+                    and self.timeout_wait_event.is_set()
+                ):
+                    # Timeout exceeded, set the stop flag
+                    self.should_stop_job = True
+                    self.log_error(
+                        fl_ctx,
+                        f"Device wait timeout ({self.device_wait_timeout}s) exceeded. "
+                        f"Setting stop job flag to terminate workflow.",
+                    )
 
                 # Clear the event to stop monitoring
                 self.timeout_wait_event.clear()
