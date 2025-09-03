@@ -81,7 +81,7 @@ class FedStatsRecipe(Recipe):
         max_bins_percent: float = 10,
     ):
         job = StatsJob(
-            job_name=name,
+            name=name,
             statistic_configs=statistic_configs,
             stats_generator=stats_generator,
             output_path=stats_output_path,
