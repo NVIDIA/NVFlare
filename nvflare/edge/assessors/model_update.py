@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 import time
 from typing import Optional, Tuple
 
@@ -58,6 +59,7 @@ class ModelUpdateAssessor(Assessor):
         self.model_manager = None
         self.device_manager = None
         self.max_model_version = max_model_version
+        self.update_lock = threading.Lock()
         self.device_wait_timeout = device_wait_timeout
         self.device_status_log_interval = device_status_log_interval
         self.device_wait_start_time = None
@@ -113,15 +115,15 @@ class ModelUpdateAssessor(Assessor):
         return base_state.to_shareable()
 
     def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> Tuple[bool, Optional[Shareable]]:
+        with self.update_lock:
+            return self._do_child_update(update, fl_ctx)
+
+    def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> Tuple[bool, Optional[Shareable]]:
         report = StateUpdateReport.from_shareable(update)
 
         # Update available devices
         if report.available_devices:
             self.device_manager.update_available_devices(report.available_devices, fl_ctx)
-            # Reset wait timer if we now have enough devices
-            if self.device_wait_start_time is not None and self.device_manager.has_enough_devices(fl_ctx):
-                self.device_wait_start_time = None
-                self.log_info(fl_ctx, "Sufficient devices now available, resetting wait timer")
 
         accepted = True
         if report.model_updates:
@@ -157,6 +159,10 @@ class ModelUpdateAssessor(Assessor):
 
     def _check_device_wait_timeout(self, fl_ctx: FLContext) -> Assessment:
         """Check if device wait timeout has been exceeded and handle accordingly."""
+        # Return early if not waiting for devices or no timeout configured
+        if self.device_wait_timeout is None or self.device_wait_start_time is None:
+            return Assessment.CONTINUE
+
         if time.time() - self.device_wait_start_time > self.device_wait_timeout:
             # Timeout exceeded - stop the workflow
             usable_devices = set(self.device_manager.available_devices.keys()) - set(
@@ -215,14 +221,9 @@ class ModelUpdateAssessor(Assessor):
             self.log_info(fl_ctx, f"Max model version {self.max_model_version} reached: {model_version=}")
             return Assessment.WORKFLOW_DONE
 
-        # Check device wait timeout
-        if self.device_wait_timeout is not None and self.device_wait_start_time is not None:
-            timeout_result = self._check_device_wait_timeout(fl_ctx)
-            if timeout_result != Assessment.CONTINUE:
-                return timeout_result
-
         # Handle device selection
         if self.device_manager.should_fill_selection(fl_ctx):
             self._handle_device_selection(fl_ctx)
 
-        return Assessment.CONTINUE
+        # Check device wait timeout
+        return self._check_device_wait_timeout(fl_ctx)
