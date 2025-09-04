@@ -139,6 +139,9 @@ class Run:
             print("abort is not supported in a simulation environment, it will always run to completion.")
             return
 
-        with self._secure_session() as sess:
-            msg = sess.abort_job(self.job_id)
-            print(f"Job {self.job_id} aborted successfully with message: {msg}")
+        try:
+            with self._secure_session() as sess:
+                msg = sess.abort_job(self.job_id)
+                print(f"Job {self.job_id} aborted successfully with message: {msg}")
+        except Exception as e:
+            print(f"Failed to abort job {self.job_id}: {e}")
