@@ -15,6 +15,7 @@
 from typing import Dict
 
 from nvflare.app_common.app_constant import StatisticsConstants as StC
+from nvflare.app_common.statistics.statistics_config_utils import get_target_quantiles
 from nvflare.fuel.utils.log_utils import get_module_logger
 
 try:
@@ -41,18 +42,6 @@ def get_quantiles(stats: Dict, statistic_configs: Dict, precision: int):
 
     quantile_config = statistic_configs.get(StC.STATS_QUANTILE)
     return compute_quantiles(global_digest, quantile_config, precision)
-
-
-def get_target_quantiles(quantile_config: dict, feature_name: str) -> list:
-    if feature_name in quantile_config:
-        percents = quantile_config.get(feature_name)
-    elif "*" in quantile_config:
-        percents = quantile_config.get("*")
-    else:
-        percents = []
-
-    return percents
-
 
 def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict:
 
