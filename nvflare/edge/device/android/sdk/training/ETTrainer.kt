@@ -36,7 +36,6 @@ class ETTrainer(
 ) : AutoCloseable {
     private val TAG = "ETTrainer"
     private var tModule: TrainingModule? = null
-    private var isInitialized = false
     
     companion object {
         private const val EXECUTORCH_HEADER_SIZE = 8
@@ -72,7 +71,6 @@ class ETTrainer(
     
     private fun resetModel() {
         tModule = null
-        isInitialized = false
     }
 
     /**
@@ -125,9 +123,9 @@ class ETTrainer(
      * The NVFlare server should send base64-encoded data, but if it sends raw binary
      * data, this method will attempt to handle it gracefully.
      */
-    private fun initializeTrainingModule(modelData: String) {
+    private fun loadGlobalModel(modelData: String) {
         try {
-            Log.d(TAG, "Initializing ExecuTorch training module")
+            Log.d(TAG, "Loading global model from server")
             
             if (!NativeLoader.isInitialized()) {
                 NativeLoader.init(SystemDelegate())
@@ -181,12 +179,11 @@ class ETTrainer(
                 throw RuntimeException("Failed to initialize training module")
             }
             
-            isInitialized = true
-            Log.d(TAG, "Training module initialized successfully")
+            Log.d(TAG, "Global model loaded successfully from server")
             
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize training module", e)
-            throw RuntimeException("Failed to initialize ExecuTorch training module: ${e.message}", e)
+            Log.e(TAG, "Failed to load global model from server", e)
+            throw RuntimeException("Failed to load global model from server: ${e.message}", e)
         }
     }
     
@@ -195,9 +192,8 @@ class ETTrainer(
         
         val actualModelData = modelData ?: throw RuntimeException("No model data provided for training")
         
-        if (!isInitialized || tModule == null) {
-            initializeTrainingModule(actualModelData)
-        }
+        // Always use the received global model from server
+        loadGlobalModel(actualModelData)
         
         try {
             val method = config.method
@@ -492,14 +488,13 @@ class ETTrainer(
      * This method is called automatically when using try-with-resources or when close() is called.
      */
     override fun close() {
-        if (isInitialized) {
+        if (tModule != null) {
             try {
                 tModule = null
                 Log.d(TAG, "Training module cleaned up successfully")
             } catch (e: Exception) {
                 Log.e(TAG, "Error during cleanup", e)
             }
-            isInitialized = false
         }
         Log.d(TAG, "Training module cleaned up")
     }
