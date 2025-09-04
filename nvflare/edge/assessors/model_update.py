@@ -14,7 +14,7 @@
 
 import threading
 import time
-from typing import Optional, Tuple
+from typing import Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
@@ -114,11 +114,11 @@ class ModelUpdateAssessor(Assessor):
         )
         return base_state.to_shareable()
 
-    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> Tuple[bool, Optional[Shareable]]:
+    def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> tuple[bool, Optional[Shareable]]:
         with self.update_lock:
             return self._do_child_update(update, fl_ctx)
 
-    def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> Tuple[bool, Optional[Shareable]]:
+    def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> tuple[bool, Optional[Shareable]]:
         report = StateUpdateReport.from_shareable(update)
 
         # Update available devices
