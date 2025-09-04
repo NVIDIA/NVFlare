@@ -69,7 +69,7 @@ dependencies {
     // ExecuTorch dependencies
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     // Add sources for better IDE support
-    implementation(files("libs/executorch-sources.jar"))
+    //implementation(files("libs/executorch-sources.jar"))
     // Add SoLoader dependency for PyTorch native library loading
     implementation("com.facebook.soloader:nativeloader:0.10.5")
     // Add Facebook JNI dependency required by executorch
