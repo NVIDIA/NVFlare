@@ -32,7 +32,7 @@ class ETTrainer(
     private val context: android.content.Context,
     private val modelData: String, 
     private val meta: Map<String, Any>,
-    private var dataset: com.nvidia.nvflare.sdk.core.Dataset? = null
+    private var dataset: Dataset? = null
 ) : AutoCloseable {
     private val TAG = "ETTrainer"
     private var tModule: TrainingModule? = null
@@ -58,13 +58,38 @@ class ETTrainer(
         setupArtifactDirectories()
     }
     
-    /**
-     * Set the dataset for training.
-     * This method allows the executor to set the dataset from context.
-     */
-    fun setDataset(dataset: com.nvidia.nvflare.sdk.core.Dataset) {
+    fun setDataset(dataset: Dataset) {
+        val previousDataset = this.dataset
         this.dataset = dataset
-        Log.d(TAG, "Dataset set: ${dataset.javaClass.simpleName}, size: ${dataset.size()}")
+        
+        val previousType = previousDataset?.javaClass?.simpleName
+        val currentType = dataset.javaClass.simpleName
+        
+        if (previousType != null && previousType != currentType) {
+            resetModel()
+        }
+    }
+    
+    private fun resetModel() {
+        tModule = null
+        isInitialized = false
+    }
+    
+    private fun validateDatasetMethodCompatibility(dataset: Dataset, method: String) {
+        val datasetType = dataset.javaClass.simpleName
+        
+        when (method) {
+            "cnn" -> {
+                if (datasetType != "CIFAR10Dataset") {
+                    throw IllegalStateException("CNN method requires CIFAR10Dataset, but got $datasetType")
+                }
+            }
+            "xor" -> {
+                if (datasetType != "XORDataset") {
+                    throw IllegalStateException("XOR method requires XORDataset, but got $datasetType")
+                }
+            }
+        }
     }
 
     /**
@@ -185,7 +210,6 @@ class ETTrainer(
     suspend fun train(config: TrainingConfig, modelData: String?): Map<String, Any> {
         Log.d(TAG, "Starting ExecuTorch training with method: ${config.method}")
         
-        // Model data should be provided separately (like iOS)
         val actualModelData = modelData ?: throw RuntimeException("No model data provided for training")
         
         if (!isInitialized || tModule == null) {
@@ -204,6 +228,9 @@ class ETTrainer(
             // Use dataset provided by user through constructor
             val trainingDataset = dataset ?: throw IllegalStateException("No dataset provided to ETTrainer")
             Log.d(TAG, "Using user-provided dataset: ${trainingDataset.javaClass.simpleName}")
+            
+            // Validate dataset and method compatibility
+            validateDatasetMethodCompatibility(trainingDataset, method)
             
             val trainingResult = performTraining(
                 tModule!!,
@@ -245,7 +272,7 @@ class ETTrainer(
      */
     private fun performTraining(
         model: TrainingModule,
-        dataset: com.nvidia.nvflare.sdk.core.Dataset,
+        dataset: Dataset,
         method: String,
         epochs: Int,
         batchSize: Int,
