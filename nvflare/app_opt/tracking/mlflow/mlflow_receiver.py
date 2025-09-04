@@ -82,6 +82,8 @@ class MLflowReceiver(AnalyticsReceiver):
                 less delay. Keep in mind that reducing the buffer_flush_time will potentially cause high
                 traffic to the MLflow tracking server, which in some cases can actually cause more latency.
         """
+        if not isinstance(tracking_uri, (str, type(None))):
+            raise ValueError("tracking_uri needs to be either None or str")
         if events is None:
             events = ["fed." + ANALYTIC_EVENT_TYPE]
         super().__init__(events=events)
