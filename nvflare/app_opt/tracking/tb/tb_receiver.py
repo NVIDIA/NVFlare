@@ -55,14 +55,13 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
         .. code-block:: text
             :caption: Folder structure
 
-            Inside run_XX folder:
-              - workspace
-                - run_01 (already created):
+              - site_workspace
+                - job_id1 (already created):
                   - output_dir (default: tb_events):
                     - peer_name_1:
                     - peer_name_2:
 
-                - run_02 (already created):
+                - job_id2 (already created):
                   - output_dir (default: tb_events):
                     - peer_name_1:
                     - peer_name_2:
