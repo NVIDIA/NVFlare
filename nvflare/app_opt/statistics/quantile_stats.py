@@ -43,13 +43,13 @@ def get_quantiles(stats: Dict, statistic_configs: Dict, precision: int):
     return compute_quantiles(global_digest, quantile_config, precision)
 
 
-def get_target_quantiles(quantile_config: dict, feature_name: str):
+def get_target_quantiles(quantile_config: dict, feature_name: str) -> list:
     if feature_name in quantile_config:
         percents = quantile_config.get(feature_name)
     elif "*" in quantile_config:
         percents = quantile_config.get("*")
     else:
-        raise ValueError(f"feature: {feature_name} target percents are not defined.")
+        percents = []
 
     return percents
 
