@@ -12,6 +12,7 @@ import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.Dataset
 import com.nvidia.nvflare.sdk.core.Connection
 
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -74,6 +75,17 @@ class FlareRunnerController(
             "methods" to listOf("cnn", "xor")
         )
     
+    /**
+     * Create a connection to the NVFlare server
+     */
+    private fun createConnection(): Connection {
+        val connection = Connection(context)
+        connection.hostname.postValue(serverHost)
+        connection.port.postValue(serverPort)
+        connection.setCapabilities(capabilities)
+        return connection
+    }
+    
     fun toggleJob(job: SupportedJob) {
         if (supportedJobs.contains(job)) {
             supportedJobs = supportedJobs - job
@@ -105,66 +117,75 @@ class FlareRunnerController(
             try {
                 Log.d(TAG, "FlareRunnerController: Starting federated learning")
                 
-                // Create dataset based on supported jobs
-                val dataset: Dataset
-                val dataSource = AndroidDataSource(context)
-                var jobName: String = "federated_learning"
-                
-                if (supportedJobs.contains(SupportedJob.CIFAR10)) {
-                    try {
-                        // Use job name pattern (iOS style) instead of hardcoded "train" phase
-                        jobName = "cifar10_et"
-                        dataset = dataSource.getDataset(jobName, FlareContext())
-                        Log.d(TAG, "FlareRunnerController: Created CIFAR-10 dataset")
-                        
-                        // Validate dataset using SDK's standardized validation
-                        dataset.validate()
-                        Log.d(TAG, "FlareRunnerController: CIFAR-10 dataset validation passed")
-                        Log.d(TAG, "FlareRunnerController: CIFAR-10 dataset size: ${dataset.size()}")
-                        
-                    } catch (e: DatasetError.NoDataFound) {
-                        Log.e(TAG, "FlareRunnerController: CIFAR-10 data not found in app bundle")
-                        throw TrainingError.DATASET_CREATION_FAILED
-                    } catch (e: DatasetError.InvalidDataFormat) {
-                        Log.e(TAG, "FlareRunnerController: CIFAR-10 data format is invalid")
-                        throw TrainingError.DATASET_CREATION_FAILED
-                    } catch (e: DatasetError.EmptyDataset) {
-                        Log.e(TAG, "FlareRunnerController: CIFAR-10 dataset is empty")
-                        throw TrainingError.DATASET_CREATION_FAILED
-                    } catch (e: Exception) {
-                        Log.e(TAG, "FlareRunnerController: Failed to create CIFAR-10 dataset: $e")
-                        throw TrainingError.DATASET_CREATION_FAILED
+                // First: Determine which job to use
+                val selectedJob = when {
+                    supportedJobs.contains(SupportedJob.CIFAR10) -> SupportedJob.CIFAR10
+                    supportedJobs.contains(SupportedJob.XOR) -> SupportedJob.XOR
+                    else -> {
+                        Log.e(TAG, "FlareRunnerController: No supported jobs enabled. Current supported jobs: ${supportedJobs.map { it.value }}")
+                        throw TrainingError.NO_SUPPORTED_JOBS
                     }
-                } else if (supportedJobs.contains(SupportedJob.XOR)) {
-                    // Use job name pattern (iOS style) instead of hardcoded "train" phase
-                    jobName = "xor_et"
-                    dataset = dataSource.getDataset(jobName, FlareContext())
-                    Log.d(TAG, "FlareRunnerController: Created XOR dataset")
-                    Log.d(TAG, "FlareRunnerController: XOR dataset size: ${dataset.size()}")
-                } else {
-                    throw TrainingError.DATASET_CREATION_FAILED
+                }
+                
+                // Second: Create dataset based on selected job
+                val dataSource = AndroidDataSource(context)
+                val dataset: Dataset
+                val jobName: String
+                
+                when (selectedJob) {
+                    SupportedJob.CIFAR10 -> {
+                        jobName = "cifar10_et"
+                        try {
+                            dataset = dataSource.getDataset(jobName, FlareContext())
+                            Log.d(TAG, "FlareRunnerController: Created CIFAR-10 dataset")
+                            
+                            // Validate dataset using SDK's standardized validation
+                            dataset.validate()
+                            Log.d(TAG, "FlareRunnerController: CIFAR-10 dataset validation passed")
+                            Log.d(TAG, "FlareRunnerController: CIFAR-10 dataset size: ${dataset.size()}")
+                            
+                        } catch (e: DatasetError.NoDataFound) {
+                            Log.e(TAG, "FlareRunnerController: CIFAR-10 data not found in app bundle")
+                            throw TrainingError.DATASET_CREATION_FAILED
+                        } catch (e: DatasetError.InvalidDataFormat) {
+                            Log.e(TAG, "FlareRunnerController: CIFAR-10 data format is invalid")
+                            throw TrainingError.DATASET_CREATION_FAILED
+                        } catch (e: DatasetError.EmptyDataset) {
+                            Log.e(TAG, "FlareRunnerController: CIFAR-10 dataset is empty")
+                            throw TrainingError.DATASET_CREATION_FAILED
+                        } catch (e: Exception) {
+                            Log.e(TAG, "FlareRunnerController: Failed to create CIFAR-10 dataset: $e")
+                            throw TrainingError.DATASET_CREATION_FAILED
+                        }
+                    }
+                    SupportedJob.XOR -> {
+                        jobName = "xor_et"
+                        dataset = dataSource.getDataset(jobName, FlareContext())
+                        Log.d(TAG, "FlareRunnerController: Created XOR dataset")
+                        Log.d(TAG, "FlareRunnerController: XOR dataset size: ${dataset.size()}")
+                    }
                 }
                 
                 // Store the dataset to keep it alive during training
                 currentDataset = dataset
                 Log.d(TAG, "FlareRunnerController: Stored dataset reference: $dataset")
                 
-                // Create FlareRunner with dataset
+                                // Create FlareRunner with dataset
                 val runner = AndroidFlareRunner(
                     context = context,
-                    connection = connection,
+                    connection = createConnection(),
                     jobName = jobName,
                     dataSource = dataSource,
                     deviceInfo = mapOf(
                         "device_id" to (android.provider.Settings.Secure.getString(
-                            context.contentResolver, 
+                            context.contentResolver,
                             android.provider.Settings.Secure.ANDROID_ID
                         ) ?: "unknown"),
                         "platform" to "android",
                         "app_version" to context.packageManager.getPackageInfo(context.packageName, 0).versionName
                     ),
                     userInfo = emptyMap(),
-                    jobTimeout = 86400.0f  // 24 hours
+                    jobTimeout = Float.MAX_VALUE  // No timeout - continue until manual stop
                 )
                 
                 flareRunner = runner
@@ -220,19 +241,5 @@ class FlareRunnerController(
         Log.d(TAG, "FlareRunnerController: Training stopped and resources cleaned up")
     }
     
-    private fun createConnection(): com.nvidia.nvflare.sdk.core.Connection {
-        val connection = com.nvidia.nvflare.sdk.core.Connection(context)
-        connection.hostname.value = serverHost
-        connection.port.value = serverPort
-        connection.setCapabilities(capabilities)
-        
-        // Set user info - use device ID as user ID for now, can be made configurable later
-        val userId = android.provider.Settings.Secure.getString(
-            context.contentResolver, 
-            android.provider.Settings.Secure.ANDROID_ID
-        ) ?: "unknown_user"
-        connection.setUserInfo(mapOf("user_id" to userId))
-        
-        return connection
-    }
+
 } 
