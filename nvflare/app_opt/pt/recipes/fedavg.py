@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, List, Optional
 
-from pydantic import BaseModel, PositiveInt
+from typing import Any, Optional
+
+from pydantic import BaseModel
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -32,8 +33,6 @@ class _FedAvgValidator(BaseModel):
 
     name: str
     initial_model: Any
-    clients: Optional[List[str]]
-    num_clients: Optional[PositiveInt]
     min_clients: int
     num_rounds: int
     train_script: str
@@ -44,12 +43,6 @@ class _FedAvgValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
-
-    def model_post_init(self, __context):
-        if self.clients and self.num_clients is None:
-            self.num_clients = len(self.clients)
-        elif self.clients and len(self.clients) != self.min_clients:
-            raise ValueError("inconsistent number of clients")
 
 
 class FedAvgRecipe(Recipe):
@@ -70,12 +63,7 @@ class FedAvgRecipe(Recipe):
         name: Name of the federated learning job. Defaults to "fedavg".
         initial_model: Initial model to start federated training with. If None,
             clients will start with their own local models.
-        clients: List of client names to participate in training. If None,
-            all available clients will be used.
-        num_clients: Number of clients expected to participate. If clients is provided,
-            this will be set automatically to len(clients).
         min_clients: Minimum number of clients required to start a training round.
-            Defaults to 0 (no minimum).
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script.
@@ -93,7 +81,6 @@ class FedAvgRecipe(Recipe):
         recipe = FedAvgRecipe(
             name="my_fedavg_job",
             initial_model=pretrained_model,
-            num_clients=3,
             min_clients=2,
             num_rounds=10,
             train_script="client.py",
@@ -115,9 +102,7 @@ class FedAvgRecipe(Recipe):
         *,
         name: str = "fedavg",
         initial_model: Any = None,
-        clients: Optional[List[str]] = None,
-        num_clients: Optional[int] = None,
-        min_clients: int = 0,
+        min_clients: int,
         num_rounds: int = 2,
         train_script: str,
         train_args: str = "",
@@ -132,8 +117,6 @@ class FedAvgRecipe(Recipe):
         v = _FedAvgValidator(
             name=name,
             initial_model=initial_model,
-            clients=clients,
-            num_clients=num_clients,
             min_clients=min_clients,
             num_rounds=num_rounds,
             train_script=train_script,
@@ -148,12 +131,8 @@ class FedAvgRecipe(Recipe):
 
         self.name = v.name
         self.initial_model = v.initial_model
-        self.clients = v.clients
-        self.num_clients = v.num_clients
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
-        self.initial_model = v.initial_model
-        self.clients = v.clients
         self.train_script = v.train_script
         self.train_args = v.train_args
         self.aggregator = v.aggregator
@@ -185,7 +164,7 @@ class FedAvgRecipe(Recipe):
         controller = ScatterAndGather(
             min_clients=self.min_clients,
             num_rounds=self.num_rounds,
-            wait_time_after_min_received=10,
+            wait_time_after_min_received=0,
             aggregator_id=aggregator_id,
             persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
             shareable_generator_id=shareable_generator_id,
@@ -203,10 +182,6 @@ class FedAvgRecipe(Recipe):
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
         )
-        if self.clients is None:
-            job.to_clients(executor)
-        else:
-            for client in self.clients:
-                job.to(executor, client)
+        job.to_clients(executor)
 
         Recipe.__init__(self, job)

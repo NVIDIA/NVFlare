@@ -559,7 +559,7 @@ class FedJob:
             self._deployed = True
 
     def export_job(self, job_root: str):
-        """Export job config to `job_root` directory with name `self.job_name`.
+        """Export job config to `job_root` directory with name `self.name`.
         For end users.
 
         Args:
