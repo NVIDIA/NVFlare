@@ -142,6 +142,7 @@ class EdgeModelUpdater(Updater):
             # model has changed.
             new_state.model_version = update_reply.model_version
             new_state.model = update_reply.model
+            new_state.converted_models = {}
             num_changes += 1
 
         if update_reply.device_selection_version != new_state.device_selection_version:

@@ -93,6 +93,30 @@ class BaseState:
         self.model = model
         self.device_selection_version = device_selection_version
         self.device_selection = device_selection
+        self.converted_models = {}  # platform => model
+
+    def set_converted_model(self, model, platform: str):
+        """Set the model that is converted from the original model for the specified platform.
+
+        Args:
+            model: the converted model
+            platform: the platform that the converted model will be used for
+
+        Returns: None
+
+        """
+        self.converted_models[platform] = model
+
+    def get_converted_model(self, platform: str):
+        """Get the model that is converted for the platform.
+
+        Args:
+            platform: the platform of the model
+
+        Returns: converted model if available; None otherwise.
+
+        """
+        return self.converted_models.get(platform)
 
     def is_device_selected(self, device_id: str, selection_id: int) -> (bool, int):
         """Determine whether the device should be selected for training.
