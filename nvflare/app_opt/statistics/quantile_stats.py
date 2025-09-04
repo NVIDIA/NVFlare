@@ -43,6 +43,7 @@ def get_quantiles(stats: Dict, statistic_configs: Dict, precision: int):
     quantile_config = statistic_configs.get(StC.STATS_QUANTILE)
     return compute_quantiles(global_digest, quantile_config, precision)
 
+
 def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict:
 
     if not TDIGEST_AVAILABLE:
