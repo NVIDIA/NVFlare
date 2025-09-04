@@ -14,10 +14,26 @@
 
 import os
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, Optional
 
 from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
-from nvflare.fuel.flare_api.flare_api import basic_cb_with_print, new_secure_session
+from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
+
+
+def _cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_kwargs) -> bool:
+    """Callback to print job meta."""
+    # cb_run_counter is a dictionary that is passed to the callback and is used to keep track of the number of times the callback has been called
+    if cb_kwargs["cb_run_counter"]["count"] == 0:
+        print("Job ID: ", job_id)
+        print("Job Meta: ", job_meta)
+
+    if job_meta["status"] == "RUNNING":
+        print(".", end="")
+    else:
+        print("\n" + str(job_meta))
+
+    cb_kwargs["cb_run_counter"]["count"] += 1
+    return True
 
 
 class Run:
@@ -82,17 +98,29 @@ class Run:
             raise RuntimeError("Simulation workspace_root is None - SimEnv may not be properly initialized")
         return os.path.join(workspace_root, self.job_id)
 
-    def _get_prod_result(self, timeout: float = 0.0) -> str:
+    def _get_prod_result(self, timeout: float = 0.0) -> Optional[str]:
         with self._secure_session() as sess:
             cb_run_counter = {"count": 0}
-            rc = sess.monitor_job(self.job_id, timeout=timeout, cb=basic_cb_with_print, cb_run_counter=cb_run_counter)
+            rc = sess.monitor_job(self.job_id, timeout=timeout, cb=_cb_with_print, cb_run_counter=cb_run_counter)
             print(f"job monitor done: {rc=}")
             if rc == MonitorReturnCode.JOB_FINISHED:
                 return sess.download_job_result(self.job_id)
+            elif rc == MonitorReturnCode.TIMEOUT:
+                print(
+                    f"Job {self.job_id} did not complete within {timeout} seconds. "
+                    "Job is still running. Try calling get_result() again with a longer timeout."
+                )
+                return None
+            elif rc == MonitorReturnCode.ENDED_BY_CB:
+                print(
+                    "Job monitoring was stopped early by callback. "
+                    "Result may not be available yet. Check job status and try again."
+                )
+                return None
             else:
-                raise RuntimeError(f"Monitor job failed: {rc}")
+                raise RuntimeError(f"Unexpected monitor return code: {rc}")
 
-    def get_result(self, timeout: float = 0.0) -> str:
+    def get_result(self, timeout: float = 0.0) -> Optional[str]:
         """Get the result workspace of the run.
 
         Args:
@@ -100,7 +128,7 @@ class Run:
                 Defaults to 0.0, means never timeout.
 
         Returns:
-            str: The result workspace of the run.
+            Optional[str]: The result workspace path if job completed, None if still running or stopped early.
         """
         env_type = self.env_info.get("env_type")
         return self.handlers[env_type](timeout=timeout)
@@ -111,5 +139,9 @@ class Run:
             print("abort is not supported in a simulation environment, it will always run to completion.")
             return
 
-        with self._secure_session() as sess:
-            sess.abort_job(self.job_id)
+        try:
+            with self._secure_session() as sess:
+                msg = sess.abort_job(self.job_id)
+                print(f"Job {self.job_id} aborted successfully with message: {msg}")
+        except Exception as e:
+            print(f"Failed to abort job {self.job_id}: {e}")
