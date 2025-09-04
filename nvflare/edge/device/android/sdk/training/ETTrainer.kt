@@ -74,23 +74,6 @@ class ETTrainer(
         tModule = null
         isInitialized = false
     }
-    
-    private fun validateDatasetMethodCompatibility(dataset: Dataset, method: String) {
-        val datasetType = dataset.javaClass.simpleName
-        
-        when (method) {
-            "cnn" -> {
-                if (datasetType != "CIFAR10Dataset") {
-                    throw IllegalStateException("CNN method requires CIFAR10Dataset, but got $datasetType")
-                }
-            }
-            "xor" -> {
-                if (datasetType != "XORDataset") {
-                    throw IllegalStateException("XOR method requires XORDataset, but got $datasetType")
-                }
-            }
-        }
-    }
 
     /**
      * Setup artifact directories.
@@ -229,8 +212,6 @@ class ETTrainer(
             val trainingDataset = dataset ?: throw IllegalStateException("No dataset provided to ETTrainer")
             Log.d(TAG, "Using user-provided dataset: ${trainingDataset.javaClass.simpleName}")
             
-            // Validate dataset and method compatibility
-            validateDatasetMethodCompatibility(trainingDataset, method)
             
             val trainingResult = performTraining(
                 tModule!!,
