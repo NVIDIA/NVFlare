@@ -69,6 +69,8 @@ def main():
     )
     device_manager_config = DeviceManagerConfig(
         device_selection_size=device_selection_size,
+        # wait for all clients report to server before starting
+        initial_min_client_num=num_leaf_nodes,
         min_hole_to_fill=min_hole_to_fill,
         device_reuse=False,
     )
