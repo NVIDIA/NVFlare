@@ -1,4 +1,4 @@
-# Data Frame Federated Statistics 
+# Tabular Data Federated Statistics 
 
 In this example, we will show how to generate federated statistics for tabular data that can be represented as Pandas Data Frame.
 
@@ -16,7 +16,7 @@ pip install -r requirements.txt
 ```
 
 
-## Install fastdigest
+## Install Optional Quantile Dependency -- fastdigest
 
 If you intend to calculate quantiles, you need to install fastdigest. 
 
@@ -48,6 +48,29 @@ Then you can install fastdigest again
 ```
 pip install fastdigest==0.4.0
 ```
+
+## Code Structure
+first get the example code from github:
+
+navigate to the hello-tabular-stats directory:
+
+```
+git switch <release branch>
+cd examples/hello-world/hello-tabular-stats
+```
+``` bash
+hello-tabular-stats
+|
+├── client.py         # client local training script
+├── job.py            # job recipe that defines client and server configurations
+├── prepare_data.py   # utilies to download data
+├── install_cargo.sh  # scripts to install rust and cargo needed for quantil dependency, only needed if you plan to inistall quantile dependency
+└── requirements.txt  # dependencies
+├── demo
+│   └── visualization.ipynb # Visualization Notebook
+ 
+```
+
 ## Data
 
 In this example, we are using UCI (University of California, Irvine) [adult dataset](https://archive.ics.uci.edu/dataset/2/adult)
@@ -76,9 +99,6 @@ skip empty line
 done with prepare data
 ```
 
-## Model
-   NA
-
 ## Client Code
 
 **Local statistics generator**
@@ -89,16 +109,22 @@ The statistics generator `AdultStatistics` implements `Statistics` spec.
 class AdultStatistics(DFStatisticsCore):
     # rest of code 
 ```
+Many of the functions needed for tabular statistics have already been implemented DFStatisticsCore
 
+In the `AdultStatistics` class, we really need to have the followings
+* data_features -- here we hard-coded the feature name array. 
+* implement `load_data() -> Dict[str, pd.DataFrame]` function, where 
+  the method will return a dictionary of panda DataFrames with one for each data source ("train", "test")
+* `data_path = f"{self.data_root_dir}/<site-name>/<filename>`
 
 ## Server Code
+The server aggregation have already implemented in Statistics Controller
 
 ## Job Recipe
 
 Job is defined via recipe, we will run it in Simulation Execution Env.
 
 ```
-
     recipe = FedStatsRecipe(
         name="stats_df",
         stats_output_path=output_path,
@@ -112,6 +138,18 @@ Job is defined via recipe, we will run it in Simulation Execution Env.
 
 ```
 
+The statistics configuration determines which statistics we need generate
+Here is an example
+```
+    statistic_configs = {
+        "count": {},
+        "mean": {},
+        "sum": {},
+        "stddev": {},
+        "histogram": {"*": {"bins": 20}, "Age": {"bins": 20, "range": [0, 100]}},
+        "quantile": {"*": [0.1, 0.5, 0.9]},
+    }
+```
 
 ## Run Job
 from terminal try to run the code
@@ -139,7 +177,8 @@ The results are stored in workspace "/tmp/nvflare"
    A visualization utility tools are showed in show_stats.py in visualization directory
    You can run jupyter notebook visualization.ipynb
 
-  
+   download and copy the output adults_stats.json file to demo directory, then you can run the visualization notebook 
+
 
 
 
