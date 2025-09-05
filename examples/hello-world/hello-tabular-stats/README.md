@@ -174,10 +174,7 @@ The results are stored in workspace "/tmp/nvflare"
 
 ## Visualization
    with json format, the data can be easily visualized via pandas dataframe and plots. 
-   A visualization utility tools are showed in show_stats.py in visualization directory
-   You can run jupyter notebook visualization.ipynb
-
-   download and copy the output adults_stats.json file to demo directory, then you can run the visualization notebook 
+   download and copy the output adults_stats.json file to demo directory, then you can run jupyter notebook visualization.ipynb 
 
 
 

@@ -141,18 +141,13 @@ Job Recipe
 
 Job is defined via recipe, we will run it in Simulation Execution Env.
 
-.. code-block:: text
 
-    recipe = FedStatsRecipe(
-        name="stats_df",
-        stats_output_path=output_path,
-        sites=sites,
-        statistic_configs=statistic_configs,
-        stats_generator=df_stats_generator,
-    )
+.. literalinclude:: ../../../examples/hello-world/hello-tabular-stats/client.py
+    :language: python
+    :linenos:
+    :caption: client.py
+    :lines: 14-
 
-    env = SimEnv(clients=sites, num_threads=n_clients)
-    recipe.execute(env=env)
 
 The statistics configuration determines which statistics we need generate
 Here is an example
@@ -197,10 +192,8 @@ The results are stored in workspace "/tmp/nvflare"
 
 ## Visualization
    with json format, the data can be easily visualized via pandas dataframe and plots.
-   A visualization utility tools are showed in show_stats.py in visualization directory
-   You can run jupyter notebook visualization.ipynb
+   download and copy the output adults_stats.json file to demo directory, then you can run jupyter notebook visualization.ipynb
 
-   download and copy the output adults_stats.json file to demo directory, then you can run the visualization notebook
 
 
 
