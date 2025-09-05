@@ -15,7 +15,7 @@ let runner = try NVFlareRunner(
     ],
     userInfo: [:],
     jobTimeout: 30.0,
-    hostname: serverHost,
-    port: serverPort
+    serverURL: "https://\(serverHost):\(serverPort)",
+    allowSelfSignedCerts: true  // Set to true for self-signed HTTPS certificates
 )
 ```

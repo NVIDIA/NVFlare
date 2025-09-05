@@ -21,7 +21,7 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from nvflare.app_opt.tf.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
@@ -41,6 +41,7 @@ class _FedAvgValidator(BaseModel):
     aggregator_data_kind: Optional[DataKind]
     launch_external_process: bool = False
     command: str = "python3 -u"
+    framework: FrameworkType = FrameworkType.TENSORFLOW
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
 
@@ -72,6 +73,7 @@ class FedAvgRecipe(Recipe):
         aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
         launch_external_process (bool): Whether to launch the script in external process. Defaults to False.
         command (str): If launch_external_process=True, command to run script (prepended to script). Defaults to "python3".
+        framework (str): The framework to use for the training script. Defaults to FrameworkType.TENSORFLOW.
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
         DIFF means that only the difference is sent. Defaults to TransferType.FULL.
@@ -110,6 +112,7 @@ class FedAvgRecipe(Recipe):
         aggregator_data_kind: Optional[DataKind] = DataKind.WEIGHTS,
         launch_external_process: bool = False,
         command: str = "python3 -u",
+        framework: FrameworkType = FrameworkType.TENSORFLOW,
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
     ):
@@ -125,6 +128,7 @@ class FedAvgRecipe(Recipe):
             aggregator_data_kind=aggregator_data_kind,
             launch_external_process=launch_external_process,
             command=command,
+            framework=framework,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
         )
@@ -139,6 +143,7 @@ class FedAvgRecipe(Recipe):
         self.aggregator_data_kind = v.aggregator_data_kind
         self.launch_external_process = v.launch_external_process
         self.command = v.command
+        self.framework = v.framework
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
 
@@ -178,7 +183,7 @@ class FedAvgRecipe(Recipe):
             script_args=self.train_args,
             launch_external_process=self.launch_external_process,
             command=self.command,
-            framework=FrameworkType.PYTORCH,
+            framework=self.framework,
             server_expected_format=self.server_expected_format,
             params_transfer_type=self.params_transfer_type,
         )

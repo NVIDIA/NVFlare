@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,20 +13,22 @@
 # limitations under the License.
 
 import tensorflow as tf
-from tf_net import TFNet
+from model import Net
 
 import nvflare.client as flare
+from nvflare.client.tracking import SummaryWriter
 
 WEIGHTS_PATH = "./tf_model.weights.h5"
 
 
 def main():
     flare.init()
+    writer = SummaryWriter()
 
     sys_info = flare.system_info()
     print(f"system info is: {sys_info}", flush=True)
 
-    model = TFNet()
+    model = Net()
     model.build(input_shape=(None, 28, 28))
     model.compile(
         optimizer="adam", loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=["accuracy"]
@@ -69,6 +71,7 @@ def main():
         print(
             f"Accuracy of the received model on round {input_model.current_round} on the test images: {test_global_acc * 100} %"
         )
+        writer.add_scalar(tag="local_acc", scalar=test_global_acc)
 
         # training
         model.fit(train_images, train_labels, epochs=1, validation_data=(test_images, test_labels))
