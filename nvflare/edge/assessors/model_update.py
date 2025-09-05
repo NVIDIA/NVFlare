@@ -142,7 +142,7 @@ class ModelUpdateAssessor(Assessor):
 
         # Handle initial model generation
         if self.model_manager.current_model_version == 0:
-            if self.device_manager.has_enough_devices(fl_ctx):
+            if self.device_manager.has_enough_devices_and_clients(fl_ctx):
                 self.log_info(
                     fl_ctx, f"got {len(self.device_manager.available_devices)} devices - generate initial model"
                 )
