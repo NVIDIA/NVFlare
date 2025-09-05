@@ -20,6 +20,11 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import okhttp3.HttpUrl
 import com.google.gson.JsonPrimitive
+import java.security.SecureRandom
+import java.security.SSLContext
+import java.security.cert.X509Certificate
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 class Connection(private val context: Context) {
     companion object {
@@ -52,8 +57,7 @@ class Connection(private val context: Context) {
         // Content types
         private const val CONTENT_TYPE_JSON = "application/json"
         
-        // HTTP scheme
-        private const val HTTP_SCHEME = "http"
+
         
         // JSON field names
         private const val FIELD_JOB_NAME = "job_name"
@@ -70,7 +74,9 @@ class Connection(private val context: Context) {
     private var currentCookie: JSONValue? = null
     private var capabilities: Map<String, Any> = mapOf(FIELD_METHODS to emptyList<String>())
     private val gson = Gson()
-    private val httpClient = OkHttpClient()
+    private var httpClient: OkHttpClient = OkHttpClient()
+    private var allowSelfSignedCerts: Boolean = false
+    private var scheme: String = "http"  // HTTP scheme - now configurable
 
     // Add hostname and port properties to match iOS
     val hostname = MutableLiveData<String>("")
@@ -105,6 +111,41 @@ class Connection(private val context: Context) {
         this.userInfo = userInfo
     }
 
+    fun setScheme(scheme: String) {
+        this.scheme = scheme
+        updateHttpClient()
+    }
+
+    fun setAllowSelfSignedCerts(allow: Boolean) {
+        this.allowSelfSignedCerts = allow
+        updateHttpClient()
+    }
+
+    private fun updateHttpClient() {
+        val builder = OkHttpClient.Builder()
+        
+        if (allowSelfSignedCerts) {
+            try {
+                // Trust all certificates for self-signed certs
+                val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+                    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+                    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+                    override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+                })
+                
+                val sslContext = SSLContext.getInstance("TLS")
+                sslContext.init(null, trustAllCerts, SecureRandom())
+                
+                builder.sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
+                builder.hostnameVerifier { _, _ -> true }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to configure SSL: ${e.message}")
+            }
+        }
+        
+        httpClient = builder.build()
+    }
+
     fun getUserInfo(): Map<String, String> = userInfo
 
     fun getDeviceInfo(): Map<String, String> = deviceInfo
@@ -131,7 +172,7 @@ class Connection(private val context: Context) {
         }
 
         val url = HttpUrl.Builder()
-            .scheme(HTTP_SCHEME)
+            .scheme(scheme)
             .host(hostname.value ?: "")
             .port(port.value ?: 0)
             .addPathSegment(ENDPOINT_JOB)
@@ -206,7 +247,7 @@ class Connection(private val context: Context) {
         }
 
         val url = HttpUrl.Builder()
-            .scheme(HTTP_SCHEME)
+            .scheme(scheme)
             .host(hostname.value ?: "")
             .port(port.value ?: 0)
             .addPathSegment(ENDPOINT_TASK)
@@ -306,7 +347,7 @@ class Connection(private val context: Context) {
         }
 
         val url = HttpUrl.Builder()
-            .scheme(HTTP_SCHEME)
+            .scheme(scheme)
             .host(hostname.value ?: "")
             .port(port.value ?: 0)
             .addPathSegment(ENDPOINT_RESULT)

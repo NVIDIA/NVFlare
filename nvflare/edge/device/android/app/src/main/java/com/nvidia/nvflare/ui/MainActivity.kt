@@ -132,6 +132,41 @@ fun MainScreen() {
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
+                
+                // SSL Configuration
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Use HTTPS",
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = flareRunnerController.useHttps,
+                        onCheckedChange = { checked ->
+                            flareRunnerController.useHttps = checked
+                        }
+                    )
+                }
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Allow Self-Signed Certs",
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = flareRunnerController.allowSelfSignedCerts,
+                        onCheckedChange = { checked ->
+                            flareRunnerController.allowSelfSignedCerts = checked
+                        }
+                    )
+                }
             }
         }
 

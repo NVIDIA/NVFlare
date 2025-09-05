@@ -6,6 +6,7 @@ import com.nvidia.nvflare.app.data.AndroidDataSource
 import com.nvidia.nvflare.app.data.DatasetError
 import com.nvidia.nvflare.sdk.training.TrainingStatus
 import com.nvidia.nvflare.sdk.core.AndroidFlareRunner
+import com.nvidia.nvflare.sdk.core.Connection
 import com.nvidia.nvflare.sdk.core.Context as FlareContext
 import com.nvidia.nvflare.sdk.core.DataSource
 import com.nvidia.nvflare.sdk.core.Signal
@@ -68,6 +69,8 @@ class FlareRunnerController(
     // Server configuration
     var serverHost: String = "192.168.6.101"
     var serverPort: Int = 4321
+    var useHttps: Boolean = false
+    var allowSelfSignedCerts: Boolean = false
     
     val capabilities: Map<String, Any>
         get() = mapOf(
@@ -173,19 +176,19 @@ class FlareRunnerController(
                                 // Create FlareRunner with dataset
                 val runner = AndroidFlareRunner(
                     context = context,
-                    connection = createConnection(),
+                    connection = connection,
                     jobName = jobName,
                     dataSource = dataSource,
                     deviceInfo = mapOf(
                         "device_id" to (android.provider.Settings.Secure.getString(
-                            context.contentResolver,
+                            context.contentResolver, 
                             android.provider.Settings.Secure.ANDROID_ID
                         ) ?: "unknown"),
                         "platform" to "android",
                         "app_version" to context.packageManager.getPackageInfo(context.packageName, 0).versionName
                     ),
                     userInfo = emptyMap(),
-                    jobTimeout = Float.MAX_VALUE  // No timeout - continue until manual stop
+                    jobTimeout = 86400.0f  // 24 hours
                 )
                 
                 flareRunner = runner
@@ -241,5 +244,27 @@ class FlareRunnerController(
         Log.d(TAG, "FlareRunnerController: Training stopped and resources cleaned up")
     }
     
-
+    private fun createConnection(): com.nvidia.nvflare.sdk.core.Connection {
+        val connection = com.nvidia.nvflare.sdk.core.Connection(context)
+        connection.hostname.value = serverHost
+        connection.port.value = serverPort
+        
+        // Configure SSL settings
+        if (useHttps) {
+            connection.setScheme("https")
+        }
+        connection.setAllowSelfSignedCerts(allowSelfSignedCerts)
+        
+        // Set capabilities
+        connection.setCapabilities(capabilities)
+        
+        // Set user info - use device ID as user ID for now, can be made configurable later
+        val userId = android.provider.Settings.Secure.getString(
+            context.contentResolver, 
+            android.provider.Settings.Secure.ANDROID_ID
+        ) ?: "unknown_user"
+        connection.setUserInfo(mapOf("user_id" to userId))
+        
+        return connection
+    }
 } 
