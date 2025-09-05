@@ -2,21 +2,30 @@
 
 In this example, we will show how to generate federated statistics for tabular data that can be represented as Pandas Data Frame.
 
-## Setup NVFLARE
-Follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to setup virtual environment and install NVFLARE
-
-Let's first install required packages.
+## NVIDIA FLARE Installation
+for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
+```
+pip install nvflare
 
 ```
-pip install --upgrade pip
+## Install the dependency
 
+first get the example code from github:
+
+```
+git clone https://github.com/NVIDIA/NVFlare.git
+```
+
+then navigate to the hello-tabular-stats directory:
+
+```
 cd NVFlare/examples/hello-world/hello-tabular-stats
 
 pip install -r requirements.txt
 ```
 
 
-## Install Optional Quantile Dependency -- fastdigest
+### Install Optional Quantile Dependency -- fastdigest
 
 If you intend to calculate quantiles, you need to install fastdigest. 
 
@@ -52,12 +61,6 @@ pip install fastdigest==0.4.0
 ## Code Structure
 first get the example code from github:
 
-navigate to the hello-tabular-stats directory:
-
-```
-git switch <release branch>
-cd examples/hello-world/hello-tabular-stats
-```
 ``` bash
 hello-tabular-stats
 |

@@ -3,17 +3,42 @@
 This example shows how to implement a federated binary
 classification via logistic regression with second-order Newton-Raphson optimization.
 
-
-
 ## Install NVFLARE and Dependencies
-Follow instructions
-[here](../../README.md#set-up-a-virtual-environment)
-to set up a virtual environment for `nvflare` examples and install
-dependencies for this example.
+
+for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
+```
+pip install nvflare
+
+```
+Install the dependency
+
+```
+pip install -r requirements.txt
+```
+
+## Code Structure
+first get the example code from github:
+
+```
+git clone https://github.com/NVIDIA/NVFlare.git
+```
+then navigate to the hello-lr directory:
+
+```
+git switch <release branch>
+cd examples/hello-world/hello-lr
+```
+``` bash
+hello-pt
+|
+|-- client.py         # client local training script
+|-- job.py            # job recipe that defines client and server configurations
+|-- prepare_data.py   # util code to download data and prepare data
+|-- requirements.txt  # dependencies
+```
 
 
-
-## Dataset
+## Data
 
 The [UCI Heart Disease
 dataset](https://archive.ics.uci.edu/dataset/45/heart+disease) is
