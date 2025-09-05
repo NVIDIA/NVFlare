@@ -59,6 +59,8 @@ from .api_spec import (
 
 _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 
+__all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
+
 
 class Session(SessionSpec):
     def __init__(
