@@ -57,11 +57,14 @@ def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict
         for feature_name in feature_metrics:
             if feature_metrics[feature_name] is not None:
                 digest_dict: Dict = feature_metrics[feature_name].get(StC.STATS_DIGEST_COORD)
-                feature_digest = TDigest.from_dict(digest_dict)
-                if feature_name not in g_digest[ds_name]:
-                    g_digest[ds_name][feature_name] = feature_digest
+                if digest_dict:
+                    feature_digest = TDigest.from_dict(digest_dict)
+                    if feature_name not in g_digest[ds_name]:
+                        g_digest[ds_name][feature_name] = feature_digest
+                    else:
+                        g_digest[ds_name][feature_name] = g_digest[ds_name][feature_name].merge(feature_digest)
                 else:
-                    g_digest[ds_name][feature_name] = g_digest[ds_name][feature_name].merge(feature_digest)
+                    g_digest[ds_name][feature_name] = {}
 
     return g_digest
 
@@ -80,8 +83,12 @@ def compute_quantiles(g_digest: dict, quantile_config: Dict, precision: int) -> 
             digest = feature_metrics[feature_name]
             percentiles = get_target_quantiles(quantile_config, feature_name)
             quantile_values = {}
-            for percentile in percentiles:
-                quantile_values[percentile] = round(digest.quantile(percentile), precision)
+            if digest:
+                for percentile in percentiles:
+                    quantile_values[percentile] = round(digest.quantile(percentile), precision)
+            else:
+                for percentile in percentiles:
+                    quantile_values[percentile] = None
 
             g_ds_metrics[ds_name][feature_name] = quantile_values
 
