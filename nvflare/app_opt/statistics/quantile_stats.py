@@ -83,8 +83,12 @@ def compute_quantiles(g_digest: dict, quantile_config: Dict, precision: int) -> 
             digest = feature_metrics[feature_name]
             percentiles = get_target_quantiles(quantile_config, feature_name)
             quantile_values = {}
-            for percentile in percentiles:
-                quantile_values[percentile] = round(digest.quantile(percentile), precision)
+            if digest:
+                for percentile in percentiles:
+                    quantile_values[percentile] = round(digest.quantile(percentile), precision)
+            else:
+                for percentile in percentiles:
+                    quantile_values[percentile] = None
 
             g_ds_metrics[ds_name][feature_name] = quantile_values
 
