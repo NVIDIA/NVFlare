@@ -1,5 +1,5 @@
 Hello Pytorch
-===================
+=============
 
 This example demonstrates how to use NVIDIA FLARE with PyTorch to train an image classifier using
 federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-pt/>_`.
