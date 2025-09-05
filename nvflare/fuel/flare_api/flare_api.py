@@ -48,6 +48,7 @@ from .api_spec import (
     JobNotRunning,
     MonitorReturnCode,
     NoClientsAvailable,
+    NoConnection,
     NoReply,
     ServerInfo,
     SessionClosed,
