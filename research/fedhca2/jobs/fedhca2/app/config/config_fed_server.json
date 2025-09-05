@@ -1,0 +1,47 @@
+{
+  "format_version": 2,
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [
+    {
+      "id": "shareable_generator",
+      "name": "FullModelShareableGenerator",
+      "args": {}
+    },
+    {
+      "id": "aggregator",
+      "path": "fedhca2_aggregator.FedHCA2Aggregator",
+      "args": {
+        "train_config_filename": "config_train.json"
+      }
+    },
+    {
+      "id": "tb_analytics_receiver",
+      "name": "TBAnalyticsReceiver",
+      "args": {
+        "events": [
+          "fed.analytix_log_stats"
+        ]
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "id": "scatter_and_gather",
+      "name": "ScatterAndGather",
+      "args": {
+        "min_clients": 6,
+        "num_rounds": 100,
+        "start_round": 0,
+        "wait_time_after_min_received": 10,
+        "aggregator_id": "aggregator",
+        "shareable_generator_id": "shareable_generator",
+        "train_task_name": "train",
+        "train_timeout": 3600
+      }
+    }
+  ]
+}
