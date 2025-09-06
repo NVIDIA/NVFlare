@@ -23,7 +23,7 @@ class DockerImageBuilder(Builder):
     def __init__(
         self,
         base_dockerfile="Dockerfile",
-        image_name="nvflare/nvflare",
+        image_name="nvflare",
         requirement: str = None,
         requirements_txt_path: str = None,
     ):
@@ -69,8 +69,10 @@ class DockerImageBuilder(Builder):
     def _build_dockerfile(self, entity, ctx: ProvisionContext):
         dockerfile_path = os.path.join(ctx.get_ws_dir(entity), ProvFileName.DOCKERFILE)
         # Ensure base Dockerfile exists
-        if not os.path.exists(self.base_dockerfile):
-            raise FileNotFoundError(f"Base Dockerfile not found: {self.base_dockerfile}")
+        base_dockerfile = entity.get_prop("base_dockerfile", self.base_dockerfile)
+        if not os.path.exists(base_dockerfile):
+            raise FileNotFoundError(f"Base Dockerfile not found: {base_dockerfile}")
+        ctx.info(f"Building from {base_dockerfile=}")
 
         to_be_copy = [ctx.get_kit_dir(entity), ctx.get_local_dir(entity), ctx.get_transfer_dir(entity)]
         relative_paths = [os.path.relpath(p, ctx.get_ws_dir(entity)) for p in to_be_copy]
@@ -87,10 +89,16 @@ class DockerImageBuilder(Builder):
 
     def _build_build_docker_sh(self, participant, ctx):
         build_script_path = os.path.join(ctx.get_ws_dir(participant), ProvFileName.DOCKER_BUILD_SH)
-        image_tag = f"{self.image_name}:{participant.name}-image"
+        image_tag = f"{self.image_name}_{participant.name}"
+        archive_name = f"{image_tag}.tgz"
+
         with open(build_script_path, "w") as f:
             f.write("#!/bin/bash\n")
-            f.write(f"docker build -t {image_tag} -f {ProvFileName.DOCKERFILE} .\n")
+            f.write('SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"\n')
+            f.write(f"docker build -t {image_tag} -f $SCRIPT_DIR/{ProvFileName.DOCKERFILE} .\n")
+            f.write(f'echo "DOCKER_IMAGE_TAG={image_tag}"\n')
+            f.write(f"docker save {image_tag} | gzip > $SCRIPT_DIR/{archive_name}\n")
+            f.write(f'echo "DOCKER_ARCHIVE=$SCRIPT_DIR/{archive_name}"\n')
         os.chmod(build_script_path, 0o755)
 
     def _determine_startup_script(self, participant, ctx):

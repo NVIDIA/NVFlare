@@ -14,7 +14,7 @@ participants:
   - name: site-1
     type: client
     org: nvidia
-      #cc_config: cc_site-1.yml
+    cc_config: cc_site-1.yml
     # Specifying listening_host will enable the creation of one pair of
     # certificate/private key for this client, allowing the client to function
     # as a server for 3rd-party integration.

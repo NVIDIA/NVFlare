@@ -4,12 +4,16 @@ cc_gpu_mechanism: nvidia_cc
 role: client
 
 # All drive sizes are in GB
-root_drive_size: 15
-secure_drive_size: 2
+root_drive_size: 10
+applog_drive_size: 1
+user_data_drive_size: 1
+secure_drive_size: 10
 data_source: /tmp/data
+docker_archive: base_images/app.tar.gz
 
-hosts_entries:
-  server1: 1.2.3.4
+# for debugging purpose
+# hosts_entries:
+#   server1: 1.2.3.4
 
 cc_issuers:
   - id: snp_authorizer
@@ -22,5 +26,3 @@ cc_issuers:
 cc_attestation:
   check_frequency: 300
   failure_action: stop_job
-
-workload_image: nvflare_tar_client
