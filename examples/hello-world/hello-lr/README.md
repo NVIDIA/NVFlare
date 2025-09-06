@@ -40,11 +40,49 @@ hello-pt
 
 ## Data
 
-The [UCI Heart Disease
-dataset](https://archive.ics.uci.edu/dataset/45/heart+disease) is
-used in this example. Scripts are provided to download and process the
-dataset as described
+The [UCI Heart Disease dataset](https://archive.ics.uci.edu/dataset/45/heart+disease) is
+used in this example. 
+
+
+Publication Request:
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+This file describes the contents of the heart-disease directory.
+
+This directory contains 4 databases concerning heart disease diagnosis.
+All attributes are numeric-valued.  The data was collected from the
+four following locations:
+
+     1. Cleveland Clinic Foundation (cleveland.data)
+     2. Hungarian Institute of Cardiology, Budapest (hungarian.data)
+     3. V.A. Medical Center, Long Beach, CA (long-beach-va.data)
+     4. University Hospital, Zurich, Switzerland (switzerland.data)
+
+Each database has the same instance format.  While the databases have 76
+raw attributes, only 14 of them are actually used.  Thus I've taken the
+liberty of making 2 copies of each database: one with all the attributes
+and 1 with the 14 attributes actually used in past experiments.
+
+The authors of the databases have requested:
+
+      ...that any publications resulting from the use of the data include the 
+      names of the principal investigator responsible for the data collection
+      at each institution.  They would be:
+
+       1. Hungarian Institute of Cardiology. Budapest: Andras Janosi, M.D.
+       2. University Hospital, Zurich, Switzerland: William Steinbrunn, M.D.
+       3. University Hospital, Basel, Switzerland: Matthias Pfisterer, M.D.
+       4. V.A. Medical Center, Long Beach and Cleveland Clinic Foundation:
+	  Robert Detrano, M.D., Ph.D.
+
+Thanks in advance for abiding by this request.
+
+David Aha
+July 22, 1988
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+Scripts are provided to download and process the dataset as described
 [here](https://github.com/owkin/FLamby/tree/main/flamby/datasets/fed_heart_disease). This
+
 dataset contains samples from 4 sites, split into training and
 testing sets as described below:
 |site         | sample split                          |
@@ -56,6 +94,20 @@ testing sets as described below:
 
 The number of features in each sample is 13.
 
+### Features 
+* -- 1. #3  (age)       
+* -- 2. #4  (sex)       
+* -- 3. #9  (cp)        
+* -- 4. #10 (trestbps)  
+* -- 5. #12 (chol)      
+* -- 6. #16 (fbs)       
+* -- 7. #19 (restecg)   
+* -- 8. #32 (thalach)   
+* -- 9. #38 (exang)     
+* -- 10. #40 (oldpeak)   
+* -- 11. #41 (slope)     
+* -- 12. #44 (ca)        
+* -- 13. #51 (thal)      
 
 
 ## Model
