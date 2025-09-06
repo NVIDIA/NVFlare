@@ -29,15 +29,16 @@ SNP_NAMESPACE = "x-snp"
 class SNPAuthorizer(CCAuthorizer):
     """AMD SEV-SNP Authorizer"""
 
-    def __init__(self, max_nonce_history=1000, amd_certs_dir="/opt/certs"):
+    def __init__(self, max_nonce_history=1000, amd_certs_dir="/opt/certs", snpguest_binary="/host/bin/snpguest"):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.my_nonce_history = NonceHistory(max_nonce_history)
         self.seen_nonce_history = NonceHistory(max_nonce_history)
         self.amd_certs_dir = amd_certs_dir
+        self.snpguest_binary = snpguest_binary
 
     def generate(self):
-        cmd = ["snpguest", "report", "report.bin", "request.bin"]
+        cmd = [self.snpguest_binary, "report", "report.bin", "request.bin"]
         with open("request.bin", "wb") as request_file:
             nonce = bytearray([random.randint(0, 255) for _ in range(64)])
             request_file.write(nonce)
@@ -53,7 +54,7 @@ class SNPAuthorizer(CCAuthorizer):
             tmp_bin_file = uuid.uuid4().hex
             with open(tmp_bin_file, "wb") as report_file:
                 report_file.write(report_bin)
-            cmd = ["snpguest", "verify", "attestation", self.amd_certs_dir, tmp_bin_file]
+            cmd = [self.snpguest_binary, "verify", "attestation", self.amd_certs_dir, tmp_bin_file]
             cp = subprocess.run(cmd, capture_output=True)
             if cp.returncode == 0:
                 return self._check_nonce(tmp_bin_file)
@@ -67,7 +68,7 @@ class SNPAuthorizer(CCAuthorizer):
                 os.remove(tmp_bin_file)
 
     def _check_nonce(self, tmp_bin_file):
-        cmd = ["snpguest", "display", "report", tmp_bin_file]
+        cmd = [self.snpguest_binary, "display", "report", tmp_bin_file]
         cp = subprocess.run(cmd, capture_output=True)
         if cp.returncode != 0:
             return False
