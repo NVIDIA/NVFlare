@@ -44,8 +44,8 @@ The [UCI Heart Disease dataset](https://archive.ics.uci.edu/dataset/45/heart+dis
 used in this example. 
 
 
-Publication Request:
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+**Publication Request:**
+
 This file describes the contents of the heart-disease directory.
 
 This directory contains 4 databases concerning heart disease diagnosis.
@@ -58,9 +58,7 @@ four following locations:
      4. University Hospital, Zurich, Switzerland (switzerland.data)
 
 Each database has the same instance format.  While the databases have 76
-raw attributes, only 14 of them are actually used.  Thus I've taken the
-liberty of making 2 copies of each database: one with all the attributes
-and 1 with the 14 attributes actually used in past experiments.
+raw attributes, only 14 of them are actually used.
 
 The authors of the databases have requested:
 
@@ -73,12 +71,7 @@ The authors of the databases have requested:
        3. University Hospital, Basel, Switzerland: Matthias Pfisterer, M.D.
        4. V.A. Medical Center, Long Beach and Cleveland Clinic Foundation:
 	  Robert Detrano, M.D., Ph.D.
-
-Thanks in advance for abiding by this request.
-
-David Aha
-July 22, 1988
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+ 
 
 Scripts are provided to download and process the dataset as described
 [here](https://github.com/owkin/FLamby/tree/main/flamby/datasets/fed_heart_disease). This
@@ -95,25 +88,26 @@ testing sets as described below:
 The number of features in each sample is 13.
 
 ### Features 
-* -- 1. #3  (age)       
-* -- 2. #4  (sex)       
-* -- 3. #9  (cp)        
-* -- 4. #10 (trestbps)  
-* -- 5. #12 (chol)      
-* -- 6. #16 (fbs)       
-* -- 7. #19 (restecg)   
-* -- 8. #32 (thalach)   
-* -- 9. #38 (exang)     
-* -- 10. #40 (oldpeak)   
-* -- 11. #41 (slope)     
-* -- 12. #44 (ca)        
-* -- 13. #51 (thal)      
-
+  
+* Variable Name	Role	Type	Demographic	Description	Units	Missing Values
+  age	    Feature	Integer	    Age		    years	                no
+  sex	    Feature	Categorical	Sex			                        no
+  cp	    Feature	Categorical				                         no
+  trestbps	Feature	Integer		resting blood pressure (on admission to the hospital)	mm Hg	no
+  chol	    Feature	Integer		serum cholestoral	mg/dl	            no
+  fbs	    Feature	Categorical		fasting blood sugar > 120 mg/dl		no
+  restecg	Feature	Categorical				no
+  thalach	Feature	Integer		maximum heart rate achieved		no
+  exang	    Feature	Categorical		exercise induced angina		no
+  oldpeak	Feature	Integer		ST depression induced by exercise relative to rest		no
+  slope	    Feature	Categorical				no
+  ca	    Feature	Integer		number of major vessels (0-3) colored by flourosopy		yes
+  thal	    Feature	Categorical				yes
+  num	    Target	Integer		diagnosis of heart disease		no
 
 ## Model
 
-The [Newton-Raphson
-optimization](https://en.wikipedia.org/wiki/Newton%27s_method) problem
+The [Newton-Raphson optimization](https://en.wikipedia.org/wiki/Newton%27s_method) problem
 can be described as follows.
 
 In a binary classification task with logistic regression, the

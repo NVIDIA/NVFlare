@@ -68,13 +68,5 @@ def prepare_data(data_dir: Path):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["download", "prepare"], help="Action to perform")
-    args = parser.parse_args()
-
     DATA_DIR = Path("/tmp/flare/dataset/heart_disease_data")
-
-    if args.action == "download":
-        download_data(DATA_DIR)
-    elif args.action == "prepare":
-        prepare_data(DATA_DIR)
+    prepare_data(DATA_DIR)

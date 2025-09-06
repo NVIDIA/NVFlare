@@ -35,6 +35,7 @@ def download_file(url: str, outdir: str):
     return filepath
 
 # Example usage:
-url = "https://example.com/data.zip"
-outdir = "./downloads"
+url = "https://archive.ics.uci.edu/static/public/45/heart+disease.zip"
+outdir = "/tmp/flare/dataset/heart_disease_data"
 download_file(url, outdir)
+
