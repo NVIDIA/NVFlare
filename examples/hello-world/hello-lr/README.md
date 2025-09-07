@@ -29,12 +29,13 @@ git switch <release branch>
 cd examples/hello-world/hello-lr
 ```
 ``` bash
-hello-pt
-|
-|-- client.py         # client local training script
-|-- job.py            # job recipe that defines client and server configurations
-|-- prepare_data.py   # util code to download data and prepare data
-|-- requirements.txt  # dependencies
+hello-lr
+    |
+    |-- client.py         # client local training script
+    |-- job.py            # job recipe that defines client and server configurations
+    |-- download_data.py  # download dataset
+    |-- prepare_data.py   # prepare data to convert to numpy
+    |-- requirements.txt  # dependencies
 ```
 
 
@@ -47,19 +48,7 @@ used in this example.
 **Publication Request:**
 
 This file describes the contents of the heart-disease directory.
-
-This directory contains 4 databases concerning heart disease diagnosis.
-All attributes are numeric-valued.  The data was collected from the
-four following locations:
-
-     1. Cleveland Clinic Foundation (cleveland.data)
-     2. Hungarian Institute of Cardiology, Budapest (hungarian.data)
-     3. V.A. Medical Center, Long Beach, CA (long-beach-va.data)
-     4. University Hospital, Zurich, Switzerland (switzerland.data)
-
-Each database has the same instance format.  While the databases have 76
-raw attributes, only 14 of them are actually used.
-
+ 
 The authors of the databases have requested:
 
       ...that any publications resulting from the use of the data include the 
@@ -73,11 +62,9 @@ The authors of the databases have requested:
 	  Robert Detrano, M.D., Ph.D.
  
 
-Scripts are provided to download and process the dataset as described
-[here](https://github.com/owkin/FLamby/tree/main/flamby/datasets/fed_heart_disease). This
-
 dataset contains samples from 4 sites, split into training and
 testing sets as described below:
+
 |site         | sample split                          |
 |-------------|---------------------------------------|
 |Cleveland    | train: 199 samples, test: 104 samples |
@@ -87,23 +74,25 @@ testing sets as described below:
 
 The number of features in each sample is 13.
 
+
 ### Features 
-  
-* Variable Name	Role	Type	Demographic	Description	Units	Missing Values
-  age	    Feature	Integer	    Age		    years	                no
-  sex	    Feature	Categorical	Sex			                        no
-  cp	    Feature	Categorical				                         no
-  trestbps	Feature	Integer		resting blood pressure (on admission to the hospital)	mm Hg	no
-  chol	    Feature	Integer		serum cholestoral	mg/dl	            no
-  fbs	    Feature	Categorical		fasting blood sugar > 120 mg/dl		no
-  restecg	Feature	Categorical				no
-  thalach	Feature	Integer		maximum heart rate achieved		no
-  exang	    Feature	Categorical		exercise induced angina		no
-  oldpeak	Feature	Integer		ST depression induced by exercise relative to rest		no
-  slope	    Feature	Categorical				no
-  ca	    Feature	Integer		number of major vessels (0-3) colored by flourosopy		yes
-  thal	    Feature	Categorical				yes
-  num	    Target	Integer		diagnosis of heart disease		no
+
+| Variable Name | Role    | Type        | Demographic | Description                                           | Units  | Missing Values |
+|---------------|---------|-------------|-------------|-------------------------------------------------------|--------|----------------|
+| age           | Feature | Integer     | Age         | years                                                 |        | no             |
+| sex           | Feature | Categorical | Sex         |                                                       |        | no             |
+| cp            | Feature | Categorical |             |                                                       |        | no             |
+| trestbps      | Feature | Integer     |             | resting blood pressure (on admission to the hospital) | mm Hg  | no             |
+| chol          | Feature | Integer     |             | serum cholestoral                                     | mg/dl  | no             |
+| fbs           | Feature | Categorical |             | fasting blood sugar > 120 mg/dl                       |        | no             |
+| restecg       | Feature | Categorical |             |                                                       |        | no             |
+| thalach       | Feature | Integer     |             | maximum heart rate achieved                           |        | no             |
+| exang         | Feature | Categorical |             | exercise induced angina                               |        | no             |
+| oldpeak       | Feature | Integer     |             | ST depression induced by exercise relative to rest    |        | no             |
+| slope         | Feature | Categorical |             |                                                       |        | no             |
+| ca            | Feature | Integer     |             | number of major vessels (0-3) colored by flourosopy   |        | yes            |
+| thal          | Feature | Categorical |             |                                                       |        | yes            |
+| num           | Target  | Integer     |             | diagnosis of heart disease                            |        | no             |
 
 ## Model
 
@@ -111,41 +100,52 @@ The [Newton-Raphson optimization](https://en.wikipedia.org/wiki/Newton%27s_metho
 can be described as follows.
 
 In a binary classification task with logistic regression, the
-probability of a data sample $x$ classified as positive is formulated
+probability of a data sample \(x\) classified as positive is formulated
 as:
-$$p(x) = \sigma(\beta \cdot x + \beta_{0})$$
-where $\sigma(.)$ denotes the sigmoid function. We can incorporate
-$\beta_{0}$ and $\beta$ into a single parameter vector $\theta =
-( \beta_{0},  \beta)$. Let $d$ be the number
-of features for each data sample $x$ and let $N$ be the number of data
+
+\[ p(x) = \sigma(\beta \cdot x + \beta_{0}) \]
+
+where \(\sigma(.)\) denotes the sigmoid function. We can incorporate
+\(\beta_{0}\) and \(\beta\) into a single parameter vector \(\theta =
+( \beta_{0},  \beta)\). Let \(d\) be the number
+of features for each data sample \(x\) and let \(N\) be the number of data
 samples. We then have the matrix version of the above probability
 equation:
-$$p(X) = \sigma( X \theta )$$
-Here $X$ is the matrix of all samples, with shape $N \times (d+1)$,
-having it's first column filled with value 1 to account for the
-intercept $\theta_{0}$.
 
-The goal is to compute parameter vector $\theta$ that maximizes the
+\[ p(X) = \sigma( X \theta ) \]
+
+Here \(X\) is the matrix of all samples, with shape \(N \times (d+1)\),
+having its first column filled with value 1 to account for the
+intercept \(\theta_{0}\).
+
+The goal is to compute parameter vector \(\theta\) that maximizes the
 below likelihood function:
-$$L_{\theta} = \prod_{i=1}^{N} p(x_i)^{y_i} (1 - p(x_i)^{1-y_i})$$
+
+\[ L_{\theta} = \prod_{i=1}^{N} p(x_i)^{y_i} (1 - p(x_i)^{1-y_i}) \]
 
 The Newton-Raphson method optimizes the likelihood function via
 quadratic approximation. Omitting the maths, the theoretical update
-formula for parameter vector $\theta$ is:
-$$\theta^{n+1} = \theta^{n} - H_{\theta^{n}}^{-1} \nabla L_{\theta^{n}}$$
+formula for parameter vector \(\theta\) is:
+
+\[ \theta^{n+1} = \theta^{n} - H_{\theta^{n}}^{-1} \nabla L_{\theta^{n}} \]
+
 where
-$$\nabla L_{\theta^{n}} = X^{T}(y - p(X))$$
-is the gradient of the likelihood function, with $y$ being the vector
-of ground truth for sample data matrix $X$,  and
-$$H_{\theta^{n}} = -X^{T} D X$$
-is the Hessian of the likelihood function, with $D$ a diagonal matrix
-where diagonal value at $(i,i)$ is $D(i,i) = p(x_i) (1 - p(x_i))$.
+
+\[ \nabla L_{\theta^{n}} = X^{T}(y - p(X)) \]
+
+is the gradient of the likelihood function, with \(y\) being the vector
+of ground truth for sample data matrix \(X\),  and
+
+\[ H_{\theta^{n}} = -X^{T} D X \]
+
+is the Hessian of the likelihood function, with \(D\) a diagonal matrix
+where diagonal value at \((i,i)\) is \(D(i,i) = p(x_i) (1 - p(x_i))\).
 
 In federated Newton-Raphson optimization, each client will compute its
-own gradient $\nabla L_{\theta^{n}}$ and Hessian $H_{\theta^{n}}$
+own gradient \(\nabla L_{\theta^{n}}\) and Hessian \(H_{\theta^{n}}\)
 based on local training samples. A server will aggregate the gradients
 and Hessians computed from all clients, and perform the update of
-parameter $\theta$ based on the theoretical update formula described
+parameter \(\theta\) based on the theoretical update formula described
 above.
 
 ## Client Side
@@ -166,7 +166,7 @@ script.
   above. This is implemented in the
   [`train_newton_raphson()`](./client.py) method. Each client then 
   sends the computed results (always in `FLModel` format) to server for aggregation, 
-  using `flare.send()`  API.
+  using `flare.send()` API.
 
 Each client site corresponds to a site listed in the data table above.
 
@@ -198,10 +198,9 @@ the server side fedavg class is located at `nvflare.app_common.workflows.lr.feda
 
 Execute the following script
 ```
-python prepare_data.py download
-python prepare_data.py prepare
+python download_data.py 
+python prepare_data.py 
 ```
-
 This will download the heart disease dataset under
 `/tmp/flare/dataset/heart_disease_data/`
 
