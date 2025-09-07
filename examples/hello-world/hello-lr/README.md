@@ -3,17 +3,42 @@
 This example shows how to implement a federated binary
 classification via logistic regression with second-order Newton-Raphson optimization.
 
-
-
 ## Install NVFLARE and Dependencies
-Follow instructions
-[here](../../README.md#set-up-a-virtual-environment)
-to set up a virtual environment for `nvflare` examples and install
-dependencies for this example.
+
+for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
+```
+pip install nvflare
+
+```
+Install the dependency
+
+```
+pip install -r requirements.txt
+```
+
+## Code Structure
+first get the example code from github:
+
+```
+git clone https://github.com/NVIDIA/NVFlare.git
+```
+then navigate to the hello-lr directory:
+
+```
+git switch <release branch>
+cd examples/hello-world/hello-lr
+```
+``` bash
+hello-pt
+|
+|-- client.py         # client local training script
+|-- job.py            # job recipe that defines client and server configurations
+|-- prepare_data.py   # util code to download data and prepare data
+|-- requirements.txt  # dependencies
+```
 
 
-
-## Dataset
+## Data
 
 The [UCI Heart Disease
 dataset](https://archive.ics.uci.edu/dataset/45/heart+disease) is
@@ -109,8 +134,19 @@ FL system, such as receiving and send `FLModel`.
 We leverage a builtin FLARE logistic regression with Newton Raphson method. 
 the server side fedavg class is located at `nvflare.app_common.workflows.lr.fedavg.FedAvgLR`
 
-## Job 
-    toddo
+## Job
+```
+  recipe = FedAvgLrRecipe(
+  num_rounds=num_rounds,
+  damping_factor=0.8,
+  num_features=13,
+  train_script="client.py",
+  train_args=f"--data_root {data_root}",
+  )
+  env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+  run = recipe.execute(env)
+  # run.get_result()
+```
 
 ## Download and prepare data
 

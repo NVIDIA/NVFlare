@@ -82,15 +82,9 @@ class ETTrainerExecutor(
  */
 object ETTrainerExecutorFactory {
     
-    /**
-     * Create an ETTrainerExecutor based on the training method and model data.
-     */
     fun createExecutor(context: android.content.Context, method: String, modelData: String, meta: Map<String, Any>): ETTrainerExecutor {
         val trainingConfig = TrainingConfig.fromMap(meta)
-
-        // Create ETTrainer without dataset - it will be provided by the executor from context
         val trainer = ETTrainer(context, modelData, meta)
-        
         return ETTrainerExecutor(trainer)
     }
 }
