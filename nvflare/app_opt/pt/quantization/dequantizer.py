@@ -132,6 +132,10 @@ class ModelDequantizer(DXOFilter):
                             dequantized = dequantize_4bit(quantized, quantize_state, quant_type="fp4")
                         else:
                             dequantized = dequantize_4bit(quantized, quantize_state, quant_type="nf4")
+                    if source_data_format == "numpy":
+                        params[param_name] = dequantized.cpu().numpy()
+                    elif source_data_format == "torch":
+                        params[param_name] = dequantized.cpu()
             else:
                 values_tensor = self.to_torch_tensor(values)
                 if param_name not in quant_state:
