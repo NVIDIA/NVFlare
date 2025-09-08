@@ -81,23 +81,6 @@ def to_abs_path(yaml_path, file_path):
     return os.path.normpath(abs_path)
 
 
-def update_docker_archive_path_inside_cc_config(
-    yaml_path: str, docker_archive_path: str = None, config_key: str = "docker_archive"
-):
-    with open(yaml_path, "r") as f:
-        config = yaml.safe_load(f)
-    file_path = config.get(config_key)
-    if file_path:
-        if not os.path.isabs(file_path):
-            raise ValueError("'docker_archive' must be absolute path")
-    elif docker_archive_path:
-        config[config_key] = docker_archive_path
-    else:
-        raise ValueError("Missing 'docker_archive' in cc config")
-    with open(yaml_path, "w") as f:
-        yaml.dump(config, f)
-
-
 def run_command(command, cwd=None):
     print(f"Running {command=} in {cwd=}")
     process = subprocess.Popen(
@@ -155,18 +138,6 @@ class OnPremPackager(Packager):
         with open(log_config_path, "w") as f:
             json.dump(updated_config, f, indent=4)
 
-    def _build_docker_image(self, participant: Participant, dest_dir: str):
-        build_docker_script = f"{dest_dir}/{participant.name}/docker_build.sh"
-        command = [build_docker_script]
-        tar_file_path = None
-        if os.path.exists(build_docker_script):
-            print(f"Building docker image using {build_docker_script}")
-            output = run_command(command, cwd=f"{dest_dir}/{participant.name}")
-            tar_file_path = _extract_docker_tar_path(output)
-            if tar_file_path is None or not os.path.exists(tar_file_path):
-                raise RuntimeError("Docker image build failed")
-        return tar_file_path
-
     def _package_for_participant(self, participant: Participant, ctx: ProvisionContext):
         """Package the startup kit for the participant."""
         if not participant.get_prop(self.cc_config_key):
@@ -176,9 +147,6 @@ class OnPremPackager(Packager):
 
         log_config_path = dest_dir / participant.name / "local" / ProvFileName.LOG_CONFIG_DEFAULT
         self._change_log_dir(log_config_path)
-
-        # Build docker image for each
-        docker_archive_path = self._build_docker_image(participant, dest_dir)
 
         cc_config_yaml = os.path.abspath(participant.get_prop(self.cc_config_key))
         if not os.path.exists(cc_config_yaml):
@@ -190,12 +158,10 @@ class OnPremPackager(Packager):
         tar_file_path = None
         try:
             shutil.copyfile(cc_config_yaml, temp_cc_config_yaml)
-            update_docker_archive_path_inside_cc_config(temp_cc_config_yaml, docker_archive_path)
             # Build CC image
             tar_file_path = self._build_cc_image(temp_cc_config_yaml, participant.name, str(dest_dir))
         finally:
-            pass
-            # os.remove(temp_cc_config_yaml)
+            os.remove(temp_cc_config_yaml)
 
         if tar_file_path is None or not os.path.exists(tar_file_path):
             raise RuntimeError("CVM build failed")
@@ -204,7 +170,7 @@ class OnPremPackager(Packager):
         site_dir = dest_dir / participant.name
         shutil.rmtree(site_dir)
         os.mkdir(site_dir)
-        shutil.copy(tar_file_path, site_dir)
+        shutil.copy(tar_file_path, site_dir / f"{participant.name}.tgz")
 
     def package(self, project: Project, ctx: ProvisionContext):
         for p in project.get_all_participants():

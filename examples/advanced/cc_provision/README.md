@@ -3,6 +3,12 @@
 This guide explains how to use **CC (Confidential Computing) Provision** in NVFLARE, including setting up site configurations, enabling the CC builder, and using Docker images for CC workloads.
 
 
+## 0. Prepare application docker image workload
+
+In CC, we don't allow custom code, all the codes and required libs must be built-in in the docker image.
+In this example, we show you how to build NVFlare docker images in `docker/`
+
+
 ## 1. Define CC Configuration per Site (`cc_config`)
 
 Each site participating in a CC job must provide a **CC configuration file**. This file describes the trusted execution environment (e.g., AMD SEV-SNP on-prem CVM), drive allocations, and attestation policies.
@@ -20,8 +26,10 @@ root_drive_size: 10
 applog_drive_size: 1
 user_data_drive_size: 1
 secure_drive_size: 10
-data_source: /tmp/data
-docker_archive: base_images/app.tar.gz
+
+# Docker image archive saved using:
+# docker save <image_name> | gzip > app.tar.gz
+docker_archive: /tmp/base_images/app.tar.gz
 
 allowed_ports:
 - 8002
@@ -29,9 +37,9 @@ allowed_ports:
 cc_issuers:
   - id: snp_authorizer
     path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
-    token_expiration: 150 # needs to be less than check_frequency
+    token_expiration: 100 # seconds, needs to be less than check_frequency
 cc_attestation:
-  check_frequency: 300
+  check_frequency: 120 # seconds
   failure_action: stop_job
 ```
 
@@ -59,27 +67,7 @@ builders:
 
 This builder sets up all CC-related configurations and assets.
 
-## 4. Add the DockerImageBuilder
-
-A Docker image is required for all CC jobs. The DockerImageBuilder uses your base_dockerfile and appends all necessary NVFLARE components into it.
-
-Add the following to the `builders` section:
-
-```yaml
-builders:
-  ...
-  - path: nvflare.lighter.impl.docker_image_builder.DockerImageBuilder
-    args:
-      base_dockerfile: Dockerfile.base
-      requirement: git+https://github.com/NVIDIA/NVFlare.git@main
-```
-
-Note:
-    1. The `requirement` is an optional argument
-    2. No custom runtime code is allowed, everything must be pre-installed in the image
-    3. The final image will be encrypted for execution in a Confidential VM
-
-## 5. Add the OnPremPackager
+## 4. Add the OnPremPackager
 
 To generate startup kits for on-premises deployment, add the `OnPremPackager`:
 
@@ -92,9 +80,9 @@ packager:
 
 Note:
     1. `build_image_cmd`: Path to the script used to build the CVM disk image.
-    2. You can obtain `build_cvm_image.sh` from the NVFLARE team
+    2. For 2.7.0 Technical Preview release, please contact `federatedlearning@nvidia.com` to receive the `build_cvm_image.sh`
 
-## 6. Generate the Startup Kits
+## 5. Generate the Startup Kits
 
 Once you add all the required sections into your `project.yml`, run the provision command:
 
@@ -102,17 +90,12 @@ Once you add all the required sections into your `project.yml`, run the provisio
 nvflare provision -p project.yml
 ```
 
-This will do:
-    1. Build and encrypt the Docker image
-    2. Package the confidential computing environment
-    3. Output `.tgz` that contains CVM image for each site
-
-## 7. Distribute and deploy
+## 6. Distribute and deploy
 
 Each site's result will be located in 
 
 ```bash
-workspace/example_project/prod_xx/[site_name]/cvm_xxx.tgz
+workspace/example_project/prod_xx/[site_name]/[site_name].tgz
 ```
 
 You can distribute these tgz file to each site.
@@ -120,7 +103,7 @@ You can distribute these tgz file to each site.
 To deploy on each site, do:
 
 ```bash
-tar -zxvf cvm_xxx.tgz
+tar -zxvf [site_name].tgz
 cd cvm_xxx
 ./launch_vm.sh
 ```
