@@ -16,6 +16,12 @@ NVIDIA FLARE
    whats_new
 
 .. toctree::
+   :caption: Quickstart
+   :maxdepth: 2
+
+   Overview <quickstart>
+   Hello World <hello-world/index>
+.. toctree::
    :maxdepth: -1
    :hidden:
    :caption: Guides
