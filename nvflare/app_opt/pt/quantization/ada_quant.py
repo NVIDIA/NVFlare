@@ -60,7 +60,7 @@ class AdaQuantizer:
         quantized_tensor = quantized_tensor.numpy().astype(dtype=new_dtype)
         if self.compression:
             raw_bytes = quantized_tensor.tobytes()
-            compressed_bytes = bz2.compress(raw_bytes)
+            compressed_bytes = bz2.compress(raw_bytes, compresslevel=1)
             if len(compressed_bytes) < len(raw_bytes):
                 compressed_tensor = np.frombuffer(bz2.compress(quantized_tensor.tobytes()), dtype=np.uint8)
                 return torch.tensor([0], dtype=torch.bool), quant_state | {
