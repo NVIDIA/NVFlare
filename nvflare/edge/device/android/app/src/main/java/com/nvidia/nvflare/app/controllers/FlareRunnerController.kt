@@ -76,11 +76,7 @@ class FlareRunnerController(
             "supported_jobs" to supportedJobs.map { it.value },
             "methods" to listOf("cnn", "xor")
         )
-<<<<<<< Updated upstream
-
-=======
     
->>>>>>> Stashed changes
     fun toggleJob(job: SupportedJob) {
         if (supportedJobs.contains(job)) {
             supportedJobs = supportedJobs - job
