@@ -9,24 +9,18 @@ NVIDIA FLARE
 
    fl_introduction
    flare_overview
+   whats_new
    Installation <installation>
    getting_started
-   Quickstart <quickstart>
-   
-   whats_new
+   Quick Start <quickstart>
 
-.. toctree::
-   :caption: Quickstart
-   :maxdepth: 2
-
-   Overview <quickstart>
-   Hello World <hello-world/index>
 .. toctree::
    :maxdepth: -1
    :hidden:
    :caption: Guides
 
    example_applications_algorithms
+   tutorials <tutorials>
    real_world_fl
    user_guide
    programming_guide

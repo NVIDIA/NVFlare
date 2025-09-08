@@ -1,3 +1,5 @@
+.. _self-paced-learning:
+
 Federated Learning with NVIDIA FLARE
 ====================================
 
