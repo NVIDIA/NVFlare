@@ -100,52 +100,41 @@ The [Newton-Raphson optimization](https://en.wikipedia.org/wiki/Newton%27s_metho
 can be described as follows.
 
 In a binary classification task with logistic regression, the
-probability of a data sample \(x\) classified as positive is formulated
+probability of a data sample $x$ classified as positive is formulated
 as:
-
-\[ p(x) = \sigma(\beta \cdot x + \beta_{0}) \]
-
-where \(\sigma(.)\) denotes the sigmoid function. We can incorporate
-\(\beta_{0}\) and \(\beta\) into a single parameter vector \(\theta =
-( \beta_{0},  \beta)\). Let \(d\) be the number
-of features for each data sample \(x\) and let \(N\) be the number of data
+$$p(x) = \sigma(\beta \cdot x + \beta_{0})$$
+where $\sigma(.)$ denotes the sigmoid function. We can incorporate
+$\beta_{0}$ and $\beta$ into a single parameter vector $\theta =
+( \beta_{0},  \beta)$. Let $d$ be the number
+of features for each data sample $x$ and let $N$ be the number of data
 samples. We then have the matrix version of the above probability
 equation:
+$$p(X) = \sigma( X \theta )$$
+Here $X$ is the matrix of all samples, with shape $N \times (d+1)$,
+having it's first column filled with value 1 to account for the
+intercept $\theta_{0}$.
 
-\[ p(X) = \sigma( X \theta ) \]
-
-Here \(X\) is the matrix of all samples, with shape \(N \times (d+1)\),
-having its first column filled with value 1 to account for the
-intercept \(\theta_{0}\).
-
-The goal is to compute parameter vector \(\theta\) that maximizes the
+The goal is to compute parameter vector $\theta$ that maximizes the
 below likelihood function:
-
-\[ L_{\theta} = \prod_{i=1}^{N} p(x_i)^{y_i} (1 - p(x_i)^{1-y_i}) \]
+$$L_{\theta} = \prod_{i=1}^{N} p(x_i)^{y_i} (1 - p(x_i)^{1-y_i})$$
 
 The Newton-Raphson method optimizes the likelihood function via
 quadratic approximation. Omitting the maths, the theoretical update
-formula for parameter vector \(\theta\) is:
-
-\[ \theta^{n+1} = \theta^{n} - H_{\theta^{n}}^{-1} \nabla L_{\theta^{n}} \]
-
+formula for parameter vector $\theta$ is:
+$$\theta^{n+1} = \theta^{n} - H_{\theta^{n}}^{-1} \nabla L_{\theta^{n}}$$
 where
-
-\[ \nabla L_{\theta^{n}} = X^{T}(y - p(X)) \]
-
-is the gradient of the likelihood function, with \(y\) being the vector
-of ground truth for sample data matrix \(X\),  and
-
-\[ H_{\theta^{n}} = -X^{T} D X \]
-
-is the Hessian of the likelihood function, with \(D\) a diagonal matrix
-where diagonal value at \((i,i)\) is \(D(i,i) = p(x_i) (1 - p(x_i))\).
+$$\nabla L_{\theta^{n}} = X^{T}(y - p(X))$$
+is the gradient of the likelihood function, with $y$ being the vector
+of ground truth for sample data matrix $X$,  and
+$$H_{\theta^{n}} = -X^{T} D X$$
+is the Hessian of the likelihood function, with $D$ a diagonal matrix
+where diagonal value at $(i,i)$ is $D(i,i) = p(x_i) (1 - p(x_i))$.
 
 In federated Newton-Raphson optimization, each client will compute its
-own gradient \(\nabla L_{\theta^{n}}\) and Hessian \(H_{\theta^{n}}\)
+own gradient $\nabla L_{\theta^{n}}$ and Hessian $H_{\theta^{n}}$
 based on local training samples. A server will aggregate the gradients
 and Hessians computed from all clients, and perform the update of
-parameter \(\theta\) based on the theoretical update formula described
+parameter $\theta$ based on the theoretical update formula described
 above.
 
 ## Client Side
