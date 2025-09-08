@@ -7,8 +7,10 @@ root_drive_size: 10
 applog_drive_size: 1
 user_data_drive_size: 1
 secure_drive_size: 10
-data_source: /tmp/data
-docker_archive: base_images/app.tar.gz
+# Docker image archive saved using:
+# docker save <image_name> | gzip > app.tar.gz
+docker_archive: /tmp/base_images/app.tar.gz
+
 
 allowed_ports:
 - 8002
@@ -16,7 +18,7 @@ allowed_ports:
 cc_issuers:
   - id: snp_authorizer
     path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
-    token_expiration: 150 # needs to be less than check_frequency
+    token_expiration: 100 # seconds, needs to be less than check_frequency
 cc_attestation:
-  check_frequency: 300
+  check_frequency: 120 # seconds
   failure_action: stop_job
