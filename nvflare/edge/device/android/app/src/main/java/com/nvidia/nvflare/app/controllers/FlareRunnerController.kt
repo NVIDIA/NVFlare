@@ -51,6 +51,10 @@ enum class SupportedJob(val value: String) {
 class FlareRunnerController(
     private val context: Context
 ) {
+    companion object {
+        // Timeout constants
+        private const val TWENTY_FOUR_HOURS_IN_SECONDS = 86400.0f
+    }
     private val TAG = "FlareRunnerController"
     
     // State management
@@ -176,7 +180,7 @@ class FlareRunnerController(
                         "app_version" to context.packageManager.getPackageInfo(context.packageName, 0).versionName
                     ),
                     userInfo = emptyMap(),
-                    jobTimeout = 86400.0f  // 24 hours
+                    jobTimeout = TWENTY_FOUR_HOURS_IN_SECONDS
                 )
                 
                 flareRunner = runner
