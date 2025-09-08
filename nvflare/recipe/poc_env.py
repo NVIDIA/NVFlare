@@ -87,6 +87,7 @@ class POCEnv(ExecEnv):
         docker_image: str = None,
         project_conf_path: str = "",
         username: str = DEFAULT_ADMIN_USER,
+        extra: dict = None,
     ):
         """Initialize POC execution environment.
 
@@ -100,7 +101,10 @@ class POCEnv(ExecEnv):
             project_conf_path (str, optional): Path to the project configuration file. Defaults to "".
                 If specified, 'number_of_clients','clients' and 'docker' specific options will be ignored.
             username (str, optional): Admin user. Defaults to "admin@nvidia.com".
+            extra: extra env info.
         """
+        super().__init__(extra)
+
         v = _PocEnvValidator(
             num_clients=num_clients,
             clients=clients,
