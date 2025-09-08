@@ -3,7 +3,7 @@ Hello TensorFlow
 
 This example demonstrates how to use `NVIDIA FLARE <https://nvflare.readthedocs.io/en/main/index.html>`_ with TensorFlow to train an image classifier using federated averaging (`FedAvg <https://arxiv.org/abs/1602.05629>`_). TensorFlow serves as the deep learning training framework in this example.
 
-For detailed documentation, see the `Hello TensorFlow <https://nvflare.readthedocs.io/en/main/examples/hello_tf_job_api.html#hello-tf-job-api>`_ example page.
+For detailed documentation, see the `Hello TensorFlow <https://www.tensorflow.org/datasets/catalog/mnist>`_ example page.
 
 We recommend using the `NVIDIA TensorFlow docker <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow>`_ for GPU support. If GPU is not required, a Python virtual environment is sufficient.
 
