@@ -174,6 +174,7 @@ class ModelQuantizer(DXOFilter):
                             values = quantized.cpu().numpy()
                         elif source_data_format == "torch":
                             values = quantized.cpu()
+                    params[param_name] = values
             else:
                 # if numpy, first convert numpy array to tensor
                 values_tensor = self.to_torch_tensor(values).cpu()
