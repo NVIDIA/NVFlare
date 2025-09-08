@@ -41,7 +41,7 @@ def main():
         "sum": {},
         "stddev": {},
         "histogram": {"*": {"bins": 20}, "Age": {"bins": 20, "range": [0, 100]}},
-        "quantile": {"*": [0.1, 0.5, 0.9], "Age": [0.1, 0.5, 0.9]},
+        "quantile": {"*": [0.1, 0.5, 0.9]},
     }
     # define local stats generator
     df_stats_generator = AdultStatistics(filename="data.csv", data_root_dir=data_root_dir)
