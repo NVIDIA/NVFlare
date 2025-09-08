@@ -11,7 +11,6 @@ import com.nvidia.nvflare.sdk.core.Context as FlareContext
 import com.nvidia.nvflare.sdk.core.DataSource
 import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.Dataset
-import com.nvidia.nvflare.sdk.core.Connection
 
 
 import kotlinx.coroutines.CoroutineScope
@@ -77,18 +76,7 @@ class FlareRunnerController(
             "supported_jobs" to supportedJobs.map { it.value },
             "methods" to listOf("cnn", "xor")
         )
-    
-    /**
-     * Create a connection to the NVFlare server
-     */
-    private fun createConnection(): Connection {
-        val connection = Connection(context)
-        connection.hostname.postValue(serverHost)
-        connection.port.postValue(serverPort)
-        connection.setCapabilities(capabilities)
-        return connection
-    }
-    
+
     fun toggleJob(job: SupportedJob) {
         if (supportedJobs.contains(job)) {
             supportedJobs = supportedJobs - job

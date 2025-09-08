@@ -21,7 +21,7 @@ import com.google.gson.JsonObject
 import okhttp3.HttpUrl
 import com.google.gson.JsonPrimitive
 import java.security.SecureRandom
-import java.security.SSLContext
+import javax.net.ssl.SSLContext
 import java.security.cert.X509Certificate
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
