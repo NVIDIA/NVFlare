@@ -47,4 +47,4 @@ Self-Paced Learning
 - For a comprehensive guide, see the :ref:`self-paced-learning` documentation.
 - 12-chapter course: in-depth overview of FLARE, covering running federated learning applications, algorithms, system architecture, experimental tracking, system monitoring, and industrial applications.
 - Each notebook can be run independently, but sequential learning is recommended.
-- Over 100 notebooks and 88 videos: a thorough guide to federated learning with FLARE.
+- Over 100 notebooks and 80 videos: a thorough guide to federated learning with FLARE.
