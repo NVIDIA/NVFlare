@@ -122,35 +122,82 @@ class Connection(private val context: Context) {
         this.allowSelfSignedCerts = allow
         updateHttpClient()
     }
+    
+    /**
+     * WARNING: This method creates a trust manager that accepts ALL certificates without validation.
+     * This is a CRITICAL SECURITY VULNERABILITY and should NEVER be used in production.
+     * 
+     * Use cases where this might be acceptable:
+     * - Development environments with self-signed certificates
+     * - Testing environments with controlled network access
+     * - Internal networks where security risks are understood and accepted
+     * 
+     * For production use, consider:
+     * - Certificate pinning
+     * - Proper certificate validation
+     * - Using a trusted certificate authority
+     * - Implementing custom certificate validation logic
+     */
+    private fun createInsecureTrustManager(): X509TrustManager {
+        return object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+                Log.w(TAG, "SECURITY WARNING: Accepting client certificate without validation")
+            }
+            
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+                Log.w(TAG, "SECURITY WARNING: Accepting server certificate without validation")
+            }
+            
+            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+        }
+    }
 
     private fun updateHttpClient() {
         val builder = OkHttpClient.Builder()
         
         if (allowSelfSignedCerts) {
             try {
-                // Trust all certificates for self-signed certs
-                val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-                    override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
-                    override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
-                    override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-                })
+                // ⚠️  CRITICAL SECURITY WARNING ⚠️
+                // This implementation DISABLES ALL CERTIFICATE VALIDATION
+                // This creates MASSIVE security vulnerabilities and should ONLY be used in:
+                // - Development environments with self-signed certificates
+                // - Testing environments with controlled network access
+                // - Internal networks where security risks are understood and accepted
+                // 
+                // 🚨 PRODUCTION WARNING: This disables all certificate validation! 🚨
+                // This makes the application vulnerable to:
+                // - Man-in-the-middle attacks
+                // - Certificate spoofing
+                // - Data interception and decryption
+                // - Expired/revoked certificate acceptance
+                // 
+                // For production use, implement proper certificate validation or pinning!
+                Log.e(TAG, "🚨 SECURITY WARNING: Using insecure trust manager that accepts ALL certificates!")
+                Log.e(TAG, "🚨 This creates critical security vulnerabilities in production environments!")
+                
+                val trustAllCerts = arrayOf<TrustManager>(createInsecureTrustManager())
                 
                 val sslContext = SSLContext.getInstance("TLS")
                 sslContext.init(null, trustAllCerts, SecureRandom())
                 
                 builder.sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
                 
-                // Implement proper hostname verification for self-signed certificates
+                // Use custom hostname verification for self-signed certificates
                 builder.hostnameVerifier { hostname, session ->
-                    if (allowSelfSignedCerts) {
-                        verifyHostname(hostname, session)
-                    } else {
-                        // Use default hostname verification for regular certificates
-                        javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(hostname, session)
-                    }
+                    verifyHostname(hostname, session)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to configure SSL: ${e.message}")
+                Log.e(TAG, "Failed to configure SSL for self-signed certificates: ${e.message}")
+            }
+        } else {
+            // For regular certificates, use default OkHttp SSL configuration
+            // This provides proper certificate validation and security
+            Log.d(TAG, "Using default SSL configuration for regular certificates")
+            
+            // Configure hostname verification for regular certificates
+            builder.hostnameVerifier { hostname, session ->
+                // Use default hostname verification for regular certificates
+                javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(hostname, session)
             }
         }
         
