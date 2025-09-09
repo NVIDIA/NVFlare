@@ -82,18 +82,21 @@ TensorFlow Keras API.
 Model
 -----
 
-In TensorFlow, we define a simple model via Keras API:
 
-.. code-block:: python
+The model.py file defines a simple neural network using TensorFlow’s Keras API. The Net model is a sequential architecture designed for image classification, featuring:
 
-   class Net(models.Sequential):
-       def __init__(self, input_shape=(None, 28, 28)):
-           super().__init__()
-           self._input_shape = input_shape
-           self.add(layers.Flatten())
-           self.add(layers.Dense(128, activation="relu"))
-           self.add(layers.Dropout(0.2))
-           self.add(layers.Dense(10))
+- Flatten Layer: Prepares input data for dense layers.
+- Dense Layer: 128 units with ReLU activation for non-linearity.
+- Dropout Layer: 20% dropout rate to mitigate overfitting.
+- Output Layer: 10 units for classifying MNIST digits.
+
+
+.. literalinclude:: ../../../examples/hello-world/hello-cyclic/model.py
+    :language: python
+    :linenos:
+    :caption: Model (model.py)
+    :lines: 14-
+
 
 Client Code
 -----------
