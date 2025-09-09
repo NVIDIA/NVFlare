@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 import time
 from typing import Optional
 
@@ -56,9 +57,10 @@ class ModelUpdateAssessor(Assessor):
         self.model_manager = None
         self.device_manager = None
         self.max_model_version = max_model_version
+        self.update_lock = threading.Lock()
         self.device_wait_timeout = device_wait_timeout
         self.device_wait_start_time = None
-        self._last_device_status_log_time = 0
+        self._last_device_status_log_time = time.time()
         self.device_status_log_interval = device_status_log_interval
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
 
@@ -92,29 +94,40 @@ class ModelUpdateAssessor(Assessor):
                 )
                 return True
 
-            else:
-                self._log_device_wait_timeout(fl_ctx)
             return False
         except Exception as e:
             self.log_error(fl_ctx, f"Error checking device timeout: {e}")
             return False
 
-    def _log_device_wait_timeout(self, fl_ctx: FLContext):
+    def _log_device_status(self, fl_ctx: FLContext):
+        """Log device status information independently of timeout logic."""
+        if self.device_status_log_interval is None:
+            return
+
         current_time = time.time()
         elapsed = current_time - self._last_device_status_log_time
+
         if elapsed >= self.device_status_log_interval:
-            remaining_time = self.device_wait_timeout - (current_time - self.device_wait_start_time)
             usable_devices = set(self.device_manager.available_devices.keys()) - set(
                 self.device_manager.used_devices.keys()
             )
+
+            # Add timeout info if we're actually waiting with a timeout
+            timeout_msg = ""
+            if self.device_wait_start_time is not None and self.device_wait_timeout is not None:
+                remaining_time = self.device_wait_timeout - (current_time - self.device_wait_start_time)
+                timeout_msg = f" Timeout in {remaining_time:.1f} seconds."
+            elif self.device_wait_start_time is not None:
+                timeout_msg = " No timeout set (waiting indefinitely)."
+
             self.log_info(
                 fl_ctx,
-                f"Waiting for devices: "
+                f"Device Status: "
                 f"Total: {len(self.device_manager.available_devices)}, "
                 f"usable: {len(usable_devices)}, "
-                f"expected: {self.device_manager.device_selection_size}. "
-                f"Timeout in {remaining_time:.1f} seconds.",
+                f"expected: {self.device_manager.device_selection_size}.{timeout_msg}",
             )
+
             self._last_device_status_log_time = current_time
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
@@ -166,6 +179,10 @@ class ModelUpdateAssessor(Assessor):
         return base_state.to_shareable()
 
     def process_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
+        with self.update_lock:
+            return self._do_child_update(update, fl_ctx)
+
+    def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
         report = StateUpdateReport.from_shareable(update)
 
         # Update available devices
@@ -246,7 +263,8 @@ class ModelUpdateAssessor(Assessor):
 
     def assess(self, fl_ctx: FLContext) -> Assessment:
         # Check if we're waiting for devices and timeout exceeded
-        if self.device_wait_start_time is not None and self._is_device_wait_timeout_exceeded(fl_ctx):
+        self._log_device_status(fl_ctx)
+        if self._is_device_wait_timeout_exceeded(fl_ctx):
             self.log_error(fl_ctx, "Job stopped due to insufficient devices joining within timeout period")
             return Assessment.WORKFLOW_DONE
         elif self.model_manager.current_model_version >= self.max_model_version:
