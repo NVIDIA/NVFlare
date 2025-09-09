@@ -3,25 +3,68 @@
 This example shows how to implement a federated binary
 classification via logistic regression with second-order Newton-Raphson optimization.
 
-
-
 ## Install NVFLARE and Dependencies
-Follow instructions
-[here](../../README.md#set-up-a-virtual-environment)
-to set up a virtual environment for `nvflare` examples and install
-dependencies for this example.
+
+for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
+```
+pip install nvflare
+
+```
+Install the dependency
+
+```
+pip install -r requirements.txt
+```
+
+## Code Structure
+first get the example code from github:
+
+```
+git clone https://github.com/NVIDIA/NVFlare.git
+```
+then navigate to the hello-lr directory:
+
+```
+git switch <release branch>
+cd examples/hello-world/hello-lr
+```
+``` bash
+hello-lr
+    |
+    |-- client.py         # client local training script
+    |-- job.py            # job recipe that defines client and server configurations
+    |-- download_data.py  # download dataset
+    |-- prepare_data.py   # prepare data to convert to numpy
+    |-- requirements.txt  # dependencies
+```
 
 
+## Data
 
-## Dataset
+The [UCI Heart Disease dataset](https://archive.ics.uci.edu/dataset/45/heart+disease) is
+used in this example. 
 
-The [UCI Heart Disease
-dataset](https://archive.ics.uci.edu/dataset/45/heart+disease) is
-used in this example. Scripts are provided to download and process the
-dataset as described
-[here](https://github.com/owkin/FLamby/tree/main/flamby/datasets/fed_heart_disease). This
+
+**Publication Request:**
+
+This file describes the contents of the heart-disease directory.
+ 
+The authors of the databases have requested:
+
+      ...that any publications resulting from the use of the data include the 
+      names of the principal investigator responsible for the data collection
+      at each institution.  They would be:
+
+       1. Hungarian Institute of Cardiology. Budapest: Andras Janosi, M.D.
+       2. University Hospital, Zurich, Switzerland: William Steinbrunn, M.D.
+       3. University Hospital, Basel, Switzerland: Matthias Pfisterer, M.D.
+       4. V.A. Medical Center, Long Beach and Cleveland Clinic Foundation:
+	  Robert Detrano, M.D., Ph.D.
+ 
+
 dataset contains samples from 4 sites, split into training and
 testing sets as described below:
+
 |site         | sample split                          |
 |-------------|---------------------------------------|
 |Cleveland    | train: 199 samples, test: 104 samples |
@@ -32,11 +75,28 @@ testing sets as described below:
 The number of features in each sample is 13.
 
 
+### Features 
+
+| Variable Name | Role    | Type        | Demographic | Description                                           | Units  | Missing Values |
+|---------------|---------|-------------|-------------|-------------------------------------------------------|--------|----------------|
+| age           | Feature | Integer     | Age         | years                                                 |        | no             |
+| sex           | Feature | Categorical | Sex         |                                                       |        | no             |
+| cp            | Feature | Categorical |             |                                                       |        | no             |
+| trestbps      | Feature | Integer     |             | resting blood pressure (on admission to the hospital) | mm Hg  | no             |
+| chol          | Feature | Integer     |             | serum cholestoral                                     | mg/dl  | no             |
+| fbs           | Feature | Categorical |             | fasting blood sugar > 120 mg/dl                       |        | no             |
+| restecg       | Feature | Categorical |             |                                                       |        | no             |
+| thalach       | Feature | Integer     |             | maximum heart rate achieved                           |        | no             |
+| exang         | Feature | Categorical |             | exercise induced angina                               |        | no             |
+| oldpeak       | Feature | Integer     |             | ST depression induced by exercise relative to rest    |        | no             |
+| slope         | Feature | Categorical |             |                                                       |        | no             |
+| ca            | Feature | Integer     |             | number of major vessels (0-3) colored by flourosopy   |        | yes            |
+| thal          | Feature | Categorical |             |                                                       |        | yes            |
+| num           | Target  | Integer     |             | diagnosis of heart disease                            |        | no             |
 
 ## Model
 
-The [Newton-Raphson
-optimization](https://en.wikipedia.org/wiki/Newton%27s_method) problem
+The [Newton-Raphson optimization](https://en.wikipedia.org/wiki/Newton%27s_method) problem
 can be described as follows.
 
 In a binary classification task with logistic regression, the
@@ -95,7 +155,7 @@ script.
   above. This is implemented in the
   [`train_newton_raphson()`](./client.py) method. Each client then 
   sends the computed results (always in `FLModel` format) to server for aggregation, 
-  using `flare.send()`  API.
+  using `flare.send()` API.
 
 Each client site corresponds to a site listed in the data table above.
 
@@ -109,17 +169,27 @@ FL system, such as receiving and send `FLModel`.
 We leverage a builtin FLARE logistic regression with Newton Raphson method. 
 the server side fedavg class is located at `nvflare.app_common.workflows.lr.fedavg.FedAvgLR`
 
-## Job 
-    toddo
+## Job
+```
+  recipe = FedAvgLrRecipe(
+  num_rounds=num_rounds,
+  damping_factor=0.8,
+  num_features=13,
+  train_script="client.py",
+  train_args=f"--data_root {data_root}",
+  )
+  env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+  run = recipe.execute(env)
+  # run.get_result()
+```
 
 ## Download and prepare data
 
 Execute the following script
 ```
-python prepare_data.py download
-python prepare_data.py prepare
+python download_data.py 
+python prepare_data.py 
 ```
-
 This will download the heart disease dataset under
 `/tmp/flare/dataset/heart_disease_data/`
 

@@ -23,8 +23,9 @@ from mlflow.tracking.client import MlflowClient
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsData, AnalyticsDataType, LogWriterName, TrackConst
 from nvflare.apis.dxo import from_shareable
-from nvflare.apis.fl_constant import ProcessType
+from nvflare.apis.fl_constant import ProcessType, ReservedKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
@@ -39,6 +40,14 @@ class MlflowConstants:
 
 def get_current_time_millis():
     return int(round(time.time() * 1000))
+
+
+def _get_job_name_from_fl_ctx(fl_ctx: FLContext, default=None):
+    # TODO: it might be good to have a function in fl_context to get the job name
+    job_meta = fl_ctx.get_prop(ReservedKey.JOB_META)
+    if job_meta and isinstance(job_meta, dict):
+        return job_meta.get(JobMetaKey.JOB_NAME, default)
+    return default
 
 
 class MLflowReceiver(AnalyticsReceiver):
@@ -73,6 +82,8 @@ class MLflowReceiver(AnalyticsReceiver):
                 less delay. Keep in mind that reducing the buffer_flush_time will potentially cause high
                 traffic to the MLflow tracking server, which in some cases can actually cause more latency.
         """
+        if not isinstance(tracking_uri, (str, type(None))):
+            raise ValueError("tracking_uri needs to be either None or str")
         if events is None:
             events = ["fed." + ANALYTIC_EVENT_TYPE]
         super().__init__(events=events)
@@ -80,7 +91,6 @@ class MLflowReceiver(AnalyticsReceiver):
 
         self.kw_args = kw_args if kw_args else {}
         self.tracking_uri = tracking_uri
-        self.mlflow = mlflow
         self.mlflow_clients: Dict[str, MlflowClient] = {}
         self.experiment_id = None
         self.run_ids = {}
@@ -164,8 +174,9 @@ class MLflowReceiver(AnalyticsReceiver):
                 )
 
                 job_id_tag = self._get_job_id_tag(fl_ctx)
+                job_name = _get_job_name_from_fl_ctx(fl_ctx)
 
-                run_name = self._get_run_name(self.kw_args, site_name, job_id_tag)
+                run_name = self._get_run_name(self.kw_args, site_name, job_id_tag, job_name)
                 tags = self._get_run_tags(self.kw_args, job_id_tag, run_name)
                 run = mlflow_client.create_run(experiment_id=self.experiment_id, run_name=run_name, tags=tags)
                 self.run_ids[site_name] = run.info.run_id
@@ -179,9 +190,10 @@ class MLflowReceiver(AnalyticsReceiver):
                 AnalyticsDataType.TAGS: [],
             }
 
-    def _get_run_name(self, kwargs: dict, site_name: str, job_id_tag: str):
+    def _get_run_name(self, kwargs: dict, site_name: str, job_id_tag: str, job_name: str):
         run_name = kwargs.get(TrackConst.RUN_NAME, DEFAULT_RUN_NAME)
-        return f"{site_name}-{job_id_tag[:6]}-{run_name}"
+        job_name_str = job_name if job_name is not None else "unknown_job"
+        return f"{site_name}-{job_id_tag[:6]}-{job_name_str}-{run_name}"
 
     def _get_run_tags(self, kwargs, job_id_tag: str, run_name: str):
         run_tags = self._get_tags(TrackConst.RUN_TAGS, kwargs=kwargs)
