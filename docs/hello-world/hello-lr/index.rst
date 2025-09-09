@@ -215,6 +215,13 @@ The training logic remains similar to the centralized logic: load data, perform 
 differences in the federated code are related to interaction with the
 FL system, such as receiving and send `FLModel`.
 
+
+.. literalinclude:: ../../../examples/hello-world/hello-lr/client.py
+    :language: python
+    :linenos:
+    :caption: Client code (client.py)
+    :lines: 14-
+
 Server Side
 -----------
 
@@ -224,10 +231,10 @@ the server side fedavg class is located at `nvflare.app_common.workflows.lr.feda
 Job
 ---
 
-.. literalinclude:: ../../../examples/hello-world/hello-lr/client.py
+.. literalinclude:: ../../../examples/hello-world/hello-lr/job.py
     :language: python
     :linenos:
-    :caption: model.py
+    :caption: Job Recipe (job.py)
     :lines: 14-
 
 
