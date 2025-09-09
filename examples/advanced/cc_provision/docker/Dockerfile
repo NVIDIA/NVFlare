@@ -9,7 +9,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install zip
 RUN pip install -U pip
 RUN pip install git+https://github.com/NVIDIA/NVFlare.git@main
 COPY application_code.zip application_code.zip
-RUN nvflare pre-install install application_code.zip
+RUN nvflare pre-install install -a application_code.zip
 
 ENTRYPOINT ["/opt/nvflare/startup/sub_start.sh"]
 

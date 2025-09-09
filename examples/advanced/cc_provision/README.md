@@ -6,7 +6,7 @@ This guide explains how to use **CC (Confidential Computing) Provision** in NVFL
 ## 0. Prepare application docker image workload
 
 In CC, we don't allow custom code, all the codes and required libs must be built-in in the docker image.
-In this example, we show you how to build NVFlare docker images in `docker/`
+In this example, we show you how to build NVFlare docker images in [docker/](docker/README.md)
 
 
 ## 1. Define CC Configuration per Site (`cc_config`)
