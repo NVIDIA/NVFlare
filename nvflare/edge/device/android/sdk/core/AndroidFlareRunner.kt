@@ -50,7 +50,6 @@ class AndroidFlareRunner(
     private var jobId: String? = null
     private var cookie: Any? = null
     private var currentJobId: String? = null
-
     private val resolverRegistryMap: MutableMap<String, Class<*>> = HashMap()
 
     init {
@@ -86,7 +85,7 @@ class AndroidFlareRunner(
     /**
      * Get Android context for platform-specific operations.
      */
-    private fun getAndroidContext(): android.content.Context {
+    private fun getAndroidContext(): AndroidContext {
         return context
     }
 

@@ -29,7 +29,7 @@ class DeviceManager(FLComponent, ABC):
     def __init__(self):
         FLComponent.__init__(self)
         """Initialize the DeviceManager.
-        DeviceManager keeps track of two dicts: 
+        DeviceManager keeps track of two dicts:
         - current_selection for devices of current task distribution
         - available_devices containing all devices that are available for selection
         """
