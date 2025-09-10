@@ -55,7 +55,7 @@ class BaseState:
         training again, it must be assigned a different global model - it does not make much sense to select a device for training
         again with the same model, because it will lead to almost the same update twice (unless the data on the device is changed during the two selections, which is unlikely).
 
-        The devices in the current selection could have different model_ids because they are selected at different time points.
+        The devices in the current selection could have different selection_ids because they are selected at different time points.
 
         Args:
             model_version: version of model. 0 means no model available.
