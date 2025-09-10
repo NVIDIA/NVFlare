@@ -24,8 +24,9 @@ from nvflare.edge.assessors.model_update import ModelUpdateAssessor
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.tools.edge_job import EdgeJob
 from nvflare.edge.widgets.evaluator import GlobalEvaluator
-from nvflare.fuel.utils.validation_utils import check_positive_int, check_positive_number
-from nvflare.recipe.spec import Recipe
+from nvflare.recipe.spec import ExecEnv, Recipe
+
+DEVICE_SIMULATION_ENV_KEY = "device_simulation"
 
 
 class ModelManagerConfig:
@@ -53,28 +54,15 @@ class ModelManagerConfig:
 
     def __init__(
         self,
-        max_num_active_model_versions: float = float("inf"),
+        max_num_active_model_versions: int = 3,
         max_model_version: int = 20,
-        update_timeout: int = 5.0,
+        update_timeout: int = 5,
         num_updates_for_model: int = 100,
-        max_model_history: float = float("inf"),
+        max_model_history: int = 10,
         staleness_weight: bool = False,
         global_lr: float = 0.01,
     ):
-
-        check_positive_int("max_model_version", max_model_version)
-        check_positive_int("num_updates_for_model", num_updates_for_model)
-        check_positive_number("update_timeout", update_timeout)
-        check_positive_number("global_lr", global_lr)
-
-        # check the validity of max_num_active_model_versions and convert to int if it is a positive integer
-        if max_num_active_model_versions <= 0:
-            raise ValueError("max_num_active_model_versions must be a positive integer or float('inf')")
-        elif max_num_active_model_versions == float("inf"):
-            self.max_num_active_model_versions = float("inf")
-        else:
-            self.max_num_active_model_versions = int(max_num_active_model_versions)
-
+        self.max_num_active_model_versions = max_num_active_model_versions
         self.max_model_version = max_model_version
         # check if max_model_version is greater than 2
         if max_model_version < 2:
@@ -82,14 +70,7 @@ class ModelManagerConfig:
 
         self.update_timeout = update_timeout
         self.num_updates_for_model = num_updates_for_model
-
-        # check the validity of max_model_history and convert to int if it is a positive integer
-        if max_model_history <= 0:
-            raise ValueError("max_model_history must be a positive integer or float('inf')")
-        elif max_model_history == float("inf"):
-            self.max_model_history = float("inf")
-        else:
-            self.max_model_history = int(max_model_history)
+        self.max_model_history = max_model_history
         self.staleness_weight = staleness_weight
         self.global_lr = global_lr
 
@@ -182,7 +163,7 @@ class EvaluatorConfig:
         self.custom_dataset = custom_dataset
 
 
-class EdgeRecipe(Recipe):
+class EdgeFedBuffRecipe(Recipe):
     """Recipe class for cross-edge federated learning using NVFlare's hierarchical edge system.
 
     This class provides a high-level interface for configuring cross-edge
@@ -208,7 +189,7 @@ class EdgeRecipe(Recipe):
             device_reuse=False
         )
 
-        recipe = EdgeRecipe(
+        recipe = EdgeFedBuffRecipe(
             job_name="my_edge_job",
             model=MyModel(),
             model_manager_config=model_manager_config,
@@ -253,12 +234,31 @@ class EdgeRecipe(Recipe):
         # check if model_manager_config.num_updates_for_model is smaller than device_manager_config.device_selection_size
         if model_manager_config.num_updates_for_model > device_manager_config.device_selection_size:
             raise ValueError(
-                "model_manager_config.num_updates_for_model needs to be smaller than or equal to device_manager_config.device_selection_size, otherwise the server will never have enough updates to update the global model"
+                f"model_manager_config.num_updates_for_model {model_manager_config.num_updates_for_model} "
+                f"needs to be smaller than or equal to device_manager_config.device_selection_size {device_manager_config.device_selection_size}, "
+                "otherwise the server will never have enough updates to update the global model"
             )
 
         job = self.create_job()
         self._configure_job(job)
         Recipe.__init__(self, job)
+
+    @staticmethod
+    def _configure_simulation(job, c: SimulationConfig):
+        job.configure_simulation(c.task_processor, c.job_timeout, c.num_devices, c.num_workers)
+
+    def process_env(self, env: ExecEnv):
+        simulation_config = env.get_extra_prop(DEVICE_SIMULATION_ENV_KEY)
+        if not simulation_config:
+            return
+
+        if not isinstance(simulation_config, SimulationConfig):
+            raise ValueError(
+                f"invalid {DEVICE_SIMULATION_ENV_KEY} in env: expect SimulationConfig but got {type(simulation_config)}"
+            )
+
+        assert isinstance(self.job, EdgeJob)
+        self._configure_simulation(self.job, simulation_config)
 
     def create_job(self) -> EdgeJob:
         """Create a new EdgeJob instance for cross-edge federated learning.
@@ -288,8 +288,7 @@ class EdgeRecipe(Recipe):
             job.to_server(evaluator, id="evaluator")
 
         if self.simulation_config:
-            c = self.simulation_config
-            job.configure_simulation(c.task_processor, c.job_timeout, c.num_devices, c.num_workers)
+            self._configure_simulation(job, self.simulation_config)
 
         factory = ModelUpdateDXOAggrFactory()
         job.configure_client(

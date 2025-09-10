@@ -43,7 +43,7 @@ class BuffModelManager(ModelManager):
     def __init__(
         self,
         num_updates_for_model: int,
-        max_model_history: float = float("inf"),  # float to support inf, default is inf
+        max_model_history: int = None,
         global_lr: float = 1.0,
         staleness_weight: bool = False,
     ):
@@ -56,9 +56,9 @@ class BuffModelManager(ModelManager):
 
         Args:
             num_updates_for_model (int): Number of updates required before generating a new model version.
-            max_model_history (float): Maximum number of historical model versions to keep in memory.
+            max_model_history (int): Maximum number of historical model versions to keep in memory.
+                - None: keep every version until all devices processing a particular version report back.
                 - positive integer: keep only the latest n versions
-                - inf: keep every version until all devices processing a particular version report back.
             global_lr (float): Global learning rate for model aggregation, default is 1.0.
             staleness_weight (bool): Whether to apply staleness weighting to model updates, default is False.
         """
@@ -67,13 +67,6 @@ class BuffModelManager(ModelManager):
         self.num_updates_for_model = num_updates_for_model
         self.num_updates_counter = 0
         self.max_model_history = max_model_history
-        # check the validity of max_model_history and convert to int if it is a positive integer
-        if max_model_history <= 0:
-            raise ValueError("max_model_history must be a positive integer or inf")
-        elif max_model_history == float("inf"):
-            self.max_model_history = float("inf")
-        else:
-            self.max_model_history = int(max_model_history)
         self.global_lr = global_lr
         self.staleness_weight = staleness_weight
 
@@ -87,8 +80,11 @@ class BuffModelManager(ModelManager):
         # - either not in versions_to_keep
         # - or too old (current_model_version - v >= max_model_history)
         versions_to_remove = []
+
         for v in self.updates.keys():
-            if v not in versions_to_keep or self.current_model_version - v >= self.max_model_history:
+            if v not in versions_to_keep:
+                versions_to_remove.append(v)
+            if self.max_model_history and self.current_model_version - v >= self.max_model_history:
                 versions_to_remove.append(v)
 
         # Remove the identified versions
