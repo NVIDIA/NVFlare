@@ -48,6 +48,8 @@ fun MainScreen() {
     var status by remember { mutableStateOf(TrainingStatus.IDLE) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var supportedJobsState by remember { mutableStateOf(flareRunnerController.supportedJobs) }
+    var useHttpsState by remember { mutableStateOf(flareRunnerController.useHttps) }
+    var allowSelfSignedCertsState by remember { mutableStateOf(flareRunnerController.allowSelfSignedCerts) }
 
     
     // Get IP address
@@ -144,8 +146,9 @@ fun MainScreen() {
                         modifier = Modifier.weight(1f)
                     )
                     Switch(
-                        checked = flareRunnerController.useHttps,
+                        checked = useHttpsState,
                         onCheckedChange = { checked ->
+                            useHttpsState = checked
                             flareRunnerController.useHttps = checked
                         }
                     )
@@ -161,8 +164,9 @@ fun MainScreen() {
                         modifier = Modifier.weight(1f)
                     )
                     Switch(
-                        checked = flareRunnerController.allowSelfSignedCerts,
+                        checked = allowSelfSignedCertsState,
                         onCheckedChange = { checked ->
+                            allowSelfSignedCertsState = checked
                             flareRunnerController.allowSelfSignedCerts = checked
                         }
                     )
