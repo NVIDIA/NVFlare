@@ -170,19 +170,17 @@ class BuffModelManager(ModelManager):
                 continue
 
             # Check if version is too old before accepting
-            if self.current_model_version - model_version >= self.max_model_history:
-                self.log_warning(
-                    fl_ctx,
-                    f"dropped child update version {model_version}. Current version {self.current_model_version}. Max history {self.max_model_history}",
-                )
-                continue
+            if self.max_model_history:
+                # if max_model_history is set, output warning for updates that are too old
+                if self.current_model_version - model_version >= self.max_model_history:
+                    self.log_warning(
+                        fl_ctx,
+                        f"dropped child update version {model_version}. Current version {self.current_model_version}. Max history {self.max_model_history}",
+                    )
+                    continue
 
             # Accept the update and aggregate it to the corresponding model version
             model_state = self.updates.get(model_version)
-            if not model_state:
-                self.log_error(fl_ctx, f"bad child update version {model_version}: no such model version")
-                continue
-
             accepted = model_state.accept(model_update, fl_ctx)
             self.log_info(
                 fl_ctx,
