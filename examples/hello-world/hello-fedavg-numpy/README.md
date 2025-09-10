@@ -1,36 +1,95 @@
-# Hello FedAvg NumPy
- 
-This example showcases Federated Averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) with NumPy.  
+# Hello FedAvg with NumPy
 
-> **_NOTE:_** This example uses a NumPy-based trainer and will generate its data within the code.
+This example demonstrates federated learning with NumPy using NVIDIA FLARE. Multiple clients collaboratively train a model without sharing their data.
 
-You can follow the [Getting Started with NVFlare (NumPy)](hello-fedavg-numpy_getting_started.ipynb)
-for a detailed walkthrough of the basic concepts.
+## Quick Start
 
-See the [Hello FedAvg with NumPy](https://nvflare.readthedocs.io/en/main/examples/hello_fedavg_numpy.html) example documentation page for details on this
-example.
-
-To run this example with the FLARE API, you can follow the [hello_world notebook](../hello_world.ipynb), or you can quickly get
-started with the following:
-
-### 1. Install NVIDIA FLARE
-
-Follow the [Installation](../../getting_started/README.md) instructions.
-
-### 2. Run the experiment
-
-Run the script using the job API to create the job and run it with the simulator:
-
-```
-python3 fedavg_script_runner_hello-numpy.py
+**Recommended for new users:**
+```bash
+cd recipe-api-approach
+pip install -r requirements.txt
+python job.py
 ```
 
-### 3. Access the logs and results
+**Interactive learning with notebooks:**
+```bash
+cd job-api-approach
+pip install -r requirements.txt
+jupyter lab
+```
 
-You can find the running logs and results inside the simulator's workspace:
+## What This Example Does
+
+- **Model**: Simple NumPy array with weights `[[1, 2, 3], [4, 5, 6], [7, 8, 9]]`
+- **Training**: Each client adds 1 to each weight (simulating local training)
+- **Aggregation**: Server averages the client updates using FedAvg
+- **Result**: You'll see weights increase by 1 each round
+
+## Directory Structure
+
+```
+hello-fedavg-numpy/
+├── recipe-api-approach/       # Modern approach (recommended)
+│   ├── client.py              # Client training script
+│   ├── model.py               # NumPy model definition
+│   ├── job.py                 # Job configuration
+│   └── requirements.txt
+├── job-api-approach/          # Detailed learning approach
+│   ├── fedavg_script_runner_hello-numpy.py
+│   ├── hello-fedavg-numpy_getting_started.ipynb
+│   ├── hello-fedavg-numpy_flare_api.ipynb
+│   └── requirements.txt
+└── job-config-approach/       # Job configuration files (reference)
+    ├── jobs/hello-numpy-sag/
+    └── hello_numpy_sag.ipynb
+```
+
+## Choose Your Approach
+
+### Recipe API (Recommended)
+- **Best for**: New users, modern development
+- **Files**: `client.py`, `model.py`, `job.py`
+- **Why**: Clean, simple, follows FLARE best practices
+
+### Job API (Learning)
+- **Best for**: Understanding FLARE internals
+- **Files**: Scripts + Jupyter notebooks
+- **Why**: Interactive tutorials, detailed explanations
+
+### Job Config (Reference)
+- **Best for**: Understanding job configuration, legacy migration
+- **Files**: JSON configuration files + job structure
+- **Why**: Shows traditional FLARE job configuration patterns with `config_fed_client.json` and `config_fed_server.json`
+
+## Installation
 
 ```bash
-$ ls /tmp/nvflare/jobs/workdir/
+pip install nvflare numpy
 ```
 
-For how to use the FLARE API to run this app, see [this notebook](hello-fedavg-numpy_flare_api.ipynb).
+## What Each Approach Provides
+
+### Recipe API Approach
+- **Modern Python code**: Clean `client.py`, `model.py`, `job.py` structure
+- **Custom NumPy recipe**: `NumpyFedAvgRecipe` designed specifically for NumPy models
+- **Easy to understand**: Follows the same pattern as other hello-world examples
+- **Best for**: New users, modern development, learning FLARE concepts
+
+### Job API Approach  
+- **Interactive learning**: Jupyter notebooks with step-by-step tutorials
+- **Detailed explanations**: Shows how to build jobs programmatically
+- **FLARE internals**: Understanding of `FedJob`, `ScriptRunner`, and client API
+- **Best for**: Learning FLARE internals, understanding job configuration
+
+### Job Config Approach
+- **Traditional structure**: Complete FLARE job with JSON configuration files
+- **Configuration examples**: `config_fed_client.json` and `config_fed_server.json`
+- **Legacy patterns**: Shows how FLARE jobs were traditionally configured
+- **Best for**: Understanding job configuration, legacy migration, reference
+
+## Next Steps
+
+1. Run the recipe API example
+2. Explore the notebooks for deeper understanding
+3. Try other hello-world examples (hello-pt, hello-tf)
+4. Move to advanced examples when ready
