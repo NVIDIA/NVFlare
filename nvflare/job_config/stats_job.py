@@ -28,7 +28,7 @@ from nvflare.app_common.workflows.statistics_controller import StatisticsControl
 class StatsJob(FedJob):
     def __init__(
         self,
-        job_name: str,
+        name: str,
         statistic_configs: dict,
         stats_generator: Statistics,
         output_path: str,
@@ -37,10 +37,9 @@ class StatsJob(FedJob):
         max_noise_level=0.3,
         max_bins_percent=10,
     ):
-        super().__init__()
+        super().__init__(name=name)
         self.writer_id = "stats_writer"
         self.stats_generator_id_prefix = "stats_generator"
-        self.job_name = job_name
         self.stats_generator = stats_generator
         self.statistic_configs = statistic_configs
         self.output_path = output_path

@@ -34,11 +34,7 @@ np.random.seed(0)
 
 
 def format_instruction(example):
-    output_texts = []
-    for i in range(len(example["input"])):
-        text = f"### Instruction: Generate Output according to the information and question given by Input. ### Input:{example['input'][i]} ### Response: {example['output'][i]}"
-        output_texts.append(text)
-    return output_texts
+    return f"### Instruction: Generate Output according to the information and question given by Input. ### Input:{example['input']} ### Response: {example['output']}"
 
 
 def main():
@@ -142,7 +138,7 @@ def main():
         warmup_ratio=0.03,
         lr_scheduler_type="constant",
         disable_tqdm=True,
-        max_seq_length=1024,
+        max_length=1024,
         save_total_limit=2,
         # safetensors has some issues in saving lm_head.weight, disable it for now
         save_safetensors=False,

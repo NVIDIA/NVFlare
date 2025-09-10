@@ -43,8 +43,8 @@ public class NVFlareRunner: ObservableObject {
         deviceInfo: [String: String],
         userInfo: [String: String],
         jobTimeout: TimeInterval,
-        hostname: String = "",
-        port: Int = 0,
+        serverURL: String,
+        allowSelfSignedCerts: Bool = false,
         inFilters: [NVFlareFilter]? = nil,
         outFilters: [NVFlareFilter]? = nil,
         resolverRegistry: [String: ComponentCreator.Type]? = nil
@@ -64,15 +64,9 @@ public class NVFlareRunner: ObservableObject {
         print("NVFlareRunner: Dataset size: \(dataset.size())")
         
         // Convert NVFlareDataset to C++ using bridge
-        guard let cppDatasetPtr = SwiftDatasetBridge.createDatasetAdapter(dataset) else {
-            var errorMessage = "NVFlareRunner: Failed to create C++ dataset adapter!"
-            // Attempt to get more info from SwiftDatasetBridge if available
-            if let bridgeType = SwiftDatasetBridge.self as? AnyObject,
-               let lastError = (bridgeType.value(forKey: "lastErrorMessage") as? String), !lastError.isEmpty {
-                errorMessage += " Reason: \(lastError)"
-            } else {
-                errorMessage += " Dataset type: \(type(of: dataset)), size: \(dataset.size())"
-            }
+        let cppDatasetPtr = SwiftDatasetBridge.createDatasetAdapter(dataset)
+        guard cppDatasetPtr != nil else {
+            let errorMessage = "NVFlareRunner: Failed to create C++ dataset adapter! Dataset type: \(type(of: dataset)), size: \(dataset.size())"
             print(errorMessage)
             throw DatasetError.dataLoadFailed
         }
@@ -85,7 +79,7 @@ public class NVFlareRunner: ObservableObject {
         self.jobTimeout = jobTimeout
         self.appInFilters = inFilters
         self.appOutFilters = outFilters
-        self.connection = NVFlareConnection(hostname: hostname, port: port, deviceInfo: deviceInfo)
+        self.connection = NVFlareConnection(serverURL: serverURL, deviceInfo: deviceInfo, allowSelfSignedCerts: allowSelfSignedCerts)
         
         // Add built-in resolvers
         addBuiltinResolvers()
@@ -129,15 +123,22 @@ public class NVFlareRunner: ObservableObject {
     /// Add ExecuTorch-specific resolvers  
     private func addBuiltinResolvers() {
         resolverRegistry.merge([
-            "ETTrainer": ETTrainerExecutor.self,
-            "Trainer.DLTrainer": ETTrainerExecutor.self,  // Map server trainer type to ETTrainer
+            "ETTrainer": ETTrainerComponentResolver.self,
+            "Trainer.DLTrainer": ETTrainerComponentResolver.self,  // Map server trainer type to ETTrainer
         ]) { _, new in new }
     }
     
     
-    /// iOS implementation of job fetching
-    private func getJob(ctx: NVFlareContext, abortSignal: NVFlareSignal) async -> NVFlareJob? {
+    /// iOS implementation of job fetching with timeout
+    private func getJob(ctx: NVFlareContext, abortSignal: NVFlareSignal, sessionStartTime: Date) async -> NVFlareJob? {
         while !abortSignal.triggered {
+            // Check job timeout
+            let elapsedTime = Date().timeIntervalSince(sessionStartTime)
+            if elapsedTime >= jobTimeout {
+                print("NVFlareRunner: Job timeout exceeded (\(jobTimeout)s), stopping session")
+                return nil
+            }
+            
             do {
                 let jobResponse = try await connection.fetchJob(jobName: self.jobName)
                 
@@ -175,8 +176,22 @@ public class NVFlareRunner: ObservableObject {
             do {
                 let taskResponse = try await connection.fetchTask(jobId: jobId)
                 
-                if taskResponse.taskStatus == .done {
+                // Handle FSM transitions based on task status
+                if taskResponse.taskStatus.isTerminal {
+                    // DONE/INVALID/ERROR -> END
                     return TaskResult.sessionDone()
+                }
+                
+                if taskResponse.taskStatus.shouldLookForNewJob {
+                    // NO_JOB -> go back to getJob
+                    return TaskResult.jobCompleted()
+                }
+                
+                if taskResponse.taskStatus.shouldRetryTask {
+                    // RETRY/NO_TASK -> getTask (retry)
+                    let retryWait = taskResponse.retryWait ?? 5
+                    try await Task.sleep(nanoseconds: UInt64(retryWait) * 1_000_000_000)
+                    continue
                 }
                 
                 if taskResponse.taskStatus.shouldContinueTraining {
@@ -213,20 +228,39 @@ public class NVFlareRunner: ObservableObject {
         return TaskResult.sessionDone()
     }
     
-    /// iOS implementation of result reporting
-    private func reportResult(result: [String: Any], ctx: NVFlareContext, abortSignal: NVFlareSignal) async -> Bool {
+    /// iOS implementation of result reporting - handles FSM transitions
+    private func reportResult(result: [String: Any], ctx: NVFlareContext, abortSignal: NVFlareSignal) async -> ReportResultState {
         guard let jobId = self.jobId,
               let taskId = ctx[NVFlareContextKey.taskId] as? String,
               let taskName = ctx[NVFlareContextKey.taskName] as? String else {
-            return true
+            return .sessionDone
         }
         
         do {
-            try await connection.sendResult(jobId: jobId, taskId: taskId, taskName: taskName, weightDiff: result)
-            return false // Continue training
+            let resultResponse = try await connection.sendResult(jobId: jobId, taskId: taskId, taskName: taskName, weightDiff: result)
+            
+            // Handle FSM transitions based on reportResult response
+            if resultResponse.resultStatus.shouldContinueToTask {
+                // OK/NO_TASK -> getTask
+                return .continueTask
+            }
+            
+            if resultResponse.resultStatus.shouldGoBackToJob {
+                // NO_JOB -> getJob
+                return .lookForNewJob
+            }
+            
+            if resultResponse.resultStatus.isTerminal {
+                // DONE/INVALID/ERROR -> END
+                return .sessionDone
+            }
+            
+            // Unknown status - continue to next task by default
+            return .continueTask
+            
         } catch {
             print("Failed to report result: \(error)")
-            return true // Stop session on error
+            return .sessionDone // Stop session on error
         }
     }
     
@@ -255,6 +289,9 @@ public class NVFlareRunner: ObservableObject {
         let ctx = NVFlareContext()
         ctx[NVFlareContextKey.runner] = self
         
+        // Start job session timer
+        let sessionStartTime = Date()
+        
         print("NVFlareRunner: Storing dataset in context (NVFlareDataset converted to C++)")
         print("NVFlareRunner: NVFlareDataset size: \(dataset.size())")
         
@@ -265,9 +302,9 @@ public class NVFlareRunner: ObservableObject {
         
         ctx[NVFlareContextKey.dataset] = cppDataset
         
-        // Try to get job
-        guard let job = await getJob(ctx: ctx, abortSignal: abortSignal) else {
-            return true // No job for me
+        // Try to get job with timeout
+        guard let job = await getJob(ctx: ctx, abortSignal: abortSignal, sessionStartTime: sessionStartTime) else {
+            return true // No job for me or timeout exceeded
         }
         
         guard !job.jobName.isEmpty else {
@@ -314,6 +351,13 @@ public class NVFlareRunner: ObservableObject {
                 let taskResult = await getTask(ctx: ctx, abortSignal: abortSignal)
                 
                 if abortSignal.triggered { return true }
+                
+                // Handle FSM transitions
+                if taskResult.jobCompleted {
+                    print("Current job completed (NO_JOB) - looking for new jobs")
+                    return false  // Exit this job, continue session to look for new jobs
+                }
+                
                 guard let task = taskResult.task else { return taskResult.sessionDone }
                 
                 // Create new context for each task
@@ -383,9 +427,23 @@ public class NVFlareRunner: ObservableObject {
                 if abortSignal.triggered { return true }
                 
                 // Report result
-                let sessionDoneAfterReport = await reportResult(result: filteredOutput.toDict(), ctx: taskCtx, abortSignal: abortSignal)
-                if sessionDoneAfterReport { return sessionDoneAfterReport }
+                let reportState = await reportResult(result: filteredOutput.toDict(), ctx: taskCtx, abortSignal: abortSignal)
                 if abortSignal.triggered { return true }
+                
+                // Handle FSM transitions from reportResult
+                switch reportState {
+                case .continueTask:
+                    // OK/NO_TASK -> continue to next task (stay in task loop)
+                    continue
+                case .lookForNewJob:
+                    // NO_JOB -> go back to getJob (exit this job, look for new jobs)
+                    print("Result report indicates NO_JOB - looking for new jobs")
+                    return false
+                case .sessionDone:
+                    // DONE/INVALID/ERROR -> END
+                    print("Result report indicates session done")
+                    return true
+                }
             }
             return true
             

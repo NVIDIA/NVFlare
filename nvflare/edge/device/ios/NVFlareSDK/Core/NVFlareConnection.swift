@@ -8,13 +8,34 @@
 import Foundation
 import UIKit
 
+/// URLSession delegate for handling self-signed certificates
+private class SelfSignedCertDelegate: NSObject, URLSessionDelegate {
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        
+        // Check if this is a server trust challenge
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        
+        // For self-signed certificates, create credential with server trust
+        if let serverTrust = challenge.protectionSpace.serverTrust {
+            let credential = URLCredential(trust: serverTrust)
+            print("NVFlareConnection: Accepting self-signed certificate for \(challenge.protectionSpace.host)")
+            completionHandler(.useCredential, credential)
+        } else {
+            completionHandler(.performDefaultHandling, nil)
+        }
+    }
+}
+
 /// Main connection class for communicating with NVFlare server
 public class NVFlareConnection: ObservableObject {
-    @Published public var hostname: String = ""
-    @Published public var port: Int = 0
+    @Published public var serverURL: String = ""
     
     private let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
     private let configuredDeviceInfo: [String: String]
+    private let urlSession: URLSession
     
     // Device info passed from NVFlareRunner or default minimal info
     private var deviceInfo: [String: String] {
@@ -28,22 +49,28 @@ public class NVFlareConnection: ObservableObject {
     private let jobEndpoint = "job"
     private let taskEndpoint = "task"
     private let resultEndpoint = "result"
-    private let scheme = "http"
     private var capabilities: [String: Any] = ["methods": []]
     private var currentCookie: JSONValue?
 
     public var isValid: Bool {
-        return !hostname.isEmpty && port > 0 && port <= 65535
+        return !serverURL.isEmpty && URL(string: serverURL) != nil
     }
     
-    public var serverURL: String {
-        return "http://\(hostname):\(port)"
-    }
-    
-    public init(hostname: String = "", port: Int = 0, deviceInfo: [String: String] = [:]) {
-        self.hostname = hostname
-        self.port = port
+    public init(serverURL: String, deviceInfo: [String: String] = [:], allowSelfSignedCerts: Bool = false) {
+        self.serverURL = serverURL
         self.configuredDeviceInfo = deviceInfo
+        
+        // Create URLSession configuration
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30.0
+        config.timeoutIntervalForResource = 60.0
+        
+        // Create URLSession with or without delegate for self-signed certificates
+        if allowSelfSignedCerts {
+            self.urlSession = URLSession(configuration: config, delegate: SelfSignedCertDelegate(), delegateQueue: nil)
+        } else {
+            self.urlSession = URLSession(configuration: config)
+        }
     }
     
     func setCapabilities(_ capabilities: [String: Any]) {
@@ -65,7 +92,7 @@ public class NVFlareConnection: ObservableObject {
     }
     
     func fetchJob(jobName: String) async throws -> JobResponse {
-        guard let url = URL(string: "\(scheme)://\(hostname):\(port)/\(jobEndpoint)") else {
+        guard let url = URL(string: "\(serverURL)/\(jobEndpoint)") else {
             throw NVFlareError.jobFetchFailed
         }
         
@@ -94,7 +121,7 @@ public class NVFlareConnection: ObservableObject {
         print("Sending request: \(request.httpMethod!) \(request.url!)")
         print("Headers: \(request.allHTTPHeaderFields ?? [:])")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             print("Error: Response is not HTTPURLResponse")
@@ -126,16 +153,17 @@ public class NVFlareConnection: ObservableObject {
     }
     
     func fetchTask(jobId: String) async throws -> TaskResponse {
-        var urlComponents = URLComponents()
-        urlComponents.scheme = scheme
-        urlComponents.host = hostname
-        urlComponents.port = port
-        urlComponents.path = "/\(taskEndpoint)"
-        urlComponents.queryItems = [
+        guard let baseURL = URL(string: serverURL) else {
+            throw NVFlareError.taskFetchFailed("Invalid server URL")
+        }
+        
+        var urlComponents = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        urlComponents?.path = "/\(taskEndpoint)"
+        urlComponents?.queryItems = [
             URLQueryItem(name: "job_id", value: jobId)
         ]
         
-        guard let url = urlComponents.url else {
+        guard let url = urlComponents?.url else {
             throw NVFlareError.taskFetchFailed("Could not construct URL")
         }
         
@@ -166,7 +194,7 @@ public class NVFlareConnection: ObservableObject {
         print("Sending request: \(request.httpMethod!) \(request.url!)")
         print("Headers: \(request.allHTTPHeaderFields ?? [:])")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NVFlareError.taskFetchFailed("wrong response type")
@@ -200,19 +228,20 @@ public class NVFlareConnection: ObservableObject {
         }
     }
     
-    func sendResult(jobId: String, taskId: String, taskName: String, weightDiff: [String: Any]) async throws {
-        var urlComponents = URLComponents()
-        urlComponents.scheme = scheme
-        urlComponents.host = hostname
-        urlComponents.port = port
-        urlComponents.path = "/\(resultEndpoint)"
-        urlComponents.queryItems = [
+    func sendResult(jobId: String, taskId: String, taskName: String, weightDiff: [String: Any]) async throws -> ResultResponse {
+        guard let baseURL = URL(string: serverURL) else {
+            throw NVFlareError.trainingFailed("Invalid server URL")
+        }
+        
+        var urlComponents = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        urlComponents?.path = "/\(resultEndpoint)"
+        urlComponents?.queryItems = [
             URLQueryItem(name: "job_id", value: jobId),
             URLQueryItem(name: "task_id", value: taskId),
             URLQueryItem(name: "task_name", value: taskName)
         ]
         
-        guard let url = urlComponents.url else {
+        guard let url = urlComponents?.url else {
             throw NVFlareError.trainingFailed("Invalid URL")
         }
         
@@ -247,7 +276,7 @@ public class NVFlareConnection: ObservableObject {
         print("Sending request: \(request.httpMethod!) \(request.url!)")
         print("Headers: \(request.allHTTPHeaderFields ?? [:])")
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NVFlareError.trainingFailed("Invalid response")
@@ -258,8 +287,14 @@ public class NVFlareConnection: ObservableObject {
             print("Response Body: \(responseString)")
         }
         
-        guard httpResponse.statusCode == 200 else {
-            throw NVFlareError.trainingFailed("HTTP \(httpResponse.statusCode)")
+        // Parse the response regardless of status code - FSM needs to handle different statuses
+        do {
+            let resultResponse = try JSONDecoder().decode(ResultResponse.self, from: data)
+            print("Decoded ResultResponse: \(resultResponse)")
+            return resultResponse
+        } catch {
+            print("Failed to decode ResultResponse: \(error)")
+            throw NVFlareError.trainingFailed("decode error: \(error)")
         }
     }
-} 
+}

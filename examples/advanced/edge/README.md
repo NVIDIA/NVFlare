@@ -83,6 +83,22 @@ cd /tmp/nvflare/workspaces/edge_example/prod_00/scripts/
 
 By default, it will start listening on port 4321, feel free to adjust that.
 
+
+## Enable HTTPS with self-signed certs
+You can use OpenSSL to generate a cert, for example:
+
+```
+openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 \
+  -subj "/C=US/ST=State/L=City/O=YourOrg/CN=localhost"
+```
+
+Then please modify the start_rp.sh to the following:
+```
+python -m nvflare.edge.web.routing_proxy 443 lcp_map.json rootCA.pem --ssl-cert cert.pem --ssl-key key.pem
+```
+
+Remember to enable allow self signed certs from the device SDK side.
+
 ## ExecuTorch-based FL
 ### ExecuTorch simulated devices
 
@@ -156,8 +172,8 @@ cd /tmp/nvflare/workspaces/edge_example/prod_00/
 bash start_all.sh 
 ```  
 
-#### Step2: Generate Job Configs using the EdgeRecipe API
-Next, let's generate job configs for cifar10 via EdgeRecipe API.
+#### Step2: Generate Job Configs using the EdgeFedBuffRecipe API
+Next, let's generate job configs for cifar10 via EdgeFedBuffRecipe API.
 
 ```commandline
 python3 jobs/pt_job.py --fl_mode sync
@@ -246,7 +262,7 @@ experimental results align well with our calculation.
 
 ### Cross-Device Simulation
 The above experiments are performed in a controlled, consistent manner, where we simulate a limited number of devices and conduct federated learning with all devices participating in each round.
-In practice, we may have a large number of devices, and the devices may not always be available for training. In this case, we can use the EdgeRecipe API to simulate a more realistic cross-device federated learning scenario, where devices are sampled from a large pool of devices, and only a subset of devices are selected for each round of training.
+In practice, we may have a large number of devices, and the devices may not always be available for training. In this case, we can use the EdgeFedBuffRecipe API to simulate a more realistic cross-device federated learning scenario, where devices are sampled from a large pool of devices, and only a subset of devices are selected for each round of training.
 
 To simulate this, rather than only specifying `sync`/`async`, we further specify multiple parameters which were automatically calculated based on the assumptions of the basic settings in previous experiment.
 ```commandline

@@ -34,12 +34,6 @@ class ETTrainerExecutor(
             
             // Extract model data from task data
             val modelData = taskData.data["model"] as? String
-            Log.d(TAG, "Extracted model data: ${modelData?.take(50) ?: "null"}...")
-            Log.d(TAG, "Model data length: ${modelData?.length ?: 0}")
-            Log.d(TAG, "Model data starts with '{': ${modelData?.startsWith("{")}")
-            Log.d(TAG, "Model data ends with '}': ${modelData?.endsWith("}")}")
-            Log.d(TAG, "Model data first 100 chars: ${modelData?.take(100)}")
-            Log.d(TAG, "Model data last 50 chars: ${modelData?.takeLast(50)}")
             
             // Validate model data
             if (modelData.isNullOrEmpty()) {
@@ -88,15 +82,9 @@ class ETTrainerExecutor(
  */
 object ETTrainerExecutorFactory {
     
-    /**
-     * Create an ETTrainerExecutor based on the training method and model data.
-     */
     fun createExecutor(context: android.content.Context, method: String, modelData: String, meta: Map<String, Any>): ETTrainerExecutor {
         val trainingConfig = TrainingConfig.fromMap(meta)
-
-        // Create ETTrainer without dataset - it will be provided by the executor from context
         val trainer = ETTrainer(context, modelData, meta)
-        
         return ETTrainerExecutor(trainer)
     }
 }
