@@ -24,6 +24,7 @@ from nvflare.edge.tools.edge_fed_buff_recipe import (
     ModelManagerConfig,
     SimulationConfig,
 )
+from nvflare.recipe.prod_env import ProdEnv
 
 
 def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds, no_delay=False):
@@ -161,6 +162,23 @@ def main():
         action="store_true",
         help="If set, disable communication delay and device speed variations (set to 0.0)",
     )
+    parser.add_argument(
+        "--startup_kit_location",
+        type=str,
+        default="/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com",
+        help="Admin startup kit location",
+    )
+    parser.add_argument(
+        "--username",
+        type=str,
+        default="admin@nvidia.com",
+        help="Username",
+    )
+    parser.add_argument(
+        "--export_job",
+        action="store_true",
+        help="If set, export the recipe to the output directory",
+    )
 
     args = parser.parse_args()
 
@@ -175,15 +193,21 @@ def main():
             no_delay=args.no_delay,
         )
 
-        print("Exporting recipe...")
-        recipe.export(args.output_dir)
-        print("DONE")
-
     except Exception as e:
         print(f"Error creating recipe: {e}")
         return 1
 
-    return 0
+    if args.export_job:
+        print(f"Exporting recipe to {args.output_dir}")
+        recipe.export(args.output_dir)
+        print("DONE")
+    else:
+        env = ProdEnv(startup_kit_location=args.startup_kit_location, username=args.username)
+        run = recipe.execute(env)
+        print()
+        print("Result can be found in :", run.get_result())
+        print("Job Status is:", run.get_status())
+        print()
 
 
 if __name__ == "__main__":
