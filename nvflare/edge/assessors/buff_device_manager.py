@@ -89,7 +89,10 @@ class BuffDeviceManager(DeviceManager):
             self.used_devices.pop(device_id, None)
 
     def has_enough_devices(self, fl_ctx) -> bool:
-        return len(self.available_devices) >= self.device_selection_size
+        num_holes = self.device_selection_size - len(self.current_selection)
+        usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
+        num_usable_devices = len(usable_devices)
+        return num_usable_devices >= num_holes
 
     def should_fill_selection(self, fl_ctx) -> bool:
         num_holes = self.device_selection_size - len(self.current_selection)
