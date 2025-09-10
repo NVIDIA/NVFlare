@@ -63,8 +63,8 @@ class ModelManager(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def keep_model_versions(self, versions_to_keep: Set[int], fl_ctx: FLContext) -> None:
-        """Keep the model versions that are still active, remove the ones that are not.
+    def prune_model_versions(self, versions_to_keep: Set[int], fl_ctx: FLContext) -> None:
+        """Prune the model versions that are no longer active.
 
         Args:
             versions_to_keep: Set of model versions to keep

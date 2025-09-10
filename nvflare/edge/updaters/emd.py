@@ -166,7 +166,7 @@ class EdgeModelUpdater(Updater):
                 if mv not in active_model_versions:
                     old_versions.append(mv)
                 # - or too old
-                elif new_state.model_version - mv > self.max_model_versions:
+                elif self.max_model_versions and new_state.model_version - mv > self.max_model_versions:
                     old_versions.append(mv)
 
             # remove old versions

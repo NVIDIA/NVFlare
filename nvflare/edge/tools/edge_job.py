@@ -94,7 +94,7 @@ class EdgeJob(FedJob):
     def configure_client(
         self,
         aggregator_factory: AggregatorFactory,
-        max_model_versions: float = float("inf"),
+        max_model_versions: int = None,
         update_timeout=5.0,
         executor_task_name="train",
         simulation_config_file: str = None,
@@ -114,13 +114,9 @@ class EdgeJob(FedJob):
         if self.client_config_added:
             raise RuntimeError("client config is already added")
 
-        # check the validity of max_model_versions and convert to int if it is a positive integer
-        if max_model_versions <= 0:
-            raise ValueError("max_model_versions must be a positive integer or float('inf')")
-        elif max_model_versions == float("inf"):
-            max_model_versions = float("inf")
-        else:
-            max_model_versions = int(max_model_versions)
+        # check the validity of max_model_versions if not None
+        if max_model_versions:
+            check_positive_number("max_model_versions", max_model_versions)
 
         check_object_type("aggregator_factory", aggregator_factory, AggregatorFactory)
         check_positive_number("update_timeout", update_timeout)

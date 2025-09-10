@@ -52,12 +52,12 @@ class BuffModelManager(ModelManager):
         The staleness_weight can be enabled to apply staleness weighting to model updates.
 
         Special cases for max_model_history:
-        - If inf: Keep every model versions, only remove a version when all devices processing it reports back (version no longer related with any device_id in the current_selection from device_manager).
+        - If None: Keep every model versions, only remove a version when all devices processing it reports back (version no longer related with any device_id in the current_selection from device_manager).
 
         Args:
             num_updates_for_model (int): Number of updates required before generating a new model version.
             max_model_history (int): Maximum number of historical model versions to keep in memory.
-                - None: keep every version until all devices processing a particular version report back.
+                - None (default): keep every version until all devices processing a particular version report back.
                 - positive integer: keep only the latest n versions
             global_lr (float): Global learning rate for model aggregation, default is 1.0.
             staleness_weight (bool): Whether to apply staleness weighting to model updates, default is False.
@@ -75,17 +75,17 @@ class BuffModelManager(ModelManager):
         # updates is a dict of model version to _ModelState
         self.updates[self.current_model_version] = _ModelState(ModelUpdateDXOAggregator())
 
-    def keep_model_versions(self, versions_to_keep: Set[int], fl_ctx: FLContext) -> None:
+    def prune_model_versions(self, versions_to_keep: Set[int], fl_ctx: FLContext) -> None:
         # go through all versions and remove the ones:
         # - either not in versions_to_keep
         # - or too old (current_model_version - v >= max_model_history)
-        versions_to_remove = []
+        versions_to_remove = set()
 
         for v in self.updates.keys():
             if v not in versions_to_keep:
-                versions_to_remove.append(v)
+                versions_to_remove.add(v)
             if self.max_model_history and self.current_model_version - v >= self.max_model_history:
-                versions_to_remove.append(v)
+                versions_to_remove.add(v)
 
         # Remove the identified versions
         for v in versions_to_remove:
