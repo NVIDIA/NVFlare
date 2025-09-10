@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import os
 
 from processors.cifar10_pt_task_processor import Cifar10PTTaskProcessor
 from processors.models.cifar10_model import Cifar10ConvNet
@@ -151,36 +152,23 @@ def main():
         default=10,
         help="Number of global federated rounds under sync mode, total globalmodel version under async mode will multiply this number by the total number of devices",
     )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer",
-        help="Output directory for the recipe",
-    )
+    parser.add_argument("--workspace_dir", type=str, default="/tmp/nvflare/workspaces", help="Workspace directory")
     parser.add_argument(
         "--no_delay",
         action="store_true",
         help="If set, disable communication delay and device speed variations (set to 0.0)",
     )
     parser.add_argument(
-        "--startup_kit_location",
-        type=str,
-        default="/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com",
-        help="Admin startup kit location",
-    )
-    parser.add_argument(
-        "--username",
-        type=str,
-        default="admin@nvidia.com",
-        help="Username",
-    )
-    parser.add_argument(
         "--export_job",
         action="store_true",
-        help="If set, export the recipe to the output directory",
+        help="If set, export the recipe to the admin'stransfer directory",
     )
+    parser.add_argument("--project_name", type=str, default="edge_example", help="Project name")
 
     args = parser.parse_args()
+
+    prod_dir = os.path.join(args.workspace_dir, args.project_name, "prod_00")
+    admin_startup_kit_dir = os.path.join(prod_dir, "admin@nvidia.com")
 
     try:
         print(f"Creating {args.fl_mode} federated learning recipe...")
@@ -198,11 +186,11 @@ def main():
         return 1
 
     if args.export_job:
-        print(f"Exporting recipe to {args.output_dir}")
-        recipe.export(args.output_dir)
-        print("DONE")
+        output_dir = os.path.join(admin_startup_kit_dir, "transfer")
+        print(f"Exporting recipe to {output_dir}")
+        recipe.export(job_dir=output_dir)
     else:
-        env = ProdEnv(startup_kit_location=args.startup_kit_location, username=args.username)
+        env = ProdEnv(startup_kit_location=admin_startup_kit_dir, username="admin@nvidia.com")
         run = recipe.execute(env)
         print()
         print("Result can be found in :", run.get_result())
