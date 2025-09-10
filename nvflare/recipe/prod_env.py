@@ -58,6 +58,7 @@ class ProdEnv(ExecEnv):
         startup_kit_location: str,
         login_timeout: float = 5.0,
         username: str = DEFAULT_ADMIN_USER,
+        extra: dict = None,
     ):
         """Production execution environment for submitting and monitoring NVFlare jobs.
 
@@ -67,7 +68,10 @@ class ProdEnv(ExecEnv):
             startup_kit_location (str): Path to the admin's startup kit directory.
             login_timeout (float): Timeout (in seconds) for logging into the Flare API session. Must be > 0.
             username (str): Username to log in with.
+            extra: extra env info.
         """
+        super().__init__(extra)
+
         v = _ProdEnvValidator(
             startup_kit_location=startup_kit_location,
             login_timeout=login_timeout,

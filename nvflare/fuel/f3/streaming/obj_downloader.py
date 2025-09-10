@@ -38,7 +38,7 @@ transport layer to send the message. If the message is to be sent to multiple en
 
 Object Downloading can drastically reduce memory consumption:
 - Instead of sending the large object in one message, it is divided into many smaller objects;
-- Instead of pushing the message to the endpoints, each endpoint will come to request. This makes it more reliable when 
+- Instead of pushing the message to the endpoints, each endpoint will come to request. This makes it more reliable when
 different endpoints have different speed.
 
 Object Downloading works as follows:
@@ -49,15 +49,15 @@ object to be downloaded to the transaction, and get a reference id (ref_id).
 
 To develop the downloading capability for a type of object (e.g. a file, a large dict, etc.), you need to provide
 the implementation of a Producer and a Consumer.
-- On the sending side, the Producer is responsible for producing the next small object to be sent (a chunk of bytes; 
+- On the sending side, the Producer is responsible for producing the next small object to be sent (a chunk of bytes;
 a small subset of the large dict; etc.).
 - On the receiving side, the Consumer is responsible for processing the received small objects (writing the received
 bytes to a temp file; putting the received small dict to the end result; etc.).
 
 One issue with object downloading is object life cycle management. Since the large objects to be downloaded are usually
-temporary, you need to remove them when they are downloaded by all sites. But the problem is that you don't know how 
-quickly each site can finish downloading these large objects. When a transaction contains multiple objects to be 
-downloaded, it's even harder to know it. 
+temporary, you need to remove them when they are downloaded by all sites. But the problem is that you don't know how
+quickly each site can finish downloading these large objects. When a transaction contains multiple objects to be
+downloaded, it's even harder to know it.
 
 There are two ways to handle this issue: object downloaded callback, and transaction timeout.
 
@@ -66,8 +66,8 @@ to a site, this CB will be called. The obj_downloaded CB must follow this signat
 
     downloaded_cb(ref_id: str, to_site: str, status: str, obj: Any, **cb_kwargs)
 
-where ref_id is the reference id of the object;    
-to_site is the FQCN of the site that has just finished downloading; 
+where ref_id is the reference id of the object;
+to_site is the FQCN of the site that has just finished downloading;
 status is the status of downloading, as defined in DownloadStatus class;
 obj is the large object that was just downloaded;
 cb_kwargs are the kw args registered with the CB.
@@ -76,7 +76,7 @@ Transaction timeout is the amount of time after the last downloading activity on
 transaction from any site. For example, suppose you want to send 2 large files to 3 sites, each time a download
 request is received on any file from any of the 3 sites, the last activity time of the transaction is updated to now.
 If no downloading activity is received from any site on any objects in the transaction for the specified timeout,
-the transaction is considered "timed out", and the timeout callback registered with the transaction is called. 
+the transaction is considered "timed out", and the timeout callback registered with the transaction is called.
 The transaction timeout CB must follow this signature:
 
     timeout_cb(tx_id: str, objs: List[Any], **cb_kwargs)
@@ -85,10 +85,10 @@ where tx_id is the ID of the transaction;
 objs is the list of large objects registered with the transaction;
 cb_kwargs are the kw args registered with the CB.
 
-You may need to use both mechanisms to fully take care of object life cycles. The object downloaded CB may never be 
+You may need to use both mechanisms to fully take care of object life cycles. The object downloaded CB may never be
 called since the site somehow didn't finish the downloading. In reality the timeout mechanism may be sufficient.
 
-Unlike with Object Streamer that the object owner pushes small objects to the recipients; with Object Downloader, 
+Unlike with Object Streamer that the object owner pushes small objects to the recipients; with Object Downloader,
 each recipient pulls the data from the object owner.
 """
 
