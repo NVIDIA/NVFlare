@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
+from typing import Optional
 
 from nvflare.app_common.tie.defs import Constant
 from nvflare.app_opt.flower.flower_job import FlowerJob
@@ -64,7 +64,7 @@ class FlowerRecipe(Recipe):
         flower_content: str,
         name: str = "flower_job",
         min_clients: int = 1,
-        mandatory_clients: Optional[List[str]] = None,
+        mandatory_clients: Optional[list[str]] = None,
         database: str = "",
         superlink_ready_timeout: float = 10.0,
         configure_task_timeout=Constant.CONFIG_TASK_TIMEOUT,
