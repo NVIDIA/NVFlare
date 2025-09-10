@@ -448,7 +448,7 @@ def define_submit_job_parser(job_subparser):
         type=str,
         action="append",
         nargs="*",
-        help="""Training config file with corresponding optional key=value pairs. 
+        help="""Training config file with corresponding optional key=value pairs.
                                        If key presents in the preceding config file, the value in the config
                                        file will be overwritten by the new value """,
     )
@@ -504,9 +504,9 @@ def define_create_job_parser(job_subparser):
         type=str,
         nargs="?",
         default="sag_pt",
-        help="""template name or template folder. You can use list_templates to see available jobs from job templates, 
-                pick name such as 'sag_pt' as template name. 
-                Alternatively, you can use the path to the job template folder, such as job_templates/sag_pt 
+        help="""template name or template folder. You can use list_templates to see available jobs from job templates,
+                pick name such as 'sag_pt' as template name.
+                Alternatively, you can use the path to the job template folder, such as job_templates/sag_pt
                 """,
     )
     create_parser.add_argument(
@@ -514,8 +514,8 @@ def define_create_job_parser(job_subparser):
         "--script_dir",
         type=str,
         nargs="?",
-        help="""script directory contains additional related files. 
-                                       All files or directories under this directory will be copied over 
+        help="""script directory contains additional related files.
+                                       All files or directories under this directory will be copied over
                                        to the custom directory.""",
     )
     create_parser.add_argument(
@@ -524,7 +524,7 @@ def define_create_job_parser(job_subparser):
         type=str,
         action="append",
         nargs="*",
-        help="""Training config file with corresponding optional key=value pairs. 
+        help="""Training config file with corresponding optional key=value pairs.
                                        If key presents in the preceding config file, the value in the config
                                        file will be overwritten by the new value """,
     )
