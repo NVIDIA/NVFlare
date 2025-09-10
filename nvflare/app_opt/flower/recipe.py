@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ from nvflare.app_common.tie.defs import Constant
 from nvflare.app_opt.flower.flower_job import FlowerJob
 from nvflare.client.api import ClientAPIType
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
-from nvflare.recipe import add_experiment_tracking
 from nvflare.recipe.spec import Recipe
 
 
@@ -26,8 +25,10 @@ class FlowerRecipe(Recipe):
     """Recipe class for Flower federated learning using NVFlare.
 
     This class provides a high-level interface for configuring Flower
-    federated learning jobs. It wraps the FlowerPyTorchJob and provides
+    federated learning jobs. It wraps the FlowerJob and provides
     a recipe-based interface for easier job configuration and execution.
+
+    Enables metric streaming and use of client API by default.
 
     Example usage:
         ```python
@@ -53,9 +54,6 @@ class FlowerRecipe(Recipe):
         per_msg_timeout (float, optional): Timeout for receiving individual messages. Defaults to 10.0 seconds.
         tx_timeout (float, optional): Timeout for transmitting data. Defaults to 100.0 seconds.
         client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
-        stream_metrics (bool, optional): Whether to stream metrics from Flower client to Flare. Defaults to False.
-        use_client_api (bool, optional): Whether to use the client api. Defaults to False.
-            Only external client api works with the current flower integration
         analytics_receiver (AnalyticsReceiver, optional): the AnalyticsReceiver to use to process received metrics.
         extra_env (dict, optional): optional extra env variables to be passed to Flower client
         tracking_type (str, optional): the type of metric tracking to enable. Defaults to "tensorboard".
@@ -76,21 +74,16 @@ class FlowerRecipe(Recipe):
         per_msg_timeout=10.0,
         tx_timeout=100.0,
         client_shutdown_timeout=5.0,
-        stream_metrics=False,
-        use_client_api=False,
         extra_env: dict = None,
-        tracking_type: str = "tensorboard",
     ):
         """Initialize the FlowerRecipe.
 
-        Creates a FlowerPyTorchJob and wraps it in the Recipe interface.
+        Creates a FlowerJob and wraps it in the Recipe interface.
         """
 
-        env = {}
-        if stream_metrics or use_client_api:
-            # needs to init client api to stream metrics
-            # only external client api works with the current flower integration
-            env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
+        # needs to init client api to stream metrics
+        # only external client api works with the current flower integration
+        env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
 
         job = FlowerJob(
             name=name,
@@ -106,11 +99,7 @@ class FlowerRecipe(Recipe):
             per_msg_timeout=per_msg_timeout,
             tx_timeout=tx_timeout,
             client_shutdown_timeout=client_shutdown_timeout,
-            stream_metrics=stream_metrics,
             extra_env=env,
         )
 
         super().__init__(job)
-
-        if stream_metrics:
-            add_experiment_tracking(self, tracking_type=tracking_type)

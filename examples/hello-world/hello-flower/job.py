@@ -15,7 +15,7 @@
 from argparse import ArgumentParser
 
 from nvflare.app_opt.flower.recipe import FlowerRecipe
-from nvflare.recipe import SimEnv
+from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
 def main():
@@ -23,7 +23,6 @@ def main():
     parser.add_argument("--job_name", type=str, required=True)
     parser.add_argument("--content_dir", type=str, required=True)
     parser.add_argument("--stream_metrics", action="store_true")
-    parser.add_argument("--use_client_api", action="store_true")
     parser.add_argument("--export_job", action="store_true")
     parser.add_argument("--export_dir", type=str, default="jobs")
     parser.add_argument("--workdir", type=str, default="/tmp/nvflare/hello-flower")
@@ -34,11 +33,11 @@ def main():
     recipe = FlowerRecipe(
         name=args.job_name,
         flower_content=args.content_dir,
-        stream_metrics=args.stream_metrics,
         min_clients=num_of_clients,
-        use_client_api=args.use_client_api,
-        tracking_type="tensorboard",
     )
+
+    if args.stream_metrics:
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     if args.export_job:
         recipe.export(args.export_dir)
