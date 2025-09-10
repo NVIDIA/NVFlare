@@ -15,9 +15,9 @@
 from processors.cifar10_pt_task_processor import Cifar10PTTaskProcessor
 from processors.models.cifar10_model import Cifar10ConvNet
 
-from nvflare.edge.tools.edge_recipe import (
+from nvflare.edge.tools.edge_fed_buff_recipe import (
     DeviceManagerConfig,
-    EdgeRecipe,
+    EdgeFedBuffRecipe,
     EvaluatorConfig,
     ModelManagerConfig,
     SimulationConfig,
@@ -65,7 +65,7 @@ def main():
         max_model_version=max_model_version,
         max_model_history=max_model_history,
         max_num_active_model_versions=max_model_history,
-        update_timeout=500.0,
+        update_timeout=500,
     )
     device_manager_config = DeviceManagerConfig(
         device_selection_size=device_selection_size,
@@ -75,7 +75,7 @@ def main():
     eval_frequency = eval_frequency
 
     # Generate recipe
-    recipe = EdgeRecipe(
+    recipe = EdgeFedBuffRecipe(
         job_name="pt_job_adv",
         model=Cifar10ConvNet(),
         model_manager_config=model_manager_config,

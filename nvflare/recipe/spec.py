@@ -30,6 +30,30 @@ class ExecEnvType(str, Enum):
 
 class ExecEnv(ABC):
 
+    def __init__(self, extra: dict = None):
+        """Constructor of ExecEnv
+
+        Args:
+            extra: a dict of extra properties
+        """
+        if not extra:
+            extra = {}
+        if not isinstance(extra, dict):
+            raise ValueError(f"extra must be dict but got {type(extra)}")
+        self.extra = extra
+
+    def get_extra_prop(self, prop_name: str, default=None):
+        """Get the specified extra property.
+
+        Args:
+            prop_name: name of the property
+            default: the default value to return if the named property does not exist.
+
+        Returns: value of the property or the default
+
+        """
+        return self.extra.get(prop_name, default)
+
     @abstractmethod
     def deploy(self, job: FedJob) -> str:
         """Deploy a FedJob and return an execution response.
@@ -62,6 +86,9 @@ class Recipe(ABC):
             job: the job that implements the recipe.
         """
         self.job = job
+
+    def process_env(self, env: ExecEnv):
+        pass
 
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
@@ -125,13 +152,20 @@ class Recipe(ABC):
         """
         self.job.to_server(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
-    def export(self, job_dir: str, server_exec_params: dict = None, client_exec_params: dict = None):
+    def export(
+        self,
+        job_dir: str,
+        server_exec_params: dict = None,
+        client_exec_params: dict = None,
+        env: ExecEnv = None,
+    ):
         """Export the recipe to a job definition.
 
         Args:
             job_dir: directory where the job will be exported to.
             server_exec_params: execution params for the server
             client_exec_params: execution params for clients
+            env: the environment that the exported job will be running in
 
         Returns: None
 
@@ -141,6 +175,9 @@ class Recipe(ABC):
 
         if client_exec_params:
             self.job.to_clients(client_exec_params)
+
+        if env:
+            self.process_env(env)
 
         self.job.export_job(job_dir)
 
@@ -161,6 +198,7 @@ class Recipe(ABC):
         if client_exec_params:
             self.job.to_clients(client_exec_params)
 
+        self.process_env(env)
         job_id = env.deploy(self.job)
         run = Run(env.get_env_info(), job_id)
         return run
