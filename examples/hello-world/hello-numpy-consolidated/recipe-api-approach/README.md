@@ -1,6 +1,6 @@
-# Hello NumPy
+# Hello NumPy - Recipe API
 
-This example demonstrates how to use NVIDIA FLARE with NumPy to train a simple model using federated averaging (FedAvg). The complete example code can be found in the `hello-numpy directory <examples/hello-world/hello-numpy/>`. It is recommended to create a virtual environment and run everything within a virtualenv.
+This example demonstrates how to use NVIDIA FLARE with NumPy to train a simple model using federated averaging (FedAvg) with the modern recipe API. It is recommended to create a virtual environment and run everything within a virtualenv.
 
 ## NVIDIA FLARE Installation
 
@@ -15,28 +15,23 @@ Install the dependency
 pip install -r requirements.txt
 ```
 
+## Quick Start
+
+```bash
+pip install -r requirements.txt
+python job.py
+```
+
 ## Code Structure
 
-First get the example code from github:
-
-```
-git clone https://github.com/NVIDIA/NVFlare.git
-```
-
-Then navigate to the hello-numpy directory:
-
-```
-git switch <release branch>
-cd examples/hello-world/hello-numpy
-```
-
 ``` bash
-hello-numpy
+recipe-api-approach/
 |
-|-- client.py         # client local training script
-|-- model.py          # model definition
-|-- job.py            # job recipe that defines client and server configurations
-|-- requirements.txt  # dependencies
+|-- client.py              # client local training script
+|-- model.py               # model definition
+|-- job.py                 # job recipe that defines client and server configurations
+|-- numpy_fedavg_recipe.py # custom NumPy recipe
+|-- requirements.txt       # dependencies
 ```
 
 ## Data
@@ -71,27 +66,34 @@ There is no need to define a customized server code for this example.
 
 ## Job Recipe Code
 
-Job Recipe contains the client.py and built-in Fed average algorithm.
-```
-    recipe = FedAvgRecipe(
-        name="hello-numpy",
-        min_clients=n_clients,
-        num_rounds=num_rounds,
-        initial_model=SimpleNumpyModel(),
-        train_script="client.py",
-        train_args=f"--learning_rate {learning_rate}",
-    )
+Job Recipe contains the client.py and built-in Fed average algorithm using our custom `NumpyFedAvgRecipe`:
 
-    env = SimEnv(num_clients=n_clients)
-    recipe.execute(env=env)
+```python
+recipe = NumpyFedAvgRecipe(
+    name="hello-numpy",
+    min_clients=n_clients,
+    num_rounds=num_rounds,
+    initial_model=SimpleNumpyModel(),
+    train_script="client.py",
+    train_args=f"--learning_rate {learning_rate}",
+)
+
+env = SimEnv(num_clients=n_clients)
+recipe.execute(env=env)
 ```
+
+The `NumpyFedAvgRecipe` is specifically designed for NumPy models and uses `FrameworkType.NUMPY` for proper parameter exchange.
  
 ## Run Job
 
-From terminal try to run the code
+From terminal try to run the code:
 
-```
-    python job.py
+```bash
+# Default: 2 clients, 3 rounds
+python job.py
+
+# Custom parameters
+python job.py --n_clients 3 --num_rounds 5 --learning_rate 2.0
 ```
 
 ## Output summary
@@ -121,11 +123,3 @@ From terminal try to run the code
 
 The model starts with weights `[[1, 2, 3], [4, 5, 6], [7, 8, 9]]` and each client adds 1 to each weight during training.
 After aggregation, you should see the weights increase by 1 each round, demonstrating the federated learning process.
-
-## Previous Versions
-
-This example consolidates the previous `hello-numpy-sag` and `hello-fedavg-numpy` examples:
-- `hello-numpy-sag` for 2.0-2.4 (legacy scatter-and-gather approach)
-- `hello-fedavg-numpy` for 2.5+ (job API approach)
-
-The current version uses the modern job recipe API for a cleaner, more maintainable structure.

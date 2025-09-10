@@ -1,140 +1,95 @@
-# Hello NumPy - Consolidated Examples
+# Hello FedAvg with NumPy
 
-This directory contains consolidated NumPy examples for NVIDIA FLARE, showcasing the evolution of FLARE APIs and providing multiple approaches for different use cases. Whether you're new to federated learning or migrating from older FLARE versions, this collection has something for you.
+This example demonstrates federated learning with NumPy using NVIDIA FLARE. Multiple clients collaboratively train a model without sharing their data.
 
-## What is This Example?
+## Quick Start
 
-This is a simple federated learning example using NumPy that demonstrates how multiple clients can collaboratively train a model without sharing their data. The model starts with weights `[[1, 2, 3], [4, 5, 6], [7, 8, 9]]` and each client adds 1 to each weight during training, showing how federated averaging works.
-
-## Directory Structure
-
-```
-hello-numpy-consolidated/
-├── recipe-api-approach/       # NEW: Modern recipe API (recommended for new users)
-│   ├── client.py              # Client training script
-│   ├── model.py               # NumPy model definition
-│   ├── job.py                 # Job recipe using NumpyFedAvgRecipe
-│   ├── numpy_fedavg_recipe.py # Custom NumPy-specific recipe
-│   ├── requirements.txt
-│   └── README.md
-├── job-api-approach/          # Modern job API approach
-│   ├── fedavg_script_runner_hello-numpy.py
-│   ├── hello-fedavg-numpy_flare_api.ipynb
-│   ├── hello-fedavg-numpy_getting_started.ipynb
-│   ├── README.md
-│   ├── requirements.txt
-│   └── src/
-│       └── hello-numpy_fl.py
-└── sag-approach/              # Legacy scatter-and-gather approach (for reference)
-    ├── jobs/
-    │   └── hello-numpy-sag/
-    │       └── app/
-    │           └── config/
-    ├── hello_numpy_sag.ipynb
-    ├── README.md
-    └── requirements.txt
-```
-
-## Which Approach Should I Use?
-
-### 🆕 Recipe API Approach (Recommended for New Users)
-**Location**: `recipe-api-approach/`
-
-This is the **newest and most modern** approach using FLARE's recipe API. It provides:
-- **Clean, simple structure** following the same pattern as `hello-pt`
-- **Custom NumPy recipe** (`NumpyFedAvgRecipe`) specifically designed for NumPy models
-- **Minimal code** with clear separation of concerns
-- **Best practices** for current FLARE development
-- **Easy to understand** for beginners
-
-**Best for**: New users, modern development, learning FLARE concepts
-
-### Job API Approach (Good for Learning)
-**Location**: `job-api-approach/`
-
-This approach uses the job API with more explicit configuration:
-- **Jupyter notebooks** for interactive learning
-- **Detailed examples** of job configuration
-- **Step-by-step tutorials** for understanding FLARE concepts
-- **More verbose** but educational
-
-**Best for**: Learning FLARE internals, understanding job configuration, interactive tutorials
-
-### Legacy SAG Approach (Reference Only)
-**Location**: `sag-approach/`
-
-This is the original scatter-and-gather approach:
-- **Historical reference** for understanding FLARE evolution
-- **Traditional job config files** (JSON-based)
-- **Legacy workflow patterns**
-- **For reference** and migration understanding
-
-**Best for**: Understanding FLARE history, migrating from older versions, reference
-
-## Quick Start Guide
-
-### Option 1: Recipe API (Recommended)
+**Recommended for new users:**
 ```bash
 cd recipe-api-approach
 pip install -r requirements.txt
 python job.py
 ```
 
-### Option 2: Job API with Notebooks
+**Interactive learning with notebooks:**
 ```bash
 cd job-api-approach
 pip install -r requirements.txt
-# Open Jupyter and run the notebooks, or:
-python fedavg_script_runner_hello-numpy.py
+jupyter lab
 ```
 
-### Option 3: Legacy SAG (Reference)
+## What This Example Does
+
+- **Model**: Simple NumPy array with weights `[[1, 2, 3], [4, 5, 6], [7, 8, 9]]`
+- **Training**: Each client adds 1 to each weight (simulating local training)
+- **Aggregation**: Server averages the client updates using FedAvg
+- **Result**: You'll see weights increase by 1 each round
+
+## Directory Structure
+
+```
+hello-fedavg-numpy/
+├── recipe-api-approach/       # Modern approach (recommended)
+│   ├── client.py              # Client training script
+│   ├── model.py               # NumPy model definition
+│   ├── job.py                 # Job configuration
+│   └── requirements.txt
+├── job-api-approach/          # Detailed learning approach
+│   ├── fedavg_script_runner_hello-numpy.py
+│   ├── hello-fedavg-numpy_getting_started.ipynb
+│   ├── hello-fedavg-numpy_flare_api.ipynb
+│   └── requirements.txt
+└── job-config-approach/       # Job configuration files (reference)
+    ├── jobs/hello-numpy-sag/
+    └── hello_numpy_sag.ipynb
+```
+
+## Choose Your Approach
+
+### Recipe API (Recommended)
+- **Best for**: New users, modern development
+- **Files**: `client.py`, `model.py`, `job.py`
+- **Why**: Clean, simple, follows FLARE best practices
+
+### Job API (Learning)
+- **Best for**: Understanding FLARE internals
+- **Files**: Scripts + Jupyter notebooks
+- **Why**: Interactive tutorials, detailed explanations
+
+### Job Config (Reference)
+- **Best for**: Understanding job configuration, legacy migration
+- **Files**: JSON configuration files + job structure
+- **Why**: Shows traditional FLARE job configuration patterns with `config_fed_client.json` and `config_fed_server.json`
+
+## Installation
+
 ```bash
-cd sag-approach
-pip install -r requirements.txt
-nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 jobs/hello-numpy-sag
+pip install nvflare numpy
 ```
 
-## Understanding the Evolution
+## What Each Approach Provides
 
-### Recipe API (Latest)
-- **Files**: `job.py` + `numpy_fedavg_recipe.py` - Clean separation
-- **API**: `NumpyFedAvgRecipe` - High-level, declarative, NumPy-specific
-- **Structure**: `client.py`, `model.py`, `job.py` - Clean separation
-- **Learning curve**: Gentle, follows familiar patterns
+### Recipe API Approach
+- **Modern Python code**: Clean `client.py`, `model.py`, `job.py` structure
+- **Custom NumPy recipe**: `NumpyFedAvgRecipe` designed specifically for NumPy models
+- **Easy to understand**: Follows the same pattern as other hello-world examples
+- **Best for**: New users, modern development, learning FLARE concepts
 
-### Job API (Modern)
-- **Files**: Multiple files with explicit configuration
-- **API**: `FedJob` - More control, more verbose
-- **Structure**: Scripts + notebooks + configuration
-- **Learning curve**: Steeper, more educational
+### Job API Approach  
+- **Interactive learning**: Jupyter notebooks with step-by-step tutorials
+- **Detailed explanations**: Shows how to build jobs programmatically
+- **FLARE internals**: Understanding of `FedJob`, `ScriptRunner`, and client API
+- **Best for**: Learning FLARE internals, understanding job configuration
 
-### SAG (Legacy)
-- **Files**: JSON configuration files + custom code
-- **API**: Direct workflow components
-- **Structure**: Traditional FLARE app structure
-- **Learning curve**: Steepest, most complex
-
-## What You'll Learn
-
-Regardless of which approach you choose, you'll learn:
-- How federated learning works in practice
-- How clients train models locally
-- How servers aggregate model updates
-- How FLARE coordinates the process
-- How to monitor and debug FL training
+### Job Config Approach
+- **Traditional structure**: Complete FLARE job with JSON configuration files
+- **Configuration examples**: `config_fed_client.json` and `config_fed_server.json`
+- **Legacy patterns**: Shows how FLARE jobs were traditionally configured
+- **Best for**: Understanding job configuration, legacy migration, reference
 
 ## Next Steps
 
-1. **Start with Recipe API** if you're new to FLARE
-2. **Try Job API** if you want to understand more details
-3. **Reference SAG** if you're migrating from older versions
-4. **Move to advanced examples** once you understand the basics
-
-## Migration Path
-
-- **From SAG → Job API**: Use the job API approach to understand modern patterns
-- **From Job API → Recipe API**: Use the recipe API for cleaner, more maintainable code
-- **New to FLARE**: Start with recipe API, then explore others for deeper understanding
-
-This consolidated structure preserves the evolution of FLARE APIs while providing clear guidance for users at different stages of their FLARE journey.
+1. Run the recipe API example
+2. Explore the notebooks for deeper understanding
+3. Try other hello-world examples (hello-pt, hello-tf)
+4. Move to advanced examples when ready
