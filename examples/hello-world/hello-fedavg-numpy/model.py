@@ -25,19 +25,11 @@ class SimpleNumpyModel:
     using federated learning.
     """
 
-    def __init__(self, input_size=3, hidden_size=3, output_size=3):
+    def __init__(self):
         """
-        Initialize the model with random weights.
-
-        Args:
-            input_size: Size of input layer
-            hidden_size: Size of hidden layer
-            output_size: Size of output layer
+        Initialize the model with fixed weights for demonstration.
+        This is a simple 3x3 weight matrix for the hello-world example.
         """
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-
         # Initialize weights with the standard starting values for this example
         self.weights = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
 

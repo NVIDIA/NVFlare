@@ -21,7 +21,7 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
-from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
+from nvflare import FedJob
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
 from nvflare.recipe.spec import Recipe
@@ -142,12 +142,8 @@ class NumpyFedAvgRecipe(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
 
-        # Create BaseFedJob with initial model
-        job = BaseFedJob(
-            initial_model=self.initial_model,
-            name=self.name,
-            min_clients=self.min_clients,
-        )
+        # Create FedJob
+        job = FedJob(name=self.name)
 
         # Define the controller and send to server
         if self.aggregator is None:
@@ -171,6 +167,10 @@ class NumpyFedAvgRecipe(Recipe):
         )
         # Send the controller to the server
         job.to_server(controller)
+        
+        # Send initial model to server if provided
+        if self.initial_model is not None:
+            job.to(self.initial_model, "server")
 
         # Add clients with NUMPY framework
         executor = ScriptRunner(
