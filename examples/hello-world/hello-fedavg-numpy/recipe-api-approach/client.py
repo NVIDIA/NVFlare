@@ -18,11 +18,10 @@
 import copy
 
 import numpy as np
+from model import SimpleNumpyModel
 
 import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
-
-from model import SimpleNumpyModel
 
 
 def main():

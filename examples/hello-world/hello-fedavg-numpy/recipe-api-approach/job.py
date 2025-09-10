@@ -18,8 +18,8 @@ and run it under different environments
 import argparse
 
 from model import SimpleNumpyModel
-
 from numpy_fedavg_recipe import NumpyFedAvgRecipe
+
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
