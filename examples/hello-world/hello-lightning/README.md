@@ -61,7 +61,86 @@ General Summary of a LightningModule
 * **Optimizer Configuration**: The configure_optimizers method specifies the optimizer(s) and learning rate scheduler(s) used during training. This allows for flexible and customizable training strategies.
 By using a LightningModule, developers can leverage PyTorch Lightning's features like distributed training, automatic checkpointing, and logging, making it easier to scale experiments and manage complex training workflows. This abstraction promotes cleaner code, better organization, and easier debugging, ultimately accelerating the model development process.
 
- 
+ ```python
+from typing import Any
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from pytorch_lightning import LightningModule
+from torchmetrics import Accuracy
+
+NUM_CLASSES = 10
+criterion = nn.CrossEntropyLoss()
+
+class Net(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 6, 5)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+
+class LitNet(LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.save_hyperparameters()
+        self.model = Net()
+        self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+        self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+        # (optional) pass additional information via self.__fl_meta__
+        self.__fl_meta__ = {}
+
+    def forward(self, x):
+        out = self.model(x)
+        return out
+
+    def training_step(self, batch, batch_idx):
+        x, labels = batch
+        outputs = self(x)
+        loss = criterion(outputs, labels)
+        self.train_acc(outputs, labels)
+        self.log("train_loss", loss)
+        self.log("train_acc", self.train_acc, on_step=True, on_epoch=False)
+        return loss
+
+    def evaluate(self, batch, stage=None):
+        x, labels = batch
+        outputs = self(x)
+        loss = criterion(outputs, labels)
+        self.valid_acc(outputs, labels)
+
+        if stage:
+            self.log(f"{stage}_loss", loss)
+            self.log(f"{stage}_acc", self.valid_acc, on_step=True, on_epoch=True)
+        return outputs
+
+    def validation_step(self, batch, batch_idx):
+        self.evaluate(batch, "val")
+
+    def test_step(self, batch, batch_idx):
+        self.evaluate(batch, "test")
+
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        return self.evaluate(batch)
+
+    def configure_optimizers(self):
+        optimizer = optim.SGD(self.parameters(), lr=0.001, momentum=0.9)
+        return {"optimizer": optimizer}
+```
 
 ## Client Code
 Notice the training code is almost identical to the pytorch lightning standard training code. The only difference is that we added a few lines to receive and send data to the server. We mark all the changed code with number 0 to 4 to make it easier to understand.
@@ -96,8 +175,8 @@ The main flow of the code logic in the client.py file involves running a federat
 With this method, the developers can use the Client API
 to change their centralized training code to an FL scenario with
 these simple code changes shown below.
-```python
-    # (1) import nvflare lightning client API
+```
+# (1) import nvflare lightning client API
     import nvflare.client.lightning as flare
 
     # (2) patch the lightning trainer

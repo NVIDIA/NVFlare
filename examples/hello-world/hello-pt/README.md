@@ -28,10 +28,11 @@ cd examples/hello-world/hello-pt
 ``` bash
 hello-pt
 |
-|-- client.py         # client local training script
-|-- model.py          # model definition
-|-- job.py            # job recipe that defines client and server configurations
-|-- requirements.txt  # dependencies
+|-- client.py             # client local training script
+|-- client_with_eval.py   # alternative client local training script with both traiing and evaluation
+|-- model.py              # model definition
+|-- job.py                # job recipe that defines client and server configurations
+|-- requirements.txt      # dependencies
 ```
 
 ## Data
@@ -93,18 +94,18 @@ With these simple methods, the developers can use the Client API
 to change their centralized training code to an FL scenario with
 five lines of code changes as shown below.
 
-```python
-    import nvflare.client as flare
+```
+import nvflare.client as flare
     
-    flare.init() # 1. Initializes NVFlare Client API environment.
-    input_model = flare.receive() # 2. Receives model from the FL server.
-    params = input_model.params # 3. Obtain the required information from the received model.
+flare.init() # 1. Initializes NVFlare Client API environment.
+input_model = flare.receive() # 2. Receives model from the FL server.
+params = input_model.params # 3. Obtain the required information from the received model.
     
-    # original local training code
-    new_params = local_train(params)
+# original local training code
+new_params = local_train(params)
     
-    output_model = flare.FLModel(params=new_params) # 4. Put the results in a new `FLModel`
-    flare.send(output_model) # 5. Sends the model to the FL server.  
+output_model = flare.FLModel(params=new_params) # 4. Put the results in a new `FLModel`
+flare.send(output_model) # 5. Sends the model to the FL server.  
 ```
 
 ## Server Code
@@ -166,7 +167,16 @@ Job Recipe contains the client.py and built-in Fed average algorithm.
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)
     recipe.execute(env=env)
 ```
- 
+
+To include both training and evaluation, you can change the recipe's training script 
+
+```python
+
+train_script="client_with_eval.py",
+
+```
+or simply overwrite client.py with client_with_eval.py
+
 ## Run Job
 from terminal try to run the code
 
@@ -174,6 +184,10 @@ from terminal try to run the code
 ```
     python job.py
 ```
+> Note: 
+>> depends on the number of clients, you might run into error due to several client try to download the data at the same time. 
+>> suggest to pre-download the data to avoid such errors. 
+
 ## Output summary
 
 #### Initialization
