@@ -16,9 +16,9 @@ import json
 from typing import Dict
 
 from nvflare.edge.models.model import DeviceModel
-from nvflare.edge.tools.edge_recipe import (
+from nvflare.edge.tools.edge_fed_buff_recipe import (
     DeviceManagerConfig,
-    EdgeRecipe,
+    EdgeFedBuffRecipe,
     EvaluatorConfig,
     ModelManagerConfig,
     SimulationConfig,
@@ -30,7 +30,7 @@ _TRAINER_NAME = "trainer"
 _DEVICE_CONFIG_FILE_NAME = "device_config.json"
 
 
-class ETRecipe(EdgeRecipe):
+class ETFedBuffRecipe(EdgeFedBuffRecipe):
 
     def __init__(
         self,
@@ -51,7 +51,7 @@ class ETRecipe(EdgeRecipe):
         self.device_training_params = device_training_params
 
         pt_model = device_model.net
-        EdgeRecipe.__init__(
+        EdgeFedBuffRecipe.__init__(
             self,
             job_name=job_name,
             model=pt_model,
