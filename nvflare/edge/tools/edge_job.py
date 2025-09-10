@@ -13,7 +13,6 @@
 # limitations under the License.
 import json
 import os.path
-
 from typing import Optional
 
 from nvflare.edge.assessor import Assessor

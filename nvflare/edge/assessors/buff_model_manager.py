@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import time
-from typing import Dict, Set, Optional
+from typing import Dict, Optional, Set
 
 import numpy as np
 
