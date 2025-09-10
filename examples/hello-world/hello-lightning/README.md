@@ -17,8 +17,9 @@ hello-lightning
 |
 |-- client.py        # client local training script
 |-- model.py         # model definition
-|-- job.py              # job recipe that defines client and server configurations
-|-- requirements.txt    # dependencies
+|-- job.py           # job recipe that defines client and server configurations
+|-- requirements.txt # dependencies
+|-- prepare_data.sh  # prepare data utils 
 ```
 
 ## Data
@@ -91,8 +92,78 @@ The main flow of the code logic in the client.py file involves running a federat
   
 7 **Execution**: - The main() function is executed if the script is run as the main module, starting the entire process.
 
+
+With this method, the developers can use the Client API
+to change their centralized training code to an FL scenario with
+these simple code changes shown below.
+```python
+    # (1) import nvflare lightning client API
+    import nvflare.client.lightning as flare
+
+    # (2) patch the lightning trainer
+    flare.patch(trainer)
+
+    while flare.is_running():
+        
+        # Note that we can optionally receive the FLModel from NVFLARE.
+        # We don't need to pass this input_model to trainer because after flare.patch 
+        # the trainer.fit/validate will get the global model internally
+        input_model = flare.receive()
+
+        trainer.validate(...)
+
+        trainer.fit(...)
+
+        trainer.test(...)
+
+        trainer.predict(...)
+```
+
+
 ## Server Code
-In federated averaging, the server code is responsible for aggregating model updates from clients, the workflow pattern is similar to scatter-gather. In this example, we will directly use the default federated averaging algorithm provided by NVFlare. The FedAvg class is defined in nvflare.app_common.workflows.fedavg.FedAvg There is no need to defined a customized server code for this example.
+In federated averaging, the server code is responsible for aggregating model updates from clients, the workflow pattern is similar to scatter-gather. 
+
+
+First, we provide a simple implementation of the [FedAvg](https://proceedings.mlr.press/v54/mcmahan17a?ref=https://githubhelp.com) algorithm with NVFlare. 
+The `run()` routine implements the main algorithmic logic. 
+Subroutines, like `sample_clients()` and `scatter_and_gather_model()` utilize the communicator object, native to each Controller to get the list of available clients,
+distribute the current global model to the clients, and collect their results.
+
+The FedAvg controller implements these main steps:
+1. FL server initializes an initial model using `self.load_model()`.
+2. For each round (global iteration):
+    - FL server samples available clients using `self.sample_clients()`.
+    - FL server sends the global model to clients and waits for their updates using `self.send_model_and_wait()`.
+    - FL server aggregates all the `results` and produces a new global model using `self.update_model()`.
+
+```python
+class FedAvg(BaseFedAvg):
+    def run(self) -> None:
+        self.info("Start FedAvg.")
+
+        model = self.load_model()
+        model.start_round = self.start_round
+        model.total_rounds = self.num_rounds
+
+        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+            self.info(f"Round {self.current_round} started.")
+            model.current_round = self.current_round
+
+            clients = self.sample_clients(self.num_clients)
+
+            results = self.send_model_and_wait(targets=clients, data=model)
+
+            aggregate_results = self.aggregate(results)
+
+            model = self.update_model(model, aggregate_results)
+
+            self.save_model(model)
+
+        self.info("Finished FedAvg.")
+```
+
+In this example, we will directly use the default federated averaging algorithm provided by NVFlare. The FedAvg class is defined in nvflare.app_common.workflows.fedavg.FedAvg There is no need to defined a customized server code for this example.
+
 
 ## Job Recipe Code
 The job recipe code is used to define the client and server configurations.
