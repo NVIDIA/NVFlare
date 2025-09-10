@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import time
-from typing import Dict, Set
+from typing import Dict, Set, Optional
 
 import numpy as np
 
@@ -43,7 +43,7 @@ class BuffModelManager(ModelManager):
     def __init__(
         self,
         num_updates_for_model: int,
-        max_model_history: int = None,
+        max_model_history: Optional[int] = None,
         global_lr: float = 1.0,
         staleness_weight: bool = False,
     ):

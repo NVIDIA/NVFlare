@@ -37,7 +37,7 @@ class EdgeModelExecutor(EdgeTaskExecutor):
     def __init__(
         self,
         aggr_factory_id: str,
-        max_model_versions: int = None,
+        max_model_versions: Optional[int] = None,
         update_timeout=60.0,
     ):
         EdgeTaskExecutor.__init__(self, "", update_timeout)

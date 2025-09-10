@@ -157,17 +157,17 @@ class EdgeModelUpdater(Updater):
 
         # drop old aggr versions based on active_model_versions from parent
         with self._update_lock:
-            old_versions = []
+            old_versions = set()
+            # make a set of current active model versions from unique value of device_selection dict
+            active_model_versions = set(new_state.device_selection.values())
             for mv in self.aggr_states.keys():
                 # remove the model versions that are
                 # - either not in device_selection values
-                # make a set of current active model versions from unique value of device_selection dict
-                active_model_versions = set(new_state.device_selection.values())
                 if mv not in active_model_versions:
-                    old_versions.append(mv)
+                    old_versions.add(mv)
                 # - or too old
                 elif self.max_model_versions and new_state.model_version - mv > self.max_model_versions:
-                    old_versions.append(mv)
+                    old_versions.add(mv)
 
             # remove old versions
             for mv in old_versions:

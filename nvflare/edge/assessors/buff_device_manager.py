@@ -104,3 +104,6 @@ class BuffDeviceManager(DeviceManager):
     def should_fill_selection(self, fl_ctx) -> bool:
         num_holes = self.device_selection_size - len(self.current_selection)
         return num_holes >= self.min_hole_to_fill
+
+    def get_active_model_versions(self, fl_ctx) -> Set[int]:
+        return set(self.current_selection.values())

@@ -14,6 +14,8 @@
 import json
 import os.path
 
+from typing import Optional
+
 from nvflare.edge.assessor import Assessor
 from nvflare.edge.controllers.sage import ScatterAndGatherForEdge
 from nvflare.edge.executors.edge_model_executor import EdgeModelExecutor
@@ -94,7 +96,7 @@ class EdgeJob(FedJob):
     def configure_client(
         self,
         aggregator_factory: AggregatorFactory,
-        max_model_versions: int = None,
+        max_model_versions: Optional[int] = None,
         update_timeout=5.0,
         executor_task_name="train",
         simulation_config_file: str = None,
@@ -116,7 +118,7 @@ class EdgeJob(FedJob):
 
         # check the validity of max_model_versions if not None
         if max_model_versions:
-            check_positive_number("max_model_versions", max_model_versions)
+            check_positive_int("max_model_versions", max_model_versions)
 
         check_object_type("aggregator_factory", aggregator_factory, AggregatorFactory)
         check_positive_number("update_timeout", update_timeout)
