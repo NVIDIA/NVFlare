@@ -17,9 +17,9 @@ import argparse
 from processors.cifar10_pt_task_processor import Cifar10PTTaskProcessor
 from processors.models.cifar10_model import Cifar10ConvNet
 
-from nvflare.edge.tools.edge_recipe import (
+from nvflare.edge.tools.edge_fed_buff_recipe import (
     DeviceManagerConfig,
-    EdgeRecipe,
+    EdgeFedBuffRecipe,
     EvaluatorConfig,
     ModelManagerConfig,
     SimulationConfig,
@@ -103,7 +103,7 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
             # on client/updater side:
             max_num_active_model_versions=(total_devices - 1) * 4,
             # increase the update timeout to allow for the slowest device to finish
-            update_timeout=500.0,
+            update_timeout=500,
         )
         device_manager_config = DeviceManagerConfig(
             # each leaf node has devices_per_leaf devices
@@ -116,7 +116,7 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
         )
         eval_frequency = total_devices
 
-    recipe = EdgeRecipe(
+    recipe = EdgeFedBuffRecipe(
         job_name=f"pt_job_{fl_mode}{suffix}",
         model=Cifar10ConvNet(),
         model_manager_config=model_manager_config,
