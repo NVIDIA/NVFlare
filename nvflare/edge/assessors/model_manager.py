@@ -30,10 +30,10 @@ class ModelManager(FLComponent, ABC):
     def __init__(self):
         FLComponent.__init__(self)
         """Initialize the ModelManager.
-        ModelManager keeps track of three things: 
+        ModelManager keeps track of three things:
         - current_model holding the current global model
         - current_model_version holding the current global model version
-        - updates containing all received updates for updating the global model 
+        - updates containing all received updates for updating the global model
         """
         self.current_model = None
         self.current_model_version = 0
