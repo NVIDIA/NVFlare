@@ -103,8 +103,6 @@ class FlowerJob(FedJob):
         if analytics_receiver:
             check_object_type("analytics_receiver", analytics_receiver, AnalyticsReceiver)
             self.to_server(analytics_receiver, "analytics_receiver")
-        else:
-            raise ValueError("Missing analytics receiver on the server side.")
 
         # client side
         # cell pipe

@@ -91,7 +91,7 @@ class SimEnv(ExecEnv):
 
     def deploy(self, job: FedJob):
         job.simulator_run(
-            workspace=os.path.join(WORKSPACE_ROOT, job.name),
+            workspace=os.path.join(self.workspace_root, job.name),
             n_clients=self.num_clients,
             clients=self.clients,
             threads=self.num_threads,
