@@ -73,8 +73,6 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
             # need all devices to train for one global model version
             num_updates_for_model=total_devices,
             max_model_version=global_rounds,
-            # basic synchronous mode, no need to discard old model updates
-            max_model_history=1,
         )
         device_manager_config = DeviceManagerConfig(
             # each leaf node has devices_per_leaf devices
@@ -94,16 +92,6 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
             # sync - each global model covers total_devices data
             # async - each global model covers 1 device's data
             max_model_version=global_rounds * total_devices,
-            # basic async mode, set max model update version diff so that
-            # the updater will not discard old model updates
-            # since the fastest device is 4 times faster than the slowest device,
-            # worst case is that there is only 1 slowest device and (total_devices - 1) fastest devices,
-            # to ensure that the updater will not discard old model updates,
-            # we need to allow (total_devices - 1) * 4 model updates
-            # on server side:
-            max_model_history=(total_devices - 1) * 4,
-            # on client/updater side:
-            max_num_active_model_versions=(total_devices - 1) * 4,
             # increase the update timeout to allow for the slowest device to finish
             update_timeout=500,
         )

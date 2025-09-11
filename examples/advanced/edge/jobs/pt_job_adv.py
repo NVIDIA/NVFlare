@@ -40,7 +40,7 @@ def main():
     global_lr = 0.1
     num_updates_for_model = 20
     max_model_version = 200
-    max_model_history = 100
+    max_model_history = None
     min_hole_to_fill = 10
     eval_frequency = 1
     local_batch_size = 10
