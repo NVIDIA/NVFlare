@@ -31,6 +31,7 @@ hello-pt
 |-- client.py         # client local training script
 |-- model.py          # model definition
 |-- job.py            # job recipe that defines client and server configurations
+|-- prepare_data.sh   # download the CIFAR10 data script 
 |-- requirements.txt  # dependencies
 ```
 Download the dataset:
@@ -49,12 +50,15 @@ The ModelController API enables the option to easily customize a workflow with P
 - Model Selection: As and alternative to using a `IntimeModelSelector` componenet for model selection, we instead compare the metrics of the models in the workflow to select the best model each round.
 - Saving/Loading: Rather than configuring a persistor such as `PTFileModelPersistor` component, we choose to utilize PyTorch's save and load functions and save the metadata of the FLModel separately.
 
-### 3. Run the script
+### 3. Run the Job 
 
-Use the Job API to define and run the example with the simulator:
+Use the Job Recipe to define and run the example with the simulator:
 
+First download the data
+```bash
+./prepare_data.sh
 ```
-python3 pt_fedavg_early_stopping_script.py
-```
 
-View the results in the job workspace: `/tmp/nvflare/jobs/workdir`.
+```bash
+python job.py
+``` 
