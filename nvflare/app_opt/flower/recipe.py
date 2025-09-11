@@ -54,9 +54,7 @@ class FlowerRecipe(Recipe):
         per_msg_timeout (float, optional): Timeout for receiving individual messages. Defaults to 10.0 seconds.
         tx_timeout (float, optional): Timeout for transmitting data. Defaults to 100.0 seconds.
         client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
-        analytics_receiver (AnalyticsReceiver, optional): the AnalyticsReceiver to use to process received metrics.
-        extra_env (dict, optional): optional extra env variables to be passed to Flower client
-        tracking_type (str, optional): the type of metric tracking to enable. Defaults to "tensorboard".
+        extra_env (dict, optional): optional extra env variables to be passed to Flower client.
     """
 
     def __init__(
