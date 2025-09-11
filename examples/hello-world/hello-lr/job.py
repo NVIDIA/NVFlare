@@ -15,7 +15,9 @@
 import argparse
 
 from nvflare.app_common.np.recipes.lr.fedavg import FedAvgLrRecipe
-from nvflare.recipe import SimEnv, POCEnv
+from nvflare.recipe import SimEnv
+
+# from nvflare.recipe import POCEnv
 
 
 def define_parser():
