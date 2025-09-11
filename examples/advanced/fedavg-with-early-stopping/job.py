@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from src.net import Net
+from model import Net
 
 from nvflare import FedJob
 from nvflare.app_opt.pt.fedavg_early_stopping import PTFedAvgEarlyStopping
@@ -21,9 +21,9 @@ from nvflare.job_config.script_runner import ScriptRunner
 if __name__ == "__main__":
     n_clients = 2
     num_rounds = 5
-    train_script = "src/cifar10_fl.py"
+    train_script = "client.py"
 
-    job = FedJob(name="cifar10_fedavg_early_stopping")
+    job = FedJob(name="fedavg_with_early_stopping")
 
     # Define the controller workflow and send to server
     controller = PTFedAvgEarlyStopping(
