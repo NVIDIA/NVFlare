@@ -11,5 +11,5 @@ RUN pip install git+https://github.com/NVIDIA/NVFlare.git@main
 COPY application_code.zip application_code.zip
 RUN nvflare pre-install install -a application_code.zip
 
-ENTRYPOINT ["/opt/nvflare/startup/sub_start.sh"]
+ENTRYPOINT ["/user_config/nvflare/startup/sub_start.sh"]
 
