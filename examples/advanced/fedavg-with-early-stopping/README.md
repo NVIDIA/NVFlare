@@ -1,4 +1,4 @@
-# Hello Customized FedAvg
+# Hello FedAvg With Early Stopping
 
 In this example we highlight the flexibility of the ModelController API, and show how to write a Federated Averaging workflow with early stopping, model selection, and saving and loading. Follow along in the [hello-fedavg.ipynb](hello-fedavg.ipynb) notebook for more details.
 
