@@ -63,6 +63,7 @@ class SimpleNumpyModel:
         Returns:
             Dictionary containing evaluation metrics
         """
-        # Simple evaluation: return the mean of the weights as accuracy
-        accuracy = np.mean(self.weights)
-        return {"accuracy": accuracy}
+        # Simple evaluation: return the mean of the weights as a mock metric
+        # In a real application, this would be actual model performance on test data
+        weight_mean = np.mean(self.weights)
+        return {"weight_mean": weight_mean}

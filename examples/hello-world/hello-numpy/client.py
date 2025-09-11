@@ -63,7 +63,7 @@ def main():
 
         # Log metrics to summary writer
         global_step = input_model.current_round
-        summary_writer.add_scalar(tag="accuracy", scalar=metrics["accuracy"], global_step=global_step)
+        summary_writer.add_scalar(tag="weight_mean", scalar=metrics["weight_mean"], global_step=global_step)
 
         print(f"Client {client_name} finished training for round {input_model.current_round}")
         print(f"Sending weights: {new_params}")
