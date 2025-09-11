@@ -52,7 +52,7 @@ The ModelController API enables the option to easily customize a workflow with P
 
 ### 3. Run the Job 
 
-Use the Job Recipe to define and run the example with the simulator:
+Use the Job API to define and run the example with the simulator:
 
 First download the data
 ```bash
