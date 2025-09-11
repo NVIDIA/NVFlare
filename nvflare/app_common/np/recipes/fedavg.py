@@ -167,7 +167,7 @@ class NumpyFedAvgRecipe(Recipe):
         )
         # Send the controller to the server
         job.to_server(controller)
-        
+
         # Send initial model to server if provided
         if self.initial_model is not None:
             job.to(self.initial_model, "server")
