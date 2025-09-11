@@ -119,7 +119,7 @@ class OnPremPackager(Packager):
         self.cc_config_key = cc_config_key
         self.build_image_cmd = build_image_cmd
 
-    def _build_cc_image(self, cc_config_yaml: str, site_name: str, startup_folder_path: str):
+    def _build_cc_image(self, cc_config_yaml: str):
         """Build CC image for the site."""
         build_image_cmd = to_abs_path(cc_config_yaml, self.build_image_cmd)
         if not os.path.exists(build_image_cmd) or not os.access(build_image_cmd, os.X_OK):
@@ -128,6 +128,18 @@ class OnPremPackager(Packager):
         output = run_command(command)
         tar_file_path = _extract_cvm_tar_path(output)
         return tar_file_path
+
+    def _add_startup_kit_to_cc_config(self, cc_config_path: str, startup_kit_path: str):
+        with open(cc_config_path, "r") as f:
+            data = yaml.safe_load(f)
+
+            user_config = data.get("user_config", {})
+            user_config.update({"nvflare": startup_kit_path})
+            data["user_config"] = user_config
+
+        # Save the updated YAML back to file
+        with open(cc_config_path, "w") as f:
+            yaml.safe_dump(data, f, default_flow_style=False)
 
     def _change_log_dir(self, log_config_path: str):
         with open(log_config_path, "r") as f:
@@ -152,14 +164,17 @@ class OnPremPackager(Packager):
         if not os.path.exists(cc_config_yaml):
             raise RuntimeError(f"{cc_config_yaml=} does not exist")
 
+
         fd, temp_cc_config_yaml = tempfile.mkstemp(suffix=".yaml")
         os.close(fd)
 
         tar_file_path = None
         try:
             shutil.copyfile(cc_config_yaml, temp_cc_config_yaml)
+            # add startup kit to yaml automatically
+            self._add_startup_kit_to_cc_config(temp_cc_config_yaml, str(dest_dir / participant.name))
             # Build CC image
-            tar_file_path = self._build_cc_image(temp_cc_config_yaml, participant.name, str(dest_dir))
+            tar_file_path = self._build_cc_image(temp_cc_config_yaml)
         finally:
             os.remove(temp_cc_config_yaml)
 
