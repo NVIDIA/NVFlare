@@ -91,7 +91,7 @@ or if you prefer both training and evaluation
 .. literalinclude:: ../../../examples/hello-world/hello-pt/client_with_eval.py
     :language: python
     :linenos:
-    :caption: Code Code (client_with_eval.py)
+    :caption: Client Code (client_with_eval.py)
     :lines: 14-
 
 

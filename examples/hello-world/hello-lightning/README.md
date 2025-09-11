@@ -175,27 +175,26 @@ The main flow of the code logic in the client.py file involves running a federat
 With this method, the developers can use the Client API
 to change their centralized training code to an FL scenario with
 these simple code changes shown below.
-```
+```python
 # (1) import nvflare lightning client API
-    import nvflare.client.lightning as flare
+import nvflare.client.lightning as flare
 
-    # (2) patch the lightning trainer
-    flare.patch(trainer)
+# (2) patch the lightning trainer
+flare.patch(trainer)
 
-    while flare.is_running():
-        
-        # Note that we can optionally receive the FLModel from NVFLARE.
-        # We don't need to pass this input_model to trainer because after flare.patch 
-        # the trainer.fit/validate will get the global model internally
-        input_model = flare.receive()
+while flare.is_running():
+    # Note that we can optionally receive the FLModel from NVFLARE.
+    # We don't need to pass this input_model to trainer because after flare.patch 
+    # the trainer.fit/validate will get the global model internally
+    input_model = flare.receive()
 
-        trainer.validate(...)
+    trainer.validate(...)
 
-        trainer.fit(...)
+    trainer.fit(...)
 
-        trainer.test(...)
+    trainer.test(...)
 
-        trainer.predict(...)
+    trainer.predict(...)
 ```
 
 
