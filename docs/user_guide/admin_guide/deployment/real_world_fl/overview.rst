@@ -123,32 +123,43 @@ There are multiple ways to deploy NVFLARE depending on use case:
 
 In this section, we will discuss how to deploy for different cases.
 
+
+python package
+==============
+
+The FLARE software is just python package installed via pip install. The training code can be either be
+
+- Dynamically training code via a custom folder containing the Python code.
+- Pre-installed as a Python package via the :ref:`app_pre_install` command of the FLARE CLI.
+
+Docker mode
+===========
+The training code and dependencies can be package into a docker container image,
+then specify the docker image during provision.
+
+Docker: Build the docker image for each startup kit,
+Then run docker run : docker run
+
+.. note::
+
+   When launching the FL server inside a docker with ``docker run``, use ``--net=host`` to map hostname into that
+   docker instance.
+
+
 On-Premise Deployment 
 =============================
 
 Local host deployment
 ---------------------
 
-Production mode, non-HA, secure, local
+Production mode, local
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 You can use the CLI provision command to generate a local production mode.
-
-Docker mode
-^^^^^^^^^^^
-Use builder to generate docker-compose files to allow different dockers run locally.  Similar to production mode, the server needs either to be localhost or one needs to modify /etc/hosts
-Run docker-compose up/down
 
 Bare-metal deployment
 ---------------------
 To deploy on-premise, copy the startup package to each host machine then start with the start script.
 
-Docker-based deployment
------------------------
-Docker: Build the docker image for each startup kit,
-
-Then run docker run : docker run
-
-See the details at :ref:`docker_compose`.
 
 Cloud Deployment
 ================
@@ -162,7 +173,7 @@ Deploy to Google Cloud will be made available in a future release.
 Kubernetes Deployment
 =====================
 As mentioned above, you can run NVIDIA FLARE in the public cloud.  If you prefer to deploy NVIDIA FLARE in Amazon Elastic Kubernetes Service (EKS),
-you can find the deployment guide in :ref:`eks_deployment`.
+you can find the deployment guide in :ref:`aws_eks`.
 
 
 Starting Federated Learning Servers
@@ -177,8 +188,7 @@ you will need to modify fed_server.json.  The same applies to the other two file
 
 .. note::
 
-   When launching the FL server inside a docker with ``docker run``, use ``--net=host`` to map hostname into that
-   docker instance.  For secure gRPC communication, the FL server has to bind to the hostname specified in the
+   For secure gRPC communication, the FL server has to bind to the hostname specified in the
    provisioning stage. Always make sure that hostname is what FL server can bind to. Additionally,
    the port that the server communicates on must also not be blocked by any firewalls.
 

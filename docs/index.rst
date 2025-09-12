@@ -20,7 +20,7 @@ NVIDIA FLARE
    :caption: Guides
 
    example_applications_algorithms
-   tutorials <tutorials>
+   tutorials
    user_guide
    programming_guide
    best_practices
