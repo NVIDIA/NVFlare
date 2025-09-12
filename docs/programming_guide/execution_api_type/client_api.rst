@@ -196,8 +196,13 @@ than CellPipe, it's not suitable for high-frequency metrics exchange.
 
 Configuration
 =============
-
 Different configurations are available for each type of executor.
+
+.. note::
+
+    The configuration can be generated automatically via the FLARE Job API, so manual editing is not required.
+    For data scientists, the FLARE Job Recipe provides an even simpler approach, leveraging the Job API to generate the configuration without needing to know the details of the job setup.
+    As such, this section is considered advanced and is intended for those who are curious about the underlying mechanisms.
 
 in-process executor configuration
 ---------------------------------
@@ -246,8 +251,8 @@ that use Client API to write the
 :github_nvflare_link:`train script <examples/hello-world/step-by-step/cifar10/code/fl/train.py>`.
 
 
-Selection of Job Templates
-==========================
+Selection of Job Templates (deprecated)
+=======================================
 To help users quickly set up job configurations, we have created numerous job templates. You can select a job template that closely matches
 your use case and adapt it to your needs by modifying the necessary variables.
 
