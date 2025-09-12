@@ -1,6 +1,6 @@
-########
-Overview
-########
+###################
+Deployment Overview
+###################
 
 ************
 Introduction
@@ -308,3 +308,4 @@ Administrator side folder and file structure
                 config/
                 models/
                 resources/
+
