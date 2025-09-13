@@ -1,0 +1,26 @@
+from .backend import Backend
+from .ctx import Context
+
+
+class Proxy:
+
+    def __init__(self, target_name, backend: Backend, caller_name: str):
+        self.target_name = target_name
+        self.backend = backend
+        self.caller_name = caller_name
+
+    @property
+    def name(self):
+        return self.target_name
+
+    def __getattr__(self, func_name):
+        """
+        This method is called when Python cannot find an invoked method func_name of this class.
+        """
+
+        def method(*args, **kwargs):
+            ctx = Context(self.caller_name, self.name)
+            kwargs["context"] = ctx
+            return self.backend.call_target(self.target_name, func_name, *args, **kwargs)
+
+        return method
