@@ -29,9 +29,10 @@ class SignatureBuilder(Builder):
 
     @staticmethod
     def _do_sign(root_pri_key, dest_dir):
-        signatures = sign_all(dest_dir, root_pri_key)
-        with open(os.path.join(dest_dir, ProvFileName.SIGNATURE_JSON), "wt") as f:
-            json.dump(signatures, f)
+        if dest_dir and os.path.isdir(dest_dir):
+            signatures = sign_all(dest_dir, root_pri_key)
+            with open(os.path.join(dest_dir, ProvFileName.SIGNATURE_JSON), "wt") as f:
+                json.dump(signatures, f)
 
     def build(self, project: Project, ctx: ProvisionContext):
         root_pri_key = ctx.get(CtxKey.ROOT_PRI_KEY)
@@ -40,4 +41,6 @@ class SignatureBuilder(Builder):
 
         for p in project.get_all_participants():
             dest_dir = ctx.get_kit_dir(p)
+            self._do_sign(root_pri_key, dest_dir)
+            dest_dir = ctx.get_local_dir(p)
             self._do_sign(root_pri_key, dest_dir)
