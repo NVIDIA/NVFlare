@@ -4,6 +4,12 @@
 Model Learner
 #############
 
+.. note::
+
+   Model Learner Pattern is one of earlier pattern used in FLARE to write client side code.
+   The pattern is still valid, but in many cases, Client API is much simpler to use, therefore we recommend take a look at :ref:`client_api` first.
+
+
 Introduction
 ============
 

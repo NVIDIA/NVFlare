@@ -17,9 +17,9 @@ is configure the Flower application into a FLARE job and submit the job to the F
 .. toctree::
    :maxdepth: 1
 
-   flower_integration/flower_initial_integration
-   flower_integration/flower_job_structure
-   flower_integration/flower_run_as_flare_job
-   flower_integration/flare_multi_job_architecture
-   flower_integration/flower_detailed_design
-   flower_integration/flower_reliable_messaging
+   flower_initial_integration
+   flower_job_structure
+   flower_run_as_flare_job
+   flare_multi_job_architecture
+   flower_detailed_design
+   flower_reliable_messaging
