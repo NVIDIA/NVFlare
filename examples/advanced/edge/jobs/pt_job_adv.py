@@ -22,6 +22,7 @@ from nvflare.edge.tools.edge_fed_buff_recipe import (
     ModelManagerConfig,
     SimulationConfig,
 )
+from nvflare.recipe.prod_env import ProdEnv
 
 
 def main():
@@ -29,6 +30,8 @@ def main():
     devices_per_leaf = 10000
     device_selection_size = 200
     num_leaf_nodes = 4
+    startup_kit_location = "/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com"
+    username = "admin@nvidia.com"
     output_dir = "/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer"
     dataset_root = "/tmp/nvflare/datasets/cifar10"
     subset_size = 100
@@ -92,11 +95,16 @@ def main():
         custom_source_root=None,
     )
 
-    print("Exporting recipe...")
+    print(f"Exporting recipe to {output_dir}")
     recipe.export(output_dir)
     print("DONE")
 
-    return 0
+    env = ProdEnv(startup_kit_location=startup_kit_location, username=username)
+    run = recipe.execute(env)
+    print()
+    print("Result can be found in :", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()
 
 
 if __name__ == "__main__":

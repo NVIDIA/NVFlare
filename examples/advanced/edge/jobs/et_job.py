@@ -108,7 +108,13 @@ recipe = ETFedBuffRecipe(
     device_training_params={"epoch": 3, "lr": 0.0001, "batch_size": batch_size},
 )
 if args.export_job:
-    recipe.export(job_dir=os.path.join(admin_startup_kit_dir, "transfer"))
+    output_dir = os.path.join(admin_startup_kit_dir, "transfer")
+    print(f"Exporting recipe to {output_dir}")
+    recipe.export(job_dir=output_dir)
 else:
-    env = ProdEnv(startup_kit_dir=admin_startup_kit_dir)
-    recipe.execute(env)
+    env = ProdEnv(startup_kit_location=admin_startup_kit_dir, username="admin@nvidia.com")
+    run = recipe.execute(env)
+    print()
+    print("Result can be found in :", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()
