@@ -164,7 +164,6 @@ class OnPremPackager(Packager):
         if not os.path.exists(cc_config_yaml):
             raise RuntimeError(f"{cc_config_yaml=} does not exist")
 
-
         fd, temp_cc_config_yaml = tempfile.mkstemp(suffix=".yaml")
         os.close(fd)
 
