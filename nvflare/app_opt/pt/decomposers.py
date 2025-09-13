@@ -92,7 +92,7 @@ class TensorDecomposer(ViaFileDecomposer):
 
     def load_from_file(self, path: str, fobs_ctx: dict, meta: dict = None) -> Any:
         items = load_file(path)
-        self.logger.debug(f"got {len(items)} tensors from file {path}")
+        self.logger.info(f"loaded {len(items)} tensor(s) from file {path}")
         if meta:
             # the meta keeps names of removed tensors and the name of the tensor for them
             for kept, removed_group in meta.items():

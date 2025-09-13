@@ -482,6 +482,7 @@ def download_object(
     )
 
     while True:
+        start_time = time.time()
         reply = cell.send_request(
             channel=OBJ_DOWNLOADER_CHANNEL,
             target=from_fqcn,
@@ -492,15 +493,16 @@ def download_object(
             optional=optional,
             abort_signal=abort_signal,
         )
+        duration = time.time() - start_time
 
         if abort_signal and abort_signal.triggered:
-            consumer.download_failed(ref_id, "download aborted")
+            consumer.download_failed(ref_id, f"download aborted after {duration} secs")
             return
 
         assert isinstance(reply, Message)
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc != ReturnCode.OK:
-            consumer.download_failed(ref_id, f"error requesting data from {from_fqcn}: {rc}")
+            consumer.download_failed(ref_id, f"error requesting data from {from_fqcn} after {duration} secs: {rc}")
             return
 
         payload = reply.payload
@@ -510,7 +512,7 @@ def download_object(
             consumer.download_completed(ref_id)
             return
         elif status == ProduceRC.ERROR:
-            consumer.download_failed(ref_id, "producer error")
+            consumer.download_failed(ref_id, f"producer error after {duration} secs")
             return
 
         # continue

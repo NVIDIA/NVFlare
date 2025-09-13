@@ -82,6 +82,7 @@ class NumpyArrayDecomposer(ViaFileDecomposer):
         with np.load(path, allow_pickle=False) as npz_obj:
             for k in npz_obj.files:
                 result[k] = npz_obj[k]
+        self.logger.info(f"loaded {len(result)} array(s) from file {path}")
         return result
 
 

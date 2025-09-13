@@ -19,6 +19,8 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
+import nvflare.fuel.utils.app_config_utils as acu
+from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
 from nvflare.fuel.utils import fobs
@@ -191,7 +193,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             raise e
 
         size = os.path.getsize(file_name)
-        self.logger.debug(f"ViaFile: created file {file_name=} {size=}")
+        self.logger.info(f"ViaFile: created file {file_name=} {size=}")
         dc.set_file_size(size)
         return file_name, size, meta
 
@@ -297,10 +299,13 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         file_name, size, meta = self._create_file(fobs_ctx)
         cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
 
+        min_size_for_file = acu.get_positive_int_var(ConfigVarName.MIN_FILE_SIZE_FOR_STREAMING, self.min_size_for_file)
+        self.logger.debug(f"MIN_FILE_SIZE_FOR_STREAMING={min_size_for_file}")
+
         if meta:
             use_file_dot = True
         else:
-            use_file_dot = cell and size > self.min_size_for_file
+            use_file_dot = cell and size > min_size_for_file
 
         if not use_file_dot:
             # use bytes DOT
@@ -462,7 +467,11 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             self.logger.error(f"missing {_FileRefKey.FQCN} from {file_ref}")
             raise RuntimeError("FOBS Protocol Error")
 
-        req_timeout = fobs_ctx.get(fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT, 10.0)
+        req_timeout = fobs_ctx.get(fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT, None)
+        if not req_timeout:
+            req_timeout = acu.get_positive_float_var(ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT, 10.0)
+        self.logger.debug(f"DOWNLOAD_REQ_TIMEOUT={req_timeout}")
+
         abort_signal = fobs_ctx.get(fobs.FOBSContextKey.ABORT_SIGNAL)
 
         self.logger.debug(f"trying to download file: {file_ref_id=} {fqcn=}")
