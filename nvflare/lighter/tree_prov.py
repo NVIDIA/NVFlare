@@ -128,6 +128,7 @@ class _Packager(Packager):
         )
 
         sample_sim_config = {
+            "job_name": "edge_job",
             "endpoint": f"http://localhost:{self.rp_port}",
             "num_devices": 10000,
             "num_active_devices": 100,
