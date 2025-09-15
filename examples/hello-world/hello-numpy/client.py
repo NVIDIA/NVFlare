@@ -15,8 +15,6 @@
     client side training scripts
 """
 
-import copy
-
 import numpy as np
 from model import SimpleNumpyModel
 
