@@ -29,9 +29,6 @@ from nvflare.fuel.utils.fobs.lobs import get_datum_dir
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.msg_root_utils import subscribe_to_msg_root
 
-# if the file size for collected items is < _MIN_SIZE_FOR_FILE, they will be attached to the message.
-_MIN_SIZE_FOR_FILE = 1024 * 1024 * 2
-
 _MIN_DOWNLOAD_TIMEOUT = 60  # allow at least 1 minute gap between download activities
 
 
@@ -92,7 +89,8 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         self.decompose_ctx_key = f"{self.prefix}_dc"  # kept in fobs_ctx: each target type has its own DecomposeCtx
         self.items_key = f"{self.prefix}_items"  # in fobs_ctx: each target type has its own set of items
         self.file_downloader_class = FileDownloader
-        self.min_size_for_file = _MIN_SIZE_FOR_FILE
+        self.min_size_for_file = 0
+        self.config_var_prefix = ""
 
     def set_file_downloader_class(self, file_downloader_class):
         # used only for offline testing!
@@ -160,6 +158,14 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         """
         pass
 
+    @abstractmethod
+    def native_decompose(self, target: Any, manager: DatumManager = None) -> bytes:
+        pass
+
+    @abstractmethod
+    def native_recompose(self, data: bytes, manager: DatumManager = None) -> Any:
+        pass
+
     def _get_temp_file_name(self):
         datum_dir = get_datum_dir()
         return os.path.join(datum_dir, f"{self.prefix}_{uuid.uuid4()}")
@@ -215,6 +221,15 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             # this should never happen
             raise RuntimeError("FOBS System Error: missing DatumManager")
 
+        min_size_for_file = acu.get_int_var(
+            self._config_var_name(ConfigVarName.MIN_FILE_SIZE_FOR_STREAMING), self.min_size_for_file
+        )
+        if min_size_for_file <= 0:
+            # use native decompose
+            self.logger.info("using native_decompose")
+            data = self.native_decompose(target, manager)
+            return {"type": "native", "data": data}
+
         fobs_ctx = manager.fobs_ctx
 
         # Create a DecomposeCtx for this target type.
@@ -226,7 +241,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
 
         item_id, target_id = self._create_ref(target, manager, fobs_ctx)
         self.logger.debug(f"ViaFile: created ref for target {target_id}: {item_id}")
-        return item_id
+        return {"type": "ref", "data": item_id}
 
     def _create_download_tx(self, fobs_ctx: dict):
         msg_root_id, msg_root_ttl = self._determine_msg_root(fobs_ctx)
@@ -295,12 +310,17 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             self.logger.error(f"exception creating datum: {ex}")
             mgr.set_error(f"exception creating datum in {type(self)}")
 
+    def _config_var_name(self, base_name: str):
+        return f"{self.config_var_prefix}{base_name}"
+
     def _create_datum(self, fobs_ctx: dict):
         file_name, size, meta = self._create_file(fobs_ctx)
         cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
 
-        min_size_for_file = acu.get_positive_int_var(ConfigVarName.MIN_FILE_SIZE_FOR_STREAMING, self.min_size_for_file)
-        self.logger.debug(f"MIN_FILE_SIZE_FOR_STREAMING={min_size_for_file}")
+        min_size_for_file = acu.get_int_var(
+            self._config_var_name(ConfigVarName.MIN_FILE_SIZE_FOR_STREAMING), self.min_size_for_file
+        )
+        self.logger.info(f"MIN_FILE_SIZE_FOR_STREAMING={min_size_for_file}")
 
         if meta:
             use_file_dot = True
@@ -413,8 +433,25 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             # should never happen!
             raise RuntimeError("missing DatumManager")
 
+        if not isinstance(data, dict):
+            self.logger.error(f"data to be recomposed should be dict but got {type(data)}")
+            raise RuntimeError("FOBS protocol error")
+
+        dtype = data.get("type")
+        data = data.get("data")
+        if not data:
+            self.logger.error("missing 'data' property from the recompose data")
+            raise RuntimeError("FOBS protocol error")
+
+        if dtype == "native":
+            self.logger.info("using native_recompose")
+            return self.native_recompose(data, manager)
+        elif dtype != "ref":
+            self.logger.error(f"invalid data type {dtype} in recompose data")
+            raise RuntimeError("FOBS protocol error")
+
         if not isinstance(data, str):
-            self.logger.error(f"data to be recomposed should be str but got {type(data)}")
+            self.logger.error(f"ref data must be str but got {type(data)}")
             raise RuntimeError("FOBS protocol error")
 
         # data is the item id
@@ -469,7 +506,9 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
 
         req_timeout = fobs_ctx.get(fobs.FOBSContextKey.DOWNLOAD_REQ_TIMEOUT, None)
         if not req_timeout:
-            req_timeout = acu.get_positive_float_var(ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT, 10.0)
+            req_timeout = acu.get_positive_float_var(
+                self._config_var_name(ConfigVarName.STREAMING_PER_REQUEST_TIMEOUT), 10.0
+            )
         self.logger.debug(f"DOWNLOAD_REQ_TIMEOUT={req_timeout}")
 
         abort_signal = fobs_ctx.get(fobs.FOBSContextKey.ABORT_SIGNAL)

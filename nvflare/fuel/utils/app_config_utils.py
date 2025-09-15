@@ -32,3 +32,11 @@ def get_positive_int_var(var_name, default):
         return default
     else:
         return value if value > 0 else default
+
+
+def get_int_var(var_name, default):
+    value = ConfigService.get_int_var(name=var_name, conf=SystemConfigs.APPLICATION_CONF, default=default)
+    if value is None:
+        return default
+    else:
+        return value

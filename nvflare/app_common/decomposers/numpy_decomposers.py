@@ -14,6 +14,7 @@
 """Decomposers for types from app_common and Machine Learning libraries."""
 import os
 from abc import ABC
+from io import BytesIO
 from typing import Any
 
 import numpy as np
@@ -57,6 +58,12 @@ class Int32ScalarDecomposer(NumpyScalarDecomposer):
 
 
 class NumpyArrayDecomposer(ViaFileDecomposer):
+
+    def __init__(self):
+        ViaFileDecomposer.__init__(self)
+        self.config_var_prefix = "np_"
+        self.min_size_for_file = 0  # by default do not use file downloading.
+
     def supported_type(self):
         return np.ndarray
 
@@ -84,6 +91,15 @@ class NumpyArrayDecomposer(ViaFileDecomposer):
                 result[k] = npz_obj[k]
         self.logger.info(f"loaded {len(result)} array(s) from file {path}")
         return result
+
+    def native_decompose(self, target: np.ndarray, manager: DatumManager = None) -> bytes:
+        stream = BytesIO()
+        np.save(stream, target, allow_pickle=False)
+        return stream.getvalue()
+
+    def native_recompose(self, data: bytes, manager: DatumManager = None) -> np.ndarray:
+        stream = BytesIO(data)
+        return np.load(stream, allow_pickle=False)
 
 
 def register():
