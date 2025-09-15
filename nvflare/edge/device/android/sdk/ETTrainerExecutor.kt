@@ -82,9 +82,9 @@ class ETTrainerExecutor(
  */
 object ETTrainerExecutorFactory {
     
-    fun createExecutor(context: android.content.Context, method: String, modelData: String, meta: Map<String, Any>): ETTrainerExecutor {
+    fun createExecutor(context: android.content.Context, method: String, meta: Map<String, Any>): ETTrainerExecutor {
         val trainingConfig = TrainingConfig.fromMap(meta)
-        val trainer = ETTrainer(context, modelData, meta)
+        val trainer = ETTrainer(context, meta)
         return ETTrainerExecutor(trainer)
     }
 }

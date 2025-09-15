@@ -169,11 +169,10 @@ private fun processComponents(
             private fun resolveExecutor(args: Map<String, Any>?): Any? {
                 // Extract required arguments for ETTrainerExecutorFactory
                 val method = args?.get("method") as? String ?: "cnn"
-                val modelData = args?.get("model_data") as? String ?: ""
                 val meta = args?.get("meta") as? Map<String, Any> ?: emptyMap()
                 
                 // Use ETTrainerExecutorFactory to create the executor
-                return ETTrainerExecutorFactory.createExecutor(context, method, modelData, meta)
+                return ETTrainerExecutorFactory.createExecutor(context, method, meta)
             }
             
             private fun resolveTrainer(args: Map<String, Any>?): Any? {
@@ -194,7 +193,7 @@ private fun processComponents(
                 )
                 
                 // Use ETTrainerExecutorFactory with the method from args
-                return ETTrainerExecutorFactory.createExecutor(context, method, "", meta)
+                return ETTrainerExecutorFactory.createExecutor(context, method, meta)
             }
         }
 
