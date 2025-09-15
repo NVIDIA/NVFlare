@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from argparse import ArgumentParser
 
-from nvflare.app_opt.flower.flower_pt_job import FlowerPyTorchJob
-from nvflare.client.api import ClientAPIType
-from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
+from nvflare.app_opt.flower.recipe import FlowerRecipe
+from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
 def main():
@@ -25,32 +23,32 @@ def main():
     parser.add_argument("--job_name", type=str, required=True)
     parser.add_argument("--content_dir", type=str, required=True)
     parser.add_argument("--stream_metrics", action="store_true")
-    parser.add_argument("--use_client_api", action="store_true")
     parser.add_argument("--export_job", action="store_true")
     parser.add_argument("--export_dir", type=str, default="jobs")
     parser.add_argument("--workdir", type=str, default="/tmp/nvflare/hello-flower")
     args = parser.parse_args()
 
-    env = {}
-    if args.stream_metrics or args.use_client_api:
-        # needs to init client api to stream metrics
-        # only external client api works with the current flower integration
-        env = {CLIENT_API_TYPE_KEY: ClientAPIType.EX_PROCESS_API.value}
-
     num_of_clients = 2
 
-    job = FlowerPyTorchJob(
+    recipe = FlowerRecipe(
         name=args.job_name,
         flower_content=args.content_dir,
-        stream_metrics=args.stream_metrics,
         min_clients=num_of_clients,
-        extra_env=env,
     )
 
+    if args.stream_metrics:
+        add_experiment_tracking(recipe, tracking_type="tensorboard")
+
     if args.export_job:
-        job.export_job(args.export_dir)
+        recipe.export(args.export_dir)
+        print(f"Job exported to {args.export_dir}")
     else:
-        job.simulator_run(os.path.join(args.workdir, job.name), gpu="0", n_clients=num_of_clients)
+        env = SimEnv(num_clients=num_of_clients, workspace_root=args.workdir)
+        run = recipe.execute(env)
+        print()
+        print("Result can be found in :", run.get_result())
+        print("Job Status is:", run.get_status())
+        print()
 
 
 if __name__ == "__main__":
