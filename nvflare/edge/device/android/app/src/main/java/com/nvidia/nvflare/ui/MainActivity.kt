@@ -207,9 +207,15 @@ fun MainScreen() {
                         Switch(
                             checked = supportedJobsState.contains(job),
                             onCheckedChange = { checked ->
+                                // Prevent changes during training to avoid race conditions
+                                if (status == TrainingStatus.TRAINING) {
+                                    return@onCheckedChange
+                                }
+                                
                                 flareRunnerController.toggleJob(job)
                                 supportedJobsState = flareRunnerController.supportedJobs
                             },
+                            enabled = status != TrainingStatus.TRAINING,
                             modifier = Modifier.padding(start = 8.dp)
                         )
                     }
@@ -276,6 +282,31 @@ fun MainScreen() {
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("Start Training")
+                    }
+                    
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                flareRunnerController.restartTrainingWithCurrentSelection(
+                                    onStatusUpdate = { newStatus ->
+                                        status = newStatus
+                                        errorMessage = null
+                                    },
+                                    onError = { error ->
+                                        status = TrainingStatus.IDLE
+                                        errorMessage = error.message ?: "Unknown error"
+                                    },
+                                    onSuccess = {
+                                        status = TrainingStatus.IDLE
+                                        errorMessage = null
+                                    }
+                                )
+                            }
+                        },
+                        enabled = status == TrainingStatus.TRAINING,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Restart Training")
                     }
                     
                     Button(
