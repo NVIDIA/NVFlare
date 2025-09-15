@@ -100,29 +100,6 @@ class FlareRunnerController(
         Log.d(TAG, "FlareRunnerController: Job selection updated: ${supportedJobs.map { it.value }}")
     }
     
-    /**
-     * Restart training with current job selection.
-     * This should be called when user wants to switch datasets during training.
-     */
-    fun restartTrainingWithCurrentSelection(
-        onStatusUpdate: (TrainingStatus) -> Unit,
-        onError: (Exception) -> Unit,
-        onSuccess: () -> Unit
-    ) {
-        if (status != TrainingStatus.TRAINING) {
-            Log.w(TAG, "FlareRunnerController: Cannot restart training - not currently training")
-            return
-        }
-        
-        Log.d(TAG, "FlareRunnerController: Restarting training with current job selection: ${supportedJobs.map { it.value }}")
-        
-        // Stop current training
-        stopTraining()
-        
-        // Start training with new selection
-        startTraining(onStatusUpdate, onError, onSuccess)
-    }
-    
     fun startTraining(
         onStatusUpdate: (TrainingStatus) -> Unit,
         onError: (Exception) -> Unit,

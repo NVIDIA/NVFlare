@@ -286,31 +286,6 @@ fun MainScreen() {
                     
                     Button(
                         onClick = {
-                            scope.launch {
-                                flareRunnerController.restartTrainingWithCurrentSelection(
-                                    onStatusUpdate = { newStatus ->
-                                        status = newStatus
-                                        errorMessage = null
-                                    },
-                                    onError = { error ->
-                                        status = TrainingStatus.IDLE
-                                        errorMessage = error.message ?: "Unknown error"
-                                    },
-                                    onSuccess = {
-                                        status = TrainingStatus.IDLE
-                                        errorMessage = null
-                                    }
-                                )
-                            }
-                        },
-                        enabled = status == TrainingStatus.TRAINING,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Restart Training")
-                    }
-                    
-                    Button(
-                        onClick = {
                             flareRunnerController.stopTraining()
                             status = TrainingStatus.IDLE
                             errorMessage = null
