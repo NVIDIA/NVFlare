@@ -69,23 +69,10 @@ NVIDIA FLARE Job Recipe
 
 The ``server.py`` script uses the modern Job Recipe API to define the federated learning job:
 
-.. code-block:: python
-
-   from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
-   from nvflare.recipe import SimEnv, add_experiment_tracking
-
-   recipe = NumpyFedAvgRecipe(
-       name="hello-numpy",
-       min_clients=n_clients,
-       num_rounds=num_rounds,
-       initial_model=SimpleNumpyModel(),
-       train_script="client.py",
-       train_args=f"--learning_rate {learning_rate}",
-   )
-   add_experiment_tracking(recipe, tracking_type="tensorboard")
-
-   env = SimEnv(num_clients=n_clients)
-   run = recipe.execute(env)
+.. literalinclude:: ../../examples/hello-world/hello-numpy/server.py
+   :language: python
+   :linenos:
+   :caption: server.py
 
 NVIDIA FLARE Client Training Script
 ------------------------------------
@@ -109,31 +96,10 @@ Client Training Loop
 
 The client training script follows the standard FL workflow:
 
-.. code-block:: python
-
-   flare.init()
-   summary_writer = SummaryWriter()
-   
-   while flare.is_running():
-       input_model = flare.receive()
-       
-       # Load the received model weights
-       model.set_weights(input_model.params["numpy_key"])
-       
-       # Perform local training
-       new_params = model.train_step(learning_rate=1.0)
-       
-       # Evaluate the model
-       metrics = model.evaluate()  # Returns {"weight_mean": np.mean(weights)}
-       
-       # Send updated model back to server
-       output_model = flare.FLModel(
-           params={"numpy_key": new_params},
-           params_type="FULL",
-           metrics=metrics,
-           current_round=input_model.current_round,
-       )
-       flare.send(output_model)
+.. literalinclude:: ../../examples/hello-world/hello-numpy/client.py
+   :language: python
+   :linenos:
+   :caption: client.py
 
 The code above uses the three essential methods of the NVFlare's Client API:
 
