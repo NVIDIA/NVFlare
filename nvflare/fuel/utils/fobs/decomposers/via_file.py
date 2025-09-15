@@ -32,6 +32,16 @@ from nvflare.fuel.utils.msg_root_utils import subscribe_to_msg_root
 _MIN_DOWNLOAD_TIMEOUT = 60  # allow at least 1 minute gap between download activities
 
 
+class EncKey:
+    TYPE = "type"
+    DATA = "data"
+
+
+class EncType:
+    NATIVE = "native"
+    REF = "ref"
+
+
 class _FileRefKey:
     LOCATION = "location"
     FILE_REF_ID = "file_ref_id"
@@ -226,9 +236,9 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         )
         if min_size_for_file <= 0:
             # use native decompose
-            self.logger.info("using native_decompose")
+            self.logger.debug("using native_decompose")
             data = self.native_decompose(target, manager)
-            return {"type": "native", "data": data}
+            return {EncKey.TYPE: EncType.NATIVE, EncKey.DATA: data}
 
         fobs_ctx = manager.fobs_ctx
 
@@ -241,7 +251,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
 
         item_id, target_id = self._create_ref(target, manager, fobs_ctx)
         self.logger.debug(f"ViaFile: created ref for target {target_id}: {item_id}")
-        return {"type": "ref", "data": item_id}
+        return {EncKey.TYPE: EncType.REF, EncKey.DATA: item_id}
 
     def _create_download_tx(self, fobs_ctx: dict):
         msg_root_id, msg_root_ttl = self._determine_msg_root(fobs_ctx)
@@ -320,7 +330,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         min_size_for_file = acu.get_int_var(
             self._config_var_name(ConfigVarName.MIN_FILE_SIZE_FOR_STREAMING), self.min_size_for_file
         )
-        self.logger.info(f"MIN_FILE_SIZE_FOR_STREAMING={min_size_for_file}")
+        self.logger.debug(f"MIN_FILE_SIZE_FOR_STREAMING={min_size_for_file}")
 
         if meta:
             use_file_dot = True
@@ -437,17 +447,17 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             self.logger.error(f"data to be recomposed should be dict but got {type(data)}")
             raise RuntimeError("FOBS protocol error")
 
-        dtype = data.get("type")
-        data = data.get("data")
+        enc_type = data.get(EncKey.TYPE)
+        data = data.get(EncKey.DATA)
         if not data:
             self.logger.error("missing 'data' property from the recompose data")
             raise RuntimeError("FOBS protocol error")
 
-        if dtype == "native":
-            self.logger.info("using native_recompose")
+        if enc_type == EncType.NATIVE:
+            self.logger.debug("using native_recompose")
             return self.native_recompose(data, manager)
-        elif dtype != "ref":
-            self.logger.error(f"invalid data type {dtype} in recompose data")
+        elif enc_type != EncType.REF:
+            self.logger.error(f"invalid enc_type {enc_type} in recompose data")
             raise RuntimeError("FOBS protocol error")
 
         if not isinstance(data, str):
