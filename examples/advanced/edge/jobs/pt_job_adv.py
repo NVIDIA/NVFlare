@@ -39,6 +39,7 @@ def main():
     max_model_version = 200
     max_model_history = 100
     min_hole_to_fill = 10
+
     eval_frequency = 1
     local_batch_size = 10
     local_epochs = 4

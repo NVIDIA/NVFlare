@@ -47,6 +47,9 @@ class BuffDeviceManager(DeviceManager):
                 - "random": randomly select devices from the available pool.
         """
         super().__init__()
+        check_positive_int("device_selection_size", device_selection_size)
+        check_positive_int("min_hole_to_fill", min_hole_to_fill)
+
         self.device_selection_size = device_selection_size
         self.initial_min_client_num = initial_min_client_num
         self.min_hole_to_fill = min_hole_to_fill
@@ -171,20 +174,28 @@ class BuffDeviceManager(DeviceManager):
             self.current_selection_version += 1
             # remove all used devices from available devices
             usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
+
             if usable_devices:
                 if self.device_sampling_strategy == "balanced":
                     # try to balance the usage of devices across clients
                     selected_devices = self._balanced_device_sampling(usable_devices, num_holes)
                     for device_id in selected_devices:
+                        # current_selection keeps track of devices selected for a particular model version
                         self.current_selection[device_id] = self.current_selection_version
-                        self.used_devices[device_id] = current_model_version
-
+                        self.used_devices[device_id] = {
+                            "model_version": current_model_version,
+                            "selection_version": self.current_selection_version,
+                        }
                 elif self.device_sampling_strategy == "random":
                     for _ in range(num_holes):
                         device_id = random.choice(list(usable_devices))
                         usable_devices.remove(device_id)
+                        # current_selection keeps track of devices selected for a particular model version
                         self.current_selection[device_id] = self.current_selection_version
-                        self.used_devices[device_id] = current_model_version
+                        self.used_devices[device_id] = {
+                            "model_version": current_model_version,
+                            "selection_version": self.current_selection_version,
+                        }
                         if not usable_devices:
                             break
                 else:
@@ -208,14 +219,19 @@ class BuffDeviceManager(DeviceManager):
             self.used_devices.pop(device_id, None)
 
     def has_enough_devices_and_clients(self, fl_ctx) -> bool:
-        # Check if we have enough devices
-        if len(self.available_devices) < self.device_selection_size:
+        num_holes = self.device_selection_size - len(self.current_selection)
+        usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
+        num_usable_devices = len(usable_devices)
+        if num_usable_devices < num_holes:
             return False
 
-        # Check if we have enough clients
+        # Further check if we have enough clients
         unique_clients = set(self.device_client_map.values())
         return len(unique_clients) >= self.initial_min_client_num
 
     def should_fill_selection(self, fl_ctx) -> bool:
         num_holes = self.device_selection_size - len(self.current_selection)
         return num_holes >= self.min_hole_to_fill
+
+    def get_active_model_versions(self, fl_ctx) -> Set[int]:
+        return set(self.current_selection.values())
