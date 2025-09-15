@@ -36,7 +36,7 @@ import java.util.HashMap
 class AndroidFlareRunner(
     private val context: AndroidContext,
     private val connection: Connection,
-    private val jobName: String,
+    val jobName: String,
     private val dataSource: DataSource,
     private val deviceInfo: Map<String, String>,
     private val userInfo: Map<String, String>,
