@@ -106,7 +106,6 @@ The results are stored in workspace "/tmp/nvflare"
 
 ## 3. Visualization
    with json format, the data can be easily visualized via pandas dataframe and plots. 
-   A visualization utility tools are showed in show_stats.py in visualization directory
    You can run jupyter notebook visualization.ipynb
 
    assuming NVFLARE_HOME env variable point to the GitHub project location (NVFlare) which contains current example. 

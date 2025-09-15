@@ -18,6 +18,7 @@ from typing import Dict, Set
 
 from nvflare.edge.assessors.device_manager import DeviceManager
 from nvflare.edge.mud import PropKey
+from nvflare.fuel.utils.validation_utils import check_positive_int
 
 
 class BuffDeviceManager(DeviceManager):

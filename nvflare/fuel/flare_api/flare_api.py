@@ -48,6 +48,7 @@ from .api_spec import (
     JobNotRunning,
     MonitorReturnCode,
     NoClientsAvailable,
+    NoConnection,
     NoReply,
     ServerInfo,
     SessionClosed,
@@ -57,6 +58,8 @@ from .api_spec import (
 )
 
 _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
+
+__all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
 
 
 class Session(SessionSpec):

@@ -1,5 +1,5 @@
 Hello Pytorch
-===================
+=============
 
 This example demonstrates how to use NVIDIA FLARE with PyTorch to train an image classifier using
 federated averaging (FedAvg).The complete example code can be found in the`hello-pt directory <examples/hello-world/hello-pt/>_`.
@@ -41,10 +41,11 @@ then navigate to the hello-pt directory:
 
     hello-pt
         |
-        |-- client.py         # client local training script
-        |-- model.py          # model definition
-        |-- job.py            # job recipe that defines client and server configurations
-        |-- requirements.txt  # dependencies
+        |-- client.py             # client local training script
+        |-- client_with_eval.py   # alternative client local training script with evaluation
+        |-- model.py              # model definition
+        |-- job.py                # job recipe that defines client and server configurations
+        |-- requirements.txt      # dependencies
 
 
 Data
@@ -83,9 +84,15 @@ The only difference is that we added a few lines to receive and send data to the
 .. literalinclude:: ../../../examples/hello-world/hello-pt/client.py
     :language: python
     :linenos:
-    :caption: client.py
+    :caption: Client Code (client.py)
     :lines: 14-
 
+or if you prefer both training and evaluation
+.. literalinclude:: ../../../examples/hello-world/hello-pt/client_with_eval.py
+    :language: python
+    :linenos:
+    :caption: Client Code (client_with_eval.py)
+    :lines: 14-
 
 
 Server Code
@@ -110,9 +117,15 @@ Job Recipe contains the client.py and built-in fedavg algorithm.
 
 
 Run FL Job
-------------------
+-----------
 This section provides the command to execute the federated learning job
 using the job recipe defined above. Run this command in your terminal.
+
+.. note::
+
+    depends on the number of clients, you might run into error due to several client try to download the data at the same time.
+    suggest to pre-download the data to avoid such errors.
+
 
 
 Command to execute the FL job

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Set
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -30,10 +30,10 @@ class ModelManager(FLComponent, ABC):
     def __init__(self):
         FLComponent.__init__(self)
         """Initialize the ModelManager.
-        ModelManager keeps track of three things: 
+        ModelManager keeps track of three things:
         - current_model holding the current global model
         - current_model_version holding the current global model version
-        - updates containing all received updates for updating the global model 
+        - updates containing all received updates for updating the global model
         """
         self.current_model = None
         self.current_model_version = 0
@@ -56,6 +56,18 @@ class ModelManager(FLComponent, ABC):
         """Generate a new model version based on accumulated updates.
 
         Args:
+            fl_ctx: FLContext object
+
+            Returns: none
+        """
+        pass
+
+    @abstractmethod
+    def prune_model_versions(self, versions_to_keep: Set[int], fl_ctx: FLContext) -> None:
+        """Prune the model versions that are no longer active.
+
+        Args:
+            versions_to_keep: Set of model versions to keep
             fl_ctx: FLContext object
 
             Returns: none

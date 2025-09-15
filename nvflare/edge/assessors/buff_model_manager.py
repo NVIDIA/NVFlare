@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import time
-from typing import Dict
+from typing import Dict, Optional, Set
 
 import numpy as np
 
@@ -43,16 +43,22 @@ class BuffModelManager(ModelManager):
     def __init__(
         self,
         num_updates_for_model: int,
-        max_model_history: int,
+        max_model_history: Optional[int] = None,
         global_lr: float = 1.0,
         staleness_weight: bool = False,
     ):
         """Initialize the ModelManager.
         The aggregation scheme and weights are calculated following FedBuff paper "Federated Learning with Buffered Asynchronous Aggregation".
         The staleness_weight can be enabled to apply staleness weighting to model updates.
+
+        Special cases for max_model_history:
+        - If None: Keep every model versions, only remove a version when all devices processing it reports back (version no longer related with any device_id in the current_selection from device_manager).
+
         Args:
             num_updates_for_model (int): Number of updates required before generating a new model version.
             max_model_history (int): Maximum number of historical model versions to keep in memory.
+                - None (default): keep every version until all devices processing a particular version report back.
+                - positive integer: keep only the latest n versions
             global_lr (float): Global learning rate for model aggregation, default is 1.0.
             staleness_weight (bool): Whether to apply staleness weighting to model updates, default is False.
         """
@@ -69,11 +75,29 @@ class BuffModelManager(ModelManager):
         # updates is a dict of model version to _ModelState
         self.updates[self.current_model_version] = _ModelState(ModelUpdateDXOAggregator())
 
+    def prune_model_versions(self, versions_to_keep: Set[int], fl_ctx: FLContext) -> None:
+        # go through all versions and remove the ones:
+        # - either not in versions_to_keep
+        # - or too old (current_model_version - v >= max_model_history)
+        versions_to_remove = set()
+
+        for v in self.updates.keys():
+            if v not in versions_to_keep:
+                versions_to_remove.add(v)
+            if self.max_model_history and self.current_model_version - v >= self.max_model_history:
+                versions_to_remove.add(v)
+
+        # Remove the identified versions
+        for v in versions_to_remove:
+            self.log_info(fl_ctx, f"removed model version {v}")
+            self.updates.pop(v)
+        # log the current total number of model versions
+        self.log_info(fl_ctx, f"current total number of active model versions: {len(self.updates)}")
+
     def generate_new_model(self, fl_ctx: FLContext) -> None:
         # New model generated based on the current global weights and all updates
         new_model = {}
         self.current_model_version += 1
-        old_model_versions = []
 
         # counter to confirm the number of updates
         num_updates = 0
@@ -103,9 +127,6 @@ class BuffModelManager(ModelManager):
                             new_model[key] = value
                         else:
                             new_model[key] = new_model[key] + value
-                # If too old, remove it
-                if self.current_model_version - v >= self.max_model_history:
-                    old_model_versions.append(v)
 
                 # Reset aggr after counting its contribution
                 ms.aggregator.reset(fl_ctx)
@@ -122,12 +143,6 @@ class BuffModelManager(ModelManager):
         # create the ModelState for the new model version
         self.updates[self.current_model_version] = _ModelState(ModelUpdateDXOAggregator())
         self.log_info(fl_ctx, f"generated new model version {self.current_model_version} with {num_updates} updates")
-
-        if old_model_versions:
-            self.log_info(fl_ctx, f"removed old model versions {old_model_versions}")
-
-        for v in old_model_versions:
-            self.updates.pop(v)
 
         # update the current model
         # convert new_model items from numpy arrays to lists for serialization
@@ -154,19 +169,18 @@ class BuffModelManager(ModelManager):
                 self.log_error(fl_ctx, f"bad child update version {model_version}: no update data")
                 continue
 
-            if self.current_model_version - model_version > self.max_model_history:
-                # this version is too old
-                self.log_info(
-                    fl_ctx,
-                    f"dropped child update version {model_version}. Current version {self.current_model_version}",
-                )
-                continue
+            # Check if version is too old before accepting
+            if self.max_model_history:
+                # if max_model_history is set, output warning for updates that are too old
+                if self.current_model_version - model_version >= self.max_model_history:
+                    self.log_warning(
+                        fl_ctx,
+                        f"dropped child update version {model_version}. Current version {self.current_model_version}. Max history {self.max_model_history}",
+                    )
+                    continue
 
+            # Accept the update and aggregate it to the corresponding model version
             model_state = self.updates.get(model_version)
-            if not model_state:
-                self.log_error(fl_ctx, f"No model state for version {model_version}")
-                continue
-
             accepted = model_state.accept(model_update, fl_ctx)
             self.log_info(
                 fl_ctx,
