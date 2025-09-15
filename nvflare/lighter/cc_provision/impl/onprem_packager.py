@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import yaml
@@ -126,6 +127,9 @@ class OnPremPackager(Packager):
             raise FileNotFoundError(f"Build image command '{build_image_cmd}' not found or is not executable.")
         command = [build_image_cmd, cc_config_yaml]
         output = run_command(command)
+        # TODO: get rid of this buffer time in between each build
+        #   we need it now otherwise the second call to image builder will fail
+        time.sleep(300.0)
         tar_file_path = _extract_cvm_tar_path(output)
         return tar_file_path
 
