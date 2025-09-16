@@ -8,6 +8,7 @@ import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.Executor
 import com.nvidia.nvflare.sdk.training.ETTrainer
 import com.nvidia.nvflare.sdk.training.TrainingConfig
+import com.nvidia.nvflare.sdk.utils.TaskHeaderKey
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -71,9 +72,18 @@ class ETTrainerExecutor(
         val data = taskData.data
         val meta = taskData.meta
         
-        // Convert meta to TrainingConfig
+        // Convert meta to TrainingConfig, including job name from context
         val metaMap = meta as? Map<String, Any> ?: emptyMap()
-        return TrainingConfig.fromMap(metaMap)
+        
+        // Get job name from runner context
+        val runner = ctx[ContextKey.RUNNER] as? AndroidFlareRunner
+        val jobName = runner?.jobName ?: ""
+        
+        // Add job name to config data for method determination
+        val configData = metaMap.toMutableMap()
+        configData[TaskHeaderKey.JOB_NAME] = jobName
+        
+        return TrainingConfig.fromMap(configData)
     }
 }
 
@@ -82,9 +92,9 @@ class ETTrainerExecutor(
  */
 object ETTrainerExecutorFactory {
     
-    fun createExecutor(context: android.content.Context, method: String, modelData: String, meta: Map<String, Any>): ETTrainerExecutor {
+    fun createExecutor(context: android.content.Context, method: String, meta: Map<String, Any>): ETTrainerExecutor {
         val trainingConfig = TrainingConfig.fromMap(meta)
-        val trainer = ETTrainer(context, modelData, meta)
+        val trainer = ETTrainer(context, meta)
         return ETTrainerExecutor(trainer)
     }
 }
