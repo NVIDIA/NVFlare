@@ -1,6 +1,7 @@
 package com.nvidia.nvflare.sdk.training
 
 import com.google.gson.annotations.SerializedName
+import com.nvidia.nvflare.sdk.utils.TaskHeaderKey
 
 // Dataset Types
 object DatasetType {
@@ -148,8 +149,18 @@ data class TrainingConfig(
         }
     }
     companion object {
+        private fun determineMethodFromJobName(data: Map<String, Any>): String {
+            // Try to determine method from job name or other context
+            val jobName = data[TaskHeaderKey.JOB_NAME] as? String ?: ""
+            return when {
+                jobName.lowercase().contains("cifar") || jobName.lowercase().contains("cnn") -> "cnn"
+                jobName.lowercase().contains("xor") -> "xor"
+                else -> "xor" // Default fallback
+            }
+        }
+        
         fun fromMap(data: Map<String, Any>): TrainingConfig {
-            val method = data["method"] as? String ?: "xor"
+            val method = data["method"] as? String ?: determineMethodFromJobName(data)
             val dataSetType = data[MetaKey.DATASET_TYPE] as? String ?: DatasetType.XOR
             
             // Use batch size 1 for XOR (small dataset), 4 for CNN (larger dataset)
