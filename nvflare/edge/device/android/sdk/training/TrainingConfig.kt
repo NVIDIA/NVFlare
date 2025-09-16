@@ -1,6 +1,7 @@
 package com.nvidia.nvflare.sdk.training
 
 import com.google.gson.annotations.SerializedName
+import com.nvidia.nvflare.sdk.utils.TaskHeaderKey
 
 // Dataset Types
 object DatasetType {
@@ -150,7 +151,7 @@ data class TrainingConfig(
     companion object {
         private fun determineMethodFromJobName(data: Map<String, Any>): String {
             // Try to determine method from job name or other context
-            val jobName = data["job_name"] as? String ?: ""
+            val jobName = data[TaskHeaderKey.JOB_NAME] as? String ?: ""
             return when {
                 jobName.lowercase().contains("cifar") || jobName.lowercase().contains("cnn") -> "cnn"
                 jobName.lowercase().contains("xor") -> "xor"

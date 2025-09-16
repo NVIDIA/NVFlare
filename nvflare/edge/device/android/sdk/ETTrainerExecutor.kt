@@ -8,6 +8,7 @@ import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.Executor
 import com.nvidia.nvflare.sdk.training.ETTrainer
 import com.nvidia.nvflare.sdk.training.TrainingConfig
+import com.nvidia.nvflare.sdk.utils.TaskHeaderKey
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -80,7 +81,7 @@ class ETTrainerExecutor(
         
         // Add job name to config data for method determination
         val configData = metaMap.toMutableMap()
-        configData["job_name"] = jobName
+        configData[TaskHeaderKey.JOB_NAME] = jobName
         
         return TrainingConfig.fromMap(configData)
     }

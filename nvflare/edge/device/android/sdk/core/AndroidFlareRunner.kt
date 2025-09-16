@@ -13,6 +13,7 @@ import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.ContextKey
 import com.nvidia.nvflare.sdk.core.DataSource
 import com.nvidia.nvflare.sdk.core.Filter
+import com.nvidia.nvflare.sdk.utils.TaskHeaderKey
 import com.nvidia.nvflare.sdk.core.NoOpFilter
 import com.nvidia.nvflare.sdk.core.NoOpEventHandler
 
@@ -313,7 +314,7 @@ class AndroidFlareRunner(
                         // Convert JobResponse to the format expected by FlareRunner
                         return mapOf(
                             "job_id" to (jobResponse.jobId ?: ""),
-                            "job_name" to jobName,
+                            TaskHeaderKey.JOB_NAME to jobName,
                             "job_data" to (jobResponse.jobData?.asMap() ?: emptyMap<String, Any>())
                         )
                     }

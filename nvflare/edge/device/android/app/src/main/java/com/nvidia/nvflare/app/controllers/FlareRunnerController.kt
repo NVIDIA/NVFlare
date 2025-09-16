@@ -82,22 +82,11 @@ class FlareRunnerController(
         )
     
     fun toggleJob(job: SupportedJob) {
-        val oldSupportedJobs = supportedJobs
-        
         if (supportedJobs.contains(job)) {
             supportedJobs = supportedJobs - job
         } else {
             supportedJobs = supportedJobs + job
         }
-        
-        // Prevent disabling all jobs
-        if (supportedJobs.isEmpty()) {
-            Log.w(TAG, "FlareRunnerController: Cannot disable all jobs, reverting change")
-            supportedJobs = oldSupportedJobs
-            return
-        }
-        
-        Log.d(TAG, "FlareRunnerController: Job selection updated: ${supportedJobs.map { it.value }}")
     }
     
     fun startTraining(
