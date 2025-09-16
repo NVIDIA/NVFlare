@@ -17,11 +17,7 @@ following format:
 {
   "endpoint": "http://localhost:4321",
   "num_devices": 1000,
-  "num_active_devices": 100,
   "num_workers": 50,
-  "cycle_duration": 30.0,
-  "device_reuse_rate": 0.2,
-  "device_id_prefix": "sim-device-",
   "processor": {
     "path": "sample_task_processor.SampleTaskProcessor",
     "args": {
@@ -31,27 +27,14 @@ following format:
         "b": 456
       }
     }
-  },
-  "capabilities": {
-    "methods": ["cnn"]
   }
 }
 
 ```
 
-The `endpoint`, and `capabilities` are self-explanatory. 
+The `endpoint` is self-explanatory. 
 
 The `num_devices` specifies the total number of devices to be simulated.
-
-The `num_active_devices` specifies the number of active devices for each query cycle. 
-Active devices is a subset of all devices that will send requests to Flare to get job or tasks. 
-The simulator recalculates active devices for each cycle.
-
-The `cycle_duration` specifies the time duration of a query cycle. 
-
-Once a device gets a task, it performs task, and is marked as "used device". 
-In general, a used device is dropped out of active devices and will not send requests to Flare.
-The `device_reuse_rate` specifies the odd that a used device is selected as an active device again.
 
 The `processor` defines the task processor that simulates the device's handling of tasks. This is a dictionary 
 with following keys,
