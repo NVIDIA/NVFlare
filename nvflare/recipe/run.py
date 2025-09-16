@@ -78,7 +78,7 @@ class Run:
         """Get the status of the run.
 
         Returns:
-            str: The status of the run.
+            Optional[str]: The status of the run, or None if called in a simulation environment.
         """
         if self._is_sim_env():
             print(
