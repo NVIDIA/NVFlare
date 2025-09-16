@@ -21,8 +21,8 @@ from nvflare.lighter.utils import verify_folder_signature
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-f", "--folder", type=str, help="folder to be verified")
-    parser.add_argument("-c", "--root_ca_path", type=str, help="root CA path")
+    parser.add_argument("-f", "--folder", type=str, required=True, help="folder to be verified")
+    parser.add_argument("-c", "--root_ca_path", type=str, required=True, help="root CA path")
     args = parser.parse_args()
     folder = args.folder
     root_ca_path = args.root_ca_path
