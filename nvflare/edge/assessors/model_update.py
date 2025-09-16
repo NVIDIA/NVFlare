@@ -79,14 +79,14 @@ class ModelUpdateAssessor(Assessor):
         try:
             elapsed = time.time() - self.device_wait_start_time
             if elapsed > self.device_wait_timeout:
-                usable_devices = set(self.device_manager.available_devices.keys()) - set(
-                    self.device_manager.used_devices.keys()
+                usable_devices = set(self.device_manager.get_available_devices(fl_ctx).keys()) - set(
+                    self.device_manager.get_used_devices(fl_ctx).keys()
                 )
                 self.log_error(
                     fl_ctx,
                     f"Device wait timeout ({self.device_wait_timeout}s) exceeded. "
                     f"Elapsed time: {elapsed:.1f}s. "
-                    f"Total devices: {len(self.device_manager.available_devices)}, "
+                    f"Total devices: {len(self.device_manager.get_available_devices(fl_ctx))}, "
                     f"usable: {len(usable_devices)}, "
                     f"expected: {self.device_manager.device_selection_size}. "
                     f"Device_reuse flag: {self.device_manager.device_reuse}. "
@@ -108,8 +108,8 @@ class ModelUpdateAssessor(Assessor):
         elapsed = current_time - self._last_device_status_log_time
 
         if elapsed >= self.device_status_log_interval:
-            usable_devices = set(self.device_manager.available_devices.keys()) - set(
-                self.device_manager.used_devices.keys()
+            usable_devices = set(self.device_manager.get_available_devices(fl_ctx).keys()) - set(
+                self.device_manager.get_used_devices(fl_ctx).keys()
             )
 
             # Add timeout info if we're actually waiting with a timeout
@@ -196,8 +196,8 @@ class ModelUpdateAssessor(Assessor):
         # Check for device wait timeout if we are waiting for devices
         if self.device_wait_start_time is not None and self._is_device_wait_timeout_exceeded(fl_ctx):
             # Timeout exceeded, prepare an empty reply and stop the job
-            usable_devices = set(self.device_manager.available_devices.keys()) - set(
-                self.device_manager.used_devices.keys()
+            usable_devices = set(self.device_manager.get_available_devices(fl_ctx).keys()) - set(
+                self.device_manager.get_used_devices(fl_ctx).keys()
             )
             self.log_error(
                 fl_ctx,
@@ -240,6 +240,9 @@ class ModelUpdateAssessor(Assessor):
                     self.log_info(fl_ctx, "Generate initial model and fill selection")
                     self.model_manager.generate_new_model(fl_ctx)
                 self.device_manager.fill_selection(self.model_manager.current_model_version, fl_ctx)
+                # prune old model versions that are no longer active
+                active_model_versions = self.device_manager.get_active_model_versions(fl_ctx)
+                self.model_manager.prune_model_versions(active_model_versions, fl_ctx)
                 # Reset wait timer since we have enough devices
                 self.device_wait_start_time = None
             else:

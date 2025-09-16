@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from net import Net
+from model import SimpleNetwork as Net
 
 # (1) import nvflare client API
 import nvflare.client as flare
@@ -29,7 +29,7 @@ from nvflare.app_common.app_constant import ModelName
 CIFAR10_ROOT = "/tmp/nvflare/data/cifar10"
 # (optional) We change to use GPU to speed things up.
 # if you want to use CPU, change DEVICE="cpu"
-DEVICE = "cuda" if torch.cuda.is_available() else "CPU"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
 def define_parser():
@@ -138,7 +138,6 @@ def main():
                     if i % 2000 == 1999:  # print every 2000 mini-batches
                         print(f"({client_id}) [{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
                         running_loss = 0.0
-                        break
 
             print(f"({client_id}) Finished Training")
 
@@ -168,7 +167,6 @@ def main():
         # (6) performing evaluate task on received model
         elif flare.is_evaluate():
             accuracy = evaluate(input_model.params)
-            print(f"({client_id}) accuracy: {accuracy}")
             flare.send(flare.FLModel(metrics={"accuracy": accuracy}))
 
         # (7) performing submit_model task to obtain best local model
