@@ -112,10 +112,21 @@ class FlareRunnerController(
             try {
                 Log.d(TAG, "FlareRunnerController: Starting federated learning")
                 
-                // First: Determine which job to use
+                // First: Determine which job to use based on user selection
                 val selectedJob = when {
-                    supportedJobs.contains(SupportedJob.CIFAR10) -> SupportedJob.CIFAR10
-                    supportedJobs.contains(SupportedJob.XOR) -> SupportedJob.XOR
+                    supportedJobs.contains(SupportedJob.CIFAR10) && supportedJobs.contains(SupportedJob.XOR) -> {
+                        // If both are enabled, prefer CIFAR-10 (can be changed to user preference)
+                        Log.d(TAG, "FlareRunnerController: Both jobs enabled, selecting CIFAR-10")
+                        SupportedJob.CIFAR10
+                    }
+                    supportedJobs.contains(SupportedJob.CIFAR10) -> {
+                        Log.d(TAG, "FlareRunnerController: CIFAR-10 job selected")
+                        SupportedJob.CIFAR10
+                    }
+                    supportedJobs.contains(SupportedJob.XOR) -> {
+                        Log.d(TAG, "FlareRunnerController: XOR job selected")
+                        SupportedJob.XOR
+                    }
                     else -> {
                         Log.e(TAG, "FlareRunnerController: No supported jobs enabled. Current supported jobs: ${supportedJobs.map { it.value }}")
                         throw TrainingError.NO_SUPPORTED_JOBS
@@ -132,7 +143,7 @@ class FlareRunnerController(
                         jobName = "cifar10_et"
                         try {
                             dataset = dataSource.getDataset(jobName, FlareContext())
-                            Log.d(TAG, "FlareRunnerController: Created CIFAR-10 dataset")
+                            Log.d(TAG, "FlareRunnerController: Created CIFAR-10 dataset for job: $jobName")
                             
                             // Validate dataset using SDK's standardized validation
                             dataset.validate()
@@ -156,10 +167,12 @@ class FlareRunnerController(
                     SupportedJob.XOR -> {
                         jobName = "xor_et"
                         dataset = dataSource.getDataset(jobName, FlareContext())
-                        Log.d(TAG, "FlareRunnerController: Created XOR dataset")
+                        Log.d(TAG, "FlareRunnerController: Created XOR dataset for job: $jobName")
                         Log.d(TAG, "FlareRunnerController: XOR dataset size: ${dataset.size()}")
                     }
                 }
+                
+                Log.d(TAG, "FlareRunnerController: Selected job: ${selectedJob.displayName} -> $jobName")
                 
                 // Store the dataset to keep it alive during training
                 currentDataset = dataset
@@ -238,8 +251,8 @@ class FlareRunnerController(
     
     private fun createConnection(): com.nvidia.nvflare.sdk.core.Connection {
         val connection = com.nvidia.nvflare.sdk.core.Connection(context)
-        connection.hostname.value = serverHost
-        connection.port.value = serverPort
+        connection.hostname.postValue(serverHost)
+        connection.port.postValue(serverPort)
         
         // Configure SSL settings
         if (useHttps) {
