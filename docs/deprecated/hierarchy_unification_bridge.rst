@@ -4,6 +4,9 @@
 Hierarchy Unification Bridge
 ############################
 
+.. notes::
+    Depreciated, Recommend to use new hierarchical Federated Learning
+
 **************************
 Background and Motivations
 **************************

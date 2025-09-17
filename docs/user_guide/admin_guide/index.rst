@@ -10,7 +10,7 @@ Guide for project Admin and Org Admin
 .. toctree::
    :maxdepth: 2
 
-   configurations/index
+   configurations
    deployment/index
    nvflare_security
    monitoring
