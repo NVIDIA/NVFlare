@@ -80,11 +80,8 @@ def _safe_save(state_dict, filename: str) -> Optional[dict]:
 class TensorDecomposer(ViaFileDecomposer):
 
     def __init__(self):
-        ViaFileDecomposer.__init__(self)
+        ViaFileDecomposer.__init__(self, 2 * 1024 * 1024, "tensor_")
         self.config_var_prefix = "tensor_"
-
-        # if the file size for collected items is < 2MB, it will be attached to the message.
-        self.min_size_for_file = 2 * 1024 * 1024  # 2MB
 
     def supported_type(self):
         return torch.Tensor

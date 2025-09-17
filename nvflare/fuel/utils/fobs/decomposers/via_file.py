@@ -93,14 +93,14 @@ class _DecomposeCtx:
 
 class ViaFileDecomposer(fobs.Decomposer, ABC):
 
-    def __init__(self):
+    def __init__(self, min_size_for_file, config_var_prefix):
         self.logger = get_obj_logger(self)
         self.prefix = self.__class__.__name__
         self.decompose_ctx_key = f"{self.prefix}_dc"  # kept in fobs_ctx: each target type has its own DecomposeCtx
         self.items_key = f"{self.prefix}_items"  # in fobs_ctx: each target type has its own set of items
         self.file_downloader_class = FileDownloader
-        self.min_size_for_file = 0
-        self.config_var_prefix = ""
+        self.min_size_for_file = min_size_for_file
+        self.config_var_prefix = config_var_prefix
 
     def set_file_downloader_class(self, file_downloader_class):
         # used only for offline testing!

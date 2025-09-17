@@ -60,9 +60,8 @@ class Int32ScalarDecomposer(NumpyScalarDecomposer):
 class NumpyArrayDecomposer(ViaFileDecomposer):
 
     def __init__(self):
-        ViaFileDecomposer.__init__(self)
-        self.config_var_prefix = "np_"
-        self.min_size_for_file = 0  # by default do not use file downloading.
+        # by default do not use file downloading.
+        ViaFileDecomposer.__init__(self, 0, "np_")
 
     def supported_type(self):
         return np.ndarray
