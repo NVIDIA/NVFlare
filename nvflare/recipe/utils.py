@@ -57,3 +57,32 @@ def add_experiment_tracking(recipe: Recipe, tracking_type: str, tracking_config:
     receiver_class = getattr(module, TRACKING_REGISTRY[tracking_type]["receiver_class"])
     receiver = receiver_class(**tracking_config)
     recipe.job.to_server(receiver, "receiver")
+
+
+def add_cross_site_evaluation(recipe: Recipe, persistor_id: str = None, submit_model_timeout: int = 600, validation_timeout: int = 6000):
+    """Enable cross-site model evaluation.
+
+    Args:
+        recipe_or_job: Recipe object to add cross-site evaluation to
+        persistor_id: The persistor ID to use for model location. If None, uses the default persistor_id from job.comp_ids
+        submit_model_timeout: Timeout for model submission in seconds
+        validation_timeout: Timeout for validation in seconds
+    """
+    from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
+    from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
+     
+    # Use provided persistor_id or default from job.comp_ids
+    if persistor_id is None:
+        persistor_id = recipe.job.comp_ids["persistor_id"]
+    
+    # Create and add model locator
+    model_locator_id = recipe.job.to_server(PTFileModelLocator(pt_persistor_id=persistor_id))
+    
+    # Create and add cross-site evaluation controller
+    eval_controller = CrossSiteModelEval(
+        model_locator_id=model_locator_id,
+        submit_model_timeout=submit_model_timeout,
+        validation_timeout=validation_timeout,
+    )
+    recipe.job.to_server(eval_controller)
+    

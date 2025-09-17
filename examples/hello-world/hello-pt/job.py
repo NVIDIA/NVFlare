@@ -21,6 +21,7 @@ from model import SimpleNetwork
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
+from nvflare.recipe.utils import add_cross_site_evaluation
 
 
 def define_parser():
@@ -48,10 +49,13 @@ def main():
         initial_model=SimpleNetwork(),
         train_script=args.train_script,
         train_args=f"--batch_size {batch_size}",
-        cross_site_eval=args.cross_site_eval,
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
+    if args.cross_site_eval:
+        add_cross_site_evaluation(recipe)
+
+    # Run FL simulation
     env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
     print()
