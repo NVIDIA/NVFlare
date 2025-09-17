@@ -13,6 +13,15 @@ class Proxy:
     def name(self):
         return self.target_name
 
+    def get_target(self, name: str):
+        obj = getattr(self, name, None)
+        if not obj:
+            return None
+        if isinstance(obj, Proxy):
+            return obj
+        else:
+            return None
+
     def __getattr__(self, func_name):
         """
         This method is called when Python cannot find an invoked method func_name of this class.

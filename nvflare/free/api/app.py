@@ -1,5 +1,5 @@
 from abc import abstractmethod, ABC
-from typing import List
+from typing import List, Union
 from .proxy import Proxy
 from .group import Group
 
@@ -83,3 +83,9 @@ class ServerApp(App):
 class ClientApp(App):
     pass
 
+
+class ClientAppFactory(ABC):
+
+    @abstractmethod
+    def make_client_app(self, name: str) -> ClientApp:
+        pass

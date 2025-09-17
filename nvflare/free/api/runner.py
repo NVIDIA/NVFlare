@@ -1,7 +1,9 @@
 import copy
+import traceback
 from concurrent.futures import ThreadPoolExecutor
+from typing import Union
 
-from nvflare.free.api.app import ServerApp, ClientApp, App, SERVER_NAME
+from nvflare.free.api.app import ServerApp, ClientApp, App, SERVER_NAME, ClientAppFactory
 from nvflare.free.api.proxy import Proxy
 from nvflare.free.api.sim_backend import SimBackend
 from nvflare.apis.signal import Signal
@@ -37,16 +39,39 @@ class AppRunner:
     def __init__(
         self,
         server_app: ServerApp,
-        client_app: ClientApp,
-        num_clients: int,
+        client_app: Union[ClientAppFactory, ClientApp],
+        max_workers: int = 100,
+        num_clients: int = 2,
     ):
-        self.abort_signal = Signal()
-        self.thread_executor = ThreadPoolExecutor(max_workers=100)
+        if not isinstance(server_app, ServerApp):
+            raise ValueError(f"server_app must be ServerApp but got {type(server_app)}")
 
+        if not isinstance(client_app, (ClientAppFactory, ClientApp)):
+            raise ValueError(f"client_app must be ClientApp or ClientAppFactory but got {type(client_app)}")
+
+        self.abort_signal = Signal()
+        self.thread_executor = ThreadPoolExecutor(max_workers=max_workers)
+        self.workflows = [(server_app, client_app)]
+        self.num_clients = num_clients
+
+    def add_workflow(self, server_app: ServerApp, client_app: Union[ClientAppFactory, ClientApp]):
+        if not isinstance(server_app, ServerApp):
+            raise ValueError(f"server_app must be ServerApp but got {type(server_app)}")
+
+        if not isinstance(client_app, (ClientAppFactory, ClientApp)):
+            raise ValueError(f"client_app must be ClientApp or ClientAppFactory but got {type(client_app)}")
+
+        self.workflows.append((server_app, client_app))
+
+    def _run_workflow(self, wf):
+        server_app, client_app = wf
         client_apps = {}
-        for i in range(num_clients):
-            name = f"site-{i+1}"
-            app = copy.deepcopy(client_app)
+        for i in range(self.num_clients):
+            name = f"site-{i + 1}"
+            if isinstance(client_app, ClientApp):
+                app = copy.deepcopy(client_app)
+            else:
+                app = client_app.make_client_app(name)
             app.name = name
             client_apps[name] = app
 
@@ -66,9 +91,16 @@ class AppRunner:
         server_proxy, client_proxies = self._prepare_proxies(server_app, client_apps, SERVER_NAME, backends)
         server_app.setup(SERVER_NAME, server_proxy, client_proxies, self.abort_signal)
 
-        self.server_app = server_app
+        server_app.run()
 
     def run(self):
         # run the server
-        self.server_app.run()
+        for idx, wf in enumerate(self.workflows):
+            try:
+                print(f"Running Workflow #{idx+1}")
+                self._run_workflow(wf)
+            except:
+                traceback.print_exc()
+                break
+
         self.thread_executor.shutdown(wait=False, cancel_futures=True)
