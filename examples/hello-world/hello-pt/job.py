@@ -28,6 +28,8 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
     parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--train_script", type=str, default="client.py")
+    parser.add_argument("--cross_site_eval", action="store_true")
 
     return parser.parse_args()
 
@@ -44,8 +46,9 @@ def main():
         min_clients=n_clients,
         num_rounds=num_rounds,
         initial_model=SimpleNetwork(),
-        train_script="client.py",
+        train_script=args.train_script,
         train_args=f"--batch_size {batch_size}",
+        cross_site_eval=args.cross_site_eval,
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 

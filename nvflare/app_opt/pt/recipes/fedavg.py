@@ -20,7 +20,10 @@ from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
+from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+from nvflare.app_opt.pt.file_model_locator import PTFileModelLocator
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType, ScriptRunner
@@ -43,6 +46,7 @@ class _FedAvgValidator(BaseModel):
     command: str = "python3 -u"
     server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY
     params_transfer_type: TransferType = TransferType.FULL
+    cross_site_eval: bool = False
 
 
 class FedAvgRecipe(Recipe):
@@ -75,6 +79,7 @@ class FedAvgRecipe(Recipe):
         server_expected_format (str): What format to exchange the parameters between server and client.
         params_transfer_type (str): How to transfer the parameters. FULL means the whole model parameters are sent.
         DIFF means that only the difference is sent. Defaults to TransferType.FULL.
+        cross_site_eval (bool): Whether to enable cross site model evaluation. Defaults to False.
 
     Example:
         ```python
@@ -112,6 +117,7 @@ class FedAvgRecipe(Recipe):
         command: str = "python3 -u",
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
+        cross_site_eval: bool = False,
     ):
         # Validate inputs internally
         v = _FedAvgValidator(
@@ -127,6 +133,7 @@ class FedAvgRecipe(Recipe):
             command=command,
             server_expected_format=server_expected_format,
             params_transfer_type=params_transfer_type,
+            cross_site_eval=cross_site_eval,
         )
 
         self.name = v.name
@@ -141,7 +148,7 @@ class FedAvgRecipe(Recipe):
         self.command = v.command
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
-
+        self.cross_site_eval = v.cross_site_eval
         # Create BaseFedJob with initial model
         job = BaseFedJob(
             initial_model=self.initial_model,
@@ -171,6 +178,16 @@ class FedAvgRecipe(Recipe):
         )
         # Send the controller to the server
         job.to_server(controller)
+
+        if self.cross_site_eval:
+            model_locator_id = job.to_server(PTFileModelLocator(pt_persistor_id=job.comp_ids["persistor_id"]))
+            eval_controller = CrossSiteModelEval(
+                model_locator_id=model_locator_id,
+                submit_model_timeout=600,
+                validation_timeout=6000,
+            )
+            job.to_server(eval_controller)
+            job.to_server(ValidationJsonGenerator())
 
         # Add clients
         executor = ScriptRunner(
