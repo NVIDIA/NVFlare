@@ -18,6 +18,7 @@ import torch
 from safetensors.torch import _remove_duplicate_names, load_file, save_file
 
 import nvflare.fuel.utils.fobs.dots as dots
+from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
 
 
@@ -78,6 +79,10 @@ def _safe_save(state_dict, filename: str) -> Optional[dict]:
 
 class TensorDecomposer(ViaFileDecomposer):
 
+    def __init__(self):
+        ViaFileDecomposer.__init__(self, 2 * 1024 * 1024, "tensor_")
+        self.config_var_prefix = "tensor_"
+
     def supported_type(self):
         return torch.Tensor
 
@@ -92,7 +97,7 @@ class TensorDecomposer(ViaFileDecomposer):
 
     def load_from_file(self, path: str, fobs_ctx: dict, meta: dict = None) -> Any:
         items = load_file(path)
-        self.logger.debug(f"got {len(items)} tensors from file {path}")
+        self.logger.info(f"loaded {len(items)} tensor(s) from file {path}")
         if meta:
             # the meta keeps names of removed tensors and the name of the tensor for them
             for kept, removed_group in meta.items():
@@ -105,3 +110,9 @@ class TensorDecomposer(ViaFileDecomposer):
 
     def get_file_dot(self) -> int:
         return dots.TENSOR_FILE
+
+    def native_decompose(self, target: Any, manager: DatumManager = None) -> bytes:
+        raise NotImplementedError("TensorDecomposer does not support native decompose")
+
+    def native_recompose(self, data: bytes, manager: DatumManager = None) -> Any:
+        raise NotImplementedError("TensorDecomposer does not support native recompose")
