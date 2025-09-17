@@ -61,6 +61,7 @@ class SimEnv(ExecEnv):
         gpu_config: str = None,
         log_config: str = None,
         workspace_root: str = WORKSPACE_ROOT,
+        extra: dict = None,
     ):
         """Initialize simulation execution environment.
 
@@ -72,7 +73,10 @@ class SimEnv(ExecEnv):
             gpu_config (str, optional): GPU configuration string. Defaults to None.
             log_config (str, optional): Log configuration string. Defaults to None.
             workspace_root (str, optional): Root directory for simulation workspace. Defaults to WORKSPACE_ROOT.
+            extra: extra env config info
         """
+        super().__init__(extra)
+
         v = _SimEnvValidator(
             num_clients=num_clients,
             clients=clients,
@@ -91,7 +95,7 @@ class SimEnv(ExecEnv):
 
     def deploy(self, job: FedJob):
         job.simulator_run(
-            workspace=os.path.join(WORKSPACE_ROOT, job.name),
+            workspace=os.path.join(self.workspace_root, job.name),
             n_clients=self.num_clients,
             clients=self.clients,
             threads=self.num_threads,

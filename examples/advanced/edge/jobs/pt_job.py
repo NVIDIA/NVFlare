@@ -13,17 +13,19 @@
 # limitations under the License.
 
 import argparse
+import os
 
 from processors.cifar10_pt_task_processor import Cifar10PTTaskProcessor
 from processors.models.cifar10_model import Cifar10ConvNet
 
-from nvflare.edge.tools.edge_recipe import (
+from nvflare.edge.tools.edge_fed_buff_recipe import (
     DeviceManagerConfig,
-    EdgeRecipe,
+    EdgeFedBuffRecipe,
     EvaluatorConfig,
     ModelManagerConfig,
     SimulationConfig,
 )
+from nvflare.recipe.prod_env import ProdEnv
 
 
 def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds, no_delay=False):
@@ -71,8 +73,6 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
             # need all devices to train for one global model version
             num_updates_for_model=total_devices,
             max_model_version=global_rounds,
-            # basic synchronous mode, no need to discard old model updates
-            max_model_history=1,
         )
         device_manager_config = DeviceManagerConfig(
             # each leaf node has devices_per_leaf devices
@@ -92,18 +92,8 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
             # sync - each global model covers total_devices data
             # async - each global model covers 1 device's data
             max_model_version=global_rounds * total_devices,
-            # basic async mode, set max model update version diff so that
-            # the updater will not discard old model updates
-            # since the fastest device is 4 times faster than the slowest device,
-            # worst case is that there is only 1 slowest device and (total_devices - 1) fastest devices,
-            # to ensure that the updater will not discard old model updates,
-            # we need to allow (total_devices - 1) * 4 model updates
-            # on server side:
-            max_model_history=(total_devices - 1) * 4,
-            # on client/updater side:
-            max_num_active_model_versions=(total_devices - 1) * 4,
             # increase the update timeout to allow for the slowest device to finish
-            update_timeout=500.0,
+            update_timeout=500,
         )
         device_manager_config = DeviceManagerConfig(
             # each leaf node has devices_per_leaf devices
@@ -116,7 +106,7 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
         )
         eval_frequency = total_devices
 
-    recipe = EdgeRecipe(
+    recipe = EdgeFedBuffRecipe(
         job_name=f"pt_job_{fl_mode}{suffix}",
         model=Cifar10ConvNet(),
         model_manager_config=model_manager_config,
@@ -150,19 +140,23 @@ def main():
         default=10,
         help="Number of global federated rounds under sync mode, total globalmodel version under async mode will multiply this number by the total number of devices",
     )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer",
-        help="Output directory for the recipe",
-    )
+    parser.add_argument("--workspace_dir", type=str, default="/tmp/nvflare/workspaces", help="Workspace directory")
     parser.add_argument(
         "--no_delay",
         action="store_true",
         help="If set, disable communication delay and device speed variations (set to 0.0)",
     )
+    parser.add_argument(
+        "--export_job",
+        action="store_true",
+        help="If set, export the recipe to the admin'stransfer directory",
+    )
+    parser.add_argument("--project_name", type=str, default="edge_example", help="Project name")
 
     args = parser.parse_args()
+
+    prod_dir = os.path.join(args.workspace_dir, args.project_name, "prod_00")
+    admin_startup_kit_dir = os.path.join(prod_dir, "admin@nvidia.com")
 
     try:
         print(f"Creating {args.fl_mode} federated learning recipe...")
@@ -175,15 +169,21 @@ def main():
             no_delay=args.no_delay,
         )
 
-        print("Exporting recipe...")
-        recipe.export(args.output_dir)
-        print("DONE")
-
     except Exception as e:
         print(f"Error creating recipe: {e}")
         return 1
 
-    return 0
+    if args.export_job:
+        output_dir = os.path.join(admin_startup_kit_dir, "transfer")
+        print(f"Exporting recipe to {output_dir}")
+        recipe.export(job_dir=output_dir)
+    else:
+        env = ProdEnv(startup_kit_location=admin_startup_kit_dir, username="admin@nvidia.com")
+        run = recipe.execute(env)
+        print()
+        print("Result can be found in :", run.get_result())
+        print("Job Status is:", run.get_status())
+        print()
 
 
 if __name__ == "__main__":

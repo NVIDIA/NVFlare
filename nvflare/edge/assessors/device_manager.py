@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, Set
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -29,12 +29,14 @@ class DeviceManager(FLComponent, ABC):
     def __init__(self):
         FLComponent.__init__(self)
         """Initialize the DeviceManager.
-        DeviceManager keeps track of two dicts: 
-        - current_selection for devices of current task distribution
+        DeviceManager keeps track of two dicts:
+        - current_selection for devices of current task distribution: our default assumption is device_id => model_id
         - available_devices containing all devices that are available for selection
+        - used_devices dict kept for record keeping, containing all devices that have participated
         """
         self.current_selection = {}
         self.available_devices = {}
+        self.used_devices = {}
 
     @abstractmethod
     def update_available_devices(self, devices: Dict, fl_ctx: FLContext) -> None:
@@ -112,6 +114,18 @@ class DeviceManager(FLComponent, ABC):
         """
         pass
 
+    @abstractmethod
+    def get_active_model_versions(self, fl_ctx: FLContext) -> Set[int]:
+        """Get the active model versions that is associated with the current selection.
+
+        Args:
+            fl_ctx: FLContext object
+
+        Returns:
+            Set of active model versions
+        """
+        pass
+
     def get_selection(self, fl_ctx: FLContext) -> Any:
         """Get the current device selection.
 
@@ -122,3 +136,25 @@ class DeviceManager(FLComponent, ABC):
             Current device selection
         """
         return self.current_selection
+
+    def get_available_devices(self, fl_ctx: FLContext) -> Set[str]:
+        """Get the available devices.
+
+        Args:
+            fl_ctx: FLContext object
+
+        Returns:
+            Set of available devices
+        """
+        return self.available_devices
+
+    def get_used_devices(self, fl_ctx: FLContext) -> Set[str]:
+        """Get the used devices.
+
+        Args:
+            fl_ctx: FLContext object
+
+        Returns:
+            Set of used devices
+        """
+        return self.used_devices
