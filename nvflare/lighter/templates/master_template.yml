@@ -567,6 +567,17 @@ sub_start_sh: |
   export PYTHONPATH=/local/custom:$PYTHONPATH
   echo "PYTHONPATH is $PYTHONPATH"
 
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --verify)
+        doVerify=true
+      ;;
+    esac
+    shift
+  done
+
   SECONDS=0
   lst=-400
   restart_count=0
@@ -612,6 +623,15 @@ sub_start_sh: |
       exit
     fi
     rm -f $DIR/../daemon_pid.fl
+  fi
+
+  if [[ "$doVerify" == "true" ]]; then
+    python3 -m nvflare.tool.verify_startup_kits -f $DIR/../ -c $DIR/rootCA.pem
+    verification_status=$?
+    if [[ $verification_status -ne 0 ]]; then
+      echo "verification failed"
+      exit 1
+    fi
   fi
 
   echo $BASHPID > $DIR/../daemon_pid.fl
