@@ -33,8 +33,27 @@ class SNPAuthorizer(CCAuthorizer):
     """AMD SEV-SNP Authorizer"""
 
     def __init__(
-        self, max_nonce_history=1000, amd_certs_dir="/opt/certs", snpguest_binary="snpguest", cpu_model="milan"
+        self,
+        max_nonce_history=1000,
+        amd_certs_dir="/opt/certs",
+        snpguest_binary="snpguest",
+        cpu_model="milan",
     ):
+        """
+         Initialize the SNPAuthorizer instance.
+
+        Args:
+            max_nonce_history (int, optional): Maximum number of nonces to keep in history for replay protection.
+                Defaults to 1000.
+            amd_certs_dir (str, optional): Directory path where AMD certificates are stored.
+                Defaults to "/opt/certs".
+            snpguest_binary (str, optional): Path to the `snpguest` binary used for generating and verifying reports.
+                Defaults to "/host/bin/snpguest".
+            cpu_model (str, optional): CPU model identifier used when fetching certificates.
+                Defaults to "milan".
+
+        """
+
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.my_nonce_history = NonceHistory(max_nonce_history)
