@@ -64,9 +64,6 @@ class Run:
     @contextmanager
     def _secure_session(self) -> Generator:
         """Context manager for secure session handling."""
-        if self._is_sim_env():
-            raise RuntimeError("Secure session not needed for simulation environment")
-
         sess = None
         try:
             sess = new_secure_session(**self._get_session_params())
@@ -77,17 +74,17 @@ class Run:
             if sess:
                 sess.close()
 
-    def get_status(self) -> str:
+    def get_status(self) -> Optional[str]:
         """Get the status of the run.
 
         Returns:
-            str: The status of the run.
+            Optional[str]: The status of the run, or None if called in a simulation environment.
         """
         if self._is_sim_env():
             print(
-                "get_status will always return completed in a simulation environment, please check the log inside the workspace returned by get_result()"
+                "get_status is not supported in a simulation environment, please check the log inside the workspace returned by get_result()"
             )
-            return "completed"
+            return None
 
         with self._secure_session() as sess:
             return sess.get_job_status(self.job_id)
