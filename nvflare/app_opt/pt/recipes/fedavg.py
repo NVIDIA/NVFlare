@@ -149,6 +149,7 @@ class FedAvgRecipe(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
         self.cross_site_eval = v.cross_site_eval
+
         # Create BaseFedJob with initial model
         job = BaseFedJob(
             initial_model=self.initial_model,
