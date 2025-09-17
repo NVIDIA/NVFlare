@@ -123,13 +123,3 @@ Use the following command in your terminal to start the job with the specified n
 
 The full source code for this exercise can be found in
 :github_nvflare_link:`examples/hello-world/hello-numpy <examples/hello-world/hello-numpy/>`.
-
-Previous Versions of Hello NumPy
---------------------------------
-
-This example consolidates the previous `hello-numpy-sag` and `hello-fedavg-numpy` examples:
-
-   - `hello-numpy-sag for 2.0-2.4 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-numpy-sag>`_ (legacy scatter-and-gather approach)
-   - `hello-fedavg-numpy for 2.5+ <https://github.com/NVIDIA/NVFlare/tree/2.5/examples/hello-world/hello-fedavg-numpy>`_ (job API approach)
-
-The current version uses the modern job recipe API for a cleaner, more maintainable structure that follows the same pattern as other hello-world examples.
