@@ -34,18 +34,18 @@ class NPSwarmClient(ClientApp):
         super().__init__()
         self.delta = delta
 
-    def train(self, weights, **kwargs):
+    def train(self, weights):
         return weights + self.delta
 
     def sag(self, model):
-        results = self.group(self.clients).train(model, blocking=True)
+        results = self.group(self.clients, blocking=True).train(model)
         results = list(results.values())
         total = results[0]
         for i in range(1, len(results)):
             total += results[i]
         return total / len(results)
 
-    def swarm_learn(self, num_rounds, model, current_round, context: Context, **kwargs):
+    def swarm_learn(self, num_rounds, model, current_round, context: Context):
         print(f"[{context.callee}]: swarm learn asked by {context.caller}: {num_rounds=} {current_round=} {model=}")
         new_model = self.sag(model)
 
@@ -62,10 +62,10 @@ class NPSwarmClient(ClientApp):
         next_client = self.clients[next_client_idx]
         next_client.swarm_learn(num_rounds, new_model, next_round, blocking=False)
 
-    def start(self, num_rounds, initial_model, **kwargs):
-        self.swarm_learn(num_rounds, initial_model, 0, **kwargs)
+    def start(self, num_rounds, initial_model, context: Context):
+        self.swarm_learn(num_rounds, initial_model, 0, context)
 
-    def accept_final_model(self, model, context: Context, **kwargs):
+    def accept_final_model(self, model, context: Context):
         # accept the final model
         # write model to disk
         print(f"[{context.callee}]: received final model from {context.caller}: {model}")

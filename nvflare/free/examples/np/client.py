@@ -11,7 +11,7 @@ class NPTrainer(ClientApp):
         ClientApp.__init__(self)
         self.delta = delta
 
-    def train(self, r, weights, abort_signal: Signal, context: Context, **kwargs):
+    def train(self, r, weights, abort_signal: Signal, context: Context):
         if abort_signal.triggered:
             print("training aborted")
             return 0
@@ -22,6 +22,6 @@ class NPTrainer(ClientApp):
             metric_receiver.accept_metric({"round": r, "y": 2})
         return weights + self.delta
 
-    def evaluate(self, model, context: Context, **kwargs):
+    def evaluate(self, model, context: Context):
         print(f"[{self.name}] called by {context.caller}: client {context.callee} to evaluate")
         return random.random()

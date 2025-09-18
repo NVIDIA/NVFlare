@@ -2,6 +2,8 @@ import threading
 
 from .backend import Backend
 from .resp import Resp
+from .constants import CollabMethodOptionName, CollabMethodArgName
+from .utils import check_optional_args
 
 
 class _Waiter(threading.Event):
@@ -27,9 +29,10 @@ class SimBackend(Backend):
         if not callable(func):
             raise AttributeError(f"the {func_name} of {target_name} is not callable")
 
-        blocking = kwargs.pop("blocking", True)
-        timeout = kwargs.pop("timeout", None)
-        kwargs["abort_signal"] = self.abort_signal
+        kwargs[CollabMethodArgName.ABORT_SIGNAL] = self.abort_signal
+
+        blocking = kwargs.pop(CollabMethodOptionName.BLOCKING, True)
+        timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, None)
 
         waiter = None
         if blocking:
@@ -48,6 +51,7 @@ class SimBackend(Backend):
     @staticmethod
     def _run_func(waiter: _Waiter, func, args, kwargs):
         try:
+            check_optional_args(func, kwargs)
             result = func(*args, **kwargs)
             if waiter:
                 waiter.result = result
@@ -71,6 +75,7 @@ class SimBackend(Backend):
     @staticmethod
     def _run_func_with_resp(resp: Resp, func, args, kwargs):
         try:
+            check_optional_args(func, kwargs)
             result = func(*args, **kwargs)
             resp.set_result(result)
         except Exception as ex:

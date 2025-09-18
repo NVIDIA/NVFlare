@@ -8,6 +8,7 @@ from nvflare.apis.fl_exception import RunAborted
 from .proxy import Proxy
 from .ctx import Context
 from .resp import Resp
+from .constants import CollabMethodArgName
 
 
 class Group:
@@ -47,12 +48,13 @@ class Group:
             resps = {}
             for p in self._proxies:
                 kwargs_copy = copy.copy(kwargs)
+
                 ctx = Context(p.caller_name, p.name)
-                kwargs_copy["context"] = ctx
+                kwargs_copy[CollabMethodArgName.CONTEXT] = ctx
 
                 resp = Resp(self._process_resp_cb, self._cb_kwargs)
                 resps[p.name] = resp
-                kwargs_copy["abort_signal"] = self._abort_signal
+                kwargs_copy[CollabMethodArgName.ABORT_SIGNAL] = self._abort_signal
                 p.backend.call_target_with_resp(
                     resp, p.name, func_name, *args, **kwargs_copy
                 )

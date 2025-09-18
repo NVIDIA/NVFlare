@@ -1,5 +1,6 @@
 from .backend import Backend
 from .ctx import Context
+from .constants import CollabMethodArgName
 
 
 class Proxy:
@@ -29,7 +30,7 @@ class Proxy:
 
         def method(*args, **kwargs):
             ctx = Context(self.caller_name, self.name)
-            kwargs["context"] = ctx
+            kwargs[CollabMethodArgName.CONTEXT] = ctx
             return self.backend.call_target(self.target_name, func_name, *args, **kwargs)
 
         return method
