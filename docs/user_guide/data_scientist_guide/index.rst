@@ -10,6 +10,7 @@ Data Scientist Guide
 
    ../../programming_guide/execution_api_type/client_api
    job_recipe
+   flare_api
    ../../quickstart.rst
    ../../tutorials
    logging_configuration
