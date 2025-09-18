@@ -82,7 +82,7 @@ class Run:
         """
         if self._is_sim_env():
             print(
-                "get_status is not supported in a simulation environment, please check the log inside the workspace returned by get_result()"
+                f"Note, get_status returns None in SimEnv. The simulation logs can be found at {self._get_sim_result()}"
             )
             return None
 

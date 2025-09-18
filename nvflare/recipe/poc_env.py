@@ -70,7 +70,7 @@ class _PocEnvValidator(BaseModel):
         return self
 
 
-class POCEnv(ExecEnv):
+class PocEnv(ExecEnv):
     """Proof of Concept execution environment for local testing and development.
 
     This environment sets up a POC deployment on a single machine with multiple
