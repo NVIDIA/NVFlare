@@ -6,7 +6,7 @@ from nvflare.free.api.ctx import Context
 
 class MetricReceiver:
 
-    def accept_metric(self, metrics: dict, context: Context, **kwargs):
+    def accept_metric(self, metrics: dict, context: Context):
         print(f"[{context.callee}] received metric report from {context.caller}: {metrics}")
 
 
