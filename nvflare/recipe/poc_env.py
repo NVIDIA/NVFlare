@@ -34,7 +34,7 @@ from nvflare.tool.poc.poc_commands import (
 )
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
-from .spec import ExecEnv, ExecEnvType
+from .session_env import SessionEnv
 
 STOP_POC_TIMEOUT = 10
 SERVICE_START_TIMEOUT = 3
@@ -70,7 +70,7 @@ class _PocEnvValidator(BaseModel):
         return self
 
 
-class POCEnv(ExecEnv):
+class PocEnv(SessionEnv):
     """Proof of Concept execution environment for local testing and development.
 
     This environment sets up a POC deployment on a single machine with multiple
@@ -123,18 +123,6 @@ class POCEnv(ExecEnv):
         self.project_conf_path = v.project_conf_path
         self.docker_image = v.docker_image
         self.username = v.username
-
-    def get_env_info(self) -> dict:
-        return {
-            "env_type": ExecEnvType.POC,
-            "startup_kit_location": self._get_admin_startup_kit_path(),
-            "num_clients": self.num_clients,
-            "gpu_ids": self.gpu_ids,
-            "use_he": self.use_he,
-            "docker_image": self.docker_image,
-            "project_conf_path": self.project_conf_path,
-            "username": self.username,
-        }
 
     def deploy(self, job: FedJob):
         """Deploy a FedJob to the POC environment.
@@ -279,3 +267,11 @@ class POCEnv(ExecEnv):
 
         except Exception as e:
             raise RuntimeError(f"Failed to locate admin startup kit: {e}")
+
+    def _get_session_params(self) -> dict:
+        """Get session parameters for creating a secure session."""
+        return {
+            "username": self.username,
+            "startup_kit_location": self._get_admin_startup_kit_path(),
+            "timeout": self.get_extra_prop("login_timeout", 10),
+        }

@@ -20,7 +20,7 @@ from pydantic import BaseModel, PositiveFloat, model_validator
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.job_config.api import FedJob
 
-from .spec import ExecEnv, ExecEnvType
+from .session_env import SessionEnv
 
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
 
@@ -52,7 +52,7 @@ class _ProdEnvValidator(BaseModel):
         return self
 
 
-class ProdEnv(ExecEnv):
+class ProdEnv(SessionEnv):
     def __init__(
         self,
         startup_kit_location: str,
@@ -101,10 +101,10 @@ class ProdEnv(ExecEnv):
             if sess:
                 sess.close()
 
-    def get_env_info(self) -> dict:
+    def _get_session_params(self) -> dict:
+        """Get session parameters for creating a secure session."""
         return {
-            "env_type": ExecEnvType.PROD,
-            "startup_kit_location": self.startup_kit_location,
-            "login_timeout": self.login_timeout,
             "username": self.username,
+            "startup_kit_location": self.startup_kit_location,
+            "timeout": self.login_timeout,
         }
