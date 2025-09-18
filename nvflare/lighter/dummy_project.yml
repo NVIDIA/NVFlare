@@ -61,6 +61,6 @@ builders:
 #    args:
 #      docker_image: localhost/nvflare:0.0.1
 #      base_image: python:3.10
-#      requirements_file: docker_compose_requirements.txt
+#      requirements_file: docker_requirements.txt
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
