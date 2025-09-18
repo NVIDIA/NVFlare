@@ -22,8 +22,8 @@ See the sections below for more in-depth information about the different capabil
 .. toctree::
    :maxdepth: 1
 
-   configurations/variable_resolution
-   configurations/job_configuration
-   configurations/communication_configuration
-   configurations/logging_configuration
+   variable_resolution
+   job_configuration
+   communication_configuration
+   logging_configuration
    

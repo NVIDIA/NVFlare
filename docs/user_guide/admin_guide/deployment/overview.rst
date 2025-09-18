@@ -1,6 +1,6 @@
-########
-Overview
-########
+###################
+Deployment Overview
+###################
 
 ************
 Introduction
@@ -11,13 +11,23 @@ federated learning project. A provisioning tool can be configured to create a st
 These packages can then be delivered to each site ready to go, streamlining the process to provision, start,
 and operate federated learning with a trusted setup.
 
-Provision - Start - Operate
-===========================
+Provision - Distribution - Start - Operate
+==========================================
 
 Provision
 ---------
 There are different ways to generate startup packages (or startup kits) for the FL server, FL clients, and admin users. Depending on how the
 packages are created and distributed then deployed, there are multiple ways to provision the packages. See :ref:`provisioning` for details.
+
+Distribution
+------------
+"Distribution" means to deliver or transfer the provisioned software package (startup kit) to different sites.
+
+- If you use command line (CLI) to provision, then the distribution is not the responsibility of the FLARE,
+  you can use any distribution means (dropbox, shared storage, email, FTP etc.) to deliver the packages.
+
+- If you are using NVIDIA FLARE's Dashboard to perform the provision, then you can directly download the packages from the Dashboard website.
+
 
 Start
 -----
@@ -113,56 +123,30 @@ Compared to the CLI provision option, there is a much simplified effort in distr
 ************************************************************************************
 Start: NVIDIA FLARE Package Deployment
 ************************************************************************************
-There are multiple ways to deploy NVFLARE depending on use case:
-
-    - On-premise
-    - In the cloud
-    - On bare-metal
-    - On docker
-    - On K8s
-
 In this section, we will discuss how to deploy for different cases.
 
 On-Premise Deployment 
-=============================
-
-Local host deployment
----------------------
-
-Production mode, non-HA, secure, local
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-You can use the CLI provision command to generate a local production mode.
-
-Docker mode
-^^^^^^^^^^^
-Use builder to generate docker-compose files to allow different dockers run locally.  Similar to production mode, the server needs either to be localhost or one needs to modify /etc/hosts
-Run docker-compose up/down
-
-Bare-metal deployment
----------------------
-To deploy on-premise, copy the startup package to each host machine then start with the start script.
-
-Docker-based deployment
------------------------
-Docker: Build the docker image for each startup kit,
-
-Then run docker run : docker run
-
-See the details at :ref:`docker_compose`.
+=====================
+After following the provision and distribution processes, the site Org Admin should have already received the startup kit.
+The Org Admin can then navigate to the startup directory and execute the `start.sh` command to initiate the server or client.
+Note: the server must be started before the clients. Once the server and clients are connected, you will have a basic federated learning system running.
 
 Cloud Deployment
 ================
-If you decide to leverage the public cloud (Azure or AWS) to deploy NVIDIA FLARE, the newly added cloud deployment features allow hybrid
+You can certainly treat each cloud VM instance similar to the on-prem hosts and deploy the similar way.
+But you would need to setup the VM and security group etc. before you can deploy the startup kit.
+
+NVIDIA FLARE has made this easy, especially for public cloud (Azure or AWS), the cloud deployment feature allows multi-cloud/hybrid
 cloud deployment such as deployment of the FL Server at Azure and FL Clients in AWS, with another FL Client on premises for example.
 
 See how to deploy to Azure and AWS clouds can be found in :ref:`cloud_deployment`.
 
-Deploy to Google Cloud will be made available in a future release.
+Similarly deployment approach to Google Cloud will be made available in a future release.
 
 Kubernetes Deployment
 =====================
 As mentioned above, you can run NVIDIA FLARE in the public cloud.  If you prefer to deploy NVIDIA FLARE in Amazon Elastic Kubernetes Service (EKS),
-you can find the deployment guide in :ref:`eks_deployment`.
+you can find the deployment guide in :ref:`aws_eks`.
 
 
 Starting Federated Learning Servers
@@ -177,8 +161,7 @@ you will need to modify fed_server.json.  The same applies to the other two file
 
 .. note::
 
-   When launching the FL server inside a docker with ``docker run``, use ``--net=host`` to map hostname into that
-   docker instance.  For secure gRPC communication, the FL server has to bind to the hostname specified in the
+   For secure gRPC communication, the FL server has to bind to the hostname specified in the
    provisioning stage. Always make sure that hostname is what FL server can bind to. Additionally,
    the port that the server communicates on must also not be blocked by any firewalls.
 
@@ -236,7 +219,9 @@ Federated Learning Administration Console
 =========================================
 Each admin console will be able to connect and submit commands to the server. Each admin console package is named after
 the email specified when provisioning the project, and the same email will need to be entered for authentication when
-the admin console is launched.
+the admin console is launched. Of course you will need to have admin console client start up kit downloaded.
+
+To use the admin console and startup kit, you will need to have NVFLARE installed first.
 
 Install the wheel package first with::
 
@@ -260,9 +245,62 @@ the participant. As such, please safeguard its private key, client.key.
    uploading files as well as directories created for federated learning runs will live here. For details, see
    `Internal folder and file structures for NVIDIA FLARE`_.
 
+
+Working with Docker
+===================
+Depending on skill set or preference, some data scientists like to work with pip install; where others prefer to use docker.
+For example, assume a docker image with python and nvflare installed, optional python dependency requirements needed for the workload
+you can the provision with docker name, optionally add docker_requirements.txt, which will install the dependencies inside the docker
+
+If the docker name is specified, then add docker builder in provision project.ymal file, the provision
+process will generate docker.sh, which can be used to start each side.
+
+The docker.sh scripts are executable files that provide a convenient way to run NVIDIA FLARE components in containerized
+environments, with proper volume mounts, networking, and security configurations automatically handled by the provisioning system.
+
+.. note::
+
+   When launching the FL server inside a docker with ``docker run``, use ``--net=host`` to map hostname into that
+   docker instance.
+
+
 *******************************************************
 Operate: Running federated learning as an administrator
 *******************************************************
+Now that the Federated System is deployed, we are almost ready to transition to the operating mode. However, there are still two more steps to verify:
+
+- **Pre-flight Check**: Ensure the system is functioning correctly.
+- **Workload**: Determine how the system will be provided with the training code, etc.
+
+Preflight Check
+===============
+We want to ensure all sites are well-connected and functioning properly after deployment.
+
+You can use the following command:
+
+.. code-block::
+
+    nvflare preflight_check
+
+To learn more about `preflight_check`, see :ref:`preflight_check`.
+
+Workload
+========
+The workload, which typically includes training and evaluation code, can be deployed in multiple ways:
+
+- **Dynamically Deployed Code**: This is the **BYOC** (Bring Your Own Code) feature. By using a **custom** folder, you can define your Python workload (training code) locally, which will be automatically deployed by FLARE at server and client sites when a job is submitted.
+
+  This feature is mostly used by data scientists during experiments and POCs. For production loads, where security requires no dynamic code loading, a pre-installed workload is necessary before running experiments.
+
+- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, pre-installation is required before starting the experiments. You can pre-install the workload via the :ref:`app_pre_install` command of the FLARE CLI.
+
+.. code-block::
+
+    nvflare pre-install
+
+.. note::
+    Ensure that both the server and clients have the proper dependencies for the workload. For example, if both the server and client need to save a checkpoint of the model using the `torch.save()` method, then PyTorch must be installed on both the server and client. If Docker is used, it must be installed inside the Docker container.
+
 
 Running federated learning from the administration console
 ==========================================================
@@ -308,3 +346,11 @@ Administrator side folder and file structure
                 config/
                 models/
                 resources/
+
+
+
+
+
+
+
+

@@ -1,4 +1,4 @@
-.. _confidential_computing:
+.. _confidential_computing_attestation:
 
 #######################################################
 Confidential Computing: Attestation Service Integration

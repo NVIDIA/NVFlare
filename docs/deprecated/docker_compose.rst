@@ -4,6 +4,9 @@
 Launching NVIDIA FLARE with docker compose
 ######################################################
 
+.. note::
+    Deprecated. This is alternative to simulate the deployment within local env. This should not be used for production
+
 For users who would like to get NVIDIA FLARE up and running as easy as possible,
 such as first-time NVIDIA FLARE users or people who need to demonstrate it upon request,
 they can use this docker compose feature.  All they need is a working docker 
