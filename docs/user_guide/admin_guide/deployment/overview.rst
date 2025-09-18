@@ -267,7 +267,6 @@ environments, with proper volume mounts, networking, and security configurations
 *******************************************************
 Operate: Running federated learning as an administrator
 *******************************************************
-
 Now that the Federated System is deployed, we are almost ready to transition to the operating mode. However, there are still two more steps to verify:
 
 - **Pre-flight Check**: Ensure the system is functioning correctly.
@@ -301,6 +300,7 @@ The workload, which typically includes training and evaluation code, can be depl
 
 .. note::
     Ensure that both the server and clients have the proper dependencies for the workload. For example, if both the server and client need to save a checkpoint of the model using the `torch.save()` method, then PyTorch must be installed on both the server and client. If Docker is used, it must be installed inside the Docker container.
+
 
 Running federated learning from the administration console
 ==========================================================
