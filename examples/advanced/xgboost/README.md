@@ -30,17 +30,17 @@ We assume that only one is the "label owner" (or we call it as the "active party
 ## Security Measures
 The following table outlines the different collaboration modes, algorithms, and security measures available in federated XGBoost:
 
-| Collaboration Mode | Algorithm | Data Exchange | Security Measures                                                              | Notes |
-|-------------------|-----------|---------------|--------------------------------------------------------------------------------|-------|
-| **Horizontal** | Tree-based | Clients submit locally boosted trees to server; server combines and routes trees back to clients | None                                                                           | All trees become part of the final model. No security mechanisms enforced. |
-| **Horizontal** | Histogram-based | Clients submit local histograms to server; server aggregates them to global histogram | Encryption of histograms                                                       | Local histograms encrypted before sending to server to protect against access by server and other clients. |
-| **Vertical** | Histogram-based | Active party computes gradients for all data samples; passive parties receive gradients and compute local histograms; histograms sent back to active party | **Primary:** encryption of gradients; **Secondary:** feature ownership masking | Gradients encrypted before sending to passive parties to protect against label recovery. Split values in final model are masked according to feature ownership - clients only see split values for their own features. |
+| Collaboration Mode | Algorithm | Data Exchange | Security Measures                                                              | Notes                                                                                                                         |
+|-------------------|-----------|---------------|--------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| **Horizontal** | Tree-based | Clients submit locally boosted trees to server; server combines and routes trees back to clients | None                                                                           | All trees become part of the final model.                                                                                     |
+| **Horizontal** | Histogram-based | Clients submit local histograms to server; server aggregates them to global histogram | Encryption of histograms                                                       | Local histograms encrypted before sending to server.                                                                          |
+| **Vertical** | Histogram-based | Active party computes gradients for all data samples; passive parties receive gradients and compute local histograms; histograms sent back to active party | **Primary:** encryption of gradients; **Secondary:** feature ownership masking | Gradients encrypted before sending to passive parties. Split values in final model are masked according to feature ownership. |
 
 ### Notes:
 - In horizontal mode, tree-based collaboration does not have security concerns that can be handled by encryption.
 - In vertical mode, histogram-based collaboration has two security goals:
   - **Primary** goal is to protect the sample gradients sent to passive parties, as they can be used to recover the labels of every single data samples.
-  - **Secondary** goal is to mask the split values in the final model according to feature ownership. This is a feature good to have, while it does not pose a secure risk as significant as the primary goal.
+  - **Secondary** goal is to let clients only see split values for their own features. This is a feature good to have, while it does not pose a secure risk as significant as the primary goal.
 
 ## GPU Accelerations
 There are two levels of GPU accelerations in federated XGBoost:
