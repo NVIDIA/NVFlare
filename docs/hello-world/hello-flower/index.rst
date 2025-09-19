@@ -137,7 +137,7 @@ You can visualize the metrics streamed to the server using TensorBoard.
 Run with real deployment
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-First, check real-world deployment guide: https://nvflare.readthedocs.io/en/main/real_world_fl/overview.html. 
+First, check deployment guide: :ref:`deployment_overview`
 
 You can run the job in a production environment by changing from ``SimEnv`` to ``ProdEnv`` in the ``job.py`` script.
 

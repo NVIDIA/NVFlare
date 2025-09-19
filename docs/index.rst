@@ -20,11 +20,12 @@ NVIDIA FLARE
    :caption: Guides
 
    example_applications_algorithms
-   tutorials <tutorials>
-   real_world_fl
+   tutorials
    user_guide
    programming_guide
    best_practices
+   edge_development/index
+   confidential_computing/index
 
 .. toctree::
    :maxdepth: -1
@@ -66,7 +67,7 @@ For first-time users and FL researchers, FLARE provides the :ref:`FL Simulator <
 FLARE for Users
 ===============
 If you want to learn how to interact with the FLARE system, please refer to the :ref:`User Guide <user_guide>`.
-When you are ready for a secure, distributed deployment, the :ref:`Real World Federated Learning <real_world_fl>` section covers the tools and processes required to deploy and operate a secure, real-world FLARE project.
+When you are ready for a secure, distributed deployment, the :ref:`Real World Federated Learning <deployment_overview>` section covers the tools and processes required to deploy and operate a secure, real-world FLARE project.
 
 FLARE for Developers
 ====================
