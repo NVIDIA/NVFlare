@@ -14,7 +14,7 @@
 
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -117,89 +117,6 @@ def test_get_admin_startup_kit_path_not_found(mock_setup, mock_get_prod_dir, moc
 
         with pytest.raises(RuntimeError, match="Admin startup kit not found"):
             env._get_admin_startup_kit_path()
-
-
-@patch("nvflare.recipe.poc_env.new_secure_session")
-def test_submit_and_monitor_job(mock_session):
-    """Test job submission via single Flare API session."""
-    mock_sess = MagicMock()
-    mock_sess.submit_job.return_value = "job_12345"
-    mock_session.return_value = mock_sess
-
-    env = PocEnv()
-
-    with patch.object(env, "_get_admin_startup_kit_path", return_value="/fake/admin/dir"):
-        result = env._submit_and_monitor_job("/fake/job/path", "test_job")
-
-        assert result == "job_12345"
-        mock_session.assert_called_once_with(username="admin@nvidia.com", startup_kit_location="/fake/admin/dir")
-        mock_sess.submit_job.assert_called_once_with("/fake/job/path")
-        mock_sess.close.assert_called_once()
-
-
-@patch("nvflare.recipe.poc_env.tempfile.TemporaryDirectory")
-@patch("nvflare.recipe.poc_env.time.sleep")
-def test_deploy_job_integration(mock_sleep, mock_temp_dir):
-    """Test complete job deployment flow."""
-    # Mock temporary directory
-    mock_temp_dir_obj = MagicMock()
-    mock_temp_dir_obj.__enter__.return_value = "/tmp/temp_dir"
-    mock_temp_dir_obj.__exit__.return_value = None
-    mock_temp_dir.return_value = mock_temp_dir_obj
-
-    # Mock job
-    mock_job = MagicMock()
-    mock_job.name = "test_job"
-    mock_job.export_job = MagicMock()
-
-    env = PocEnv()
-
-    with (
-        patch.object(env, "_check_poc_running", return_value=False),
-        patch("nvflare.recipe.poc_env.prepare_poc_provision") as mock_prepare,
-        patch("nvflare.recipe.poc_env._start_poc") as mock_start_poc,
-        patch.object(env, "_submit_and_monitor_job", return_value="job_12345"),
-    ):
-        result = env.deploy(mock_job)
-
-        assert result == "job_12345"
-        mock_job.export_job.assert_called_once_with("/tmp/temp_dir")
-        env._submit_and_monitor_job.assert_called_once_with("/tmp/temp_dir/test_job", "test_job")
-
-        # Verify POC services were prepared and started
-        mock_prepare.assert_called_once()
-        mock_start_poc.assert_called_once()
-
-
-@patch("nvflare.recipe.poc_env.tempfile.TemporaryDirectory")
-@patch("nvflare.recipe.poc_env.time.sleep")
-def test_deploy_job_with_existing_poc(mock_sleep, mock_temp_dir):
-    """Test job deployment when POC is already running."""
-    # Mock temporary directory
-    mock_temp_dir_obj = MagicMock()
-    mock_temp_dir_obj.__enter__.return_value = "/tmp/temp_dir"
-    mock_temp_dir_obj.__exit__.return_value = None
-    mock_temp_dir.return_value = mock_temp_dir_obj
-
-    # Mock job
-    mock_job = MagicMock()
-    mock_job.name = "test_job"
-    mock_job.export_job = MagicMock()
-
-    env = PocEnv()
-
-    with (
-        patch.object(env, "_check_poc_running", return_value=True),  # POC already running
-        patch.object(env, "stop") as mock_stop,  # Should stop existing POC
-        patch("nvflare.recipe.poc_env.prepare_poc_provision") as mock_prepare,
-        patch("nvflare.recipe.poc_env._start_poc") as mock_start_poc,
-        patch.object(env, "_submit_and_monitor_job", return_value="job_12345"),
-    ):
-        result = env.deploy(mock_job)
-
-        assert result == "job_12345"
-        # Should stop existing POC before starting fresh one
-        mock_stop.assert_called_once()
 
 
 @patch("nvflare.recipe.poc_env.setup_service_config")

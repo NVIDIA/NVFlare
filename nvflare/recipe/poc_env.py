@@ -14,14 +14,13 @@
 
 import os
 import shutil
-import tempfile
 import time
 from typing import Optional
 
 from pydantic import BaseModel, conint, model_validator
 
-from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.job_config.api import FedJob
+from nvflare.recipe.spec import ExecEnv
 from nvflare.tool.poc.poc_commands import (
     _clean_poc,
     _start_poc,
@@ -34,7 +33,7 @@ from nvflare.tool.poc.poc_commands import (
 )
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 
-from .session_env import SessionEnv
+from .session_mgr import SessionManager
 
 STOP_POC_TIMEOUT = 10
 SERVICE_START_TIMEOUT = 3
@@ -70,7 +69,7 @@ class _PocEnvValidator(BaseModel):
         return self
 
 
-class PocEnv(SessionEnv):
+class PocEnv(ExecEnv):
     """Proof of Concept execution environment for local testing and development.
 
     This environment sets up a POC deployment on a single machine with multiple
@@ -123,6 +122,7 @@ class PocEnv(SessionEnv):
         self.project_conf_path = v.project_conf_path
         self.docker_image = v.docker_image
         self.username = v.username
+        self._session_manager = None  # Lazy initialization
 
     def deploy(self, job: FedJob):
         """Deploy a FedJob to the POC environment.
@@ -158,12 +158,8 @@ class PocEnv(SessionEnv):
         # Give services time to start up
         time.sleep(SERVICE_START_TIMEOUT)
 
-        # Submit job using Flare API like ProdEnv
-        with tempfile.TemporaryDirectory() as temp_dir:
-            job.export_job(temp_dir)
-            job_path = os.path.join(temp_dir, job.name)
-
-            return self._submit_and_monitor_job(job_path, job.name)
+        # Submit job using SessionManager
+        return self._get_session_manager().submit_job(job)
 
     def _check_poc_running(self) -> bool:
         try:
@@ -213,37 +209,14 @@ class PocEnv(SessionEnv):
         print(f"Removing POC workspace: {self.poc_workspace}")
         shutil.rmtree(self.poc_workspace, ignore_errors=True)
 
-    def _submit_and_monitor_job(self, job_path: str, job_name: str) -> str:
-        """Submit and monitor job via Flare API using a single session.
+    def get_job_status(self, job_id: str) -> Optional[str]:
+        return self._get_session_manager().get_job_status(job_id)
 
-        Args:
-            job_path: Path to the exported job directory.
-            job_name: Name of the job for logging.
+    def abort_job(self, job_id: str) -> None:
+        self._get_session_manager().abort_job(job_id)
 
-        Returns:
-            str: Job ID returned by the system.
-        """
-        sess = None
-        try:
-            # Get the admin startup kit path for POC
-            admin_dir = self._get_admin_startup_kit_path()
-
-            # Create secure session with POC admin (reuse for both submit and monitor)
-            sess = new_secure_session(
-                username=self.username,
-                startup_kit_location=admin_dir,
-            )
-
-            # Submit the job
-            job_id = sess.submit_job(job_path)
-
-            return job_id
-        except Exception as e:
-            raise RuntimeError(f"Failed to submit/monitor job via Flare API: {e}")
-
-        finally:
-            if sess:
-                sess.close()
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+        return self._get_session_manager().get_job_result(job_id, timeout)
 
     def _get_admin_startup_kit_path(self) -> str:
         """Get the path to the admin startup kit for POC.
@@ -268,10 +241,13 @@ class PocEnv(SessionEnv):
         except Exception as e:
             raise RuntimeError(f"Failed to locate admin startup kit: {e}")
 
-    def _get_session_params(self) -> dict:
-        """Get session parameters for creating a secure session."""
-        return {
-            "username": self.username,
-            "startup_kit_location": self._get_admin_startup_kit_path(),
-            "timeout": self.get_extra_prop("login_timeout", 10),
-        }
+    def _get_session_manager(self):
+        """Get or create SessionManager with lazy initialization."""
+        if self._session_manager is None:
+            session_params = {
+                "username": self.username,
+                "startup_kit_location": self._get_admin_startup_kit_path(),
+                "timeout": self.get_extra_prop("login_timeout", 10),
+            }
+            self._session_manager = SessionManager(session_params)
+        return self._session_manager
