@@ -20,6 +20,7 @@ from nvflare import FedJob
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.aggregators import InTimeAccumulateWeightedAggregator
+from nvflare.app_common.np.np_model_persistor import NPModelPersistor
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.client.config import ExchangeFormat, TransferType
@@ -157,20 +158,24 @@ class NumpyFedAvgRecipe(Recipe):
         shareable_generator_id = job.to_server(shareable_generator, id="shareable_generator")
         aggregator_id = job.to_server(self.aggregator, id="aggregator")
 
+        # Handle initial model if provided
+        persistor_id = ""
+        if self.initial_model is not None:
+            # Add persistor and initial model directly
+            persistor_id = job.to_server(NPModelPersistor(), id="persistor")
+            job.to(self.initial_model, "server")
+
         controller = ScatterAndGather(
             min_clients=self.min_clients,
             num_rounds=self.num_rounds,
             wait_time_after_min_received=0,
             aggregator_id=aggregator_id,
-            persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
+            persistor_id=persistor_id,
             shareable_generator_id=shareable_generator_id,
+            allow_empty_global_weights=True,  # Allow empty weights if no initial model
         )
         # Send the controller to the server
         job.to_server(controller)
-
-        # Send initial model to server if provided
-        if self.initial_model is not None:
-            job.to(self.initial_model, "server")
 
         # Add clients with NUMPY framework
         executor = ScriptRunner(
