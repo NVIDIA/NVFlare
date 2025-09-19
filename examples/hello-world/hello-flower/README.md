@@ -112,7 +112,7 @@ tensorboard --logdir /tmp/nvflare/hello-flower
 
 ### Run with real deployment
 
-First, check real-world deployment guide: https://nvflare.readthedocs.io/en/main/real_world_fl/overview.html. 
+First, check real-world deployment guide: https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/overview.html. 
 
 You can run the job in a production environment by changing from `SimEnv` to `ProdEnv` in the `job.py` script.
 

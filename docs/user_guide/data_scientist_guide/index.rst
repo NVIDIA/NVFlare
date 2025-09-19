@@ -12,6 +12,6 @@ Data Scientist Guide
    job_recipe
    ../../quickstart.rst
    ../../tutorials
-   logging_configuration
+   flare_api
    flower_integration/flower_integration
    federated_xgboost/federated_xgboost

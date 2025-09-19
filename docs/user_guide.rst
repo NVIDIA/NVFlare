@@ -28,4 +28,4 @@ please check :ref:`researcher_guide`
    user_guide/admin_guide/index
    user_guide/data_scientist_guide/index
    user_guide/researcher_guide/index
-   user_guide/tools/nvflare_cli
+   user_guide/nvflare_cli/nvflare_cli

@@ -107,7 +107,7 @@ Next, we start the NVFlare system distributing the three clients to use two GPUs
 ```
 nvflare poc start --gpu 0 1 2 3 4 5
 ```
-For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt):
+For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/operation.html#admin-command-prompt):
 ```
 nvflare poc start --service admin@nvidia.com
 ```
