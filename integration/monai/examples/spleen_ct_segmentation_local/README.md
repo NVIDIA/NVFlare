@@ -184,7 +184,7 @@ nvflare job submit -j jobs/spleen_ct_segmentation_local
 
 > **_NOTE:_** You can always use the admin console to manually abort a running job.
   using `abort_job [JOB_ID]`.
-> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html).
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/operation.html).
 >
 > For the secure workspace admin console, use the username "admin@nvidia.com"
 
@@ -194,7 +194,7 @@ The results can be downloaded and shown with the admin console using
   download_job [JOB_ID]
 ```
 where `[JOB_ID]` is the ID assigned by the system when submitting the job.
-You can use the `list_jobs` [admin command](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt) to find the relevant `JOB_ID`.
+You can use the `list_jobs` [admin command](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/operation.html#admin-command-prompt) to find the relevant `JOB_ID`.
 
 The result will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
 You should see the cross-site validation results at
