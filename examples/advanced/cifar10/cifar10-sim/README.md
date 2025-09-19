@@ -4,7 +4,7 @@ This example includes instructions on running [FedAvg](https://arxiv.org/abs/160
 [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), 
 and [SCAFFOLD](https://arxiv.org/abs/1910.06378) algorithms using NVFlare's FL simulator.
 
-For instructions of how to run CIFAR-10 in real-world deployment settings, 
+For instructions of how to run CIFAR-10 in deployment settings, 
 see the example on ["Real-world Federated Learning with CIFAR-10"](../cifar10-real-world/README.md).
 
 ## 1. Install requirements

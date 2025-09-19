@@ -170,4 +170,4 @@ experiments conducted with NVFlare produce results that are identical
 to those obtained from standalone scripts.
 
 For more information on the secure xgboost user guide please refer to
-https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html
+https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/federated_xgboost/secure_xgboost_user_guide.html
