@@ -58,6 +58,10 @@ builders:
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
   - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
+  - path: nvflare.lighter.impl.docker_image_builder.DockerImageBuilder
+    args:
+      base_dockerfile: Dockerfile.base
+      requirement: git+https://github.com/NVIDIA/NVFlare.git@main
 packager:
   path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
   args:
