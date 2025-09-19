@@ -12,7 +12,7 @@ Before You Start
 Feel free to refer to the :doc:`detailed documentation <../programming_guide>` at any point
 to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
 
-We recommend you first finish the :doc:`Hello FedAvg with NumPy <hello_fedavg_numpy>` exercise since it introduces the
+We recommend you first finish the :doc:`Hello NumPy <hello_numpy>` exercise since it introduces the
 federated learning concepts of `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_.
 
 Make sure you have an environment with NVIDIA FLARE installed.
@@ -65,7 +65,7 @@ NVIDIA FLARE Job API
 --------------------
 
 The ``fedavg_script_runner_pt.py`` script for this hello-pt example is very similar to the ``fedavg_script_runner_hello-numpy.py`` script
-for the :doc:`Hello FedAvg with NumPy <hello_fedavg_numpy>` exercise. Other than changes to the names of the job and client script, the only difference
+for the :doc:`Hello NumPy <hello_numpy>` exercise. Other than changes to the names of the job and client script, the only difference
 is a line to define the initial global model for the server:
 
 .. code-block:: python

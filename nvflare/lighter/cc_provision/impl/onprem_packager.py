@@ -14,8 +14,11 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
+import tempfile
+import time
 from pathlib import Path
 
 import yaml
@@ -26,6 +29,22 @@ from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Packager
 
 BUILD_IMAGE_CMD = "build_cvm_image.sh"
+
+
+def _extract_cvm_tar_path(output):
+    for line in output.splitlines():
+        match = re.search(r"CVM Bundle\s+([^\s]+)\s+is ready", line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _extract_docker_tar_path(output):
+    for line in output.splitlines():
+        match = re.search(r"DOCKER_ARCHIVE=([^\s]+)", line)
+        if match:
+            return match.group(1)
+    return None
 
 
 def update_log_filenames(config, new_log_root: str = "/applog"):
@@ -63,34 +82,36 @@ def to_abs_path(yaml_path, file_path):
     return os.path.normpath(abs_path)
 
 
-def update_path_inside_cc_config(yaml_path, config_key: str):
-    with open(yaml_path, "r") as f:
-        config = yaml.safe_load(f)
-    package_path = config.get(config_key)
-    if package_path:
-        config[config_key] = to_abs_path(yaml_path, package_path)
-    with open(yaml_path, "w") as f:
-        yaml.dump(config, f)
-
-
 def run_command(command, cwd=None):
-    try:
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=True,  # Raises CalledProcessError on non-zero return
-        )
-        print(f"STDOUT:\n{result.stdout}")
-        print(f"STDERR:\n{result.stderr}")
-        return result.stdout
+    print(f"Running {command=} in {cwd=}")
+    process = subprocess.Popen(
+        command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, universal_newlines=True
+    )
 
-    except subprocess.CalledProcessError as e:
-        print(f"Process failed with return code {e.returncode}")
-        print(f"STDOUT:\n{e.stdout}")
-        print(f"STDERR:\n{e.stderr}")
-        raise
+    stdout_lines = []
+    stderr_lines = []
+
+    # Read stdout and stderr asynchronously
+    while True:
+        stdout_line = process.stdout.readline()
+        stderr_line = process.stderr.readline()
+
+        if stdout_line:
+            print(stdout_line, end="")
+            stdout_lines.append(stdout_line)
+        if stderr_line:
+            print(stderr_line, end="")
+            stderr_lines.append(stderr_line)
+
+        if stdout_line == "" and stderr_line == "" and process.poll() is not None:
+            break
+
+    retcode = process.wait()
+    if retcode != 0:
+        raise subprocess.CalledProcessError(
+            retcode, command, output="".join(stdout_lines), stderr="".join(stderr_lines)
+        )
+    return "".join(stdout_lines)
 
 
 class OnPremPackager(Packager):
@@ -99,21 +120,30 @@ class OnPremPackager(Packager):
         self.cc_config_key = cc_config_key
         self.build_image_cmd = build_image_cmd
 
-    def _build_cc_image(self, cc_config_yaml: str, site_name: str, startup_folder_path: str):
+    def _build_cc_image(self, cc_config_yaml: str):
         """Build CC image for the site."""
-        cc_config_yaml = os.path.abspath(cc_config_yaml)
-        update_path_inside_cc_config(cc_config_yaml, config_key="nvflare_package")
         build_image_cmd = to_abs_path(cc_config_yaml, self.build_image_cmd)
         if not os.path.exists(build_image_cmd) or not os.access(build_image_cmd, os.X_OK):
             raise FileNotFoundError(f"Build image command '{build_image_cmd}' not found or is not executable.")
-        command = [build_image_cmd, cc_config_yaml, site_name, startup_folder_path]
+        command = [build_image_cmd, cc_config_yaml]
         output = run_command(command)
-        tar_file_path = None
-        for line in output.splitlines():
-            if line.startswith("CVM_BUNDLE_PATH="):
-                tar_file_path = line.split("=", 1)[1]
-                break
+        # TODO: get rid of this buffer time in between each build
+        #   we need it now otherwise the second call to image builder will fail
+        time.sleep(300.0)
+        tar_file_path = _extract_cvm_tar_path(output)
         return tar_file_path
+
+    def _add_startup_kit_to_cc_config(self, cc_config_path: str, startup_kit_path: str):
+        with open(cc_config_path, "r") as f:
+            data = yaml.safe_load(f)
+
+            user_config = data.get("user_config", {})
+            user_config.update({"nvflare": startup_kit_path})
+            data["user_config"] = user_config
+
+        # Save the updated YAML back to file
+        with open(cc_config_path, "w") as f:
+            yaml.safe_dump(data, f, default_flow_style=False)
 
     def _change_log_dir(self, log_config_path: str):
         with open(log_config_path, "r") as f:
@@ -134,14 +164,31 @@ class OnPremPackager(Packager):
         log_config_path = dest_dir / participant.name / "local" / ProvFileName.LOG_CONFIG_DEFAULT
         self._change_log_dir(log_config_path)
 
-        # Build CC image
-        tar_file_path = self._build_cc_image(participant.get_prop(self.cc_config_key), participant.name, str(dest_dir))
+        cc_config_yaml = os.path.abspath(participant.get_prop(self.cc_config_key))
+        if not os.path.exists(cc_config_yaml):
+            raise RuntimeError(f"{cc_config_yaml=} does not exist")
+
+        fd, temp_cc_config_yaml = tempfile.mkstemp(suffix=".yaml")
+        os.close(fd)
+
+        tar_file_path = None
+        try:
+            shutil.copyfile(cc_config_yaml, temp_cc_config_yaml)
+            # add startup kit to yaml automatically
+            self._add_startup_kit_to_cc_config(temp_cc_config_yaml, str(dest_dir / participant.name))
+            # Build CC image
+            tar_file_path = self._build_cc_image(temp_cc_config_yaml)
+        finally:
+            os.remove(temp_cc_config_yaml)
+
+        if tar_file_path is None or not os.path.exists(tar_file_path):
+            raise RuntimeError("CVM build failed")
 
         # Copy the package that is generated by the build_image_cmd
         site_dir = dest_dir / participant.name
         shutil.rmtree(site_dir)
         os.mkdir(site_dir)
-        shutil.copy(tar_file_path, site_dir)
+        shutil.copy(tar_file_path, site_dir / f"{participant.name}.tgz")
 
     def package(self, project: Project, ctx: ProvisionContext):
         for p in project.get_all_participants():

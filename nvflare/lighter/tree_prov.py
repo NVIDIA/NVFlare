@@ -128,18 +128,14 @@ class _Packager(Packager):
         )
 
         sample_sim_config = {
+            "job_name": "edge_job",
             "endpoint": f"http://localhost:{self.rp_port}",
             "num_devices": 10000,
-            "num_active_devices": 100,
             "num_workers": 30,
-            "cycle_duration": 30.0,
-            "device_reuse_rate": 0.0,
-            "device_id_prefix": "sim-device-",
             "processor": {
                 "path": "nvflare.edge.simulation.devices.num.NumProcessor",
                 "args": {"min_train_time": 0.2, "max_train_time": 1.0},
             },
-            "capabilities": {"methods": ["cnn"]},
         }
 
         with open(os.path.join(script_dir, SIMULATION_CONFIG), "wt") as f:
