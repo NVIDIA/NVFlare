@@ -162,7 +162,7 @@ class NumpyFedAvgRecipe(Recipe):
             num_rounds=self.num_rounds,
             wait_time_after_min_received=0,
             aggregator_id=aggregator_id,
-            persistor_id=job.comp_ids["persistor_id"] if self.initial_model is not None else "",
+            persistor_id="",  # No persistor needed for this simple example
             shareable_generator_id=shareable_generator_id,
         )
         # Send the controller to the server
