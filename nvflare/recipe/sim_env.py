@@ -19,7 +19,7 @@ from pydantic import BaseModel, model_validator
 
 from nvflare.job_config.api import FedJob
 
-from .spec import ExecEnv, ExecEnvType
+from .spec import ExecEnv
 
 WORKSPACE_ROOT = "/tmp/nvflare/simulation"
 
@@ -104,13 +104,19 @@ class SimEnv(ExecEnv):
         )
         return job.name
 
-    def get_env_info(self) -> dict:
-        return {
-            "env_type": ExecEnvType.SIM,
-            "workspace_root": self.workspace_root,
-            "num_clients": self.num_clients,
-            "num_threads": self.num_threads,
-            "gpu_config": self.gpu_config,
-            "log_config": self.log_config,
-            "clients": self.clients,
-        }
+    def get_job_status(self, job_id: str) -> Optional[str]:
+        """Get job status - not supported in simulation environment."""
+        print(
+            f"Note, get_status returns None in SimEnv. The simulation logs can be found at {os.path.join(self.workspace_root, job_id)}"
+        )
+        return None
+
+    def abort_job(self, job_id: str) -> None:
+        """Abort job - not supported in simulation environment."""
+        print("abort is not supported in a simulation environment, it will always run to completion.")
+
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+        """Get job result workspace path."""
+        if self.workspace_root is None:
+            raise RuntimeError("Simulation workspace_root is None - SimEnv may not be properly initialized")
+        return os.path.join(self.workspace_root, job_id)
