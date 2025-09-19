@@ -123,33 +123,7 @@ The FedAvg controller implements these main steps:
     - FL server sends the global model to clients and waits for their updates using `self.send_model_and_wait()`.
     - FL server aggregates all the `results` and produces a new global model using `self.update_model()`.
 
-```python
-class FedAvg(BaseFedAvg):
-    def run(self) -> None:
-        self.info("Start FedAvg.")
-
-        model = self.load_model()
-        model.start_round = self.start_round
-        model.total_rounds = self.num_rounds
-
-        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
-            self.info(f"Round {self.current_round} started.")
-            model.current_round = self.current_round
-
-            clients = self.sample_clients(self.num_clients)
-
-            results = self.send_model_and_wait(targets=clients, data=model)
-
-            aggregate_results = self.aggregate(results)
-
-            model = self.update_model(model, aggregate_results)
-
-            self.save_model(model)
-
-        self.info("Finished FedAvg.")
-```
-
-In this example, we will directly use the default federated averaging algorithm provided by NVFlare. The FedAvg class is defined in nvflare.app_common.workflows.fedavg.FedAvg
+In this example, we will directly use the default federated averaging algorithm provided by NVFlare implemented using the `ScatterAndGather` controller.
 There is no need to defined a customized server code for this example.
 
 ## Job Recipe Code
@@ -168,22 +142,31 @@ Job Recipe contains the client.py and built-in Fed average algorithm.
     recipe.execute(env=env)
 ```
 
-To include both training and evaluation, you can change the recipe's training script 
+To include both training and evaluation using the `CrossSiteModelEval` controller, we use the recipe's training script 
 
 ```python
 
 train_script="client_with_eval.py",
 
 ```
-or simply overwrite client.py with client_with_eval.py
+and set `cross_site_eval=True` in [job.py](job.py) using below commandline arguments.
 
 ## Run Job
 from terminal try to run the code
 
-
 ```
     python job.py
 ```
+
+To run with cross-site evaluation, execute
+```
+    python job.py --train_script="client_with_eval.py" --cross_site_eval
+```
+The cross-site evaluation results can be shown via
+```
+cat /tmp/nvflare/simulation/hello-pt/server/simulate_job/cross_site_val/cross_val_results.json
+```
+
 > Note: 
 >> depends on the number of clients, you might run into error due to several client try to download the data at the same time. 
 >> suggest to pre-download the data to avoid such errors. 
