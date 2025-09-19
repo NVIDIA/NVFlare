@@ -222,9 +222,6 @@ def test_parse_args():
         help="Installation prefix (default: /opt/nvflare/apps)",
     )
     mock_parser.add_argument.assert_any_call(
-        "-s", "--site-name", required=True, help="Target site name (e.g., site-1, server)"
-    )
-    mock_parser.add_argument.assert_any_call(
         "-ts",
         "--target_shared_dir",
         default=PYTHON_PATH_SHARED_DIR,
