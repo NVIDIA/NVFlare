@@ -13,19 +13,11 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from enum import Enum
 from typing import List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.defs import FilterType
-from nvflare.recipe.run import Run
-
-
-class ExecEnvType(str, Enum):
-    SIM = "sim"
-    POC = "poc"
-    PROD = "prod"
 
 
 class ExecEnv(ABC):
@@ -67,11 +59,36 @@ class ExecEnv(ABC):
         pass
 
     @abstractmethod
-    def get_env_info(self) -> dict:
-        """Get the environment information.
+    def get_job_status(self, job_id: str) -> Optional[str]:
+        """Get the status of a job.
+
+        Args:
+            job_id: The job ID to check status for.
 
         Returns:
-            dict: The environment information.
+            Optional[str]: The status of the job, or None if not supported.
+        """
+        pass
+
+    @abstractmethod
+    def abort_job(self, job_id: str) -> None:
+        """Abort a running job.
+
+        Args:
+            job_id: The job ID to abort.
+        """
+        pass
+
+    @abstractmethod
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+        """Get the result workspace of a job.
+
+        Args:
+            job_id: The job ID to get results for.
+            timeout: The timeout for the job to complete. Defaults to 0.0 (no timeout).
+
+        Returns:
+            Optional[str]: The result workspace path if job completed, None if still running or stopped early.
         """
         pass
 
@@ -181,7 +198,7 @@ class Recipe(ABC):
 
         self.job.export_job(job_dir)
 
-    def execute(self, env: ExecEnv, server_exec_params: dict = None, client_exec_params: dict = None) -> Run:
+    def execute(self, env: ExecEnv, server_exec_params: dict = None, client_exec_params: dict = None) -> "Run":
         """Execute the recipe in a specified execution environment.
 
         Args:
@@ -200,5 +217,7 @@ class Recipe(ABC):
 
         self.process_env(env)
         job_id = env.deploy(self.job)
-        run = Run(env.get_env_info(), job_id)
+        from nvflare.recipe.run import Run
+
+        run = Run(env, job_id)
         return run
