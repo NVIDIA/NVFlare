@@ -33,12 +33,12 @@ In our current design, XGBoost communication is routed through the NVIDIA FLARE 
 From communication's perspective, the previous direct messages within XGBoost are now handled by FL communicator - they become "external communications" to and from XGBoost via FL system.
 This gives us flexibilities in performing message operations both within XGBoost (before entering FL communicator) and within FL system (by FL communicator)
 
-.. figure:: ../../resources/xgb_communicator.jpg
+.. figure:: ../../../resources/xgb_communicator.jpg
     :height: 500px
 
 With NVFlare, the XGBoost plugin will be implemented in C++, while the FL system communicator will be implemented in Python. A processor interface is designed and developed to properly connect the two by taking plugins implemented towards a specific HE method and collaboration mode:
 
-.. figure:: ../../resources/processor_interface_design.png
+.. figure:: ../../../resources/processor_interface_design.png
     :height: 500px
 
 Processor Interface Design
@@ -65,7 +65,7 @@ For vertical pipeline:
   4. The resulting E(G/H) will be sent to active party via FL message routing
   5. Decrypted by processor interface on active party side, tree building can be performed with global histogram information
 
-.. figure:: ../../resources/secure_vertical_xgb.png
+.. figure:: ../../../resources/secure_vertical_xgb.png
     :height: 500px
 
 Secure Vertical Federated XGBoost with XGBoost-side Encryption
@@ -77,7 +77,7 @@ For horizontal pipeline:
   2. Before sending to federated server, the G/H histograms will be encrypted at local gRPC handler with Python-based encryption util library
   3. Federated server will perform secure aggregation over received partial E(G/H), and distribute the global E(G/H) to each clients, where the global histograms will be decrypted, and used for further tree-building
 
-.. figure:: ../../resources/secure_horizontal_xgb.png
+.. figure:: ../../../resources/secure_horizontal_xgb.png
     :height: 500px
 
 Secure Horizontal Federated XGBoost with FL-side Encryption
