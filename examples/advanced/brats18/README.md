@@ -156,7 +156,7 @@ bash ./workspace_brats/admin/startup/fl_admin.sh
 ``` 
 
 Then using `abort_job [JOB_ID]` to abort a job, where `[JOB_ID]` is the ID assigned by the system when submitting the job. 
-For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/admin_guilde/deployment/operation.html).
+For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/operation.html).
 The `[JOB_ID]` can be found from site folder like `./workspace_brats/site-1`.
 
 To log into the POC workspace admin console no username is required 
