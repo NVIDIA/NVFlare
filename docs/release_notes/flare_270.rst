@@ -4,8 +4,8 @@ What's New in FLARE v2.7.0
 
 The new features can be divided into three categories
 
-FLARE Core Features
-===================
+FLARE Core
+==========
 
 Job Recipe (Technical Preview)
 ------------------------------
@@ -70,6 +70,6 @@ Confidential Federated AI
 =========================
 
 
-FLARE EDGE
-=========================
+FLARE Edge
+==========
 
