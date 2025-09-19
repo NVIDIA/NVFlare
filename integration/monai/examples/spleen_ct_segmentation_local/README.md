@@ -8,8 +8,6 @@ It uses the provisioning and the admin API to submit jobs, similar to how one wo
 real-world deployment.
 
 In this example, we use an already prepared [provisioning](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html) file (*project.yml*) to run experiments on a single machine.
-For real-world deployment, additional considerations must be taken into account.
-See [here](https://nvflare.readthedocs.io/en/latest/real_world_fl.html) for more information.
 
 For an example to get started with FL simulator, see [here](../spleen_ct_segmentation_sim/README.md).
 
