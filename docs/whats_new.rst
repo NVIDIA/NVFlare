@@ -13,6 +13,7 @@ Previous Releases of FLARE
 .. toctree::
    :maxdepth: 1
 
+   release_notes/flare_260
    release_notes/flare_250
    release_notes/flare_240
    release_notes/flare_230
