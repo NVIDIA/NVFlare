@@ -18,24 +18,26 @@ Job Recipe (Technical Preview)
   Here is an example of the FedAvg Job Recipe
 
   ```
-    n_clients = 2
-    num_rounds = 3
-    train_script = "client.py"
+
+    n_clients = args.n_clients
+    num_rounds = args.num_rounds
+    batch_size = args.batch_size
 
     recipe = FedAvgRecipe(
-        name="hello-tf_fedavg",
-        num_rounds=num_rounds,
-        initial_model=Net(),
+        name="hello-pt",
         min_clients=n_clients,
-        train_script=train_script,
+        num_rounds=num_rounds,
+        initial_model=SimpleNetwork(),
+        train_script="client.py",
+        train_args=f"--batch_size {batch_size}",
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     env = SimEnv(num_clients=n_clients)
-    run = recipe.execute(env=env)
+    run = recipe.execute(env)
     print()
-    print("Job Status is:", run.get_status())
     print("Result can be found in :", run.get_result())
+    print("Job Status is:", run.get_status())
     print()
 
   ```
