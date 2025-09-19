@@ -54,7 +54,7 @@ As shown above, histogram-based XGBoost in horizontal and vertical collaboration
 
 | Collaboration Mode | Security Goal | CPU XGBoost + CPU Encryption | CPU XGBoost + GPU Encryption | GPU XGBoost + CPU Encryption | GPU XGBoost + GPU Encryption |
 |-------------------|---------------|------------------------------|------------------------------|------------------------------|------------------------------|
-| **Horizontal** | Protection of histograms against server | ✅ | ❌ (Not needed) | ✅ | ❌ (Not needed) |
+| **Horizontal** | Protection of histograms against server | ✅ | Not needed | ✅ | Not needed |
 | **Vertical** | **Primary:** Protection of sample gradients against passive parties | ✅ | ✅ | ✅ | ✅ |
 | **Vertical** | **Secondary:** Protection of split values against non-feature owners | ✅ | ✅ | ❌ | ❌ |
 
