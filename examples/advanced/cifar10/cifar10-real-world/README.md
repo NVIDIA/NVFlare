@@ -4,7 +4,6 @@ This example includes instructions on running [FedAvg](https://arxiv.org/abs/160
 with streaming of TensorBoard metrics to the server during training 
 and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/).
 It uses the provisioning and the admin API to submit jobs, similar to how one would set up experiments in real-world deployment.
-For more information on real-world FL see [here](https://nvflare.readthedocs.io/en/latest/real_world_fl.html).
 
 For instructions of how to run CIFAR-10 with FL simulator to compare different FL algorithms, 
 see the example on ["Simulated Federated Learning with CIFAR-10"](../cifar10-sim/README.md).
