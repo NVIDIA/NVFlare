@@ -25,7 +25,3 @@ with experiment tracking using [MLflow](https://mlflow.org/) and
 
 In this example, we use an already prepared [provisioning](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html)
 file (*project.yml*) to run experiments on a single machine. 
-For [real-world deployment](https://nvflare.readthedocs.io/en/main/real_world_fl.html), 
-additional considerations must be taken into account.
-Please see the [real-world FL docs](https://nvflare.readthedocs.io/en/main/real_world_fl.html) 
-for further details on using FL in a real-world deployment.
