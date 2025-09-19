@@ -23,18 +23,18 @@ It offers advanced features like GPU accelerated capabilities, and distributed/f
 ## Collaboration Modes and Data Split
 Essentially there are two collaboration modes: horizontal and vertical:
 - In horizontal case, each participant has access to the same features (columns) of different data samples (rows). 
-In this case, everyone holds equal status as "label owner"
+In this case, everyone holds equal status as "label owner".
 - In vertical case, each client has access to different features (columns) of the same data samples (rows).
 We assume that only one is the "label owner" (or we call it as the "active party"), all other clients are "passive parties".
 
 ## Security Measures
 The following table outlines the different collaboration modes, algorithms, and security measures available in federated XGBoost:
 
-| Collaboration Mode | Algorithm | Data Exchange | Security Measures                                                                       | Notes |
-|-------------------|-----------|---------------|-----------------------------------------------------------------------------------------|-------|
-| **Horizontal** | Tree-based | Clients submit locally boosted trees to server; server combines and routes trees back to clients | None                                                                                    | All trees become part of the final model. No security mechanisms enforced. |
-| **Horizontal** | Histogram-based | Clients submit local histograms to server; server aggregates them to global histogram | Optional encryption of histograms                                                       | Local histograms encrypted before sending to server to protect against access by server and other clients. |
-| **Vertical** | Histogram-based | Active party computes gradients for all data samples; passive parties receive gradients and compute local histograms; histograms sent back to active party | **Primary:** Optional encryption of gradients; **Secondary:** feature ownership masking | Gradients encrypted before sending to passive parties to protect against label recovery. Split values in final model are masked according to feature ownership - clients only see split values for their own features. |
+| Collaboration Mode | Algorithm | Data Exchange | Security Measures                                                              | Notes |
+|-------------------|-----------|---------------|--------------------------------------------------------------------------------|-------|
+| **Horizontal** | Tree-based | Clients submit locally boosted trees to server; server combines and routes trees back to clients | None                                                                           | All trees become part of the final model. No security mechanisms enforced. |
+| **Horizontal** | Histogram-based | Clients submit local histograms to server; server aggregates them to global histogram | Encryption of histograms                                                       | Local histograms encrypted before sending to server to protect against access by server and other clients. |
+| **Vertical** | Histogram-based | Active party computes gradients for all data samples; passive parties receive gradients and compute local histograms; histograms sent back to active party | **Primary:** encryption of gradients; **Secondary:** feature ownership masking | Gradients encrypted before sending to passive parties to protect against label recovery. Split values in final model are masked according to feature ownership - clients only see split values for their own features. |
 
 ### Notes:
 - In horizontal mode, tree-based collaboration does not have security concerns that can be handled by encryption.
@@ -44,7 +44,7 @@ The following table outlines the different collaboration modes, algorithms, and 
 
 ## GPU Accelerations
 There are two levels of GPU accelerations in federated XGBoost:
-1. XGBoost itself has built-in GPU acceleration for training and prediction. To enable it, set the `tree_method` parameter to `gpu_hist` when initializing the XGBoost model. [GPU XGBoost Blog](https://developer.nvidia.com/blog/gradient-boosting-decision-trees-xgboost-cuda/) shows that this method can achieve a **4.15x** speed improvement compared to CPU-based training for the dataset and testing environment.
+1. XGBoost itself has built-in GPU acceleration for training. To enable it, set the `tree_method` parameter to `gpu_hist` when initializing the XGBoost model. [GPU XGBoost Blog](https://developer.nvidia.com/blog/gradient-boosting-decision-trees-xgboost-cuda/) shows that this method can achieve a **4.15x** speed improvement compared to CPU-based training for the dataset and testing environment.
 2. NVFlare provides GPU acceleration for homomorphic encryption operations. To enable it, use different encryption plugins. This can significantly speed up the encryption and decryption processes, as shown in [NVFlare Secure XGBoost Blog](https://developer.nvidia.com/blog/security-for-data-privacy-in-federated-learning-with-cuda-accelerated-homomorphic-encryption-in-xgboost/), GPU acceleration can achieve **up to 36.5x** speed improvement compared to CPU-based encryption for the dataset and testing environment.
 
 We will refer to them as "CPU / GPU XGBoost" and "CPU / GPU Encryption"
