@@ -178,8 +178,7 @@ With this release, we offer this first of kind product for end-to-end IP protect
 using confidential computing.
 
 - The solution is for on-premise deployment on bare metal using AMD CPU and NVIDIA GPU with Confidential VM.
-- End-To-End Protection: by end-to-end protection, we are stating that it is not only protect the IP (model and code) in use at runtime,
-but also protect against the CVM tampering at deployment.
+- End-To-End Protection: by end-to-end protection, we are stating that it is not only protect the IP (model and code) in use at runtime,but also protect against the CVM tampering at deployment.
 - The solution is able to perform
     - **security aggregation** on the server-side to protection privacy leak via model
     - **model theft Protection** on the client-side to safe guard the Model IP during collaboration
