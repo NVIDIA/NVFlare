@@ -7,13 +7,13 @@ The new features can be divided into three categories
 FLARE Core
 ==========
 
-Job Recipe (Technical Preview)
-------------------------------
+Job Recipe
+-----------
 Introducing new **Flare Job Recipe**: Simple Recipe to capture the code needed to specify the client training and server algorithm. This should greatly
 simplify the data scientists code to write for federated learning job. The same Job Recipe can be run in SimEnv, PoCEnv, ProdEnv.
 
 .. note::
-    this feature is technical review, as we haven't convert all the example and code to Job Recipe.
+    this feature is **technical review**, as we haven't convert all the example and code to Job Recipe.
     But more than half-dozen recipes are provided for you to use.
 
 Here is an example of the FedAvg Job Recipe
@@ -171,7 +171,7 @@ Confidential Federated AI
 =========================
 
 .. note::
-    This feature is in Technical Preview.
+    This feature is in **Technical Preview**.
     Reach to NVIDIA FLARE team for CVM build scripts: federatedlearning@nvidia.com
 
 With this release, we offer this first of kind product for end-to-end IP protection solution in federated setup
