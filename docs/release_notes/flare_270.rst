@@ -12,7 +12,7 @@ Job Recipe (Technical Preview)
 Introducing new **Flare Job Recipe**: Simple Recipe to capture the code needed to specify the client training and server algorithm. This should greatly
 simplify the data scientists code to write for federated learning job. The same Job Recipe can be run in SimEnv, PoCEnv, ProdEnv.
 
-.. Note::
+.. note::
     this feature is technical review, as we haven't convert all the example and code to Job Recipe.
     But more than half-dozen recipes are provided for you to use.
 
