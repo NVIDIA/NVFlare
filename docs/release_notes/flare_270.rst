@@ -9,15 +9,16 @@ FLARE Core
 
 Job Recipe (Technical Preview)
 ------------------------------
-  Introducing new **Flare Job Recipe**: Simple Recipe to capture the code needed to specify the client training and server algorithm. This should greatly
-  simplify the data scientists code to write for federated learning job. The same Job Recipe can be run in SimEnv, PoCEnv, ProdEnv.
+Introducing new **Flare Job Recipe**: Simple Recipe to capture the code needed to specify the client training and server algorithm. This should greatly
+simplify the data scientists code to write for federated learning job. The same Job Recipe can be run in SimEnv, PoCEnv, ProdEnv.
 
-  > Note: this feature is technical review, as we haven't convert all the example and code to Job Recipe.
-  > But more than half-dozen recipes are provided for you to use.
+.. Note::
+    this feature is technical review, as we haven't convert all the example and code to Job Recipe.
+    But more than half-dozen recipes are provided for you to use.
 
-  Here is an example of the FedAvg Job Recipe
+Here is an example of the FedAvg Job Recipe
 
-  ```
+.. code-block:: python
 
     n_clients = args.n_clients
     num_rounds = args.num_rounds
@@ -40,7 +41,7 @@ Job Recipe (Technical Preview)
     print("Job Status is:", run.get_status())
     print()
 
-  ```
+
 
 you can directly experience the recipe with recipe tutorial notebook `Job Recipe Tutorials <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/job_recipe.ipynb>`_
 or read the :ref:`job_recipe`
