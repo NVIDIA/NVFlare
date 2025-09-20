@@ -206,4 +206,7 @@ Try FLARE edge development following the `edge examples <https://github.com/NVID
 
 
 
+Self-Paced Training Tutorial
+============================
 
+.. include:: self-paced-training/index
