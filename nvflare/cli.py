@@ -205,7 +205,7 @@ def run(prog_name):
         print(e)
         sys.exit(1)
     except Exception as e:
-        print(f"\nUnable to handle command: {sub_cmd} due to: {e} \n")
+        print(f"\nError: {e} \n")
         if hasattr(prog_args, "debug"):
             if prog_args.debug:
                 print(traceback.format_exc())
@@ -217,7 +217,7 @@ def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
     if sub_cmd:
         sub_parser = sub_cmd_parsers[sub_cmd]
         if sub_parser:
-            print(f"sub_parser is: {sub_parser}")
+            print(f"Usage for subcommand '{sub_cmd}':\n")
             sub_parser.print_help()
         else:
             prog_parser.print_help()
