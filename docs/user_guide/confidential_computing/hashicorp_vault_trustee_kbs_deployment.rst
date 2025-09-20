@@ -593,7 +593,7 @@ Method 2: Set via admin API (optional)
 
 .. code-block:: bash
 
-   /path/to/target/release/kbs-client --url https://localhost:8999 \
+   /path/to/target/release/kbs-client --url https://<trustee-service-host>:8999 \
    --cert-file ./keys/kbs-ca.crt \
    config --auth-private-key ./admin/admin.key \
    set-attestation-policy --policy-file ./sample_policies/allow_all.rego
@@ -622,7 +622,7 @@ Execute the following command to store the file content in Vault (admin operatio
 
 .. code-block:: bash
 
-   /path/to/target/release/kbs-client --url https://localhost:8999 \
+   /path/to/target/release/kbs-client --url https://<trustee-service-host>:8999 \
    --cert-file ./keys/kbs-ca.crt \
    config --auth-private-key ./admin/admin.key \
    set-resource --path mysecrets/database/password \
@@ -642,7 +642,7 @@ Retrieve secret (client will automatically execute attestation process):
 
 .. code-block:: bash
 
-   /path/to/target/release/kbs-client --url https://localhost:8999 \
+   /path/to/target/release/kbs-client --url https://<trustee-server-host>:8999 \
    --cert-file ./keys/kbs-ca.crt \
    get-resource --path mysecrets/database/password \
    --tee-key-file ./tee_ec.key
@@ -707,7 +707,7 @@ Or set via admin API:
 
 .. code-block:: bash
 
-   kbs-client --url https://localhost:8999 \
+   kbs-client --url https://<trustee-service-host>:8999 \
      --cert-file ./keys/kbs-ca.crt \
      config --auth-private-key ./admin/admin.key \
      set-attestation-policy --policy-file ./sample_policies/allow_all.rego
