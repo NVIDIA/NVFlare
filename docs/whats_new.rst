@@ -4,7 +4,7 @@
 What's New
 ##########
 
-.. include:: release_notes/flare_260.rst
+.. include:: release_notes/flare_270.rst
 
 **************************
 Previous Releases of FLARE
