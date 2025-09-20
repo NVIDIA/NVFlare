@@ -276,3 +276,9 @@ Once the recipient receives RID(s), it calls the function to download the refere
       """
 
 The arguments are self-explanatory. If the downloading is successful, you will get the full path to the downloaded file. It’s up to you what to do with the file.
+
+
+Large Object Serialization with File Streaming or Download
+----------------------------------------------------
+please refer to :ref:`decomposer_for_large_object`
+
