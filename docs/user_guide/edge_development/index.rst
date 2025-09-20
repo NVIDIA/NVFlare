@@ -217,7 +217,7 @@ The following is a sample simulation_config.json.
 .. code-block:: json
 
    {
-       "endpoint": "http://localhost:4321",
+       "endpoint": "http://<end-point-host>:4321",
        "num_devices": 10000,
        "num_workers": 30,
        "processor": {
