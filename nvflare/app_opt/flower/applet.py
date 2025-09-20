@@ -26,6 +26,25 @@ from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.security.logging import secure_format_exception
 
 
+
+def get_partition_id(fl_ctx: FLContext):
+    """Get the partition id for the current client based on the sorted list of all client names."""
+    engine = fl_ctx.get_engine()
+
+    all_client_names = sorted([client.name for client in engine.all_clients])
+
+    for id, client_name in enumerate(all_client_names):
+        if client_name == fl_ctx.get_identity_name():
+            return id
+
+    return -1
+
+def get_num_partitions(fl_ctx: FLContext):
+    """Get the number of partitions based on the number of clients."""
+    engine = fl_ctx.get_engine()
+    return len(engine.all_clients)
+
+
 class FlowerClientApplet(CLIApplet):
     def __init__(self, extra_env: dict = None):
         """Constructor of FlowerClientApplet, which extends CLIApplet."""
@@ -63,13 +82,19 @@ class FlowerClientApplet(CLIApplet):
         flower-supernode --insecure --grpc-adapter
         --superlink 127.0.0.1:9092
         --clientappio-api-address 127.0.0.1:9094
+        --node-config ...
         """
-
+        
         cmd = (
             f"flower-supernode --insecure --grpc-adapter "
             f"--superlink {superlink_addr} "
-            f"--clientappio-api-address {clientapp_api_addr}"
+            f"--clientappio-api-address {clientapp_api_addr} "
         )
+
+        # add node config
+        node_config = self._get_node_config(fl_ctx)
+        if node_config:
+            cmd += node_config
 
         # use app_dir as the cwd for flower's client app.
         # this is necessary for client_api to be used with the flower client app for metrics logging
@@ -83,6 +108,21 @@ class FlowerClientApplet(CLIApplet):
             stdout_msg_prefix="FLWR-CA",
             stop_method=StopMethod.TERMINATE,
         )
+
+    def _get_node_config(self, fl_ctx: FLContext):
+        """Get the node config for the flower client app."""
+        try:
+            cmd = f" client-name=\"{fl_ctx.get_identity_name()}\""
+            partition_id = get_partition_id(fl_ctx)
+            if partition_id != -1:
+                cmd += f" partition-id={int(partition_id)}"
+            num_partitions = get_num_partitions(fl_ctx)
+            if num_partitions != -1:
+                cmd += f" num-partitions={int(num_partitions)}"
+            return f" --node-config '{cmd}'"
+        except Exception as ex:
+            self.log_error(fl_ctx, f"Exception getting node config from fl_ctx: {secure_format_exception(ex)}")
+            return None
 
 
 class FlowerServerApplet(Applet):
