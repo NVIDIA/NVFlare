@@ -702,7 +702,7 @@ Here is a policy example. The resource policy we set to ensure only CVM with the
    package policy
    default allow = false
    allow {
-       input["submods"]["cpu"]["ear.veraison.annotated-evidence"]["snp"]["measurement"] == "Cwa8qBJimP2freTTrrpvAZVbEQEyAhPY4fZGgSn9z4qtt0CAGmcS+Otz96qQZ92k"
+       input["submods"]["cpu0"]["ear.veraison.annotated-evidence"]["snp"]["measurement"] == "Cwa8qBJimP2freTTrrpvAZVbEQEyAhPY4fZGgSn9z4qtt0CAGmcS+Otz96qQZ92k"
    }
 
 And the command to set this policy into the Trustee service.
@@ -710,13 +710,14 @@ And the command to set this policy into the Trustee service.
 .. code-block:: bash
 
    #!/usr/bin/env bash
-
-   TRUSTEE_ADDRESS=trustee-azsnptpm.eastus.cloudapp.azure.com
+   TRUSTEE_ADDRESS=<your organization trustee service addresss>
    PORT=8999
 
    ROOTCA=keys/rootCA.crt
 
    sudo kbs-client --url https://$TRUSTEE_ADDRESS:$PORT --cert-file $ROOTCA config --auth-private-key private.key  set-resource-policy --policy-file resource_policy.rego
+
+
 
 Set & Get Resource
 ------------------
