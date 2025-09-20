@@ -46,8 +46,7 @@ Software Prerequisites
 - Has qemu on the machine.
 - Get the codes from NVFlare main GitHub repo: `git clone https://github.com/NVIDIA/NVFlare.git`
 - Get image builder codes:
-  - [Internal Users] Get the image builder codes from the Gitlab repo: `git clone https://gitlab-master.nvidia.com/dlmed/nvflare-meta-group/nvflare-github.git`
-  - [External Users] Get the image builder codes from NVFlare team.
+  - Get the image builder codes from NVFlare team (email federatedlearning@nvidia.com)
 - Get base images from NVFlare team.
 - Copy them inside `~/nvflare-github/nvflare/lighter/cc/image_builder/base_images`.
 - Get or build your own kbs client that needs to match the kbs server, we are using commit: `a2570329cc33daf9ca16370a1948b5379bb17fbe`.
@@ -61,9 +60,11 @@ Software Prerequisites
 
 Project Admin Prerequisites
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Learn `Trustee Service:<https://www.redhat.com/en/blog/introducing-confidential-containers-trustee-attestation-services-solution-overview-and-use-cases>`_
+- Following the Instruction of `Trustee:<https://github.com/confidential-containers/trustee?tab=readme-ov-file>`
+- Deploy the Trustee KBS server: Deployment Guide of Trustee KBS and HashiCorp Vault :ref:`hashicorp_vault_trustee_deployment`
 
-- Deploy the Trustee KBS server: Deployment Guide of Trustee KBS and HashiCorp Vault.
-- NVFlare team has deployed one on `trustee-azsnptpm.eastus.cloudapp.azure.com:8999`.
+
 
 Usage
 =====
