@@ -186,9 +186,24 @@ using confidential computing.
 
 You can read more about the user usage at :ref:`cc_user_guide`
 
+Develop Edge Applications with FLARE
+====================================
+
+FLARE 2.7 extends federated learning capabilities to edge devices. Edge device applications present some new challenges.
+
+- **Scalability**: Unlike cross-silo applications where the number of FL clients is relatively small, the number of devices could be in the millions. It’s infeasible to treat the devices as simple FL clients and connect them directly to the FL server.
+- **Stability**: Unlike cross-silo applications where the FL clients are stable, edge devices come and go at any time. This requires the training strategy to accommodate this behavior.
+- **Compute capability**: Compared to cross-silo applications, edge devices don’t have as much computing power.
+- **Platform dependency**: There are multiple edge device platforms (e.g. iOS, Android, etc.), and each has a different application development environment.
+
+To support scalability, we add the following features
+
+- support for hierarchical federated architecture :ref:`flare_hierarchical_architecture`
+- asynch federated learning algorithm based on FedBuff: :ref:`_flare_edge`
+- model development support for both iOS and Android :ref:`_flare_mobile`
+
+Try FLARE edge development following the `edge examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_
 
 
 
-FLARE Edge
-==========
 
