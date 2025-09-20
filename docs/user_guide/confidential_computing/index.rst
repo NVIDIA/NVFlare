@@ -1,4 +1,4 @@
-.. _cc_user_guide
+.. _confidential_computing
 
 ##########################################
 FLARE Confidential Federated AI User Guide
@@ -12,4 +12,5 @@ Confidential Computing User Guide
 
     cc_deployment_guide
     cc_architecture
+    attestation
     hashicorp_vault_trustee_kbs_deployment
