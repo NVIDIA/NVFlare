@@ -26,7 +26,6 @@ from nvflare.fuel.utils.grpc_utils import create_channel
 from nvflare.security.logging import secure_format_exception
 
 
-
 def get_partition_id(fl_ctx: FLContext):
     """Get the partition id for the current client based on the sorted list of all client names."""
     engine = fl_ctx.get_engine()
@@ -38,6 +37,7 @@ def get_partition_id(fl_ctx: FLContext):
             return id
 
     return -1
+
 
 def get_num_partitions(fl_ctx: FLContext):
     """Get the number of partitions based on the number of clients."""
@@ -84,7 +84,7 @@ class FlowerClientApplet(CLIApplet):
         --clientappio-api-address 127.0.0.1:9094
         --node-config ...
         """
-        
+
         cmd = (
             f"flower-supernode --insecure --grpc-adapter "
             f"--superlink {superlink_addr} "
@@ -112,7 +112,7 @@ class FlowerClientApplet(CLIApplet):
     def _get_node_config(self, fl_ctx: FLContext):
         """Get the node config for the flower client app."""
         try:
-            cmd = f" client-name=\"{fl_ctx.get_identity_name()}\""
+            cmd = f' client-name="{fl_ctx.get_identity_name()}"'
             partition_id = get_partition_id(fl_ctx)
             if partition_id != -1:
                 cmd += f" partition-id={int(partition_id)}"
