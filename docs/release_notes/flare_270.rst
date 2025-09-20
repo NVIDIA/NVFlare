@@ -57,6 +57,8 @@ Another issue of LLM streaming is limited by Memory size, the model size must fi
 
 For complete description of the memory management feature, please refer to :ref:`file_streaming` and :ref:`tensor_streaming`
 
+We introduced FileStreamer in previous release, we are now introducing FileDownloader
+
 Push vs. Pull
 ^^^^^^^^^^^^^
 
@@ -128,6 +130,13 @@ port numbers for admin/server and client/server communications.
 
 This features can be greatly reduce the dependency for IT support. Not only they only needs single port, the port could be
 HTTPS port 443 using HTTP driver and using TLS.
+
+Connection Example Illustration
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The following diagrams illustrate the two different connection and authentication mechanism
+enabled by the single port, TLS, bring your own connection features.
+
+PICTURES TODO
 
 
 New HTTPS Driver

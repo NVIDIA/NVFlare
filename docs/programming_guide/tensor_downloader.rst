@@ -1,7 +1,7 @@
 .. _tensor_downloader:
 
-#################
-Tensor Downloader
-#################
+#######################
+FLARE Tensor Downloader
+#######################
 
 todo
