@@ -41,6 +41,7 @@ Proposed Solution
 -----------------
 
 A secure deployment architecture combining:
+
 - Specialized CVM Image
 - Hardware-backed chain of trust from hardware to application
 - Enhanced security controls for network, storage, and access
