@@ -42,6 +42,7 @@ After reboot, verify the firmware is updated:
 Software Prerequisites
 ^^^^^^^^^^^^^^^^^^^^^^
 
+- Ubuntu 25.04 ( Host must be 25.04, Guest could be 24.04)
 - Has qemu on the machine.
 - Get the codes from NVFlare main GitHub repo: `git clone https://github.com/NVIDIA/NVFlare.git`
 - Get image builder codes:
@@ -51,8 +52,12 @@ Software Prerequisites
 - Copy them inside `~/nvflare-github/nvflare/lighter/cc/image_builder/base_images`.
 - Get or build your own kbs client that needs to match the kbs server, we are using commit: `a2570329cc33daf9ca16370a1948b5379bb17fbe`.
 - Copy it inside `~/nvflare-github/nvflare/lighter/cc/image_builder/kbs`.
-- Ubuntu 25.04 (or else need to patch QEMU Zhihong Zhang US to provide more info).
-- The current KBS doesn’t support updating individual rules. So we have to update the whole rule file every time a new CVM is added. We use that file as the master copy of the policy file. You just need to create this folder `/shared/policy` and place the following files there: `policy.rego`, `set-policy.sh`, `private.key`, please get these files from the NVFlare team.
+-- note::
+    The current KBS doesn’t support updating individual rules.
+    So we have to update the whole rule file every time a new CVM is added.
+    We use that file as the master copy of the policy file.
+    You just need to create this folder `/shared/policy` and place the following files
+    there: `policy.rego`, `set-policy.sh`, `private.key`, please get these files from the NVFlare team.
 
 Project Admin Prerequisites
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -249,14 +254,6 @@ CC Configuration
      - 120
      - In seconds, how frequent should we do attestation check
 
-Notes on debugging CVM
-=======================
-
-The following is [ONLY FOR DEBUG PURPOSES]
-- To shutdown: `sudo poweroff`
-- To login: username: nvidia, password can be found in scratch
-- To check the logs: `cat /applog`
-- In real case, users won’t be able to login to the CVM
 
 Reference YAMLs for testing on 10.176.200.152 machine
 =====================================================
