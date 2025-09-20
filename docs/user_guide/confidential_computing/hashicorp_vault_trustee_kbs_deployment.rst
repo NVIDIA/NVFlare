@@ -147,17 +147,22 @@ Configure Vault (/etc/vault.d/vault.hcl)
 Use `sudo nano /etc/vault.d/vault.hcl` to edit the configuration file and replace with the following content:
 
 .. code-block::
-
-   ui = true
-   api_addr      = "https://0.0.0.0:8200"
-   storage "file" {
-     path = "/opt/vault/data"
-   }
-   listener "tcp" {
-     address       = "0.0.0.0:8200"
-     tls_cert_file = "/opt/vault/tls/vaultlocal.crt"
-     tls_key_file  = "/opt/vault/tls/vaultlocal.key"
-   }
+{
+  "ui": true,
+  "api_addr": "https://<your-server-IP-or-hostname>:8200",  // Example URL
+  "storage": {
+    "file": {
+      "path": "/opt/vault/data"
+    }
+  },
+  "listener": {
+    "tcp": {
+      "address": "<your-server-IP-or-hostname>:8200",  // Example address
+      "tls_cert_file": "/opt/vault/tls/vaultlocal.crt",
+      "tls_key_file": "/opt/vault/tls/vaultlocal.key"
+    }
+  }
+}
 
 Use CA-signed server certificates (for strict validation, recommended)
 ---------------------------------------------------------------------
