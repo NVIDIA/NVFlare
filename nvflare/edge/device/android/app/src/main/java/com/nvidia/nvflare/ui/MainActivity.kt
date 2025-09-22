@@ -208,12 +208,10 @@ fun MainScreen() {
                             checked = supportedJobsState.contains(job),
                             onCheckedChange = { checked ->
                                 // Prevent changes during training to avoid race conditions
-                                if (status == TrainingStatus.TRAINING) {
-                                    return
+                                if (status != TrainingStatus.TRAINING) {
+                                    flareRunnerController.toggleJob(job)
+                                    supportedJobsState = flareRunnerController.supportedJobs
                                 }
-                                
-                                flareRunnerController.toggleJob(job)
-                                supportedJobsState = flareRunnerController.supportedJobs
                             },
                             enabled = status != TrainingStatus.TRAINING,
                             modifier = Modifier.padding(start = 8.dp)
