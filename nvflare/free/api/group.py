@@ -1,14 +1,27 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import copy
 import time
 from typing import List
 
-from nvflare.apis.signal import Signal
 from nvflare.apis.fl_exception import RunAborted
+from nvflare.apis.signal import Signal
 
-from .proxy import Proxy
-from .ctx import Context
-from .resp import Resp
 from .constants import CollabMethodArgName
+from .ctx import Context
+from .proxy import Proxy
+from .resp import Resp
 
 
 class Group:
@@ -49,15 +62,12 @@ class Group:
             for p in self._proxies:
                 kwargs_copy = copy.copy(kwargs)
 
-                ctx = Context(p.caller_name, p.name)
+                ctx = Context(p.caller_name, p.name, self._abort_signal)
                 kwargs_copy[CollabMethodArgName.CONTEXT] = ctx
 
-                resp = Resp(self._process_resp_cb, self._cb_kwargs)
+                resp = Resp(self._process_resp_cb, self._cb_kwargs, ctx)
                 resps[p.name] = resp
-                kwargs_copy[CollabMethodArgName.ABORT_SIGNAL] = self._abort_signal
-                p.backend.call_target_with_resp(
-                    resp, p.name, func_name, *args, **kwargs_copy
-                )
+                p.backend.call_target_with_resp(resp, p.name, func_name, *args, **kwargs_copy)
 
             # wait for responses
             if not self._blocking:
@@ -106,3 +116,32 @@ class Group:
             return results
 
         return method
+
+
+def group(
+    ctx: Context,
+    proxies: List[Proxy],
+    blocking: bool = True,
+    timeout: float = None,
+    min_resps: int = None,
+    wait_after_min_resps: float = None,
+    process_resp_cb=None,
+    **cb_kwargs,
+):
+    return Group(
+        ctx.abort_signal, proxies, blocking, timeout, min_resps, wait_after_min_resps, process_resp_cb, **cb_kwargs
+    )
+
+
+def all_clients(
+    ctx: Context,
+    blocking: bool = True,
+    timeout: float = None,
+    min_resps: int = None,
+    wait_after_min_resps: float = None,
+    process_resp_cb=None,
+    **cb_kwargs,
+):
+    return Group(
+        ctx.abort_signal, ctx.clients, blocking, timeout, min_resps, wait_after_min_resps, process_resp_cb, **cb_kwargs
+    )

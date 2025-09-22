@@ -15,24 +15,23 @@ import numpy as np
 
 from nvflare.free.api.app import ServerApp
 from nvflare.free.api.runner import AppRunner
-from nvflare.free.examples.np.client import TrainerFactory
-from nvflare.free.examples.np.controllers import NPFedAvgSequential
+from nvflare.free.examples.np.client import NPTrainer
+from nvflare.free.examples.np.controllers import NPFedAvgInTime
 from nvflare.free.examples.np.widgets import MetricReceiver
 
 
 def main():
 
     server_app = ServerApp(
-        controller=NPFedAvgSequential(
-            num_rounds=2,
-            initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32),
+        controller=NPFedAvgInTime(
+            initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32), num_rounds=2
         )
     )
     server_app.add_target_object("metric_receiver", MetricReceiver())
 
     runner = AppRunner(
         server_app=server_app,
-        client_app=TrainerFactory(delta=1.0),
+        client_app=NPTrainer(delta=1.0),
         num_clients=2,
     )
 
