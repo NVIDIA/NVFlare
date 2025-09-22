@@ -11,16 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import inspect
+from abc import ABC, abstractmethod
 
-from .constants import CollabMethodArgName
+from .ctx import Context
 
 
-def check_optional_args(func, kwargs):
-    signature = inspect.signature(func)
-    parameter_names = signature.parameters.keys()
+class Controller(ABC):
 
-    # make sure to expose the optional args if the collab method supports them
-    for n in [CollabMethodArgName.CONTEXT]:
-        if n not in parameter_names:
-            kwargs.pop(n, None)
+    @abstractmethod
+    def run(self, context: Context):
+        pass

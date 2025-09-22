@@ -1,30 +1,44 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import copy
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Union
 
-from nvflare.free.api.app import ServerApp, ClientApp, App, SERVER_NAME, ClientAppFactory
+from nvflare.apis.signal import Signal
+from nvflare.free.api.app import SERVER_NAME, App, ClientApp, ClientAppFactory, ServerApp
+from nvflare.free.api.ctx import Context
 from nvflare.free.api.proxy import Proxy
 from nvflare.free.api.sim_backend import SimBackend
-from nvflare.apis.signal import Signal
 
 
 class AppRunner:
 
     def _prepare_app_backends(self, app: App):
-        bes = {"": SimBackend(app, self.abort_signal, self.thread_executor)}
+        bes = {"": SimBackend(app, app, self.abort_signal, self.thread_executor)}
         targets = app.get_target_objects()
         if targets:
-            for name, obj in targets.items():
-                 bes[name] = SimBackend(obj, self.abort_signal, self.thread_executor)
+            for name, obj in targets:
+                bes[name] = SimBackend(app, obj, self.abort_signal, self.thread_executor)
         return bes
 
     def _prepare_app_proxy(self, app_name: str, app: App, caller_name: str, app_backends: dict):
-        app_proxy = Proxy(target_name=app_name, backend=app_backends[""], caller_name=caller_name)
+        app_proxy = Proxy(app=app, target_name=app_name, backend=app_backends[""], caller_name=caller_name)
         cos = app.get_target_objects()
         if cos:
-            for name, obj in cos.items():
-                p = Proxy(target_name=name, backend=app_backends[name], caller_name=caller_name)
+            for name, obj in cos:
+                p = Proxy(app=app, target_name=name, backend=app_backends[name], caller_name=caller_name)
                 setattr(app_proxy, name, p)
         return app_proxy
 
@@ -50,21 +64,11 @@ class AppRunner:
             raise ValueError(f"client_app must be ClientApp or ClientAppFactory but got {type(client_app)}")
 
         self.abort_signal = Signal()
+        self.server_app = server_app
+        self.client_app = client_app
         self.thread_executor = ThreadPoolExecutor(max_workers=max_workers)
-        self.workflows = [(server_app, client_app)]
         self.num_clients = num_clients
 
-    def add_workflow(self, server_app: ServerApp, client_app: Union[ClientAppFactory, ClientApp]):
-        if not isinstance(server_app, ServerApp):
-            raise ValueError(f"server_app must be ServerApp but got {type(server_app)}")
-
-        if not isinstance(client_app, (ClientAppFactory, ClientApp)):
-            raise ValueError(f"client_app must be ClientApp or ClientAppFactory but got {type(client_app)}")
-
-        self.workflows.append((server_app, client_app))
-
-    def _run_workflow(self, wf):
-        server_app, client_app = wf
         client_apps = {}
         for i in range(self.num_clients):
             name = f"site-{i + 1}"
@@ -75,9 +79,7 @@ class AppRunner:
             app.name = name
             client_apps[name] = app
 
-        backends = {
-            SERVER_NAME: self._prepare_app_backends(server_app)
-        }
+        backends = {SERVER_NAME: self._prepare_app_backends(server_app)}
 
         for name, app in client_apps.items():
             backends[name] = self._prepare_app_backends(app)
@@ -91,14 +93,16 @@ class AppRunner:
         server_proxy, client_proxies = self._prepare_proxies(server_app, client_apps, SERVER_NAME, backends)
         server_app.setup(SERVER_NAME, server_proxy, client_proxies, self.abort_signal)
 
-        server_app.run()
-
     def run(self):
         # run the server
-        for idx, wf in enumerate(self.workflows):
+        for idx, controller in enumerate(self.server_app.controllers):
             try:
-                print(f"Running Workflow #{idx+1}")
-                self._run_workflow(wf)
+                print(f"Running Controller #{idx+1}")
+                self.server_app.current_controller = controller
+                ctx = Context(caller=self.server_app.name, callee=self.server_app.name, abort_signal=self.abort_signal)
+                ctx.server = self.server_app.server
+                ctx.clients = self.server_app.clients
+                controller.run(context=ctx)
             except:
                 traceback.print_exc()
                 break

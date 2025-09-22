@@ -11,16 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import inspect
-
-from .constants import CollabMethodArgName
+from nvflare.free.api.ctx import Context
 
 
-def check_optional_args(func, kwargs):
-    signature = inspect.signature(func)
-    parameter_names = signature.parameters.keys()
+class MetricReceiver:
 
-    # make sure to expose the optional args if the collab method supports them
-    for n in [CollabMethodArgName.CONTEXT]:
-        if n not in parameter_names:
-            kwargs.pop(n, None)
+    def accept_metric(self, metrics: dict, context: Context):
+        print(f"[{context.callee}] received metric report from {context.caller}: {metrics}")

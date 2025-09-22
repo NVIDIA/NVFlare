@@ -1,7 +1,21 @@
-from abc import abstractmethod, ABC
-from typing import List, Union
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from abc import ABC, abstractmethod
+from typing import List
+
+from .controller import Controller
 from .proxy import Proxy
-from .group import Group
 
 SERVER_NAME = "server"
 
@@ -13,16 +27,18 @@ class App(ABC):
         self.server = None
         self.clients = None
         self._me = None
-        self._target_objs = {}
+        self._target_objs = []
         self._abort_signal = None
 
+    def get_default_target(self):
+        return None
+
     def add_target_object(self, name: str, obj):
-        if name in ['name','server', 'clients', "add_target_object", "get_target_objects", "setup", "get_my_site"]:
+        if hasattr(obj, name):
             raise ValueError(f"conflict with reserved name {name}")
 
-        # TBD: more name validation needed
         setattr(self, name, obj)
-        self._target_objs[name] = obj
+        self._target_objs.append((name, obj))
 
     def get_target_objects(self):
         return self._target_objs
@@ -51,33 +67,23 @@ class App(ABC):
     def initialize(self, **kwargs):
         pass
 
-    def group(
-        self,
-        proxies: List[Proxy],
-        blocking: bool = True,
-        timeout: float = None,
-        min_resps: int = None,
-        wait_after_min_resps: float = None,
-        process_resp_cb=None,
-        **cb_kwargs,
-    ):
-        return Group(
-            self._abort_signal,
-            proxies,
-            blocking,
-            timeout,
-            min_resps,
-            wait_after_min_resps,
-            process_resp_cb,
-            **cb_kwargs
-        )
-
 
 class ServerApp(App):
 
-    @abstractmethod
-    def run(self, **kwargs):
-        pass
+    def __init__(self, controller: Controller):
+        super().__init__()
+        if not isinstance(controller, Controller):
+            raise ValueError(f"controller must be Controller but got {type(controller)}")
+        self.controllers = [controller]
+        self.current_controller = None
+
+    def add_controller(self, controller):
+        if not isinstance(controller, Controller):
+            raise ValueError(f"controller must be Controller but got {type(controller)}")
+        self.controllers.append(controller)
+
+    def get_default_target(self):
+        return self.current_controller
 
 
 class ClientApp(App):
