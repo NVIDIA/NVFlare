@@ -26,7 +26,7 @@ from nvflare.lighter.entity import participant_from_dict
 from nvflare.lighter.prov_utils import prepare_builders, prepare_packager
 from nvflare.lighter.provisioner import Provisioner
 from nvflare.lighter.spec import Project
-from nvflare.lighter.tree_prov import edge_provision
+from nvflare.lighter.tree_prov import hierachical_provision
 from nvflare.lighter.utils import load_yaml
 
 adding_client_error_msg = """
@@ -118,7 +118,7 @@ def provision_for_edge(params, project_dict):
     participants = project_dict.get("participants")
     admins = [participant_from_dict(p) for p in participants if p.get("type") == "admin"]
     builders = prepare_builders(project_dict)
-    edge_provision(params, project, builders, admins)
+    hierachical_provision(params, project, builders, admins)
 
 
 def provision(
@@ -130,7 +130,10 @@ def provision(
     project_dict = load_yaml(project_full_path)
     edge_params = project_dict.get("edge")
     if edge_params:
-        provision_for_edge(edge_params, project_dict)
+        try:
+            provision_for_edge(edge_params, project_dict)
+        except Exception as e:
+            raise Exception(f"Provisioning failed in edge mode: {e}")
         return
 
     project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
