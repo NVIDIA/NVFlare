@@ -1,5 +1,6 @@
 package com.nvidia.nvflare.sdk.training
 
+import android.util.Log
 import com.google.gson.annotations.SerializedName
 import com.nvidia.nvflare.sdk.utils.TaskHeaderKey
 
