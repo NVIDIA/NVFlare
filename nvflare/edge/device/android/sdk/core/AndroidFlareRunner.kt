@@ -142,6 +142,7 @@ class AndroidFlareRunner(
         val jobData = job["job_data"] as? Map<String, Any>
 
         Log.d(TAG, "Processing job: $jobName (ID: $jobId)")
+        Log.d(TAG, "Job data keys: ${jobData?.keys}")
 
         // Process training configuration
         val trainConfig = if (jobData != null) {
