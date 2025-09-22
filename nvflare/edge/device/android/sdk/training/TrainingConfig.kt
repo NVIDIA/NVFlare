@@ -174,7 +174,11 @@ data class TrainingConfig(
         
         fun fromMap(data: Map<String, Any>): TrainingConfig {
             val method = data["method"] as? String ?: determineMethodFromJobName(data)
-            val dataSetType = data[MetaKey.DATASET_TYPE] as? String ?: DatasetType.XOR
+            val dataSetType = data[MetaKey.DATASET_TYPE] as? String ?: when (method) {
+                "cnn" -> DatasetType.CIFAR10
+                "xor" -> DatasetType.XOR
+                else -> DatasetType.XOR
+            }
             
             if (DEBUG_TRAINING_CONFIG) {
                 Log.d("TrainingConfig", "Creating config - method: $method, dataset: $dataSetType")
