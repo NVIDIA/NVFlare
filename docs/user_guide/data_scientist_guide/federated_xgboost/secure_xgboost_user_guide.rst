@@ -18,8 +18,7 @@ It supports federated training in the following 4 modes:
 3. Row split with HE (Requires at least 3 clients. With 2 clients, the other client's histogram can be deduced.)
 4. Column split with HE
 
-When running with NVFlare, all the GRPC connections in XGBoost are local and the messages are forwarded to other clients through NVFlare's CellNet communication.
-The local GRPC ports are selected automatically by NVFlare.
+When running with NVFlare, all communications in XGBoost are local and the messages are forwarded through NVFlare's communication.
 
 The encryption is handled in XGBoost by encryption plugins, which are external components that can be installed at runtime.
 
