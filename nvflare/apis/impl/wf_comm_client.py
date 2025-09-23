@@ -68,7 +68,7 @@ class WFCommClient(FLComponent, WFCommSpec):
         engine = fl_ctx.get_engine()
         # apply task filters
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=False, private=True)
+        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=True, private=True)
         self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
         # # first apply privacy-defined filters
@@ -85,7 +85,7 @@ class WFCommClient(FLComponent, WFCommSpec):
             return replies
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=False, private=True)
+        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=True, private=True)
         self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
 
         if targets is None:
@@ -143,7 +143,7 @@ class WFCommClient(FLComponent, WFCommSpec):
         for target, reply in replies.items():
             assert isinstance(reply, Shareable)
             peer_ctx = reply.get_peer_context()
-            peer_ctx.set_prop(FLContextKey.SHAREABLE, reply, private=True)
+            peer_ctx.set_prop(FLContextKey.SHAREABLE, reply, private=True, sticky=True)
             fl_ctx.set_peer_context(peer_ctx)
 
             # get the client task for the target

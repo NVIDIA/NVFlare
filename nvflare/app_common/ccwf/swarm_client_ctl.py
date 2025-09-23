@@ -640,7 +640,7 @@ class SwarmClientController(ClientSideController):
             self.log_info(fl_ctx, f"got training result from {client_name} for round {current_round}")
 
             # to be compatible with some widgets that rely on peer_ctx to get result
-            peer_ctx.set_prop(FLContextKey.SHAREABLE, request)
+            peer_ctx.set_prop(FLContextKey.SHAREABLE, request, private=True, sticky=True)
 
             gatherer = self.gatherer
             if not gatherer:

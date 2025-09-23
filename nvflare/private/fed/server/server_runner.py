@@ -404,7 +404,7 @@ class ServerRunner(TBI):
 
                     fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
                     fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
-                    fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
+                    fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task_data, private=True, sticky=True)
 
                     self.log_info(fl_ctx, f"assigned task to client {client.name}: name={task_name}, id={task_id}")
 
@@ -455,9 +455,9 @@ class ServerRunner(TBI):
             return
 
         # set the reply prop so log msg context could include RC from it
-        fl_ctx.set_prop(FLContextKey.REPLY, result, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.REPLY, result, private=True, sticky=True)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=result, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=result, private=True, sticky=True)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
 
         client_audit_event_id = result.get_header(ReservedHeaderKey.AUDIT_EVENT_ID, "")

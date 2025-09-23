@@ -184,7 +184,7 @@ class Communicator:
                     requesting_client_ctx = req.get_peer_context()
                     fl_ctx.set_peer_context(requesting_client_ctx)
                     fl_ctx.set_prop(FLContextKey.TASK_ID, pending_task_id, private=True, sticky=False)
-                    fl_ctx.set_prop(FLContextKey.TASK_DATA, task, private=True, sticky=False)
+                    fl_ctx.set_prop(FLContextKey.TASK_DATA, task, private=True, sticky=True)
                     self.engine.fire_event(EventType.TASK_ASSIGNMENT_SENT, fl_ctx)
                     is_processed = fl_ctx.get_prop(FLContextKey.EVENT_PROCESSED)
                     if not is_processed:

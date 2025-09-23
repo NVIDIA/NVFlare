@@ -86,7 +86,7 @@ class TaskController(FLComponent, ControllerSpec):
         request = task.data
         # apply task filters
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=False, private=True)
+        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=True, private=True)
         self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
         # # first apply privacy-defined filters
@@ -103,7 +103,7 @@ class TaskController(FLComponent, ControllerSpec):
             return replies
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=False, private=True)
+        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=True, private=True)
         self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
 
         target_names = get_target_names(targets)
