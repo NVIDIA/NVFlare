@@ -16,13 +16,16 @@ from nvflare.apis.signal import Signal
 
 class Context:
 
-    def __init__(self, caller: str, callee: str, abort_signal: Signal):
+    def __init__(self, caller: str, callee: str, abort_signal: Signal, props: dict = None):
         self.caller = caller
         self.callee = callee
         self.abort_signal = abort_signal
         self.server = None
         self.clients = None
+        self.app = None
         self.props = {}
+        if props:
+            self.props.update(props)
 
     def set_prop(self, name: str, value):
         self.props[name] = value

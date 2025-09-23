@@ -15,6 +15,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from .controller import Controller
+from .ctx import Context
 from .proxy import Proxy
 
 SERVER_NAME = "server"
@@ -66,6 +67,13 @@ class App(ABC):
 
     def initialize(self, **kwargs):
         pass
+
+    def new_context(self, caller: str, callee: str, props: dict = None):
+        ctx = Context(caller, callee, self._abort_signal, props)
+        ctx.app = self
+        ctx.server = self.server
+        ctx.clients = self.clients
+        return ctx
 
 
 class ServerApp(App):

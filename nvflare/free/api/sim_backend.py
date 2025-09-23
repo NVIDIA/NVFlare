@@ -17,7 +17,7 @@ from .app import App
 from .backend import Backend
 from .constants import CollabMethodArgName, CollabMethodOptionName
 from .resp import Resp
-from .utils import check_optional_args
+from .utils import check_context_support
 
 
 class _Waiter(threading.Event):
@@ -86,7 +86,7 @@ class SimBackend(Backend):
         if ctx:
             ctx.server = self.target_app.server
             ctx.clients = self.target_app.clients
-        check_optional_args(func, kwargs)
+        check_context_support(func, kwargs)
 
     def _run_func(self, waiter: _Waiter, func, args, kwargs):
         try:

@@ -18,6 +18,7 @@ from typing import Union
 
 from nvflare.apis.signal import Signal
 from nvflare.free.api.app import SERVER_NAME, App, ClientApp, ClientAppFactory, ServerApp
+from nvflare.free.api.constants import ContextKey
 from nvflare.free.api.ctx import Context
 from nvflare.free.api.proxy import Proxy
 from nvflare.free.api.sim_backend import SimBackend
@@ -95,16 +96,19 @@ class AppRunner:
 
     def run(self):
         # run the server
+        result = None
+        ctx = self.server_app.new_context(caller=self.server_app.name, callee=self.server_app.name)
+        ctx.server = self.server_app.server
+        ctx.clients = self.server_app.clients
         for idx, controller in enumerate(self.server_app.controllers):
             try:
                 print(f"Running Controller #{idx+1}")
                 self.server_app.current_controller = controller
-                ctx = Context(caller=self.server_app.name, callee=self.server_app.name, abort_signal=self.abort_signal)
-                ctx.server = self.server_app.server
-                ctx.clients = self.server_app.clients
-                controller.run(context=ctx)
+                result = controller.run(context=ctx)
+                ctx.set_prop(ContextKey.INPUT, result)
             except:
                 traceback.print_exc()
                 break
 
         self.thread_executor.shutdown(wait=False, cancel_futures=True)
+        return result
