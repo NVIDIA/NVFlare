@@ -14,7 +14,7 @@ simplify the data scientists code to write for federated learning job. The same 
 
 .. note::
     this feature is **technical review**, as we haven't convert all the example and code to Job Recipe.
-    But more than half-dozen recipes are provided for you to use.
+    But more than half-dozen recipes are provided for you to use: :ref:`quickstart`
 
 Here is an example of the FedAvg Job Recipe
 
@@ -213,5 +213,5 @@ Self-Paced Training Tutorial
 ============================
 
 
-.. include::self-paced-training/index
+.. include::../self-paced-training/index
 
