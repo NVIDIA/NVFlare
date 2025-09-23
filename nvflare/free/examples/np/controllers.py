@@ -15,6 +15,7 @@ import random
 
 import numpy as np
 
+from nvflare.free.api.constants import ContextKey
 from nvflare.free.api.controller import Controller
 from nvflare.free.api.ctx import Context
 from nvflare.free.api.group import all_clients
@@ -30,9 +31,10 @@ class NPFedAvgSequential(Controller):
 
     def run(self, context: Context):
         print(f"[{self.name}] Start training for {self.num_rounds} rounds")
-        current_model = self.initial_model
+        current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model, context)
+        return current_model
 
     def _do_one_round(self, r, current_model, context: Context):
         total = np.array([[0, 0, 0], [0, 0, 0], [0, 0, 0]], dtype=np.float32)
@@ -54,11 +56,12 @@ class NPFedAvgParallel(Controller):
 
     def run(self, context: Context):
         print(f"[{self.name}] Start training for {self.num_rounds} rounds")
-        current_model = self.initial_model
+        current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model, context)
             score = self._do_eval(current_model, context)
             print(f"[{self.name}]: eval score in round {i}: {score}")
+        return current_model
 
     def _do_eval(self, model, ctx: Context):
         results = all_clients(ctx).evaluate(model)
@@ -94,11 +97,12 @@ class NPFedAvgInTime(Controller):
 
     def run(self, context: Context):
         print(f"[{self.name}] Start training for {self.num_rounds} rounds")
-        current_model = self.initial_model
+        current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model, context)
             score = self._do_eval(current_model, context)
             print(f"[{self.name}]: eval score in round {i}: {score}")
+        return current_model
 
     def _do_eval(self, model, ctx: Context):
         results = all_clients(ctx).evaluate(model)
@@ -136,10 +140,11 @@ class NPCyclic(Controller):
         self.initial_model = initial_model
 
     def run(self, context: Context):
-        current_model = self.initial_model
+        current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
         for current_round in range(self.num_rounds):
             current_model = self._do_one_round(current_round, current_model, context)
         print(f"final result: {current_model}")
+        return current_model
 
     def _do_one_round(self, current_round, current_model, ctx: Context):
         random.shuffle(ctx.clients)

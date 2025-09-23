@@ -12,15 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import inspect
+from typing import List
 
 from .constants import CollabMethodArgName
 
 
-def check_optional_args(func, kwargs):
+def check_optional_args(func, kwargs, arg_names: List[str]):
     signature = inspect.signature(func)
     parameter_names = signature.parameters.keys()
 
     # make sure to expose the optional args if the collab method supports them
-    for n in [CollabMethodArgName.CONTEXT]:
+    for n in arg_names:
         if n not in parameter_names:
             kwargs.pop(n, None)
+
+
+def check_context_support(func, kwargs):
+    check_optional_args(func, kwargs, [CollabMethodArgName.CONTEXT])

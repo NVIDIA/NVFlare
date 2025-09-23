@@ -13,7 +13,6 @@
 # limitations under the License.
 from .backend import Backend
 from .constants import CollabMethodArgName
-from .ctx import Context
 
 
 class Proxy:
@@ -43,7 +42,7 @@ class Proxy:
         """
 
         def method(*args, **kwargs):
-            ctx = Context(self.caller_name, self.name, self.backend.abort_signal)
+            ctx = self.app.new_context(self.caller_name, self.name)
             kwargs[CollabMethodArgName.CONTEXT] = ctx
             return self.backend.call_target(self.target_name, func_name, *args, **kwargs)
 

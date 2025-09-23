@@ -16,7 +16,7 @@ import time
 
 from .constants import CollabMethodArgName
 from .ctx import Context
-from .utils import check_optional_args
+from .utils import check_context_support
 
 
 class Resp:
@@ -38,7 +38,7 @@ class Resp:
             ctx.caller = ctx.callee
             ctx.callee = original_caller
             self.cb_kwargs[CollabMethodArgName.CONTEXT] = ctx
-            check_optional_args(self.process_cb, self.cb_kwargs)
+            check_context_support(self.process_cb, self.cb_kwargs)
             result = self.process_cb(result, **self.cb_kwargs)
         self.result = result
         self.resp_time = time.time()

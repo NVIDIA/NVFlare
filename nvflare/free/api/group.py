@@ -28,6 +28,7 @@ class Group:
 
     def __init__(
         self,
+        app,
         abort_signal: Signal,
         proxies: List[Proxy],
         blocking: bool = True,
@@ -37,6 +38,7 @@ class Group:
         process_resp_cb=None,
         **cb_kwargs,
     ):
+        self._app = app
         self._abort_signal = abort_signal
         self._proxies = proxies
         self._blocking = blocking
@@ -61,10 +63,8 @@ class Group:
             resps = {}
             for p in self._proxies:
                 kwargs_copy = copy.copy(kwargs)
-
-                ctx = Context(p.caller_name, p.name, self._abort_signal)
+                ctx = self._app.new_context(p.caller_name, p.name)
                 kwargs_copy[CollabMethodArgName.CONTEXT] = ctx
-
                 resp = Resp(self._process_resp_cb, self._cb_kwargs, ctx)
                 resps[p.name] = resp
                 p.backend.call_target_with_resp(resp, p.name, func_name, *args, **kwargs_copy)
@@ -129,7 +129,15 @@ def group(
     **cb_kwargs,
 ):
     return Group(
-        ctx.abort_signal, proxies, blocking, timeout, min_resps, wait_after_min_resps, process_resp_cb, **cb_kwargs
+        ctx.app,
+        ctx.abort_signal,
+        proxies,
+        blocking,
+        timeout,
+        min_resps,
+        wait_after_min_resps,
+        process_resp_cb,
+        **cb_kwargs,
     )
 
 
@@ -143,5 +151,13 @@ def all_clients(
     **cb_kwargs,
 ):
     return Group(
-        ctx.abort_signal, ctx.clients, blocking, timeout, min_resps, wait_after_min_resps, process_resp_cb, **cb_kwargs
+        ctx.app,
+        ctx.abort_signal,
+        ctx.clients,
+        blocking,
+        timeout,
+        min_resps,
+        wait_after_min_resps,
+        process_resp_cb,
+        **cb_kwargs,
     )

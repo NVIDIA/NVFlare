@@ -19,3 +19,7 @@ class CollabMethodArgName:
 class CollabMethodOptionName:
     BLOCKING = "blocking"
     TIMEOUT = "timeout"
+
+
+class ContextKey:
+    INPUT = "input"
