@@ -14,7 +14,7 @@ Key features:
   - Direct cropping and casting for fp32 to fp16 conversion
   - 8- and 4-bit quantization using bitsandbytes
 
-.. image:: resources/message_quantization.png
+.. image:: ../resources/message_quantization.png
     :height: 300px
 
 
@@ -42,7 +42,7 @@ The table below illustrates the message size in MB for a 1B parameter LLM under 
 
 By applying message quantization techniques, FL can achieve significant bandwidth savings, and for training LLM with Supervised Fine-Tuning (SFT) in our experiments. As shown in the Figure below, message quantization does not sacrifice model convergence quality with regard to the training loss.
 
-.. image:: resources/quantization_loss.png
+.. image:: ../resources/quantization_loss.png
     :height: 300px
 
 Native Tensor Transfer
@@ -103,7 +103,7 @@ System Monitoring
 =================
 FLARE Monitoring provides system metrics tracking for federated learning jobs, focusing on job and system lifecycle metrics. It leverages StatsD Exporter to monitor FLARE job and system events, which can be scraped by Prometheus and visualized with Grafana. This differs from machine learning experiment tracking by focusing on system-level metrics rather than training metrics. For more information, see :ref:`Monitoring <monitoring>`.
 
-.. image:: resources/system_monitoring.png
+.. image:: ../resources/system_monitoring.png
     :height: 450px
 
 Flower Integration v2

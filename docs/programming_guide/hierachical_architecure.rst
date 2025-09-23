@@ -1,4 +1,4 @@
-.. _flare_hierarchical_architecture
+.. _flare_hierarchical_architecture:
 
 Hierarchical FLARE
 ==================

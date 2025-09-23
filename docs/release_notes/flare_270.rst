@@ -137,7 +137,7 @@ Connection Example Illustration
 The following diagrams illustrate the two different connection and authentication mechanism
 enabled by the single port, TLS, bring your own connection features.
 
-.. image::../resources/flare_byocc.png
+.. image:: ../resources/flare_byocc.png
 
 See :ref:`check out FL server port consolidation details <server_port_consolidation>`.
 
@@ -187,7 +187,7 @@ using confidential computing.
     - **model theft Protection** on the client-side to safe guard the Model IP during collaboration
     - **data leak prevention** on the client-side with the pre-approved,certified code.
 
-You can read more about the user usage at :ref:`cc_user_guide`
+You can read more about the user usage at :ref:`confidential_computing`
 
 Develop Edge Applications with FLARE
 ====================================
@@ -202,8 +202,8 @@ FLARE 2.7 extends federated learning capabilities to edge devices. Edge device a
 To support scalability, we add the following features
 
 - support for hierarchical federated architecture :ref:`flare_hierarchical_architecture`
-- asynch federated learning algorithm based on FedBuff: :ref:`_flare_edge`
-- model development support for both iOS and Android :ref:`_flare_mobile`
+- asynch federated learning algorithm based on FedBuff: :ref:`flare_edge`
+- model development support for both iOS and Android :ref:`flare_mobile`
 
 Try FLARE edge development following the `edge examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_
 
