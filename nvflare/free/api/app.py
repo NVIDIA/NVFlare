@@ -11,12 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 from abc import ABC, abstractmethod
 from typing import List
 
+from .constants import CollabMethodArgName
 from .controller import Controller
 from .ctx import Context
 from .proxy import Proxy
+from .utils import check_context_support
 
 SERVER_NAME = "server"
 
@@ -30,6 +33,14 @@ class App(ABC):
         self._me = None
         self._target_objs = []
         self._abort_signal = None
+        self._props = {}
+        self._event_handlers = {}  # event type => list of (cb, kwargs)
+
+    def set_prop(self, name: str, value):
+        self._props[name] = value
+
+    def get_prop(self, name: str, default=None):
+        return self._props.get(name, default)
 
     def get_default_target(self):
         return None
@@ -65,8 +76,20 @@ class App(ABC):
     def get_my_site(self) -> Proxy:
         return self._me
 
-    def initialize(self, **kwargs):
+    def initialize_app(self, context: Context):
         pass
+
+    def initialize(self, context: Context):
+        self.initialize_app(context)
+
+        # initialize target objects
+        for name, obj in self._target_objs:
+            init_func = getattr(obj, "initialize", None)
+            if init_func and callable(init_func):
+                print(f"initializing target object {name}")
+                kwargs = {CollabMethodArgName.CONTEXT: context}
+                check_context_support(init_func, kwargs)
+                init_func(**kwargs)
 
     def new_context(self, caller: str, callee: str, props: dict = None):
         ctx = Context(caller, callee, self._abort_signal, props)
@@ -74,6 +97,22 @@ class App(ABC):
         ctx.server = self.server
         ctx.clients = self.clients
         return ctx
+
+    def register_event_handler(self, event_type: str, handler, **handler_kwargs):
+        handlers = self._event_handlers.get(event_type)
+        if not handlers:
+            handlers = []
+            self._event_handlers[event_type] = handlers
+        handlers.append((handler, handler_kwargs))
+
+    def fire_event(self, event_type: str, data, context: Context):
+        for e, handlers in self._event_handlers.items():
+            if e == event_type:
+                for h, kwargs in handlers:
+                    kwargs = copy.copy(kwargs)
+                    kwargs.update({CollabMethodArgName.CONTEXT: context})
+                    check_context_support(h, kwargs)
+                    h(event_type, data, **kwargs)
 
 
 class ServerApp(App):

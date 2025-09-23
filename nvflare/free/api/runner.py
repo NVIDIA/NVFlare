@@ -88,24 +88,31 @@ class AppRunner:
         for name, app in client_apps.items():
             server_proxy, client_proxies = self._prepare_proxies(server_app, client_apps, name, backends)
             app.setup(name, server_proxy, client_proxies, self.abort_signal)
-            app.initialize()
 
         # prepare server
         server_proxy, client_proxies = self._prepare_proxies(server_app, client_apps, SERVER_NAME, backends)
         server_app.setup(SERVER_NAME, server_proxy, client_proxies, self.abort_signal)
 
+        self.client_apps = client_apps
+
     def run(self):
+        # initialize all apps
+        server_ctx = self.server_app.new_context(caller=self.server_app.name, callee=self.server_app.name)
+        print("initializing server app")
+        self.server_app.initialize(server_ctx)
+
+        for n, app in self.client_apps.items():
+            print(f"initializing client app for {n}")
+            app.initialize(app.new_context(n, n))
+
         # run the server
         result = None
-        ctx = self.server_app.new_context(caller=self.server_app.name, callee=self.server_app.name)
-        ctx.server = self.server_app.server
-        ctx.clients = self.server_app.clients
         for idx, controller in enumerate(self.server_app.controllers):
             try:
                 print(f"Running Controller #{idx+1}")
                 self.server_app.current_controller = controller
-                result = controller.run(context=ctx)
-                ctx.set_prop(ContextKey.INPUT, result)
+                result = controller.run(context=server_ctx)
+                server_ctx.set_prop(ContextKey.INPUT, result)
             except:
                 traceback.print_exc()
                 break

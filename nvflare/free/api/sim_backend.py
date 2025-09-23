@@ -84,8 +84,8 @@ class SimBackend(Backend):
     def _augment_context(self, func, kwargs):
         ctx = kwargs.get(CollabMethodArgName.CONTEXT)
         if ctx:
-            ctx.server = self.target_app.server
-            ctx.clients = self.target_app.clients
+            target_ctx = self.target_app.new_context(ctx.caller, ctx.callee)
+            kwargs[CollabMethodArgName.CONTEXT] = target_ctx
         check_context_support(func, kwargs)
 
     def _run_func(self, waiter: _Waiter, func, args, kwargs):
