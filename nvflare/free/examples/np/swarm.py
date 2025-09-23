@@ -47,6 +47,7 @@ class NPSwarmClient(ClientApp):
     def __init__(self, delta: float):
         super().__init__()
         self.delta = delta
+        self.register_event_handler("final_model", self._accept_final_model)
 
     def train(self, weights, current_round, context: Context):
         print(f"[{context.callee}]: train asked by {context.caller}: {current_round=}")
@@ -67,7 +68,7 @@ class NPSwarmClient(ClientApp):
         print(f"[{context.callee}]: trained model {new_model=}")
         if current_round == num_rounds - 1:
             # all done
-            all_clients(context).accept_final_model(new_model, blocking=False)
+            all_clients(context, blocking=False).fire_event("final_model", new_model)
             self.server.notify_done()
             return
 
@@ -80,10 +81,10 @@ class NPSwarmClient(ClientApp):
     def start(self, num_rounds, initial_model, context: Context):
         self.swarm_learn(num_rounds, initial_model, 0, context)
 
-    def accept_final_model(self, model, context: Context):
+    def _accept_final_model(self, event_type: str, model, context: Context):
         # accept the final model
         # write model to disk
-        print(f"[{context.callee}]: received final model from {context.caller}: {model}")
+        print(f"[{context.callee}]: received event '{event_type}' from {context.caller}: {model}")
 
 
 def main():

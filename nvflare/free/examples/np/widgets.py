@@ -18,3 +18,10 @@ class MetricReceiver:
 
     def accept_metric(self, metrics: dict, context: Context):
         print(f"[{context.callee}] received metric report from {context.caller}: {metrics}")
+
+    def initialize(self, context: Context):
+        context.app.register_event_handler("metrics", self._accept_metric)
+        print("MetricReceiver initialized!")
+
+    def _accept_metric(self, event_type: str, data, context: Context):
+        print(f"[{context.callee}] received event '{event_type}' from {context.caller}: {data}")
