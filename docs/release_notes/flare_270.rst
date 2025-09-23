@@ -137,7 +137,7 @@ Connection Example Illustration
 The following diagrams illustrate the two different connection and authentication mechanism
 enabled by the single port, TLS, bring your own connection features.
 
-PICTURES TODO
+.. image::../resources/flare_byocc.png
 
 See :ref:`check out FL server port consolidation details <server_port_consolidation>`.
 
@@ -212,4 +212,6 @@ Try FLARE edge development following the `edge examples <https://github.com/NVID
 Self-Paced Training Tutorial
 ============================
 
-.. include:: self-paced-training/index
+
+.. include::self-paced-training/index
+
