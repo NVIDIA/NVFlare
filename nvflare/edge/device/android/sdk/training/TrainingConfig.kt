@@ -1,5 +1,6 @@
 package com.nvidia.nvflare.sdk.training
 
+import android.util.Log
 import com.google.gson.annotations.SerializedName
 import com.nvidia.nvflare.sdk.utils.TaskHeaderKey
 
@@ -149,19 +150,39 @@ data class TrainingConfig(
         }
     }
     companion object {
+        private const val DEBUG_TRAINING_CONFIG = true
+        
         private fun determineMethodFromJobName(data: Map<String, Any>): String {
-            // Try to determine method from job name or other context
             val jobName = data[TaskHeaderKey.JOB_NAME] as? String ?: ""
-            return when {
+            
+            if (DEBUG_TRAINING_CONFIG) {
+                Log.d("TrainingConfig", "Job name: '$jobName' -> method determination")
+            }
+            
+            val method = when {
                 jobName.lowercase().contains("cifar") || jobName.lowercase().contains("cnn") -> "cnn"
                 jobName.lowercase().contains("xor") -> "xor"
                 else -> "xor" // Default fallback
             }
+            
+            if (DEBUG_TRAINING_CONFIG) {
+                Log.d("TrainingConfig", "Selected method: $method")
+            }
+            
+            return method
         }
         
         fun fromMap(data: Map<String, Any>): TrainingConfig {
             val method = data["method"] as? String ?: determineMethodFromJobName(data)
-            val dataSetType = data[MetaKey.DATASET_TYPE] as? String ?: DatasetType.XOR
+            val dataSetType = data[MetaKey.DATASET_TYPE] as? String ?: when (method) {
+                "cnn" -> DatasetType.CIFAR10
+                "xor" -> DatasetType.XOR
+                else -> DatasetType.XOR
+            }
+            
+            if (DEBUG_TRAINING_CONFIG) {
+                Log.d("TrainingConfig", "Creating config - method: $method, dataset: $dataSetType")
+            }
             
             // Use batch size 1 for XOR (small dataset), 4 for CNN (larger dataset)
             val defaultBatchSize = when {
