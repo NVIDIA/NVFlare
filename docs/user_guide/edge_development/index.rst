@@ -24,7 +24,7 @@ In the diagram, devices (D1 to Dn) connect to FLARE via web nodes (W1 to Wk), vi
 
 Hierarchical FLARE
 ==================
-check more details in :ref:`lare_hierarchical_architecture` for the hierarchical architecture.
+check more details in :ref:`flare_hierarchical_architecture` for the hierarchical deployment architecture.
 
 Edge Training Algorithm
 =======================
