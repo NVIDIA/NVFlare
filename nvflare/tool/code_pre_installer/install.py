@@ -42,7 +42,7 @@ def define_pre_install_parser(cmd_name: str, sub_cmd):
         default=DEFAULT_APPLICATION_INSTALL_DIR,
         help=f"Installation prefix (default: {DEFAULT_APPLICATION_INSTALL_DIR})",
     )
-    parser.add_argument("-s", "--site-name", required=False, default="", help="Target site name (e.g., site-1, server)")
+    parser.add_argument("-s", "--site-name", required=True, help="Target site name (e.g., site-1, server)")
     parser.add_argument(
         "-ts",
         "--target_shared_dir",

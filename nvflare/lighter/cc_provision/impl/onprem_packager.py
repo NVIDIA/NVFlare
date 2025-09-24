@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 import yaml
@@ -45,15 +43,6 @@ def _extract_docker_tar_path(output):
         if match:
             return match.group(1)
     return None
-
-
-def update_log_filenames(config, new_log_root: str = "/applog"):
-    handlers = config.get("handlers", {})
-    for handler_name, handler_cfg in handlers.items():
-        filename = handler_cfg.get("filename")
-        if filename:
-            handler_cfg["filename"] = os.path.join(new_log_root, filename)
-    return config
 
 
 def to_abs_path(yaml_path, file_path):
@@ -127,9 +116,6 @@ class OnPremPackager(Packager):
             raise FileNotFoundError(f"Build image command '{build_image_cmd}' not found or is not executable.")
         command = [build_image_cmd, cc_config_yaml]
         output = run_command(command)
-        # TODO: get rid of this buffer time in between each build
-        #   we need it now otherwise the second call to image builder will fail
-        time.sleep(300.0)
         tar_file_path = _extract_cvm_tar_path(output)
         return tar_file_path
 
@@ -145,24 +131,12 @@ class OnPremPackager(Packager):
         with open(cc_config_path, "w") as f:
             yaml.safe_dump(data, f, default_flow_style=False)
 
-    def _change_log_dir(self, log_config_path: str):
-        with open(log_config_path, "r") as f:
-            config = json.load(f)
-
-        updated_config = update_log_filenames(config)
-
-        with open(log_config_path, "w") as f:
-            json.dump(updated_config, f, indent=4)
-
     def _package_for_participant(self, participant: Participant, ctx: ProvisionContext):
         """Package the startup kit for the participant."""
         if not participant.get_prop(self.cc_config_key):
             return
 
         dest_dir = Path(ctx.get_result_location())
-
-        log_config_path = dest_dir / participant.name / "local" / ProvFileName.LOG_CONFIG_DEFAULT
-        self._change_log_dir(log_config_path)
 
         cc_config_yaml = os.path.abspath(participant.get_prop(self.cc_config_key))
         if not os.path.exists(cc_config_yaml):
@@ -191,5 +165,11 @@ class OnPremPackager(Packager):
         shutil.copy(tar_file_path, site_dir / f"{participant.name}.tgz")
 
     def package(self, project: Project, ctx: ProvisionContext):
-        for p in project.get_all_participants():
-            self._package_for_participant(p, ctx)
+        start_all_script = os.path.join(ctx.get_result_location(), ProvFileName.START_ALL_SH)
+        if os.path.exists(start_all_script):
+            os.remove(start_all_script)
+
+        participants = project.get_all_participants()
+
+        for participant in participants:
+            self._package_for_participant(participant, ctx)
