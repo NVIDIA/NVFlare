@@ -118,31 +118,11 @@ def main():
         for key in score:
             f.write(f"{key}: {score[key]}\n")
 
-    # Load test data
-    X_test, y_test = load_test_data(args.data_test_file)
-    # construct xgboost DMatrix
-    dmat_test = xgb.DMatrix(X_test, label=y_test)
-
-    # Explain the model
-    explainer = shap.TreeExplainer(bst)
-    explanation = explainer(dmat_test)
-
-    # save the beeswarm plot to png file
-    shap.plots.beeswarm(explanation, show=False)
-    img = plt.gcf()
-    img.savefig(f"{args.out_path}/shap.base.png")
-
     # dump tree and save to text file
     dump = bst.get_dump()
     with open(f"{args.out_path}/tree_dump.base.txt", "w") as f:
         for tree in dump:
             f.write(tree)
-
-    # plot tree and save to png file
-    xgb.plot_tree(bst, num_trees=0, rankdir="LR")
-    fig = plt.gcf()
-    fig.set_size_inches(18, 5)
-    plt.savefig(f"{args.out_path}/tree.base.png", dpi=100)
 
     # export tree to dataframe
     tree_df = bst.trees_to_dataframe()

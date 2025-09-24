@@ -2,7 +2,6 @@ pandas
 torch
 scikit-learn
 tensorboard
-graphviz
 kagglehub
 shap
 matplotlib
