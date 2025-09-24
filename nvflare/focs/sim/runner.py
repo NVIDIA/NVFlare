@@ -106,11 +106,11 @@ class AppRunner:
 
         # run the server
         result = None
-        for idx, controller in enumerate(self.server_app.controllers):
+        for idx, strategy in enumerate(self.server_app.strategies):
             try:
-                print(f"Running Controller #{idx+1}")
-                self.server_app.current_controller = controller
-                result = controller.run(context=server_ctx)
+                print(f"Running Strategy #{idx+1}")
+                self.server_app.current_strategy = strategy
+                result = strategy.execute(context=server_ctx)
                 server_ctx.set_prop(ContextKey.INPUT, result)
             except:
                 traceback.print_exc()

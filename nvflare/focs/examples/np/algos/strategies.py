@@ -16,20 +16,20 @@ import random
 import numpy as np
 
 from nvflare.focs.api.constants import ContextKey
-from nvflare.focs.api.controller import Controller
 from nvflare.focs.api.ctx import Context
 from nvflare.focs.api.group import all_clients
+from nvflare.focs.api.strategy import Strategy
 
 
-class NPFedAvgSequential(Controller):
+class NPFedAvgSequential(Strategy):
 
     def __init__(self, initial_model, num_rounds=10):
-        Controller.__init__(self)
+        Strategy.__init__(self)
         self.name = "NPFedAvgSequential"
         self.num_rounds = num_rounds
         self.initial_model = initial_model
 
-    def run(self, context: Context):
+    def execute(self, context: Context):
         print(f"[{self.name}] Start training for {self.num_rounds} rounds")
         current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
         for i in range(self.num_rounds):
@@ -47,14 +47,14 @@ class NPFedAvgSequential(Controller):
         return total / n
 
 
-class NPFedAvgParallel(Controller):
+class NPFedAvgParallel(Strategy):
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
         self.initial_model = initial_model
         self.name = "NPFedAvgParallel"
 
-    def run(self, context: Context):
+    def execute(self, context: Context):
         print(f"[{self.name}] Start training for {self.num_rounds} rounds")
         current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
         for i in range(self.num_rounds):
@@ -87,7 +87,7 @@ class _AggrResult:
         self.count = 0
 
 
-class NPFedAvgInTime(Controller):
+class NPFedAvgInTime(Strategy):
 
     def __init__(self, initial_model, num_rounds=10, timeout=2.0):
         self.num_rounds = num_rounds
@@ -95,7 +95,7 @@ class NPFedAvgInTime(Controller):
         self.timeout = timeout
         self.name = "NPFedAvgInTime"
 
-    def run(self, context: Context):
+    def execute(self, context: Context):
         print(f"[{self.name}] Start training for {self.num_rounds} rounds")
         current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
         for i in range(self.num_rounds):
@@ -133,13 +133,13 @@ class NPFedAvgInTime(Controller):
         return None
 
 
-class NPCyclic(Controller):
+class NPCyclic(Strategy):
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
         self.initial_model = initial_model
 
-    def run(self, context: Context):
+    def execute(self, context: Context):
         current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
         for current_round in range(self.num_rounds):
             current_model = self._do_one_round(current_round, current_model, context)

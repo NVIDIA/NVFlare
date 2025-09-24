@@ -15,7 +15,7 @@ import numpy as np
 
 from nvflare.focs.api.app import ServerApp
 from nvflare.focs.examples.np.algos.client import NPTrainer
-from nvflare.focs.examples.np.algos.controllers import NPCyclic
+from nvflare.focs.examples.np.algos.strategies import NPCyclic
 from nvflare.focs.sim.runner import AppRunner
 
 
@@ -23,9 +23,7 @@ def main():
 
     runner = AppRunner(
         server_app=ServerApp(
-            controller=NPCyclic(
-                initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32), num_rounds=2
-            )
+            strategy=NPCyclic(initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32), num_rounds=2)
         ),
         client_app=NPTrainer(delta=1.0),
         num_clients=2,

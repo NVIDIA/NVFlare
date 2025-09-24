@@ -16,9 +16,9 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from .constants import CollabMethodArgName
-from .controller import Controller
 from .ctx import Context
 from .proxy import Proxy
+from .strategy import Strategy
 from .utils import check_context_support
 
 SERVER_NAME = "server"
@@ -117,20 +117,20 @@ class App(ABC):
 
 class ServerApp(App):
 
-    def __init__(self, controller: Controller):
+    def __init__(self, strategy: Strategy):
         super().__init__()
-        if not isinstance(controller, Controller):
-            raise ValueError(f"controller must be Controller but got {type(controller)}")
-        self.controllers = [controller]
-        self.current_controller = None
+        if not isinstance(strategy, Strategy):
+            raise ValueError(f"strategy must be Strategy but got {type(strategy)}")
+        self.strategies = [strategy]
+        self.current_strategy = None
 
-    def add_controller(self, controller):
-        if not isinstance(controller, Controller):
-            raise ValueError(f"controller must be Controller but got {type(controller)}")
-        self.controllers.append(controller)
+    def add_strategy(self, strategy):
+        if not isinstance(strategy, Strategy):
+            raise ValueError(f"strategy must be Controller but got {type(strategy)}")
+        self.strategies.append(strategy)
 
     def get_default_target(self):
-        return self.current_controller
+        return self.current_strategy
 
 
 class ClientApp(App):

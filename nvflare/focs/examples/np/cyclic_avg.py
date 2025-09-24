@@ -15,7 +15,7 @@ import numpy as np
 
 from nvflare.focs.api.app import ServerApp
 from nvflare.focs.examples.np.algos.client import NPTrainer
-from nvflare.focs.examples.np.algos.controllers import NPCyclic, NPFedAvgParallel
+from nvflare.focs.examples.np.algos.strategies import NPCyclic, NPFedAvgParallel
 from nvflare.focs.sim.runner import AppRunner
 
 
@@ -23,7 +23,7 @@ def main():
     server_app = ServerApp(
         NPCyclic(initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32), num_rounds=2)
     )
-    server_app.add_controller(NPFedAvgParallel(initial_model=None, num_rounds=2))
+    server_app.add_strategy(NPFedAvgParallel(initial_model=None, num_rounds=2))
 
     runner = AppRunner(
         server_app=server_app,
