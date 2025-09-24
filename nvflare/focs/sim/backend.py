@@ -13,11 +13,11 @@
 # limitations under the License.
 import threading
 
-from .app import App
-from .backend import Backend
-from .constants import CollabMethodArgName, CollabMethodOptionName
-from .resp import Resp
-from .utils import check_context_support
+from nvflare.focs.api.app import App
+from nvflare.focs.api.backend import Backend
+from nvflare.focs.api.constants import CollabMethodArgName, CollabMethodOptionName
+from nvflare.focs.api.resp import Resp
+from nvflare.focs.api.utils import check_context_support
 
 
 class _Waiter(threading.Event):
@@ -30,9 +30,10 @@ class _Waiter(threading.Event):
 
 class SimBackend(Backend):
 
-    def __init__(self, target_app: App, target_obj, abort_signal, thread_executor):
+    def __init__(self, target_app: App, target_name: str, target_obj, abort_signal, thread_executor):
         Backend.__init__(self, abort_signal)
         self.target_app = target_app
+        self.target_name = target_name
         self.target_obj = target_obj
         self.executor = thread_executor
 

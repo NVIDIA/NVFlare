@@ -13,26 +13,22 @@
 # limitations under the License.
 import numpy as np
 
-from nvflare.free.api.app import ServerApp
-from nvflare.free.api.runner import AppRunner
-from nvflare.free.examples.np.client import NPTrainer
-from nvflare.free.examples.np.controllers import NPFedAvgParallel
-from nvflare.free.examples.np.widgets import MetricReceiver
+from nvflare.focs.api.app import ServerApp
+from nvflare.focs.examples.np.algos.client import NPTrainer
+from nvflare.focs.examples.np.algos.controllers import NPCyclic
+from nvflare.focs.sim.runner import AppRunner
 
 
 def main():
 
-    server_app = ServerApp(
-        controller=NPFedAvgParallel(
-            initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32), num_rounds=2
-        )
-    )
-    server_app.add_target_object("metric_receiver", MetricReceiver())
-
     runner = AppRunner(
-        server_app=server_app,
+        server_app=ServerApp(
+            controller=NPCyclic(
+                initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32), num_rounds=2
+            )
+        ),
         client_app=NPTrainer(delta=1.0),
-        num_clients=10,
+        num_clients=2,
     )
 
     runner.run()

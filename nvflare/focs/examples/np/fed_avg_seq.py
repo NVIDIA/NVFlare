@@ -13,11 +13,11 @@
 # limitations under the License.
 import numpy as np
 
-from nvflare.free.api.app import ServerApp
-from nvflare.free.api.runner import AppRunner
-from nvflare.free.examples.np.client import TrainerFactory
-from nvflare.free.examples.np.controllers import NPFedAvgSequential
-from nvflare.free.examples.np.widgets import MetricReceiver
+from nvflare.focs.api.app import ServerApp
+from nvflare.focs.examples.np.algos.client import TrainerFactory
+from nvflare.focs.examples.np.algos.controllers import NPFedAvgSequential
+from nvflare.focs.examples.np.algos.widgets import MetricReceiver
+from nvflare.focs.sim.runner import AppRunner
 
 
 def main():

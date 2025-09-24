@@ -16,11 +16,11 @@ import threading
 
 import numpy as np
 
-from nvflare.free.api.app import ClientApp, ServerApp
-from nvflare.free.api.controller import Controller
-from nvflare.free.api.ctx import Context
-from nvflare.free.api.group import all_clients
-from nvflare.free.api.runner import AppRunner
+from nvflare.focs.api.app import ClientApp, ServerApp
+from nvflare.focs.api.controller import Controller
+from nvflare.focs.api.ctx import Context
+from nvflare.focs.api.group import all_clients
+from nvflare.focs.sim.runner import AppRunner
 
 
 class NPSwarm(Controller):
