@@ -21,6 +21,7 @@ from pathlib import Path
 
 import yaml
 
+from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Packager
@@ -164,6 +165,10 @@ class OnPremPackager(Packager):
         shutil.copy(tar_file_path, site_dir / f"{participant.name}.tgz")
 
     def package(self, project: Project, ctx: ProvisionContext):
+        start_all_script = os.path.join(ctx.get_result_location(), ProvFileName.START_ALL_SH)
+        if os.path.exists(start_all_script):
+            os.remove(start_all_script)
+
         participants = project.get_all_participants()
 
         for participant in participants:

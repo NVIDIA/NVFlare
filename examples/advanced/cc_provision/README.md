@@ -65,6 +65,8 @@ builders:
   - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
 ```
 
+Note that this CCBuilder needs to be placed **after** the "StaticFileBuilder" and
+**before** the "SignatureBuilder".
 This builder sets up all CC-related configurations and assets.
 
 ## 4. Add the OnPremPackager
