@@ -16,8 +16,8 @@ from abc import ABC, abstractmethod
 from .ctx import Context
 
 
-class Controller(ABC):
+class Strategy(ABC):
 
     @abstractmethod
-    def run(self, context: Context):
+    def execute(self, context: Context):
         pass

@@ -17,20 +17,20 @@ import threading
 import numpy as np
 
 from nvflare.focs.api.app import ClientApp, ServerApp
-from nvflare.focs.api.controller import Controller
 from nvflare.focs.api.ctx import Context
 from nvflare.focs.api.group import all_clients
+from nvflare.focs.api.strategy import Strategy
 from nvflare.focs.sim.runner import AppRunner
 
 
-class NPSwarm(Controller):
+class NPSwarm(Strategy):
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
         self.initial_model = initial_model
         self.waiter = threading.Event()
 
-    def run(self, context: Context):
+    def execute(self, context: Context):
         # randomly pick a client to start
         start_client_idx = random.randint(0, len(context.clients) - 1)
         start_client = context.clients[start_client_idx]
@@ -91,9 +91,7 @@ def main():
 
     runner = AppRunner(
         server_app=ServerApp(
-            controller=NPSwarm(
-                initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32), num_rounds=5
-            )
+            strategy=NPSwarm(initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32), num_rounds=5)
         ),
         client_app=NPSwarmClient(delta=1.0),
         num_clients=3,

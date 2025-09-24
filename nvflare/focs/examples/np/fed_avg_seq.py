@@ -15,7 +15,7 @@ import numpy as np
 
 from nvflare.focs.api.app import ServerApp
 from nvflare.focs.examples.np.algos.client import TrainerFactory
-from nvflare.focs.examples.np.algos.controllers import NPFedAvgSequential
+from nvflare.focs.examples.np.algos.strategies import NPFedAvgSequential
 from nvflare.focs.examples.np.algos.widgets import MetricReceiver
 from nvflare.focs.sim.runner import AppRunner
 
@@ -23,7 +23,7 @@ from nvflare.focs.sim.runner import AppRunner
 def main():
 
     server_app = ServerApp(
-        controller=NPFedAvgSequential(
+        strategy=NPFedAvgSequential(
             num_rounds=2,
             initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32),
         )
