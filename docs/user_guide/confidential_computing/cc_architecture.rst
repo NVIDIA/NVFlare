@@ -24,6 +24,7 @@ Runtime Risks
 -------------
 
 Even after deployment, model IP remains exposed to runtime threats. A host system—whether trusted or compromised—can still leak the model if sufficient safeguards are not maintained. Attackers may exploit vulnerabilities to gain remote access, copy the model from memory, intercept it over the network, or extract it from disk-based checkpoints. Insider threats or physical access to a machine can also lead to data exfiltration. While VM-based Trusted Execution Environments (TEEs) provided by Confidential Computing offer strong isolation guarantees, these mechanisms are not infallible. If the attacker can directly access the CVM TEE or modify the application inside the TEE, then the TEE protection doesn’t help the IP protection: here are a few possible ways that model IP can be leaked out at runtime:
+
 - Compromised participant machines
 - Unauthorized access to the remote training machine (via direct access or network access)
 - Remote access or a leak from the network
@@ -43,12 +44,12 @@ Proposed Solution
 A secure deployment architecture combining:
 
 - Specialized CVM Image
-- Hardware-backed chain of trust from hardware to application
-- Enhanced security controls for network, storage, and access
-- Measured boot and runtime attestation
+    - Hardware-backed chain of trust from hardware to application
+    - Enhanced security controls for network, storage, and access
+    - Measured boot and runtime attestation
 - Pre-packaged Workload Container
-- FLARE training applications or inference services
-- Model weights and proprietary code
+    - FLARE training applications or inference services
+    - Model weights and proprietary code
 
 Security Guarantee
 ------------------
@@ -111,7 +112,7 @@ This design addresses the above challenges with the following approaches:
   - CPU verification ⇒ GPU verification (extending the chain of the trust from CPU to GPU)
   - Two-stage key releases with partition dm-verity.
 
-Additional Security Hardenings
+Additional Security Hardening
 ------------------------------
 
 - **Disk Security**: Leverage both dm-crypt for encryption and dm-verity for integrity verification of disk partitions. Disable auto-mount.
@@ -170,20 +171,22 @@ Embedding InitApp within initramfs ensures:
 Bootup Sequence Overview
 -------------------------
 
-- BIOS/UEFI
-  ↓
-- Bootloader (GRUB) loads:
+- BIOS/UEFI ↓
+
+- Bootloader (GRUB) loads:↓
+
   - vmlinuz
   - initramfs (includes InitApp and minimal network tools)
-  ↓
-- initramfs executes /bin/init-app
-  ↓
-- InitApp:
+
+- initramfs executes /bin/init-app  ↓
+
+- InitApp ↓
+
   - Brings up network interface (e.g., eth0)
   - Performs attestation using CPU TEE
   - Contacts trustee and key broker service
   - Decrypts and mounts secure root filesystem
-  ↓
+
 - InitApp executes: switch_root /new_root /sbin/init
 
 Secure Filesystem Layout for initramfs
@@ -194,7 +197,7 @@ Secure Filesystem Layout for initramfs
    initramfs/
    ├── bin/
    │   └── init-app         # Attesting agent
-   ├── init                # Stub to call /bin/init-app
+   ├── init                 # Stub to call /bin/init-app
    ├── dev/
    ├── etc/
    ├── lib64/
@@ -220,6 +223,7 @@ What Needs to Be Measured and Signed?
 When preparing a Confidential VM (CVM) image, it's crucial to ensure that key components are measured and cryptographically verified to maintain a trusted boot process.
 
 With TEE platforms like AMD SEV-SNP or Intel TDX, the firmware measures and includes the hashes of the following in the attestation report:
+
 - Kernel binary
 - Initramfs (which includes InitApp)
 - Kernel command-line parameters
@@ -243,58 +247,75 @@ Build Process: Creating a Confidential VM (CVM) Image
 Goal: Produce a secure CVM image with all trusted measurements registered in the Trustee service in a trusted host A.
 
 1. **Build Base CVM Image**
+
    - Follow your standard CVM creation guide or automation pipeline.
    - Choose a supported OS (e.g., Ubuntu 22.04 LTS).
 
 2. **System Requirements**
+
    - Install guest OS patches for AMD SEV-SNP or Intel TDX.
    - Install Confidential Computing drivers:
+
      - AMD: kvm_amd, sev, snp kernel modules
      - TDX: TDX guest drivers (tdx_guest)
+
    - (Optional) Install GPU drivers (e.g., NVIDIA vGPU with CC support).
 
 3. **Install Required Packages**
+
    - Install the attestation SDK CLI tools or libraries.
    - Install tooling to generate initramfs.
 
 4. **Prepare InitApp + Initramfs**
+
    - Build the InitApp binary (early boot attestation code).
    - Generate initramfs:
+
      - Include InitApp, attestation tools, and measurement logic.
      - Call InitApp in the default init (via /bin/init).
+
    - Generate a unique CVM_ID for this VM.
    - Add to kernel boot arguments:
+
      - initrd=/boot/initramfs.img
      - append(vm_id=”$CVM_ID")
 
 5. **Partition Disks & Apply Security Hardening**
+
    - Partition the disk and prepare encrypted volumes.
    - See the disk partitioning section for more details.
 
 6. **Install the Workload**
+
    - Deploy the pre-approved workload (e.g., a Docker image).
    - Install the workload on the CVM’s encrypted disk.
 
 7. **Apply Additional Security Enhancements**
+
    - Harden access:
+
      - Disable password logins
      - Restrict or disable SSH and console access
      - Configure firewall rules and disable unneeded services and ports.
 
 8. **Finalize & Encrypt**
+
    - Power off the CVM.
    - Generate an encryption key.
    - Encrypt the root FS using LUKS.
 
 9. **Get the CVM measurement**
+
    - Boot up the CVM, the CVM kernel panics because it can't retrieve the key due to the measurement not registered yet. The InitApp prints measurements in the log.
    - Todo: It's much faster to calculate the measurement with this tool but it generates invalid result: https://github.com/virtee/sev-snp-measure
 
 10. **Update the resource policy or reference values to the Trustee**
+
     - Update the policy in Trustee with measurement.
     - Store the encryption key with Trustee with the namespace /keys/root/$CVM_ID.
 
 11. **Package the CVM Bundle**
+
     - All the files generated by CVM builder is packaged a gzipped tar.
 
 Runtime Boot-Up Process (CVM)
