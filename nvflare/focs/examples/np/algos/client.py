@@ -13,8 +13,8 @@
 # limitations under the License.
 import random
 
-from nvflare.free.api.app import ClientApp, ClientAppFactory
-from nvflare.free.api.ctx import Context
+from nvflare.focs.api.app import ClientApp, ClientAppFactory
+from nvflare.focs.api.ctx import Context
 
 
 class NPTrainer(ClientApp):

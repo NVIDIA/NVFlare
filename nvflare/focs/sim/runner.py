@@ -17,21 +17,20 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Union
 
 from nvflare.apis.signal import Signal
-from nvflare.free.api.app import SERVER_NAME, App, ClientApp, ClientAppFactory, ServerApp
-from nvflare.free.api.constants import ContextKey
-from nvflare.free.api.ctx import Context
-from nvflare.free.api.proxy import Proxy
-from nvflare.free.api.sim_backend import SimBackend
+from nvflare.focs.api.app import SERVER_NAME, App, ClientApp, ClientAppFactory, ServerApp
+from nvflare.focs.api.constants import ContextKey
+from nvflare.focs.api.proxy import Proxy
+from nvflare.focs.sim.backend import SimBackend
 
 
 class AppRunner:
 
     def _prepare_app_backends(self, app: App):
-        bes = {"": SimBackend(app, app, self.abort_signal, self.thread_executor)}
+        bes = {"": SimBackend(app, "", app, self.abort_signal, self.thread_executor)}
         targets = app.get_target_objects()
         if targets:
             for name, obj in targets:
-                bes[name] = SimBackend(app, obj, self.abort_signal, self.thread_executor)
+                bes[name] = SimBackend(app, name, obj, self.abort_signal, self.thread_executor)
         return bes
 
     def _prepare_app_proxy(self, app_name: str, app: App, caller_name: str, app_backends: dict):

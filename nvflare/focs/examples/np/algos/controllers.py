@@ -15,10 +15,10 @@ import random
 
 import numpy as np
 
-from nvflare.free.api.constants import ContextKey
-from nvflare.free.api.controller import Controller
-from nvflare.free.api.ctx import Context
-from nvflare.free.api.group import all_clients
+from nvflare.focs.api.constants import ContextKey
+from nvflare.focs.api.controller import Controller
+from nvflare.focs.api.ctx import Context
+from nvflare.focs.api.group import all_clients
 
 
 class NPFedAvgSequential(Controller):
