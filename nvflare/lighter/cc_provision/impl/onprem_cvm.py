@@ -17,10 +17,29 @@ import os
 
 from nvflare.lighter import utils
 from nvflare.lighter.cc_provision.cc_constants import CC_AUTHORIZERS_KEY
-from nvflare.lighter.constants import PropKey
+from nvflare.lighter.constants import PropKey, ProvFileName
 from nvflare.lighter.ctx import ProvisionContext
 from nvflare.lighter.entity import Entity, Project
 from nvflare.lighter.spec import Builder
+
+
+def _update_log_filenames(config, new_log_root: str = "/applog"):
+    handlers = config.get("handlers", {})
+    for handler_name, handler_cfg in handlers.items():
+        filename = handler_cfg.get("filename")
+        if filename:
+            handler_cfg["filename"] = os.path.join(new_log_root, filename)
+    return config
+
+
+def _change_log_dir(log_config_path: str):
+    with open(log_config_path, "r") as f:
+        config = json.load(f)
+
+    updated_config = _update_log_filenames(config)
+
+    with open(log_config_path, "w") as f:
+        json.dump(updated_config, f, indent=4)
 
 
 class OnPremCVMBuilder(Builder):
@@ -56,3 +75,5 @@ class OnPremCVMBuilder(Builder):
                 json.dumps({"components": [authorizer]}, indent=2),
                 "t",
             )
+        log_config_path = os.path.join(dest_dir, ProvFileName.LOG_CONFIG_DEFAULT)
+        _change_log_dir(log_config_path)
