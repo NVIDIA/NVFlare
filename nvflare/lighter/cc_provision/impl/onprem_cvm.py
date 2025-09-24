@@ -76,4 +76,9 @@ class OnPremCVMBuilder(Builder):
                 "t",
             )
         log_config_path = os.path.join(dest_dir, ProvFileName.LOG_CONFIG_DEFAULT)
+        if not os.path.exists(log_config_path):
+            raise RuntimeError(
+                "The OnPremCVMBuilder requires StaticFileBuilder to run first. "
+                "Please ensure that StaticFileBuilder is included in the 'builder' section of your configuration before OnPremCVMBuilder."
+            )
         _change_log_dir(log_config_path)

@@ -25,7 +25,7 @@ cc_issuers:
     path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
     token_expiration: 100 # seconds, needs to be less than check_frequency
     args:
-        snpguest_binary: "/host/bin/snpguest"
+      snpguest_binary: "/host/bin/snpguest"
   - id: gpu_authorizer
     path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
     token_expiration: 100 # seconds, needs to be less than check_frequency

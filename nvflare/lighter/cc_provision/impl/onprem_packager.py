@@ -152,8 +152,7 @@ class OnPremPackager(Packager):
             # Build CC image
             tar_file_path = self._build_cc_image(temp_cc_config_yaml)
         finally:
-            pass
-            # os.remove(temp_cc_config_yaml)
+            os.remove(temp_cc_config_yaml)
 
         if tar_file_path is None or not os.path.exists(tar_file_path):
             raise RuntimeError("CVM build failed")
