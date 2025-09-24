@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Union
 
 from nvflare.apis.signal import Signal
-from nvflare.focs.api.app import SERVER_NAME, App, ClientApp, ClientAppFactory, ServerApp
+from nvflare.focs.api.app import App, ClientApp, ClientAppFactory, ServerApp
 from nvflare.focs.api.constants import ContextKey
 from nvflare.focs.api.proxy import Proxy
 from nvflare.focs.sim.backend import SimBackend
@@ -26,27 +26,32 @@ from nvflare.focs.sim.backend import SimBackend
 class AppRunner:
 
     def _prepare_app_backends(self, app: App):
-        bes = {"": SimBackend(app, "", app, self.abort_signal, self.thread_executor)}
+        bes = {"": SimBackend(app, app, self.abort_signal, self.thread_executor)}
         targets = app.get_target_objects()
         if targets:
             for name, obj in targets:
-                bes[name] = SimBackend(app, name, obj, self.abort_signal, self.thread_executor)
+                bes[name] = SimBackend(app, obj, self.abort_signal, self.thread_executor)
         return bes
 
-    def _prepare_app_proxy(self, app_name: str, app: App, caller_name: str, app_backends: dict):
-        app_proxy = Proxy(app=app, target_name=app_name, backend=app_backends[""], caller_name=caller_name)
-        cos = app.get_target_objects()
-        if cos:
-            for name, obj in cos:
-                p = Proxy(app=app, target_name=name, backend=app_backends[name], caller_name=caller_name)
+    def _prepare_proxy(self, for_app: App, target_app: App, backends: dict):
+        app_proxy = Proxy(app=for_app, target_name=target_app.name, backend=backends[""], caller_name=for_app.name)
+        tos = target_app.get_target_objects()
+        if tos:
+            for name, obj in tos:
+                p = Proxy(
+                    app=for_app,
+                    target_name=f"{target_app.name}.{name}",
+                    backend=backends[name],
+                    caller_name=for_app.name,
+                )
                 setattr(app_proxy, name, p)
         return app_proxy
 
-    def _prepare_proxies(self, server_app: App, client_apps: dict, caller_name, backends: dict):
-        server_proxy = self._prepare_app_proxy(SERVER_NAME, server_app, caller_name, backends[SERVER_NAME])
+    def _prepare_proxies(self, for_app: App, server_app: App, client_apps: dict, backends: dict):
+        server_proxy = self._prepare_proxy(for_app, server_app, backends[server_app.name])
         client_proxies = []
         for name, app in client_apps.items():
-            p = self._prepare_app_proxy(name, app, caller_name, backends[name])
+            p = self._prepare_proxy(for_app, app, backends[name])
             client_proxies.append(p)
         return server_proxy, client_proxies
 
@@ -64,6 +69,7 @@ class AppRunner:
             raise ValueError(f"client_app must be ClientApp or ClientAppFactory but got {type(client_app)}")
 
         self.abort_signal = Signal()
+        server_app.name = "server"
         self.server_app = server_app
         self.client_app = client_app
         self.thread_executor = ThreadPoolExecutor(max_workers=max_workers)
@@ -79,18 +85,18 @@ class AppRunner:
             app.name = name
             client_apps[name] = app
 
-        backends = {SERVER_NAME: self._prepare_app_backends(server_app)}
+        backends = {server_app.name: self._prepare_app_backends(server_app)}
 
         for name, app in client_apps.items():
             backends[name] = self._prepare_app_backends(app)
 
         for name, app in client_apps.items():
-            server_proxy, client_proxies = self._prepare_proxies(server_app, client_apps, name, backends)
-            app.setup(name, server_proxy, client_proxies, self.abort_signal)
+            server_proxy, client_proxies = self._prepare_proxies(app, server_app, client_apps, backends)
+            app.setup(server_proxy, client_proxies, self.abort_signal)
 
         # prepare server
-        server_proxy, client_proxies = self._prepare_proxies(server_app, client_apps, SERVER_NAME, backends)
-        server_app.setup(SERVER_NAME, server_proxy, client_proxies, self.abort_signal)
+        server_proxy, client_proxies = self._prepare_proxies(server_app, server_app, client_apps, backends)
+        server_app.setup(server_proxy, client_proxies, self.abort_signal)
 
         self.client_apps = client_apps
 
@@ -105,10 +111,13 @@ class AppRunner:
             app.initialize(app.new_context(n, n))
 
         # run the server
+        if not self.server_app.strategies:
+            raise RuntimeError("server app does not have any strategies!")
+
         result = None
         for idx, strategy in enumerate(self.server_app.strategies):
             try:
-                print(f"Running Strategy #{idx+1}")
+                print(f"Running Strategy #{idx+1} - {type(strategy).__name__}")
                 self.server_app.current_strategy = strategy
                 result = strategy.execute(context=server_ctx)
                 server_ctx.set_prop(ContextKey.INPUT, result)
