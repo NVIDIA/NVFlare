@@ -18,6 +18,7 @@ from .constants import CollabMethodArgName
 class Proxy:
 
     def __init__(self, app, target_name, backend: Backend, caller_name: str):
+        """The Proxy represents a target in the App."""
         self.app = app
         self.target_name = target_name
         self.backend = backend

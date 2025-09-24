@@ -21,8 +21,6 @@ from .proxy import Proxy
 from .strategy import Strategy
 from .utils import check_context_support
 
-SERVER_NAME = "server"
-
 
 class App(ABC):
 
@@ -55,23 +53,22 @@ class App(ABC):
     def get_target_objects(self):
         return self._target_objs
 
-    def setup(self, name: str, server: Proxy, clients: List[Proxy], abort_signal):
-        self.name = name
+    def setup(self, server: Proxy, clients: List[Proxy], abort_signal):
         self.server = server
         self._abort_signal = abort_signal
 
         self.clients = clients
         self._me = None
-        if not name or name == "server":
+        if not self.name or self.name == "server":
             self._me = server
         else:
             for c in clients:
-                if c.name == name:
+                if c.name == self.name:
                     self._me = c
                     break
 
         if not self._me:
-            raise ValueError(f"cannot find site for {name}")
+            raise ValueError(f"cannot find site for {self.name}")
 
     def get_my_site(self) -> Proxy:
         return self._me
@@ -117,7 +114,7 @@ class App(ABC):
 
 class ServerApp(App):
 
-    def __init__(self, strategy: Strategy):
+    def __init__(self, strategy: Strategy = None):
         super().__init__()
         if not isinstance(strategy, Strategy):
             raise ValueError(f"strategy must be Strategy but got {type(strategy)}")
