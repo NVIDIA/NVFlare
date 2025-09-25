@@ -113,8 +113,8 @@ class TestSimulatorRunner:
         ],
     )
     def test_split_gpus_success(self, gpus, expected_gpus):
-        splitted_gpus = split_gpus(gpus)
-        assert splitted_gpus == expected_gpus
+        split_gpus = split_gpus(gpus)
+        assert split_gpus == expected_gpus
 
     @pytest.mark.parametrize(
         "gpus",
