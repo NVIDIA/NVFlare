@@ -115,10 +115,10 @@ class FlowerClientApplet(CLIApplet):
             cmd = f' client-name="{fl_ctx.get_identity_name()}"'
             partition_id = get_partition_id(fl_ctx)
             if partition_id != -1:
-                cmd += f" partition-id={int(partition_id)}"
+                cmd += f" partition-id={partition_id}"
             num_partitions = get_num_partitions(fl_ctx)
             if num_partitions != -1:
-                cmd += f" num-partitions={int(num_partitions)}"
+                cmd += f" num-partitions={num_partitions}"
             return f" --node-config '{cmd}'"
         except Exception as ex:
             self.log_error(fl_ctx, f"Exception getting node config from fl_ctx: {secure_format_exception(ex)}")
