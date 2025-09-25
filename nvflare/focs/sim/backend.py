@@ -37,24 +37,7 @@ class SimBackend(Backend):
         self.executor = thread_executor
 
     def _get_func(self, func_name):
-        func = getattr(self.target_obj, func_name, None)
-        if func:
-            return func
-
-        if isinstance(self.target_obj, App):
-            # see whether any targets have this method
-            default_target = self.target_obj.get_default_target()
-            if default_target:
-                func = getattr(default_target, func_name, None)
-                if func:
-                    return func
-
-            targets = self.target_obj.get_target_objects()
-            for _, obj in targets:
-                func = getattr(obj, func_name, None)
-                if func:
-                    return func
-        return None
+        return self.target_app.find_method(self.target_obj, func_name)
 
     def call_target(self, target_name: str, func_name: str, *args, **kwargs):
         func = self._get_func(func_name)
@@ -102,6 +85,10 @@ class SimBackend(Backend):
                 waiter.set()
 
     def call_target_with_resp(self, resp: Resp, target_name: str, func_name: str, *args, **kwargs):
+        # do not use the optional args - they are managed by the group
+        kwargs.pop(CollabMethodOptionName.BLOCKING, None)
+        kwargs.pop(CollabMethodOptionName.TIMEOUT, None)
+
         func = self._get_func(func_name)
         if not func:
             raise AttributeError(f"{target_name} does not have {func_name}")

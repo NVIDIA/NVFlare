@@ -11,22 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.focs.api.app import ServerApp
-from nvflare.focs.examples.np.algos.client import NPTrainer
-from nvflare.focs.examples.np.algos.strategies import NPCyclic
-from nvflare.focs.sim.runner import AppRunner
+SYNC_TASK_NAME = "sync"
+
+MSG_CHANNEL = "focs"
 
 
-def main():
-
-    runner = AppRunner(
-        server_app=ServerApp(strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)),
-        client_app=NPTrainer(delta=1.0),
-        num_clients=2,
-    )
-
-    runner.run()
+class SyncKey:
+    TARGET_OBJ_NAMES = "target_obj_names"
 
 
-if __name__ == "__main__":
-    main()
+class ObjectCallKey:
+    CALLER = "caller"
+    TARGET_NAME = "target_name"
+    METHOD_NAME = "method_name"
+    ARGS = "args"
+    KWARGS = "kwargs"
+    TIMEOUT = "timeout"
+    BLOCKING = "blocking"
+
+
+class CallReplyKey:
+    ERROR = "error"
+    RESULT = "result"

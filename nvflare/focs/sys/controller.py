@@ -13,6 +13,7 @@
 # limitations under the License.
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List
 
 from nvflare.apis.client import Client as ClientSite
@@ -25,7 +26,21 @@ from nvflare.focs.api.app import ServerApp
 from nvflare.focs.api.constants import ContextKey
 from nvflare.focs.api.proxy import Proxy
 from nvflare.focs.api.strategy import Strategy
-from nvflare.focs.sys.backend import SysBackend
+
+from .backend import SysBackend
+from .constants import SYNC_TASK_NAME, SyncKey
+from .utils import prepare_for_remote_call
+
+
+class _ClientInfo:
+
+    def __init__(self, target_obj_names):
+        """Information about a client. Reported by the client in the sync response.
+
+        Args:
+            target_obj_names: names of target objects on the client.
+        """
+        self.target_obj_names = target_obj_names
 
 
 class FocsController(Controller):
@@ -35,18 +50,18 @@ class FocsController(Controller):
         server_app_id: str,
         strategy_ids: List[str],
         server_target_obj_ids: Dict[str, str] = None,
-        client_target_obj_names: List[str] = None,
         sync_task_timeout=2,
+        max_call_threads=100,
     ):
         Controller.__init__(self)
         self.server_app_id = server_app_id  # component name
         self.strategy_ids = strategy_ids  # component names
         self.server_target_obj_ids = server_target_obj_ids  # component IDs
-        self.client_target_obj_names = client_target_obj_names  # callable names
         self.sync_task_timeout = sync_task_timeout
         self.server_app = None
-        self.client_statuses = {}  # client name => bool
-        self.ready = False
+        self.client_info = {}  # client name => _ClientInfo
+        self.cell = None
+        self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads)
 
         if not strategy_ids:
             raise ValueError(f"no strategies defined - there must be at least one strategy")
@@ -79,16 +94,26 @@ class FocsController(Controller):
 
         self.server_app = app
 
+        # register msg CB for processing object calls
+        self.cell = engine.get_cell()
+        prepare_for_remote_call(self.cell, self.server_app, self.logger)
+
     def _prepare_client_backend(self, client: ClientSite, abort_signal: Signal):
         return SysBackend(
+            caller=self.server_app.name,
+            cell=self.cell,
             target_fqcn=client.get_fqcn(),
             abort_signal=abort_signal,
+            thread_executor=self.thread_executor,
         )
 
     def _prepare_server_backend(self, abort_signal: Signal):
         return SysBackend(
+            caller=self.server_app.name,
+            cell=self.cell,
             target_fqcn="server",
             abort_signal=abort_signal,
+            thread_executor=self.thread_executor,
         )
 
     def _prepare_client_proxy(self, client: ClientSite, target_obj_names: List[str], abort_signal):
@@ -121,9 +146,15 @@ class FocsController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         # configure all sites
+        if self.server_target_obj_ids:
+            target_obj_names = list(self.server_target_obj_ids.keys())
+        else:
+            target_obj_names = []
+
+        task_data = Shareable({SyncKey.TARGET_OBJ_NAMES: target_obj_names})
         task = Task(
-            name="sync",
-            data=Shareable(),
+            name=SYNC_TASK_NAME,
+            data=task_data,
             timeout=self.sync_task_timeout,
             result_received_cb=self._process_sync_reply,
         )
@@ -132,8 +163,8 @@ class FocsController(Controller):
         all_clients = engine.get_clients()
         num_clients = len(all_clients)
         for c in all_clients:
-            assert isinstance(c, Client)
-            self.client_statuses[c.name] = False
+            assert isinstance(c, ClientSite)
+            self.client_info[c.name] = None
 
         start_time = time.time()
         self.broadcast_and_wait(
@@ -146,8 +177,8 @@ class FocsController(Controller):
         self.log_info(fl_ctx, f"client sync took {time_taken} seconds")
 
         failed_clients = []
-        for c, ok in self.client_statuses.items():
-            if not ok:
+        for c, info in self.client_info.items():
+            if not info:
                 failed_clients.append(c)
 
         if failed_clients:
@@ -157,19 +188,20 @@ class FocsController(Controller):
             )
             return
 
-        self.log_info(fl_ctx, f"successfully configured clients {self.client_statuses.keys()}")
-        self.ready = True
+        self.log_info(fl_ctx, f"successfully synced clients {self.client_info.keys()}")
 
         # prepare proxies and backends
         server_proxy = self._prepare_server_proxy(abort_signal)
         client_proxies = []
         for c in all_clients:
-            client_proxies.append(self._prepare_client_proxy(c, self.client_target_obj_names, abort_signal))
+            info = self.client_info[c.name]
+            assert isinstance(info, _ClientInfo)
+            client_proxies.append(self._prepare_client_proxy(c, info.target_obj_names, abort_signal))
 
         self.server_app.setup(server_proxy, client_proxies, abort_signal)
 
         server_ctx = self.server_app.new_context(caller=self.server_app.name, callee=self.server_app.name)
-        print("initializing server app")
+        self.log_info(fl_ctx, "initializing server app")
         self.server_app.initialize(server_ctx)
 
         for idx, strategy in enumerate(self.server_app.strategies):
@@ -177,7 +209,7 @@ class FocsController(Controller):
                 break
 
             try:
-                print(f"Running Strategy #{idx + 1} - {type(strategy).__name__}")
+                self.log_info(fl_ctx, f"Running Strategy #{idx + 1} - {type(strategy).__name__}")
                 self.server_app.current_strategy = strategy
                 result = strategy.execute(context=server_ctx)
                 server_ctx.set_prop(ContextKey.INPUT, result)
@@ -192,7 +224,18 @@ class FocsController(Controller):
         rc = result.get_return_code()
         if rc == ReturnCode.OK:
             self.log_info(fl_ctx, f"successfully synced client {client_name}")
-            self.client_statuses[client_name] = True
+            target_obj_names = result.get(SyncKey.TARGET_OBJ_NAMES)
+            if not target_obj_names:
+                target_obj_names = []
+            self.client_info[client_name] = _ClientInfo(target_obj_names)
         else:
             self.log_error(fl_ctx, f"client {client_task.client.name} failed to sync: {rc}")
-            self.client_statuses[client_name] = False
+            self.client_info[client_name] = None
+
+    def process_result_of_unknown_task(
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+    ):
+        pass
+
+    def stop_controller(self, fl_ctx: FLContext):
+        self.thread_executor.shutdown(wait=False, cancel_futures=True)

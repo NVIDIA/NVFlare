@@ -73,6 +73,26 @@ class App(ABC):
     def get_my_site(self) -> Proxy:
         return self._me
 
+    def find_method(self, target_obj, method_name):
+        m = getattr(target_obj, method_name, None)
+        if m:
+            return m
+
+        if isinstance(target_obj, App):
+            # see whether any targets have this method
+            default_target = self.get_default_target()
+            if default_target:
+                m = getattr(default_target, method_name, None)
+                if m:
+                    return m
+
+            targets = self.get_target_objects()
+            for _, obj in targets:
+                m = getattr(obj, method_name, None)
+                if m:
+                    return m
+        return None
+
     def initialize_app(self, context: Context):
         pass
 
