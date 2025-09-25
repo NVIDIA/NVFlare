@@ -124,7 +124,7 @@ class Cell(StreamCell):
     def update_fobs_context(self, props: dict):
         self.core_cell.update_fobs_context(props)
 
-    def get_fobs_context(self, props: dict = None):
+    def get_fobs_context(self, props: Optional[dict] = None):
         """Return a new copy of the fobs context. If props is specified, they will be set into the context.
 
         Returns: a new copy of the fobs context

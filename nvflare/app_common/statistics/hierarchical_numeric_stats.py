@@ -517,7 +517,7 @@ def get_hierarchical_stddevs(global_metrics: dict) -> dict:
     return global_metrics
 
 
-def get_hierarchical_levels(data: dict, level: int = 0, levels_dict: dict = None) -> dict:
+def get_hierarchical_levels(data: dict, level: int = 0, levels_dict: Optional[dict] = None) -> dict:
     """Calculate number of hierarchical levels from the given hierarchy config.
 
     Args:

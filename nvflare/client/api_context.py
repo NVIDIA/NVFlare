@@ -34,7 +34,7 @@ class ClientAPIType(Enum):
 
 
 class APIContext:
-    def __init__(self, rank: Optional[str] = None, config_file: str = None):
+    def __init__(self, rank: Optional[str] = None, config_file: Optional[str] = None):
         self.rank = rank
         self.config_file = config_file if config_file else DEFAULT_CONFIG
 

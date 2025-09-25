@@ -23,7 +23,7 @@ from nvflare.app_common.widgets.streaming import AnalyticsSender
 
 
 class LogWriter(FLComponent, ABC):
-    def __init__(self, event_type: str = ANALYTIC_EVENT_TYPE, metrics_sender_id: str = None):
+    def __init__(self, event_type: str = ANALYTIC_EVENT_TYPE, metrics_sender_id: Optional[str] = None):
         super().__init__()
         self.event_type = event_type
         self.metrics_sender_id = metrics_sender_id

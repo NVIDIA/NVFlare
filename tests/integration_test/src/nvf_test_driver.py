@@ -15,6 +15,7 @@
 import logging
 import os
 import time
+from typing import Optional
 
 from nvflare.apis.job_def import RunStatus
 from nvflare.fuel.hci.client.api_status import APIStatus
@@ -90,7 +91,7 @@ def _check_run_state(state, expected_state):
 
 def _check_event_trigger(
     event_trigger,
-    string_to_check: str = None,
+    string_to_check: Optional[str] = None,
     run_state: dict = None,
 ) -> bool:
     """check if a run state trigger an event trigger."""

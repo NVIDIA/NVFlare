@@ -32,7 +32,7 @@ class PEFTmodel(torch.nn.Module, FLComponent):
         self,
         config_path: str = "custom/megatron_gpt_peft_tuning_config.yaml",
         restore_from_path: str = "/models/megatron_gpt_345m.nemo",
-        peft_restore_from_path: str = None,
+        peft_restore_from_path: Optional[str] = None,
     ):
         """
         Initializes the PEFT model or full model on the server.

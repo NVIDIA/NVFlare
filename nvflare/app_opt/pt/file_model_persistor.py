@@ -41,7 +41,7 @@ class PTFileModelPersistor(ModelPersistor):
         global_model_file_name=DefaultCheckpointFileName.GLOBAL_MODEL,
         best_global_model_file_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
         source_ckpt_file_full_name=None,
-        filter_id: str = None,
+        filter_id: Optional[str] = None,
         load_weights_only: bool = False,
         allow_numpy_conversion: bool = True,
     ):

@@ -63,7 +63,7 @@ class NVFlareStatsHandler(LogWriter):
         state_attributes: Sequence[str] | None = None,
         state_attributes_type: AnalyticsDataType | None = None,
         tag_name: str = DEFAULT_TAG,
-        metrics_sender_id: str = None,
+        metrics_sender_id: Optional[str] = None,
     ) -> None:
         """
         Args:

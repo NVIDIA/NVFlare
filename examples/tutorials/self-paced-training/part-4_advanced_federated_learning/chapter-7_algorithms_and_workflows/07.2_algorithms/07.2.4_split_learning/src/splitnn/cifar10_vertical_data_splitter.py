@@ -45,7 +45,7 @@ def get_site_class_summary(train_label, site_idx):
 
 
 class Cifar10VerticalDataSplitter(FLComponent):
-    def __init__(self, split_dir: str = None, overlap: int = 10_000, seed: int = 0):
+    def __init__(self, split_dir: Optional[str] = None, overlap: int = 10_000, seed: int = 0):
         super().__init__()
         self.split_dir = split_dir
         self.overlap = overlap

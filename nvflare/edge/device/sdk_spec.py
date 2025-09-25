@@ -33,7 +33,7 @@ class FlareRunner:
         job_timeout: float,
         in_filters: List[Filter] = None,
         out_filters: List[Filter] = None,
-        resolver_registry: dict = None,
+        resolver_registry: Optional[dict] = None,
     ):
         """Constructor of FlareRunner
 

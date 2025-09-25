@@ -46,7 +46,7 @@ class SimpleSwarmLearningRecipe(BaseSwarmLearningRecipe):
         initial_model,
         num_rounds: int,
         train_script: str,
-        train_args: dict = None,
+        train_args: Optional[dict] = None,
         do_cross_site_eval: bool = False,
         cross_site_eval_timeout: float = 300,
     ):

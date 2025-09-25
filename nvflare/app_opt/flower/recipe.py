@@ -72,7 +72,7 @@ class FlowerRecipe(Recipe):
         per_msg_timeout=10.0,
         tx_timeout=100.0,
         client_shutdown_timeout=5.0,
-        extra_env: dict = None,
+        extra_env: Optional[dict] = None,
     ):
         """Initialize the FlowerRecipe.
 

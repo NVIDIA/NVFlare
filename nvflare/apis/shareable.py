@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+from typing import Optional
 
 from ..fuel.utils import fobs
 from .fl_constant import ReservedKey, ReturnCode, ServerCommandKey
@@ -44,7 +45,7 @@ class Shareable(dict):
     It is recommended that keys are strings. Values must be serializable.
     """
 
-    def __init__(self, data: dict = None):
+    def __init__(self, data: Optional[dict] = None):
         """Init the Shareable."""
         super().__init__()
         if data:

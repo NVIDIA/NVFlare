@@ -46,7 +46,7 @@ def get_num_partitions(fl_ctx: FLContext):
 
 
 class FlowerClientApplet(CLIApplet):
-    def __init__(self, extra_env: dict = None):
+    def __init__(self, extra_env: Optional[dict] = None):
         """Constructor of FlowerClientApplet, which extends CLIApplet."""
         CLIApplet.__init__(self, stop_method="term")
         self.extra_env = extra_env

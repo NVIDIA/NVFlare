@@ -24,7 +24,7 @@ from .object_retriever import ObjectRetriever
 class ContainerRetriever(ObjectRetriever):
     def __init__(
         self,
-        topic: str = None,
+        topic: Optional[str] = None,
         stream_msg_optional=False,
         stream_msg_secure=False,
         entry_timeout=None,

@@ -18,9 +18,9 @@ class ResultResponse(BaseModel):
     def __init__(
         self,
         status: str,
-        message: str = None,
-        task_id: str = None,
-        task_name: str = None,
+        message: Optional[str] = None,
+        task_id: Optional[str] = None,
+        task_name: Optional[str] = None,
         **kwargs,
     ):
         super().__init__()

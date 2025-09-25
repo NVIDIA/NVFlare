@@ -27,7 +27,7 @@ class FileRetriever(ObjectRetriever):
     def __init__(
         self,
         source_dir: str,
-        topic: str = None,
+        topic: Optional[str] = None,
         stream_msg_optional=False,
         stream_msg_secure=False,
         dest_dir=None,

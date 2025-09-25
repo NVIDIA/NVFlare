@@ -34,7 +34,7 @@ class MonaiBundlePersistor(PTFileModelPersistor):
         global_model_file_name=DefaultCheckpointFileName.GLOBAL_MODEL,
         best_global_model_file_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
         source_ckpt_filename=None,
-        filter_id: str = None,
+        filter_id: Optional[str] = None,
     ):
         """Persist pytorch-based from MONAI bundle configuration.
 

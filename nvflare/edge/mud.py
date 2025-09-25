@@ -203,7 +203,7 @@ class BaseState:
 
 class Device:
 
-    def __init__(self, device_id: str, client_name: str, last_alive_time: float, props: Dict = None):
+    def __init__(self, device_id: str, client_name: str, last_alive_time: float, props: Optional[dict] = None):
         """Device object keeps device information to be communicated to the Server.
 
         Args:
