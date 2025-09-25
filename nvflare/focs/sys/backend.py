@@ -12,17 +12,80 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.focs.api.backend import Backend
+from nvflare.focs.api.constants import CollabMethodOptionName
 from nvflare.focs.api.resp import Resp
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.utils import new_cell_message
+from nvflare.fuel.f3.message import Message
+
+from .constants import MSG_CHANNEL, CallReplyKey, ObjectCallKey
 
 
 class SysBackend(Backend):
 
-    def __init__(self, target_fqcn, abort_signal):
+    def __init__(self, caller, cell, target_fqcn, abort_signal, thread_executor):
         Backend.__init__(self, abort_signal)
+        self.caller = caller
+        self.cell = cell
         self.target_fqcn = target_fqcn
+        self.thread_executor = thread_executor
 
     def call_target(self, target_name: str, func_name: str, *args, **kwargs):
-        pass
+        blocking = kwargs.pop(CollabMethodOptionName.BLOCKING, True)
+        payload = {
+            ObjectCallKey.CALLER: self.caller,
+            ObjectCallKey.TARGET_NAME: target_name,
+            ObjectCallKey.METHOD_NAME: func_name,
+            ObjectCallKey.ARGS: args,
+            ObjectCallKey.KWARGS: kwargs,
+        }
+        request = new_cell_message({}, payload)
+
+        if blocking:
+            timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, None)
+
+            reply = self.cell.send_one_request(
+                channel=MSG_CHANNEL,
+                target=self.target_fqcn,
+                topic="call",
+                request=request,
+                timeout=timeout,
+                secure=False,
+                optional=False,
+                abort_signal=self.abort_signal,
+            )
+            assert isinstance(reply, Message)
+            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+            if rc == ReturnCode.TIMEOUT:
+                raise TimeoutError(f"function {func_name} timed out after {timeout} seconds")
+            elif rc != ReturnCode.OK:
+                raise RuntimeError(f"function {func_name} failed: {rc}")
+
+            if not isinstance(reply.payload, dict):
+                raise RuntimeError(f"function {func_name} failed: reply must be dict but got {type(reply.payload)}")
+
+            error = reply.payload.get(CallReplyKey.ERROR)
+            if error:
+                raise RuntimeError(f"function {func_name} failed: {error}")
+
+            return reply.payload.get(CallReplyKey.RESULT)
+        else:
+            # fire and forget
+            self.cell.fire_and_forget(
+                channel=MSG_CHANNEL,
+                topic="call",
+                targets=self.target_fqcn,
+                message=request,
+                secure=False,
+                optional=False,
+            )
 
     def call_target_with_resp(self, resp: Resp, target_name: str, func_name: str, *args, **kwargs):
-        pass
+        self.thread_executor.submit(self._run_func, resp, target_name, args, kwargs)
+
+    def _run_func(self, resp: Resp, target_name: str, func_name: str, *args, **kwargs):
+        try:
+            result = self.call_target(target_name, func_name, *args, **kwargs)
+            resp.set_result(result)
+        except Exception as ex:
+            resp.set_exception(ex)

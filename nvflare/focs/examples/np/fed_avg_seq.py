@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import numpy as np
-
 from nvflare.focs.api.app import ServerApp
 from nvflare.focs.examples.np.algos.client import TrainerFactory
 from nvflare.focs.examples.np.algos.strategies import NPFedAvgSequential
@@ -25,7 +23,7 @@ def main():
     server_app = ServerApp(
         strategy=NPFedAvgSequential(
             num_rounds=2,
-            initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32),
+            initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
         )
     )
     server_app.add_target_object("metric_receiver", MetricReceiver())

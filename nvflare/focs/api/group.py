@@ -18,7 +18,7 @@ from typing import List
 from nvflare.apis.fl_exception import RunAborted
 from nvflare.apis.signal import Signal
 
-from .constants import CollabMethodArgName
+from .constants import CollabMethodArgName, CollabMethodOptionName
 from .ctx import Context
 from .proxy import Proxy
 from .resp import Resp
@@ -65,6 +65,10 @@ class Group:
                 kwargs_copy = copy.copy(kwargs)
                 ctx = self._app.new_context(p.caller_name, p.name)
                 kwargs_copy[CollabMethodArgName.CONTEXT] = ctx
+
+                # set the optional args to help backend decide how to call
+                kwargs_copy[CollabMethodOptionName.TIMEOUT] = self._timeout
+                kwargs_copy[CollabMethodOptionName.BLOCKING] = self._blocking
                 resp = Resp(self._process_resp_cb, self._cb_kwargs, ctx)
                 resps[p.name] = resp
                 p.backend.call_target_with_resp(resp, p.name, func_name, *args, **kwargs_copy)

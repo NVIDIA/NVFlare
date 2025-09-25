@@ -20,6 +20,8 @@ from nvflare.focs.api.ctx import Context
 from nvflare.focs.api.group import all_clients
 from nvflare.focs.api.strategy import Strategy
 
+from .utils import parse_array_def
+
 
 class NPFedAvgSequential(Strategy):
 
@@ -27,7 +29,7 @@ class NPFedAvgSequential(Strategy):
         Strategy.__init__(self)
         self.name = "NPFedAvgSequential"
         self.num_rounds = num_rounds
-        self.initial_model = initial_model
+        self.initial_model = parse_array_def(initial_model)
 
     def execute(self, context: Context):
         print(f"[{self.name}] Start training for {self.num_rounds} rounds")
@@ -51,7 +53,7 @@ class NPFedAvgParallel(Strategy):
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
-        self.initial_model = initial_model
+        self.initial_model = parse_array_def(initial_model)
         self.name = "NPFedAvgParallel"
 
     def execute(self, context: Context):
@@ -91,7 +93,7 @@ class NPFedAvgInTime(Strategy):
 
     def __init__(self, initial_model, num_rounds=10, timeout=2.0):
         self.num_rounds = num_rounds
-        self.initial_model = initial_model
+        self.initial_model = parse_array_def(initial_model)
         self.timeout = timeout
         self.name = "NPFedAvgInTime"
 
@@ -137,7 +139,7 @@ class NPCyclic(Strategy):
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
-        self.initial_model = initial_model
+        self.initial_model = parse_array_def(initial_model)
 
     def execute(self, context: Context):
         current_model = context.get_prop(ContextKey.INPUT, self.initial_model)

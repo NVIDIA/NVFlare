@@ -14,12 +14,11 @@
 import random
 import threading
 
-import numpy as np
-
 from nvflare.focs.api.app import ClientApp, ServerApp
 from nvflare.focs.api.ctx import Context
 from nvflare.focs.api.group import all_clients
 from nvflare.focs.api.strategy import Strategy
+from nvflare.focs.examples.np.algos.utils import parse_array_def
 from nvflare.focs.sim.runner import AppRunner
 
 
@@ -27,7 +26,7 @@ class NPSwarm(Strategy):
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
-        self.initial_model = initial_model
+        self.initial_model = parse_array_def(initial_model)
         self.waiter = threading.Event()
 
     def execute(self, context: Context):
@@ -90,9 +89,7 @@ class NPSwarmClient(ClientApp):
 def main():
 
     runner = AppRunner(
-        server_app=ServerApp(
-            strategy=NPSwarm(initial_model=np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32), num_rounds=5)
-        ),
+        server_app=ServerApp(strategy=NPSwarm(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=5)),
         client_app=NPSwarmClient(delta=1.0),
         num_clients=3,
     )
