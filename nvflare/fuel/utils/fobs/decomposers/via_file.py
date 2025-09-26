@@ -470,7 +470,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         item_id = data
         fobs_ctx = manager.fobs_ctx
         items = fobs_ctx.get(self.items_key)
-        self.logger.debug(f"trying to get item for {item_id=} from {items=}")
+        self.logger.debug(f"trying to get item for {item_id=} from {type(items)=}")
         item = items.get(item_id)
         self.logger.debug(f"{tid=} found item {item_id}: {type(item)}")
         if item is None:

@@ -259,7 +259,7 @@ class ClientRunner(TBI):
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
         fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=True)
-        fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=True)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task.task_id, private=True, sticky=False)
 
         server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
