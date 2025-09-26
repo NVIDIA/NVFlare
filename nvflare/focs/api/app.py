@@ -17,6 +17,7 @@ from typing import List
 
 from .constants import CollabMethodArgName
 from .ctx import Context
+from .dec import collab, is_collab
 from .proxy import Proxy
 from .strategy import Strategy
 from .utils import check_context_support
@@ -93,6 +94,12 @@ class App(ABC):
                     return m
         return None
 
+    def find_collab_method(self, target_obj, method_name):
+        m = self.find_method(target_obj, method_name)
+        if m and is_collab(m):
+            return m
+        return None
+
     def initialize_app(self, context: Context):
         pass
 
@@ -122,6 +129,7 @@ class App(ABC):
             self._event_handlers[event_type] = handlers
         handlers.append((handler, handler_kwargs))
 
+    @collab
     def fire_event(self, event_type: str, data, context: Context):
         for e, handlers in self._event_handlers.items():
             if e == event_type:

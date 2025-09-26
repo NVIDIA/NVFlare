@@ -73,7 +73,7 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     if not target_obj:
         return _error_reply(f"no object named '{target_name}'", logger)
 
-    m = app.find_method(target_obj, method_name)
+    m = app.find_collab_method(target_obj, method_name)
     if not m:
         return _error_reply(f"no method named '{method_name}'", logger)
 
