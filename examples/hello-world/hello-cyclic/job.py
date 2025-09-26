@@ -28,7 +28,7 @@ if __name__ == "__main__":
         train_script=train_script,
     )
 
-    env = SimEnv(num_clients=n_clients, log_config="full")
+    env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env=env)
     print()
     print("Result can be found in :", run.get_result())
