@@ -16,6 +16,7 @@ import threading
 
 from nvflare.focs.api.app import ClientApp, ServerApp
 from nvflare.focs.api.ctx import Context
+from nvflare.focs.api.dec import collab
 from nvflare.focs.api.group import all_clients
 from nvflare.focs.api.strategy import Strategy
 from nvflare.focs.examples.np.algos.utils import parse_array_def
@@ -36,6 +37,7 @@ class NPSwarm(Strategy):
         start_client.start(self.num_rounds, self.initial_model)
         self.waiter.wait()
 
+    @collab
     def notify_done(self, context: Context):
         print(f"[{context.callee}]: received DONE from client: {context.caller}")
         self.waiter.set()
@@ -48,6 +50,7 @@ class NPSwarmClient(ClientApp):
         self.delta = delta
         self.register_event_handler("final_model", self._accept_final_model)
 
+    @collab
     def train(self, weights, current_round, context: Context):
         print(f"[{context.callee}]: train asked by {context.caller}: {current_round=}")
         return weights + self.delta
@@ -60,6 +63,7 @@ class NPSwarmClient(ClientApp):
             total += results[i]
         return total / len(results)
 
+    @collab
     def swarm_learn(self, num_rounds, model, current_round, context: Context):
         print(f"[{context.callee}]: swarm learn asked by {context.caller}: {num_rounds=} {current_round=} {model=}")
         new_model = self.sag(model, current_round, context)
@@ -77,6 +81,7 @@ class NPSwarmClient(ClientApp):
         next_client = self.clients[next_client_idx]
         next_client.swarm_learn(num_rounds, new_model, next_round, blocking=False)
 
+    @collab
     def start(self, num_rounds, initial_model, context: Context):
         self.swarm_learn(num_rounds, initial_model, 0, context)
 

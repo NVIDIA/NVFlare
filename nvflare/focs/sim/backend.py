@@ -16,8 +16,8 @@ import threading
 from nvflare.focs.api.app import App
 from nvflare.focs.api.backend import Backend
 from nvflare.focs.api.constants import CollabMethodArgName, CollabMethodOptionName
+from nvflare.focs.api.dec import adjust_kwargs
 from nvflare.focs.api.resp import Resp
-from nvflare.focs.api.utils import check_context_support
 
 
 class _Waiter(threading.Event):
@@ -37,15 +37,15 @@ class SimBackend(Backend):
         self.executor = thread_executor
 
     def _get_func(self, func_name):
-        return self.target_app.find_method(self.target_obj, func_name)
+        return self.target_app.find_collab_method(self.target_obj, func_name)
 
     def call_target(self, target_name: str, func_name: str, *args, **kwargs):
         func = self._get_func(func_name)
         if not func:
-            raise AttributeError(f"{target_name} does not have {func_name}")
+            raise AttributeError(f"{target_name} does not have method '{func_name}' or it is not collab")
 
         if not callable(func):
-            raise AttributeError(f"the {func_name} of {target_name} is not callable")
+            raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
         blocking = kwargs.pop(CollabMethodOptionName.BLOCKING, True)
         timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, None)
@@ -69,7 +69,7 @@ class SimBackend(Backend):
         if ctx:
             target_ctx = self.target_app.new_context(ctx.caller, ctx.callee)
             kwargs[CollabMethodArgName.CONTEXT] = target_ctx
-        check_context_support(func, kwargs)
+        adjust_kwargs(func, kwargs)
 
     def _run_func(self, waiter: _Waiter, func, args, kwargs):
         try:
@@ -91,10 +91,10 @@ class SimBackend(Backend):
 
         func = self._get_func(func_name)
         if not func:
-            raise AttributeError(f"{target_name} does not have {func_name}")
+            raise AttributeError(f"{target_name} does not have method '{func_name}' or it is not collab")
 
         if not callable(func):
-            raise AttributeError(f"the {func_name} of {target_name} is not callable")
+            raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
         self.executor.submit(self._run_func_with_resp, resp, func, args, kwargs)
 

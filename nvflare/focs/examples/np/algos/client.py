@@ -15,6 +15,7 @@ import random
 
 from nvflare.focs.api.app import ClientApp, ClientAppFactory
 from nvflare.focs.api.ctx import Context
+from nvflare.focs.api.dec import collab
 
 
 class NPTrainer(ClientApp):
@@ -23,6 +24,7 @@ class NPTrainer(ClientApp):
         ClientApp.__init__(self)
         self.delta = delta
 
+    @collab
     def train(self, r, weights, context: Context):
         if context.is_aborted():
             print("training aborted")
@@ -36,6 +38,7 @@ class NPTrainer(ClientApp):
         self.server.fire_event("metrics", {"round": r, "y": 10}, blocking=False)
         return weights + self.delta
 
+    @collab
     def evaluate(self, model, context: Context):
         print(f"[{self.name}] called by {context.caller}: client {context.callee} to evaluate")
         return random.random()

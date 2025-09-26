@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.focs.api.ctx import Context
+from nvflare.focs.api.dec import collab
 
 
 class MetricReceiver:
 
+    @collab
     def accept_metric(self, metrics: dict, context: Context):
         print(f"[{context.callee}] received metric report from {context.caller}: {metrics}")
 
