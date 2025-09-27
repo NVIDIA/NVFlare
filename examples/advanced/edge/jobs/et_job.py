@@ -15,9 +15,9 @@
 import argparse
 import os
 
-from nvflare.edge.tools.et_recipe import (
+from nvflare.edge.tools.et_fed_buff_recipe import (
     DeviceManagerConfig,
-    ETRecipe,
+    ETFedBuffRecipe,
     EvaluatorConfig,
     ModelManagerConfig,
     SimulationConfig,
@@ -33,7 +33,6 @@ parser.add_argument("--total_num_of_devices", type=int, default=4)
 parser.add_argument("--num_of_simulated_devices_on_each_leaf", type=int, default=1)
 args = parser.parse_args()
 
-# TODO: work with tree_prov.py changes to make more general
 prod_dir = os.path.join(args.workspace_dir, args.project_name, "prod_00")
 admin_startup_kit_dir = os.path.join(prod_dir, "admin@nvidia.com")
 total_num_of_devices = args.total_num_of_devices
@@ -81,7 +80,7 @@ elif args.dataset == "xor":
     evaluator_config = None
 
 
-recipe = ETRecipe(
+recipe = ETFedBuffRecipe(
     job_name=job_name,
     device_model=device_model,
     input_shape=input_shape,
@@ -89,7 +88,7 @@ recipe = ETRecipe(
     model_manager_config=ModelManagerConfig(
         # max_num_active_model_versions=1,
         max_model_version=3,
-        update_timeout=1000.0,
+        update_timeout=1000,
         num_updates_for_model=total_num_of_devices,
         # max_model_history=1,
     ),
@@ -106,10 +105,16 @@ recipe = ETRecipe(
         if num_of_simulated_devices_on_each_leaf > 0
         else None
     ),
-    device_training_params={"epoch": 3, "lr": 0.0001},
+    device_training_params={"epoch": 3, "lr": 0.0001, "batch_size": batch_size},
 )
 if args.export_job:
-    recipe.export(job_dir=os.path.join(admin_startup_kit_dir, "transfer"))
+    output_dir = os.path.join(admin_startup_kit_dir, "transfer")
+    print(f"Exporting recipe to {output_dir}")
+    recipe.export(job_dir=output_dir)
 else:
-    env = ProdEnv(startup_kit_dir=admin_startup_kit_dir)
-    recipe.execute(env)
+    env = ProdEnv(startup_kit_location=admin_startup_kit_dir, username="admin@nvidia.com")
+    run = recipe.execute(env)
+    print()
+    print("Result can be found in :", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()

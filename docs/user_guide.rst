@@ -6,23 +6,29 @@ User Guide
 
 This user guide provides instructions on how to utilize various features in NVIDIA FLARE.
 
-For information about operating an FL system, see :ref:`Real-World Federated Learning <real_world_fl>`.
-
 For a more in-depth exploration of the capabilities offered by apps with custom workflows and algorithms,
 please refer to the :ref:`programming_guide`.
 
-.. toctree::
-   :maxdepth: 1
+**Integration Developers**:  Developers who works on building Platform powered by NVIDIA FLARE. refer to :ref:`programming_guide`
+for APIs needed for integration
 
-   user_guide/nvflare_cli
-   user_guide/configurations
-   user_guide/dashboard_api
-   user_guide/dashboard_ui
-   user_guide/nvflare_security
-   user_guide/docker_compose
-   user_guide/helm_chart
-   user_guide/confidential_computing
-   user_guide/hierarchy_unification_bridge
-   user_guide/federated_xgboost
-   user_guide/flower_integration
-   user_guide/monitoring
+**Data Scientists**: Users that focused on federated learning applications.
+They are less interested in develop custom algorithms or workflow patterns, applying the existing FL algorithm to real-world applications is their focus.
+please check :ref:`data_scientist_guide`
+
+**Researchers**: Users who focused on FL research, needs to experiments and customize both client and server code to develop new workflow.
+please check :ref:`researcher_guide`
+
+.. toctree::
+   :maxdepth: 2
+
+   user_guide/core_concepts/application
+   user_guide/core_concepts/job
+   user_guide/core_concepts/workspace
+   user_guide/admin_guide/index
+   user_guide/data_scientist_guide/index
+   user_guide/researcher_guide/index
+   user_guide/nvflare_cli/nvflare_cli
+   user_guide/confidential_computing/index
+   user_guide/edge/index
+

@@ -11,42 +11,87 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os.path
-import tempfile
+from typing import Optional
 
-from nvflare.fuel.flare_api.flare_api import new_insecure_session
+from pydantic import BaseModel, PositiveFloat, model_validator
+
 from nvflare.job_config.api import FedJob
+from nvflare.recipe.spec import ExecEnv
 
-from .spec import ExecEnv
+from .session_mgr import SessionManager
+
+DEFAULT_ADMIN_USER = "admin@nvidia.com"
+
+
+# Internal — not part of the public API
+class _ProdEnvValidator(BaseModel):
+    startup_kit_location: str
+    login_timeout: PositiveFloat = 5.0
+    username: str = DEFAULT_ADMIN_USER
+
+    @model_validator(mode="after")
+    def check_startup_kit_location_exists(self) -> "_ProdEnvValidator":
+        if not os.path.exists(self.startup_kit_location):
+            raise ValueError(f"startup_kit_location path does not exist: {self.startup_kit_location}")
+        return self
 
 
 class ProdEnv(ExecEnv):
-
     def __init__(
         self,
-        startup_kit_dir: str,
+        startup_kit_location: str,
         login_timeout: float = 5.0,
-        monitor_job_duration: int = None,
+        username: str = DEFAULT_ADMIN_USER,
+        extra: dict = None,
     ):
-        self.startup_kit_dir = startup_kit_dir
-        self.login_timeout = login_timeout
-        self.monitor_job_duration = monitor_job_duration
+        """Production execution environment for submitting and monitoring NVFlare jobs.
+
+        This environment uses the startup kit of an NVFlare deployment to submit jobs via the Flare API.
+
+        Args:
+            startup_kit_location (str): Path to the admin's startup kit directory.
+            login_timeout (float): Timeout (in seconds) for logging into the Flare API session. Must be > 0.
+            username (str): Username to log in with.
+            extra: extra env info.
+        """
+        super().__init__(extra)
+
+        v = _ProdEnvValidator(
+            startup_kit_location=startup_kit_location,
+            login_timeout=login_timeout,
+            username=username,
+        )
+
+        self.startup_kit_location = v.startup_kit_location
+        self.login_timeout = v.login_timeout
+        self.username = v.username
+        self._session_manager = None  # Lazy initialization
+
+    def get_job_status(self, job_id: str) -> Optional[str]:
+        return self._get_session_manager().get_job_status(job_id)
+
+    def abort_job(self, job_id: str) -> None:
+        self._get_session_manager().abort_job(job_id)
+
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+        return self._get_session_manager().get_job_result(job_id, timeout)
 
     def deploy(self, job: FedJob):
-        sess = new_insecure_session(startup_kit_location=self.startup_kit_dir, timeout=self.login_timeout)
-
+        """Deploy a job using SessionManager."""
         try:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                job.export_job(temp_dir)
-                job_path = os.path.join(temp_dir, job.name)
-                job_id = sess.submit_job(job_path)
-                print(f"submitted job: {job_id}")
+            return self._get_session_manager().submit_job(job)
+        except Exception as e:
+            raise RuntimeError(f"Failed to submit job via Flare API: {e}")
 
-            # monitor job until done.
-            if self.monitor_job_duration:
-                rc = sess.monitor_job(job_id, timeout=self.monitor_job_duration)
-                print(f"job monitor done: {rc=}")
-
-            return job_id
-        finally:
-            sess.close()
+    def _get_session_manager(self):
+        """Get or create SessionManager with lazy initialization."""
+        if self._session_manager is None:
+            session_params = {
+                "username": self.username,
+                "startup_kit_location": self.startup_kit_location,
+                "timeout": self.login_timeout,
+            }
+            self._session_manager = SessionManager(session_params)
+        return self._session_manager

@@ -33,7 +33,7 @@ Welcome to NVIDIA FLARE! This guide will help you get started, explore key featu
 5. Research Topics
 ====================
 - Deepen your understanding with NVIDIA FLARE's research resources:
-  - **[NVIDIA FLARE Research Algorithms & Implementations](https://github.com/NVIDIA/NVFlare/tree/main/research)**
+  - `NVIDIA FLARE Research Algorithms & Implementations <https://github.com/NVIDIA/NVFlare/tree/main/research>`_
     - Wide range of FL research projects, algorithms, and experimental features.
     - Ideal for advanced FL techniques and custom solutions.
 
@@ -44,10 +44,8 @@ Welcome to NVIDIA FLARE! This guide will help you get started, explore key featu
 - **NVIDIA FLARE DAY Talks 2024:**
   See: https://nvidia.github.io/NVFlare/flareDay/
   - Showcases use cases from cancer studies, drug discovery, financial services, genomics research, edge training, NVIDIA FLARE-based LLM training, and more.
-- **NVIDIA FLARE DAY 2025:**  (coming soon)
-
-  - Workshop: 2025-09-16
-  - Conference Events: 2025-09-17, 2025-09-24
+- **NVIDIA FLARE DAY 2025:**
+  See: https://developer.nvidia.com/flare-day-2025
 
 =============================
 7. Discover NVIDIA FLARE via Chatbot

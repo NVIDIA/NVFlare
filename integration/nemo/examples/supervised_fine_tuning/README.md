@@ -139,7 +139,7 @@ For 1.3B model experiment, we start the NVFlare system with one GPU:
 ```
 nvflare poc start --gpu 0
 ```
-For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt):
+For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/operation.html#admin-command-prompt):
 ```
 nvflare poc start -p admin@nvidia.com
 ```
@@ -174,7 +174,7 @@ For 1.3B model experiment, each client needs ~24 GB memory, here we start the NV
 ```
 nvflare poc start --gpu 0
 ```
-For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt):
+For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/operation.html#admin-command-prompt):
 ```
 nvflare poc start -p admin@nvidia.com
 ```

@@ -20,7 +20,7 @@ import argparse
 from model import SimpleNetwork
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe.sim_env import SimEnv
+from nvflare.recipe import SimEnv, add_experiment_tracking
 
 
 def define_parser():
@@ -47,9 +47,14 @@ def main():
         train_script="client.py",
         train_args=f"--batch_size {batch_size}",
     )
+    add_experiment_tracking(recipe, tracking_type="tensorboard")
 
-    env = SimEnv(num_clients=n_clients, num_threads=n_clients)
-    recipe.execute(env=env)
+    env = SimEnv(num_clients=n_clients)
+    run = recipe.execute(env)
+    print()
+    print("Result can be found in :", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()
 
 
 if __name__ == "__main__":

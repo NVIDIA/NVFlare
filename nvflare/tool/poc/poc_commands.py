@@ -689,20 +689,20 @@ def _stop_poc(poc_workspace: str, excluded=None, services_list=None):
 
     p_size = len(services_list)
     if p_size == 0 or service_config[SC.FLARE_SERVER] in services_list:
-        print("start shutdown NVFLARE")
+        print("Starting shutdown of NVFLARE")
         shutdown_system(prod_dir, username=service_config[SC.FLARE_PROJ_ADMIN])
     else:
-        print(f"start shutdown {services_list}")
+        print(f"Starting shutdown of {services_list} using the stop_fl.sh script")
 
-    _run_poc(
-        SC.CMD_STOP,
-        poc_workspace,
-        gpu_ids,
-        service_config,
-        project_config,
-        excluded=excluded,
-        services_list=services_list,
-    )
+        _run_poc(
+            SC.CMD_STOP,
+            poc_workspace,
+            gpu_ids,
+            service_config,
+            project_config,
+            excluded=excluded,
+            services_list=services_list,
+        )
 
 
 def _get_clients(service_commands: list, service_config) -> List[str]:

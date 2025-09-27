@@ -14,6 +14,5 @@
 
 from .client_package_checker import ClientPackageChecker
 from .nvflare_console_package_checker import NVFlareConsolePackageChecker
-from .overseer_package_checker import OverseerPackageChecker
 from .package_checker import PackageChecker
 from .server_package_checker import ServerPackageChecker

@@ -20,12 +20,7 @@ from nvflare.tool.package_checker.utils import (
     NVFlareConfig,
     NVFlareRole,
     check_grpc_server_running,
-    check_overseer_running,
-    check_response,
-    construct_dummy_response,
-    get_required_args_for_overseer_agent,
-    is_dummy_overseer_agent,
-    parse_overseer_agent_args,
+    construct_dummy_overseer_response,
     try_bind_address,
     try_write_dir,
 )
@@ -59,61 +54,6 @@ class CheckRule(ABC):
             A "CheckResult".
         """
         pass
-
-
-class CheckOverseerRunning(CheckRule):
-    def __init__(self, name: str, role: str):
-        super().__init__(name)
-        if role not in [NVFlareRole.SERVER, NVFlareRole.CLIENT, NVFlareRole.ADMIN]:
-            raise RuntimeError(f"role {role} is not supported.")
-        self.role = role
-
-    def __call__(self, package_path, data=None):
-        startup = os.path.join(package_path, "startup")
-        if self.role == NVFlareRole.SERVER:
-            nvf_config = NVFlareConfig.SERVER
-        elif self.role == NVFlareRole.CLIENT:
-            nvf_config = NVFlareConfig.CLIENT
-        else:
-            nvf_config = NVFlareConfig.ADMIN
-
-        fed_config_file = os.path.join(startup, nvf_config)
-        with open(fed_config_file, "r") as f:
-            fed_config = json.load(f)
-
-        if self.role == NVFlareRole.ADMIN:
-            admin = fed_config["admin"]
-            host = admin["host"]
-            port = admin["port"]
-            overseer_agent_conf = {
-                "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
-                "args": {"sp_end_point": f"{host}:{port}:{port}"},
-            }
-        else:
-            overseer_agent_conf = fed_config["overseer_agent"]
-
-        overseer_agent_class = overseer_agent_conf.get("path")
-        required_args = get_required_args_for_overseer_agent(overseer_agent_class=overseer_agent_class, role=self.role)
-        overseer_agent_args = parse_overseer_agent_args(overseer_agent_conf, required_args)
-        if is_dummy_overseer_agent(overseer_agent_class):
-            resp = construct_dummy_response(overseer_agent_args=overseer_agent_args)
-            return CheckResult(CHECK_PASSED, "N/A", resp)
-        resp, err = check_overseer_running(startup=startup, overseer_agent_args=overseer_agent_args, role=self.role)
-        if err:
-            return CheckResult(
-                f"Can't connect to overseer ({overseer_agent_args['overseer_end_point']}): {err}",
-                "1) Please check if overseer is up or certificates are correct."
-                + "2) Please check if overseer hostname in project.yml is available."
-                + "3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts",
-            )
-        elif not check_response(resp):
-            return CheckResult(
-                f"Can't connect to overseer ({overseer_agent_args['overseer_end_point']})",
-                "1) Please check if overseer is up or certificates are correct."
-                + "2) Please check if overseer hostname in project.yml is available."
-                + "3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts",
-            )
-        return CheckResult(CHECK_PASSED, "N/A", resp)
 
 
 class CheckAddressBinding(CheckRule):
@@ -157,46 +97,47 @@ def _get_primary_sp(sp_list):
     return None
 
 
-class CheckSPListInResponse(CheckRule):
-    def __call__(self, package_path, data):
-        data = data.json()
-        sp_list = data.get("sp_list", [])
-        psp = _get_primary_sp(sp_list)
-        if psp is None:
-            return CheckResult(
-                "Can't get primary service provider from overseer",
-                "Please contact NVFLARE system admin and make sure at least one of the FL servers"
-                + " is up and can connect to overseer.",
-            )
-        return CheckResult(CHECK_PASSED, "N/A", sp_list)
+class CheckGRPCServerAvailable(CheckRule):
+    def __init__(self, name: str, role: str):
+        super().__init__(name)
+        if role not in [NVFlareRole.SERVER, NVFlareRole.CLIENT, NVFlareRole.ADMIN]:
+            raise RuntimeError(f"role {role} is not supported.")
+        self.role = role
 
-
-class CheckPrimarySPGRPCServerAvailable(CheckRule):
     def __call__(self, package_path, data):
         startup = os.path.join(package_path, "startup")
-        psp = _get_primary_sp(data)
+        if self.role == NVFlareRole.SERVER:
+            nvf_config = NVFlareConfig.SERVER
+        elif self.role == NVFlareRole.CLIENT:
+            nvf_config = NVFlareConfig.CLIENT
+        else:
+            nvf_config = NVFlareConfig.ADMIN
+
+        fed_config_file = os.path.join(startup, nvf_config)
+        with open(fed_config_file, "r") as f:
+            fed_config = json.load(f)
+
+        if self.role == NVFlareRole.ADMIN:
+            admin = fed_config["admin"]
+            host = admin["host"]
+            port = admin["port"]
+            overseer_agent_conf = {
+                "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+                "args": {"sp_end_point": f"{host}:{port}:{port}"},
+            }
+        else:
+            overseer_agent_conf = fed_config["overseer_agent"]
+
+        resp = construct_dummy_overseer_response(overseer_agent_conf=overseer_agent_conf, role=self.role)
+        resp = resp.json()
+        sp_list = resp.get("sp_list", [])
+        psp = _get_primary_sp(sp_list)
         sp_end_point = psp["sp_end_point"]
         sp_name, grpc_port, admin_port = sp_end_point.split(":")
 
         if not check_grpc_server_running(startup=startup, host=sp_name, port=int(grpc_port)):
             return CheckResult(
-                f"Can't connect to primary service provider's grpc server ({sp_name}:{grpc_port})",
+                f"Can't connect to grpc server ({sp_name}:{grpc_port})",
                 "Please check if server is up.",
             )
-        return CheckResult(CHECK_PASSED, "N/A", data)
-
-
-class CheckNonPrimarySPGRPCServerAvailable(CheckRule):
-    def __call__(self, package_path, data):
-        startup = os.path.join(package_path, "startup")
-        for sp in data:
-            if not sp["primary"]:
-                sp_end_point = sp["sp_end_point"]
-                sp_name, grpc_port, admin_port = sp_end_point.split(":")
-
-                if not check_grpc_server_running(startup=startup, host=sp_name, port=int(grpc_port)):
-                    return CheckResult(
-                        f"Can't connect to non-primary service provider's grpc server ({sp_name}:{grpc_port})",
-                        "Please check if server is up.",
-                    )
-        return CheckResult(CHECK_PASSED, "N/A", data)
+        return CheckResult(CHECK_PASSED, "N/A")

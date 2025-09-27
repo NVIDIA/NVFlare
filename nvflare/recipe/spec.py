@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.job_config.api import FedJob
@@ -22,8 +22,74 @@ from nvflare.job_config.defs import FilterType
 
 class ExecEnv(ABC):
 
+    def __init__(self, extra: dict = None):
+        """Constructor of ExecEnv
+
+        Args:
+            extra: a dict of extra properties
+        """
+        if not extra:
+            extra = {}
+        if not isinstance(extra, dict):
+            raise ValueError(f"extra must be dict but got {type(extra)}")
+        self.extra = extra
+
+    def get_extra_prop(self, prop_name: str, default=None):
+        """Get the specified extra property.
+
+        Args:
+            prop_name: name of the property
+            default: the default value to return if the named property does not exist.
+
+        Returns: value of the property or the default
+
+        """
+        return self.extra.get(prop_name, default)
+
     @abstractmethod
-    def deploy(self, job: FedJob):
+    def deploy(self, job: FedJob) -> str:
+        """Deploy a FedJob and return an execution response.
+
+        Args:
+            job: The FedJob to deploy.
+
+        Returns:
+            str: The job ID.
+        """
+        pass
+
+    @abstractmethod
+    def get_job_status(self, job_id: str) -> Optional[str]:
+        """Get the status of a job.
+
+        Args:
+            job_id: The job ID to check status for.
+
+        Returns:
+            Optional[str]: The status of the job, or None if not supported.
+        """
+        pass
+
+    @abstractmethod
+    def abort_job(self, job_id: str) -> None:
+        """Abort a running job.
+
+        Args:
+            job_id: The job ID to abort.
+        """
+        pass
+
+    @abstractmethod
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+        """Get the result workspace of a job.
+
+        Args:
+            job_id: The job ID to get results for.
+            timeout: The timeout for the job to complete. Defaults to 0.0 (no timeout).
+
+        Returns:
+            Optional[str]: The result workspace path if job completed, None if still running or stopped early.
+        """
         pass
 
 
@@ -37,6 +103,9 @@ class Recipe(ABC):
             job: the job that implements the recipe.
         """
         self.job = job
+
+    def process_env(self, env: ExecEnv):
+        pass
 
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
@@ -100,13 +169,20 @@ class Recipe(ABC):
         """
         self.job.to_server(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
 
-    def export(self, job_dir: str, server_exec_params: dict = None, client_exec_params: dict = None):
+    def export(
+        self,
+        job_dir: str,
+        server_exec_params: dict = None,
+        client_exec_params: dict = None,
+        env: ExecEnv = None,
+    ):
         """Export the recipe to a job definition.
 
         Args:
             job_dir: directory where the job will be exported to.
             server_exec_params: execution params for the server
             client_exec_params: execution params for clients
+            env: the environment that the exported job will be running in
 
         Returns: None
 
@@ -117,9 +193,12 @@ class Recipe(ABC):
         if client_exec_params:
             self.job.to_clients(client_exec_params)
 
+        if env:
+            self.process_env(env)
+
         self.job.export_job(job_dir)
 
-    def execute(self, env: ExecEnv, server_exec_params: dict = None, client_exec_params: dict = None) -> Any:
+    def execute(self, env: ExecEnv, server_exec_params: dict = None, client_exec_params: dict = None) -> "Run":
         """Execute the recipe in a specified execution environment.
 
         Args:
@@ -127,7 +206,7 @@ class Recipe(ABC):
             server_exec_params: execution params for the server
             client_exec_params: execution params for clients
 
-        Returns: result returned from the execution environment's deployment
+        Returns: Run to get job ID and execution results
 
         """
         if server_exec_params:
@@ -136,4 +215,9 @@ class Recipe(ABC):
         if client_exec_params:
             self.job.to_clients(client_exec_params)
 
-        return env.deploy(self.job)
+        self.process_env(env)
+        job_id = env.deploy(self.job)
+        from nvflare.recipe.run import Run
+
+        run = Run(env, job_id)
+        return run

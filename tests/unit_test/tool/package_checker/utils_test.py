@@ -22,8 +22,6 @@ from requests import Response
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.tool.package_checker.utils import (
     NVFlareRole,
-    check_overseer_running,
-    check_response,
     get_required_args_for_overseer_agent,
     try_bind_address,
     try_write_dir,
@@ -60,24 +58,6 @@ class TestUtils:
         port = get_open_ports(1)[0]
         with patch("socket.socket.bind", side_effect=OSError("Test")):
             assert try_bind_address(host=host, port=port).args == OSError("Test").args
-
-    @pytest.mark.parametrize("resp, result", [(None, False), (_mock_response(200), True), (_mock_response(404), False)])
-    def test_check_response(self, resp, result):
-        assert check_response(resp=resp) == result
-
-    def test_check_overseer_running(self):
-        with patch("nvflare.tool.package_checker.utils._create_http_session") as mock2:
-            mock2.return_value = None
-            with patch("nvflare.tool.package_checker.utils._prepare_data") as mock3:
-                mock3.return_value = None
-                with patch("nvflare.tool.package_checker.utils._send_request") as mock4:
-                    mock4.return_value = _mock_response(200)
-                    resp, err = check_overseer_running(
-                        startup="test",
-                        overseer_agent_args={"overseer_end_point": "random"},
-                        role="",
-                    )
-                    assert resp.status_code == 200
 
     @pytest.mark.parametrize(
         "overseer_agent_class, role, result",

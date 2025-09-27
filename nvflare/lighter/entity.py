@@ -219,6 +219,12 @@ class Entity:
                 fb_key = key
             return self.parent.get_prop(fb_key, default)
 
+    def __str__(self):
+        return f"Entity[{self.name=}, {self.props=}, {self.parent=}]"
+
+    def __repr__(self):
+        return self.__str__()
+
 
 class Participant(Entity):
     def __init__(self, type: str, name: str, org: str, props: dict = None, project: Entity = None):
@@ -396,7 +402,6 @@ class Project(Entity):
         self.serialized_root_cert = serialized_root_cert
         self.root_private_key = root_private_key
         self.server = None
-        self.overseer = None
         self._participants_by_types = {}  # participant type => list of participants
         self._all_names = {}  # name => participant
 
@@ -430,23 +435,21 @@ class Project(Entity):
         """
         return self.server
 
-    def set_overseer(self, name: str, org: str, props: dict) -> Participant:
-        return self.add_participant(Participant(ParticipantType.OVERSEER, name, org, props))
-
     def get_overseer(self) -> Optional[Participant]:
-        """Get the overseer definition. Only one overseer is supported!
+        """Get the overseer definition.
 
-        Returns: overseer participant
+        Note: overseer is deprecated.
+
+        Returns: None
 
         """
-        return self.overseer
+        return None
 
     def add_participant(self, participant: Participant) -> Participant:
         """Add a participant to the project.
         Before adding the participant, this method checks the following conditions:
         - All participants in the project must have unique names
         - Only one server is allowed in the project
-        - Only one overseer is allowed in the project
         - Role must be specified for admin type of participant
 
         Args:
@@ -464,9 +467,7 @@ class Project(Entity):
                 raise ValueError(f"cannot add participant {participant.name} as server - server already exists")
             self.server = participant
         elif participant.type == ParticipantType.OVERSEER:
-            if self.overseer:
-                raise ValueError(f"cannot add participant {participant.name} as overseer - overseer already exists")
-            self.overseer = participant
+            raise ValueError(f"cannot add participant {participant.name} as overseer - overseer is removed")
 
         participants = self._participants_by_types.get(participant.type)
         if not participants:

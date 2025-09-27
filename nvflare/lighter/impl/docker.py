@@ -24,7 +24,7 @@ from nvflare.lighter.spec import Builder, Project, ProvisionContext
 
 class DockerBuilder(Builder):
     def __init__(self, base_image="python:3.10", requirements_file="requirements.txt"):
-        """Build docker compose file."""
+        """Build docker file."""
         self.base_image = base_image
         self.requirements_file = requirements_file
         self.services = {}

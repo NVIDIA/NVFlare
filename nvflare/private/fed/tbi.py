@@ -14,12 +14,12 @@
 
 import time
 
+import nvflare.fuel.utils.app_config_utils as acu
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotReadyToEndRun
-from nvflare.fuel.utils.config_service import ConfigService
 
 
 class TBI(FLComponent):
@@ -34,22 +34,11 @@ class TBI(FLComponent):
 
     @staticmethod
     def get_positive_float_var(var_name, default):
-        # use ConfigService to determine value for the specified var_name:
-        #   the job config could define variable var_name;
-        #   the user could define OS env var NVFLARE_VAR_NAME (the var_name turned to uppercase)
-        value = ConfigService.get_float_var(name=var_name, conf=SystemConfigs.APPLICATION_CONF, default=default)
-        if value is None:
-            return default
-        else:
-            return value if value > 0.0 else default
+        return acu.get_positive_float_var(var_name, default)
 
     @staticmethod
     def get_positive_int_var(var_name, default):
-        value = ConfigService.get_int_var(name=var_name, conf=SystemConfigs.APPLICATION_CONF, default=default)
-        if value is None:
-            return default
-        else:
-            return value if value > 0 else default
+        return acu.get_positive_int_var(var_name, default)
 
     def _any_component_is_not_ready(self, fl_ctx: FLContext) -> bool:
         any_component_not_ready = fl_ctx.get_prop(FLContextKey.NOT_READY_TO_END_RUN, False)

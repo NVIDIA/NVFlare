@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import threading
 import time
 from typing import Optional
 
@@ -33,10 +34,17 @@ from nvflare.security.logging import secure_format_exception
 
 class EdgeModelExecutor(EdgeTaskExecutor):
 
-    def __init__(self, aggr_factory_id: str, max_model_versions: int, update_timeout=60):
+    def __init__(
+        self,
+        aggr_factory_id: str,
+        max_model_versions: Optional[int] = None,
+        update_timeout=60.0,
+    ):
         EdgeTaskExecutor.__init__(self, "", update_timeout)
         self.aggr_factory_id = aggr_factory_id
         self.max_model_versions = max_model_versions
+
+        self.cvt_lock = threading.Lock()
 
     def get_updater(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -193,14 +201,22 @@ class EdgeModelExecutor(EdgeTaskExecutor):
         self.log_debug(
             fl_ctx, f"task for model V{task_state.model_version} sent to device {device_id}: {new_selection_id=}"
         )
-        task_data = self._convert_task(task_state, current_task, fl_ctx)
+
+        # all platforms use the same converted model for now!
+        with self.cvt_lock:
+            platform = "*"
+            converted_model = task_state.get_converted_model(platform)
+            if not converted_model:
+                converted_model = self._convert_task(task_state, current_task, fl_ctx)
+                task_state.set_converted_model(converted_model, platform)
+
         return TaskResponse(
             status=EdgeApiStatus.OK,
             job_id=job_id,
             retry_wait=0,
             task_id=current_task.id,
             task_name=current_task.name,
-            task_data=task_data,
+            task_data=converted_model,
             cookie=self._make_cookie(task_state.model_version, new_selection_id),
         )
 
