@@ -14,6 +14,7 @@
 SYNC_TASK_NAME = "sync"
 
 MSG_CHANNEL = "focs"
+MSG_TOPIC = "call"
 
 
 class SyncKey:

@@ -22,10 +22,12 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
+from nvflare.app_common.decomposers.numpy_decomposers import register
 from nvflare.focs.api.app import ServerApp
 from nvflare.focs.api.constants import ContextKey
 from nvflare.focs.api.proxy import Proxy
 from nvflare.focs.api.strategy import Strategy
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .backend import SysBackend
 from .constants import SYNC_TASK_NAME, SyncKey
@@ -47,8 +49,8 @@ class FocsController(Controller):
 
     def __init__(
         self,
-        server_app_id: str,
         strategy_ids: List[str],
+        server_app_id: str = None,
         server_target_obj_ids: Dict[str, str] = None,
         sync_task_timeout=2,
         max_call_threads=100,
@@ -67,14 +69,18 @@ class FocsController(Controller):
             raise ValueError(f"no strategies defined - there must be at least one strategy")
 
     def start_controller(self, fl_ctx: FLContext):
+        register()
         engine = fl_ctx.get_engine()
-        app = engine.get_component(self.server_app_id)
-        if not isinstance(app, ServerApp):
-            self.system_panic(f"component {self.server_app_id} must be ServerApp but got {type(app)}", fl_ctx)
-            return
+
+        if self.server_app_id:
+            app = engine.get_component(self.server_app_id)
+            if not isinstance(app, ServerApp):
+                self.system_panic(f"component {self.server_app_id} must be ServerApp but got {type(app)}", fl_ctx)
+                return
+        else:
+            app = ServerApp()
 
         app.name = "server"
-
         for cid in self.strategy_ids:
             strategy = engine.get_component(cid)
             if not isinstance(strategy, Strategy):
@@ -94,30 +100,26 @@ class FocsController(Controller):
 
         self.server_app = app
 
-        # register msg CB for processing object calls
-        self.cell = engine.get_cell()
-        prepare_for_remote_call(self.cell, self.server_app, self.logger)
-
-    def _prepare_client_backend(self, client: ClientSite, abort_signal: Signal):
+    def _prepare_client_backend(self, job_id, client: ClientSite, abort_signal: Signal):
         return SysBackend(
             caller=self.server_app.name,
             cell=self.cell,
-            target_fqcn=client.get_fqcn(),
+            target_fqcn=FQCN.join([client.get_fqcn(), job_id]),
             abort_signal=abort_signal,
             thread_executor=self.thread_executor,
         )
 
-    def _prepare_server_backend(self, abort_signal: Signal):
+    def _prepare_server_backend(self, job_id: str, abort_signal: Signal):
         return SysBackend(
             caller=self.server_app.name,
             cell=self.cell,
-            target_fqcn="server",
+            target_fqcn=FQCN.join([FQCN.ROOT_SERVER, job_id]),
             abort_signal=abort_signal,
             thread_executor=self.thread_executor,
         )
 
-    def _prepare_client_proxy(self, client: ClientSite, target_obj_names: List[str], abort_signal):
-        backend = self._prepare_client_backend(client, abort_signal)
+    def _prepare_client_proxy(self, job_id: str, client: ClientSite, target_obj_names: List[str], abort_signal):
+        backend = self._prepare_client_backend(job_id, client, abort_signal)
         proxy = Proxy(app=self.server_app, target_name=client.name, backend=backend, caller_name=self.server_app.name)
 
         for name in target_obj_names:
@@ -130,9 +132,9 @@ class FocsController(Controller):
             setattr(proxy, name, p)
         return proxy
 
-    def _prepare_server_proxy(self, abort_signal):
+    def _prepare_server_proxy(self, job_id, abort_signal):
         server_name = self.server_app.name
-        backend = self._prepare_server_backend(abort_signal)
+        backend = self._prepare_server_backend(job_id, abort_signal)
         proxy = Proxy(app=self.server_app, target_name=server_name, backend=backend, caller_name=server_name)
 
         tos = self.server_app.get_target_objects()
@@ -160,6 +162,7 @@ class FocsController(Controller):
         )
 
         engine = fl_ctx.get_engine()
+        self.logger.info(f"server engine {type(engine)}")
         all_clients = engine.get_clients()
         num_clients = len(all_clients)
         for c in all_clients:
@@ -190,13 +193,18 @@ class FocsController(Controller):
 
         self.log_info(fl_ctx, f"successfully synced clients {self.client_info.keys()}")
 
+        # register msg CB for processing object calls
+        self.cell = engine.get_cell()
+        prepare_for_remote_call(self.cell, self.server_app, self.logger)
+
         # prepare proxies and backends
-        server_proxy = self._prepare_server_proxy(abort_signal)
+        job_id = fl_ctx.get_job_id()
+        server_proxy = self._prepare_server_proxy(job_id, abort_signal)
         client_proxies = []
         for c in all_clients:
             info = self.client_info[c.name]
             assert isinstance(info, _ClientInfo)
-            client_proxies.append(self._prepare_client_proxy(c, info.target_obj_names, abort_signal))
+            client_proxies.append(self._prepare_client_proxy(job_id, c, info.target_obj_names, abort_signal))
 
         self.server_app.setup(server_proxy, client_proxies, abort_signal)
 

@@ -23,7 +23,7 @@ from .strategy import Strategy
 from .utils import check_context_support
 
 
-class App(ABC):
+class App:
 
     def __init__(self):
         self.name = None
@@ -144,9 +144,13 @@ class ServerApp(App):
 
     def __init__(self, strategy: Strategy = None):
         super().__init__()
-        if not isinstance(strategy, Strategy):
+
+        if strategy and not isinstance(strategy, Strategy):
             raise ValueError(f"strategy must be Strategy but got {type(strategy)}")
-        self.strategies = [strategy]
+
+        self.strategies = []
+        if strategy:
+            self.strategies.append(strategy)
         self.current_strategy = None
 
     def add_strategy(self, strategy):

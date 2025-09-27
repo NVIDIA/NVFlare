@@ -24,6 +24,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.focs.api.app import ClientApp, ClientAppFactory
 from nvflare.focs.api.proxy import Proxy
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .backend import SysBackend
 from .constants import SYNC_TASK_NAME, SyncKey
@@ -50,10 +51,13 @@ class FocsExecutor(Executor):
             )
             return
 
+        client_name = fl_ctx.get_identity_name()
         if isinstance(client_app, ClientApp):
             self.client_app = client_app
         else:
-            self.client_app = client_app.make_client_app(fl_ctx.get_identity_name())
+            self.client_app = client_app.make_client_app(client_name)
+
+        self.client_app.name = client_name
 
         if self.client_target_obj_ids:
             for name, cid in self.client_target_obj_ids:
@@ -64,19 +68,13 @@ class FocsExecutor(Executor):
 
                 self.client_app.add_target_object(name, obj)
 
-        prepare_for_remote_call(
-            cell=engine.get_cell(),
-            app=self.client_app,
-            logger=self.logger,
-        )
-
-    def _prepare_server_proxy(self, cell, server_target_obj_names, abort_signal):
+    def _prepare_server_proxy(self, job_id, cell, server_target_obj_names, abort_signal):
         my_name = self.client_app.name
         server_name = "server"
         backend = SysBackend(
             caller=self.client_app.name,
             cell=cell,
-            target_fqcn=server_name,
+            target_fqcn=FQCN.join([FQCN.ROOT_SERVER, job_id]),
             abort_signal=abort_signal,
             thread_executor=self.thread_executor,
         )
@@ -87,12 +85,12 @@ class FocsExecutor(Executor):
             setattr(proxy, name, p)
         return proxy
 
-    def _prepare_client_proxy(self, cell, client: Client, abort_signal):
+    def _prepare_client_proxy(self, job_id, cell, client: Client, abort_signal):
         my_name = self.client_app.name
         backend = SysBackend(
             caller=self.client_app.name,
             cell=cell,
-            target_fqcn=client.get_fqcn(),
+            target_fqcn=FQCN.join([client.get_fqcn(), job_id]),
             abort_signal=abort_signal,
             thread_executor=self.thread_executor,
         )
@@ -119,15 +117,22 @@ class FocsExecutor(Executor):
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
 
+        prepare_for_remote_call(
+            cell=cell,
+            app=self.client_app,
+            logger=self.logger,
+        )
+
         # build proxies
-        server_proxy = self._prepare_server_proxy(cell, server_target_obj_names, abort_signal)
+        job_id = fl_ctx.get_job_id()
+        server_proxy = self._prepare_server_proxy(job_id, cell, server_target_obj_names, abort_signal)
 
         job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
         job_clients = job_meta.get(JobMetaKey.JOB_CLIENTS)
         all_clients = [from_dict(d) for d in job_clients]
         client_proxies = []
         for c in all_clients:
-            p = self._prepare_client_proxy(cell, c, abort_signal)
+            p = self._prepare_client_proxy(job_id, cell, c, abort_signal)
             client_proxies.append(p)
 
         self.client_app.setup(server_proxy, client_proxies, abort_signal)

@@ -13,24 +13,29 @@
 # limitations under the License.
 from nvflare.focs.api.app import App
 from nvflare.focs.api.constants import CollabMethodArgName
-from nvflare.focs.api.utils import check_context_support
+from nvflare.focs.api.dec import adjust_kwargs
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
 
-from .constants import MSG_CHANNEL, CallReplyKey, ObjectCallKey
+from .constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
 
 def prepare_for_remote_call(cell, app, logger):
-    cell.register_request_cb(channel=MSG_CHANNEL, topic="*", cb=_call_app_method, app=app, logger=logger)
+    logger.info(f"register cb for cell {cell.get_fqcn()}: {type(cell)}")
+    cell.register_request_cb(channel=MSG_CHANNEL, topic=MSG_TOPIC, cb=_call_app_method, app=app, logger=logger)
+    logger.info(f"registered request CB for {MSG_CHANNEL}/{MSG_TOPIC}")
 
 
 def _error_reply(error: str, logger) -> Message:
     logger.error(error)
-    return new_cell_message(headers={}, payload={CallReplyKey.ERROR: error})
+    return new_cell_message(
+        headers={MessageHeaderKey.RETURN_CODE: ReturnCode.PROCESS_EXCEPTION}, payload={CallReplyKey.ERROR: error}
+    )
 
 
 def _call_app_method(request: Message, app: App, logger) -> Message:
-    logger.info(f"got call")
+    logger.info("got a remote call")
     payload = request.payload
     assert isinstance(payload, dict)
 
@@ -52,8 +57,8 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     method_args = payload.get(ObjectCallKey.ARGS)
     if not method_args:
         method_args = []
-    elif not isinstance(method_args, list):
-        return _error_reply(f"bad method args: should be list but got {type(method_args)}", logger)
+    elif not isinstance(method_args, (list, tuple)):
+        return _error_reply(f"bad method args: should be list/tuple but got {type(method_args)}", logger)
 
     method_kwargs = payload.get(ObjectCallKey.KWARGS)
     if not method_kwargs:
@@ -68,21 +73,31 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     if obj_name:
         target_objs = app.get_target_objects()
         target_obj = target_objs.get(obj_name)
+        logger.info(f"calling target obj: {app.name}.{obj_name}")
     else:
         target_obj = app
+        logger.info(f"calling target app: {app.name}")
+
     if not target_obj:
         return _error_reply(f"no object named '{target_name}'", logger)
 
     m = app.find_collab_method(target_obj, method_name)
     if not m:
-        return _error_reply(f"no method named '{method_name}'", logger)
+        return _error_reply(f"no method named '{method_name}' or it is not collab", logger)
+    else:
+        logger.info(f"found method for {method_name}")
 
     # invoke this method
     try:
         ctx = app.new_context(caller=caller, callee=app.name)
         method_kwargs[CollabMethodArgName.CONTEXT] = ctx
-        check_context_support(m, method_kwargs)
+        adjust_kwargs(m, method_kwargs)
+
+        logger.info(f"calling method {method_name}: {caller=}: {method_args=} {method_kwargs=}")
         result = m(*method_args, **method_kwargs)
-        return new_cell_message(headers={}, payload={CallReplyKey.RESULT: result})
+        logger.info(f"result from method {method_name}: {result}")
+        return new_cell_message(
+            headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, payload={CallReplyKey.RESULT: result}
+        )
     except Exception as ex:
         return _error_reply(f"exception {type(ex)}", logger)
