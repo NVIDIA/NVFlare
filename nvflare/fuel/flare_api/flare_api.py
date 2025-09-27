@@ -48,6 +48,7 @@ from .api_spec import (
     JobNotRunning,
     MonitorReturnCode,
     NoClientsAvailable,
+    NoConnection,
     NoReply,
     ServerInfo,
     SessionClosed,
@@ -57,6 +58,8 @@ from .api_spec import (
 )
 
 _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
+
+__all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
 
 
 class Session(SessionSpec):
@@ -372,7 +375,8 @@ class Session(SessionSpec):
         Args:
             job_id (str): job to be aborted
 
-        Returns: dict of (status, info)
+        Returns:
+            str: the message from the server
 
         If the job is already done, no effect;
         If job is not started yet, it will be cancelled and won't be scheduled.
@@ -380,9 +384,13 @@ class Session(SessionSpec):
 
         """
         self._validate_job_id(job_id)
-        # result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
-        # return result.get(ResultKey.META, None)
-        self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
+        result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
+        meta = result[ResultKey.META]
+        status = meta.get(MetaKey.STATUS)
+        info = meta.get(MetaKey.INFO)
+        if status != MetaStatusValue.OK:
+            raise InternalError(f"failed to abort job {job_id}: {status}, {info}")
+        return info
 
     def delete_job(self, job_id: str):
         """Delete the specified job completely from the system.
@@ -390,7 +398,8 @@ class Session(SessionSpec):
         Args:
             job_id (str): job to be deleted
 
-        Returns: None
+        Returns:
+            None
 
         The job will be deleted from the job store if the job is not currently running.
 

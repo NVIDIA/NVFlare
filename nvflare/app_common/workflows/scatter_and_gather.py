@@ -148,7 +148,7 @@ class ScatterAndGather(Controller):
         self._current_round = None
 
     def start_controller(self, fl_ctx: FLContext) -> None:
-        self.log_info(fl_ctx, "Initializing ScatterAndGather workflow.")
+        self.log_info(fl_ctx, "Initializing ScatterAndGather workflow for Federated Averaging.")
         self._phase = AppConstants.PHASE_INIT
 
         self.aggregator = self._engine.get_component(self.aggregator_id)

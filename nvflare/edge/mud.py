@@ -47,16 +47,15 @@ class BaseState:
 
         The device_selection is a dict of device_id => selection_id.
 
-        Device selection is maintained by the Server. Every time the content of the selection is changed, a new
-        selection version should be used.
+        Device selection is maintained by the Server. It records the device_id paired with a selection_id, which is a non-zero integer.
+        A device can train only once with the same selection_id.
 
-        When a device is selected, it is assigned a Selection ID, which is a non-zero integer.
+        Our default way is to assign selection_id is that when a device is added to the selection, set its selection_id to
+        the global model version assigned to it. This means that if the device is selected for
+        training again, it must be assigned a different global model - it does not make much sense to select a device for training
+        again with the same model, because it will lead to almost the same update twice (unless the data on the device is changed during the two selections, which is unlikely).
 
-        A device can train only once with the same selection id. This means that if the device is selected for
-        training again, it must be assigned a different selection id.
-
-        One way to assign selection id is that when a device is added to the selection, set its selection id to
-        the Selection Version. The devices in the current selection could have different selection IDs.
+        The devices in the current selection could have different selection_ids because they are selected at different time points.
 
         Args:
             model_version: version of model. 0 means no model available.
@@ -93,6 +92,30 @@ class BaseState:
         self.model = model
         self.device_selection_version = device_selection_version
         self.device_selection = device_selection
+        self.converted_models = {}  # platform => model
+
+    def set_converted_model(self, model, platform: str):
+        """Set the model that is converted from the original model for the specified platform.
+
+        Args:
+            model: the converted model
+            platform: the platform that the converted model will be used for
+
+        Returns: None
+
+        """
+        self.converted_models[platform] = model
+
+    def get_converted_model(self, platform: str):
+        """Get the model that is converted for the platform.
+
+        Args:
+            platform: the platform of the model
+
+        Returns: converted model if available; None otherwise.
+
+        """
+        return self.converted_models.get(platform)
 
     def is_device_selected(self, device_id: str, selection_id: int) -> (bool, int):
         """Determine whether the device should be selected for training.

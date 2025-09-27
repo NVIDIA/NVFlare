@@ -28,7 +28,7 @@ from nvflare.app_common.app_constant import AppConstants
 
 class TestInTimeAccumulateWeightedAggregator:
     @pytest.mark.parametrize(
-        "exclude_vars,aggregation_weights,expected_data_kind,error,error_msg",
+        "exclude_vars,aggregation_weights,expected_data_kind,error,error_msg,is_regex",
         [
             (
                 2.0,
@@ -36,6 +36,7 @@ class TestInTimeAccumulateWeightedAggregator:
                 DataKind.WEIGHT_DIFF,
                 ValueError,
                 f"exclude_vars = 2.0 should be a regex string but got {type(2.0)}.",
+                False,
             ),
             (
                 {"dxo1": 3.0, "dxo2": ""},
@@ -43,14 +44,23 @@ class TestInTimeAccumulateWeightedAggregator:
                 {"dxo1": DataKind.WEIGHT_DIFF, "dxo2": DataKind.WEIGHT_DIFF},
                 ValueError,
                 f"exclude_vars[dxo1] = 3.0 should be a regex string but got {type(3.0)}.",
+                False,
             ),
-            (None, None, DataKind.ANALYTIC, ValueError, "expected_data_kind = ANALYTIC is not WEIGHT_DIFF or WEIGHTS"),
+            (
+                None,
+                None,
+                DataKind.ANALYTIC,
+                ValueError,
+                r"expected_data_kind.*ANALYTIC.*is not.*WEIGHT_DIFF.*WEIGHTS.*METRICS",
+                True,
+            ),
             (
                 None,
                 None,
                 {"dxo1": DataKind.WEIGHT_DIFF, "dxo2": DataKind.ANALYTIC},
                 ValueError,
-                "expected_data_kind[dxo2] = ANALYTIC is not WEIGHT_DIFF or WEIGHTS",
+                r"expected_data_kind\[dxo2\].*ANALYTIC.*is not.*WEIGHT_DIFF.*WEIGHTS.*METRICS",
+                True,
             ),
             (
                 None,
@@ -59,6 +69,7 @@ class TestInTimeAccumulateWeightedAggregator:
                 ValueError,
                 "A dict of dict aggregation_weights should specify aggregation_weights "
                 "for every key in expected_data_kind. But missed these keys: ['dxo2']",
+                False,
             ),
             (
                 {"dxo2": ""},
@@ -67,11 +78,12 @@ class TestInTimeAccumulateWeightedAggregator:
                 ValueError,
                 "A dict exclude_vars should specify exclude_vars for every key in expected_data_kind. "
                 "But missed these keys: ['dxo1']",
+                False,
             ),
         ],
     )
-    def test_invalid_create(self, exclude_vars, aggregation_weights, expected_data_kind, error, error_msg):
-        with pytest.raises(error, match=re.escape(error_msg)):
+    def test_invalid_create(self, exclude_vars, aggregation_weights, expected_data_kind, error, error_msg, is_regex):
+        with pytest.raises(error) as exc_info:
             aggregator = InTimeAccumulateWeightedAggregator(
                 exclude_vars=exclude_vars,
                 aggregation_weights=aggregation_weights,
@@ -80,6 +92,17 @@ class TestInTimeAccumulateWeightedAggregator:
             aggregator._initialize(
                 aggregator.aggregation_weights, aggregator.exclude_vars, aggregator.expected_data_kind
             )
+
+        # Check if the error message matches the expected pattern
+        actual_error = str(exc_info.value)
+
+        if is_regex:
+            # This is a regex pattern - remove the r"..." wrapper
+            pattern = error_msg[2:-1] if error_msg.startswith('r"') else error_msg
+            assert re.search(pattern, actual_error), f"Expected pattern '{pattern}' not found in '{actual_error}'"
+        else:
+            # Simple string match
+            assert error_msg in actual_error, f"Expected '{error_msg}' not found in '{actual_error}'"
 
     @pytest.mark.parametrize(
         "exclude_vars,aggregation_weights,expected_data_kind,expected_object",

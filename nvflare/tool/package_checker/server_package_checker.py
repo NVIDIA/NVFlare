@@ -17,9 +17,9 @@ import os
 import shutil
 import sys
 
-from .check_rule import CheckAddressBinding, CheckOverseerRunning, CheckWriting
+from .check_rule import CheckAddressBinding, CheckWriting
 from .package_checker import PackageChecker
-from .utils import NVFlareConfig, NVFlareRole
+from .utils import NVFlareConfig
 
 SERVER_SCRIPT = "nvflare.private.fed.app.server.server_train"
 
@@ -78,7 +78,6 @@ class ServerPackageChecker(PackageChecker):
     def init_rules(self, package_path):
         self.dry_run_timeout = 3
         self.rules = [
-            CheckOverseerRunning(name="Check overseer running", role=NVFlareRole.SERVER),
             CheckAddressBinding(name="Check grpc port binding", get_host_and_port_from_package=_get_grpc_host_and_port),
             CheckAddressBinding(
                 name="Check admin port binding", get_host_and_port_from_package=_get_admin_host_and_port

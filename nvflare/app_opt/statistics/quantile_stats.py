@@ -15,6 +15,7 @@
 from typing import Dict
 
 from nvflare.app_common.app_constant import StatisticsConstants as StC
+from nvflare.app_common.statistics.statistics_config_utils import get_target_quantiles
 from nvflare.fuel.utils.log_utils import get_module_logger
 
 try:
@@ -43,17 +44,6 @@ def get_quantiles(stats: Dict, statistic_configs: Dict, precision: int):
     return compute_quantiles(global_digest, quantile_config, precision)
 
 
-def get_target_quantiles(quantile_config: dict, feature_name: str):
-    if feature_name in quantile_config:
-        percents = quantile_config.get(feature_name)
-    elif "*" in quantile_config:
-        percents = quantile_config.get("*")
-    else:
-        raise ValueError(f"feature: {feature_name} target percents are not defined.")
-
-    return percents
-
-
 def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict:
 
     if not TDIGEST_AVAILABLE:
@@ -67,11 +57,14 @@ def merge_quantiles(metrics: Dict[str, Dict[str, Dict]], g_digest: dict) -> dict
         for feature_name in feature_metrics:
             if feature_metrics[feature_name] is not None:
                 digest_dict: Dict = feature_metrics[feature_name].get(StC.STATS_DIGEST_COORD)
-                feature_digest = TDigest.from_dict(digest_dict)
-                if feature_name not in g_digest[ds_name]:
-                    g_digest[ds_name][feature_name] = feature_digest
+                if digest_dict:
+                    feature_digest = TDigest.from_dict(digest_dict)
+                    if feature_name not in g_digest[ds_name]:
+                        g_digest[ds_name][feature_name] = feature_digest
+                    else:
+                        g_digest[ds_name][feature_name] = g_digest[ds_name][feature_name].merge(feature_digest)
                 else:
-                    g_digest[ds_name][feature_name] = g_digest[ds_name][feature_name].merge(feature_digest)
+                    g_digest[ds_name][feature_name] = {}
 
     return g_digest
 
@@ -90,8 +83,12 @@ def compute_quantiles(g_digest: dict, quantile_config: Dict, precision: int) -> 
             digest = feature_metrics[feature_name]
             percentiles = get_target_quantiles(quantile_config, feature_name)
             quantile_values = {}
-            for percentile in percentiles:
-                quantile_values[percentile] = round(digest.quantile(percentile), precision)
+            if digest:
+                for percentile in percentiles:
+                    quantile_values[percentile] = round(digest.quantile(percentile), precision)
+            else:
+                for percentile in percentiles:
+                    quantile_values[percentile] = None
 
             g_ds_metrics[ds_name][feature_name] = quantile_values
 

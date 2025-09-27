@@ -15,13 +15,14 @@
 from processors.cifar10_pt_task_processor import Cifar10PTTaskProcessor
 from processors.models.cifar10_model import Cifar10ConvNet
 
-from nvflare.edge.tools.edge_recipe import (
+from nvflare.edge.tools.edge_fed_buff_recipe import (
     DeviceManagerConfig,
-    EdgeRecipe,
+    EdgeFedBuffRecipe,
     EvaluatorConfig,
     ModelManagerConfig,
     SimulationConfig,
 )
+from nvflare.recipe.prod_env import ProdEnv
 
 
 def main():
@@ -29,6 +30,8 @@ def main():
     devices_per_leaf = 10000
     device_selection_size = 200
     num_leaf_nodes = 4
+    startup_kit_location = "/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com"
+    username = "admin@nvidia.com"
     output_dir = "/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/transfer"
     dataset_root = "/tmp/nvflare/datasets/cifar10"
     subset_size = 100
@@ -37,7 +40,7 @@ def main():
     global_lr = 0.1
     num_updates_for_model = 20
     max_model_version = 200
-    max_model_history = 100
+    max_model_history = None
     min_hole_to_fill = 10
     eval_frequency = 1
     local_batch_size = 10
@@ -65,7 +68,7 @@ def main():
         max_model_version=max_model_version,
         max_model_history=max_model_history,
         max_num_active_model_versions=max_model_history,
-        update_timeout=500.0,
+        update_timeout=500,
     )
     device_manager_config = DeviceManagerConfig(
         device_selection_size=device_selection_size,
@@ -75,7 +78,7 @@ def main():
     eval_frequency = eval_frequency
 
     # Generate recipe
-    recipe = EdgeRecipe(
+    recipe = EdgeFedBuffRecipe(
         job_name="pt_job_adv",
         model=Cifar10ConvNet(),
         model_manager_config=model_manager_config,
@@ -92,11 +95,16 @@ def main():
         custom_source_root=None,
     )
 
-    print("Exporting recipe...")
+    print(f"Exporting recipe to {output_dir}")
     recipe.export(output_dir)
     print("DONE")
 
-    return 0
+    env = ProdEnv(startup_kit_location=startup_kit_location, username=username)
+    run = recipe.execute(env)
+    print()
+    print("Result can be found in :", run.get_result())
+    print("Job Status is:", run.get_status())
+    print()
 
 
 if __name__ == "__main__":

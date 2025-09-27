@@ -138,7 +138,7 @@ class ObjectStreamer(FLComponent):
         self.streaming_executor = None
         if e:
             e.shutdown(wait=False, cancel_futures=True)
-            self.logger.info("Stream Runer is Shut Down")
+            self.logger.debug("Stream Runner is Shut Down")
 
     def register_stream_processing(
         self,

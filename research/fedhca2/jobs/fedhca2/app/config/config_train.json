@@ -1,0 +1,90 @@
+{
+    "format_version": 2,
+    "experiment_name": "fedhca2_pascal_st_nyud_mt_1c",
+    "client_configs": {
+        "site-1": {
+            "dataset": "pascalcontext",
+            "tasks": [
+                "semseg"
+            ]
+        },
+        "site-2": {
+            "dataset": "pascalcontext",
+            "tasks": [
+                "human_parts"
+            ]
+        },
+        "site-3": {
+            "dataset": "pascalcontext",
+            "tasks": [
+                "normals"
+            ]
+        },
+        "site-4": {
+            "dataset": "pascalcontext",
+            "tasks": [
+                "edge"
+            ]
+        },
+        "site-5": {
+            "dataset": "pascalcontext",
+            "tasks": [
+                "sal"
+            ]
+        },
+        "site-6": {
+            "dataset": "nyud",
+            "tasks": [
+                "semseg",
+                "normals",
+                "edge",
+                "depth"
+            ]
+        }
+    },
+    "model": {
+        "backbone_type": "swin-t",
+        "backbone_pretrained": true
+    },
+    "hyperweight": {
+        "learning_rate": 0.01,
+        "weight_decay": 0.0001,
+        "momentum": 0.9
+    },
+    "algorithm": {
+        "encoder_agg": "conflict_averse",
+        "decoder_agg": "cross_attention",
+        "ca_c": 0.4,
+        "enc_alpha_init": 0.1,
+        "dec_beta_init": 0.1
+    },
+    "dataset_configs": {
+        "pascalcontext": {
+            "learning_rate": 0.0001,
+            "weight_decay": 0.0001,
+            "local_epochs": 1,
+            "batch_size": 4,
+            "warmup_epochs": 5,
+            "optimizer": "adamw",
+            "nworkers": 4,
+            "fp16": true
+        },
+        "nyud": {
+            "learning_rate": 0.0001,
+            "weight_decay": 0.0001,
+            "local_epochs": 4,
+            "batch_size": 4,
+            "warmup_epochs": 5,
+            "optimizer": "adamw",
+            "nworkers": 4,
+            "fp16": true
+        }
+    },
+    "paths": {
+        "data_root": "data/",
+        "results_dir": "results/"
+    },
+    "misc": {
+        "seed": 42
+    }
+}

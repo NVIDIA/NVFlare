@@ -1,0 +1,19 @@
+name: Dispatch Format Command
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  slash-command:
+    if: github.event.issue.pull_request != null && contains(github.event.comment.body, '/format')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Format Workflow
+        uses: peter-evans/slash-command-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          command: format
+          reaction-token: ${{ secrets.GITHUB_TOKEN }}
+

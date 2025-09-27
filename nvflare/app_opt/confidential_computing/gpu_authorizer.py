@@ -87,7 +87,7 @@ class GPUAuthorizer(CCAuthorizer):
             self.remote_att_result_policy = default_policy
         else:
             self.remote_att_result_policy = open(policy_file).read()
-        self.client.add_verifier(attestation.Devices.GPU, attestation.Environment.REMOTE, nras_url, "")
+        self.client.add_verifier(attestation.Devices.GPU, attestation.Environment.REMOTE, verifier_url, "")
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def generate(self):

@@ -15,7 +15,7 @@ This guide supports two distinct workflows:
 
 ## Setup the NVFlare System
 ### Install prerequisites
-After properly installing NVFlare, further install the required packages for this example:
+Install NVFlare and the required packages for this example:
 ```commandline
 pip install -r requirements.txt
 ```
@@ -24,21 +24,25 @@ To run the ExecuTorch simulated devices, you need to install the executorch pybi
 
 ### Provision the NVFlare System
 
-We are using `nvflare/edge/tools/tree_prov.py` to provision a hierarchical NVFlare system:
+We are using `nvflare provision` to provision a hierarchical NVFlare system for edge, in this example, we have a pre-defined project file `project.yml` for provisioning.
+
+***Note: if starting from scratch, please first run `nvflare provision -e` to create a project yaml, update the settings, then run the following.***
 
 ```commandline
-./setup_nvflare.sh
+nvflare provision -p project.yml
 ```
 
-Note that in this example, we specify `-d 1 -w 2`, indicating a hierarchy of depth 1 and width 2, which results in a topology as following:
+Note that in this example, we specify `depth: 1, width: 2` and `clients: 2`, indicating a hierarchy with a topology as following:
 <img src="./figs/edge_topo.png" alt="Edge Topology" width="800" >
-- `-d` (depth) indicates the number of levels in the hierarchy, in this case, we only have 1 layer of relays. 
-- `-w` (width) indicates the number of connections for each node, in this case, we have 2 relays connecting to the server, and each with 2 leaf clients.
-- There are two types of clints: leaf clients (C11, C12, C21, C22) and non-leaf clients (C1, C2). The leaf clients are the ones that will connect with real devices or run device simulations; while non-leaf clients are used for intermediate message updates through the hierarchy only.
+- depth indicates the number of levels in the hierarchy, in this case, we only have 1 layer of relays. 
+- width indicates the number of connections for each node, in this case, we have 2 relays connecting to the server.
+- clients indicates the number of leaf clients on each relay, in this case, we have 2 leaf clients connecting to each relay.
+
+There are two types of clints: leaf clients (C11, C12, C21, C22) and non-leaf clients (C1, C2). The leaf clients are the ones that will connect with real devices or run device simulations; while non-leaf clients are used for intermediate message updates through the hierarchy only.
 
 For edge-device connection, we only needs the information of the leaf nodes, let's check the lcp map:
 ```commandline
-cat /tmp/nvflare/workspaces/edge_example/prod_00/demo/lcp_map.json
+cat /tmp/nvflare/workspaces/edge_example/prod_00/scripts/lcp_map.json
 ```
 
 We can see the address and port of each leaf node, which can be used by the mobile devices to connect to the system.
@@ -69,7 +73,31 @@ To start the system, run the following command:
 ```commandline
 cd /tmp/nvflare/workspaces/edge_example/prod_00/
 ./start_all.sh
-```    
+```
+
+To run with real device, we also need to start the proxy:
+```commandline
+cd /tmp/nvflare/workspaces/edge_example/prod_00/scripts/
+./start_rp.sh
+```
+
+By default, it will start listening on port 4321, feel free to adjust that.
+
+
+## Enable HTTPS with self-signed certs
+You can use OpenSSL to generate a cert, for example:
+
+```
+openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 \
+  -subj "/C=US/ST=State/L=City/O=YourOrg/CN=localhost"
+```
+
+Then please modify the start_rp.sh to the following:
+```
+python -m nvflare.edge.web.routing_proxy 443 lcp_map.json rootCA.pem --ssl-cert cert.pem --ssl-key key.pem
+```
+
+Remember to enable allow self signed certs from the device SDK side.
 
 ## ExecuTorch-based FL
 ### ExecuTorch simulated devices
@@ -144,34 +172,18 @@ cd /tmp/nvflare/workspaces/edge_example/prod_00/
 bash start_all.sh 
 ```  
 
-#### Step2: Generate Job Configs using the EdgeRecipe API
-Next, let's generate job configs for cifar10 via EdgeRecipe API.
+#### Step2: Generate Jobs and Submit Using the EdgeFedBuffRecipe API
+Next, let's generate job configs for cifar10 via EdgeFedBuffRecipe API.
+
+This will generate two job configurations and submit them to run on the FL system for basic synchronous and asynchronous training:
+- sync assumes ALL devices participate in each round
+- async assumes server updates the global model and immediately dispatch it after receiving ONE device's update.
 
 ```commandline
 python3 jobs/pt_job.py --fl_mode sync
 python3 jobs/pt_job.py --fl_mode async
 python3 jobs/pt_job.py --fl_mode sync --no_delay
 python3 jobs/pt_job.py --fl_mode async --no_delay
-```
-This will generate two job configurations for basic synchronous and asynchronous training:
-- sync assumes ALL devices participate in each round
-- async assumes server updates the global model and immediately dispatch it after receiving ONE device's update.
-
-#### Step3: Submit NVFlare Job
-Start a new console for admin to interact with the NVFlare system:
-```commandline
-/tmp/nvflare/workspaces/edge_example/prod_00/admin@nvidia.com/startup/fl_admin.sh
-```
-
-For simulations performed directly at leaf nodes, simply submit the job:
-```
-submit_job pt_job_sync
-```
-similarly for other jobs:
-```
-submit_job pt_job_async
-submit_job pt_job_sync_no_delay
-submit_job pt_job_async_no_delay
 ```
 
 You will then see the simulated devices start receiving the model from the server and complete local trainings.
@@ -234,14 +246,11 @@ experimental results align well with our calculation.
 
 ### Cross-Device Simulation
 The above experiments are performed in a controlled, consistent manner, where we simulate a limited number of devices and conduct federated learning with all devices participating in each round.
-In practice, we may have a large number of devices, and the devices may not always be available for training. In this case, we can use the EdgeRecipe API to simulate a more realistic cross-device federated learning scenario, where devices are sampled from a large pool of devices, and only a subset of devices are selected for each round of training.
+In practice, we may have a large number of devices, and the devices may not always be available for training. In this case, we can use the EdgeFedBuffRecipe API to simulate a more realistic cross-device federated learning scenario, where devices are sampled from a large pool of devices, and only a subset of devices are selected for each round of training.
 
 To simulate this, rather than only specifying `sync`/`async`, we further specify multiple parameters which were automatically calculated based on the assumptions of the basic settings in previous experiment.
-```commandline
-python3 jobs/pt_job_adv.py 
-```
 
-This will generate a job configuration for cross-device federated learning with the following parameters:
+We can submit a job for cross-device federated learning with the following parameters:
 
 -   devices_per_leaf: 10000, so in total we have 40000 devices across all leaf nodes.
 -   device_selection_size: 200, every round we will randomly select 200 devices in total to execute local training.
@@ -253,9 +262,11 @@ This will generate a job configuration for cross-device federated learning with 
 -   local training parameters: local_batch_size 10, local_epochs 4, local_lr 0.1, and local_momentum 0.0. 
 These settings will simulate a realistic cross-device federated learning scenario, where devices are sampled from a large pool of devices, and only a subset of devices is selected for each round of training. As it is much more complex than the previous experiments, we call it advanced (`_adv`) recipe. Users can further customize the parameters to simulate different scenarios.
 In admin console, submit the job:
+
+```commandline
+python3 jobs/pt_job_adv.py 
 ```
-submit_job pt_job_adv
-```
+
 Upon finishing, we can visualize the results in TensorBoard as before:
 ```commandline
 tensorboard --logdir=/tmp/nvflare/

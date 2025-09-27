@@ -54,7 +54,8 @@ class BaseFedAvg(ModelController):
             - def run(self)
 
         Args:
-            num_clients (int, optional): The number of clients. Defaults to 3.
+            num_clients (int, optional): The number of clients. Defaults to 3. NOTE: this argument should not be here
+            we will remove this argument in next release.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): The starting round number.
         """
