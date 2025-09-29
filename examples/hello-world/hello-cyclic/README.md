@@ -100,7 +100,6 @@ the default federated cyclic algorithm provided by NVFlare.
     train_script = "client.py"
 
     recipe = CyclicRecipe(
-        framework=FrameworkType.TENSORFLOW,
         num_rounds=num_rounds,
         initial_model=Net(),
         train_script=train_script,
