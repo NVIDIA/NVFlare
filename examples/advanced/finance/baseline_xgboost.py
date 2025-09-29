@@ -93,10 +93,10 @@ def main():
     # Split to training and validation
     X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=valid_ratio, random_state=77)
     print(
-        f"TRAINING: X_train: {X_train.shape}, y_train: {y_train.shape}, Fraudulant transaction: {y_train.value_counts()[1]}"
+        f"TRAINING: X_train: {X_train.shape}, y_train: {y_train.shape}, Fraudulent transaction: {y_train.value_counts()[1]}"
     )
     print(
-        f"VALIDATION: X_validate: {X_valid.shape}, y_validate: {y_valid.shape}, Fraudulant transaction: {y_valid.value_counts()[1]}"
+        f"VALIDATION: X_validate: {X_valid.shape}, y_validate: {y_valid.shape}, Fraudulent transaction: {y_valid.value_counts()[1]}"
     )
 
     # construct xgboost DMatrix

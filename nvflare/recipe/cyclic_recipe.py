@@ -14,7 +14,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, conint
 
 from nvflare import FedJob
 from nvflare.app_common.shareablegenerators import FullModelShareableGenerator
@@ -31,6 +31,7 @@ class _CyclicValidator(BaseModel):
     name: str
     initial_model: Any
     num_rounds: int
+    min_clients: conint(ge=2)
     train_script: str
     train_args: str
     launch_external_process: bool = False
@@ -47,6 +48,7 @@ class CyclicRecipe(Recipe):
         name: str = "cyclic",
         initial_model: Any = None,
         num_rounds: int = 2,
+        min_clients: int = 2,
         train_script: str,
         train_args: str = "",
         launch_external_process: bool = False,
@@ -60,6 +62,7 @@ class CyclicRecipe(Recipe):
             name=name,
             initial_model=initial_model,
             num_rounds=num_rounds,
+            min_clients=min_clients,
             train_script=train_script,
             train_args=train_args,
             launch_external_process=launch_external_process,
@@ -81,7 +84,7 @@ class CyclicRecipe(Recipe):
         self.server_expected_format: ExchangeFormat = v.server_expected_format
         self.params_transfer_type: TransferType = v.params_transfer_type
 
-        job = FedJob(name=name)
+        job = FedJob(name=name, min_clients=v.min_clients)
         # Define the controller workflow and send to server
         controller = CyclicController(
             num_rounds=num_rounds,
