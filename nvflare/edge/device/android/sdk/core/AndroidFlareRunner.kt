@@ -51,6 +51,8 @@ class AndroidFlareRunner(
     private var jobId: String? = null
     private var cookie: Any? = null
     private var currentJobId: String? = null
+    private var currentTaskId: String? = null
+    private var currentTaskName: String? = null
     private val resolverRegistryMap: MutableMap<String, Class<*>> = HashMap()
 
     init {
@@ -112,10 +114,36 @@ class AndroidFlareRunner(
         Log.d(TAG, "Stopping AndroidFlareRunner")
         abortSignal.trigger(null)
         
+        // Try to report result to server before stopping
+        // This ensures the server knows the device has completed/aborted the current task
+        try {
+            if (currentJobId != null && cookie != null && currentTaskId != null && currentTaskName != null) {
+                Log.d(TAG, "Reporting abort result to server before stopping")
+                
+                // Create task context with current task info
+                val ctx = Context()
+                ctx[ContextKey.TASK_ID] = currentTaskId
+                ctx[ContextKey.TASK_NAME] = currentTaskName
+                Log.d(TAG, "Using current task context: $currentTaskId, $currentTaskName")
+
+                // Create empty tensor differences to indicate no training occurred
+                val emptyTensorDifferences = emptyMap<String, Any>()
+                
+                reportResult(ctx, DXO.fromMap(emptyTensorDifferences))
+                Log.d(TAG, "Abort result reported to server")
+            } else {
+                Log.d(TAG, "Skipping abort result report - no active task (jobId=$currentJobId, taskId=$currentTaskId)")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reporting abort result to server", e)
+        }
+        
         // Reset state variables to allow clean restart
         jobId = null
         cookie = null
         currentJobId = null
+        currentTaskId = null
+        currentTaskName = null
         
         // Close the connection to prevent device count increase
         try {
@@ -253,8 +281,10 @@ class AndroidFlareRunner(
             }
 
             // Set task context
-            taskCtx[ContextKey.TASK_ID] = task?.get("task_id") ?: ""
-            taskCtx[ContextKey.TASK_NAME] = taskName ?: ""
+            currentTaskId = task?.get("task_id") as? String
+            currentTaskName = taskName
+            taskCtx[ContextKey.TASK_ID] = currentTaskId ?: ""
+            taskCtx[ContextKey.TASK_NAME] = currentTaskName ?: ""
             taskCtx[ContextKey.TASK_DATA] = taskData ?: emptyMap<String, Any>()
             taskCtx[ContextKey.EXECUTOR] = executor
             taskCtx[ContextKey.ANDROID_CONTEXT] = getAndroidContext()
