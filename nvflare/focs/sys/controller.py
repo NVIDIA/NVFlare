@@ -14,7 +14,7 @@
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List
+from typing import List
 
 from nvflare.apis.client import Client as ClientSite
 from nvflare.apis.controller_spec import Client, ClientTask, Task
@@ -22,7 +22,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.decomposers.numpy_decomposers import register
 from nvflare.focs.api.app import ServerApp
 from nvflare.focs.api.constants import ContextKey
 from nvflare.focs.api.proxy import Proxy
@@ -51,14 +50,16 @@ class FocsController(Controller):
         self,
         strategy_ids: List[str],
         server_app_id: str = None,
-        server_target_obj_ids: Dict[str, str] = None,
+        server_collab_obj_ids: List[str] = None,
         sync_task_timeout=2,
         max_call_threads=100,
     ):
         Controller.__init__(self)
+        if not server_collab_obj_ids:
+            server_collab_obj_ids = []
         self.server_app_id = server_app_id  # component name
         self.strategy_ids = strategy_ids  # component names
-        self.server_target_obj_ids = server_target_obj_ids  # component IDs
+        self.server_collab_obj_ids = server_collab_obj_ids  # component IDs
         self.sync_task_timeout = sync_task_timeout
         self.server_app = None
         self.client_info = {}  # client name => _ClientInfo
@@ -69,7 +70,6 @@ class FocsController(Controller):
             raise ValueError(f"no strategies defined - there must be at least one strategy")
 
     def start_controller(self, fl_ctx: FLContext):
-        register()
         engine = fl_ctx.get_engine()
 
         if self.server_app_id:
@@ -89,14 +89,14 @@ class FocsController(Controller):
 
             app.add_strategy(strategy)
 
-        if self.server_target_obj_ids:
-            for name, cid in self.server_target_obj_ids:
+        if self.server_collab_obj_ids:
+            for cid in self.server_collab_obj_ids:
                 obj = engine.get_component(cid)
                 if not obj:
                     self.system_panic(f"component {cid} does not exist", fl_ctx)
                     return
 
-                app.add_target_object(name, obj)
+                app.add_collab_object(cid, obj)
 
         self.server_app = app
 
@@ -137,23 +137,17 @@ class FocsController(Controller):
         backend = self._prepare_server_backend(job_id, abort_signal)
         proxy = Proxy(app=self.server_app, target_name=server_name, backend=backend, caller_name=server_name)
 
-        tos = self.server_app.get_target_objects()
-        if tos:
-            for name in tos.keys():
-                p = Proxy(
-                    app=self.server_app, target_name=f"{server_name}.{name}", backend=backend, caller_name=server_name
-                )
-                setattr(proxy, name, p)
+        for name in self.server_collab_obj_ids:
+            p = Proxy(
+                app=self.server_app, target_name=f"{server_name}.{name}", backend=backend, caller_name=server_name
+            )
+            setattr(proxy, name, p)
         return proxy
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         # configure all sites
-        if self.server_target_obj_ids:
-            target_obj_names = list(self.server_target_obj_ids.keys())
-        else:
-            target_obj_names = []
-
-        task_data = Shareable({SyncKey.TARGET_OBJ_NAMES: target_obj_names})
+        collab_obj_names = self.server_collab_obj_ids
+        task_data = Shareable({SyncKey.COLLAB_OBJ_NAMES: collab_obj_names})
         task = Task(
             name=SYNC_TASK_NAME,
             data=task_data,
@@ -232,7 +226,7 @@ class FocsController(Controller):
         rc = result.get_return_code()
         if rc == ReturnCode.OK:
             self.log_info(fl_ctx, f"successfully synced client {client_name}")
-            target_obj_names = result.get(SyncKey.TARGET_OBJ_NAMES)
+            target_obj_names = result.get(SyncKey.COLLAB_OBJ_NAMES)
             if not target_obj_names:
                 target_obj_names = []
             self.client_info[client_name] = _ClientInfo(target_obj_names)

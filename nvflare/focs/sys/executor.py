@@ -66,7 +66,7 @@ class FocsExecutor(Executor):
                     self.system_panic(f"component {cid} does not exist", fl_ctx)
                     return
 
-                self.client_app.add_target_object(name, obj)
+                self.client_app.add_collab_object(name, obj)
 
     def _prepare_server_proxy(self, job_id, cell, server_target_obj_names, abort_signal):
         my_name = self.client_app.name
@@ -112,7 +112,7 @@ class FocsExecutor(Executor):
             self.log_error(fl_ctx, f"received unsupported task {task_name}")
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
-        server_target_obj_names = shareable.get(SyncKey.TARGET_OBJ_NAMES)
+        server_target_obj_names = shareable.get(SyncKey.COLLAB_OBJ_NAMES)
 
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
@@ -145,5 +145,5 @@ class FocsExecutor(Executor):
             target_obj_names = list(self.client_target_obj_ids.keys())
         else:
             target_obj_names = []
-        reply[SyncKey.TARGET_OBJ_NAMES] = target_obj_names
+        reply[SyncKey.COLLAB_OBJ_NAMES] = target_obj_names
         return reply

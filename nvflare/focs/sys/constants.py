@@ -18,7 +18,7 @@ MSG_TOPIC = "call"
 
 
 class SyncKey:
-    TARGET_OBJ_NAMES = "target_obj_names"
+    COLLAB_OBJ_NAMES = "collab_obj_names"
 
 
 class ObjectCallKey:

@@ -30,7 +30,7 @@ class App:
         self.server = None
         self.clients = None
         self._me = None
-        self._target_objs = []
+        self._collab_objs = []
         self._abort_signal = None
         self._props = {}
         self._event_handlers = {}  # event type => list of (cb, kwargs)
@@ -41,18 +41,18 @@ class App:
     def get_prop(self, name: str, default=None):
         return self._props.get(name, default)
 
-    def get_default_target(self):
+    def get_default_collab_object(self):
         return None
 
-    def add_target_object(self, name: str, obj):
+    def add_collab_object(self, name: str, obj):
         if hasattr(obj, name):
             raise ValueError(f"conflict with reserved name {name}")
 
         setattr(self, name, obj)
-        self._target_objs.append((name, obj))
+        self._collab_objs.append((name, obj))
 
-    def get_target_objects(self):
-        return self._target_objs
+    def get_collab_objects(self):
+        return self._collab_objs
 
     def setup(self, server: Proxy, clients: List[Proxy], abort_signal):
         self.server = server
@@ -81,13 +81,13 @@ class App:
 
         if isinstance(target_obj, App):
             # see whether any targets have this method
-            default_target = self.get_default_target()
+            default_target = self.get_default_collab_object()
             if default_target:
                 m = getattr(default_target, method_name, None)
                 if m:
                     return m
 
-            targets = self.get_target_objects()
+            targets = self.get_collab_objects()
             for _, obj in targets:
                 m = getattr(obj, method_name, None)
                 if m:
@@ -107,7 +107,7 @@ class App:
         self.initialize_app(context)
 
         # initialize target objects
-        for name, obj in self._target_objs:
+        for name, obj in self._collab_objs:
             init_func = getattr(obj, "initialize", None)
             if init_func and callable(init_func):
                 print(f"initializing target object {name}")
@@ -158,7 +158,7 @@ class ServerApp(App):
             raise ValueError(f"strategy must be Controller but got {type(strategy)}")
         self.strategies.append(strategy)
 
-    def get_default_target(self):
+    def get_default_collab_object(self):
         return self.current_strategy
 
 
