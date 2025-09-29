@@ -609,10 +609,19 @@ class SimulatorClientRunner(FLComponent):
 
         self.clients_finished_end_run = []
 
+        # Fail-fast configuration
+        self.fail_fast = self.kv_list.get(
+            "simulator_fail_fast_on_client_error", True
+        )  # Default: stop on any client failure
+        self.client_failure_event = threading.Event()  # Signal client failure across threads
+
     def run(self, gpu):
         try:
             # self.create_clients()
             self.logger.info("Start the clients run simulation.")
+            if self.fail_fast:
+                self.logger.info("Fail-fast mode enabled: simulation will stop on first client failure")
+
             executor = ThreadPoolExecutor(max_workers=self.args.threads)
             lock = threading.Lock()
             timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
@@ -624,6 +633,9 @@ class SimulatorClientRunner(FLComponent):
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
+
+            if self.client_failure_event.is_set():
+                self.logger.error("Simulation stopped due to client failure")
 
         except Exception as e:
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
@@ -650,6 +662,11 @@ class SimulatorClientRunner(FLComponent):
 
         try:
             while not stop_run:
+                # Check if another thread signaled failure
+                if self.fail_fast and self.client_failure_event.is_set():
+                    self.logger.info(f"Thread for GPU {gpu} exiting due to client failure in another thread")
+                    break
+
                 time.sleep(interval)
                 with lock:
                     if not client_to_run:
@@ -661,6 +678,7 @@ class SimulatorClientRunner(FLComponent):
                 stop_run, client_to_run, end_run_client = self.do_one_task(
                     client, num_of_threads, gpu, lock, timeout=timeout
                 )
+
                 if end_run_client:
                     with lock:
                         self.clients_finished_end_run.append(end_run_client)
@@ -756,7 +774,7 @@ class SimulatorClientRunner(FLComponent):
                 python_paths.remove(self.server_custom_folder)
             new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(python_paths)
 
-        _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
+        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
 
@@ -772,23 +790,70 @@ class SimulatorClientRunner(FLComponent):
         conn.send(data)
 
         end_run_client = None
-        while True:
-            stop_run = conn.recv()
-            if stop_run:
-                end_run_client = conn.recv()
+        try:
+            while True:
+                if process.poll() is not None:
+                    self.logger.error(
+                        f"Subprocess died for client {client.client_name}, exit code: {process.returncode}"
+                    )
+                    if self.fail_fast:
+                        self.logger.error("Fail-fast enabled: stopping all threads due to subprocess death")
+                        self.client_failure_event.set()
+                    return True, None, client.client_name
 
-            with lock:
-                if num_of_threads != len(self.federated_clients):
-                    next_client = self.get_next_run_client(gpu)
+                stop_run = conn.recv()
+
+                if stop_run:
+                    # Check again before second recv
+                    if process.poll() is not None:
+                        self.logger.error(
+                            f"Subprocess died for client {client.client_name} before second recv, exit code: {process.returncode}"
+                        )
+                        if self.fail_fast:
+                            self.logger.error("Fail-fast enabled: stopping all threads due to subprocess death")
+                            self.client_failure_event.set()
+                        return True, None, client.client_name
+
+                    end_run_client = conn.recv()
+
+                with lock:
+                    if num_of_threads != len(self.federated_clients):
+                        next_client = self.get_next_run_client(gpu)
+                    else:
+                        next_client = client
+
+                # Check process health before sending
+                if process.poll() is not None:
+                    self.logger.error(
+                        f"Subprocess died for client {client.client_name} before send, exit code: {process.returncode}"
+                    )
+                    return True, None, client.client_name
+
+                if not stop_run and next_client.client_name == client.client_name:
+                    conn.send(True)
                 else:
-                    next_client = client
-            if not stop_run and next_client.client_name == client.client_name:
-                conn.send(True)
-            else:
-                conn.send(False)
-                break
+                    conn.send(False)
+                    break
 
-        return stop_run, next_client, end_run_client
+            return stop_run, next_client, end_run_client
+
+        except (EOFError, OSError, ConnectionError) as e:
+            self.logger.error(f"Communication error with client {client.client_name}: {e}")
+            if self.fail_fast:
+                self.logger.error("Fail-fast enabled: stopping all threads due to client failure")
+                self.client_failure_event.set()
+            return True, None, client.client_name
+        finally:
+            # Clean up subprocess if it's still running
+            if process and process.poll() is None:
+                try:
+                    process.terminate()
+                    process.wait(timeout=5.0)
+                except:
+                    try:
+                        process.kill()
+                    except:
+                        pass
 
     def _get_new_sys_path(self):
         new_sys_path = []
