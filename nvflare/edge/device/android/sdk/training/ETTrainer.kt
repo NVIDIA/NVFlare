@@ -310,6 +310,7 @@ class ETTrainer(
                 }
                 
                 Log.d(TAG, "Processing batch - requested batchSize: $batchSize, actual inputData.size: ${inputData.size}, actual labelData.size: ${labelData.size}")
+                Log.d(TAG, "DEBUG: About to create input tensor with method: '$method'")
                 
                 val inputTensor = createInputTensor(inputData, method, batchSize)
                 val labelTensor = createLabelTensor(labelData, batchSize)
@@ -370,7 +371,8 @@ class ETTrainer(
      * Create input tensor based on method and batch size.
      */
     private fun createInputTensor(inputData: FloatArray, method: String, batchSize: Int): Tensor {
-        Log.d(TAG, "Creating input tensor - method: $method, inputData.size: ${inputData.size}, requested batchSize: $batchSize")
+        Log.d(TAG, "Creating input tensor - method: '$method', inputData.size: ${inputData.size}, requested batchSize: $batchSize")
+        Log.d(TAG, "DEBUG: Method check - method == 'cnn': ${method == "cnn"}, method == 'xor': ${method == "xor"}")
         
         return when (method) {
             "cnn" -> {

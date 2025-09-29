@@ -111,6 +111,20 @@ class AndroidFlareRunner(
     fun stop() {
         Log.d(TAG, "Stopping AndroidFlareRunner")
         abortSignal.trigger(null)
+        
+        // Reset state variables to allow clean restart
+        jobId = null
+        cookie = null
+        currentJobId = null
+        
+        // Close the connection to prevent device count increase
+        try {
+            Log.d(TAG, "About to close connection")
+            connection.close()
+            Log.d(TAG, "Connection closed successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing connection", e)
+        }
     }
 
     /**
