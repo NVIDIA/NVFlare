@@ -37,7 +37,7 @@ class CyclicRecipe(BaseCyclicRecipe):
     ):
         super().__init__(
             name=name,
-            initial_model=TFModel(initial_model),
+            initial_model=TFModel(initial_model) if initial_model is not None and not isinstance(initial_model, TFModel) else initial_model,
             num_rounds=num_rounds,
             train_script=train_script,
             train_args=train_args,
