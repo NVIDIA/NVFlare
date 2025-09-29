@@ -120,14 +120,13 @@ class FocsController(Controller):
 
     def _prepare_client_proxy(self, job_id: str, client: ClientSite, target_obj_names: List[str], abort_signal):
         backend = self._prepare_client_backend(job_id, client, abort_signal)
-        proxy = Proxy(app=self.server_app, target_name=client.name, backend=backend, caller_name=self.server_app.name)
+        proxy = Proxy(app=self.server_app, target_name=client.name, backend=backend)
 
         for name in target_obj_names:
             p = Proxy(
                 app=self.server_app,
                 target_name=f"{client.name}.{name}",
                 backend=backend,
-                caller_name=self.server_app.name,
             )
             setattr(proxy, name, p)
         return proxy
@@ -135,12 +134,10 @@ class FocsController(Controller):
     def _prepare_server_proxy(self, job_id, abort_signal):
         server_name = self.server_app.name
         backend = self._prepare_server_backend(job_id, abort_signal)
-        proxy = Proxy(app=self.server_app, target_name=server_name, backend=backend, caller_name=server_name)
+        proxy = Proxy(app=self.server_app, target_name=server_name, backend=backend)
 
         for name in self.server_collab_obj_ids:
-            p = Proxy(
-                app=self.server_app, target_name=f"{server_name}.{name}", backend=backend, caller_name=server_name
-            )
+            p = Proxy(app=self.server_app, target_name=f"{server_name}.{name}", backend=backend)
             setattr(proxy, name, p)
         return proxy
 

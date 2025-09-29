@@ -20,7 +20,9 @@ from nvflare.focs.sim.runner import AppRunner
 def main():
 
     runner = AppRunner(
-        server_app=ServerApp(strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)),
+        server_app=ServerApp(
+            strategy_name="cyclic", strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)
+        ),
         client_app=NPTrainer(delta=1.0),
         num_clients=2,
     )

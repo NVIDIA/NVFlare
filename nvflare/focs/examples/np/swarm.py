@@ -72,7 +72,7 @@ class NPSwarmClient(ClientApp):
         if current_round == num_rounds - 1:
             # all done
             all_clients(context, blocking=False).fire_event("final_model", new_model)
-            self.server.notify_done()
+            self.server.swarm.notify_done()
             return
 
         # determine next client
@@ -93,9 +93,17 @@ class NPSwarmClient(ClientApp):
 
 def main():
 
+    server_app = ServerApp(
+        strategy_name="swarm", strategy=NPSwarm(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=5)
+    )
+    server_app.get_collab_signature()
+
+    client_app = NPSwarmClient(delta=1.0)
+    client_app.get_collab_signature()
+
     runner = AppRunner(
-        server_app=ServerApp(strategy=NPSwarm(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=5)),
-        client_app=NPSwarmClient(delta=1.0),
+        server_app=server_app,
+        client_app=client_app,
         num_clients=3,
     )
 

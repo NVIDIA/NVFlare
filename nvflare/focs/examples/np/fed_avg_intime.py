@@ -20,8 +20,14 @@ from nvflare.focs.sim.runner import AppRunner
 
 def main():
 
-    server_app = ServerApp(strategy=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2))
+    server_app = ServerApp(
+        strategy_name="fed_avg_in_time",
+        strategy=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
+    )
+
     server_app.add_collab_object("metric_receiver", MetricReceiver())
+
+    server_app.get_collab_signature()
 
     runner = AppRunner(
         server_app=server_app,

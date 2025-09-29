@@ -15,8 +15,9 @@ import inspect
 
 from .constants import CollabMethodArgName
 
-_ATTR_COLLAB = "_is_fox_collab"
-_ATTR_SUPPORT_CTX = "_supports_fox_ctx"
+_ATTR_COLLAB = "_fox_is_collab"
+_ATTR_SUPPORT_CTX = "_fox_supports_ctx"
+_ATTR_PARAM_NAMES = "_fox_param_names"
 
 
 def collab(func):
@@ -24,11 +25,18 @@ def collab(func):
         return func(*args, **kwargs)
 
     signature = inspect.signature(func)
-    parameter_names = signature.parameters.keys()
+    parameter_names = list(signature.parameters.keys())
+    if "self" in parameter_names:
+        parameter_names.remove("self")
+    setattr(wrapper, _ATTR_PARAM_NAMES, parameter_names)
     if CollabMethodArgName.CONTEXT in parameter_names:
         setattr(wrapper, _ATTR_SUPPORT_CTX, True)
     setattr(wrapper, _ATTR_COLLAB, True)
     return wrapper
+
+
+def get_param_names(func):
+    return getattr(func, _ATTR_PARAM_NAMES, None)
 
 
 def is_collab(func):
@@ -42,3 +50,12 @@ def supports_context(func):
 def adjust_kwargs(func, kwargs):
     if not supports_context(func):
         kwargs.pop(CollabMethodArgName.CONTEXT, None)
+
+
+def get_object_collab_signature(obj):
+    result = {}
+    for name in dir(obj):
+        func = getattr(obj, name)
+        if callable(func) and is_collab(func):
+            result[name] = get_param_names(func)
+    return result

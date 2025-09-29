@@ -17,7 +17,7 @@ from typing import List
 
 from .constants import CollabMethodArgName
 from .ctx import Context
-from .dec import collab, is_collab
+from .dec import collab, get_object_collab_signature, is_collab
 from .proxy import Proxy
 from .strategy import Strategy
 from .utils import check_context_support
@@ -45,6 +45,10 @@ class App:
         return None
 
     def add_collab_object(self, name: str, obj):
+        for n, o in self._collab_objs:
+            if name == n:
+                raise ValueError(f"conflict with existing collab object '{name}' of {type(o)}")
+
         if hasattr(obj, name):
             raise ValueError(f"conflict with reserved name {name}")
 
@@ -129,6 +133,14 @@ class App:
             self._event_handlers[event_type] = handlers
         handlers.append((handler, handler_kwargs))
 
+    def get_collab_signature(self):
+        results = {"": get_object_collab_signature(self)}
+
+        for name, obj in self._collab_objs:
+            results[name] = get_object_collab_signature(obj)
+
+        print(f"get_collab_signature: {results}")
+
     @collab
     def fire_event(self, event_type: str, data, context: Context):
         for e, handlers in self._event_handlers.items():
@@ -142,7 +154,7 @@ class App:
 
 class ServerApp(App):
 
-    def __init__(self, strategy: Strategy = None):
+    def __init__(self, strategy_name: str, strategy: Strategy = None):
         super().__init__()
 
         if strategy and not isinstance(strategy, Strategy):
@@ -150,13 +162,14 @@ class ServerApp(App):
 
         self.strategies = []
         if strategy:
-            self.strategies.append(strategy)
+            self.add_strategy(strategy_name, strategy)
         self.current_strategy = None
 
-    def add_strategy(self, strategy):
+    def add_strategy(self, strategy_name: str, strategy):
         if not isinstance(strategy, Strategy):
             raise ValueError(f"strategy must be Controller but got {type(strategy)}")
         self.strategies.append(strategy)
+        self.add_collab_object(strategy_name, strategy)
 
     def get_default_collab_object(self):
         return self.current_strategy
