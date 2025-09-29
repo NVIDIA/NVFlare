@@ -21,7 +21,7 @@ from nvflare.focs.sim.runner import AppRunner
 def main():
 
     server_app = ServerApp(strategy=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2))
-    server_app.add_target_object("metric_receiver", MetricReceiver())
+    server_app.add_collab_object("metric_receiver", MetricReceiver())
 
     runner = AppRunner(
         server_app=server_app,

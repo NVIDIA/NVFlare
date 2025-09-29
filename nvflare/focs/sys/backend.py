@@ -47,7 +47,7 @@ class SysBackend(Backend):
         request = new_cell_message({}, payload)
 
         if blocking:
-            self.logger.info(f"request payload: {request.payload} from {self.cell.get_fqcn()} to {self.target_fqcn}")
+            self.logger.info(f"send_request from {self.cell.get_fqcn()} to {self.target_fqcn}")
 
             reply = self.cell.send_request(
                 channel=MSG_CHANNEL,
@@ -78,6 +78,7 @@ class SysBackend(Backend):
             return result
         else:
             # fire and forget
+            self.logger.info(f"fire_and_forget from {self.cell.get_fqcn()} to {self.target_fqcn}")
             self.cell.fire_and_forget(
                 channel=MSG_CHANNEL,
                 topic=MSG_TOPIC,

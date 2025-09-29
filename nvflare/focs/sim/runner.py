@@ -27,7 +27,7 @@ class AppRunner:
 
     def _prepare_app_backends(self, app: App):
         bes = {"": SimBackend(app, app, self.abort_signal, self.thread_executor)}
-        targets = app.get_target_objects()
+        targets = app.get_collab_objects()
         if targets:
             for name, obj in targets:
                 bes[name] = SimBackend(app, obj, self.abort_signal, self.thread_executor)
@@ -35,7 +35,7 @@ class AppRunner:
 
     def _prepare_proxy(self, for_app: App, target_app: App, backends: dict):
         app_proxy = Proxy(app=for_app, target_name=target_app.name, backend=backends[""], caller_name=for_app.name)
-        tos = target_app.get_target_objects()
+        tos = target_app.get_collab_objects()
         if tos:
             for name, obj in tos:
                 p = Proxy(

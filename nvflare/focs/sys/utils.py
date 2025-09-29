@@ -71,7 +71,7 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     if len(parts) >= 2:
         obj_name = parts[1]
     if obj_name:
-        target_objs = app.get_target_objects()
+        target_objs = app.get_collab_objects()
         target_obj = target_objs.get(obj_name)
         logger.info(f"calling target obj: {app.name}.{obj_name}")
     else:

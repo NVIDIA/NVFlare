@@ -26,7 +26,7 @@ def main():
             initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
         )
     )
-    server_app.add_target_object("metric_receiver", MetricReceiver())
+    server_app.add_collab_object("metric_receiver", MetricReceiver())
 
     runner = AppRunner(
         server_app=server_app,
