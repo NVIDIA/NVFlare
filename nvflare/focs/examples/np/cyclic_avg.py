@@ -18,8 +18,12 @@ from nvflare.focs.sim.runner import AppRunner
 
 
 def main():
-    server_app = ServerApp(NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2))
-    server_app.add_strategy(NPFedAvgParallel(initial_model=None, num_rounds=2))
+    server_app = ServerApp(
+        strategy_name="cyclic", strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)
+    )
+    server_app.add_strategy("fed_avg_parallel", NPFedAvgParallel(initial_model=None, num_rounds=2))
+
+    server_app.get_collab_signature()
 
     runner = AppRunner(
         server_app=server_app,

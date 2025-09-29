@@ -19,6 +19,7 @@ from typing import Union
 from nvflare.apis.signal import Signal
 from nvflare.focs.api.app import App, ClientApp, ClientAppFactory, ServerApp
 from nvflare.focs.api.constants import ContextKey
+from nvflare.focs.api.dec import get_object_collab_signature
 from nvflare.focs.api.proxy import Proxy
 from nvflare.focs.sim.backend import SimBackend
 
@@ -34,7 +35,12 @@ class AppRunner:
         return bes
 
     def _prepare_proxy(self, for_app: App, target_app: App, backends: dict):
-        app_proxy = Proxy(app=for_app, target_name=target_app.name, backend=backends[""], caller_name=for_app.name)
+        app_proxy = Proxy(
+            app=for_app,
+            target_name=target_app.name,
+            backend=backends[""],
+            target_signature=get_object_collab_signature(target_app),
+        )
         tos = target_app.get_collab_objects()
         if tos:
             for name, obj in tos:
@@ -42,7 +48,7 @@ class AppRunner:
                     app=for_app,
                     target_name=f"{target_app.name}.{name}",
                     backend=backends[name],
-                    caller_name=for_app.name,
+                    target_signature=get_object_collab_signature(obj),
                 )
                 setattr(app_proxy, name, p)
         return app_proxy
