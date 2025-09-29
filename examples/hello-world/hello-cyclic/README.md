@@ -95,14 +95,14 @@ the default federated cyclic algorithm provided by NVFlare.
 ## Job Recipe
 
 ```python
-  n_clients = 2
+    n_clients = 2
     num_rounds = 3
     train_script = "client.py"
 
     recipe = CyclicRecipe(
         framework=FrameworkType.TENSORFLOW,
         num_rounds=num_rounds,
-        initial_model=TFModel(Net()),
+        initial_model=Net(),
         train_script=train_script,
     )
 

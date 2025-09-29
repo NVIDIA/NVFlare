@@ -17,7 +17,7 @@ from typing import Any
 from nvflare.app_opt.pt.job_config.model import PTModel
 from nvflare.client.config import ExchangeFormat, TransferType
 from nvflare.job_config.script_runner import FrameworkType
-from nvflare.recipe.cyclic_recipe import CyclicRecipe as BaseCyclicRecipe
+from nvflare.recipe.cyclic import CyclicRecipe as BaseCyclicRecipe
 
 
 class CyclicRecipe(BaseCyclicRecipe):
@@ -27,6 +27,7 @@ class CyclicRecipe(BaseCyclicRecipe):
         name: str = "cyclic",
         initial_model: Any = None,
         num_rounds: int = 2,
+        min_clients: int = 2,
         train_script: str,
         train_args: str = "",
         launch_external_process: bool = False,
@@ -43,6 +44,7 @@ class CyclicRecipe(BaseCyclicRecipe):
             name=name,
             initial_model=model_to_pass,
             num_rounds=num_rounds,
+            min_clients=min_clients,
             train_script=train_script,
             train_args=train_args,
             launch_external_process=launch_external_process,

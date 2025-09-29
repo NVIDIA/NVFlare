@@ -42,6 +42,48 @@ class _CyclicValidator(BaseModel):
 
 
 class CyclicRecipe(Recipe):
+    """Cyclic federated learning recipe for sequential model training across clients.
+    
+    This recipe implements a cyclic (sequential) federated learning approach where clients
+    train one after another in a round-robin fashion, rather than training in parallel.
+    Each client receives the model from the previous client, trains on their local data,
+    and passes the updated model to the next client.
+    
+    The recipe uses the following key components:
+    - CyclicController: Manages the sequential workflow and client coordination on the server
+    - FullModelShareableGenerator: Handles serialization/deserialization of models for transfer
+    - ScriptRunner: Executes client training scripts with specified parameters
+    - FedJob: Orchestrates the overall federated learning job configuration
+    
+    Args:
+        name: Name identifier for the federated learning job. Defaults to "cyclic".
+        initial_model: Starting model object to begin training. Can be None.
+        num_rounds: Number of complete training rounds to execute. Defaults to 2.
+        min_clients: Minimum number of clients required to participate. Must be >= 2.
+        train_script: Path to the client training script to execute.
+        train_args: Additional command-line arguments to pass to the training script.
+        launch_external_process: Whether to run training in a separate process. Defaults to False.
+        command: Shell command to execute the training script. Defaults to "python3 -u".
+        framework: ML framework type for compatibility. Defaults to FrameworkType.NUMPY.
+        server_expected_format: Data exchange format between server and clients. 
+            Defaults to ExchangeFormat.NUMPY.
+        params_transfer_type: Method for transferring model parameters. 
+            Defaults to TransferType.FULL.
+    
+    Raises:
+        ValidationError: If min_clients < 2 or other parameter validation fails.
+        
+    Example:
+        >>> recipe = CyclicRecipe(
+        ...     name="my_cyclic_job",
+        ...     initial_model=my_model,
+        ...     num_rounds=5,
+        ...     min_clients=3,
+        ...     train_script="client_train.py",
+        ...     train_args="--epochs 10 --lr 0.01"
+        ... )
+        >>> # The recipe can then be submitted to the federated learning system
+    """
     def __init__(
         self,
         *,
