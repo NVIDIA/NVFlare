@@ -35,13 +35,13 @@ from .utils import prepare_for_remote_call
 
 class _ClientInfo:
 
-    def __init__(self, target_obj_names):
+    def __init__(self, collab_signature: dict):
         """Information about a client. Reported by the client in the sync response.
 
         Args:
-            target_obj_names: names of target objects on the client.
+            collab_signature: collab method signature of the client.
         """
-        self.target_obj_names = target_obj_names
+        self.collab_signature = collab_signature
 
 
 class FocsController(Controller):
@@ -87,7 +87,7 @@ class FocsController(Controller):
                 self.system_panic(f"component {cid} must be Strategy but got {type(strategy)}", fl_ctx)
                 return
 
-            app.add_strategy(strategy)
+            app.add_strategy(cid, strategy)
 
         if self.server_collab_obj_ids:
             for cid in self.server_collab_obj_ids:
@@ -118,33 +118,52 @@ class FocsController(Controller):
             thread_executor=self.thread_executor,
         )
 
-    def _prepare_client_proxy(self, job_id: str, client: ClientSite, target_obj_names: List[str], abort_signal):
+    def _prepare_client_proxy(
+        self,
+        job_id: str,
+        client: ClientSite,
+        collab_signature: dict,
+        abort_signal,
+    ):
         backend = self._prepare_client_backend(job_id, client, abort_signal)
-        proxy = Proxy(app=self.server_app, target_name=client.name, backend=backend)
+        proxy = Proxy(
+            app=self.server_app, target_name=client.name, backend=backend, target_signature=collab_signature.get("")
+        )
 
-        for name in target_obj_names:
-            p = Proxy(
-                app=self.server_app,
-                target_name=f"{client.name}.{name}",
-                backend=backend,
-            )
+        for name, sig in collab_signature.items():
+            if name == "":
+                continue
+
+            p = Proxy(app=self.server_app, target_name=f"{client.name}.{name}", backend=backend, target_signature=sig)
             setattr(proxy, name, p)
         return proxy
 
-    def _prepare_server_proxy(self, job_id, abort_signal):
+    def _prepare_server_proxy(
+        self,
+        job_id,
+        abort_signal,
+        collab_signature: dict,
+    ):
         server_name = self.server_app.name
         backend = self._prepare_server_backend(job_id, abort_signal)
-        proxy = Proxy(app=self.server_app, target_name=server_name, backend=backend)
+        proxy = Proxy(
+            app=self.server_app, target_name=server_name, backend=backend, target_signature=collab_signature.get("")
+        )
 
         for name in self.server_collab_obj_ids:
-            p = Proxy(app=self.server_app, target_name=f"{server_name}.{name}", backend=backend)
+            p = Proxy(
+                app=self.server_app,
+                target_name=f"{server_name}.{name}",
+                backend=backend,
+                target_signature=collab_signature.get(name),
+            )
             setattr(proxy, name, p)
         return proxy
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         # configure all sites
-        collab_obj_names = self.server_collab_obj_ids
-        task_data = Shareable({SyncKey.COLLAB_OBJ_NAMES: collab_obj_names})
+        server_collab_signature = self.server_app.get_collab_signature()
+        task_data = Shareable({SyncKey.COLLAB_SIGNATURE: server_collab_signature})
         task = Task(
             name=SYNC_TASK_NAME,
             data=task_data,
@@ -190,12 +209,12 @@ class FocsController(Controller):
 
         # prepare proxies and backends
         job_id = fl_ctx.get_job_id()
-        server_proxy = self._prepare_server_proxy(job_id, abort_signal)
+        server_proxy = self._prepare_server_proxy(job_id, abort_signal, server_collab_signature)
         client_proxies = []
         for c in all_clients:
             info = self.client_info[c.name]
             assert isinstance(info, _ClientInfo)
-            client_proxies.append(self._prepare_client_proxy(job_id, c, info.target_obj_names, abort_signal))
+            client_proxies.append(self._prepare_client_proxy(job_id, c, info.collab_signature, abort_signal))
 
         self.server_app.setup(server_proxy, client_proxies, abort_signal)
 
@@ -223,10 +242,8 @@ class FocsController(Controller):
         rc = result.get_return_code()
         if rc == ReturnCode.OK:
             self.log_info(fl_ctx, f"successfully synced client {client_name}")
-            target_obj_names = result.get(SyncKey.COLLAB_OBJ_NAMES)
-            if not target_obj_names:
-                target_obj_names = []
-            self.client_info[client_name] = _ClientInfo(target_obj_names)
+            collab_signature = result.get(SyncKey.COLLAB_SIGNATURE)
+            self.client_info[client_name] = _ClientInfo(collab_signature)
         else:
             self.log_error(fl_ctx, f"client {client_task.client.name} failed to sync: {rc}")
             self.client_info[client_name] = None

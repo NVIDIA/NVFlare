@@ -38,6 +38,7 @@ class FocsExecutor(Executor):
         self.client_app_id = client_app_id
         self.client_target_obj_ids = client_target_obj_ids
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
+        self.register_event_handler(EventType.END_RUN, self._handle_end_run)
         self.client_app = None
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads)
 
@@ -68,8 +69,10 @@ class FocsExecutor(Executor):
 
                 self.client_app.add_collab_object(name, obj)
 
-    def _prepare_server_proxy(self, job_id, cell, server_target_obj_names, abort_signal):
-        my_name = self.client_app.name
+    def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
+        self.thread_executor.shutdown(wait=False, cancel_futures=True)
+
+    def _prepare_server_proxy(self, job_id, cell, collab_signature: dict, abort_signal):
         server_name = "server"
         backend = SysBackend(
             caller=self.client_app.name,
@@ -78,14 +81,19 @@ class FocsExecutor(Executor):
             abort_signal=abort_signal,
             thread_executor=self.thread_executor,
         )
-        proxy = Proxy(app=self.client_app, target_name=server_name, backend=backend, caller_name=my_name)
+        proxy = Proxy(
+            app=self.client_app, target_name=server_name, backend=backend, target_signature=collab_signature.get("")
+        )
 
-        for name in server_target_obj_names:
-            p = Proxy(app=self.client_app, target_name=f"{server_name}.{name}", backend=backend, caller_name=my_name)
+        for name, sig in collab_signature.items():
+            if name == "":
+                # this is the server app itself
+                continue
+            p = Proxy(app=self.client_app, target_name=f"{server_name}.{name}", backend=backend, target_signature=sig)
             setattr(proxy, name, p)
         return proxy
 
-    def _prepare_client_proxy(self, job_id, cell, client: Client, abort_signal):
+    def _prepare_client_proxy(self, job_id, cell, client: Client, abort_signal, collab_signature):
         my_name = self.client_app.name
         backend = SysBackend(
             caller=self.client_app.name,
@@ -94,7 +102,9 @@ class FocsExecutor(Executor):
             abort_signal=abort_signal,
             thread_executor=self.thread_executor,
         )
-        proxy = Proxy(app=self.client_app, target_name=client.name, backend=backend, caller_name=my_name)
+        proxy = Proxy(
+            app=self.client_app, target_name=client.name, backend=backend, target_signature=collab_signature.get("")
+        )
 
         if self.client_target_obj_ids:
             for name in self.client_target_obj_ids.keys():
@@ -102,7 +112,7 @@ class FocsExecutor(Executor):
                     app=self.client_app,
                     target_name=f"{client.name}.{name}",
                     backend=backend,
-                    caller_name=my_name,
+                    target_signature=collab_signature.get(name),
                 )
                 setattr(proxy, name, p)
         return proxy
@@ -112,7 +122,9 @@ class FocsExecutor(Executor):
             self.log_error(fl_ctx, f"received unsupported task {task_name}")
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
-        server_target_obj_names = shareable.get(SyncKey.COLLAB_OBJ_NAMES)
+        server_collab_signature = shareable.get(SyncKey.COLLAB_SIGNATURE)
+        client_collab_signature = self.client_app.get_collab_signature()
+        self.log_info(fl_ctx, f"{client_collab_signature=} {server_collab_signature=}")
 
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
@@ -125,14 +137,14 @@ class FocsExecutor(Executor):
 
         # build proxies
         job_id = fl_ctx.get_job_id()
-        server_proxy = self._prepare_server_proxy(job_id, cell, server_target_obj_names, abort_signal)
+        server_proxy = self._prepare_server_proxy(job_id, cell, server_collab_signature, abort_signal)
 
         job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
         job_clients = job_meta.get(JobMetaKey.JOB_CLIENTS)
         all_clients = [from_dict(d) for d in job_clients]
         client_proxies = []
         for c in all_clients:
-            p = self._prepare_client_proxy(job_id, cell, c, abort_signal)
+            p = self._prepare_client_proxy(job_id, cell, c, abort_signal, client_collab_signature)
             client_proxies.append(p)
 
         self.client_app.setup(server_proxy, client_proxies, abort_signal)
@@ -141,9 +153,5 @@ class FocsExecutor(Executor):
         self.client_app.initialize(ctx)
 
         reply = make_reply(ReturnCode.OK)
-        if self.client_target_obj_ids:
-            target_obj_names = list(self.client_target_obj_ids.keys())
-        else:
-            target_obj_names = []
-        reply[SyncKey.COLLAB_OBJ_NAMES] = target_obj_names
+        reply[SyncKey.COLLAB_SIGNATURE] = client_collab_signature
         return reply

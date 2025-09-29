@@ -134,12 +134,13 @@ class App:
         handlers.append((handler, handler_kwargs))
 
     def get_collab_signature(self):
-        results = {"": get_object_collab_signature(self)}
+        result = {"": get_object_collab_signature(self)}
 
         for name, obj in self._collab_objs:
-            results[name] = get_object_collab_signature(obj)
+            result[name] = get_object_collab_signature(obj)
 
-        print(f"get_collab_signature: {results}")
+        print(f"get_collab_signature: {result}")
+        return result
 
     @collab
     def fire_event(self, event_type: str, data, context: Context):
@@ -154,7 +155,7 @@ class App:
 
 class ServerApp(App):
 
-    def __init__(self, strategy_name: str, strategy: Strategy = None):
+    def __init__(self, strategy_name: str = "strategy", strategy: Strategy = None):
         super().__init__()
 
         if strategy and not isinstance(strategy, Strategy):
@@ -162,6 +163,8 @@ class ServerApp(App):
 
         self.strategies = []
         if strategy:
+            if not strategy_name:
+                raise ValueError("missing strategy name")
             self.add_strategy(strategy_name, strategy)
         self.current_strategy = None
 

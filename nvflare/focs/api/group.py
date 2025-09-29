@@ -32,12 +32,15 @@ class Group:
         abort_signal: Signal,
         proxies: List[Proxy],
         blocking: bool = True,
-        timeout: float = None,
+        timeout: float = 5.0,
         min_resps: int = None,
         wait_after_min_resps: float = None,
         process_resp_cb=None,
         **cb_kwargs,
     ):
+        if not proxies:
+            raise ValueError("no proxies to group")
+
         self._app = app
         self._abort_signal = abort_signal
         self._proxies = proxies
@@ -61,17 +64,23 @@ class Group:
 
         def method(*args, **kwargs):
             resps = {}
+            call_args, call_kwargs = self._proxies[0].adjust_func_args(func_name, args, kwargs)
+
             for p in self._proxies:
-                kwargs_copy = copy.copy(kwargs)
+                kwargs_copy = copy.copy(call_kwargs)
                 ctx = self._app.new_context(p.caller_name, p.name)
                 kwargs_copy[CollabMethodArgName.CONTEXT] = ctx
 
                 # set the optional args to help backend decide how to call
-                kwargs_copy[CollabMethodOptionName.TIMEOUT] = self._timeout
+                if self._timeout:
+                    kwargs_copy[CollabMethodOptionName.TIMEOUT] = self._timeout
+
                 kwargs_copy[CollabMethodOptionName.BLOCKING] = self._blocking
                 resp = Resp(self._process_resp_cb, self._cb_kwargs, ctx)
                 resps[p.name] = resp
-                p.backend.call_target_with_resp(resp, p.name, func_name, *args, **kwargs_copy)
+
+                print(f"group call: {func_name=} args={call_args} kwargs={kwargs_copy}")
+                p.backend.call_target_with_resp(resp, p.name, func_name, *call_args, **kwargs_copy)
 
             # wait for responses
             if not self._blocking:
@@ -126,7 +135,7 @@ def group(
     ctx: Context,
     proxies: List[Proxy],
     blocking: bool = True,
-    timeout: float = None,
+    timeout: float = 5.0,
     min_resps: int = None,
     wait_after_min_resps: float = None,
     process_resp_cb=None,
@@ -148,7 +157,7 @@ def group(
 def all_clients(
     ctx: Context,
     blocking: bool = True,
-    timeout: float = None,
+    timeout: float = 5.0,
     min_resps: int = None,
     wait_after_min_resps: float = None,
     process_resp_cb=None,
