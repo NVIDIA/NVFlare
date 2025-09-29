@@ -40,24 +40,30 @@ class Proxy:
         else:
             return None
 
+    def adjust_func_args(self, func_name, args, kwargs):
+        call_args = args
+        call_kwargs = kwargs
+
+        if self.target_signature:
+            arg_names = self.target_signature.get(func_name)
+            if arg_names:
+                # check args and turn them to kwargs
+                call_kwargs = copy.copy(kwargs)
+                call_args = []
+                for i, arg_value in enumerate(args):
+                    call_kwargs[arg_names[i]] = arg_value
+
+        ctx = self.app.new_context(self.caller_name, self.name)
+        call_kwargs[CollabMethodArgName.CONTEXT] = ctx
+        return call_args, call_kwargs
+
     def __getattr__(self, func_name):
         """
         This method is called when Python cannot find an invoked method func_name of this class.
         """
 
         def method(*args, **kwargs):
-            call_args = args
-            call_kwargs = kwargs
-
-            if self.target_signature:
-                arg_names = self.target_signature.get(func_name)
-                if arg_names:
-                    # check args and turn them to kwargs
-                    call_kwargs = copy.copy(kwargs)
-                    call_args = []
-                    for i, arg_value in enumerate(args):
-                        call_kwargs[arg_names[i]] = arg_value
-
+            call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
             ctx = self.app.new_context(self.caller_name, self.name)
             call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 

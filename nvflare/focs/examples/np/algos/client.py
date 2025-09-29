@@ -25,17 +25,17 @@ class NPTrainer(ClientApp):
         self.delta = delta
 
     @collab
-    def train(self, r, weights, context: Context):
+    def train(self, current_round, weights, context: Context):
         if context.is_aborted():
             print("training aborted")
             return 0
-        print(f"[{self.name}] called by {context.caller}: client {context.callee} trained round {r}")
+        print(f"[{self.name}] called by {context.caller}: client {context.callee} trained round {current_round}")
 
         # metric_receiver = self.server.get_target("metric_receiver")
         # if metric_receiver:
         #     self.server.accept_metric({"round": r, "y": 2})
         #
-        self.server.fire_event("metrics", {"round": r, "y": 10}, blocking=False)
+        self.server.fire_event("metrics", {"round": current_round, "y": 10}, blocking=False)
         return weights + self.delta
 
     @collab

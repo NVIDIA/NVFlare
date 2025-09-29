@@ -47,7 +47,7 @@ class SysBackend(Backend):
         request = new_cell_message({}, payload)
 
         if blocking:
-            self.logger.info(f"send_request from {self.cell.get_fqcn()} to {self.target_fqcn}")
+            self.logger.info(f"send_request from {self.cell.get_fqcn()} to {self.target_fqcn}: {payload=} {timeout=}")
 
             reply = self.cell.send_request(
                 channel=MSG_CHANNEL,
@@ -89,9 +89,9 @@ class SysBackend(Backend):
             )
 
     def call_target_with_resp(self, resp: Resp, target_name: str, func_name: str, *args, **kwargs):
-        self.thread_executor.submit(self._run_func, resp, target_name, args, kwargs)
+        self.thread_executor.submit(self._run_func, resp, target_name, func_name, args, kwargs)
 
-    def _run_func(self, resp: Resp, target_name: str, func_name: str, *args, **kwargs):
+    def _run_func(self, resp: Resp, target_name: str, func_name: str, args, kwargs):
         try:
             result = self.call_target(target_name, func_name, *args, **kwargs)
             resp.set_result(result)
