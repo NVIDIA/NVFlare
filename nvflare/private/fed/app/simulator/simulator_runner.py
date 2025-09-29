@@ -609,19 +609,10 @@ class SimulatorClientRunner(FLComponent):
 
         self.clients_finished_end_run = []
 
-        # Fail-fast configuration
-        self.fail_fast = self.kv_list.get(
-            "simulator_fail_fast_on_client_error", True
-        )  # Default: stop on any client failure
-        self.client_failure_event = threading.Event()  # Signal client failure across threads
-
     def run(self, gpu):
         try:
             # self.create_clients()
             self.logger.info("Start the clients run simulation.")
-            if self.fail_fast:
-                self.logger.info("Fail-fast mode enabled: simulation will stop on first client failure")
-
             executor = ThreadPoolExecutor(max_workers=self.args.threads)
             lock = threading.Lock()
             timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
@@ -633,9 +624,6 @@ class SimulatorClientRunner(FLComponent):
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
-
-            if self.client_failure_event.is_set():
-                self.logger.error("Simulation stopped due to client failure")
 
         except Exception as e:
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
@@ -662,11 +650,6 @@ class SimulatorClientRunner(FLComponent):
 
         try:
             while not stop_run:
-                # Check if another thread signaled failure
-                if self.fail_fast and self.client_failure_event.is_set():
-                    self.logger.info(f"Thread for GPU {gpu} exiting due to client failure in another thread")
-                    break
-
                 time.sleep(interval)
                 with lock:
                     if not client_to_run:
@@ -796,9 +779,6 @@ class SimulatorClientRunner(FLComponent):
                     self.logger.error(
                         f"Subprocess died for client {client.client_name}, exit code: {process.returncode}"
                     )
-                    if self.fail_fast:
-                        self.logger.error("Fail-fast enabled: stopping all threads due to subprocess death")
-                        self.client_failure_event.set()
                     return True, None, client.client_name
 
                 stop_run = conn.recv()
@@ -809,9 +789,6 @@ class SimulatorClientRunner(FLComponent):
                         self.logger.error(
                             f"Subprocess died for client {client.client_name} before second recv, exit code: {process.returncode}"
                         )
-                        if self.fail_fast:
-                            self.logger.error("Fail-fast enabled: stopping all threads due to subprocess death")
-                            self.client_failure_event.set()
                         return True, None, client.client_name
 
                     end_run_client = conn.recv()
@@ -839,21 +816,23 @@ class SimulatorClientRunner(FLComponent):
 
         except (EOFError, OSError, ConnectionError) as e:
             self.logger.error(f"Communication error with client {client.client_name}: {e}")
-            if self.fail_fast:
-                self.logger.error("Fail-fast enabled: stopping all threads due to client failure")
-                self.client_failure_event.set()
             return True, None, client.client_name
         finally:
             # Clean up subprocess if it's still running
-            if process and process.poll() is None:
-                try:
-                    process.terminate()
-                    process.wait(timeout=5.0)
-                except:
-                    try:
-                        process.kill()
-                    except:
-                        pass
+            self._cleanup_process(process)
+
+    def _cleanup_process(self, process, timeout=5.0):
+        """Clean process shutdown - no exceptions escape"""
+        if not process or process.poll() is not None:
+            return  # Already dead or None
+
+        try:
+            process.terminate()
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        except (OSError, ProcessLookupError):
+            pass  # Process already gone
 
     def _get_new_sys_path(self):
         new_sys_path = []
