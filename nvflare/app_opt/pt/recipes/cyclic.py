@@ -35,9 +35,13 @@ class CyclicRecipe(BaseCyclicRecipe):
         server_expected_format: ExchangeFormat = ExchangeFormat.NUMPY,
         params_transfer_type: TransferType = TransferType.FULL,
     ):
+        if initial_model is None or isinstance(initial_model, PTModel):
+            model_to_pass = initial_model
+        else:
+            model_to_pass = PTModel(initial_model)
         super().__init__(
             name=name,
-            initial_model=PTModel(initial_model),
+            initial_model=model_to_pass,
             num_rounds=num_rounds,
             train_script=train_script,
             train_args=train_args,
