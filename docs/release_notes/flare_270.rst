@@ -29,7 +29,7 @@ You can read more about the user usage at :ref:`confidential_computing`
     **Confidential Federated AI Applications:**
     -------------------------------------------
 
-    Where would you use this ?
+    **Confidential Federated AI Applications:**: Where would you use this ?
 
     - **Pharmaceutical and Biotech R&D:** Multiple organizations can jointly train or validate models while ensuring that each company’s proprietary model and data remain protected.
 
