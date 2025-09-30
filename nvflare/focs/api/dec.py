@@ -52,7 +52,7 @@ def adjust_kwargs(func, kwargs):
         kwargs.pop(CollabMethodArgName.CONTEXT, None)
 
 
-def get_object_collab_signature(obj):
+def get_object_collab_interface(obj):
     result = {}
     for name in dir(obj):
         func = getattr(obj, name)

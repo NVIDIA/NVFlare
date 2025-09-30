@@ -27,7 +27,7 @@ def main():
 
     server_app.add_collab_object("metric_receiver", MetricReceiver())
 
-    server_app.get_collab_signature()
+    server_app.get_collab_interface()
 
     runner = AppRunner(
         server_app=server_app,

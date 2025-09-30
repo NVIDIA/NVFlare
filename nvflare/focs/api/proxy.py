@@ -19,13 +19,13 @@ from .constants import CollabMethodArgName
 
 class Proxy:
 
-    def __init__(self, app, target_name, backend: Backend, target_signature):
+    def __init__(self, app, target_name, backend: Backend, target_interface):
         """The Proxy represents a target in the App."""
         self.app = app
         self.target_name = target_name
         self.backend = backend
         self.caller_name = app.name
-        self.target_signature = target_signature
+        self.target_interface = target_interface
         self.children = {}  # child proxies
 
     @property
@@ -45,8 +45,8 @@ class Proxy:
         else:
             return None
 
-    def _find_signature(self, func_name):
-        args = self.target_signature.get(func_name) if self.target_signature else None
+    def _find_interface(self, func_name):
+        args = self.target_interface.get(func_name) if self.target_interface else None
         if args:
             return self, args
 
@@ -55,7 +55,7 @@ class Proxy:
         the_proxy = None
         the_name = None
         for n, c in self.children.items():
-            args = c.target_signature.get(func_name) if c.target_signature else None
+            args = c.target_interface.get(func_name) if c.target_interface else None
             if not args:
                 continue
 
@@ -75,7 +75,7 @@ class Proxy:
         call_kwargs = kwargs
 
         # find the proxy for the func
-        p, arg_names = self._find_signature(func_name)
+        p, arg_names = self._find_interface(func_name)
         if not p:
             raise RuntimeError(f"target {self.target_name} does not have method '{func_name}'")
 
