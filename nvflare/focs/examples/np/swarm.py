@@ -14,7 +14,7 @@
 
 from nvflare.focs.api.app import ServerApp
 from nvflare.focs.examples.np.algos.swarm import NPSwarm, NPSwarmClient
-from nvflare.focs.sim.runner import AppRunner
+from nvflare.focs.sim.simulator import Simulator
 
 
 def main():
@@ -24,13 +24,13 @@ def main():
     )
     client_app = NPSwarmClient(delta=1.0)
 
-    runner = AppRunner(
+    simulator = Simulator(
         server_app=server_app,
         client_app=client_app,
         num_clients=3,
     )
 
-    runner.run()
+    simulator.run()
 
 
 if __name__ == "__main__":

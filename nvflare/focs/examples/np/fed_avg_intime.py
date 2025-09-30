@@ -15,7 +15,7 @@ from nvflare.focs.api.app import ServerApp
 from nvflare.focs.examples.np.algos.client import NPTrainer
 from nvflare.focs.examples.np.algos.strategies import NPFedAvgInTime
 from nvflare.focs.examples.np.algos.widgets import MetricReceiver
-from nvflare.focs.sim.runner import AppRunner
+from nvflare.focs.sim.simulator import Simulator
 
 
 def main():
@@ -29,13 +29,13 @@ def main():
 
     server_app.get_collab_interface()
 
-    runner = AppRunner(
+    simulator = Simulator(
         server_app=server_app,
         client_app=NPTrainer(delta=1.0),
         num_clients=2,
     )
 
-    runner.run()
+    simulator.run()
 
 
 if __name__ == "__main__":

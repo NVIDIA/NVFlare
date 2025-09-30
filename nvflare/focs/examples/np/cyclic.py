@@ -14,12 +14,12 @@
 from nvflare.focs.api.app import ServerApp
 from nvflare.focs.examples.np.algos.client import NPTrainer
 from nvflare.focs.examples.np.algos.strategies import NPCyclic
-from nvflare.focs.sim.runner import AppRunner
+from nvflare.focs.sim.simulator import Simulator
 
 
 def main():
 
-    runner = AppRunner(
+    simulator = Simulator(
         server_app=ServerApp(
             strategy_name="cyclic", strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)
         ),
@@ -27,7 +27,7 @@ def main():
         num_clients=2,
     )
 
-    runner.run()
+    simulator.run()
 
 
 if __name__ == "__main__":
