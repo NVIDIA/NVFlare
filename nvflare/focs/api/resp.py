@@ -23,7 +23,6 @@ class Resp:
 
     def __init__(self, process_cb, cb_kwargs, context: Context):
         self.result = None
-        self.exception = None
         self.resp_time = None
         self.process_cb = process_cb
         self.cb_kwargs = cb_kwargs
@@ -44,5 +43,5 @@ class Resp:
         self.resp_time = time.time()
 
     def set_exception(self, ex):
-        self.exception = ex
+        self.result = ex
         self.resp_time = time.time()

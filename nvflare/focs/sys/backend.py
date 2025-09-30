@@ -62,16 +62,16 @@ class SysBackend(Backend):
             assert isinstance(reply, Message)
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
             if rc == ReturnCode.TIMEOUT:
-                raise TimeoutError(f"function {func_name} timed out after {timeout} seconds")
+                return TimeoutError(f"function {func_name} timed out after {timeout} seconds")
             elif rc != ReturnCode.OK:
-                raise RuntimeError(f"function {func_name} failed: {rc}")
+                return RuntimeError(f"function {func_name} failed: {rc}")
 
             if not isinstance(reply.payload, dict):
-                raise RuntimeError(f"function {func_name} failed: reply must be dict but got {type(reply.payload)}")
+                return RuntimeError(f"function {func_name} failed: reply must be dict but got {type(reply.payload)}")
 
             error = reply.payload.get(CallReplyKey.ERROR)
             if error:
-                raise RuntimeError(f"function {func_name} failed: {error}")
+                return RuntimeError(f"function {func_name} failed: {error}")
 
             result = reply.payload.get(CallReplyKey.RESULT)
             self.logger.info(f"got result from {self.target_fqcn}: {result}")

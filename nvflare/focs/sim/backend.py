@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import threading
+import time
 
+from nvflare.apis.fl_exception import RunAborted
 from nvflare.focs.api.app import App
 from nvflare.focs.api.backend import Backend
 from nvflare.focs.api.constants import CollabMethodArgName, CollabMethodOptionName
@@ -25,7 +27,6 @@ class _Waiter(threading.Event):
     def __init__(self):
         super().__init__()
         self.result = None
-        self.exception = None
 
 
 class SimBackend(Backend):
@@ -56,12 +57,21 @@ class SimBackend(Backend):
 
         self.executor.submit(self._run_func, waiter, func, args, kwargs)
         if waiter:
-            ok = waiter.wait(timeout)
-            if not ok:
-                # timed out
-                raise TimeoutError(f"function {func_name} timed out after {timeout} seconds")
-            if waiter.exception:
-                raise waiter.exception
+            start_time = time.time()
+            while True:
+                if self.abort_signal.triggered:
+                    waiter.result = RunAborted("job is aborted")
+
+                ok = waiter.wait(0.1)
+                if ok:
+                    break
+
+                waited = time.time() - start_time
+                if waited > timeout:
+                    # timed out
+                    waiter.result = TimeoutError(f"function {func_name} timed out after {waited} seconds")
+                    break
+
             return waiter.result
 
     def _augment_context(self, func, kwargs):
@@ -79,7 +89,7 @@ class SimBackend(Backend):
                 waiter.result = result
         except Exception as ex:
             if waiter:
-                waiter.exception = ex
+                waiter.result = ex
         finally:
             if waiter:
                 waiter.set()
