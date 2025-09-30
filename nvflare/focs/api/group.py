@@ -119,10 +119,7 @@ class Group:
             results = {}
             for name, resp in resps.items():
                 if resp.resp_time:
-                    if resp.exception:
-                        result = resp.exception
-                    else:
-                        result = resp.result
+                    result = resp.result
                 else:
                     result = TimeoutError()
                 results[name] = result

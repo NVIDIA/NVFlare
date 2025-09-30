@@ -101,6 +101,9 @@ class Proxy:
             call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
             print(f"calling target {p.target_name} func {func_name}: {call_args=} {call_kwargs=}")
-            return p.backend.call_target(self.target_name, func_name, *call_args, **call_kwargs)
+            result = p.backend.call_target(self.target_name, func_name, *call_args, **call_kwargs)
+            if isinstance(result, Exception):
+                raise result
+            return result
 
         return method
