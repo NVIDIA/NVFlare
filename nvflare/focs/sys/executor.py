@@ -90,7 +90,7 @@ class FocsExecutor(Executor):
                 # this is the server app itself
                 continue
             p = Proxy(app=self.client_app, target_name=f"{server_name}.{name}", backend=backend, target_signature=sig)
-            setattr(proxy, name, p)
+            proxy.add_child(name, p)
         return proxy
 
     def _prepare_client_proxy(self, job_id, cell, client: Client, abort_signal, collab_signature):
@@ -114,7 +114,7 @@ class FocsExecutor(Executor):
                     backend=backend,
                     target_signature=collab_signature.get(name),
                 )
-                setattr(proxy, name, p)
+                proxy.add_child(name, p)
         return proxy
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:

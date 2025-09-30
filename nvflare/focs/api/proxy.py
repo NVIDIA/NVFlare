@@ -19,17 +19,22 @@ from .constants import CollabMethodArgName
 
 class Proxy:
 
-    def __init__(self, app, target_name, backend: Backend, target_signature=None):
+    def __init__(self, app, target_name, backend: Backend, target_signature):
         """The Proxy represents a target in the App."""
         self.app = app
         self.target_name = target_name
         self.backend = backend
         self.caller_name = app.name
         self.target_signature = target_signature
+        self.children = {}  # child proxies
 
     @property
     def name(self):
         return self.target_name
+
+    def add_child(self, name, p):
+        self.children[name] = p
+        setattr(self, name, p)
 
     def get_target(self, name: str):
         obj = getattr(self, name, None)
@@ -40,22 +45,47 @@ class Proxy:
         else:
             return None
 
+    def _find_signature(self, func_name):
+        args = self.target_signature.get(func_name) if self.target_signature else None
+        if args:
+            return self, args
+
+        # try children
+        the_args = None
+        the_proxy = None
+        the_name = None
+        for n, c in self.children.items():
+            args = c.target_signature.get(func_name) if c.target_signature else None
+            if not the_proxy:
+                the_name = n
+                the_proxy = c
+                the_args = args
+            else:
+                # already found a child proxy that has this func - ambiguity
+                raise RuntimeError(
+                    f"multiple collab objects ({the_name} and {n}) have {func_name}: please use qualified call"
+                )
+        return the_proxy, the_args
+
     def adjust_func_args(self, func_name, args, kwargs):
         call_args = args
         call_kwargs = kwargs
 
-        if self.target_signature:
-            arg_names = self.target_signature.get(func_name)
-            if arg_names:
-                # check args and turn them to kwargs
-                call_kwargs = copy.copy(kwargs)
-                call_args = []
-                for i, arg_value in enumerate(args):
-                    call_kwargs[arg_names[i]] = arg_value
+        # find the proxy for the func
+        p, arg_names = self._find_signature(func_name)
+        if not p:
+            raise RuntimeError(f"target {self.target_name} does not have method '{func_name}'")
+
+        if arg_names:
+            # check args and turn them to kwargs
+            call_kwargs = copy.copy(kwargs)
+            call_args = []
+            for i, arg_value in enumerate(args):
+                call_kwargs[arg_names[i]] = arg_value
 
         ctx = self.app.new_context(self.caller_name, self.name)
         call_kwargs[CollabMethodArgName.CONTEXT] = ctx
-        return call_args, call_kwargs
+        return p, call_args, call_kwargs
 
     def __getattr__(self, func_name):
         """
@@ -63,11 +93,11 @@ class Proxy:
         """
 
         def method(*args, **kwargs):
-            call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
-            ctx = self.app.new_context(self.caller_name, self.name)
+            p, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
+            ctx = p.app.new_context(self.caller_name, self.name)
             call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
-            print(f"calling target {self.target_name} func {func_name}: {call_args=} {call_kwargs=}")
-            return self.backend.call_target(self.target_name, func_name, *call_args, **call_kwargs)
+            print(f"calling target {p.target_name} func {func_name}: {call_args=} {call_kwargs=}")
+            return p.backend.call_target(self.target_name, func_name, *call_args, **call_kwargs)
 
         return method

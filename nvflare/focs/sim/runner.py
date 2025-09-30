@@ -50,7 +50,7 @@ class AppRunner:
                     backend=backends[name],
                     target_signature=get_object_collab_signature(obj),
                 )
-                setattr(app_proxy, name, p)
+                app_proxy.add_child(name, p)
         return app_proxy
 
     def _prepare_proxies(self, for_app: App, server_app: App, client_apps: dict, backends: dict):

@@ -79,7 +79,7 @@ class NPSwarmClient(ClientApp):
             # all done
             all_clients(context, blocking=False).fire_event("final_model", new_model)
             # self.server.fire_event("all_done", "OK", blocking=False)
-            self.server.strategy.all_done("OK", blocking=False)
+            self.server.all_done("OK", blocking=False)
             return
 
         # determine next client

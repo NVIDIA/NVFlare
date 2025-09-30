@@ -135,7 +135,7 @@ class FocsController(Controller):
                 continue
 
             p = Proxy(app=self.server_app, target_name=f"{client.name}.{name}", backend=backend, target_signature=sig)
-            setattr(proxy, name, p)
+            proxy.add_child(name, p)
         return proxy
 
     def _prepare_server_proxy(
