@@ -56,6 +56,9 @@ class Proxy:
         the_name = None
         for n, c in self.children.items():
             args = c.target_signature.get(func_name) if c.target_signature else None
+            if not args:
+                continue
+
             if not the_proxy:
                 the_name = n
                 the_proxy = c

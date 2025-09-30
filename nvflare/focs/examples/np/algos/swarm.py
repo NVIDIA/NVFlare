@@ -13,14 +13,14 @@
 # limitations under the License.
 import random
 import threading
+import traceback
 
-from nvflare.focs.api.app import ClientApp, ServerApp
+from nvflare.focs.api.app import ClientApp
 from nvflare.focs.api.ctx import Context
 from nvflare.focs.api.dec import collab
 from nvflare.focs.api.group import all_clients
 from nvflare.focs.api.strategy import Strategy
 from nvflare.focs.examples.np.algos.utils import parse_array_def
-from nvflare.focs.sim.runner import AppRunner
 
 
 class NPSwarm(Strategy):
@@ -37,7 +37,9 @@ class NPSwarm(Strategy):
         start_client_idx = random.randint(0, len(context.clients) - 1)
         start_client = context.clients[start_client_idx]
         start_client.start(self.num_rounds, self.initial_model)
-        self.waiter.wait()
+        while not context.is_aborted():
+            if self.waiter.wait(timeout=0.5):
+                break
 
     def _all_done(self, event_type: str, data, context: Context):
         print(f"[{context.callee}]: received {event_type} from client: {context.caller}: {data}")
@@ -79,7 +81,12 @@ class NPSwarmClient(ClientApp):
             # all done
             all_clients(context, blocking=False).fire_event("final_model", new_model)
             # self.server.fire_event("all_done", "OK", blocking=False)
-            self.server.all_done("OK", blocking=False)
+            print("notify server all done!")
+            try:
+                self.server.all_done("OK", blocking=False)
+            except:
+                traceback.print_exc()
+            print("Swarm Training is DONE!")
             return
 
         # determine next client
