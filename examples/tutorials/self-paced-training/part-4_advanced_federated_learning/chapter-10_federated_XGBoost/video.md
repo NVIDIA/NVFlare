@@ -1,4 +1,4 @@
-# Federated Learning for XGBoost 
+# Video: Federated XGBoost 
 
-## [FL for XGBoost](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter10/DLI-Chapter10-Federated%20XGBoost.mp4)
+## [Federated XGBoost](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter10/part4-chapter10-federated_xgboost.mp4)
  

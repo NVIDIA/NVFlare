@@ -1,5 +1,5 @@
 
-# Set Up a Federated System
+# Videos: Set Up a Federated System
 
 ## [Introduction](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter4/part2-chapter4-04.0-intro.mp4)
 
@@ -11,11 +11,24 @@
 
 ## [Preflight Check](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter4/part2-chapter4-04.3-preflight_check.mp4)
 
-## [Deploy with Docker](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter4/part2-chapter4-04.3-preflight_check.mp4)
+## [Deploy with Docker](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter4/part2-chapter4-04.4-deploy_docker.mp4)
 
 ## [Deploy with AWS ](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter4/part2-chapter4-04.5-deploy_aws.mp4)
 
-## [Deploy with Azure ](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter4/part2-chapter4-04.6-deploy_azure.mp4)
+## [Deploy with Azure](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter4/part2-chapter4-04.6-deploy_azure.mp4
 
 ## [Deploy with Kubernetes](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter4/part2-chapter4-04.7-deploy_kubernetes.mp4)
+
+## [Chapter Recap](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter4/part2-chapter4-04.8-recap.mp4)
+
+
+
+
+
+
+
+
+
+
+
 

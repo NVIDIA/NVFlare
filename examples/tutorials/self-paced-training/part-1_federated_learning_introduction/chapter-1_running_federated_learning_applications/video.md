@@ -1,4 +1,4 @@
-# Running Federated Learning Applications
+# Videos: Running Federated Learning Applications
 
 ## [Running FL Application](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter1/part1-chapter1-01.0-intro.mp4)
 
@@ -23,3 +23,16 @@
 ## [Logging Configuration](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter1/part1-chapter1-01.7-logging.mp4)
 
 ## [Chapter Recap](https://developer.download.nvidia.com/assets/Clara/flare/tutorials/Chapter1/part1-chapter1-01.8-recap.mp4)
+
+
+
+
+
+
+
+
+
+
+
+
+
