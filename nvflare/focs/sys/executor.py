@@ -94,7 +94,6 @@ class FocsExecutor(Executor):
         return proxy
 
     def _prepare_client_proxy(self, job_id, cell, client: Client, abort_signal, collab_signature):
-        my_name = self.client_app.name
         backend = SysBackend(
             caller=self.client_app.name,
             cell=cell,
