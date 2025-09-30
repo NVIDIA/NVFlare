@@ -24,7 +24,7 @@ from nvflare.focs.api.proxy import Proxy
 from nvflare.focs.sim.backend import SimBackend
 
 
-class AppRunner:
+class Simulator:
 
     def _prepare_app_backends(self, app: App):
         bes = {"": SimBackend(app, app, self.abort_signal, self.thread_executor)}
