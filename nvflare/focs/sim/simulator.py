@@ -105,6 +105,13 @@ class Simulator:
         self.client_apps = client_apps
 
     def run(self):
+        try:
+            self._try_run()
+        except KeyboardInterrupt:
+            print("execution is aborted by user")
+            self.abort_signal.trigger(True)
+
+    def _try_run(self):
         # initialize all apps
         server_ctx = self.server_app.new_context(caller=self.server_app.name, callee=self.server_app.name)
         print("initializing server app")
@@ -120,14 +127,10 @@ class Simulator:
 
         result = None
         for idx, strategy in enumerate(self.server_app.strategies):
-            try:
-                print(f"Running Strategy #{idx+1} - {type(strategy).__name__}")
-                self.server_app.current_strategy = strategy
-                result = strategy.execute(context=server_ctx)
-                server_ctx.set_prop(ContextKey.INPUT, result)
-            except:
-                traceback.print_exc()
-                break
+            print(f"Running Strategy #{idx+1} - {type(strategy).__name__}")
+            self.server_app.current_strategy = strategy
+            result = strategy.execute(context=server_ctx)
+            server_ctx.set_prop(ContextKey.INPUT, result)
 
         self.thread_executor.shutdown(wait=False, cancel_futures=True)
         return result
