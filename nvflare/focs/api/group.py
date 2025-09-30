@@ -64,11 +64,11 @@ class Group:
 
         def method(*args, **kwargs):
             resps = {}
-            call_args, call_kwargs = self._proxies[0].adjust_func_args(func_name, args, kwargs)
 
             for p in self._proxies:
+                the_proxy, call_args, call_kwargs = p.adjust_func_args(func_name, args, kwargs)
                 kwargs_copy = copy.copy(call_kwargs)
-                ctx = self._app.new_context(p.caller_name, p.name)
+                ctx = self._app.new_context(the_proxy.caller_name, the_proxy.name)
                 kwargs_copy[CollabMethodArgName.CONTEXT] = ctx
 
                 # set the optional args to help backend decide how to call
@@ -80,7 +80,7 @@ class Group:
                 resps[p.name] = resp
 
                 print(f"group call: {func_name=} args={call_args} kwargs={kwargs_copy}")
-                p.backend.call_target_with_resp(resp, p.name, func_name, *call_args, **kwargs_copy)
+                the_proxy.backend.call_target_with_resp(resp, the_proxy.name, func_name, *call_args, **kwargs_copy)
 
             # wait for responses
             if not self._blocking:
