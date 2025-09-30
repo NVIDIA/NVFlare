@@ -86,7 +86,7 @@ There is no need to define a customized server code for this example as Flower p
 Job Recipe Code
 ---------------
 
-Job Recipe contains the Flower app configuration and deployes it within NVFlare.
+Job Recipe contains the Flower app configuration and deploys it within NVFlare.
 
 .. code-block:: python
 

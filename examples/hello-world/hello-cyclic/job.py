@@ -14,10 +14,8 @@
 
 from model import Net
 
-from nvflare.app_opt.tf.job_config.model import TFModel
-from nvflare.job_config.script_runner import FrameworkType
+from nvflare.app_opt.tf.recipes.cyclic import CyclicRecipe
 from nvflare.recipe import SimEnv
-from nvflare.recipe.cyclic_recipe import CyclicRecipe
 
 if __name__ == "__main__":
     n_clients = 2
@@ -25,9 +23,8 @@ if __name__ == "__main__":
     train_script = "client.py"
 
     recipe = CyclicRecipe(
-        framework=FrameworkType.TENSORFLOW,
         num_rounds=num_rounds,
-        initial_model=TFModel(Net()),
+        initial_model=Net(),
         train_script=train_script,
     )
 

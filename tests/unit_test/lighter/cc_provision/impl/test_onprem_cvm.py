@@ -66,8 +66,11 @@ class TestOnPremCVMBuilder:
     """Test suite for OnPremCVMBuilder."""
 
     @patch("nvflare.lighter.utils.write")
-    def test_build_resources(self, mock_write, builder, basic_project, ctx):
+    @patch("os.path.exists")
+    @patch("nvflare.lighter.cc_provision.impl.onprem_cvm._change_log_dir")
+    def test_build_resources(self, mock_change, mock_exists, mock_write, builder, basic_project, ctx):
         """Test building resources for an entity."""
+        mock_exists.return_value = True
         server = basic_project.get_server()
         ctx[CC_AUTHORIZERS_KEY] = [{"id": "test_authorizer", "path": "test.path.TestAuthorizer", "args": {}}]
 

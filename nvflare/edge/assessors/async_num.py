@@ -213,13 +213,16 @@ class AsyncNumAssessor(Assessor):
                 for _ in range(num_holes):
                     device_id = random.choice(list(usable_devices))
                     usable_devices.remove(device_id)
-                    self.current_selection[device_id] = self.current_selection_version
-                    self.used_devices[device_id] = self.current_model_version
+                    self.current_selection[device_id] = self.current_model_version
+                    self.used_devices[device_id] = {
+                        "model_version": self.current_model_version,
+                        "selection_version": self.current_selection_version,
+                    }
                     if not usable_devices:
                         break
         self.log_info(
             fl_ctx,
-            f"current selection with {len(self.current_selection)} items: V{self.current_selection_version}; {self.current_selection}",
+            f"current selection with {len(self.current_selection)} items: V{self.current_selection_version}; {dict(sorted(self.current_selection.items()))}",
         )
         if len(self.current_selection) < self.device_selection_size:
             self.log_warning(

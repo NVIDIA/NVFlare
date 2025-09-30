@@ -251,8 +251,8 @@ class FlareRunnerController(
     
     private fun createConnection(): com.nvidia.nvflare.sdk.core.Connection {
         val connection = com.nvidia.nvflare.sdk.core.Connection(context)
-        connection.hostname.postValue(serverHost)
-        connection.port.postValue(serverPort)
+        connection.hostname.value = serverHost
+        connection.port.value = serverPort
         
         // Configure SSL settings
         if (useHttps) {

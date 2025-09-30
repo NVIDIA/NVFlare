@@ -97,8 +97,9 @@ cp -r nvflare/edge/device/android/sdk \
 ### Step 5: Add Training Data
 
 ```bash
-# Copy CIFAR-10 dataset
-cp nvflare/edge/ios/NVFlareMobile/NVFlareMobile/Assets.xcassets/cifar10/data_batch_1.dataset/data_batch_1.bin \
+mkdir nvflare/edge/device/android/app/src/main/assets
+# Copy CIFAR-10 dataset from the location in the repo used for iOS
+cp nvflare/edge/device/ios/ExampleProject/ExampleApp/Assets.xcassets/cifar10/data_batch_1.dataset/data_batch_1.bin \
    nvflare/edge/device/android/app/src/main/assets/data_batch_1.bin
 ```
 

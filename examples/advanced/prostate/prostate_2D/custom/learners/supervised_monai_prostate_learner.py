@@ -68,7 +68,7 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
         self.config_info = None
 
     def train_config(self, fl_ctx: FLContext):
-        """MONAI traning configuration
+        """MONAI training configuration
         Here, we use a json to specify the needed parameters
         """
 

@@ -29,3 +29,6 @@ please check :ref:`researcher_guide`
    user_guide/data_scientist_guide/index
    user_guide/researcher_guide/index
    user_guide/nvflare_cli/nvflare_cli
+   user_guide/confidential_computing/index
+   user_guide/edge/index
+
