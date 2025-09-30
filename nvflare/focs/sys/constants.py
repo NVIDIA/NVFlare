@@ -18,7 +18,7 @@ MSG_TOPIC = "call"
 
 
 class SyncKey:
-    COLLAB_SIGNATURE = "collab_signature"
+    COLLAB_INTERFACE = "collab_interface"
 
 
 class ObjectCallKey:

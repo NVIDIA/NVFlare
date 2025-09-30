@@ -19,7 +19,7 @@ from typing import Union
 from nvflare.apis.signal import Signal
 from nvflare.focs.api.app import App, ClientApp, ClientAppFactory, ServerApp
 from nvflare.focs.api.constants import ContextKey
-from nvflare.focs.api.dec import get_object_collab_signature
+from nvflare.focs.api.dec import get_object_collab_interface
 from nvflare.focs.api.proxy import Proxy
 from nvflare.focs.sim.backend import SimBackend
 
@@ -29,9 +29,8 @@ class AppRunner:
     def _prepare_app_backends(self, app: App):
         bes = {"": SimBackend(app, app, self.abort_signal, self.thread_executor)}
         targets = app.get_collab_objects()
-        if targets:
-            for name, obj in targets:
-                bes[name] = SimBackend(app, obj, self.abort_signal, self.thread_executor)
+        for name, obj in targets.items():
+            bes[name] = SimBackend(app, obj, self.abort_signal, self.thread_executor)
         return bes
 
     def _prepare_proxy(self, for_app: App, target_app: App, backends: dict):
@@ -39,18 +38,17 @@ class AppRunner:
             app=for_app,
             target_name=target_app.name,
             backend=backends[""],
-            target_signature=get_object_collab_signature(target_app),
+            target_interface=get_object_collab_interface(target_app),
         )
-        tos = target_app.get_collab_objects()
-        if tos:
-            for name, obj in tos:
-                p = Proxy(
-                    app=for_app,
-                    target_name=f"{target_app.name}.{name}",
-                    backend=backends[name],
-                    target_signature=get_object_collab_signature(obj),
-                )
-                app_proxy.add_child(name, p)
+        collab_objs = target_app.get_collab_objects()
+        for name, obj in collab_objs.items():
+            p = Proxy(
+                app=for_app,
+                target_name=f"{target_app.name}.{name}",
+                backend=backends[name],
+                target_interface=get_object_collab_interface(obj),
+            )
+            app_proxy.add_child(name, p)
         return app_proxy
 
     def _prepare_proxies(self, for_app: App, server_app: App, client_apps: dict, backends: dict):

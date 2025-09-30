@@ -35,13 +35,13 @@ from .utils import prepare_for_remote_call
 
 class _ClientInfo:
 
-    def __init__(self, collab_signature: dict):
+    def __init__(self, collab_interface: dict):
         """Information about a client. Reported by the client in the sync response.
 
         Args:
-            collab_signature: collab method signature of the client.
+            collab_interface: collab method interface of the client.
         """
-        self.collab_signature = collab_signature
+        self.collab_interface = collab_interface
 
 
 class FocsController(Controller):
@@ -122,19 +122,19 @@ class FocsController(Controller):
         self,
         job_id: str,
         client: ClientSite,
-        collab_signature: dict,
+        collab_interface: dict,
         abort_signal,
     ):
         backend = self._prepare_client_backend(job_id, client, abort_signal)
         proxy = Proxy(
-            app=self.server_app, target_name=client.name, backend=backend, target_signature=collab_signature.get("")
+            app=self.server_app, target_name=client.name, backend=backend, target_interface=collab_interface.get("")
         )
 
-        for name, sig in collab_signature.items():
+        for name, itf in collab_interface.items():
             if name == "":
                 continue
 
-            p = Proxy(app=self.server_app, target_name=f"{client.name}.{name}", backend=backend, target_signature=sig)
+            p = Proxy(app=self.server_app, target_name=f"{client.name}.{name}", backend=backend, target_interface=itf)
             proxy.add_child(name, p)
         return proxy
 
@@ -142,12 +142,12 @@ class FocsController(Controller):
         self,
         job_id,
         abort_signal,
-        collab_signature: dict,
+        collab_interface: dict,
     ):
         server_name = self.server_app.name
         backend = self._prepare_server_backend(job_id, abort_signal)
         proxy = Proxy(
-            app=self.server_app, target_name=server_name, backend=backend, target_signature=collab_signature.get("")
+            app=self.server_app, target_name=server_name, backend=backend, target_interface=collab_interface.get("")
         )
 
         for name in self.server_collab_obj_ids:
@@ -155,15 +155,15 @@ class FocsController(Controller):
                 app=self.server_app,
                 target_name=f"{server_name}.{name}",
                 backend=backend,
-                target_signature=collab_signature.get(name),
+                target_interface=collab_interface.get(name),
             )
             setattr(proxy, name, p)
         return proxy
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         # configure all sites
-        server_collab_signature = self.server_app.get_collab_signature()
-        task_data = Shareable({SyncKey.COLLAB_SIGNATURE: server_collab_signature})
+        server_collab_interface = self.server_app.get_collab_interface()
+        task_data = Shareable({SyncKey.COLLAB_INTERFACE: server_collab_interface})
         task = Task(
             name=SYNC_TASK_NAME,
             data=task_data,
@@ -209,12 +209,12 @@ class FocsController(Controller):
 
         # prepare proxies and backends
         job_id = fl_ctx.get_job_id()
-        server_proxy = self._prepare_server_proxy(job_id, abort_signal, server_collab_signature)
+        server_proxy = self._prepare_server_proxy(job_id, abort_signal, server_collab_interface)
         client_proxies = []
         for c in all_clients:
             info = self.client_info[c.name]
             assert isinstance(info, _ClientInfo)
-            client_proxies.append(self._prepare_client_proxy(job_id, c, info.collab_signature, abort_signal))
+            client_proxies.append(self._prepare_client_proxy(job_id, c, info.collab_interface, abort_signal))
 
         self.server_app.setup(server_proxy, client_proxies, abort_signal)
 
@@ -242,8 +242,8 @@ class FocsController(Controller):
         rc = result.get_return_code()
         if rc == ReturnCode.OK:
             self.log_info(fl_ctx, f"successfully synced client {client_name}")
-            collab_signature = result.get(SyncKey.COLLAB_SIGNATURE)
-            self.client_info[client_name] = _ClientInfo(collab_signature)
+            collab_itf = result.get(SyncKey.COLLAB_INTERFACE)
+            self.client_info[client_name] = _ClientInfo(collab_itf)
         else:
             self.log_error(fl_ctx, f"client {client_task.client.name} failed to sync: {rc}")
             self.client_info[client_name] = None

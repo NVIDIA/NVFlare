@@ -23,7 +23,7 @@ def main():
     )
     server_app.add_strategy("fed_avg_parallel", NPFedAvgParallel(initial_model=None, num_rounds=2))
 
-    server_app.get_collab_signature()
+    server_app.get_collab_interface()
 
     runner = AppRunner(
         server_app=server_app,

@@ -17,7 +17,7 @@ from typing import List
 
 from .constants import CollabMethodArgName
 from .ctx import Context
-from .dec import collab, get_object_collab_signature, is_collab
+from .dec import collab, get_object_collab_interface, is_collab
 from .proxy import Proxy
 from .strategy import Strategy
 from .utils import check_context_support
@@ -30,7 +30,7 @@ class App:
         self.server = None
         self.clients = None
         self._me = None
-        self._collab_objs = []
+        self._collab_objs = {}
         self._abort_signal = None
         self._props = {}
         self._event_handlers = {}  # event type => list of (cb, kwargs)
@@ -45,15 +45,14 @@ class App:
         return None
 
     def add_collab_object(self, name: str, obj):
-        for n, o in self._collab_objs:
-            if name == n:
-                raise ValueError(f"conflict with existing collab object '{name}' of {type(o)}")
+        if name in self._collab_objs:
+            raise ValueError(f"conflict with existing collab object '{name}' of {type(self._collab_objs[name])}")
 
         if hasattr(obj, name):
             raise ValueError(f"conflict with reserved name {name}")
 
         setattr(self, name, obj)
-        self._collab_objs.append((name, obj))
+        self._collab_objs[name] = obj
 
     def get_collab_objects(self):
         return self._collab_objs
@@ -92,7 +91,7 @@ class App:
                     return m
 
             targets = self.get_collab_objects()
-            for _, obj in targets:
+            for _, obj in targets.items():
                 m = getattr(obj, method_name, None)
                 if m:
                     return m
@@ -111,7 +110,7 @@ class App:
         self.initialize_app(context)
 
         # initialize target objects
-        for name, obj in self._collab_objs:
+        for name, obj in self._collab_objs.items():
             init_func = getattr(obj, "initialize", None)
             if init_func and callable(init_func):
                 print(f"initializing target object {name}")
@@ -133,13 +132,10 @@ class App:
             self._event_handlers[event_type] = handlers
         handlers.append((handler, handler_kwargs))
 
-    def get_collab_signature(self):
-        result = {"": get_object_collab_signature(self)}
-
-        for name, obj in self._collab_objs:
-            result[name] = get_object_collab_signature(obj)
-
-        print(f"get_collab_signature: {result}")
+    def get_collab_interface(self):
+        result = {"": get_object_collab_interface(self)}
+        for name, obj in self._collab_objs.items():
+            result[name] = get_object_collab_interface(obj)
         return result
 
     @collab
