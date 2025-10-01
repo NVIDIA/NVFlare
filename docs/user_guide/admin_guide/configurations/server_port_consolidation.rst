@@ -14,7 +14,7 @@ For some customers, it may still be desirable to use different port numbers beca
 The following diagrams illustrate the two different connection and authentication mechanisms
 enabled by the single port, TLS, bring your own connection features.
 
-.. image:: resources/flare_byocc.png
+.. image:: ../../resources/flare_byocc.png
     :height: 300px
 
 
