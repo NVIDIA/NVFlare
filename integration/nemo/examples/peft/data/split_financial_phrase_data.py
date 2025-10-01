@@ -68,7 +68,7 @@ def get_site_class_summary(train_labels, site_idx):
     return class_sum
 
 
-def partition_data(train_labels, label_names, num_sites, alpha, sum_file_name: str = None):
+def partition_data(train_labels, label_names, num_sites, alpha, sum_file_name: Optional[str] = None):
     min_size = 0
     N = len(train_labels)
     site_idx = {}

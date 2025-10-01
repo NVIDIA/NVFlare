@@ -50,7 +50,7 @@ class ConfigParser:
         self.processor_args = None
         self.parse(config_file)
 
-    def get_processor(self, variables: dict = None) -> DeviceTaskProcessor:
+    def get_processor(self, variables: Optional[dict] = None) -> DeviceTaskProcessor:
 
         if self.processor_args:
             args = self._variable_substitution(self.processor_args, variables)

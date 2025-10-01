@@ -18,12 +18,12 @@ from nvflare.private.fed.server.client_manager import ClientManager
 
 
 class A:
-    def __init__(self, name: str = None):
+    def __init__(self, name: Optional[str] = None):
         self.name = name
 
 
 class B(A):
-    def __init__(self, type: str = None, *args, **kwargs):
+    def __init__(self, type: Optional[str] = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.type = type
 

@@ -98,7 +98,7 @@ class EdgeJob(FedJob):
         max_model_versions: Optional[int] = None,
         update_timeout=5.0,
         executor_task_name="train",
-        simulation_config_file: str = None,
+        simulation_config_file: Optional[str] = None,
     ):
         """Set up client config.
 

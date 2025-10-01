@@ -44,7 +44,7 @@ class ModelController(BaseModelController, ABC):
         task_name: str = "train",
         data: FLModel = None,
         targets: Union[List[str], None] = None,
-        min_responses: int = None,
+        min_responses: Optional[int] = None,
         timeout: int = 0,
     ) -> List[FLModel]:
         """Send a task with data to targets and wait for results.
@@ -76,7 +76,7 @@ class ModelController(BaseModelController, ABC):
         task_name: str = "train",
         data: FLModel = None,
         targets: Union[List[str], None] = None,
-        min_responses: int = None,
+        min_responses: Optional[int] = None,
         timeout: int = 0,
         callback: Callable[[FLModel], None] = None,
     ) -> None:
@@ -123,7 +123,7 @@ class ModelController(BaseModelController, ABC):
         """
         super().save_model(model)
 
-    def sample_clients(self, num_clients: int = None) -> List[str]:
+    def sample_clients(self, num_clients: Optional[int] = None) -> List[str]:
         """Returns a list of `num_clients` clients.
 
         Args:

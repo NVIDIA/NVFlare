@@ -156,7 +156,7 @@ class FileStreamer(StreamerBase):
         fl_ctx: FLContext,
         channel: str,
         topic: str,
-        dest_dir: str = None,
+        dest_dir: Optional[str] = None,
         stream_done_cb=None,
         chunk_consumed_cb=None,
         **cb_kwargs,

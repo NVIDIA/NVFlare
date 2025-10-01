@@ -32,7 +32,7 @@ class LinearLearner(Learner):
         train_end: int,
         valid_start: int,
         valid_end: int,
-        random_state: int = None,
+        random_state: Optional[int] = None,
     ):
         super().__init__()
         self.data_path = data_path

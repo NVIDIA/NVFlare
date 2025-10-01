@@ -103,7 +103,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         data,
         task_name: str = AppConstants.TASK_TRAIN,
         targets: Union[List[Client], List[str], None] = None,
-        min_responses: int = None,
+        min_responses: Optional[int] = None,
         timeout: int = 0,
         wait_time_after_min_received: int = 0,
         blocking: bool = True,
@@ -354,7 +354,7 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         else:
             self.error("persistor not configured, model will not be saved")
 
-    def sample_clients(self, num_clients: int = None) -> List[str]:
+    def sample_clients(self, num_clients: Optional[int] = None) -> List[str]:
         clients = [client.name for client in self.engine.get_clients()]
 
         if num_clients:

@@ -30,7 +30,7 @@ class KMeansLearner(Learner):
         train_end: int,
         valid_start: int,
         valid_end: int,
-        random_state: int = None,
+        random_state: Optional[int] = None,
         max_iter: int = 1,
         n_init: int = 1,
         reassignment_ratio: int = 0,

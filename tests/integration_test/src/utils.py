@@ -111,7 +111,7 @@ def _get_snapshot_path_from_workspace(path: str, server_name: str) -> str:
     return resource_json["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"]
 
 
-def update_snapshot_path_in_workspace(path: str, server_name: str, snapshot_path: str = None):
+def update_snapshot_path_in_workspace(path: str, server_name: str, snapshot_path: Optional[str] = None):
     new_snapshot_path = snapshot_path if snapshot_path else tempfile.mkdtemp()
     resource_json_path = _get_resource_json_file(workspace_path=path, site_name=server_name)
     with open(resource_json_path, "r") as f:
@@ -148,7 +148,7 @@ def _get_job_store_path_from_workspace(path: str, server_name: str) -> str:
             return c["args"]["uri_root"]
 
 
-def update_job_store_path_in_workspace(path: str, server_name: str, job_store_path: str = None):
+def update_job_store_path_in_workspace(path: str, server_name: str, job_store_path: Optional[str] = None):
     new_job_store_path = job_store_path if job_store_path else tempfile.mkdtemp()
     resource_json_path = _get_resource_json_file(workspace_path=path, site_name=server_name)
     with open(resource_json_path, "r") as f:

@@ -58,7 +58,7 @@ class XGBClientRunner(AppRunner, FLComponent):
         self,
         data_loader_id: str,
         model_file_name: str,
-        metrics_writer_id: str = None,
+        metrics_writer_id: Optional[str] = None,
     ):
         FLComponent.__init__(self)
         self.model_file_name = model_file_name

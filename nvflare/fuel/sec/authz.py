@@ -381,7 +381,7 @@ def parse_policy_config(config: dict, right_categories: dict):
 
 
 class Authorizer(object):
-    def __init__(self, site_org: str, right_categories: dict = None):
+    def __init__(self, site_org: str, right_categories: Optional[dict] = None):
         """Base class containing the authorization policy."""
         self.site_org = _normalize_str(site_org, FieldNames.SITE_ORG)
         self.right_categories = right_categories

@@ -24,10 +24,10 @@ class ResultReport(BaseModel):
         user_info: UserInfo,
         job_id: str,
         task_id: str,
-        task_name: str = None,
+        task_name: Optional[str] = None,
         status: str = EdgeApiStatus.OK,
-        result: dict = None,
-        cookie: dict = None,
+        result: Optional[dict] = None,
+        cookie: Optional[dict] = None,
         **kwargs,
     ):
         super().__init__()

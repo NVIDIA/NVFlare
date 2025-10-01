@@ -36,7 +36,7 @@ def use_nvidia_smi(query: str, report_format: str = "csv"):
     return None
 
 
-def _parse_gpu_mem(result: str = None, unit: str = "MiB") -> List:
+def _parse_gpu_mem(result: Optional[str] = None, unit: str = "MiB") -> List:
     gpu_memory = []
     if result:
         for i in result[1:]:

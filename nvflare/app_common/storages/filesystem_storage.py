@@ -356,7 +356,7 @@ class FilesystemStorage(StorageSpec):
 
         return _read(os.path.join(full_uri, component_name))
 
-    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: str = None):
+    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: Optional[str] = None):
         full_uri = self._object_path(uri)
 
         if not StorageSpec.is_valid_component(component_name):

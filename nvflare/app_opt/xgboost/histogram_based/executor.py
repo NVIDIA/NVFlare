@@ -65,7 +65,7 @@ class FedXGBHistogramExecutor(Executor):
         data_loader_id: str,
         verbose_eval=False,
         use_gpus=False,
-        metrics_writer_id: str = None,
+        metrics_writer_id: Optional[str] = None,
         model_file_name="test.model.json",
     ):
         """Federated XGBoost Executor for histogram-base collaboration.

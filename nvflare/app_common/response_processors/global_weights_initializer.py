@@ -32,7 +32,7 @@ class GlobalWeightsInitializer(ResponseProcessor):
         self,
         weights_prop_name: str = AppConstants.GLOBAL_MODEL,
         weight_method: str = WeightMethod.FIRST,
-        client_name: str = None,
+        client_name: Optional[str] = None,
     ):
         """Set global model weights based on specified weight setting method.
 
