@@ -85,9 +85,13 @@ class TaskController(FLComponent, ControllerSpec):
         engine = fl_ctx.get_engine()
         request = task.data
         # apply task filters
+
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=True, private=True)
-        self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
+        try:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=False, private=True)
+            self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
+        finally:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, None, sticky=False, private=True)
 
         # # first apply privacy-defined filters
         try:
@@ -103,8 +107,11 @@ class TaskController(FLComponent, ControllerSpec):
             return replies
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=True, private=True)
-        self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
+        try:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=False, private=True)
+            self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
+        finally:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, None, sticky=False, private=True)
 
         target_names = get_target_names(targets)
         _, invalid_names = engine.validate_targets(target_names)

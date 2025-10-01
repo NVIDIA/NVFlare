@@ -68,8 +68,11 @@ class WFCommClient(FLComponent, WFCommSpec):
         engine = fl_ctx.get_engine()
         # apply task filters
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=True, private=True)
-        self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
+        try:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=False, private=True)
+            self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
+        finally:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, None, sticky=False, private=True)
 
         # # first apply privacy-defined filters
         try:
@@ -85,8 +88,11 @@ class WFCommClient(FLComponent, WFCommSpec):
             return replies
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=True, private=True)
-        self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
+        try:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, task.data, sticky=False, private=True)
+            self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
+        finally:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, None, sticky=False, private=True)
 
         if targets is None:
             targets = engine.all_clients
