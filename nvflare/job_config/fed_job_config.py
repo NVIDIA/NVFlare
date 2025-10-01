@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import builtins
 import inspect
 import json
@@ -23,7 +24,7 @@ from enum import Enum
 from tempfile import TemporaryDirectory
 from typing import Dict, List
 
-from nvflare.fuel.utils.class_utils import get_component_init_parameters
+from nvflare.fuel.utils.class_utils import get_component_init_parameters, resolve_component_attribute_key
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.base_app_config import BaseAppConfig
@@ -394,26 +395,29 @@ class FedJobConfig:
 
     def _get_args(self, component, custom_dir):
         args = {}
-        if hasattr(component, "__dict__"):
-            parameters = get_component_init_parameters(component)
-            attrs = component.__dict__
+        parameters = get_component_init_parameters(component)
 
-            for param in parameters:
-                attr_key = param if param in attrs.keys() else "_" + param
+        for param in parameters:
+            if param in ["self", "args", "kwargs"]:
+                continue
 
-                if attr_key in ["args", "kwargs"]:
-                    continue
+            # Use the centralized attribute resolution logic
+            attr_key = resolve_component_attribute_key(component, param)
+            if attr_key is None:
+                continue  # Skip if neither attribute exists
 
-                if attr_key in attrs.keys() and parameters[param].default != attrs[attr_key]:
-                    if type(attrs[attr_key]).__name__ in dir(builtins):
-                        args[param] = attrs[attr_key]
-                    elif issubclass(attrs[attr_key].__class__, Enum):
-                        args[param] = attrs[attr_key].value
-                    else:
-                        args[param] = {
-                            "path": self._get_class_path(attrs[attr_key], custom_dir),
-                            "args": self._get_args(attrs[attr_key], custom_dir),
-                        }
+            attr_value = getattr(component, attr_key)
+
+            if parameters[param].default != attr_value:
+                if type(attr_value).__name__ in dir(builtins):
+                    args[param] = attr_value
+                elif issubclass(attr_value.__class__, Enum):
+                    args[param] = attr_value.value
+                else:
+                    args[param] = {
+                        "path": self._get_class_path(attr_value, custom_dir),
+                        "args": self._get_args(attr_value, custom_dir),
+                    }
 
         return args
 
