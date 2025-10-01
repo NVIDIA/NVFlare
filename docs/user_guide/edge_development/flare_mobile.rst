@@ -138,7 +138,7 @@ Basic Usage
            
            // Create connection
            val connection = Connection(
-               serverURL = "https://your-server:4321",  // Replace with your actual server URL
+               serverURL = "",  // Replace with your actual server URL
                allowSelfSignedCerts = true
            )
            
@@ -210,7 +210,7 @@ Basic Usage
                ],
                userInfo: [:],
                jobTimeout: 30.0,
-               serverURL: "https://your-server:4321",  // Replace with your actual server URL
+               serverURL: "",  // Replace with your actual server URL
                allowSelfSignedCerts: true
            )
            
