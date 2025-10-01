@@ -30,7 +30,7 @@ def get_partition_id(fl_ctx: FLContext):
     """Get the partition id for the current client based on the sorted list of all client names."""
     engine = fl_ctx.get_engine()
 
-    all_client_names = sorted([client.name for client in engine.all_clients])
+    all_client_names = sorted([client.name for client in engine.get_clients()])
 
     for id, client_name in enumerate(all_client_names):
         if client_name == fl_ctx.get_identity_name():
@@ -42,7 +42,7 @@ def get_partition_id(fl_ctx: FLContext):
 def get_num_partitions(fl_ctx: FLContext):
     """Get the number of partitions based on the number of clients."""
     engine = fl_ctx.get_engine()
-    return len(engine.all_clients)
+    return len(engine.get_clients())
 
 
 class FlowerClientApplet(CLIApplet):
@@ -112,7 +112,7 @@ class FlowerClientApplet(CLIApplet):
     def _get_node_config(self, fl_ctx: FLContext):
         """Get the node config for the flower client app."""
         try:
-            cmd = f' client-name="{fl_ctx.get_identity_name()}"'
+            cmd = f'client-name="{fl_ctx.get_identity_name()}"'
             partition_id = get_partition_id(fl_ctx)
             if partition_id != -1:
                 cmd += f" partition-id={partition_id}"
