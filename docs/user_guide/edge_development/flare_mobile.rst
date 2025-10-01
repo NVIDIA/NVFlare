@@ -46,11 +46,7 @@ iOS
 Architecture
 ============
 
-The mobile SDK follows a modular architecture with these key components:
-
-.. image:: ../../resources/mobile_sdk_architecture.png
-   :height: 400px
-   :alt: Mobile SDK Architecture
+The Mobile SDK architecture consists of modular components including FlareRunner, Connection, DataSource, ETTrainer, and Dataset. Each component is responsible for a specific aspect of federated learning on mobile devices, such as orchestration, communication, data handling, and model training. Please refer to the component descriptions below for details.
 
 Core Components
 ---------------
@@ -379,24 +375,27 @@ Mobile FL training uses ExecuTorch for optimized model execution. Models must be
 .. code-block:: python
 
    import torch
-   from executorch.extension.pybindings.portable_lib import _load_for_executorch
+   from executorch.exir import to_edge_transform_and_lower
    
    # Load your PyTorch model
    model = YourPyTorchModel()
    model.eval()
    
-   # Convert to ExecuTorch format
+   # Prepare example input
    example_input = torch.randn(1, 3, 224, 224)
-   traced_model = torch.jit.trace(model, example_input)
    
-   # Export to ExecuTorch
-   executorch_program = _load_for_executorch(traced_model)
+   # Export the model using torch.export
+   exported_program = torch.export.export(model, (example_input,))
+   
+   # Convert to ExecuTorch format using public API
+   edge_program = to_edge_transform_and_lower(exported_program)
 
 **Model Requirements**
 
 - Models must be compatible with ExecuTorch's supported operations
 - Input/output shapes must be fixed at conversion time
 - Custom operations may require ExecuTorch extensions
+- Use the official ExecuTorch export APIs for model conversion
 
 Best Practices
 ==============

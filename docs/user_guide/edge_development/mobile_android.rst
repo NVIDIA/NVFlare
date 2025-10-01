@@ -548,27 +548,57 @@ The Android SDK provides comprehensive error handling through exceptions and log
 Common Exceptions
 -----------------
 
-* ``NVFlareError``: Base exception for FLARE-related errors
-* ``IOException``: Network communication errors
-* ``RuntimeException``: General runtime errors
+* ``NVFlareError`` (``com.nvidia.nvflare.sdk.core.NVFlareError``): Custom base exception for FLARE-related errors
+* ``IOException`` (``java.io.IOException``): Standard Java exception for network communication errors
+* ``RuntimeException`` (``java.lang.RuntimeException``): Standard Java exception for general runtime errors
+
+Exception Hierarchy
+-------------------
+
+The SDK uses a custom exception hierarchy where ``NVFlareError`` extends ``Exception`` and provides specific error types. In practice, the Android app primarily handles ``ServerRequestedStop`` specifically, while other errors are handled generically:
+
+.. code-block:: kotlin
+
+   sealed class NVFlareError : Exception() {
+       // Network related
+       data class JobFetchFailed(override val message: String) : NVFlareError()
+       data class TaskFetchFailed(override val message: String) : NVFlareError()
+       data class InvalidRequest(override val message: String) : NVFlareError()
+       data class AuthError(override val message: String) : NVFlareError()
+       data class ServerError(override val message: String) : NVFlareError()
+       data class NetworkError(override val message: String) : NVFlareError()
+       
+       // Training related
+       data class InvalidMetadata(override val message: String) : NVFlareError()
+       data class InvalidModelData(override val message: String) : NVFlareError()
+       data class TrainingFailed(override val message: String) : NVFlareError()
+       object ServerRequestedStop : NVFlareError()
+   }
 
 Error Handling Best Practices
 -----------------------------
+
+The Android SDK uses a simplified error handling approach that catches generic exceptions and provides specific handling for `NVFlareError.ServerRequestedStop`:
 
 .. code-block:: kotlin
 
    try {
        val result = flareRunner.run()
-   } catch (e: NVFlareError) {
-       Log.e("FLARE", "FLARE error: ${e.message}")
-       // Handle FLARE-specific errors
-   } catch (e: IOException) {
-       Log.e("FLARE", "Network error: ${e.message}")
-       // Handle network errors
    } catch (e: Exception) {
-       Log.e("FLARE", "Unexpected error: ${e.message}")
-       // Handle unexpected errors
+       Log.e("FLARE", "Training failed with error: $e")
+       
+       // Check for specific NVFlareError types
+       if (e is NVFlareError.ServerRequestedStop) {
+           Log.i("FLARE", "Server requested stop")
+           // Gracefully stop training
+       } else {
+           // Handle other errors generically
+           Log.e("FLARE", "Error: ${e.message}")
+       }
    }
+
+.. note::
+   The Connection class does use more specific error handling, converting ``IOException`` to ``NVFlareError.NetworkError`` and throwing appropriate ``NVFlareError`` subtypes based on HTTP status codes. However, the main application code uses the simplified approach shown above.
 
 Logging
 -------
