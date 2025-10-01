@@ -560,6 +560,7 @@ class StaticFileBuilder(Builder):
 
         replacement_dict = {
             "project_name": project.name,
+            "user_name": admin.name,
             "server_identity": server.name,
             "scheme": self.scheme,
             "conn_sec": conn_sec,
@@ -898,7 +899,7 @@ class StaticFileBuilder(Builder):
         for c in project.get_clients():
             content = self._append(content, c)
 
-        utils.write(os.path.join(ctx.get_wip_dir(), "start_all.sh"), content, "t", exe=True)
+        utils.write(os.path.join(ctx.get_wip_dir(), ProvFileName.START_ALL_SH), content, "t", exe=True)
 
 
 def _remove_undefined_port(section: str) -> str:

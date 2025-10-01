@@ -1,10 +1,10 @@
-.. _eks_deployment:
+.. _aws_eks:
 
 ############################################
 Amazon Elastic Kubernetes Service Deployment
 ############################################
 In this document, we will describe how to run the entire NVIDIA FLARE inside one Amazon Elastic Kubernetes Service (EKS).  For information
-how to run NVIDIA FLARE inside microk8s (local kubernetes cluster), please refer to :ref:`_helm_chart`.  That document describes how to
+how to run NVIDIA FLARE inside microk8s (local kubernetes cluster), please refer to :ref:`helm_chart`.  That document describes how to
 provision one NVIDIA FLARE system, configure your microk8s cluster, deploy the servers, the overseer and the clients to that cluster, and
 control and submit jobs to that NVIDIA FLARE from admin console.
 

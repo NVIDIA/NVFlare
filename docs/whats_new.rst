@@ -1,10 +1,6 @@
 .. _whats_new:
 
-##########
-What's New
-##########
-
-.. include:: release_notes/flare_260.rst
+.. include:: release_notes/flare_270.rst
 
 **************************
 Previous Releases of FLARE
@@ -13,6 +9,7 @@ Previous Releases of FLARE
 .. toctree::
    :maxdepth: 1
 
+   release_notes/flare_260
    release_notes/flare_250
    release_notes/flare_240
    release_notes/flare_230
