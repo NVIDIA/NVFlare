@@ -57,8 +57,8 @@ This section provides a hands-on introduction to federated learning using NVIDIA
 
 .. tip::
 
-`View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/01.0_introduction/introduction.ipynb>`_,
-`Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/video.md>`_
+    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/01.0_introduction/introduction.ipynb>`_,
+    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/video.md>`_
 
 **Chapter 2: Developing Federated Learning Applications**
 
