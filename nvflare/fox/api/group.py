@@ -33,6 +33,8 @@ class Group:
         proxies: List[Proxy],
         blocking: bool = True,
         timeout: float = 5.0,
+        optional: bool = False,
+        secure: bool = False,
         min_resps: int = None,
         wait_after_min_resps: float = None,
         process_resp_cb=None,
@@ -46,6 +48,8 @@ class Group:
         self._proxies = proxies
         self._blocking = blocking
         self._timeout = timeout
+        self._optional = optional
+        self._secure = secure
         self._min_resps = min_resps
         self._wait_after_min_resps = wait_after_min_resps
         self._process_resp_cb = process_resp_cb
@@ -56,6 +60,8 @@ class Group:
 
         if not wait_after_min_resps:
             self._wait_after_min_resps = 0
+
+        print(f"min resps: {self._min_resps}")
 
     def __getattr__(self, func_name):
         """
@@ -76,6 +82,9 @@ class Group:
                     kwargs_copy[CollabMethodOptionName.TIMEOUT] = self._timeout
 
                 kwargs_copy[CollabMethodOptionName.BLOCKING] = self._blocking
+                kwargs_copy[CollabMethodOptionName.SECURE] = self._secure
+                kwargs_copy[CollabMethodOptionName.OPTIONAL] = self._optional
+
                 resp = Resp(self._process_resp_cb, self._cb_kwargs, ctx)
                 resps[p.name] = resp
 
@@ -102,6 +111,7 @@ class Group:
                     break
 
                 now = time.time()
+                print(f"what is min_resps: {self=} {self._min_resps}")
                 if resps_received >= self._min_resps:
                     if not min_received_time:
                         min_received_time = now
@@ -133,6 +143,8 @@ def group(
     proxies: List[Proxy],
     blocking: bool = True,
     timeout: float = 5.0,
+    optional: bool = False,
+    secure: bool = False,
     min_resps: int = None,
     wait_after_min_resps: float = None,
     process_resp_cb=None,
@@ -144,6 +156,8 @@ def group(
         proxies,
         blocking,
         timeout,
+        optional,
+        secure,
         min_resps,
         wait_after_min_resps,
         process_resp_cb,
@@ -155,6 +169,8 @@ def all_clients(
     ctx: Context,
     blocking: bool = True,
     timeout: float = 5.0,
+    optional: bool = False,
+    secure: bool = False,
     min_resps: int = None,
     wait_after_min_resps: float = None,
     process_resp_cb=None,
@@ -166,6 +182,8 @@ def all_clients(
         ctx.clients,
         blocking,
         timeout,
+        optional,
+        secure,
         min_resps,
         wait_after_min_resps,
         process_resp_cb,

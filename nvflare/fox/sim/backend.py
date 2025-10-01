@@ -15,11 +15,11 @@ import threading
 import time
 
 from nvflare.apis.fl_exception import RunAborted
-from nvflare.focs.api.app import App
-from nvflare.focs.api.backend import Backend
-from nvflare.focs.api.constants import CollabMethodArgName, CollabMethodOptionName
-from nvflare.focs.api.dec import adjust_kwargs
-from nvflare.focs.api.resp import Resp
+from nvflare.fox.api.app import App
+from nvflare.fox.api.backend import Backend
+from nvflare.fox.api.constants import CollabMethodArgName, CollabMethodOptionName
+from nvflare.fox.api.dec import adjust_kwargs
+from nvflare.fox.api.resp import Resp
 
 
 class _Waiter(threading.Event):
@@ -50,6 +50,10 @@ class SimBackend(Backend):
 
         blocking = kwargs.pop(CollabMethodOptionName.BLOCKING, True)
         timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, None)
+
+        # these options don't apply to simulation
+        kwargs.pop(CollabMethodOptionName.OPTIONAL, None)
+        kwargs.pop(CollabMethodOptionName.SECURE, None)
 
         waiter = None
         if blocking:
@@ -98,6 +102,8 @@ class SimBackend(Backend):
         # do not use the optional args - they are managed by the group
         kwargs.pop(CollabMethodOptionName.BLOCKING, None)
         kwargs.pop(CollabMethodOptionName.TIMEOUT, None)
+        kwargs.pop(CollabMethodOptionName.OPTIONAL, None)
+        kwargs.pop(CollabMethodOptionName.SECURE, None)
 
         func = self._get_func(func_name)
         if not func:

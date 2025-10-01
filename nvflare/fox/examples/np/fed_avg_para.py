@@ -11,20 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.focs.api.app import ServerApp
-from nvflare.focs.examples.np.algos.client import NPTrainer
-from nvflare.focs.examples.np.algos.strategies import NPCyclic
-from nvflare.focs.sim.simulator import Simulator
+from nvflare.fox.api.app import ServerApp
+from nvflare.fox.examples.np.algos.client import NPTrainer
+from nvflare.fox.examples.np.algos.strategies import NPFedAvgParallel
+from nvflare.fox.examples.np.algos.widgets import MetricReceiver
+from nvflare.fox.sim.simulator import Simulator
 
 
 def main():
 
+    server_app = ServerApp(
+        strategy_name="fed_avg",
+        strategy=NPFedAvgParallel(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
+    )
+    server_app.add_collab_object("metric_receiver", MetricReceiver())
+
     simulator = Simulator(
-        server_app=ServerApp(
-            strategy_name="cyclic", strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)
-        ),
+        server_app=server_app,
         client_app=NPTrainer(delta=1.0),
-        num_clients=2,
+        num_clients=10,
     )
 
     simulator.run()

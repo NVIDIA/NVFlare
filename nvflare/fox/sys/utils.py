@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.focs.api.app import App
-from nvflare.focs.api.constants import CollabMethodArgName
-from nvflare.focs.api.dec import adjust_kwargs
+from nvflare.fox.api.app import App
+from nvflare.fox.api.constants import CollabMethodArgName
+from nvflare.fox.api.dec import adjust_kwargs
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message

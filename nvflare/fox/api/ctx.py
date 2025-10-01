@@ -16,7 +16,8 @@ from nvflare.apis.signal import Signal
 
 class Context:
 
-    def __init__(self, caller: str, callee: str, abort_signal: Signal, props: dict = None):
+    def __init__(self, env_type: str, caller: str, callee: str, abort_signal: Signal, props: dict = None):
+        self.env_type = env_type
         self.caller = caller
         self.callee = callee
         self.abort_signal = abort_signal

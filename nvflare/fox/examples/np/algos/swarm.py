@@ -15,12 +15,12 @@ import random
 import threading
 import traceback
 
-from nvflare.focs.api.app import ClientApp
-from nvflare.focs.api.ctx import Context
-from nvflare.focs.api.dec import collab
-from nvflare.focs.api.group import all_clients
-from nvflare.focs.api.strategy import Strategy
-from nvflare.focs.examples.np.algos.utils import parse_array_def
+from nvflare.fox.api.app import ClientApp
+from nvflare.fox.api.ctx import Context
+from nvflare.fox.api.dec import collab
+from nvflare.fox.api.group import all_clients
+from nvflare.fox.api.strategy import Strategy
+from nvflare.fox.examples.np.algos.utils import parse_array_def
 
 
 class NPSwarm(Strategy):
@@ -83,7 +83,7 @@ class NPSwarmClient(ClientApp):
             # self.server.fire_event("all_done", "OK", blocking=False)
             print("notify server all done!")
             try:
-                self.server.all_done("OK", blocking=False)
+                self.server.all_done("OK", _blocking=False)
             except:
                 traceback.print_exc()
             print("Swarm Training is DONE!")
@@ -93,7 +93,7 @@ class NPSwarmClient(ClientApp):
         next_round = current_round + 1
         next_client_idx = random.randint(0, len(self.clients) - 1)
         next_client = self.clients[next_client_idx]
-        next_client.swarm_learn(num_rounds, new_model, next_round, blocking=False)
+        next_client.swarm_learn(num_rounds, new_model, next_round, _blocking=False)
 
     @collab
     def start(self, num_rounds, initial_model, context: Context):

@@ -12,16 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Union
 
 from nvflare.apis.signal import Signal
-from nvflare.focs.api.app import App, ClientApp, ClientAppFactory, ServerApp
-from nvflare.focs.api.constants import ContextKey
-from nvflare.focs.api.dec import get_object_collab_interface
-from nvflare.focs.api.proxy import Proxy
-from nvflare.focs.sim.backend import SimBackend
+from nvflare.fox.api.app import App, ClientApp, ClientAppFactory, ServerApp
+from nvflare.fox.api.constants import ContextKey, EnvType
+from nvflare.fox.api.dec import get_object_collab_interface
+from nvflare.fox.api.proxy import Proxy
+from nvflare.fox.sim.backend import SimBackend
 
 
 class Simulator:
@@ -74,6 +73,7 @@ class Simulator:
 
         self.abort_signal = Signal()
         server_app.name = "server"
+        server_app.env_type = EnvType.SIMULATION
         self.server_app = server_app
         self.client_app = client_app
         self.thread_executor = ThreadPoolExecutor(max_workers=max_workers)
@@ -87,6 +87,7 @@ class Simulator:
             else:
                 app = client_app.make_client_app(name)
             app.name = name
+            app.env_type = EnvType.SIMULATION
             client_apps[name] = app
 
         backends = {server_app.name: self._prepare_app_backends(server_app)}

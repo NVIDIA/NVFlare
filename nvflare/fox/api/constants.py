@@ -17,9 +17,16 @@ class CollabMethodArgName:
 
 
 class CollabMethodOptionName:
-    BLOCKING = "blocking"
-    TIMEOUT = "timeout"
+    BLOCKING = "_blocking"
+    TIMEOUT = "_timeout"
+    OPTIONAL = "_optional"
+    SECURE = "_secure"
 
 
 class ContextKey:
     INPUT = "input"
+
+
+class EnvType:
+    SIMULATION = "simulation"
+    SYSTEM = "system"
