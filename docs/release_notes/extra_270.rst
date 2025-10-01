@@ -1,3 +1,5 @@
+.. _extra_270:
+
 Extra Features in v2.7.0
 ==============================
 
@@ -11,9 +13,7 @@ These issues exists regardless the model is sent directly or via streaming. We h
 
 Another issue of LLM streaming is limited by Memory size, the model size must fit into the memory. File-based streaming then not limited by the memory size.
 
-For complete description of the memory management feature, please refer to :ref:`file_streaming` and :ref:`tensor_streaming`
-
-We introduced FileStreamer in previous release, we are now introducing FileDownloader
+We introduced FileStreamer in previous release :ref:`file_streaming`, we are now introducing FileDownloader
 
 Push vs. Pull
 ^^^^^^^^^^^^^

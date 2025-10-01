@@ -81,7 +81,7 @@ Add this component to config_fed_client.json:
 If using the subprocess Client API with the ClientAPILauncherExecutor (rather than the in-process Client API with the InProcessClientAPIExecutor),
 we need to add the ``MetricRelay`` to fire fed events, a ``CellPipe`` for metrics, and an ``ExternalConfigurator`` for client api initialization.
 
-.. code-block:: yaml
+.. code-block::
 
     {
       id = "metric_relay"

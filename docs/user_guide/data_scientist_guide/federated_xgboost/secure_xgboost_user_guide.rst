@@ -391,7 +391,7 @@ Vertical Training
 
 Here are the configuration files for a vertical secure training job. If encryption is not needed, just change the ``secure_training`` arg to false.
 
-.. code-block:: json
+.. code-block::
 
     :caption: config_fed_server.json
 
@@ -428,7 +428,7 @@ Here are the configuration files for a vertical secure training job. If encrypti
 
 
 
-.. code-block:: json
+.. code-block::
 
     :caption: config_fed_client.json
 
@@ -564,7 +564,7 @@ in executor arguments control the timeout behavior:
     - **per_msg_timeout**: Timeout in seconds for each message.
     - **tx_timeout**: Timeout for the whole transaction in seconds. This is the total time to wait for a response, accounting for all retry attempts.
 
-.. code-block:: json
+.. code-block::
    :caption: config_fed_client.json
 
     {
@@ -594,7 +594,7 @@ Number of Clients
 -----------------
 The default configuration can only handle 20 clients. This parameter needs to be adjusted if more clients are involved in the training:
 
-.. code-block:: json
+.. code-block::
    :caption: config_fed_client.json
 
     {

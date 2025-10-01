@@ -474,7 +474,7 @@ then configure it as a component in the site ``resources.json``.
 
 In the ``local/resources.json``:
 
-.. code-block:: json
+.. code-block::
 
     {
         "format_version": 2,

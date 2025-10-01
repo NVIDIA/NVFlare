@@ -30,5 +30,5 @@ please check :ref:`researcher_guide`
    user_guide/researcher_guide/index
    user_guide/nvflare_cli/nvflare_cli
    user_guide/confidential_computing/index
-   user_guide/edge/index
+   user_guide/edge_development/index
 

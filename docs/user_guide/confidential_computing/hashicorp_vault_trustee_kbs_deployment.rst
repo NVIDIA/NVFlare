@@ -508,7 +508,7 @@ Prepare KBS configuration file (kbs-config.toml)
 
 Create a file named kbs-config.toml in the kbs directory and fill in the following content.
 
-.. code-block:: toml
+.. code-block::
 
    [http_server]
    sockets = ["0.0.0.0:8999"]
