@@ -2,8 +2,6 @@
 
 .. include:: release_notes/flare_270.rst
 
-.. include:: self-paced-training/index.rst
-
 **************************
 Previous Releases of FLARE
 **************************
