@@ -95,7 +95,7 @@ When combined with the Client API (typically 4+ lines), building and running fed
 
 .. admonition:: Job Recipe
 
-    This feature is in technical review. Not all examples and code have been converted to use Job Recipe yet.
+    This feature is in **technical review**. Not all examples and code have been converted to use Job Recipe yet.
     However, you can directly experience the recipe with recipe tutorial notebook `Job Recipe Tutorials <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/job_recipe.ipynb>`_
     or read the :ref:`job_recipe`, more than half a dozen ready-to-use recipes are provided: :ref:`quickstart`
 
