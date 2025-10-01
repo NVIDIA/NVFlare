@@ -60,6 +60,15 @@ Parameters
 * ``outFilters``: Optional output filters for result processing
 * ``resolverRegistry``: Optional component resolver registry
 
+What is a Resolver?
+-------------------
+
+A **Resolver** is a component that maps string identifiers to actual class implementations. In the context of FLARE's edge SDK, resolvers are used to dynamically instantiate training components, filters, and other plugins based on configuration data received from the server.
+
+For example, when the server sends a job configuration that specifies a trainer component, the resolver looks up the string identifier (like "ETTrainerExecutor") and maps it to the actual class that should be instantiated. This allows for flexible, configuration-driven component loading without hardcoding specific implementations.
+
+The ``resolverRegistry`` parameter allows you to register custom resolvers for your own components, enabling the system to dynamically load and instantiate them when needed.
+
 Properties
 ----------
 

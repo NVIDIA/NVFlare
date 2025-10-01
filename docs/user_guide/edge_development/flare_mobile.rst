@@ -450,9 +450,9 @@ Examples and Tutorials
 
 Complete working examples are available in the NVFlare repository:
 
-* **Android Example**: ``examples/advanced/edge/`` - Complete Android app with CIFAR-10 training
-* **iOS Example**: ``examples/advanced/edge/`` - Complete iOS app with federated learning
-* **Edge Simulation**: ``examples/advanced/edge/`` - Simulated edge training without real devices
+* **iOS Example App**: `iOS Example Project <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/edge/device/ios/ExampleProject>`_
+* **Android Example App**: `Android Example Project <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/edge/device/android>`_
+* **How to run NVFlare with Edge**: `Edge Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_ - includes both simulation and real devices
 
 .. tip::
    Start with the examples to understand the complete integration flow before building your own application.

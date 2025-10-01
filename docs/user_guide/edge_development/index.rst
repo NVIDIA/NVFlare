@@ -4,8 +4,7 @@
 Develop Edge Applications with FLARE
 ####################################
 
-
-FLARE 2.7 extends federated learning capabilities to edge devices. Edge device applications present some new challenges.
+FLARE extends federated learning capabilities to edge devices. Edge device applications present some new challenges.
 
 - **Scalability**: Unlike cross-silo applications where the number of FL clients is relatively small, the number of devices could be in the millions. It's infeasible to treat the devices as simple FL clients and connect them directly to the FL server.
 
