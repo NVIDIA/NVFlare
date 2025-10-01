@@ -88,7 +88,7 @@ class FlowerClientApplet(CLIApplet):
         cmd = (
             f"flower-supernode --insecure --grpc-adapter "
             f"--superlink {superlink_addr} "
-            f"--clientappio-api-address {clientapp_api_addr} "
+            f"--clientappio-api-address {clientapp_api_addr}"
         )
 
         # add node config
@@ -112,7 +112,7 @@ class FlowerClientApplet(CLIApplet):
     def _get_node_config(self, fl_ctx: FLContext):
         """Get the node config for the flower client app."""
         try:
-            cmd = f'client-name="{fl_ctx.get_identity_name()}"'
+            cmd = f' client-name="{fl_ctx.get_identity_name()}"'
             partition_id = get_partition_id(fl_ctx)
             if partition_id != -1:
                 cmd += f" partition-id={partition_id}"
