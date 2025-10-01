@@ -11,19 +11,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.focs.api.ctx import Context
-from nvflare.focs.api.dec import collab
+
+from nvflare.fox.api.app import ServerApp
+from nvflare.fox.examples.np.algos.swarm import NPSwarm, NPSwarmClient
+from nvflare.fox.sim.simulator import Simulator
 
 
-class MetricReceiver:
+def main():
 
-    @collab
-    def accept_metric(self, metrics: dict, context: Context):
-        print(f"[{context.callee}] received metric report from {context.caller}: {metrics}")
+    server_app = ServerApp(
+        strategy_name="strategy", strategy=NPSwarm(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=5)
+    )
+    client_app = NPSwarmClient(delta=1.0)
 
-    def initialize(self, context: Context):
-        context.app.register_event_handler("metrics", self._accept_metric)
-        print("MetricReceiver initialized!")
+    simulator = Simulator(
+        server_app=server_app,
+        client_app=client_app,
+        num_clients=3,
+    )
 
-    def _accept_metric(self, event_type: str, data, context: Context):
-        print(f"[{context.callee}] received event '{event_type}' from {context.caller}: {data}")
+    simulator.run()
+
+
+if __name__ == "__main__":
+    main()

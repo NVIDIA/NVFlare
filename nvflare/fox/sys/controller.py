@@ -22,10 +22,10 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
-from nvflare.focs.api.app import ServerApp
-from nvflare.focs.api.constants import ContextKey
-from nvflare.focs.api.proxy import Proxy
-from nvflare.focs.api.strategy import Strategy
+from nvflare.fox.api.app import ServerApp
+from nvflare.fox.api.constants import ContextKey, EnvType
+from nvflare.fox.api.proxy import Proxy
+from nvflare.fox.api.strategy import Strategy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .backend import SysBackend
@@ -44,7 +44,7 @@ class _ClientInfo:
         self.collab_interface = collab_interface
 
 
-class FocsController(Controller):
+class FoxController(Controller):
 
     def __init__(
         self,
@@ -81,6 +81,8 @@ class FocsController(Controller):
             app = ServerApp()
 
         app.name = "server"
+        app.env_type = EnvType.SYSTEM
+
         for cid in self.strategy_ids:
             strategy = engine.get_component(cid)
             if not isinstance(strategy, Strategy):

@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.focs.api.backend import Backend
-from nvflare.focs.api.constants import CollabMethodArgName, CollabMethodOptionName
-from nvflare.focs.api.resp import Resp
+from nvflare.fox.api.backend import Backend
+from nvflare.fox.api.constants import CollabMethodArgName, CollabMethodOptionName
+from nvflare.fox.api.resp import Resp
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
@@ -35,6 +35,9 @@ class SysBackend(Backend):
     def call_target(self, target_name: str, func_name: str, *args, **kwargs):
         blocking = kwargs.pop(CollabMethodOptionName.BLOCKING, True)
         timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, 10.0)
+        optional = kwargs.pop(CollabMethodOptionName.OPTIONAL, False)
+        secure = kwargs.pop(CollabMethodOptionName.SECURE, False)
+
         kwargs.pop(CollabMethodArgName.CONTEXT, None)
 
         payload = {
@@ -55,8 +58,8 @@ class SysBackend(Backend):
                 topic=MSG_TOPIC,
                 request=request,
                 timeout=timeout,
-                secure=False,
-                optional=False,
+                secure=secure,
+                optional=optional,
                 abort_signal=self.abort_signal,
             )
             assert isinstance(reply, Message)
@@ -84,8 +87,8 @@ class SysBackend(Backend):
                 topic=MSG_TOPIC,
                 targets=self.target_fqcn,
                 message=request,
-                secure=False,
-                optional=False,
+                secure=secure,
+                optional=optional,
             )
 
     def call_target_with_resp(self, resp: Resp, target_name: str, func_name: str, *args, **kwargs):

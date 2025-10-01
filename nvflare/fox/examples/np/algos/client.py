@@ -13,9 +13,9 @@
 # limitations under the License.
 import random
 
-from nvflare.focs.api.app import ClientApp, ClientAppFactory
-from nvflare.focs.api.ctx import Context
-from nvflare.focs.api.dec import collab
+from nvflare.fox.api.app import ClientApp, ClientAppFactory
+from nvflare.fox.api.ctx import Context
+from nvflare.fox.api.dec import collab
 
 
 class NPTrainer(ClientApp):
@@ -35,7 +35,7 @@ class NPTrainer(ClientApp):
         # if metric_receiver:
         #     self.server.accept_metric({"round": r, "y": 2})
         #
-        self.server.fire_event("metrics", {"round": current_round, "y": 10}, blocking=False)
+        self.server.fire_event("metrics", {"round": current_round, "y": 10}, _blocking=False)
         return weights + self.delta
 
     @collab

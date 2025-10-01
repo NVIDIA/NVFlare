@@ -22,8 +22,9 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.focs.api.app import ClientApp, ClientAppFactory
-from nvflare.focs.api.proxy import Proxy
+from nvflare.fox.api.app import ClientApp, ClientAppFactory
+from nvflare.fox.api.constants import EnvType
+from nvflare.fox.api.proxy import Proxy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .backend import SysBackend
@@ -31,7 +32,7 @@ from .constants import SYNC_TASK_NAME, SyncKey
 from .utils import prepare_for_remote_call
 
 
-class FocsExecutor(Executor):
+class FoxExecutor(Executor):
 
     def __init__(self, client_app_id: str, client_target_obj_ids: Dict[str, str] = None, max_call_threads=100):
         Executor.__init__(self)
@@ -59,6 +60,7 @@ class FocsExecutor(Executor):
             self.client_app = client_app.make_client_app(client_name)
 
         self.client_app.name = client_name
+        self.client_app.env_type = EnvType.SYSTEM
 
         if self.client_target_obj_ids:
             for name, cid in self.client_target_obj_ids:

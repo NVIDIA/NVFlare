@@ -29,6 +29,7 @@ class App:
         self.name = None
         self.server = None
         self.clients = None
+        self.env_type = None
         self._me = None
         self._collab_objs = {}
         self._abort_signal = None
@@ -119,7 +120,7 @@ class App:
                 init_func(**kwargs)
 
     def new_context(self, caller: str, callee: str, props: dict = None):
-        ctx = Context(caller, callee, self._abort_signal, props)
+        ctx = Context(self.env_type, caller, callee, self._abort_signal, props)
         ctx.app = self
         ctx.server = self.server
         ctx.clients = self.clients

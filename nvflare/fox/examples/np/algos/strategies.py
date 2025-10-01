@@ -15,10 +15,10 @@ import random
 
 import numpy as np
 
-from nvflare.focs.api.constants import ContextKey
-from nvflare.focs.api.ctx import Context
-from nvflare.focs.api.group import all_clients
-from nvflare.focs.api.strategy import Strategy
+from nvflare.fox.api.constants import ContextKey
+from nvflare.fox.api.ctx import Context
+from nvflare.fox.api.group import all_clients
+from nvflare.fox.api.strategy import Strategy
 
 from .utils import parse_array_def
 
