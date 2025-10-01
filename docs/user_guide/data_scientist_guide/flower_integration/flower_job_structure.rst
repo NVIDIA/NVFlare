@@ -78,7 +78,7 @@ Server App Specification
 
 This value is specified following this format:
 
-.. code-block:: toml
+.. code-block::
 
     <server_app_module>:<server_app_var_name>
 
@@ -96,7 +96,7 @@ Client App Specification
 ------------------------
 This value is specified following this format:
 
-.. code-block:: toml
+.. code-block::
 
 	<client_app_module>:<client_app_var_name>
 

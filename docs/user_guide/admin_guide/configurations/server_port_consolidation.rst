@@ -1,4 +1,4 @@
-.. _server_port_consolidation
+.. _server_port_consolidation:
 
 FL Server Port Consolidation
 ============================
@@ -8,6 +8,15 @@ Historically, Flare’s FL Server requires two communication port numbers to be 
 Flare 2.7 consolidates port number requirement to one: the same port number can be used for both types of communication!
 
 For some customers, it may still be desirable to use different port numbers because they can be managed under different network security policies. To accommodate such customers, the system can still be provisioned to use two different port numbers for admin/server and client/server communications.
+
+**Connection Example Illustration**
+
+The following diagrams illustrate the two different connection and authentication mechanisms
+enabled by the single port, TLS, bring your own connection features.
+
+.. image:: ../../resources/flare_byocc.png
+    :height: 300px
+
 
 Detailed Changes
 ----------------

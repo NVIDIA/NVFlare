@@ -294,7 +294,7 @@ The workload, which typically includes training and evaluation code, can be depl
 
   This feature is mostly used by data scientists during experiments and POCs. For production loads, where security requires no dynamic code loading, a pre-installed workload is necessary before running experiments.
 
-- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, pre-installation is required before starting the experiments. You can pre-install the workload via the :ref:`app_pre_install` command of the FLARE CLI.
+- **Pre-deployed Code**: In cases where security or other requirements demand no dynamic code loading, pre-installation is required before starting the experiments. You can pre-install the workload via the :ref:`pre_installer` command of the FLARE CLI.
 
 .. code-block::
 
