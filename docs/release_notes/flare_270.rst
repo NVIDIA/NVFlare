@@ -5,25 +5,6 @@ What's New in FLARE v2.7.0
 The new features can be divided into three categories
 
 
-Confidential Federated AI
-=========================
-
-.. note::
-    This feature is in **Technical Preview**.
-    Reach to NVIDIA FLARE team for CVM build scripts: federatedlearning@nvidia.com
-
-With this release, we offer this first of kind product for end-to-end IP protection solution in federated setup
-using confidential computing.
-
-- The solution is for on-premise deployment on bare metal using AMD CPU and NVIDIA GPU with Confidential VM.
-- End-To-End Protection: by end-to-end protection, we are stating that it is not only protect the IP (model and code) in use at runtime,but also protect against the CVM tampering at deployment.
-- The solution is able to perform
-    - **security aggregation** on the server-side to protection privacy leak via model
-    - **model theft Protection** on the client-side to safe guard the Model IP during collaboration
-    - **data leak prevention** on the client-side with the pre-approved,certified code.
-
-You can read more about the user usage at :ref:`confidential_computing`
-
 .. sidebar::
 
     **Confidential Federated AI Applications:**
@@ -46,6 +27,25 @@ You can read more about the user usage at :ref:`confidential_computing`
     - **Defense and National Security:** Allow cross-agency AI projects while preserving strict confidentiality of algorithms and data.
 
     - **Cross-Industry Consortia:** Support joint innovation (e.g., supply chain, energy, automotive) without risking leakage of competitive IP.
+
+Confidential Federated AI
+=========================
+
+.. note::
+    This feature is in **Technical Preview**.
+    Reach to NVIDIA FLARE team for CVM build scripts: federatedlearning@nvidia.com
+
+With this release, we offer this first of kind product for end-to-end IP protection solution in federated setup
+using confidential computing.
+
+- The solution is for on-premise deployment on bare metal using AMD CPU and NVIDIA GPU with Confidential VM.
+- End-To-End Protection: by end-to-end protection, we are stating that it is not only protect the IP (model and code) in use at runtime,but also protect against the CVM tampering at deployment.
+- The solution is able to perform
+    - **security aggregation** on the server-side to protection privacy leak via model
+    - **model theft Protection** on the client-side to safe guard the Model IP during collaboration
+    - **data leak prevention** on the client-side with the pre-approved,certified code.
+
+You can read more about the user usage at :ref:`confidential_computing`
 
 FLARE Core
 ==========
