@@ -18,13 +18,6 @@ and only the server writes data to the MLflow tracking server with
 be the only party that needs to deal with authentication and communication with the MLflow tracking server, and
 streamlines and reduces the communication by buffering the data to send.
 
-.. note::
-
-  Like :ref:`tensorboard_streaming`, this exercise differs from :doc:`hello_pt` by using the ``Learner`` API along with the ``LearnerExecutor``.
-  In short, the execution flow is abstracted away into the ``LearnerExecutor``, allowing you to only need to implement the required methods in the ``Learner`` class.
-  This will not be the focus of this guide, however you can learn more at :class:`Learner<nvflare.app_common.abstract.learner_spec.Learner>`
-  and :class:`LearnerExecutor<nvflare.app_common.executors.learner_executor.LearnerExecutor>`.
-
 
 Let's get started. Make sure you have an environment with NVIDIA FLARE installed as described in
 :ref:`getting_started`. First clone the repo:
