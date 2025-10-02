@@ -92,9 +92,9 @@ class FlowerClientApplet(CLIApplet):
         )
 
         # add node config
-        node_config = self._get_node_config(fl_ctx)
-        if node_config:
-            cmd += node_config
+        node_config_str = self._get_node_config(fl_ctx)
+        if node_config_str:
+            cmd += node_config_str
 
         # use app_dir as the cwd for flower's client app.
         # this is necessary for client_api to be used with the flower client app for metrics logging
@@ -116,12 +116,10 @@ class FlowerClientApplet(CLIApplet):
             partition_id = get_partition_id(fl_ctx)
             if partition_id != -1:
                 cmd += f" partition-id={partition_id}"
-            num_partitions = get_num_partitions(fl_ctx)
-            if num_partitions != -1:
-                cmd += f" num-partitions={num_partitions}"
+            cmd += f" num-partitions={get_num_partitions(fl_ctx)}"
             return f" --node-config '{cmd}'"
         except Exception as ex:
-            self.log_error(fl_ctx, f"Exception getting node config from fl_ctx: {secure_format_exception(ex)}")
+            self.log_error(fl_ctx, f"Exception getting node configuration from fl_ctx: {secure_format_exception(ex)}")
             return None
 
 
