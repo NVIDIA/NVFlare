@@ -107,6 +107,8 @@ class TensorServerStreamer(FLComponent):
                 self.system_panic(fl_ctx, f"Failed to send tensors: {e}")
                 return
 
+            self.try_to_clean_task_data(fl_ctx)
+
         elif event_type == EventType.BEFORE_TASK_RESULT_FILTER:
             self.receiver.set_ctx_with_tensors(fl_ctx)
 
@@ -123,7 +125,6 @@ class TensorServerStreamer(FLComponent):
             return
 
         self.num_task_data_sent += 1
-        self.try_to_clean_task_data(fl_ctx)
 
     def try_to_clean_task_data(self, fl_ctx: FLContext):
         """Clean the task data in the FLContext.
@@ -133,7 +134,7 @@ class TensorServerStreamer(FLComponent):
         """
         total_clients = len(self.engine.get_clients())
         if self.num_task_data_sent < total_clients:
-            self.debug(
+            self.log_debug(
                 fl_ctx,
                 f"Not all sites received the tensors yet. "
                 f"Skipping removing tensors from task data. Sent {self.num_task_data_sent} out of {total_clients}",
