@@ -781,6 +781,7 @@ class SimulatorClientRunner(FLComponent):
                     )
                     return True, None, client.client_name
 
+                # the child process is in nvflare/private/fed/app/simulator/simulator_worker.py 
                 stop_run = conn.recv()
 
                 if stop_run:
@@ -791,6 +792,7 @@ class SimulatorClientRunner(FLComponent):
                         )
                         return True, None, client.client_name
 
+                    # the child process is in nvflare/private/fed/app/simulator/simulator_worker.py 
                     end_run_client = conn.recv()
 
                 with lock:
