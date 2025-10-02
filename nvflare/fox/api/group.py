@@ -71,25 +71,34 @@ class Group:
         def method(*args, **kwargs):
             resps = {}
 
+            # filter once for all targets
+            p = self._proxies[0]
+            the_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
+            ctx = the_proxy.app.new_context(self.caller_name, self.name)
+
+            # apply outgoing call filters
+            adj_kwargs = self._app.apply_outgoing_call_filters(p.target_name, func_name, adj_kwargs, ctx)
+            the_proxy.check_call_args(func_name, func_itf, adj_args, adj_kwargs)
+
             for p in self._proxies:
-                the_proxy, call_args, call_kwargs = p.adjust_func_args(func_name, args, kwargs)
-                kwargs_copy = copy.copy(call_kwargs)
+                the_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, adj_args, adj_kwargs)
+                call_kwargs = copy.copy(call_kwargs)
                 ctx = self._app.new_context(the_proxy.caller_name, the_proxy.name)
-                kwargs_copy[CollabMethodArgName.CONTEXT] = ctx
+                call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
                 # set the optional args to help backend decide how to call
                 if self._timeout:
-                    kwargs_copy[CollabMethodOptionName.TIMEOUT] = self._timeout
+                    call_kwargs[CollabMethodOptionName.TIMEOUT] = self._timeout
 
-                kwargs_copy[CollabMethodOptionName.BLOCKING] = self._blocking
-                kwargs_copy[CollabMethodOptionName.SECURE] = self._secure
-                kwargs_copy[CollabMethodOptionName.OPTIONAL] = self._optional
+                call_kwargs[CollabMethodOptionName.BLOCKING] = self._blocking
+                call_kwargs[CollabMethodOptionName.SECURE] = self._secure
+                call_kwargs[CollabMethodOptionName.OPTIONAL] = self._optional
 
                 resp = Resp(self._process_resp_cb, self._cb_kwargs, ctx)
                 resps[p.name] = resp
 
-                print(f"group call: {func_name=} args={call_args} kwargs={kwargs_copy}")
-                the_proxy.backend.call_target_with_resp(resp, the_proxy.name, func_name, *call_args, **kwargs_copy)
+                print(f"group call: {func_name=} args={call_args} kwargs={call_kwargs}")
+                the_proxy.backend.call_target_with_resp(resp, the_proxy.name, func_name, *call_args, **call_kwargs)
 
             # wait for responses
             if not self._blocking:

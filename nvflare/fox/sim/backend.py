@@ -49,7 +49,7 @@ class SimBackend(Backend):
             raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
         blocking = kwargs.pop(CollabMethodOptionName.BLOCKING, True)
-        timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, None)
+        timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, 5.0)
 
         # these options don't apply to simulation
         kwargs.pop(CollabMethodOptionName.OPTIONAL, None)

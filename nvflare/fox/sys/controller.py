@@ -24,6 +24,7 @@ from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.constants import ContextKey, EnvType
+from nvflare.fox.api.filter import CallFilter, FilterChain
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -50,16 +51,18 @@ class FoxController(Controller):
         self,
         strategy_ids: List[str],
         server_app_id: str = None,
-        server_collab_obj_ids: List[str] = None,
+        collab_obj_ids: List[str] = None,
+        outgoing_call_filters=None,
         sync_task_timeout=2,
         max_call_threads=100,
     ):
         Controller.__init__(self)
-        if not server_collab_obj_ids:
-            server_collab_obj_ids = []
+        if not collab_obj_ids:
+            collab_obj_ids = []
         self.server_app_id = server_app_id  # component name
+        self.outgoing_call_filters = outgoing_call_filters
         self.strategy_ids = strategy_ids  # component names
-        self.server_collab_obj_ids = server_collab_obj_ids  # component IDs
+        self.server_collab_obj_ids = collab_obj_ids  # component IDs
         self.sync_task_timeout = sync_task_timeout
         self.server_app = None
         self.client_info = {}  # client name => _ClientInfo
@@ -99,6 +102,41 @@ class FoxController(Controller):
                     return
 
                 app.add_collab_object(cid, obj)
+
+        if self.outgoing_call_filters:
+            if not isinstance(self.outgoing_call_filters, list):
+                self.system_panic(
+                    f"outgoing_call_filters must be a list but got {type(self.outgoing_call_filters)}", fl_ctx
+                )
+                return
+
+            for chain_dict in self.outgoing_call_filters:
+                if not isinstance(chain_dict, dict):
+                    self.system_panic(
+                        f"element in outgoing_call_filters must be dict but got {type(chain_dict)}", fl_ctx
+                    )
+                    return
+
+                pattern = chain_dict.get("pattern")
+                if not pattern:
+                    self.system_panic("missing 'pattern' in outgoing_call_filters chain", fl_ctx)
+                    return
+
+                filter_ids = chain_dict.get("filters")
+                if not filter_ids:
+                    self.system_panic("missing 'filters' in outgoing_call_filters chain", fl_ctx)
+                    return
+
+                filters = []
+                for fid in filter_ids:
+                    f = engine.get_component(fid)
+                    if not f:
+                        self.system_panic(f"component {fid} does not exist", fl_ctx)
+                        return
+                    if not isinstance(f, CallFilter):
+                        self.system_panic(f"component {fid} should be a CallFilter but got {type(f)}", fl_ctx)
+                    filters.append(f)
+                app.add_outgoing_call_filters(pattern, filters)
 
         self.server_app = app
 

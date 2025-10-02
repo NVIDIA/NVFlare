@@ -23,8 +23,23 @@ class CollabMethodOptionName:
     SECURE = "_secure"
 
 
+OPTION_ARGS = [
+    CollabMethodOptionName.BLOCKING,
+    CollabMethodOptionName.TIMEOUT,
+    CollabMethodOptionName.OPTIONAL,
+    CollabMethodOptionName.SECURE,
+]
+
+
 class ContextKey:
     INPUT = "input"
+    QUALIFIED_FUNC_NAME = "qualified_func_name"
+    DIRECTION = "direction"
+
+
+class FilterDirection:
+    INCOMING = "incoming"
+    OUTGOING = "outgoing"
 
 
 class EnvType:
