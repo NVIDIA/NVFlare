@@ -23,6 +23,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.app_opt.tensor_stream.sender import TensorSender
 from nvflare.app_opt.tensor_stream.types import TENSORS_CHANNEL, TensorTopics
+from nvflare.client.config import ExchangeFormat
 
 
 class TestTensorSender:
@@ -176,39 +177,62 @@ class TestTensorSender:
         result = sender._get_dxo_from_ctx(mock_fl_context)
         assert result is None
 
-    def test_get_tensors_from_dxo_success_cases(self, mock_streamable_engine):
-        """Test _get_tensors_from_dxo with various successful scenarios."""
-        sender = TensorSender(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, root_keys=[""])
+    @pytest.mark.parametrize(
+        "tensor_format, root_key, test_data",
+        [
+            (ExchangeFormat.PYTORCH, "", {"layer1.weight": torch.randn(2, 3), "layer1.bias": torch.randn(2)}),
+            (
+                ExchangeFormat.NUMPY,
+                "",
+                {
+                    "layer1.weight": np.random.randn(2, 3).astype(np.float32),
+                    "layer1.bias": np.random.randn(2).astype(np.float32),
+                },
+            ),
+            (
+                ExchangeFormat.PYTORCH,
+                "encoder",
+                {
+                    "encoder": {"layer1.weight": torch.randn(2, 3), "layer1.bias": torch.randn(2)},
+                },
+            ),
+            (
+                ExchangeFormat.NUMPY,
+                "encoder",
+                {
+                    "encoder": {
+                        "layer1.weight": np.random.randn(2, 3).astype(np.float32),
+                        "layer1.bias": np.random.randn(2).astype(np.float32),
+                    },
+                },
+            ),
+        ],
+    )
+    def test_get_tensors_from_dxo_success_cases(self, mock_streamable_engine, tensor_format, root_key, test_data):
+        """Test _get_tensors_from_dxo with various successful scenarios and tensor formats."""
+        sender = TensorSender(
+            engine=mock_streamable_engine,
+            ctx_prop_key=FLContextKey.TASK_DATA,
+            format=tensor_format,
+            root_keys=[""],
+        )
 
-        # Test 1: Empty key (top-level tensors)
-        test_tensors = {"layer1.weight": torch.randn(2, 3), "layer1.bias": torch.randn(2)}
-        dxo_weights = DXO(data_kind=DataKind.WEIGHTS, data=test_tensors)
-
-        tensors = sender._get_tensors_from_dxo(dxo_weights, key="")
-        assert len(tensors) == len(test_tensors)
+        dxo_weights = DXO(data_kind=DataKind.WEIGHTS, data=test_data)
+        tensors = sender._get_tensors_from_dxo(dxo_weights, key=root_key)
         for name, tensor in tensors.items():
+            # Always check if returned value is torch.Tensor
             assert isinstance(tensor, torch.Tensor)
-            assert torch.allclose(tensor, test_tensors[name])
+            if root_key:
+                original_data = test_data[root_key][name]
+            else:
+                original_data = test_data[name]
+            if tensor_format == ExchangeFormat.NUMPY:
+                original_data = torch.from_numpy(original_data)
 
-        # Test 2: Nested structure with specific key
-        nested_data = {"encoder": test_tensors, "decoder": {"out.weight": torch.randn(1, 2)}}
-        dxo_nested = DXO(data_kind=DataKind.WEIGHTS, data=nested_data)
-
-        tensors = sender._get_tensors_from_dxo(dxo_nested, key="encoder")
-        assert len(tensors) == len(test_tensors)
-        for name, tensor in tensors.items():
-            assert torch.allclose(tensor, test_tensors[name])
-
-        # Test 3: Mixed torch tensors and numpy arrays
-        mixed_data = {"torch_tensor": torch.randn(2, 2), "numpy_array": np.random.randn(3, 3).astype(np.float32)}
-        dxo_mixed = DXO(data_kind=DataKind.WEIGHTS, data=mixed_data)
-
-        tensors = sender._get_tensors_from_dxo(dxo_mixed, key="")
-        assert len(tensors) == 2
-        assert isinstance(tensors["torch_tensor"], torch.Tensor)
-        assert isinstance(tensors["numpy_array"], torch.Tensor)
-        assert torch.allclose(tensors["torch_tensor"], mixed_data["torch_tensor"])
-        assert torch.allclose(tensors["numpy_array"], torch.from_numpy(mixed_data["numpy_array"]))
+            # For torch format, should be the same tensor
+            assert tensor.shape == original_data.shape
+            assert tensor.dtype == original_data.dtype
+            assert torch.allclose(tensor, original_data)
 
     @pytest.mark.parametrize(
         "dxo_data,key,expected_error,error_message",
@@ -220,7 +244,12 @@ class TestTensorSender:
                 ValueError,
                 "No tensor data found on the context shareable",
             ),  # Non-existent key
-            ({"invalid_tensor": "this_is_a_string"}, "", TypeError, "Unsupported tensor data type"),  # Unsupported type
+            (
+                {"invalid_tensor": "this_is_a_string"},
+                "",
+                ValueError,
+                "Expected torch.Tensor for key 'invalid_tensor', but got <class 'str'>",
+            ),  # Unsupported type
         ],
     )
     def test_get_tensors_from_dxo_error_cases(
@@ -244,7 +273,12 @@ class TestTensorSender:
 
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=numpy_data)
 
-        sender = TensorSender(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, root_keys=[""])
+        sender = TensorSender(
+            engine=mock_streamable_engine,
+            ctx_prop_key=FLContextKey.TASK_DATA,
+            format=ExchangeFormat.NUMPY,
+            root_keys=[""],
+        )
 
         tensors = sender._get_tensors_from_dxo(dxo, key="")
 

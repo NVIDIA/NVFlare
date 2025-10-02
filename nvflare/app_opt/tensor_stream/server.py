@@ -19,6 +19,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.streaming import StreamableEngine
+from nvflare.client.config import ExchangeFormat
 
 from .receiver import TensorReceiver
 from .sender import TensorSender
@@ -30,7 +31,7 @@ class TensorServerStreamer(FLComponent):
 
     It uses a StreamableEngine, TensorReceiver, and TensorSender to manage tensor streaming on the server side.
     Attributes:
-        format (str): The format of the tensors to send/receive. Default is "torch".
+        format (str): The format of the tensors to send/receive. Default is "pytorch".
         root_keys (list[str]): The root keys to include in the tensor sending. Default is None, which means all keys.
         entry_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
         engine (StreamableEngine): The StreamableEngine used for tensor streaming.
@@ -45,11 +46,13 @@ class TensorServerStreamer(FLComponent):
         try_to_clean_task_data(fl_ctx): Cleans the task data in the FLContext if all clients have received the tensors.
     """
 
-    def __init__(self, format="torch", root_keys: list[str] = None, entry_timeout=30.0):
+    def __init__(
+        self, format: ExchangeFormat = ExchangeFormat.PYTORCH, root_keys: list[str] = None, entry_timeout=30.0
+    ):
         """Initialize the TensorServerStreamer component.
 
         Args:
-            format (str): The format of the tensors to send/receive. Default is "torch".
+            format (ExchangeFormat): The format of the tensors to send/receive. Default is ExchangeFormat.TORCH.
             root_keys (list[str]): The root keys to include in the tensor sending. Default is None, which means all keys.
             entry_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
         """
@@ -104,7 +107,7 @@ class TensorServerStreamer(FLComponent):
             try:
                 self.send_tensors_to_client(fl_ctx)
             except Exception as e:
-                self.system_panic(fl_ctx, f"Failed to send tensors: {e}")
+                self.system_panic(f"Failed to send tensors: {e}", fl_ctx)
                 return
 
             self.try_to_clean_task_data(fl_ctx)
@@ -121,7 +124,7 @@ class TensorServerStreamer(FLComponent):
         try:
             self.sender.send(fl_ctx, self.entry_timeout)
         except ValueError as e:
-            self.system_panic(fl_ctx, f"Failed to send tensors: {e}")
+            self.system_panic(f"Failed to send tensors: {e}", fl_ctx)
             return
 
         self.num_task_data_sent += 1

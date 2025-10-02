@@ -22,7 +22,7 @@ from nvflare.apis.streaming import StreamableEngine
 from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
 from nvflare.app_opt.tensor_stream.sender import TensorSender
 from nvflare.app_opt.tensor_stream.server import TensorServerStreamer
-
+from nvflare.client.config import ExchangeFormat
 
 
 class TestTensorServerStreamer:
@@ -31,9 +31,9 @@ class TestTensorServerStreamer:
     @pytest.mark.parametrize(
         "format_type,root_keys,entry_timeout,expected_root_keys",
         [
-            ("torch", None, 30.0, [""]),  # Default values
-            ("numpy", ["encoder", "decoder"], 10.0, ["encoder", "decoder"]),  # Custom values
-            ("torch", ["model"], 45.0, ["model"]),  # Partial custom values
+            (ExchangeFormat.PYTORCH, None, 30.0, [""]),  # Default values
+            (ExchangeFormat.NUMPY, ["encoder", "decoder"], 10.0, ["encoder", "decoder"]),  # Custom values
+            (ExchangeFormat.PYTORCH, ["model"], 45.0, ["model"]),  # Partial custom values
         ],
     )
     def test_init_parameters(self, format_type, root_keys, entry_timeout, expected_root_keys):
@@ -64,14 +64,16 @@ class TestTensorServerStreamer:
         mock_receiver_class.return_value = mock_receiver_instance
 
         # Create and initialize streamer
-        streamer = TensorServerStreamer(format="torch", root_keys=["model"])
+        streamer = TensorServerStreamer(format=ExchangeFormat.PYTORCH, root_keys=["model"])
         streamer.initialize(mock_fl_context)
 
         # Verify engine assignment
         assert streamer.engine == mock_engine_with_clients
 
         # Verify receiver creation
-        mock_receiver_class.assert_called_once_with(mock_engine_with_clients, FLContextKey.TASK_RESULT, "torch")
+        mock_receiver_class.assert_called_once_with(
+            mock_engine_with_clients, FLContextKey.TASK_RESULT, ExchangeFormat.PYTORCH
+        )
         assert streamer.receiver == mock_receiver_instance
 
         # Verify sender creation
@@ -182,8 +184,8 @@ class TestTensorServerStreamer:
         # Verify system_panic was called
         streamer.system_panic.assert_called_once()
         args = streamer.system_panic.call_args
-        assert args[0][0] == mock_fl_context
-        assert "Failed to send tensors" in args[0][1]
+        assert args[0][1] == mock_fl_context
+        assert "Failed to send tensors" in args[0][0]
 
     def test_handle_event_before_task_result_filter(self, mock_fl_context):
         """Test handling BEFORE_TASK_RESULT_FILTER event."""
@@ -236,9 +238,9 @@ class TestTensorServerStreamer:
         # Verify system_panic was called
         streamer.system_panic.assert_called_once()
         args = streamer.system_panic.call_args
-        assert args[0][0] == mock_fl_context
-        assert "Failed to send tensors" in args[0][1]
-        assert "No tensor data found" in args[0][1]
+        assert args[0][1] == mock_fl_context
+        assert "Failed to send tensors" in args[0][0]
+        assert "No tensor data found" in args[0][0]
 
     @patch("nvflare.app_opt.tensor_stream.server.clean_task_data")
     def test_try_to_clean_task_data_all_clients_received(
@@ -310,7 +312,7 @@ class TestTensorServerStreamer:
         mock_receiver_class.return_value = mock_receiver_instance
 
         # Create streamer
-        streamer = TensorServerStreamer(format="torch", root_keys=["model"], entry_timeout=10.0)
+        streamer = TensorServerStreamer(format=ExchangeFormat.PYTORCH, root_keys=["model"], entry_timeout=10.0)
 
         # Step 1: Handle START_RUN event (initialization)
         streamer.handle_event(EventType.START_RUN, mock_fl_context)
@@ -395,12 +397,14 @@ class TestTensorServerStreamer:
             mock_fl_context.get_engine.return_value = mock_engine_with_clients
 
             # Test with numpy format
-            streamer = TensorServerStreamer(format="numpy")
+            streamer = TensorServerStreamer(format=ExchangeFormat.NUMPY)
             streamer.initialize(mock_fl_context)
 
             # Verify receiver was created with correct format
             mock_receiver_class.assert_called_once_with(
-                mock_engine_with_clients, FLContextKey.TASK_RESULT, "numpy"  # Should pass the format parameter
+                mock_engine_with_clients,
+                FLContextKey.TASK_RESULT,
+                ExchangeFormat.NUMPY,  # Should pass the format parameter
             )
 
     def test_root_keys_parameter_propagation(self, mock_fl_context, mock_engine_with_clients):

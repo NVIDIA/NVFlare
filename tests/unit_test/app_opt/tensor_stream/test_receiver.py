@@ -23,6 +23,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.tensor_stream.consumer import TorchTensorsConsumerFactory
 from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
 from nvflare.app_opt.tensor_stream.types import SAFE_TENSORS_PROP_KEY, TENSORS_CHANNEL, TensorTopics
+from nvflare.client.config import ExchangeFormat
 
 
 class TestTensorReceiver:
@@ -31,8 +32,20 @@ class TestTensorReceiver:
     @pytest.mark.parametrize(
         "ctx_prop_key,format_type,channel,expected_topic,expected_channel",
         [
-            (FLContextKey.TASK_DATA, "torch", "custom_channel", TensorTopics.TASK_DATA, "custom_channel"),
-            (FLContextKey.TASK_RESULT, "numpy", None, TensorTopics.TASK_RESULT, TENSORS_CHANNEL),  # Default channel
+            (
+                FLContextKey.TASK_DATA,
+                ExchangeFormat.PYTORCH,
+                "custom_channel",
+                TensorTopics.TASK_DATA,
+                "custom_channel",
+            ),
+            (
+                FLContextKey.TASK_RESULT,
+                ExchangeFormat.NUMPY,
+                None,
+                TensorTopics.TASK_RESULT,
+                TENSORS_CHANNEL,
+            ),  # Default channel
         ],
     )
     @patch("nvflare.app_opt.tensor_stream.receiver.get_topic_for_ctx_prop_key")
@@ -77,7 +90,9 @@ class TestTensorReceiver:
 
     def test_save_tensors_cb_success(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
         """Test _save_tensors_cb with successful tensor reception."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         # Setup FL context with received tensors
         peer_name = "test_peer"
@@ -93,7 +108,9 @@ class TestTensorReceiver:
 
     def test_save_tensors_cb_failure(self, mock_streamable_engine, mock_fl_context):
         """Test _save_tensors_cb with failed tensor reception."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         peer_name = "test_client"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
@@ -107,7 +124,9 @@ class TestTensorReceiver:
 
     def test_save_tensors_cb_no_tensors(self, mock_streamable_engine, mock_fl_context):
         """Test _save_tensors_cb when no tensors are found in context."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         peer_name = "test_client"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
@@ -122,7 +141,9 @@ class TestTensorReceiver:
 
     def test_save_tensors_cb_nested_tensors(self, mock_streamable_engine, mock_fl_context, sample_nested_tensors):
         """Test _save_tensors_cb with nested tensor structure."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         peer_name = "test_client"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
@@ -141,7 +162,9 @@ class TestTensorReceiver:
         self, mock_streamable_engine, mock_fl_context, sample_shareable_with_dxo, random_torch_tensors
     ):
         """Test set_ctx_with_tensors with torch format."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         # Setup: store tensors from peer
         peer_name = "test_client"
@@ -179,7 +202,9 @@ class TestTensorReceiver:
     ):
         """Test set_ctx_with_tensors with numpy format conversion."""
         receiver = TensorReceiver(
-            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="numpy"  # Different format
+            engine=mock_streamable_engine,
+            ctx_prop_key=FLContextKey.TASK_DATA,
+            format=ExchangeFormat.NUMPY,  # Different format
         )
 
         # Setup: store tensors from peer
@@ -213,7 +238,9 @@ class TestTensorReceiver:
         self, mock_streamable_engine, mock_fl_context, sample_shareable_with_weight_diff_dxo, random_torch_tensors
     ):
         """Test set_ctx_with_tensors with WEIGHT_DIFF data kind."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_RESULT, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_RESULT, format=ExchangeFormat.PYTORCH
+        )
 
         # Setup: store tensors from peer
         peer_name = "test_client"
@@ -241,7 +268,9 @@ class TestTensorReceiver:
         self, mock_streamable_engine, mock_fl_context, sample_shareable_with_dxo, sample_nested_tensors
     ):
         """Test set_ctx_with_tensors with nested tensor structure."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         # Setup: store nested tensors from peer
         peer_name = "test_client"
@@ -272,7 +301,9 @@ class TestTensorReceiver:
         self, mock_streamable_engine, mock_fl_context, sample_shareable_with_dxo
     ):
         """Test set_ctx_with_tensors when no tensors are stored for peer."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         # Setup FL context without storing any tensors
         peer_name = "test_client"
@@ -285,7 +316,9 @@ class TestTensorReceiver:
 
     def test_set_ctx_with_tensors_no_shareable(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
         """Test set_ctx_with_tensors when no shareable is found in context."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         # Setup: store tensors but no shareable in context
         peer_name = "test_client"
@@ -300,7 +333,9 @@ class TestTensorReceiver:
 
     def test_set_ctx_with_tensors_no_dxo(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
         """Test set_ctx_with_tensors when shareable contains no DXO."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         # Setup: store tensors and empty shareable
         peer_name = "test_client"
@@ -318,7 +353,9 @@ class TestTensorReceiver:
         self, mock_streamable_engine, mock_fl_context, random_torch_tensors
     ):
         """Test set_ctx_with_tensors with invalid DXO data kind."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         # Setup: store tensors and shareable with invalid data kind
         peer_name = "test_client"
@@ -336,7 +373,9 @@ class TestTensorReceiver:
 
     def test_multiple_peers_tensors(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
         """Test handling tensors from multiple peers."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         # Simulate receiving tensors from multiple peers
         peer1_tensors = {k: v for k, v in list(random_torch_tensors.items())[:5]}
@@ -358,7 +397,9 @@ class TestTensorReceiver:
         self, mock_streamable_engine, mock_fl_context, sample_shareable_with_dxo, random_torch_tensors
     ):
         """Test that tensors are cleaned up after being used in set_ctx_with_tensors."""
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         # Setup: store tensors for multiple peers
         receiver.tensors["client1"] = random_torch_tensors
@@ -383,7 +424,9 @@ class TestTensorReceiver:
         mock_get_topic.return_value = TensorTopics.TASK_DATA
 
         # Create receiver
-        receiver = TensorReceiver(engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format="torch")
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
 
         peer_name = "integration_client"
 

@@ -21,6 +21,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
 from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
 from nvflare.app_opt.tensor_stream.sender import TensorSender
+from nvflare.client.config import ExchangeFormat
 
 
 class TestTensorClientStreamer:
@@ -29,9 +30,9 @@ class TestTensorClientStreamer:
     @pytest.mark.parametrize(
         "format_type,root_keys,entry_timeout,expected_root_keys",
         [
-            ("torch", None, 30.0, [""]),  # Default values
-            ("numpy", ["encoder", "decoder"], 15.0, ["encoder", "decoder"]),  # Custom values
-            ("torch", ["model"], 45.0, ["model"]),  # Partial custom values
+            (ExchangeFormat.PYTORCH, None, 30.0, [""]),  # Default values
+            (ExchangeFormat.NUMPY, ["encoder", "decoder"], 15.0, ["encoder", "decoder"]),  # Custom values
+            (ExchangeFormat.PYTORCH, ["model"], 45.0, ["model"]),  # Partial custom values
         ],
     )
     def test_init_parameters(self, format_type, root_keys, entry_timeout, expected_root_keys):
@@ -60,14 +61,16 @@ class TestTensorClientStreamer:
         mock_receiver_class.return_value = mock_receiver_instance
 
         # Create and initialize streamer
-        streamer = TensorClientStreamer(format="torch", root_keys=["model"])
+        streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, root_keys=["model"])
         streamer.initialize(mock_fl_context)
 
         # Verify engine assignment
         assert streamer.engine == mock_engine_with_clients
 
         # Verify receiver creation (client receives TASK_DATA from server)
-        mock_receiver_class.assert_called_once_with(mock_engine_with_clients, FLContextKey.TASK_DATA, "torch")
+        mock_receiver_class.assert_called_once_with(
+            mock_engine_with_clients, FLContextKey.TASK_DATA, ExchangeFormat.PYTORCH
+        )
         assert streamer.receiver == mock_receiver_instance
 
         # Verify sender creation (client sends TASK_RESULT to server)
@@ -233,7 +236,11 @@ class TestTensorClientStreamer:
 
     @pytest.mark.parametrize(
         "format_type,root_keys",
-        [("numpy", ["encoder", "decoder"]), ("torch", ["model"]), ("torch", None)],  # Test None root_keys
+        [
+            (ExchangeFormat.NUMPY, ["encoder", "decoder"]),
+            (ExchangeFormat.PYTORCH, ["model"]),
+            (ExchangeFormat.PYTORCH, None),
+        ],  # Test None root_keys
     )
     def test_parameter_propagation(self, mock_fl_context, mock_engine_with_clients, format_type, root_keys):
         """Test that parameters are properly propagated to sender and receiver."""
@@ -295,7 +302,7 @@ class TestTensorClientStreamer:
         streamer = TensorClientStreamer()
 
         # Mock sender to raise exception
-        mock_sender = Mock()
+        mock_sender = Mock(spec=TensorSender)
         mock_sender.send.side_effect = Exception("Send failed")
         streamer.sender = mock_sender
 
