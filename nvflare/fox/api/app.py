@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import fnmatch
 from abc import ABC, abstractmethod
 from typing import List
 
-from .constants import CollabMethodArgName
+from .constants import CollabMethodArgName, ContextKey, FilterDirection
 from .ctx import Context
 from .dec import collab, get_object_collab_interface, is_collab
+from .filter import CallFilter, FilterChain, ResultFilter
 from .proxy import Proxy
 from .strategy import Strategy
-from .utils import check_context_support
+from .utils import check_context_support, get_collab_object_name
 
 
 class App:
@@ -35,6 +37,94 @@ class App:
         self._abort_signal = None
         self._props = {}
         self._event_handlers = {}  # event type => list of (cb, kwargs)
+        self._incoming_call_filter_chains = []
+        self._outgoing_call_filter_chains = []
+        self._incoming_result_filter_chains = []
+        self._outgoing_result_filter_chains = []
+
+    @staticmethod
+    def _add_filters(pattern: str, filters, to_list: list, filter_type):
+        if not filters:
+            return
+
+        if not isinstance(filters, list):
+            raise ValueError(f"filters must be a list but got {type(filters)}")
+
+        for i, f in enumerate(filters):
+            if not isinstance(f, filter_type):
+                raise ValueError(f"filter {i} must be {filter_type} but got {type(f)}")
+
+        chain = FilterChain(pattern, filter_type)
+        chain.add_filters(filters)
+        to_list.append(chain)
+
+    def add_incoming_call_filters(self, pattern: str, filters: List[CallFilter]):
+        self._add_filters(pattern, filters, self._incoming_call_filter_chains, CallFilter)
+
+    def add_outgoing_call_filters(self, pattern: str, filters: List[CallFilter]):
+        self._add_filters(pattern, filters, self._outgoing_call_filter_chains, CallFilter)
+
+    def add_incoming_result_filters(self, pattern: str, filters: List[ResultFilter]):
+        self._add_filters(pattern, filters, self._incoming_result_filter_chains, ResultFilter)
+
+    def add_outgoing_result_filters(self, pattern: str, filters: List[ResultFilter]):
+        self._add_filters(pattern, filters, self._outgoing_result_filter_chains, ResultFilter)
+
+    @staticmethod
+    def _find_filter_chain(chains: List[FilterChain], target_name: str, func_name: str, ctx: Context):
+        """
+
+        Args:
+            chains:
+            target_name:
+            func_name:
+
+        Returns:
+
+        """
+        if not chains:
+            return None
+
+        collab_obj_name = get_collab_object_name(target_name)
+        qualified_func_name = f"{collab_obj_name}.{func_name}"
+        ctx.set_prop(ContextKey.QUALIFIED_FUNC_NAME, qualified_func_name)
+
+        for c in chains:
+            if fnmatch.fnmatch(qualified_func_name, c.pattern):
+                return c
+        return None
+
+    def apply_incoming_call_filters(self, target_name: str, func_name: str, func_kwargs, context: Context):
+        filter_chain = self._find_filter_chain(self._incoming_call_filter_chains, target_name, func_name, context)
+        if filter_chain:
+            context.set_prop(ContextKey.DIRECTION, FilterDirection.INCOMING)
+            return filter_chain.apply_filters(func_kwargs, context)
+        else:
+            return func_kwargs
+
+    def apply_outgoing_call_filters(self, target_name: str, func_name: str, func_kwargs, context: Context):
+        filter_chain = self._find_filter_chain(self._outgoing_call_filter_chains, target_name, func_name, context)
+        if filter_chain:
+            context.set_prop(ContextKey.DIRECTION, FilterDirection.OUTGOING)
+            return filter_chain.apply_filters(func_kwargs, context)
+        else:
+            return func_kwargs
+
+    def apply_incoming_result_filters(self, target_name: str, func_name: str, result, context: Context):
+        filter_chain = self._find_filter_chain(self._incoming_result_filter_chains, target_name, func_name, context)
+        if filter_chain:
+            context.set_prop(ContextKey.DIRECTION, FilterDirection.INCOMING)
+            return filter_chain.apply_filters(result, context)
+        else:
+            return result
+
+    def apply_outgoing_result_filters(self, target_name: str, func_name: str, result, context: Context):
+        filter_chain = self._find_filter_chain(self._outgoing_result_filter_chains, target_name, func_name, context)
+        if filter_chain:
+            context.set_prop(ContextKey.DIRECTION, FilterDirection.OUTGOING)
+            return filter_chain.apply_filters(result, context)
+        else:
+            return result
 
     def set_prop(self, name: str, value):
         self._props[name] = value

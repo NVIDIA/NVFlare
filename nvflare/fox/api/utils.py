@@ -29,3 +29,20 @@ def check_optional_args(func, kwargs, arg_names: List[str]):
 
 def check_context_support(func, kwargs):
     check_optional_args(func, kwargs, [CollabMethodArgName.CONTEXT])
+
+
+def get_collab_object_name(target_name: str):
+    """The target_name is either the site name or <site_name>.<collab_obj_name>.
+    This function gets the collab object name.
+
+    Args:
+        target_name:
+
+    Returns:
+
+    """
+    parts = target_name.split(".")
+    if len(parts) == 1:
+        return "app"
+    else:
+        return parts[1]

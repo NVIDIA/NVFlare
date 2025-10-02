@@ -34,10 +34,10 @@ from .utils import prepare_for_remote_call
 
 class FoxExecutor(Executor):
 
-    def __init__(self, client_app_id: str, client_target_obj_ids: Dict[str, str] = None, max_call_threads=100):
+    def __init__(self, client_app_id: str, collab_obj_ids: Dict[str, str] = None, max_call_threads=100):
         Executor.__init__(self)
         self.client_app_id = client_app_id
-        self.client_target_obj_ids = client_target_obj_ids
+        self.collab_obj_ids = collab_obj_ids
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
         self.client_app = None
@@ -62,8 +62,8 @@ class FoxExecutor(Executor):
         self.client_app.name = client_name
         self.client_app.env_type = EnvType.SYSTEM
 
-        if self.client_target_obj_ids:
-            for name, cid in self.client_target_obj_ids:
+        if self.collab_obj_ids:
+            for name, cid in self.collab_obj_ids:
                 obj = engine.get_component(cid)
                 if not obj:
                     self.system_panic(f"component {cid} does not exist", fl_ctx)
@@ -107,8 +107,8 @@ class FoxExecutor(Executor):
             app=self.client_app, target_name=client.name, backend=backend, target_interface=collab_interface.get("")
         )
 
-        if self.client_target_obj_ids:
-            for name in self.client_target_obj_ids.keys():
+        if self.collab_obj_ids:
+            for name in self.collab_obj_ids.keys():
                 p = Proxy(
                     app=self.client_app,
                     target_name=f"{client.name}.{name}",

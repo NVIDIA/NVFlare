@@ -34,6 +34,7 @@ class NPTrainer(ClientApp):
         # metric_receiver = self.server.get_target("metric_receiver")
         # if metric_receiver:
         #     self.server.accept_metric({"round": r, "y": 2})
+        #     self.server.metric_receiver.accept_metric({"round": r, "y": 2})
         #
         self.server.fire_event("metrics", {"round": current_round, "y": 10}, _blocking=False)
         return weights + self.delta

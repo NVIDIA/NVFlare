@@ -14,7 +14,7 @@
 import copy
 
 from .backend import Backend
-from .constants import CollabMethodArgName
+from .constants import OPTION_ARGS, CollabMethodArgName
 
 
 class Proxy:
@@ -75,20 +75,38 @@ class Proxy:
         call_kwargs = kwargs
 
         # find the proxy for the func
-        p, arg_names = self._find_interface(func_name)
+        p, func_itf = self._find_interface(func_name)
         if not p:
             raise RuntimeError(f"target {self.target_name} does not have method '{func_name}'")
 
-        if arg_names:
+        if func_itf:
             # check args and turn them to kwargs
+            num_call_args = len(args) + len(kwargs)
+            if num_call_args > len(func_itf):
+                raise RuntimeError(
+                    f"there are {num_call_args} call args ({args=} {kwargs=}), "
+                    f"but function '{func_name}' only supports {len(func_itf)} args ({func_itf})"
+                )
             call_kwargs = copy.copy(kwargs)
             call_args = []
             for i, arg_value in enumerate(args):
-                call_kwargs[arg_names[i]] = arg_value
+                call_kwargs[func_itf[i]] = arg_value
 
-        ctx = self.app.new_context(self.caller_name, self.name)
-        call_kwargs[CollabMethodArgName.CONTEXT] = ctx
-        return p, call_args, call_kwargs
+        return p, func_itf, call_args, call_kwargs
+
+    @staticmethod
+    def check_call_args(func_name, func_itf, call_args, call_kwargs: dict):
+        num_call_args = len(call_args) + len(call_kwargs)
+        if num_call_args > len(func_itf):
+            raise RuntimeError(
+                f"there are {num_call_args} call args ({call_args=} {call_kwargs=}), "
+                f"but function '{func_name}' only supports {len(func_itf)} args ({func_itf})"
+            )
+
+        # make sure every arg in kwargs is valid
+        for arg_name in call_kwargs.keys():
+            if (arg_name not in OPTION_ARGS) and (arg_name not in func_itf):
+                raise RuntimeError(f"call arg {arg_name} is not supported by func '{func_name}'")
 
     def __getattr__(self, func_name):
         """
@@ -96,14 +114,22 @@ class Proxy:
         """
 
         def method(*args, **kwargs):
-            p, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
+            p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
             ctx = p.app.new_context(self.caller_name, self.name)
-            call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
             print(f"calling target {p.target_name} func {func_name}: {call_args=} {call_kwargs=}")
-            result = p.backend.call_target(self.target_name, func_name, *call_args, **call_kwargs)
+
+            # apply outgoing call filters
+            call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
+            self.check_call_args(func_name, func_itf, call_args, call_kwargs)
+
+            call_kwargs[CollabMethodArgName.CONTEXT] = ctx
+            result = p.backend.call_target(p.target_name, func_name, *call_args, **call_kwargs)
             if isinstance(result, Exception):
                 raise result
+
+            # filter incoming result filters
+            result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
             return result
 
         return method
