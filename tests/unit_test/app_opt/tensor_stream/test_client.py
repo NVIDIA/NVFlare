@@ -1,0 +1,415 @@
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from unittest.mock import Mock, patch
+
+import pytest
+
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.app_opt.tensor_stream.client import TensorClientStreamer
+from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
+from nvflare.app_opt.tensor_stream.sender import TensorSender
+
+
+class TestTensorClientStreamer:
+    """Test cases for TensorClientStreamer class."""
+
+    @pytest.mark.parametrize(
+        "format_type,root_keys,entry_timeout,expected_root_keys",
+        [
+            ("torch", None, 30.0, [""]),  # Default values
+            ("numpy", ["encoder", "decoder"], 15.0, ["encoder", "decoder"]),  # Custom values
+            ("torch", ["model"], 45.0, ["model"]),  # Partial custom values
+        ],
+    )
+    def test_init_parameters(self, format_type, root_keys, entry_timeout, expected_root_keys):
+        """Test TensorClientStreamer initialization with various parameters."""
+        streamer = TensorClientStreamer(format=format_type, root_keys=root_keys, entry_timeout=entry_timeout)
+
+        assert streamer.format == format_type
+        assert streamer.root_keys == expected_root_keys
+        assert streamer.entry_timeout == entry_timeout
+        # All components should be None before initialization
+        assert streamer.engine is None
+        assert streamer.sender is None
+        assert streamer.receiver is None
+
+    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
+    @patch("nvflare.app_opt.tensor_stream.client.TensorReceiver")
+    def test_initialize_success(
+        self, mock_receiver_class, mock_sender_class, mock_fl_context, mock_engine_with_clients
+    ):
+        """Test successful initialization of TensorClientStreamer."""
+        # Setup mocks
+        mock_fl_context.get_engine.return_value = mock_engine_with_clients
+        mock_sender_instance = Mock(spec=TensorSender)
+        mock_receiver_instance = Mock(spec=TensorReceiver)
+        mock_sender_class.return_value = mock_sender_instance
+        mock_receiver_class.return_value = mock_receiver_instance
+
+        # Create and initialize streamer
+        streamer = TensorClientStreamer(format="torch", root_keys=["model"])
+        streamer.initialize(mock_fl_context)
+
+        # Verify engine assignment
+        assert streamer.engine == mock_engine_with_clients
+
+        # Verify receiver creation (client receives TASK_DATA from server)
+        mock_receiver_class.assert_called_once_with(mock_engine_with_clients, FLContextKey.TASK_DATA, "torch")
+        assert streamer.receiver == mock_receiver_instance
+
+        # Verify sender creation (client sends TASK_RESULT to server)
+        mock_sender_class.assert_called_once_with(mock_engine_with_clients, FLContextKey.TASK_RESULT, ["model"])
+        assert streamer.sender == mock_sender_instance
+
+    def test_initialize_no_engine(self, mock_fl_context):
+        """Test initialization when no engine is found."""
+        mock_fl_context.get_engine.return_value = None
+
+        streamer = TensorClientStreamer()
+
+        # Mock system_panic to verify it's called
+        streamer.system_panic = Mock()
+
+        streamer.initialize(mock_fl_context)
+
+        # Verify system_panic was called with appropriate message
+        streamer.system_panic.assert_called_once()
+        args = streamer.system_panic.call_args[0]
+        assert "Engine not found" in args[0]
+        assert args[1] == mock_fl_context
+
+    def test_initialize_wrong_engine_type(self, mock_fl_context):
+        """Test initialization when engine is not a StreamableEngine."""
+        # Return a generic Mock instead of StreamableEngine
+        wrong_engine = Mock()
+        mock_fl_context.get_engine.return_value = wrong_engine
+
+        streamer = TensorClientStreamer()
+        streamer.system_panic = Mock()
+
+        streamer.initialize(mock_fl_context)
+
+        # Verify system_panic was called
+        streamer.system_panic.assert_called_once()
+        args = streamer.system_panic.call_args[0]
+        assert "Engine is not a StreamableEngine" in args[0]
+        assert args[1] == mock_fl_context
+
+    @patch("nvflare.app_opt.tensor_stream.client.TensorReceiver")
+    def test_initialize_receiver_exception(self, mock_receiver_class, mock_fl_context, mock_engine_with_clients):
+        """Test initialization when TensorReceiver creation fails."""
+        mock_fl_context.get_engine.return_value = mock_engine_with_clients
+        mock_receiver_class.side_effect = Exception("Receiver creation failed")
+
+        streamer = TensorClientStreamer()
+        streamer.system_panic = Mock()
+
+        streamer.initialize(mock_fl_context)
+
+        # Verify system_panic was called with exception message
+        streamer.system_panic.assert_called_once_with("Receiver creation failed", mock_fl_context)
+
+    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
+    @patch("nvflare.app_opt.tensor_stream.client.TensorReceiver")
+    def test_handle_event_start_run(
+        self, mock_receiver_class, mock_sender_class, mock_fl_context, mock_engine_with_clients
+    ):
+        """Test handling START_RUN event."""
+        mock_fl_context.get_engine.return_value = mock_engine_with_clients
+
+        streamer = TensorClientStreamer()
+
+        # Handle START_RUN event
+        streamer.handle_event(EventType.START_RUN, mock_fl_context)
+
+        # Verify initialization was called (components should be created)
+        assert streamer.engine == mock_engine_with_clients
+        assert streamer.sender is not None
+        assert streamer.receiver is not None
+
+    def test_handle_event_before_task_data_filter(self, mock_fl_context):
+        """Test handling BEFORE_TASK_DATA_FILTER event."""
+        streamer = TensorClientStreamer()
+        mock_receiver = Mock(spec=TensorReceiver)
+        streamer.receiver = mock_receiver
+
+        # Handle BEFORE_TASK_DATA_FILTER event
+        streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
+
+        # Verify receiver.set_ctx_with_tensors was called
+        mock_receiver.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
+
+    def test_handle_event_before_send_task_result(self, mock_fl_context):
+        """Test handling BEFORE_SEND_TASK_RESULT event."""
+        streamer = TensorClientStreamer()
+        streamer.send_tensors_to_server = Mock()
+
+        # Handle BEFORE_SEND_TASK_RESULT event
+        streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+
+        # Verify send_tensors_to_server was called
+        streamer.send_tensors_to_server.assert_called_once_with(mock_fl_context)
+
+    def test_handle_event_before_send_task_result_exception(self, mock_fl_context):
+        """Test handling BEFORE_SEND_TASK_RESULT event when send_tensors_to_server raises exception."""
+        streamer = TensorClientStreamer()
+        streamer.send_tensors_to_server = Mock(side_effect=Exception("Send failed"))
+        streamer.system_panic = Mock()
+
+        # Handle BEFORE_SEND_TASK_RESULT event
+        streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+
+        # Verify system_panic was called
+        streamer.system_panic.assert_called_once_with("Send failed", mock_fl_context)
+
+    @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
+    def test_send_tensors_to_server_success(self, mock_clean_task_result, mock_fl_context):
+        """Test successful tensor sending to server."""
+        streamer = TensorClientStreamer(entry_timeout=7.0)
+
+        # Mock sender
+        mock_sender = Mock(spec=TensorSender)
+        streamer.sender = mock_sender
+
+        # Send tensors
+        streamer.send_tensors_to_server(mock_fl_context)
+
+        # Verify sender.send was called with correct parameters
+        mock_sender.send.assert_called_once_with(mock_fl_context, 7.0)
+
+        # Verify clean_task_result was called
+        mock_clean_task_result.assert_called_once_with(mock_fl_context)
+
+    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
+    @patch("nvflare.app_opt.tensor_stream.client.TensorReceiver")
+    def test_complete_workflow(self, mock_receiver_class, mock_sender_class, mock_fl_context, mock_engine_with_clients):
+        """Test complete client workflow: initialization, receiving task data, sending results."""
+        # Setup mocks
+        mock_fl_context.get_engine.return_value = mock_engine_with_clients
+        mock_sender_instance = Mock(spec=TensorSender)
+        mock_receiver_instance = Mock(spec=TensorReceiver)
+        mock_sender_class.return_value = mock_sender_instance
+        mock_receiver_class.return_value = mock_receiver_instance
+
+        # Create streamer
+        streamer = TensorClientStreamer(format="torch", root_keys=["model"], entry_timeout=5.0)
+
+        # Step 1: Handle START_RUN event (initialization)
+        streamer.handle_event(EventType.START_RUN, mock_fl_context)
+
+        # Verify initialization
+        assert streamer.engine == mock_engine_with_clients
+        assert streamer.sender == mock_sender_instance
+        assert streamer.receiver == mock_receiver_instance
+
+        # Step 2: Handle BEFORE_TASK_DATA_FILTER event (receive tensors from server)
+        streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
+
+        # Verify receiver was called
+        mock_receiver_instance.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
+
+        # Step 3: Handle BEFORE_SEND_TASK_RESULT event (send tensors to server)
+        with patch("nvflare.app_opt.tensor_stream.client.clean_task_result") as mock_clean:
+            streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+
+            # Verify sender was called
+            mock_sender_instance.send.assert_called_once_with(mock_fl_context, 5.0)
+
+            # Verify cleanup was called
+            mock_clean.assert_called_once_with(mock_fl_context)
+
+    @pytest.mark.parametrize(
+        "format_type,root_keys",
+        [("numpy", ["encoder", "decoder"]), ("torch", ["model"]), ("torch", None)],  # Test None root_keys
+    )
+    def test_parameter_propagation(self, mock_fl_context, mock_engine_with_clients, format_type, root_keys):
+        """Test that parameters are properly propagated to sender and receiver."""
+        with patch("nvflare.app_opt.tensor_stream.client.TensorReceiver") as mock_receiver_class:
+            with patch("nvflare.app_opt.tensor_stream.client.TensorSender") as mock_sender_class:
+                mock_fl_context.get_engine.return_value = mock_engine_with_clients
+
+                streamer = TensorClientStreamer(format=format_type, root_keys=root_keys)
+                streamer.initialize(mock_fl_context)
+
+                # Verify receiver created with correct format
+                mock_receiver_class.assert_called_once_with(
+                    mock_engine_with_clients, FLContextKey.TASK_DATA, format_type
+                )
+
+                # Verify sender created with correct root keys
+                expected_keys = root_keys if root_keys is not None else [""]
+                mock_sender_class.assert_called_once_with(
+                    mock_engine_with_clients, FLContextKey.TASK_RESULT, expected_keys
+                )
+
+    def test_event_handling_edge_cases(self, mock_fl_context):
+        """Test handling of unexpected or unhandled events."""
+        streamer = TensorClientStreamer()
+
+        # Mock methods to ensure they're not called for unhandled events
+        streamer.initialize = Mock()
+        streamer.send_tensors_to_server = Mock()
+        mock_receiver = Mock(spec=TensorReceiver)
+        streamer.receiver = mock_receiver
+
+        # Handle an unrelated event
+        streamer.handle_event("SOME_OTHER_EVENT", mock_fl_context)
+
+        # Verify no methods were called
+        streamer.initialize.assert_not_called()
+        streamer.send_tensors_to_server.assert_not_called()
+        mock_receiver.set_ctx_with_tensors.assert_not_called()
+
+    @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
+    def test_send_tensors_with_cleanup(self, mock_clean_task_result, mock_fl_context):
+        """Test that send_tensors_to_server calls cleanup after successful send."""
+        custom_timeout = 42.0
+        streamer = TensorClientStreamer(entry_timeout=custom_timeout)
+
+        # Mock sender for successful case
+        mock_sender = Mock(spec=TensorSender)
+        streamer.sender = mock_sender
+
+        # Call send_tensors_to_server
+        streamer.send_tensors_to_server(mock_fl_context)
+
+        # Verify sender was called with correct timeout and cleanup was called
+        mock_sender.send.assert_called_once_with(mock_fl_context, custom_timeout)
+        mock_clean_task_result.assert_called_once_with(mock_fl_context)
+
+    def test_send_tensors_exception_no_cleanup(self, mock_fl_context):
+        """Test that exceptions in sender.send prevent cleanup from being called."""
+        streamer = TensorClientStreamer()
+
+        # Mock sender to raise exception
+        mock_sender = Mock()
+        mock_sender.send.side_effect = Exception("Send failed")
+        streamer.sender = mock_sender
+
+        # Should raise exception and not call cleanup
+        with pytest.raises(Exception, match="Send failed"):
+            streamer.send_tensors_to_server(mock_fl_context)
+
+    def test_component_state_after_initialization(self, mock_fl_context, mock_engine_with_clients):
+        """Test that all components are properly set up after initialization."""
+        with patch("nvflare.app_opt.tensor_stream.client.TensorSender") as mock_sender_class:
+            with patch("nvflare.app_opt.tensor_stream.client.TensorReceiver") as mock_receiver_class:
+                mock_fl_context.get_engine.return_value = mock_engine_with_clients
+                mock_sender_instance = Mock(spec=TensorSender)
+                mock_receiver_instance = Mock(spec=TensorReceiver)
+                mock_sender_class.return_value = mock_sender_instance
+                mock_receiver_class.return_value = mock_receiver_instance
+
+                streamer = TensorClientStreamer()
+
+                # Before initialization
+                assert streamer.engine is None
+                assert streamer.sender is None
+                assert streamer.receiver is None
+
+                # Initialize
+                streamer.initialize(mock_fl_context)
+
+                # After initialization
+                assert streamer.engine == mock_engine_with_clients
+                assert streamer.sender == mock_sender_instance
+                assert streamer.receiver == mock_receiver_instance
+
+    def test_error_propagation_in_event_handling(self, mock_fl_context):
+        """Test that exceptions in event handling are properly handled."""
+        streamer = TensorClientStreamer()
+
+        # Test exception in receiver.set_ctx_with_tensors
+        mock_receiver = Mock(spec=TensorReceiver)
+        mock_receiver.set_ctx_with_tensors.side_effect = Exception("Receiver error")
+        streamer.receiver = mock_receiver
+
+        # Should not raise exception (client doesn't have system_panic call for this event)
+        # The exception will propagate up to the caller
+        with pytest.raises(Exception, match="Receiver error"):
+            streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
+
+    def test_initialization_component_creation_order(self, mock_fl_context, mock_engine_with_clients):
+        """Test that receiver is created before sender during initialization."""
+        with patch("nvflare.app_opt.tensor_stream.client.TensorSender") as mock_sender_class:
+            with patch("nvflare.app_opt.tensor_stream.client.TensorReceiver") as mock_receiver_class:
+                mock_fl_context.get_engine.return_value = mock_engine_with_clients
+
+                # Track call order
+                call_order = []
+
+                def receiver_side_effect(*args, **kwargs):
+                    call_order.append("receiver")
+                    return Mock()
+
+                def sender_side_effect(*args, **kwargs):
+                    call_order.append("sender")
+                    return Mock()
+
+                mock_receiver_class.side_effect = receiver_side_effect
+                mock_sender_class.side_effect = sender_side_effect
+
+                streamer = TensorClientStreamer()
+                streamer.initialize(mock_fl_context)
+
+                # Verify receiver is created before sender
+                assert call_order == ["receiver", "sender"]
+
+    @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
+    def test_send_tensors_cleanup_not_called_when_sender_fails(self, mock_clean_task_result, mock_fl_context):
+        """Test that clean_task_result is not called when sender fails."""
+        streamer = TensorClientStreamer()
+
+        # Mock sender to raise exception
+        mock_sender = Mock(spec=TensorSender)
+        mock_sender.send.side_effect = Exception("Send failed")
+        streamer.sender = mock_sender
+
+        # Should raise exception but still call cleanup
+        with pytest.raises(Exception, match="Send failed"):
+            streamer.send_tensors_to_server(mock_fl_context)
+
+        # Verify cleanup was still called
+        mock_clean_task_result.assert_not_called()
+
+    def test_different_event_types_integration(self, mock_fl_context, mock_engine_with_clients):
+        """Test handling multiple different event types in sequence."""
+        with patch("nvflare.app_opt.tensor_stream.client.TensorSender") as mock_sender_class:
+            with patch("nvflare.app_opt.tensor_stream.client.TensorReceiver") as mock_receiver_class:
+                mock_fl_context.get_engine.return_value = mock_engine_with_clients
+                mock_sender_instance = Mock(spec=TensorSender)
+                mock_receiver_instance = Mock(spec=TensorReceiver)
+                mock_sender_class.return_value = mock_sender_instance
+                mock_receiver_class.return_value = mock_receiver_instance
+
+                streamer = TensorClientStreamer()
+
+                # 1. START_RUN
+                streamer.handle_event(EventType.START_RUN, mock_fl_context)
+                assert streamer.engine is not None
+
+                # 2. BEFORE_TASK_DATA_FILTER
+                streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
+                mock_receiver_instance.set_ctx_with_tensors.assert_called_once()
+
+                # 3. BEFORE_SEND_TASK_RESULT
+                with patch("nvflare.app_opt.tensor_stream.client.clean_task_result"):
+                    streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+                    mock_sender_instance.send.assert_called_once()
+
+                # Verify all components were used
+                assert mock_receiver_instance.set_ctx_with_tensors.called
+                assert mock_sender_instance.send.called

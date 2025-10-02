@@ -61,7 +61,7 @@ class TensorReceiver:
             factory=TorchTensorsConsumerFactory(),
             stream_done_cb=self._save_tensors_cb,
         )
-        self.logger.warning(
+        self.logger.info(
             f"Registered tensor receiver for context property '{self.ctx_prop_key}' "
             f"on '{self.channel}:{topic}' with format '{self.format}'.",
         )
@@ -80,11 +80,11 @@ class TensorReceiver:
 
         tensors = fl_ctx.get_custom_prop(SAFE_TENSORS_PROP_KEY)
         if not tensors:
-            self.logger.warning(f"No tensors found from peer {peer_name}.")
+            self.logger.error(f"No tensors found from peer {peer_name}.")
             return
 
         self.tensors[peer_name] = tensors
-        self.logger.warning(f"Storing tensors received from peer {peer_name}.")
+        self.logger.info(f"Storing tensors received from peer {peer_name}.")
 
     def set_ctx_with_tensors(self, fl_ctx: FLContext):
         """Update the context with the received tensors.
@@ -112,7 +112,7 @@ class TensorReceiver:
             raise RuntimeError(msg)
 
         if dxo["kind"] not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
-            msg = f"Task data kind is not WEIGHTS or WEIGHT_DIFF: {dxo['data_kind']}"
+            msg = f"Task data kind is not WEIGHTS or WEIGHT_DIFF: {dxo['kind']}"
             self.logger.error(msg)
             raise RuntimeError(msg)
 
