@@ -81,7 +81,7 @@ class FederatedClient(FederatedClientBase):
 
     def fetch_task(self, fl_ctx: FLContext, timeout=None):
         fire_event(EventType.BEFORE_PULL_TASK, self.handlers, fl_ctx)
-        self.logger.info(f"pull_task started with timeout {timeout}")
+        self.logger.debug(f"pull_task started with timeout {timeout}")
         pull_success, task_name, shareable = self.pull_task(fl_ctx, timeout)
         fire_event(EventType.AFTER_PULL_TASK, self.handlers, fl_ctx)
         if task_name == SpecialTaskName.TRY_AGAIN:
