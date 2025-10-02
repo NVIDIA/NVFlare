@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-    client side training scripts
+client side training scripts
 """
 
 import os
@@ -79,7 +79,9 @@ def main():
                 if i % 3000 == 0:
                     print(f"site={client_name}, Epoch: {epoch}/{epochs}, Iteration: {i}, Loss: {running_loss / 3000}")
                     global_step = input_model.current_round * steps + epoch * len(train_loader) + i
-                    summary_writer.add_scalar(tag="loss_for_each_batch", scalar=running_loss, global_step=global_step)
+                    summary_writer.add_scalar(
+                        tag="loss_for_each_batch", scalar=float(running_loss), global_step=global_step
+                    )
                     running_loss = 0.0
 
         print(f"Finished Training for {client_name}")
