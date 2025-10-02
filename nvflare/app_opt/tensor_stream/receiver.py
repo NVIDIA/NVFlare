@@ -17,11 +17,12 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import StreamableEngine
+from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .consumer import TorchTensorsConsumerFactory
 from .types import SAFE_TENSORS_PROP_KEY, TENSORS_CHANNEL, TensorsMap
-from .utils import get_topic_for_ctx_prop_key
+from .utils import get_topic_for_ctx_prop_key, to_numpy_recursive
 
 
 class TensorReceiver:
@@ -31,7 +32,7 @@ class TensorReceiver:
         self,
         engine: StreamableEngine,
         ctx_prop_key: FLContextKey,
-        format: str,
+        format: ExchangeFormat = ExchangeFormat.PYTORCH,
         channel: str = TENSORS_CHANNEL,
     ):
         """Initialize the TensorReceiver.
@@ -39,8 +40,7 @@ class TensorReceiver:
         Args:
             engine (StreamableEngine): The streamable engine to use for streaming.
             ctx_prop_key (FLContextKey): The context property key to receive tensors for.
-            format (str): The format of the tensors to receive. Currently only "torch" is
-                supported.
+            format (ExchangeFormat): The format of the tensors to receive. Default is ExchangeFormat.PYTORCH.
             channel (str): The channel to use for streaming. Default is TENSORS_CHANNEL.
         """
         super().__init__()
@@ -124,10 +124,14 @@ class TensorReceiver:
                 f"'{peer_name}' and {total_values} tensors.",
             )
 
-        if self.format == "torch":
+        if self.format == ExchangeFormat.PYTORCH:
             dxo["data"] = tensors
+        elif self.format == ExchangeFormat.NUMPY:
+            dxo["data"] = to_numpy_recursive(tensors)
         else:
-            dxo["data"] = {k: v.numpy() for k, v in tensors.items()}
+            msg = f"Unsupported tensor format: {self.format}"
+            self.logger.error(msg)
+            raise RuntimeError(msg)
 
         s["DXO"] = dxo
         fl_ctx.set_prop(self.ctx_prop_key, s, private=True, sticky=False)

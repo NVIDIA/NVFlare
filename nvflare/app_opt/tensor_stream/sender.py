@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
 import torch
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
@@ -20,11 +19,18 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import StreamableEngine, StreamContext
+from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .producer import TorchTensorsProducer
 from .types import TENSORS_CHANNEL
-from .utils import get_targets_for_ctx_and_prop_key, get_topic_for_ctx_prop_key
+from .utils import (
+    get_targets_for_ctx_and_prop_key,
+    get_topic_for_ctx_prop_key,
+    to_torch_recursive,
+    validate_numpy_dict_params_recursive,
+    validate_torch_dict_params_recursive,
+)
 
 
 class TensorSender:
@@ -35,6 +41,7 @@ class TensorSender:
         engine: StreamableEngine,
         ctx_prop_key: FLContextKey,
         root_keys: list[str],
+        format: ExchangeFormat = ExchangeFormat.PYTORCH,
         channel: str = TENSORS_CHANNEL,
     ):
         """Initialize the TensorSender.
@@ -48,6 +55,7 @@ class TensorSender:
         self.engine = engine
         self.ctx_prop_key = ctx_prop_key
         self.root_keys = root_keys
+        self.format = format
         self.channel = channel
         self.logger = get_obj_logger(self)
 
@@ -119,7 +127,6 @@ class TensorSender:
             TypeError: If the tensor data type is unsupported.
             ValueError: If no tensors are found in the context shareable.
         """
-        tensors: dict[str, torch.Tensor] = {}
         if not key:
             data = dxo.data
         else:
@@ -129,22 +136,25 @@ class TensorSender:
             msg = "No tensor data found on the context shareable."
             if key:
                 msg += f" Key='{key}'"
+            self.logger.error(msg)
             raise ValueError(msg)
 
-        for name, tensor_data in data.items():
-            if isinstance(tensor_data, torch.Tensor):
-                tensors[name] = tensor_data
-                continue
-            elif not isinstance(tensor_data, np.ndarray):
-                raise TypeError(f"Unsupported tensor data type: {type(tensor_data)}")
+        if not isinstance(data, dict):
+            self.logger.error(f"Expected tensor data to be a dict, but got {type(data)}")
+            raise ValueError(f"Expected tensor data to be a dict, but got {type(data)}")
 
-            # convert numpy array to torch tensor
-            dtype = getattr(torch, str(tensor_data.dtype).split(".")[-1])
-            shape = tuple(tensor_data.shape)
-            tensor = torch.frombuffer(tensor_data.data, dtype=dtype).reshape(shape)
-            tensors[name] = tensor
+        if self.format == ExchangeFormat.PYTORCH:
+            validate_torch_dict_params_recursive(data)
+            tensors = data
+        elif self.format == ExchangeFormat.NUMPY:
+            validate_numpy_dict_params_recursive(data)
+            tensors = to_torch_recursive(data)
+        else:
+            self.logger.error(f"Unsupported tensor data type: {self.format}")
+            raise TypeError(f"Unsupported tensor data type: {self.format}")
 
         if not tensors:
+            self.logger.error(f"No tensors found on context shareable with key {self.ctx_prop_key}")
             raise ValueError(f"No tensors found on context shareable with key {self.ctx_prop_key}")
 
         return tensors

@@ -17,6 +17,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.streaming import StreamableEngine
+from nvflare.client.config import ExchangeFormat
 
 from .receiver import TensorReceiver
 from .sender import TensorSender
@@ -28,7 +29,7 @@ class TensorClientStreamer(FLComponent):
 
     It uses a StreamableEngine, TensorReceiver, and TensorSender to manage tensor streaming on the client side.
     Attributes:
-        format (str): The format of the tensors to send. Default is "torch".
+        format (str): The format of the tensors to send. Default is "pytorch".
         root_keys (list[str]): The root keys to include in the tensor sending. Default is None, which means all keys.
         entry_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
         engine (StreamableEngine): The StreamableEngine used for tensor streaming.
@@ -40,11 +41,13 @@ class TensorClientStreamer(FLComponent):
         send_tensors_to_server(fl_ctx): Sends tensors to the server before sending the task result.
     """
 
-    def __init__(self, format="torch", root_keys: list[str] = None, entry_timeout=30.0):
+    def __init__(
+        self, format: ExchangeFormat = ExchangeFormat.PYTORCH, root_keys: list[str] = None, entry_timeout=30.0
+    ):
         """Initialize the TensorClientStreamer component.
 
         Args:
-            format (str): The format of the tensors to send. Default is "torch".
+            format (ExchangeFormat): The format of the tensors to send. Default is ExchangeFormat.TORCH.
             root_keys (list[str]): The root keys to include in the tensor sending. Default is None, which means all keys.
             entry_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
         """

@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import numpy as np
+import torch
+
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import SERVER_SITE_NAME
@@ -61,13 +64,13 @@ def get_topic_for_ctx_prop_key(ctx_prop_key: str) -> str:
         raise ValueError(f"Unsupported context property key: {ctx_prop_key}")
 
 
-def get_targets_for_ctx_and_prop_key(fl_ctx: FLContext, ctx_prop_key: str) -> str:
+def get_targets_for_ctx_and_prop_key(fl_ctx: FLContext, ctx_prop_key: str) -> list[str]:
     """Get the peer identity name from the FLContext.
 
     Args:
         fl_ctx (FLContext): The FLContext for the current operation.
     Returns:
-        str: The identity name of the peer.
+        list[str]: The identity name(s) of the peer(s).
     """
     if ctx_prop_key == FLContextKey.TASK_DATA:
         return [fl_ctx.get_peer_context().get_identity_name()]
@@ -75,3 +78,49 @@ def get_targets_for_ctx_and_prop_key(fl_ctx: FLContext, ctx_prop_key: str) -> st
         return [SERVER_SITE_NAME]
     else:
         raise ValueError(f"Unsupported context property key: {ctx_prop_key}")
+
+
+def to_numpy_recursive(obj: torch.Tensor | dict[str, torch.Tensor]) -> dict[str, np.ndarray] | np.ndarray:
+    """Recursively convert objects with a `numpy` method to numpy arrays."""
+    if hasattr(obj, "numpy"):
+        return obj.numpy()
+    elif isinstance(obj, dict):
+        return {k: to_numpy_recursive(v) for k, v in obj.items()}
+    else:
+        raise ValueError(f"Unsupported object type: {type(obj)}")
+
+
+def to_torch_recursive(
+    obj: np.ndarray | dict[str, np.ndarray], device: torch.device = "cpu"
+) -> dict[str, torch.Tensor] | torch.Tensor:
+    """Recursively convert numpy arrays to torch tensors."""
+    if isinstance(obj, np.ndarray):
+        return torch.from_numpy(obj).to(device)
+    elif isinstance(obj, dict):
+        return {k: to_torch_recursive(v, device) for k, v in obj.items()}
+    else:
+        raise ValueError(f"Unsupported object type: {type(obj)}")
+
+
+def validate_torch_dict_params_recursive(tensor_dict: dict):
+    """Recursively validate that all values in the dictionary are torch tensors."""
+    if not isinstance(tensor_dict, dict):
+        raise ValueError(f"Expected a dictionary, but got {type(tensor_dict)}")
+
+    for key, value in tensor_dict.items():
+        if isinstance(value, dict):
+            validate_torch_dict_params_recursive(value)
+        elif not isinstance(value, torch.Tensor):
+            raise ValueError(f"Expected torch.Tensor for key '{key}', but got {type(value)}")
+
+
+def validate_numpy_dict_params_recursive(tensor_dict: dict):
+    """Recursively validate that all values in the dictionary are numpy arrays."""
+    if not isinstance(tensor_dict, dict):
+        raise ValueError(f"Expected a dictionary, but got {type(tensor_dict)}")
+
+    for key, value in tensor_dict.items():
+        if isinstance(value, dict):
+            validate_numpy_dict_params_recursive(value)
+        elif not isinstance(value, np.ndarray):
+            raise ValueError(f"Expected np.ndarray for key '{key}', but got {type(value)}")
