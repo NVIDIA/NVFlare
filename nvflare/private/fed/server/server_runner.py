@@ -301,7 +301,10 @@ class ServerRunner(TBI):
 
         # Check if this client already has a task being processed (during filtering)
         if client.name in self._processing_tasks:
-            self.log_debug(fl_ctx, f"client {client.name} already has task {self._processing_tasks[client.name]} being processed - asked to try again later")
+            self.log_debug(
+                fl_ctx,
+                f"client {client.name} already has task {self._processing_tasks[client.name]} being processed - asked to try again later",
+            )
             return self._task_try_again()
 
         try:
@@ -345,10 +348,10 @@ class ServerRunner(TBI):
             audit_event_id = add_job_audit_event(fl_ctx=fl_ctx, msg=f'sent task to client "{client.name}"')
             task_data.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, audit_event_id)
             task_data.set_header(TaskConstant.WAIT_TIME, self.config.task_request_interval)
-            
+
             # Remove task from processing tracker since it's successfully sent
             self._processing_tasks.pop(client.name, None)
-            
+
             return task_name, task_id, task_data
         except Exception as e:
             self.log_exception(
