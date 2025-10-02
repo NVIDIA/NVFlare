@@ -105,6 +105,7 @@ class ServerRunner(TBI):
         self.turn_to_cold = False
         # track tasks currently being processed (during filtering) to prevent duplicate assignments
         self._processing_tasks = {}  # client_name => task_id
+        self._processing_tasks_lock = threading.Lock()  # protect _processing_tasks from race conditions
         self._register_aux_message_handler(engine)
 
     def _register_aux_message_handler(self, engine):
@@ -300,12 +301,14 @@ class ServerRunner(TBI):
             return SpecialTaskName.END_RUN, "", None
 
         # Check if this client already has a task being processed (during filtering)
-        if client.name in self._processing_tasks:
-            self.log_debug(
-                fl_ctx,
-                f"client {client.name} already has task {self._processing_tasks[client.name]} being processed - asked to try again later",
-            )
-            return self._task_try_again()
+        # Use lock to prevent race conditions between check and assignment
+        with self._processing_tasks_lock:
+            if client.name in self._processing_tasks:
+                self.log_debug(
+                    fl_ctx,
+                    f"client {client.name} already has task {self._processing_tasks[client.name]} being processed - asked to try again later",
+                )
+                return self._task_try_again()
 
         try:
             task_name, task_id, task_data = self._try_to_get_task(
@@ -317,7 +320,8 @@ class ServerRunner(TBI):
                 return self._task_try_again()
 
             # Mark this task as being processed to prevent duplicate assignments
-            self._processing_tasks[client.name] = task_id
+            with self._processing_tasks_lock:
+                self._processing_tasks[client.name] = task_id
 
             # filter task data
             self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
@@ -338,7 +342,8 @@ class ServerRunner(TBI):
                     if self.current_wf:
                         self.current_wf.controller.communicator.handle_exception(task_id, fl_ctx)
                 # Remove task from processing tracker since filtering failed
-                self._processing_tasks.pop(client.name, None)
+                with self._processing_tasks_lock:
+                    self._processing_tasks.pop(client.name, None)
                 return self._task_try_again()
 
             self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
@@ -350,7 +355,8 @@ class ServerRunner(TBI):
             task_data.set_header(TaskConstant.WAIT_TIME, self.config.task_request_interval)
 
             # Remove task from processing tracker since it's successfully sent
-            self._processing_tasks.pop(client.name, None)
+            with self._processing_tasks_lock:
+                self._processing_tasks.pop(client.name, None)
 
             return task_name, task_id, task_data
         except Exception as e:
@@ -359,7 +365,8 @@ class ServerRunner(TBI):
                 f"Error processing client task request: {secure_format_exception(e)}; asked client to try again later",
             )
             # Remove task from processing tracker since an exception occurred
-            self._processing_tasks.pop(client.name, None)
+            with self._processing_tasks_lock:
+                self._processing_tasks.pop(client.name, None)
             return self._task_try_again()
 
     def _try_to_get_task(self, client, fl_ctx, timeout=None, retry_interval=0.005):
