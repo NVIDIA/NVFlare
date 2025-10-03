@@ -29,7 +29,7 @@ class NPTrainer(ClientApp):
         if context.is_aborted():
             print("training aborted")
             return 0
-        print(f"[{self.name}] called by {context.caller}: client {context.callee} trained round {current_round}")
+        print(f"[{context.header_str()}] trained round {current_round}")
 
         # metric_receiver = self.server.get_target("metric_receiver")
         # if metric_receiver:
@@ -41,7 +41,7 @@ class NPTrainer(ClientApp):
 
     @collab
     def evaluate(self, model, context: Context):
-        print(f"[{self.name}] called by {context.caller}: client {context.callee} to evaluate")
+        print(f"[{context.header_str()}] evaluate")
         return random.random()
 
 

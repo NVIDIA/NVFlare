@@ -62,8 +62,6 @@ class Group:
         if not wait_after_min_resps:
             self._wait_after_min_resps = 0
 
-        print(f"min resps: {self._min_resps}")
-
     def __getattr__(self, func_name):
         """
         This method is called when Python cannot find an invoked method func_name of this class.
@@ -75,7 +73,7 @@ class Group:
             # filter once for all targets
             p = self._proxies[0]
             the_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
-            ctx = the_proxy.app.new_context(self.caller_name, self.name)
+            ctx = the_proxy.app.new_context(the_proxy.app.name, the_proxy.name)
 
             # apply outgoing call filters
             adj_kwargs = self._app.apply_outgoing_call_filters(p.target_name, func_name, adj_kwargs, ctx)
@@ -95,10 +93,17 @@ class Group:
                 call_kwargs[CollabMethodOptionName.SECURE] = self._secure
                 call_kwargs[CollabMethodOptionName.OPTIONAL] = self._optional
 
-                resp = Resp(self._process_resp_cb, self._cb_kwargs, ctx)
+                resp = Resp(
+                    self._app,
+                    p.target_name,
+                    func_name,
+                    self._process_resp_cb,
+                    self._cb_kwargs,
+                    ctx,
+                )
                 resps[p.name] = resp
 
-                print(f"group call: {func_name=} args={call_args} kwargs={call_kwargs}")
+                print(f"[{ctx.header_str()}] group call: {func_name=} args={call_args} kwargs={call_kwargs}")
                 the_proxy.backend.call_target_with_resp(resp, the_proxy.name, func_name, *call_args, **call_kwargs)
 
             # wait for responses
@@ -121,7 +126,6 @@ class Group:
                     break
 
                 now = time.time()
-                print(f"what is min_resps: {self=} {self._min_resps}")
                 if resps_received >= self._min_resps:
                     if not min_received_time:
                         min_received_time = now

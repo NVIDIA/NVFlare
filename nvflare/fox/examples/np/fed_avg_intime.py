@@ -13,7 +13,7 @@
 # limitations under the License.
 from nvflare.fox.api.app import ServerApp
 from nvflare.fox.examples.np.algos.client import NPTrainer
-from nvflare.fox.examples.np.algos.filters import AddNoiseToModel
+from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, PrintCall, PrintResult
 from nvflare.fox.examples.np.algos.strategies import NPFedAvgInTime
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
 from nvflare.fox.sim.simulator import Simulator
@@ -28,10 +28,15 @@ def main():
 
     server_app.add_collab_object("metric_receiver", MetricReceiver())
     server_app.add_outgoing_call_filters("*.train", [AddNoiseToModel()])
+    server_app.add_incoming_result_filters("*.train", [PrintResult()])
+
+    client_app = NPTrainer(delta=1.0)
+    client_app.add_incoming_call_filters("*.train", [PrintCall()])
+    client_app.add_outgoing_result_filters("*.train", [PrintResult()])
 
     simulator = Simulator(
         server_app=server_app,
-        client_app=NPTrainer(delta=1.0),
+        client_app=client_app,
         num_clients=2,
     )
 

@@ -17,6 +17,15 @@ from nvflare.apis.signal import Signal
 class Context:
 
     def __init__(self, env_type: str, caller: str, callee: str, abort_signal: Signal, props: dict = None):
+        if not isinstance(env_type, str):
+            raise ValueError(f"env_type must be str but got {type(env_type)}")
+
+        if not isinstance(caller, str):
+            raise ValueError(f"caller must be str but got {type(caller)}")
+
+        if not isinstance(callee, str):
+            raise ValueError(f"callee must be str but got {type(callee)}")
+
         self.env_type = env_type
         self.caller = caller
         self.callee = callee
@@ -36,3 +45,6 @@ class Context:
 
     def is_aborted(self):
         return self.abort_signal and self.abort_signal.triggered
+
+    def header_str(self):
+        return f"{self.app.name}:{self.caller}=>{self.callee}"

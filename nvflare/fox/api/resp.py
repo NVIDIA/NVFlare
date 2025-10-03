@@ -21,7 +21,10 @@ from .utils import check_context_support
 
 class Resp:
 
-    def __init__(self, process_cb, cb_kwargs, context: Context):
+    def __init__(self, app, target_name, func_name, process_cb, cb_kwargs, context: Context):
+        self.app = app
+        self.target_name = target_name
+        self.func_name = func_name
         self.result = None
         self.resp_time = None
         self.process_cb = process_cb
@@ -29,13 +32,17 @@ class Resp:
         self.context = context
 
     def set_result(self, result):
-        if self.process_cb:
-            ctx = copy.copy(self.context)
+        # filter incoming result
+        ctx = copy.copy(self.context)
+        # swap caller/callee
+        original_caller = ctx.caller
+        ctx.caller = ctx.callee
+        ctx.callee = original_caller
 
-            # swap caller/callee
-            original_caller = ctx.caller
-            ctx.caller = ctx.callee
-            ctx.callee = original_caller
+        if not isinstance(result, Exception):
+            result = self.app.apply_incoming_result_filters(self.target_name, self.func_name, result, ctx)
+
+        if self.process_cb:
             self.cb_kwargs[CollabMethodArgName.CONTEXT] = ctx
             check_context_support(self.process_cb, self.cb_kwargs)
             result = self.process_cb(result, **self.cb_kwargs)
