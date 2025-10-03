@@ -560,7 +560,7 @@ class StaticFileBuilder(Builder):
 
         replacement_dict = {
             "project_name": project.name,
-            "user_name": admin.name,
+            "username": admin.name,
             "server_identity": server.name,
             "scheme": self.scheme,
             "conn_sec": conn_sec,

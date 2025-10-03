@@ -230,7 +230,7 @@ class AdminConfigKey:
     UID_SOURCE = "uid_source"  # where does user id come from
     UPLOAD_DIR = "upload_dir"
     DOWNLOAD_DIR = "download_dir"
-    USERNAME = "user_name"
+    USERNAME = "username"
     FILE_DOWNLOAD_PROGRESS_TIMEOUT = "file_download_progress_timeout"
     AUTHENTICATE_MSG_TIMEOUT = "authenticate_msg_timeout"
 
