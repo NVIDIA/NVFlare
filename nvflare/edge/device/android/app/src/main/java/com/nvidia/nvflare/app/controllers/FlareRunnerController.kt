@@ -64,6 +64,7 @@ class FlareRunnerController(
     // Task management
     private var currentJob: Job? = null
     private var flareRunner: AndroidFlareRunner? = null
+    private var currentConnection: com.nvidia.nvflare.sdk.core.Connection? = null
     
     // CRITICAL: Strong reference to keep dataset alive during training
     // This prevents the dataset from being deallocated while training is in progress
@@ -107,6 +108,7 @@ class FlareRunnerController(
         
         // Create connection on main thread to avoid background thread issues
         val connection = createConnection()
+        currentConnection = connection
         
         currentJob = CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -221,6 +223,8 @@ class FlareRunnerController(
                 withContext(Dispatchers.Main) {
                     Log.d(TAG, "FlareRunnerController: Clearing dataset reference due to error")
                     currentDataset = null // Release dataset reference on error too
+                    currentConnection?.close() // Close connection on error too
+                    currentConnection = null
                     status = TrainingStatus.IDLE
                     onStatusUpdate(status)
                     onError(e)
@@ -232,13 +236,17 @@ class FlareRunnerController(
     fun stopTraining() {
         Log.d(TAG, "FlareRunnerController: Stopping training and cleaning up resources")
         
-        // Stop the flare runner
+        // Stop the flare runner (this will also close the connection)
         flareRunner?.stop()
         flareRunner = null
         
         // Cancel the current job
         currentJob?.cancel()
         currentJob = null
+        
+        // Close the connection to prevent device count increase
+        currentConnection?.close()
+        currentConnection = null
         
         // Clear the dataset reference
         currentDataset = null
