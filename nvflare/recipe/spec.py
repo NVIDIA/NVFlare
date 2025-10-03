@@ -13,9 +13,11 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from nvflare.apis.filter import Filter
+from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
+from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.job_config.api import FedJob
 from nvflare.job_config.defs import FilterType
 
@@ -168,6 +170,42 @@ class Recipe(ABC):
 
         """
         self.job.to_server(filter, filter_type=FilterType.TASK_RESULT, tasks=tasks)
+
+    @staticmethod
+    def _get_full_class_name(obj):
+        """
+        Returns the fully qualified name of an object.
+        """
+        cls = type(obj)
+        module = cls.__module__
+        qualname = cls.__qualname__
+        if module == "builtins":  # For built-in types like int, str, etc.
+            return qualname
+        return f"{module}.{qualname}"
+
+    def add_decomposers(self, decomposers: List[Union[str, Decomposer]]):
+        """Add decomposers to the job
+
+        Args:
+            decomposers: spec of decomposers. Can be class names or Decomposer objects
+
+        Returns: None
+
+        """
+        if not decomposers:
+            return
+
+        class_names = []
+        for d in decomposers:
+            if isinstance(d, str):
+                # class name
+                class_names.append(d)
+            elif isinstance(d, Decomposer):
+                class_names.append(self._get_full_class_name(d))
+
+        reg = DecomposerRegister(class_names)
+        self.job.to_server(reg, id="decomposer_reg")
+        self.job.to_clients(reg, id="decomposer_reg")
 
     def export(
         self,
