@@ -82,7 +82,7 @@ class SimBackend(Backend):
 
     def _preprocess(self, target_name, func_name, func, kwargs):
         caller_ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
-        my_ctx = self.target_app.new_context(caller_ctx.caller, caller_ctx.caller)
+        my_ctx = self.target_app.new_context(caller_ctx.caller, caller_ctx.callee)
         kwargs = self.target_app.apply_incoming_call_filters(target_name, func_name, kwargs, my_ctx)
 
         # make sure the final kwargs conforms to func interface
@@ -95,7 +95,7 @@ class SimBackend(Backend):
             raise RuntimeError(f"cannot find interface for func '{func_name}' of object {self.target_obj_name}")
 
         check_call_args(func_name, func_itf, [], kwargs)
-        print(f"received kwargs is good: {kwargs}")
+        print(f"[{my_ctx.header_str()}] received kwargs is good: {kwargs}")
 
         kwargs[CollabMethodArgName.CONTEXT] = my_ctx
         adjust_kwargs(func, kwargs)

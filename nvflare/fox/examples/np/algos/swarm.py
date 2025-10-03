@@ -42,12 +42,12 @@ class NPSwarm(Strategy):
                 break
 
     def _all_done(self, event_type: str, data, context: Context):
-        print(f"[{context.callee}]: received {event_type} from client: {context.caller}: {data}")
+        print(f"[{context.header_str()}]: received {event_type} from client: {context.caller}: {data}")
         self.all_done(data, context)
 
     @collab
     def all_done(self, reason: str, context: Context):
-        print(f"[{context.callee}]: all done from client: {context.caller}: {reason}")
+        print(f"[{context.header_str()}]: all done from client: {context.caller}: {reason}")
         self.waiter.set()
 
 
@@ -60,7 +60,7 @@ class NPSwarmClient(ClientApp):
 
     @collab
     def train(self, weights, current_round, context: Context):
-        print(f"[{context.callee}]: train asked by {context.caller}: {current_round=}")
+        print(f"[{context.header_str()}]: train asked by {context.caller}: {current_round=}")
         return weights + self.delta
 
     def sag(self, model, current_round, ctx: Context):
@@ -73,10 +73,10 @@ class NPSwarmClient(ClientApp):
 
     @collab
     def swarm_learn(self, num_rounds, model, current_round, context: Context):
-        print(f"[{context.callee}]: swarm learn asked by {context.caller}: {num_rounds=} {current_round=} {model=}")
+        print(f"[{context.header_str()}]: swarm learn asked: {num_rounds=} {current_round=} {model=}")
         new_model = self.sag(model, current_round, context)
 
-        print(f"[{context.callee}]: trained model {new_model=}")
+        print(f"[{context.header_str()}]: trained model {new_model=}")
         if current_round == num_rounds - 1:
             # all done
             all_clients(context, blocking=False).fire_event("final_model", new_model)
@@ -102,4 +102,4 @@ class NPSwarmClient(ClientApp):
     def _accept_final_model(self, event_type: str, model, context: Context):
         # accept the final model
         # write model to disk
-        print(f"[{context.callee}]: received event '{event_type}' from {context.caller}: {model}")
+        print(f"[{context.header_str()}]: received event '{event_type}' from {context.caller}: {model}")

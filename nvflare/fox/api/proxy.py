@@ -110,7 +110,7 @@ class Proxy:
             p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
             ctx = p.app.new_context(self.caller_name, self.name)
 
-            print(f"calling target {p.target_name} func {func_name}: {call_args=} {call_kwargs=}")
+            print(f"[{ctx.header_str()}] calling target {p.target_name} func {func_name}: {call_args=} {call_kwargs=}")
 
             # apply outgoing call filters
             call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)

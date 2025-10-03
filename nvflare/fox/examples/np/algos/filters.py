@@ -15,7 +15,7 @@ import random
 
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.filter import CallFilter
+from nvflare.fox.api.filter import CallFilter, ResultFilter
 
 
 class AddNoiseToModel(CallFilter):
@@ -23,7 +23,7 @@ class AddNoiseToModel(CallFilter):
     def filter_call(self, func_kwargs: dict, context: Context):
         direction = context.get_prop(ContextKey.DIRECTION)
         qual_func_name = context.get_prop(ContextKey.QUALIFIED_FUNC_NAME)
-        print(f"filtering {func_kwargs} {direction=} {qual_func_name=}")
+        print(f"[{context.header_str()}] filtering call: {func_kwargs=} {direction=} {qual_func_name=}")
         weights_key = "weights"
         weights = func_kwargs.get(weights_key)
         if weights is None:
@@ -33,7 +33,25 @@ class AddNoiseToModel(CallFilter):
 
         # add some noise to weights
         noise = random.random()
-        print(f"adding noise {noise}")
+        print(f"[{context.header_str()}] adding noise {noise}")
         weights += noise
         func_kwargs[weights_key] = weights
         return func_kwargs
+
+
+class PrintCall(CallFilter):
+
+    def filter_call(self, func_kwargs: dict, context: Context):
+        direction = context.get_prop(ContextKey.DIRECTION)
+        qual_func_name = context.get_prop(ContextKey.QUALIFIED_FUNC_NAME)
+        print(f"[{context.header_str()}] printing call: {func_kwargs=} {direction=} {qual_func_name=}")
+        return func_kwargs
+
+
+class PrintResult(ResultFilter):
+
+    def filter_result(self, result, context: Context):
+        direction = context.get_prop(ContextKey.DIRECTION)
+        qual_func_name = context.get_prop(ContextKey.QUALIFIED_FUNC_NAME)
+        print(f"[{context.header_str()}] printing result: {result=} {direction=} {qual_func_name=}")
+        return result
