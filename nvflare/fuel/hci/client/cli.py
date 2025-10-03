@@ -75,7 +75,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         admin_config: dict,
         cmd_modules: Optional[List] = None,
         debug: bool = False,
-        user_name: str = "",
+        username: str = "",
         handlers=None,
         cli_history_dir: str = str(Path.home() / ".nvflare"),
         cli_history_size: int = 1000,
@@ -83,7 +83,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         super().__init__()
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = admin_config.get(AdminConfigKey.PROMPT, "> ")
-        self.user_name = user_name
+        self.user_name = username
         self.debug = debug
         self.out_file = None
         self.no_stdout = False

@@ -88,7 +88,7 @@ def main():
         admin_config=admin_config,
         cmd_modules=modules,
         debug=with_debug,
-        user_name=admin_config.get(AdminConfigKey.USERNAME, ""),
+        username=admin_config.get(AdminConfigKey.USERNAME, ""),
         handlers=conf.handlers,
         cli_history_dir=args.workspace,
         cli_history_size=cli_history_size,
