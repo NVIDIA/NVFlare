@@ -22,6 +22,7 @@ from .constants import CollabMethodArgName, CollabMethodOptionName
 from .ctx import Context
 from .proxy import Proxy
 from .resp import Resp
+from .utils import check_call_args
 
 
 class Group:
@@ -78,7 +79,7 @@ class Group:
 
             # apply outgoing call filters
             adj_kwargs = self._app.apply_outgoing_call_filters(p.target_name, func_name, adj_kwargs, ctx)
-            the_proxy.check_call_args(func_name, func_itf, adj_args, adj_kwargs)
+            check_call_args(func_name, func_itf, adj_args, adj_kwargs)
 
             for p in self._proxies:
                 the_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, adj_args, adj_kwargs)

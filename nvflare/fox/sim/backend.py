@@ -17,9 +17,10 @@ import time
 from nvflare.apis.fl_exception import RunAborted
 from nvflare.fox.api.app import App
 from nvflare.fox.api.backend import Backend
-from nvflare.fox.api.constants import CollabMethodArgName, CollabMethodOptionName
+from nvflare.fox.api.constants import OPTION_ARGS, CollabMethodArgName, CollabMethodOptionName
 from nvflare.fox.api.dec import adjust_kwargs
 from nvflare.fox.api.resp import Resp
+from nvflare.fox.api.utils import check_call_args
 
 
 class _Waiter(threading.Event):
@@ -31,8 +32,9 @@ class _Waiter(threading.Event):
 
 class SimBackend(Backend):
 
-    def __init__(self, target_app: App, target_obj, abort_signal, thread_executor):
+    def __init__(self, target_obj_name: str, target_app: App, target_obj, abort_signal, thread_executor):
         Backend.__init__(self, abort_signal)
+        self.target_obj_name = target_obj_name
         self.target_app = target_app
         self.target_obj = target_obj
         self.executor = thread_executor
@@ -51,15 +53,15 @@ class SimBackend(Backend):
         blocking = kwargs.pop(CollabMethodOptionName.BLOCKING, True)
         timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, 5.0)
 
-        # these options don't apply to simulation
-        kwargs.pop(CollabMethodOptionName.OPTIONAL, None)
-        kwargs.pop(CollabMethodOptionName.SECURE, None)
+        # other options don't apply to simulation
+        for k in OPTION_ARGS:
+            kwargs.pop(k, None)
 
         waiter = None
         if blocking:
             waiter = _Waiter()
 
-        self.executor.submit(self._run_func, waiter, func, args, kwargs)
+        self.executor.submit(self._run_func, waiter, target_name, func_name, func, args, kwargs)
         if waiter:
             start_time = time.time()
             while True:
@@ -78,17 +80,35 @@ class SimBackend(Backend):
 
             return waiter.result
 
-    def _augment_context(self, func, kwargs):
-        ctx = kwargs.get(CollabMethodArgName.CONTEXT)
-        if ctx:
-            target_ctx = self.target_app.new_context(ctx.caller, ctx.callee)
-            kwargs[CollabMethodArgName.CONTEXT] = target_ctx
-        adjust_kwargs(func, kwargs)
+    def _preprocess(self, target_name, func_name, func, kwargs):
+        caller_ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
+        my_ctx = self.target_app.new_context(caller_ctx.caller, caller_ctx.caller)
+        kwargs = self.target_app.apply_incoming_call_filters(target_name, func_name, kwargs, my_ctx)
 
-    def _run_func(self, waiter: _Waiter, func, args, kwargs):
+        # make sure the final kwargs conforms to func interface
+        obj_itf = self.target_app.get_target_object_collab_interface(self.target_obj_name)
+        if not obj_itf:
+            raise RuntimeError(f"cannot find collab interface for object {self.target_obj_name}")
+
+        func_itf = obj_itf.get(func_name)
+        if not func_itf:
+            raise RuntimeError(f"cannot find interface for func '{func_name}' of object {self.target_obj_name}")
+
+        check_call_args(func_name, func_itf, [], kwargs)
+        print(f"received kwargs is good: {kwargs}")
+
+        kwargs[CollabMethodArgName.CONTEXT] = my_ctx
+        adjust_kwargs(func, kwargs)
+        return my_ctx, kwargs
+
+    def _run_func(self, waiter: _Waiter, target_name, func_name, func, args, kwargs):
         try:
-            self._augment_context(func, kwargs)
+            ctx, kwargs = self._preprocess(target_name, func_name, func, kwargs)
             result = func(*args, **kwargs)
+
+            # apply result filter
+            result = self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
+
             if waiter:
                 waiter.result = result
         except Exception as ex:
@@ -100,10 +120,8 @@ class SimBackend(Backend):
 
     def call_target_with_resp(self, resp: Resp, target_name: str, func_name: str, *args, **kwargs):
         # do not use the optional args - they are managed by the group
-        kwargs.pop(CollabMethodOptionName.BLOCKING, None)
-        kwargs.pop(CollabMethodOptionName.TIMEOUT, None)
-        kwargs.pop(CollabMethodOptionName.OPTIONAL, None)
-        kwargs.pop(CollabMethodOptionName.SECURE, None)
+        for k in OPTION_ARGS:
+            kwargs.pop(k, None)
 
         func = self._get_func(func_name)
         if not func:
@@ -112,12 +130,15 @@ class SimBackend(Backend):
         if not callable(func):
             raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
-        self.executor.submit(self._run_func_with_resp, resp, func, args, kwargs)
+        self.executor.submit(self._run_func_with_resp, resp, target_name, func_name, func, args, kwargs)
 
-    def _run_func_with_resp(self, resp: Resp, func, args, kwargs):
+    def _run_func_with_resp(self, resp: Resp, target_name, func_name, func, args, kwargs):
         try:
-            self._augment_context(func, kwargs)
+            ctx, kwargs = self._preprocess(target_name, func_name, func, kwargs)
             result = func(*args, **kwargs)
+
+            # apply result filter
+            result = self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
             resp.set_result(result)
         except Exception as ex:
             resp.set_exception(ex)

@@ -26,10 +26,10 @@ from nvflare.fox.sim.backend import SimBackend
 class Simulator:
 
     def _prepare_app_backends(self, app: App):
-        bes = {"": SimBackend(app, app, self.abort_signal, self.thread_executor)}
+        bes = {"": SimBackend("", app, app, self.abort_signal, self.thread_executor)}
         targets = app.get_collab_objects()
         for name, obj in targets.items():
-            bes[name] = SimBackend(app, obj, self.abort_signal, self.thread_executor)
+            bes[name] = SimBackend(name, app, obj, self.abort_signal, self.thread_executor)
         return bes
 
     def _prepare_proxy(self, for_app: App, target_app: App, backends: dict):
