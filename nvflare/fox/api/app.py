@@ -41,6 +41,7 @@ class App:
         self._outgoing_call_filter_chains = []
         self._incoming_result_filter_chains = []
         self._outgoing_result_filter_chains = []
+        self._collab_interface = {"": get_object_collab_interface(self)}
 
     @staticmethod
     def _add_filters(pattern: str, filters, to_list: list, filter_type):
@@ -144,6 +145,7 @@ class App:
 
         setattr(self, name, obj)
         self._collab_objs[name] = obj
+        self._collab_interface[name] = get_object_collab_interface(obj)
 
     def get_collab_objects(self):
         return self._collab_objs
@@ -224,10 +226,13 @@ class App:
         handlers.append((handler, handler_kwargs))
 
     def get_collab_interface(self):
-        result = {"": get_object_collab_interface(self)}
-        for name, obj in self._collab_objs.items():
-            result[name] = get_object_collab_interface(obj)
-        return result
+        return self._collab_interface
+
+    def get_target_object_collab_interface(self, target_name: str):
+        if not target_name or target_name.lower() == "app":
+            return self._collab_interface.get("")
+        else:
+            return self._collab_interface.get(target_name)
 
     @collab
     def fire_event(self, event_type: str, data, context: Context):

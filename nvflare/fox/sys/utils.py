@@ -14,6 +14,7 @@
 from nvflare.fox.api.app import App
 from nvflare.fox.api.constants import CollabMethodArgName
 from nvflare.fox.api.dec import adjust_kwargs
+from nvflare.fox.api.utils import check_call_args
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
@@ -32,6 +33,27 @@ def _error_reply(error: str, logger) -> Message:
     return new_cell_message(
         headers={MessageHeaderKey.RETURN_CODE: ReturnCode.PROCESS_EXCEPTION}, payload={CallReplyKey.ERROR: error}
     )
+
+
+def _preprocess(app: App, caller, target_obj_name, target_name, func_name, func, args, kwargs):
+    ctx = app.new_context(caller=caller, callee=app.name)
+    kwargs = app.apply_incoming_call_filters(target_name, func_name, kwargs, ctx)
+
+    # make sure the final kwargs conforms to func interface
+    obj_itf = app.get_target_object_collab_interface(target_obj_name)
+    if not obj_itf:
+        raise RuntimeError(f"cannot find collab interface for object {target_obj_name}")
+
+    func_itf = obj_itf.get(func_name)
+    if not func_itf:
+        raise RuntimeError(f"cannot find interface for func '{func_name}' of object {target_obj_name}")
+
+    check_call_args(func_name, func_itf, args, kwargs)
+    print(f"received kwargs is good: {kwargs}")
+
+    kwargs[CollabMethodArgName.CONTEXT] = ctx
+    adjust_kwargs(func, kwargs)
+    return ctx, kwargs
 
 
 def _call_app_method(request: Message, app: App, logger) -> Message:
@@ -67,7 +89,7 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
         return _error_reply(f"bad method kwargs: should be dict but got {type(method_kwargs)}", logger)
 
     parts = target_name.split(".")
-    obj_name = None
+    obj_name = ""
     if len(parts) >= 2:
         obj_name = parts[1]
     if obj_name:
@@ -89,9 +111,7 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
 
     # invoke this method
     try:
-        ctx = app.new_context(caller=caller, callee=app.name)
-        method_kwargs[CollabMethodArgName.CONTEXT] = ctx
-        adjust_kwargs(m, method_kwargs)
+        ctx, method_kwargs = _preprocess(app, caller, obj_name, target_name, method_name, m, method_args, method_kwargs)
 
         logger.info(f"calling method {method_name}: {caller=}: {method_args=} {method_kwargs=}")
         result = m(*method_args, **method_kwargs)

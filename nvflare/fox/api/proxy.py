@@ -15,6 +15,7 @@ import copy
 
 from .backend import Backend
 from .constants import OPTION_ARGS, CollabMethodArgName
+from .utils import check_call_args
 
 
 class Proxy:
@@ -94,26 +95,18 @@ class Proxy:
 
         return p, func_itf, call_args, call_kwargs
 
-    @staticmethod
-    def check_call_args(func_name, func_itf, call_args, call_kwargs: dict):
-        num_call_args = len(call_args) + len(call_kwargs)
-        if num_call_args > len(func_itf):
-            raise RuntimeError(
-                f"there are {num_call_args} call args ({call_args=} {call_kwargs=}), "
-                f"but function '{func_name}' only supports {len(func_itf)} args ({func_itf})"
-            )
-
-        # make sure every arg in kwargs is valid
-        for arg_name in call_kwargs.keys():
-            if (arg_name not in OPTION_ARGS) and (arg_name not in func_itf):
-                raise RuntimeError(f"call arg {arg_name} is not supported by func '{func_name}'")
-
     def __getattr__(self, func_name):
         """
         This method is called when Python cannot find an invoked method func_name of this class.
         """
 
         def method(*args, **kwargs):
+            # remove option args
+            option_args = {}
+            for k in OPTION_ARGS:
+                if k in kwargs:
+                    option_args[k] = kwargs.pop(k)
+
             p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
             ctx = p.app.new_context(self.caller_name, self.name)
 
@@ -121,9 +114,14 @@ class Proxy:
 
             # apply outgoing call filters
             call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
-            self.check_call_args(func_name, func_itf, call_args, call_kwargs)
+            check_call_args(func_name, func_itf, call_args, call_kwargs)
 
             call_kwargs[CollabMethodArgName.CONTEXT] = ctx
+
+            # restore option args
+            for k, v in option_args.items():
+                call_kwargs[k] = v
+
             result = p.backend.call_target(p.target_name, func_name, *call_args, **call_kwargs)
             if isinstance(result, Exception):
                 raise result

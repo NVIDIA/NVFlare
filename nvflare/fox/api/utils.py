@@ -46,3 +46,28 @@ def get_collab_object_name(target_name: str):
         return "app"
     else:
         return parts[1]
+
+
+def check_call_args(func_name, func_itf, call_args, call_kwargs: dict):
+    """Check call args against the function's interface.
+
+    Args:
+        func_name:
+        func_itf:
+        call_args:
+        call_kwargs:
+
+    Returns:
+
+    """
+    num_call_args = len(call_args) + len(call_kwargs)
+    if num_call_args > len(func_itf):
+        raise RuntimeError(
+            f"there are {num_call_args} call args ({call_args=} {call_kwargs=}), "
+            f"but function '{func_name}' only supports {len(func_itf)} args ({func_itf})"
+        )
+
+    # make sure every arg in kwargs is valid
+    for arg_name in call_kwargs.keys():
+        if arg_name not in func_itf:
+            raise RuntimeError(f"call arg {arg_name} is not supported by func '{func_name}'")
