@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import yaml
@@ -171,5 +172,7 @@ class OnPremPackager(Packager):
 
         participants = project.get_all_participants()
 
-        for participant in participants:
+        for i, participant in enumerate(participants):
             self._package_for_participant(participant, ctx)
+            if i != len(participants) - 1:
+                time.sleep(100.0)
