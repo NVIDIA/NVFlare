@@ -287,7 +287,7 @@ fed_admin: |
     "format_version": 1,
     "admin": {
       "project_name": "{~~project_name~~}",
-      "user_name": "{~~user_name~~}",
+      "username": "{~~username~~}",
       "server_identity": "{~~server_identity~~}",
       "scheme": "{~~scheme~~}",
       "host": "{~~host~~}",
