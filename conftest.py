@@ -11,10 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import pytest
-import nbformat
+import subprocess
 from pathlib import Path
+
+try:
+    import nbformat
+except Exception:
+    nbformat = None
 
 
 def pytest_collection_modifyitems(config, items):
@@ -42,3 +45,91 @@ def filter_notebook(notebook_path):
     if len(filtered_cells) != len(nb.cells):
         nb.cells = filtered_cells
         nbformat.write(nb, notebook_path)
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--nbmake-clean",
+        action="store",
+        default="on-success",
+        choices=["always", "on-success", "never"],
+        help="When to clear outputs from executed notebooks: always, on-success (default), never",
+    )
+
+_executed_notebooks = set()
+_passed_notebooks = set()
+
+def _is_notebook_item(item):
+    try:
+        return Path(str(item.fspath)).suffix == ".ipynb"
+    except Exception:
+        return False
+
+def pytest_runtest_setup(item):
+    # record that this notebook is being executed
+    if _is_notebook_item(item):
+        _executed_notebooks.add(Path(str(item.fspath)))
+
+def pytest_runtest_makereport(item, call):
+    # called for setup/call/teardown — only consider the 'call' phase
+    if call.when != "call":
+        return
+    if not _is_notebook_item(item):
+        return
+    # success if no exception info
+    if call.excinfo is None:
+        _passed_notebooks.add(Path(str(item.fspath)))
+
+def _clear_outputs_with_nbformat(nb_path: Path):
+    if nbformat is None:
+        return False
+    nb = nbformat.read(str(nb_path), as_version=nbformat.NO_CONVERT)
+    changed = False
+    for cell in nb.cells:
+        if cell.get("outputs"):
+            cell["outputs"] = []
+            changed = True
+        if "execution_count" in cell and cell["execution_count"] is not None:
+            cell["execution_count"] = None
+            changed = True
+    if changed:
+        nbformat.write(nb, str(nb_path))
+    return changed
+
+def _clear_outputs_with_nbconvert(nb_path: Path):
+    # fallback if nbformat isn't available or you prefer nbconvert
+    subprocess.run([
+        "jupyter", "nbconvert",
+        "--ClearOutputPreprocessor.enabled=True",
+        "--inplace", str(nb_path)
+    ], check=False)
+
+def pytest_sessionfinish(session, exitstatus):
+    mode = session.config.getoption("--nbmake-clean")
+    if mode == "never":
+        return
+
+    if mode == "always":
+        to_clean = _executed_notebooks
+    else:  # on-success
+        to_clean = _passed_notebooks
+
+    if not to_clean:
+        return
+
+    cleaned = []
+    for nb in sorted(to_clean):
+        # prefer programmatic clearing; fallback to nbconvert
+        ok = False
+        if nbformat is not None:
+            try:
+                ok = _clear_outputs_with_nbformat(nb)
+            except Exception:
+                ok = False
+        if not ok:
+            _clear_outputs_with_nbconvert(nb)
+        cleaned.append(str(nb))
+
+    print(f"\n[nbmake-clean] cleaned outputs from {len(cleaned)} executed notebook(s):")
+    for p in cleaned:
+        print("  -", p)
