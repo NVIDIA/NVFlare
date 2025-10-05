@@ -38,7 +38,7 @@ class ModelDequantizer(DXOFilter):
         # support weight and weight_diff data kinds
         data_kinds = [DataKind.WEIGHTS, DataKind.WEIGHT_DIFF]
         super().__init__(supported_data_kinds=data_kinds, data_kinds_to_filter=data_kinds)
-        self.logger.info("Using model dequantizator.")
+        self.logger.info("Using model dequantizer.")
 
     def dequantization(
         self, params: dict, quant_state: dict, quantization_type: str, source_datatype: dict, fl_ctx: FLContext
@@ -188,6 +188,6 @@ class ModelDequantizer(DXOFilter):
         dxo.data = dequantized_params
         dxo.remove_meta_props([MetaKey.PROCESSED_ALGORITHM, "quant_state", "source_datatype", "quantized_flag"])
         dxo.update_shareable(shareable)
-        self.log_info(fl_ctx, f"Dequantized back to {source_datatype}")
+        self.log_info(fl_ctx, "Dequantized back to original precision")
 
         return dxo
