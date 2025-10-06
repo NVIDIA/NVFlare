@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Union
+
 import torch
 
 TENSORS_CHANNEL = "tensor_stream"
 SAFE_TENSORS_PROP_KEY = "_safe_tensors_blob_"
 
-TensorsMap = dict[str, torch.Tensor] | dict[str, dict[str, torch.Tensor]]
+TensorsMap = Union[dict[str, torch.Tensor], dict[str, dict[str, torch.Tensor]]]
 
 
 class TensorTopics:

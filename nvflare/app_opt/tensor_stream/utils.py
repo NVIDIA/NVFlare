@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Union
+
 import numpy as np
 import torch
 
@@ -80,7 +82,7 @@ def get_targets_for_ctx_and_prop_key(fl_ctx: FLContext, ctx_prop_key: str) -> li
         raise ValueError(f"Unsupported context property key: {ctx_prop_key}")
 
 
-def to_numpy_recursive(obj: torch.Tensor | dict[str, torch.Tensor]) -> dict[str, np.ndarray] | np.ndarray:
+def to_numpy_recursive(obj: Union[torch.Tensor, dict[str, torch.Tensor]]) -> Union[dict[str, np.ndarray], np.ndarray]:
     """Recursively convert objects with a `numpy` method to numpy arrays."""
     if hasattr(obj, "numpy"):
         return obj.numpy()
@@ -91,8 +93,8 @@ def to_numpy_recursive(obj: torch.Tensor | dict[str, torch.Tensor]) -> dict[str,
 
 
 def to_torch_recursive(
-    obj: np.ndarray | dict[str, np.ndarray], device: torch.device = "cpu"
-) -> dict[str, torch.Tensor] | torch.Tensor:
+    obj: Union[np.ndarray, dict[str, np.ndarray]], device: torch.device = "cpu"
+) -> Union[dict[str, torch.Tensor], torch.Tensor]:
     """Recursively convert numpy arrays to torch tensors."""
     if isinstance(obj, np.ndarray):
         return torch.from_numpy(obj).to(device)
