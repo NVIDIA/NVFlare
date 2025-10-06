@@ -77,6 +77,8 @@ class Group:
             the_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
             ctx = the_proxy.app.new_context(the_proxy.app.name, the_proxy.name)
 
+            self._logger.debug(f"[{ctx.header_str()}] calling {func_name} of group {[p.name for p in self._proxies]}")
+
             # apply outgoing call filters
             adj_kwargs = self._app.apply_outgoing_call_filters(p.target_name, func_name, adj_kwargs, ctx)
             check_call_args(func_name, func_itf, adj_args, adj_kwargs)
@@ -198,6 +200,66 @@ def all_clients(
         ctx.app,
         ctx.abort_signal,
         ctx.clients,
+        blocking,
+        timeout,
+        optional,
+        secure,
+        min_resps,
+        wait_after_min_resps,
+        process_resp_cb,
+        **cb_kwargs,
+    )
+
+
+def all_children(
+    ctx: Context,
+    blocking: bool = True,
+    timeout: float = 5.0,
+    optional: bool = False,
+    secure: bool = False,
+    min_resps: int = None,
+    wait_after_min_resps: float = None,
+    process_resp_cb=None,
+    **cb_kwargs,
+):
+    clients = ctx.app.get_children()
+    if not clients:
+        raise RuntimeError(f"app {ctx.app.name} has no child clients")
+
+    return Group(
+        ctx.app,
+        ctx.abort_signal,
+        clients,
+        blocking,
+        timeout,
+        optional,
+        secure,
+        min_resps,
+        wait_after_min_resps,
+        process_resp_cb,
+        **cb_kwargs,
+    )
+
+
+def all_leaf_clients(
+    ctx: Context,
+    blocking: bool = True,
+    timeout: float = 5.0,
+    optional: bool = False,
+    secure: bool = False,
+    min_resps: int = None,
+    wait_after_min_resps: float = None,
+    process_resp_cb=None,
+    **cb_kwargs,
+):
+    clients = ctx.app.get_leaf_clients()
+    if not clients:
+        raise RuntimeError(f"app {ctx.app.name} has no leaf clients")
+
+    return Group(
+        ctx.app,
+        ctx.abort_signal,
+        clients,
         blocking,
         timeout,
         optional,

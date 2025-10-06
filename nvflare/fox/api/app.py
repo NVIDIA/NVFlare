@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.tree_utils import Forest, Node
 
 from .constants import CollabMethodArgName, ContextKey, FilterDirection
 from .ctx import Context
@@ -31,8 +32,10 @@ class App:
 
     def __init__(self):
         self.name = None
+        self.fqn = None
         self.server = None
         self.clients = None
+        self.client_hierarchy = None
         self.env_type = None
         self._me = None
         self._collab_objs = {}
@@ -247,6 +250,17 @@ class App:
                     check_context_support(h, kwargs)
                     h(event_type, data, **kwargs)
 
+    def get_children(self):
+        return []
+
+    def has_children(self):
+        return True
+
+    def get_leaf_clients(self):
+        assert isinstance(self.client_hierarchy, Forest)
+        leaf_nodes = [self.client_hierarchy.nodes[n] for n in self.client_hierarchy.leaves]
+        return [node.obj for node in leaf_nodes]
+
 
 class ServerApp(App):
 
@@ -272,9 +286,34 @@ class ServerApp(App):
     def get_default_collab_object(self):
         return self.current_strategy
 
+    def get_children(self):
+        assert isinstance(self.client_hierarchy, Forest)
+        root_nodes = [self.client_hierarchy.nodes[n] for n in self.client_hierarchy.roots]
+        return [node.obj for node in root_nodes]
+
+    def has_children(self):
+        return True
+
 
 class ClientApp(App):
-    pass
+
+    def get_children(self):
+        assert isinstance(self.client_hierarchy, Forest)
+        my_node = self.client_hierarchy.nodes[self.name]
+        assert isinstance(my_node, Node)
+        if my_node.children:
+            return [node.obj for node in my_node.children]
+        else:
+            return None
+
+    def has_children(self):
+        assert isinstance(self.client_hierarchy, Forest)
+        my_node = self.client_hierarchy.nodes[self.name]
+        assert isinstance(my_node, Node)
+        if my_node.children:
+            return True
+        else:
+            return False
 
 
 class ClientAppFactory(ABC):

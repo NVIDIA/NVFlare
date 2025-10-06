@@ -16,6 +16,7 @@ import random
 from nvflare.fox.api.app import ClientApp, ClientAppFactory
 from nvflare.fox.api.ctx import Context
 from nvflare.fox.api.dec import collab
+from nvflare.fox.api.group import all_children
 
 
 class NPTrainer(ClientApp):
@@ -26,6 +27,51 @@ class NPTrainer(ClientApp):
 
     @collab
     def train(self, current_round, weights, context: Context):
+        if context.is_aborted():
+            self.logger.debug("training aborted")
+            return 0
+        self.logger.debug(f"[{context.header_str()}] trained round {current_round}")
+
+        # metric_receiver = self.server.get_target("metric_receiver")
+        # if metric_receiver:
+        #     self.server.accept_metric({"round": r, "y": 2})
+        #     self.server.metric_receiver.accept_metric({"round": r, "y": 2})
+        #
+        self.server.fire_event("metrics", {"round": current_round, "y": 10}, _blocking=False)
+        return weights + self.delta
+
+    @collab
+    def evaluate(self, model, context: Context):
+        self.logger.debug(f"[{context.header_str()}] evaluate")
+        return random.random()
+
+
+class NPHierarchicalTrainer(ClientApp):
+
+    def __init__(self, delta: float):
+        ClientApp.__init__(self)
+        self.delta = delta
+
+    @collab
+    def train(self, current_round, weights, context: Context):
+        if context.is_aborted():
+            self.logger.debug("training aborted")
+            return 0
+
+        self.logger.debug(f"[{context.header_str()}] training round {current_round}")
+        if context.app.has_children():
+            total = 0
+            results = all_children(context).train(current_round, weights)
+            for n, v in results.items():
+                total += v
+            result = total / len(results)
+            self.logger.debug(f"[{context.header_str()}]: aggr result from children of round {current_round}: {result}")
+        else:
+            result = self._local_train(current_round, weights, context)
+            self.logger.debug(f"[{context.header_str()}]: local train result of round {current_round}: {result}")
+        return result
+
+    def _local_train(self, current_round, weights, context: Context):
         if context.is_aborted():
             self.logger.debug("training aborted")
             return 0
