@@ -410,7 +410,7 @@ class HubController(Controller):
                         self.log_warning(fl_ctx, "CONTRIBUTION_ROUND Not Set!")
 
                     self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
-                    fl_ctx.set_prop(key=FLContextKey.TASK_DATA, value=task_data, private=True, sticky=True)
+                    fl_ctx.set_prop(key=FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
                     self.current_task_name = task_name
                     self.current_task_id = task_id
                     self.task_abort_signal = abort_signal

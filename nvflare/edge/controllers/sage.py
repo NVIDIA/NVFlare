@@ -160,8 +160,11 @@ class ScatterAndGatherForEdge(Controller):
                 task_data.set_header(EdgeTaskHeaderKey.UPDATE_INTERVAL, self._update_interval)
                 task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
-                fl_ctx.set_prop(FLContextKey.TASK_DATA, task_data, private=True, sticky=True)
-                self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
+                try:
+                    fl_ctx.set_prop(FLContextKey.TASK_DATA, task_data, private=True, sticky=False)
+                    self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
+                finally:
+                    fl_ctx.set_prop(FLContextKey.TASK_DATA, None, private=True, sticky=False)
 
                 task = Task(
                     name=self.task_name,

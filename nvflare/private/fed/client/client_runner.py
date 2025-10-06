@@ -258,8 +258,8 @@ class ClientRunner(TBI):
             self.log_error(fl_ctx, f"got invalid task data in assignment: expect Shareable, but got {type(task.data)}")
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=True)
-        fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=True)
+        fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task.name, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task.task_id, private=True, sticky=False)
 
         server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
@@ -355,8 +355,13 @@ class ClientRunner(TBI):
         self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_EXECUTION")
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=True)
-        self.fire_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
+
+        try:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
+            self.fire_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
+        finally:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, value=None, private=True, sticky=False)
+
         try:
             self.log_info(fl_ctx, f"invoking task executor {executor_name}")
             add_job_audit_event(fl_ctx=fl_ctx, msg=f"invoked executor {executor_name}")
@@ -453,11 +458,13 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}",
             )
 
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=True)
-
-        self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
-        self.fire_event(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx)
-        self.log_info(fl_ctx, "finished processing task")
+        try:
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
+            self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
+            self.fire_event(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx)
+            self.log_info(fl_ctx, "finished processing task")
+        finally:
+            fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=None, private=True, sticky=False)
 
         if not isinstance(reply, Shareable):
             self.log_error(
