@@ -12,25 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import StreamableEngine, StreamContext
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-from .producer import TorchTensorsProducer
+from .producer import TensorProducer
 from .types import TENSORS_CHANNEL
-from .utils import (
-    get_targets_for_ctx_and_prop_key,
-    get_topic_for_ctx_prop_key,
-    to_torch_recursive,
-    validate_numpy_dict_params_recursive,
-    validate_torch_dict_params_recursive,
-)
+from .utils import get_dxo_from_ctx, get_targets_for_ctx_and_prop_key, get_tensors_from_dxo, get_topic_for_ctx_prop_key
 
 
 class TensorSender:
@@ -40,8 +30,8 @@ class TensorSender:
         self,
         engine: StreamableEngine,
         ctx_prop_key: FLContextKey,
-        root_keys: list[str],
-        format: ExchangeFormat = ExchangeFormat.PYTORCH,
+        format: ExchangeFormat,
+        tasks: list[str],
         channel: str = TENSORS_CHANNEL,
     ):
         """Initialize the TensorSender.
@@ -49,13 +39,13 @@ class TensorSender:
         Args:
             engine (StreamableEngine): The streamable engine to use for streaming.
             ctx_prop_key (FLContextKey): The context property key to send tensors for.
-            root_keys (list[str]): The root keys in the DXO data dict to send tensors for.
             channel (str): The channel to use for streaming. Default is TENSORS_CHANNEL.
         """
         self.engine = engine
         self.ctx_prop_key = ctx_prop_key
-        self.root_keys = root_keys
+        self.root_keys = []
         self.format = format
+        self.tasks = tasks
         self.channel = channel
         self.logger = get_obj_logger(self)
 
@@ -63,7 +53,7 @@ class TensorSender:
         self,
         fl_ctx: FLContext,
         entry_timeout: float,
-    ):
+    ) -> bool:
         """Send tensors to the peer.
 
         Args:
@@ -74,13 +64,28 @@ class TensorSender:
 
         self.logger.debug(f"Sending tensors to peer: {peer_name}")
 
-        data = self._get_dxo_from_ctx(fl_ctx)
+        try:
+            dxo = get_dxo_from_ctx(fl_ctx, self.ctx_prop_key, self.tasks)
+        except ValueError as exc:
+            self.logger.warning(f"{exc}. Nothing to send.")
+            return False
+
+        for key, value in dxo.data.items():
+            # auto-detect tensor stored on root keys
+            if not isinstance(value, dict) and "" not in self.root_keys:
+                self.root_keys.append("")
+            elif isinstance(value, dict) and key not in self.root_keys:
+                self.root_keys.append(key)
+
         for key in self.root_keys:
-            tensors = self._get_tensors_from_dxo(data, key=key)
-            producer = TorchTensorsProducer(tensors, entry_timeout, root_key=key)
+            tensors = get_tensors_from_dxo(dxo, key, self.format)
+            producer = TensorProducer(tensors, entry_timeout, root_key=key)
+            self.logger.info(f"Starting to send {len(producer.tensors_keys)} tensors for root key '{key}'")
             self._send_tensors(targets, producer, fl_ctx)
 
-    def _send_tensors(self, targets: list[str], producer: TorchTensorsProducer, fl_ctx: FLContext):
+        return True
+
+    def _send_tensors(self, targets: list[str], producer: TensorProducer, fl_ctx: FLContext):
         """Send tensors to the peer using the StreamableEngine."""
         stream_ctx = StreamContext()
         self.engine.stream_objects(
@@ -93,68 +98,3 @@ class TensorSender:
             optional=False,
             secure=False,
         )
-
-    def _get_dxo_from_ctx(self, fl_ctx: FLContext) -> DXO:
-        """Extract model parameters from the FLContext based on the provided property key.
-
-        Args:
-            fl_ctx (FLContext): The FLContext containing the data.
-
-        Returns:
-            dict[str, torch.Tensor]: A dictionary of data extracted from the FLContext.
-        """
-        data: Shareable = fl_ctx.get_prop(self.ctx_prop_key)
-        if data is None:
-            self.logger.warning("No task data found in FLContext")
-            return None
-
-        dxo = from_shareable(data)
-        if dxo.data_kind not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
-            return None
-
-        return dxo
-
-    def _get_tensors_from_dxo(self, dxo: DXO, key: str) -> dict[str, torch.Tensor]:
-        """Extract tensors from the FLContext based on the provided property key.
-
-        Args:
-            dxo (DXO): The DXO containing the data.
-            key (str): The key to extract tensors for.
-
-        Returns:
-            dict[str, torch.Tensor]: A dictionary of tensors extracted from the FLContext.
-        Raises:
-            TypeError: If the tensor data type is unsupported.
-            ValueError: If no tensors are found in the context shareable.
-        """
-        if not key:
-            data = dxo.data
-        else:
-            data = dxo.data.get(key)
-
-        if not data:
-            msg = "No tensor data found on the context shareable."
-            if key:
-                msg += f" Key='{key}'"
-            self.logger.error(msg)
-            raise ValueError(msg)
-
-        if not isinstance(data, dict):
-            self.logger.error(f"Expected tensor data to be a dict, but got {type(data)}")
-            raise ValueError(f"Expected tensor data to be a dict, but got {type(data)}")
-
-        if self.format == ExchangeFormat.PYTORCH:
-            validate_torch_dict_params_recursive(data)
-            tensors = data
-        elif self.format == ExchangeFormat.NUMPY:
-            validate_numpy_dict_params_recursive(data)
-            tensors = to_torch_recursive(data)
-        else:
-            self.logger.error(f"Unsupported tensor data type: {self.format}")
-            raise TypeError(f"Unsupported tensor data type: {self.format}")
-
-        if not tensors:
-            self.logger.error(f"No tensors found on context shareable with key {self.ctx_prop_key}")
-            raise ValueError(f"No tensors found on context shareable with key {self.ctx_prop_key}")
-
-        return tensors

@@ -14,17 +14,28 @@
 
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
+import torch
 
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.job_def import SERVER_SITE_NAME
+from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.tensor_stream.types import TensorTopics
 from nvflare.app_opt.tensor_stream.utils import (
     clean_task_data,
     clean_task_result,
+    get_dxo_from_ctx,
     get_targets_for_ctx_and_prop_key,
+    get_tensors_from_dxo,
     get_topic_for_ctx_prop_key,
+    to_numpy_recursive,
+    to_torch_recursive,
+    validate_numpy_dict_params_recursive,
+    validate_torch_dict_params_recursive,
 )
+from nvflare.client.config import ExchangeFormat
 
 
 class TestCleanTaskData:
@@ -267,6 +278,418 @@ class TestGetTargetsForCtxAndPropKey:
         task_result_targets = get_targets_for_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_RESULT)
         assert isinstance(task_result_targets, list)
         assert len(task_result_targets) == 1
+
+
+class TestToNumpyRecursive:
+    """Test cases for to_numpy_recursive function."""
+
+    def test_convert_single_tensor(self):
+        """Test converting a single torch tensor to numpy."""
+        tensor = torch.tensor([1.0, 2.0, 3.0])
+        result = to_numpy_recursive(tensor)
+
+        assert isinstance(result, np.ndarray)
+        np.testing.assert_array_equal(result, np.array([1.0, 2.0, 3.0]))
+
+    def test_convert_dict_of_tensors(self, random_torch_tensors):
+        """Test converting a dictionary of torch tensors to numpy arrays."""
+        result = to_numpy_recursive(random_torch_tensors)
+
+        assert isinstance(result, dict)
+        assert len(result) == len(random_torch_tensors)
+
+        for key, value in result.items():
+            assert isinstance(value, np.ndarray)
+            np.testing.assert_array_equal(value, random_torch_tensors[key].numpy())
+
+    def test_convert_nested_dict_tensors(self, sample_nested_tensors):
+        """Test converting nested dictionary of torch tensors to numpy arrays."""
+        result = to_numpy_recursive(sample_nested_tensors)
+
+        assert isinstance(result, dict)
+        assert "encoder" in result and "decoder" in result
+
+        for section_name, section_tensors in result.items():
+            assert isinstance(section_tensors, dict)
+            for key, value in section_tensors.items():
+                assert isinstance(value, np.ndarray)
+                np.testing.assert_array_equal(value, sample_nested_tensors[section_name][key].numpy())
+
+    def test_unsupported_object_raises_error(self):
+        """Test that unsupported objects raise ValueError."""
+        with pytest.raises(ValueError, match="Unsupported object type"):
+            to_numpy_recursive("invalid_string")
+
+        with pytest.raises(ValueError, match="Unsupported object type"):
+            to_numpy_recursive(123)
+
+    def test_mixed_dict_with_invalid_value(self):
+        """Test dict containing non-tensor values raises error."""
+        mixed_dict = {"tensor": torch.tensor([1.0, 2.0]), "invalid": "not_a_tensor"}
+        with pytest.raises(ValueError, match="Unsupported object type"):
+            to_numpy_recursive(mixed_dict)
+
+
+class TestToTorchRecursive:
+    """Test cases for to_torch_recursive function."""
+
+    def test_convert_single_array(self):
+        """Test converting a single numpy array to torch tensor."""
+        array = np.array([1.0, 2.0, 3.0])
+        result = to_torch_recursive(array)
+
+        assert isinstance(result, torch.Tensor)
+        torch.testing.assert_close(result, torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64))
+
+    def test_convert_dict_of_arrays(self):
+        """Test converting a dictionary of numpy arrays to torch tensors."""
+        arrays = {"weight": np.array([[1.0, 2.0], [3.0, 4.0]]), "bias": np.array([0.1, 0.2])}
+        result = to_torch_recursive(arrays)
+
+        assert isinstance(result, dict)
+        assert len(result) == 2
+
+        for key, value in result.items():
+            assert isinstance(value, torch.Tensor)
+            torch.testing.assert_close(value, torch.from_numpy(arrays[key]))
+
+    def test_convert_nested_dict_arrays(self):
+        """Test converting nested dictionary of numpy arrays to torch tensors."""
+        nested_arrays = {
+            "encoder": {"weight": np.array([[1.0, 2.0]]), "bias": np.array([0.1])},
+            "decoder": {"weight": np.array([[3.0, 4.0]]), "bias": np.array([0.2])},
+        }
+        result = to_torch_recursive(nested_arrays)
+
+        assert isinstance(result, dict)
+        assert "encoder" in result and "decoder" in result
+
+        for section_name, section_arrays in result.items():
+            assert isinstance(section_arrays, dict)
+            for key, value in section_arrays.items():
+                assert isinstance(value, torch.Tensor)
+                expected = torch.from_numpy(nested_arrays[section_name][key])
+                torch.testing.assert_close(value, expected)
+
+    def test_convert_with_device(self):
+        """Test converting with specified device."""
+        array = np.array([1.0, 2.0, 3.0])
+        result = to_torch_recursive(array, device=torch.device("cpu"))
+
+        assert isinstance(result, torch.Tensor)
+        assert result.device == torch.device("cpu")
+        torch.testing.assert_close(result, torch.tensor([1.0, 2.0, 3.0], dtype=torch.float64))
+
+    def test_unsupported_object_raises_error(self):
+        """Test that unsupported objects raise ValueError."""
+        with pytest.raises(ValueError, match="Unsupported object type"):
+            to_torch_recursive("invalid_string")
+
+        with pytest.raises(ValueError, match="Unsupported object type"):
+            to_torch_recursive(123)
+
+    def test_mixed_dict_with_invalid_value(self):
+        """Test dict containing non-array values raises error."""
+        mixed_dict = {"array": np.array([1.0, 2.0]), "invalid": "not_an_array"}
+        with pytest.raises(ValueError, match="Unsupported object type"):
+            to_torch_recursive(mixed_dict)
+
+
+class TestValidateTorchDictParamsRecursive:
+    """Test cases for validate_torch_dict_params_recursive function."""
+
+    def test_valid_torch_dict(self, random_torch_tensors):
+        """Test validation of valid torch tensor dictionary."""
+        # Should not raise any exception
+        validate_torch_dict_params_recursive(random_torch_tensors)
+
+    def test_valid_nested_torch_dict(self, sample_nested_tensors):
+        """Test validation of valid nested torch tensor dictionary."""
+        # Should not raise any exception
+        validate_torch_dict_params_recursive(sample_nested_tensors)
+
+    def test_non_dict_raises_error(self):
+        """Test that non-dictionary input raises ValueError."""
+        with pytest.raises(ValueError, match="Expected a dictionary"):
+            validate_torch_dict_params_recursive("not_a_dict")
+
+        with pytest.raises(ValueError, match="Expected a dictionary"):
+            validate_torch_dict_params_recursive(torch.tensor([1.0, 2.0]))
+
+    def test_dict_with_non_tensor_raises_error(self):
+        """Test that dictionary with non-tensor values raises ValueError."""
+        invalid_dict = {"tensor": torch.tensor([1.0, 2.0]), "invalid": "not_a_tensor"}
+        with pytest.raises(ValueError, match="Expected torch.Tensor for key 'invalid'"):
+            validate_torch_dict_params_recursive(invalid_dict)
+
+    def test_nested_dict_with_non_tensor_raises_error(self):
+        """Test that nested dictionary with non-tensor values raises ValueError."""
+        invalid_nested_dict = {
+            "valid_section": {"tensor": torch.tensor([1.0, 2.0])},
+            "invalid_section": {
+                "tensor": torch.tensor([3.0, 4.0]),
+                "invalid": np.array([1.0, 2.0]),  # numpy array instead of torch tensor
+            },
+        }
+        with pytest.raises(ValueError, match="Expected torch.Tensor for key 'invalid'"):
+            validate_torch_dict_params_recursive(invalid_nested_dict)
+
+    def test_empty_dict_is_valid(self):
+        """Test that empty dictionary is considered valid."""
+        # Should not raise any exception
+        validate_torch_dict_params_recursive({})
+
+    def test_deeply_nested_dict(self):
+        """Test validation of deeply nested dictionary."""
+        deeply_nested = {"level1": {"level2": {"tensor": torch.tensor([1.0, 2.0])}}}
+        # Should not raise any exception
+        validate_torch_dict_params_recursive(deeply_nested)
+
+
+class TestValidateNumpyDictParamsRecursive:
+    """Test cases for validate_numpy_dict_params_recursive function."""
+
+    def test_valid_numpy_dict(self):
+        """Test validation of valid numpy array dictionary."""
+        numpy_dict = {"weight": np.array([[1.0, 2.0], [3.0, 4.0]]), "bias": np.array([0.1, 0.2])}
+        # Should not raise any exception
+        validate_numpy_dict_params_recursive(numpy_dict)
+
+    def test_valid_nested_numpy_dict(self):
+        """Test validation of valid nested numpy array dictionary."""
+        nested_numpy_dict = {
+            "encoder": {"weight": np.array([[1.0, 2.0]]), "bias": np.array([0.1])},
+            "decoder": {"weight": np.array([[3.0, 4.0]]), "bias": np.array([0.2])},
+        }
+        # Should not raise any exception
+        validate_numpy_dict_params_recursive(nested_numpy_dict)
+
+    def test_non_dict_raises_error(self):
+        """Test that non-dictionary input raises ValueError."""
+        with pytest.raises(ValueError, match="Expected a dictionary"):
+            validate_numpy_dict_params_recursive("not_a_dict")
+
+        with pytest.raises(ValueError, match="Expected a dictionary"):
+            validate_numpy_dict_params_recursive(np.array([1.0, 2.0]))
+
+    def test_dict_with_non_array_raises_error(self):
+        """Test that dictionary with non-array values raises ValueError."""
+        invalid_dict = {"array": np.array([1.0, 2.0]), "invalid": "not_an_array"}
+        with pytest.raises(ValueError, match="Expected np.ndarray for key 'invalid'"):
+            validate_numpy_dict_params_recursive(invalid_dict)
+
+    def test_dict_with_torch_tensor_raises_error(self):
+        """Test that dictionary with torch tensor values raises ValueError."""
+        invalid_dict = {
+            "array": np.array([1.0, 2.0]),
+            "tensor": torch.tensor([3.0, 4.0]),  # torch tensor instead of numpy array
+        }
+        with pytest.raises(ValueError, match="Expected np.ndarray for key 'tensor'"):
+            validate_numpy_dict_params_recursive(invalid_dict)
+
+    def test_empty_dict_is_valid(self):
+        """Test that empty dictionary is considered valid."""
+        # Should not raise any exception
+        validate_numpy_dict_params_recursive({})
+
+
+class TestGetDxoFromCtx:
+    """Test cases for get_dxo_from_ctx function."""
+
+    def test_get_dxo_success(self, mock_fl_context):
+        """Test successful DXO extraction from context."""
+        # Setup task shareable
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data={"model": torch.tensor([1.0, 2.0])})
+        task_shareable = dxo.to_shareable()
+        task_shareable.set_header(ReservedKey.TASK_NAME, "train")
+
+        mock_fl_context.get_prop.return_value = task_shareable
+
+        # Test extraction
+        result_dxo = get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_DATA, ["train", "validate"])
+
+        assert isinstance(result_dxo, DXO)
+        assert result_dxo.data_kind == DataKind.WEIGHTS
+        mock_fl_context.get_prop.assert_called_once_with(FLContextKey.TASK_DATA)
+
+    def test_get_dxo_weight_diff(self, mock_fl_context):
+        """Test successful DXO extraction with WEIGHT_DIFF data kind."""
+        # Setup task shareable with WEIGHT_DIFF
+        dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data={"diff": torch.tensor([0.1, 0.2])})
+        task_shareable = dxo.to_shareable()
+        task_shareable.set_header(ReservedKey.TASK_NAME, "aggregate")
+
+        mock_fl_context.get_prop.return_value = task_shareable
+
+        # Test extraction
+        result_dxo = get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_RESULT, ["aggregate"])
+
+        assert isinstance(result_dxo, DXO)
+        assert result_dxo.data_kind == DataKind.WEIGHT_DIFF
+
+    def test_no_task_in_context_raises_error(self, mock_fl_context):
+        """Test that missing task in context raises ValueError."""
+        mock_fl_context.get_prop.return_value = None
+
+        with pytest.raises(ValueError, match="No task found in FLContext"):
+            get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_DATA, ["train"])
+
+    def test_no_task_name_raises_error(self, mock_fl_context):
+        """Test that missing task name raises ValueError."""
+        task_shareable = Shareable()
+        # No task name set in header
+        mock_fl_context.get_prop.return_value = task_shareable
+
+        with pytest.raises(ValueError, match="No task name found in Shareable header"):
+            get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_DATA, ["train"])
+
+    def test_invalid_task_name_raises_error(self, mock_fl_context):
+        """Test that invalid task name raises ValueError."""
+        task_shareable = Shareable()
+        task_shareable.set_header(ReservedKey.TASK_NAME, "invalid_task")
+        mock_fl_context.get_prop.return_value = task_shareable
+
+        with pytest.raises(ValueError, match="Task name 'invalid_task' not part of configured tasks"):
+            get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_DATA, ["train", "validate"])
+
+    def test_invalid_data_kind_raises_error(self, mock_fl_context):
+        """Test that invalid data kind raises ValueError."""
+        dxo = DXO(data_kind=DataKind.METRICS, data={"accuracy": 0.95})  # Invalid data kind
+        task_shareable = dxo.to_shareable()
+        task_shareable.set_header(ReservedKey.TASK_NAME, "train")
+
+        mock_fl_context.get_prop.return_value = task_shareable
+
+        with pytest.raises(ValueError, match="Skipping task, data kind is not WEIGHTS or WEIGHT_DIFF"):
+            get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_DATA, ["train"])
+
+    @pytest.mark.parametrize("task_name", ["train", "validate", "aggregate", "submit_model"])
+    def test_various_valid_task_names(self, mock_fl_context, task_name):
+        """Test various valid task names."""
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data={"model": torch.tensor([1.0])})
+        task_shareable = dxo.to_shareable()
+        task_shareable.set_header(ReservedKey.TASK_NAME, task_name)
+
+        mock_fl_context.get_prop.return_value = task_shareable
+
+        result_dxo = get_dxo_from_ctx(
+            mock_fl_context, FLContextKey.TASK_DATA, ["train", "validate", "aggregate", "submit_model"]
+        )
+
+        assert isinstance(result_dxo, DXO)
+        assert result_dxo.data_kind == DataKind.WEIGHTS
+
+
+class TestGetTensorsFromDxo:
+    """Test cases for get_tensors_from_dxo function."""
+
+    def test_get_tensors_pytorch_format(self, sample_dxo_weights):
+        """Test extracting tensors from DXO in PyTorch format."""
+        result = get_tensors_from_dxo(sample_dxo_weights, "", ExchangeFormat.PYTORCH)
+
+        assert isinstance(result, dict)
+        for key, value in result.items():
+            assert isinstance(value, torch.Tensor)
+            assert key in sample_dxo_weights.data
+
+    def test_get_tensors_numpy_format(self):
+        """Test extracting tensors from DXO in NumPy format."""
+        # Create DXO with numpy arrays
+        numpy_data = {"weight": np.array([[1.0, 2.0], [3.0, 4.0]]), "bias": np.array([0.1, 0.2])}
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data=numpy_data)
+
+        result = get_tensors_from_dxo(dxo, "", ExchangeFormat.NUMPY)
+
+        assert isinstance(result, dict)
+        for key, value in result.items():
+            assert isinstance(value, torch.Tensor)
+            torch.testing.assert_close(value, torch.from_numpy(numpy_data[key]))
+
+    def test_get_tensors_with_key(self, sample_dxo_nested_weights):
+        """Test extracting tensors with specific key."""
+        result = get_tensors_from_dxo(sample_dxo_nested_weights, "encoder", ExchangeFormat.PYTORCH)
+
+        assert isinstance(result, dict)
+        for key, value in result.items():
+            assert isinstance(value, torch.Tensor)
+            assert key in sample_dxo_nested_weights.data["encoder"]
+
+    def test_get_tensors_empty_key_uses_all_data(self, sample_dxo_weights):
+        """Test that empty key extracts all data."""
+        result = get_tensors_from_dxo(sample_dxo_weights, "", ExchangeFormat.PYTORCH)
+
+        assert len(result) == len(sample_dxo_weights.data)
+        for key in sample_dxo_weights.data.keys():
+            assert key in result
+
+    def test_no_data_raises_error(self):
+        """Test that missing data raises ValueError."""
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data={})
+
+        with pytest.raises(ValueError, match="No tensor data found on the context shareable"):
+            get_tensors_from_dxo(dxo, "", ExchangeFormat.PYTORCH)
+
+    def test_missing_key_raises_error(self, sample_dxo_weights):
+        """Test that missing key raises ValueError."""
+        with pytest.raises(ValueError, match="No tensor data found on the context shareable. Key='missing_key'"):
+            get_tensors_from_dxo(sample_dxo_weights, "missing_key", ExchangeFormat.PYTORCH)
+
+    def test_non_dict_data_raises_error(self):
+        """Test that non-dictionary data raises ValueError."""
+        # DXO creation with string data should fail during construction
+        with pytest.raises(ValueError, match="invalid DXO: invalid data"):
+            dxo = DXO(data_kind=DataKind.WEIGHTS, data="not_a_dict")
+
+    def test_get_tensors_with_non_dict_data(self, sample_dxo_weights):
+        """Test that get_tensors_from_dxo handles non-dict data properly."""
+        # Create a valid DXO first
+        dxo = sample_dxo_weights
+        # Then manually corrupt the data to test error handling
+        dxo.data = "not_a_dict"
+
+        with pytest.raises(ValueError, match="Expected tensor data to be a dict"):
+            get_tensors_from_dxo(dxo, "", ExchangeFormat.PYTORCH)
+
+    def test_unsupported_format_raises_error(self, sample_dxo_weights):
+        """Test that unsupported format raises TypeError."""
+        # Create a fake format that doesn't exist
+        fake_format = "UNSUPPORTED_FORMAT"
+
+        with pytest.raises(TypeError, match="Unsupported tensor data type"):
+            get_tensors_from_dxo(sample_dxo_weights, "", fake_format)
+
+    def test_pytorch_format_validation_error(self):
+        """Test that PyTorch format with invalid data raises error."""
+        # Create DXO with mixed data types
+        mixed_data = {"tensor": torch.tensor([1.0, 2.0]), "invalid": "not_a_tensor"}
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data=mixed_data)
+
+        with pytest.raises(ValueError, match="Expected torch.Tensor for key 'invalid'"):
+            get_tensors_from_dxo(dxo, "", ExchangeFormat.PYTORCH)
+
+    def test_numpy_format_validation_error(self):
+        """Test that NumPy format with invalid data raises error."""
+        # Create DXO with mixed data types
+        mixed_data = {"array": np.array([1.0, 2.0]), "invalid": "not_an_array"}
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data=mixed_data)
+
+        with pytest.raises(ValueError, match="Expected np.ndarray for key 'invalid'"):
+            get_tensors_from_dxo(dxo, "", ExchangeFormat.NUMPY)
+
+    def test_nested_data_with_key(self):
+        """Test extracting nested data with specific key."""
+        nested_data = {
+            "encoder": {"weight": torch.tensor([[1.0, 2.0]]), "bias": torch.tensor([0.1])},
+            "decoder": {"weight": torch.tensor([[3.0, 4.0]]), "bias": torch.tensor([0.2])},
+        }
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data=nested_data)
+
+        result = get_tensors_from_dxo(dxo, "encoder", ExchangeFormat.PYTORCH)
+
+        assert len(result) == 2
+        assert "weight" in result and "bias" in result
+        torch.testing.assert_close(result["weight"], nested_data["encoder"]["weight"])
+        torch.testing.assert_close(result["bias"], nested_data["encoder"]["bias"])
 
 
 class TestUtilsIntegration:

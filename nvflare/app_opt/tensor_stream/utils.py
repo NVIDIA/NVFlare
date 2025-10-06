@@ -17,10 +17,12 @@ from typing import Union
 import numpy as np
 import torch
 
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.apis.shareable import Shareable
+from nvflare.client.config import ExchangeFormat
 
 from .types import TensorTopics
 
@@ -126,3 +128,69 @@ def validate_numpy_dict_params_recursive(tensor_dict: dict):
             validate_numpy_dict_params_recursive(value)
         elif not isinstance(value, np.ndarray):
             raise ValueError(f"Expected np.ndarray for key '{key}', but got {type(value)}")
+
+
+def get_dxo_from_ctx(fl_ctx: FLContext, ctx_prop_key: FLContextKey, tasks: list[str]) -> DXO:
+    """Extract model parameters from the FLContext based on the provided property key.
+
+    Args:
+        fl_ctx (FLContext): The FLContext containing the data.
+
+    Returns:
+        dict[str, torch.Tensor]: A dictionary of data extracted from the FLContext.
+    """
+    task: Shareable = fl_ctx.get_prop(ctx_prop_key)
+    if task is None:
+        raise ValueError(f"No task found in FLContext. Looked for: {ctx_prop_key}.")
+
+    task_name = task.get_header(ReservedKey.TASK_NAME)
+    if not task_name:
+        raise ValueError("No task name found in Shareable header.")
+
+    if task_name not in tasks:
+        raise ValueError(f"Task name '{task_name}' not part of configured tasks: {tasks}")
+
+    dxo = from_shareable(task)
+    if dxo.data_kind not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):
+        raise ValueError(f"Skipping task, data kind is not WEIGHTS or WEIGHT_DIFF: {dxo.data_kind}")
+
+    return dxo
+
+
+def get_tensors_from_dxo(dxo: DXO, key: str, format: ExchangeFormat) -> dict[str, torch.Tensor]:
+    """Extract tensors from the FLContext based on the provided property key.
+
+    Args:
+        dxo (DXO): The DXO containing the data.
+        key (str): The key to extract tensors for.
+
+    Returns:
+        dict[str, torch.Tensor]: A dictionary of tensors extracted from the FLContext.
+    Raises:
+        TypeError: If the tensor data type is unsupported.
+        ValueError: If no tensors are found in the context shareable.
+    """
+    if not key:
+        data = dxo.data
+    else:
+        data = dxo.data.get(key)
+
+    if not data:
+        msg = "No tensor data found on the context shareable."
+        if key:
+            msg += f" Key='{key}'"
+        raise ValueError(msg)
+
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected tensor data to be a dict, but got {type(data)}")
+
+    if format == ExchangeFormat.PYTORCH:
+        validate_torch_dict_params_recursive(data)
+        tensors = data
+    elif format == ExchangeFormat.NUMPY:
+        validate_numpy_dict_params_recursive(data)
+        tensors = to_torch_recursive(data)
+    else:
+        raise TypeError(f"Unsupported tensor data type: {format}")
+
+    return tensors

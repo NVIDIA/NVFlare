@@ -22,7 +22,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from .types import SAFE_TENSORS_PROP_KEY, TensorBlobKeys, TensorsMap
 
 
-class TorchTensorsConsumerFactory(ConsumerFactory):
+class TensorConsumerFactory(ConsumerFactory):
     """Factory for creating TensorConsumer instances.
 
     Methods:
@@ -30,11 +30,11 @@ class TorchTensorsConsumerFactory(ConsumerFactory):
     """
 
     def get_consumer(self, stream_ctx: StreamContext, fl_ctx: FLContext) -> ObjectConsumer:
-        return TorchTensorsConsumer(stream_ctx, fl_ctx)
+        return TensorConsumer(stream_ctx, fl_ctx)
 
 
-class TorchTensorsConsumer(ObjectConsumer):
-    """TorchTensorsConsumer handles receiving and reconstructing torch tensors from a stream of byte objects.
+class TensorConsumer(ObjectConsumer):
+    """TensorConsumer handles receiving and reconstructing torch tensors from a stream of byte objects.
 
     Attributes:
         logger: Logger for logging messages.
@@ -42,7 +42,7 @@ class TorchTensorsConsumer(ObjectConsumer):
     """
 
     def __init__(self, stream_ctx: StreamContext, fl_ctx: FLContext):
-        """Initialize the TorchTensorsConsumer.
+        """Initialize the TensorConsumer.
 
         Args:
             stream_ctx (StreamContext): The stream context for the current operation. (not used)
