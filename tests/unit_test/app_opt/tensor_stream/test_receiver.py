@@ -20,7 +20,7 @@ import torch
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.shareable import Shareable
-from nvflare.app_opt.tensor_stream.consumer import TorchTensorsConsumerFactory
+from nvflare.app_opt.tensor_stream.consumer import TensorConsumerFactory
 from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
 from nvflare.app_opt.tensor_stream.types import SAFE_TENSORS_PROP_KEY, TENSORS_CHANNEL, TensorTopics
 from nvflare.client.config import ExchangeFormat
@@ -83,7 +83,7 @@ class TestTensorReceiver:
 
         assert call_args.kwargs["channel"] == expected_channel
         assert call_args.kwargs["topic"] == expected_topic
-        assert isinstance(call_args.kwargs["factory"], TorchTensorsConsumerFactory)
+        assert isinstance(call_args.kwargs["factory"], TensorConsumerFactory)
         assert call_args.kwargs["stream_done_cb"] == receiver._save_tensors_cb
 
         mock_get_topic.assert_called_once_with(ctx_prop_key)

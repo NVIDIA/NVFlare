@@ -25,8 +25,8 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from .types import TensorBlobKeys
 
 
-class TorchTensorsProducer(ObjectProducer):
-    """TorchTensorsProducer produces stream data bytes objects from a map of torch tensors.
+class TensorProducer(ObjectProducer):
+    """TensorProducer produces stream data bytes objects from a map of torch tensors.
 
     Attributes:
         logger: Logger for logging messages.

@@ -20,7 +20,7 @@ from nvflare.apis.streaming import StreamableEngine
 from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-from .consumer import TorchTensorsConsumerFactory
+from .consumer import TensorConsumerFactory
 from .types import SAFE_TENSORS_PROP_KEY, TENSORS_CHANNEL, TensorsMap
 from .utils import get_topic_for_ctx_prop_key, to_numpy_recursive
 
@@ -59,7 +59,7 @@ class TensorReceiver:
         self.engine.register_stream_processing(
             channel=self.channel,
             topic=topic,
-            factory=TorchTensorsConsumerFactory(),
+            factory=TensorConsumerFactory(),
             stream_done_cb=self._save_tensors_cb,
         )
         self.logger.info(
@@ -85,7 +85,7 @@ class TensorReceiver:
             return
 
         self.tensors[peer_name] = tensors
-        self.logger.info(f"Storing tensors received from peer {peer_name}.")
+        self.logger.debug(f"Storing tensors received from peer {peer_name}.")
 
     def set_ctx_with_tensors(self, fl_ctx: FLContext):
         """Update the context with the received tensors.
@@ -117,13 +117,12 @@ class TensorReceiver:
             self.logger.error(msg)
             raise RuntimeError(msg)
 
-        total_values = len(dxo["data"])
-
-        if total_values > 0:
+        if len(dxo["data"]) == 0 and not tensors:
             self.logger.error(
-                f"Peer '{fl_ctx.get_identity_name()}': received DXO with task data from peer"
-                f"'{peer_name}' and {total_values} tensors.",
+                f"Peer '{fl_ctx.get_identity_name()}':received task with empty data no tensors "
+                f"are present for '{peer_name}'.",
             )
+            raise RuntimeError(msg)
 
         if self.format == ExchangeFormat.PYTORCH:
             dxo["data"] = tensors
