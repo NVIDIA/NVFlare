@@ -78,7 +78,7 @@ class TorchTensorsProducer(ObjectProducer):
 
         data = Shareable()
         key = self.tensors_keys[self.current]
-        tensor = {key: self.tensors.pop(key)}
+        tensor = {key: self.tensors[key]}
 
         data[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors(tensor)
         data[TensorBlobKeys.TENSOR_KEYS] = [key]

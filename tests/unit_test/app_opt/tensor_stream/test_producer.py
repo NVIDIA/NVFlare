@@ -76,8 +76,8 @@ class TestTorchTensorsProducer:
         assert "test_tensor" in loaded_tensors
         assert torch.allclose(loaded_tensors["test_tensor"], single_tensor["test_tensor"])
 
-        # After producing, the tensor should be removed from producer's tensors
-        assert "test_tensor" not in producer.tensors
+        # After producing, the tensor should **not** be removed from producer's tensors
+        assert "test_tensor" in producer.tensors
         assert producer.last is True
         assert producer.current == 1
         assert producer.total_bytes > 0
@@ -121,7 +121,7 @@ class TestTorchTensorsProducer:
         # Verify all tensors were produced
         assert len(produced_keys) == original_tensor_count
         assert set(produced_keys) == set(random_torch_tensors.keys())
-        assert len(producer.tensors) == 0  # All tensors should be consumed
+        assert len(producer.tensors) == 10  # All tensors should still be present
 
     def test_produce_with_none_tensors(self, mock_stream_context, mock_fl_context):
         """Test producing when tensors is None."""
