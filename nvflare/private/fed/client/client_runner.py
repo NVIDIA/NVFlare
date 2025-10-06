@@ -417,7 +417,7 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.EXECUTION_EXCEPTION}",
             )
 
-        fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=True)
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_EXECUTION")
         self.fire_event(EventType.AFTER_TASK_EXECUTION, fl_ctx)
