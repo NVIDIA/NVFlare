@@ -34,34 +34,74 @@ def pytest_collection_modifyitems(config, items):
 
 
 def filter_notebook(notebook_path, kernel_name):
-    """Remove cells tagged with 'skip-execution'"""
+    """Remove cells tagged with 'skip-execution' and handle kernel specifications"""
     nb = nbformat.read(notebook_path, as_version=4)
-    # skip the kernelspec
+    
     kernel_spec_updated = False
-    kernel_spec = nb.metadata.get("kernelspec", {})
-    if nb.metadata and kernel_spec:
-        if kernel_name != kernel_spec.get("name", ""):
-            nb.metadata["kernelspec"] = {
-                "display_name": kernel_name,
-                "language": "python",
-                "name": kernel_name
-            }
-            kernel_spec_updated = True
-
+    current_spec = nb.metadata.get("kernelspec", {})
+    spec_kernel_name = current_spec.get("name", "")
+    
+    # Determine which kernel to use
+    if kernel_name:
+        # User provided --kernel flag, use that
+        target_kernel = kernel_name
+    else:
+        # No --kernel flag, use notebook's existing kernel
+        target_kernel = spec_kernel_name
+    
+    # Handle kernel specification
+    if current_spec:
+        # Check if target kernel exists and differs from current spec
+        if target_kernel:
+            is_registered = is_kernel_registered(target_kernel)
+            
+            if is_registered and target_kernel != spec_kernel_name:
+                # Update to the registered target kernel
+                nb.metadata["kernelspec"] = {
+                    "display_name": target_kernel,
+                    "language": "python",
+                    "name": target_kernel
+                }
+                print(f"Updated kernel: '{spec_kernel_name}' → '{target_kernel}'")
+                kernel_spec_updated = True
+            elif not is_registered:
+                # Target kernel not registered, remove kernelspec
+                del nb.metadata["kernelspec"]
+                print(f"Warning: Kernel '{target_kernel}' not registered. Removed kernelspec - nbmake will use current interpreter.")
+                kernel_spec_updated = True
+            # else: kernel is registered and matches current spec, no change needed
+    
+    # Filter cells
     filtered_cells = []
     for cell in nb.cells:
         tags = cell.get('metadata', {}).get('tags', [])
         if any(tag in ['skip-execution', 'skip', 'colab'] for tag in tags):
             continue
         filtered_cells.append(cell)
-
+    
     cell_skipped = len(filtered_cells) != len(nb.cells)
     if cell_skipped:
         nb.cells = filtered_cells
-
+    
+    # Write back if anything changed
     if cell_skipped or kernel_spec_updated:
         nbformat.write(nb, notebook_path)
+        if cell_skipped:
+            print(f"Filtered {len(nb.cells) - len(filtered_cells)} cells from {notebook_path.name}")
 
+
+def is_kernel_registered(kernel_name):
+    """Check if a kernel is registered in Jupyter"""
+    if not kernel_name:
+        return False
+    
+    try:
+        from jupyter_client.kernelspec import KernelSpecManager
+        ksm = KernelSpecManager()
+        return kernel_name in ksm.get_all_specs()
+    except Exception:
+        # If jupyter_client isn't available or fails, assume kernel doesn't exist
+        return False
 
 def pytest_addoption(parser):
     parser.addoption(
