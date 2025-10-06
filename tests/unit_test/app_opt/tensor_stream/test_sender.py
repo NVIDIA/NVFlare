@@ -14,11 +14,8 @@
 
 from unittest.mock import patch
 
-import numpy as np
 import pytest
-import torch
 
-from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.app_opt.tensor_stream.sender import TensorSender

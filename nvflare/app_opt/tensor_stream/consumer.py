@@ -118,9 +118,11 @@ class TensorConsumer(ObjectConsumer):
 
         # If there's only one root key which is an empty string, it means all tensors are at the top level
         if self.root_keys == [""]:
-            fl_ctx.set_custom_prop(SAFE_TENSORS_PROP_KEY, self.tensors[""])
+            tensors = self.tensors[""]
         else:
-            fl_ctx.set_custom_prop(SAFE_TENSORS_PROP_KEY, self.tensors)
+            tensors = self.tensors
+
+        fl_ctx.set_custom_prop(SAFE_TENSORS_PROP_KEY, tensors)
 
         # Clear tensors after setting them in the context
         self.tensors = {}

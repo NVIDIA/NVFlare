@@ -40,8 +40,8 @@ class ExampleExecutor(Executor):
         fl_model = FLModelUtils.from_shareable(shareable)
 
         params = fl_model.params
-        if "state_dict" in fl_model.params:
-            params = fl_model.params["state_dict"]
+        if "state_dict" in params:
+            params = params["state_dict"]
 
         print(f"Total tensors: {len(params)}")
 

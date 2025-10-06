@@ -101,8 +101,6 @@ class TensorServerStreamer(FLComponent):
             self.system_panic(str(e), fl_ctx)
             return
 
-        self.sender = TensorSender(engine, FLContextKey.TASK_DATA, self.format, self.tasks)
-
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """Handle events for the TensorSender component.
 
@@ -115,12 +113,14 @@ class TensorServerStreamer(FLComponent):
         elif event_type == EventType.BEFORE_TASK_DATA_FILTER:
             self.reset_counters()
         elif event_type == EventType.AFTER_TASK_DATA_FILTER:
+            self.sender = TensorSender(self.engine, FLContextKey.TASK_DATA, self.format, self.tasks)
             num_clients = len(self.engine.get_clients())
             self.send_tensors_to_client(fl_ctx)
             self.wait_clients_to_complete(num_clients, fl_ctx)
             self.try_to_clean_task_data(num_clients, fl_ctx)
         elif event_type == EventType.BEFORE_TASK_RESULT_FILTER:
             self.receiver.set_ctx_with_tensors(fl_ctx)
+            self.receiver.tensors.clear()  # clear previous received tensors
 
     def reset_counters(self):
         """Reset the counters for the number of task data sent and skipped."""

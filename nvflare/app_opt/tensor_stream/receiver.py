@@ -84,7 +84,12 @@ class TensorReceiver:
             self.logger.error(f"No tensors found from peer {peer_name}.")
             return
 
-        self.tensors[peer_name] = tensors
+        # add or update (when multiple root keys are present) the tensors received from the peer
+        if peer_name not in self.tensors:
+            self.tensors[peer_name] = tensors
+        else:
+            self.tensors[peer_name].update(tensors)
+
         self.logger.debug(f"Storing tensors received from peer {peer_name}.")
 
     def set_ctx_with_tensors(self, fl_ctx: FLContext):
@@ -119,7 +124,7 @@ class TensorReceiver:
 
         if len(dxo["data"]) == 0 and not tensors:
             self.logger.error(
-                f"Peer '{fl_ctx.get_identity_name()}':received task with empty data no tensors "
+                f"Peer '{fl_ctx.get_identity_name()}':received task with empty data, no tensors "
                 f"are present for '{peer_name}'.",
             )
             raise RuntimeError(msg)
@@ -135,7 +140,7 @@ class TensorReceiver:
 
         s["DXO"] = dxo
         fl_ctx.set_prop(self.ctx_prop_key, s, private=True, sticky=False)
+
         self.logger.info(
-            f"Peer '{fl_ctx.get_identity_name()}': updated task data with "
-            f"{len(tensors.keys())} tensors received from peer '{peer_name}'.",
+            f"Peer '{fl_ctx.get_identity_name()}': updated task data with tensors received from peer '{peer_name}'."
         )
