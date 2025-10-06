@@ -21,6 +21,7 @@ from nvflare.fox.api.constants import OPTION_ARGS, CollabMethodArgName, CollabMe
 from nvflare.fox.api.dec import adjust_kwargs
 from nvflare.fox.api.resp import Resp
 from nvflare.fox.api.utils import check_call_args
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class _Waiter(threading.Event):
@@ -38,6 +39,7 @@ class SimBackend(Backend):
         self.target_app = target_app
         self.target_obj = target_obj
         self.executor = thread_executor
+        self.logger = get_obj_logger(self)
 
     def _get_func(self, func_name):
         return self.target_app.find_collab_method(self.target_obj, func_name)
@@ -95,7 +97,7 @@ class SimBackend(Backend):
             raise RuntimeError(f"cannot find interface for func '{func_name}' of object {self.target_obj_name}")
 
         check_call_args(func_name, func_itf, [], kwargs)
-        print(f"[{my_ctx.header_str()}] received kwargs is good: {kwargs}")
+        self.logger.debug(f"[{my_ctx.header_str()}] received kwargs is good: {kwargs}")
 
         kwargs[CollabMethodArgName.CONTEXT] = my_ctx
         adjust_kwargs(func, kwargs)

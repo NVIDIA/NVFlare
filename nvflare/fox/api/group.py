@@ -17,6 +17,7 @@ from typing import List
 
 from nvflare.apis.fl_exception import RunAborted
 from nvflare.apis.signal import Signal
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .constants import CollabMethodArgName, CollabMethodOptionName
 from .ctx import Context
@@ -55,6 +56,7 @@ class Group:
         self._wait_after_min_resps = wait_after_min_resps
         self._process_resp_cb = process_resp_cb
         self._cb_kwargs = cb_kwargs
+        self._logger = get_obj_logger(self)
 
         if not min_resps:
             self._min_resps = len(proxies)
@@ -103,7 +105,9 @@ class Group:
                 )
                 resps[p.name] = resp
 
-                print(f"[{ctx.header_str()}] group call: {func_name=} args={call_args} kwargs={call_kwargs}")
+                self._logger.debug(
+                    f"[{ctx.header_str()}] group call: {func_name=} args={call_args} kwargs={call_kwargs}"
+                )
                 the_proxy.backend.call_target_with_resp(resp, the_proxy.name, func_name, *call_args, **call_kwargs)
 
             # wait for responses

@@ -13,6 +13,8 @@
 # limitations under the License.
 import copy
 
+from nvflare.fuel.utils.log_utils import get_obj_logger
+
 from .backend import Backend
 from .constants import OPTION_ARGS, CollabMethodArgName
 from .utils import check_call_args
@@ -28,6 +30,7 @@ class Proxy:
         self.caller_name = app.name
         self.target_interface = target_interface
         self.children = {}  # child proxies
+        self.logger = get_obj_logger(self)
 
     @property
     def name(self):
@@ -110,7 +113,9 @@ class Proxy:
             p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
             ctx = p.app.new_context(self.caller_name, self.name)
 
-            print(f"[{ctx.header_str()}] calling target {p.target_name} func {func_name}: {call_args=} {call_kwargs=}")
+            self.logger.debug(
+                f"[{ctx.header_str()}] calling target {p.target_name} func {func_name}: {call_args=} {call_kwargs=}"
+            )
 
             # apply outgoing call filters
             call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
