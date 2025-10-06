@@ -22,10 +22,11 @@ from .utils import check_call_args
 
 class Proxy:
 
-    def __init__(self, app, target_name, backend: Backend, target_interface):
+    def __init__(self, app, target_name, target_fqn: str, backend: Backend, target_interface):
         """The Proxy represents a target in the App."""
         self.app = app
         self.target_name = target_name
+        self.fqn = target_fqn  # fully qualified name of the target in hierarchy
         self.backend = backend
         self.caller_name = app.name
         self.target_interface = target_interface

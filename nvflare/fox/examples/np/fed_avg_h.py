@@ -15,8 +15,9 @@ import logging
 
 from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
-from nvflare.fox.examples.np.algos.client import NPTrainer
-from nvflare.fox.examples.np.algos.strategies import NPCyclic, NPFedAvgParallel
+from nvflare.fox.examples.np.algos.client import NPHierarchicalTrainer
+from nvflare.fox.examples.np.algos.strategies import NPHierarchicalFedAvg
+from nvflare.fox.examples.np.algos.widgets import MetricReceiver
 from nvflare.fox.sim.simulator import Simulator
 
 
@@ -24,18 +25,14 @@ def main():
     simple_logging(logging.DEBUG)
 
     server_app = ServerApp(
-        strategy_name="cyclic", strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)
+        strategy_name="fed_avg",
+        strategy=NPHierarchicalFedAvg(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=3),
     )
-    server_app.add_strategy("fed_avg_parallel", NPFedAvgParallel(initial_model=None, num_rounds=2))
+    server_app.add_collab_object("metric_receiver", MetricReceiver())
 
-    simulator = Simulator(
-        server_app=server_app,
-        client_app=NPTrainer(delta=1.0),
-        num_clients=2,
-    )
+    simulator = Simulator(server_app=server_app, client_app=NPHierarchicalTrainer(delta=1.0), num_clients=(3, 2))
 
-    final_result = simulator.run()
-    print(f"final model: {final_result}")
+    simulator.run()
 
 
 if __name__ == "__main__":

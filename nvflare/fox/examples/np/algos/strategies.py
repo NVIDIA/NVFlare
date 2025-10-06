@@ -17,7 +17,7 @@ import numpy as np
 
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.group import all_clients
+from nvflare.fox.api.group import all_children, all_clients, all_leaf_clients
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -85,6 +85,41 @@ class NPFedAvgParallel(Strategy):
         return total / len(results)
 
 
+class NPHierarchicalFedAvg(Strategy):
+
+    def __init__(self, initial_model, num_rounds=10):
+        self.num_rounds = num_rounds
+        self.initial_model = parse_array_def(initial_model)
+        self.name = self.__class__.__name__
+        self.logger = get_obj_logger(self)
+
+    def execute(self, context: Context):
+        self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
+        current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
+        for i in range(self.num_rounds):
+            current_model = self._do_one_round(i, current_model, context)
+            score = self._do_eval(current_model, context)
+            self.logger.info(f"[{context.header_str()}]: eval score in round {i}: {score}")
+        self.logger.info(f"FINAL MODEL: {current_model}")
+        return current_model
+
+    def _do_eval(self, model, ctx: Context):
+        results = all_leaf_clients(ctx).evaluate(model)
+        total = 0.0
+        for n, v in results.items():
+            self.logger.info(f"[{ctx.header_str()}]: got eval result from client {n}: {v}")
+            total += v
+        return total / len(results)
+
+    def _do_one_round(self, r, current_model, ctx: Context):
+        total = np.array([[0, 0, 0], [0, 0, 0], [0, 0, 0]], dtype=np.float32)
+        results = all_children(ctx).train(r, current_model)
+        for n, v in results.items():
+            self.logger.info(f"[{ctx.header_str()}] round {r}: got group result from client {n}: {v}")
+            total += v
+        return total / len(results)
+
+
 class _AggrResult:
 
     def __init__(self):
@@ -143,7 +178,7 @@ class NPFedAvgInTime(Strategy):
 
 class NPCyclic(Strategy):
 
-    def __init__(self, initial_model, num_rounds=10):
+    def __init__(self, initial_model, num_rounds=(2, 3)):
         self.num_rounds = num_rounds
         self.initial_model = parse_array_def(initial_model)
         self.logger = get_obj_logger(self)
