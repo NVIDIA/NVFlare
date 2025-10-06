@@ -107,6 +107,8 @@ def mock_streamable_engine():
     """Mock StreamableEngine for testing."""
     engine = Mock(spec=StreamableEngine)
     engine.get_clients = Mock(return_value=["client1", "client2", "client3"])  # Default 3 clients
+    engine.register_stream_processing = Mock()
+    engine.fire_event = Mock()
     return engine
 
 
