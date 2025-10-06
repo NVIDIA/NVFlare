@@ -29,8 +29,9 @@ def pytest_collection_modifyitems(config, items):
     kernel_name = config.getoption('--kernel', default="")
 
     for item in items:
-        if hasattr(item, 'path') and str(item.path).endswith('.ipynb'):
-            filter_notebook(item.path, kernel_name)
+        if _is_notebook_item(item):
+            notebook_path = item.path if hasattr(item, 'path') else item.fspath
+            filter_notebook(notebook_path, kernel_name)
 
 
 def filter_notebook(notebook_path, kernel_name):
@@ -122,7 +123,12 @@ _executed_notebooks = set()
 _passed_notebooks = set()
 
 def _is_notebook_item(item):
+    """Check if item is a notebook, compatible with old and new pytest versions"""
     try:
+        # Try newer pytest attribute first (pytest 7+)
+        if hasattr(item, 'path'):
+            return str(item.path).endswith('.ipynb')
+        # Fall back to older pytest attribute
         return Path(str(item.fspath)).suffix == ".ipynb"
     except Exception:
         return False
@@ -130,7 +136,8 @@ def _is_notebook_item(item):
 def pytest_runtest_setup(item):
     # record that this notebook is being executed
     if _is_notebook_item(item):
-        _executed_notebooks.add(Path(str(item.fspath)))
+        notebook_path = Path(str(item.path)) if hasattr(item, 'path') else Path(str(item.fspath))
+        _executed_notebooks.add(notebook_path)
 
 def pytest_runtest_makereport(item, call):
     # called for setup/call/teardown — only consider the 'call' phase
@@ -140,7 +147,8 @@ def pytest_runtest_makereport(item, call):
         return
     # success if no exception info
     if call.excinfo is None:
-        _passed_notebooks.add(Path(str(item.fspath)))
+        notebook_path = Path(str(item.path)) if hasattr(item, 'path') else Path(str(item.fspath))
+        _passed_notebooks.add(notebook_path)
 
 def _clear_outputs_with_nbformat(nb_path: Path):
     if nbformat is None:
