@@ -48,6 +48,7 @@ class TensorReceiver:
         self.ctx_prop_key = ctx_prop_key
         self.format = format
         self.channel = channel
+        # key: peer_name, value: tensors received from the peer
         self.tensors: dict[str, TensorsMap] = {}
         self.logger = get_obj_logger(self)
         self._register()
