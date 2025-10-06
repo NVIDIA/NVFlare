@@ -1,6 +1,4 @@
 nvflare[PT]~=2.7.0rc
-torch
-torchvision
 jsonargparse[signatures]>=4.17.0
 pytorch_lightning
 tensorboard
