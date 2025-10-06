@@ -17,6 +17,7 @@ import logging
 import os
 import random
 import subprocess
+import time
 import uuid
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
@@ -24,7 +25,6 @@ from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 from .utils import NonceHistory
 
 SNP_NAMESPACE = "x-snp"
-
 REPORT_PATH = "report.bin"
 REQUEST_PATH = "request.bin"
 
@@ -38,9 +38,11 @@ class SNPAuthorizer(CCAuthorizer):
         amd_certs_dir="/opt/certs",
         snpguest_binary="snpguest",
         cpu_model="milan",
+        max_retries=3,
+        retry_interval=5,
     ):
         """
-         Initialize the SNPAuthorizer instance.
+        Initialize the SNPAuthorizer instance.
 
         Args:
             max_nonce_history (int, optional): Maximum number of nonces to keep in history for replay protection.
@@ -51,9 +53,9 @@ class SNPAuthorizer(CCAuthorizer):
                 Defaults to "/host/bin/snpguest".
             cpu_model (str, optional): CPU model identifier used when fetching certificates.
                 Defaults to "milan".
-
+            max_retries (int): Max number of retries on transient failures.
+            retry_interval (int): Wait time (seconds) between retries.
         """
-
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.my_nonce_history = NonceHistory(max_nonce_history)
@@ -61,6 +63,23 @@ class SNPAuthorizer(CCAuthorizer):
         self.amd_certs_dir = amd_certs_dir
         self.snpguest_binary = snpguest_binary
         self.cpu_model = cpu_model
+        self.max_retries = max_retries
+        self.retry_interval = retry_interval
+
+    def _run_with_retry(self, cmd: list[str], action_name: str) -> subprocess.CompletedProcess:
+        for attempt in range(1, self.max_retries + 1):
+            self.logger.info(f"[{action_name}] Attempt {attempt}/{self.max_retries}: running {cmd}")
+            result = subprocess.run(cmd, capture_output=True)
+            if result.returncode == 0:
+                return result
+            else:
+                self.logger.warning(
+                    f"[{action_name}] Failed with return code {result.returncode}. "
+                    f"stderr: {result.stderr.decode().strip()}"
+                )
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_interval)
+        raise RuntimeError(f"[{action_name}] Failed after {self.max_retries} attempts.")
 
     def _ensure_amd_ca_certs(self):
         ask_path = os.path.join(self.amd_certs_dir, "ask.pem")
@@ -68,7 +87,7 @@ class SNPAuthorizer(CCAuthorizer):
         if not (os.path.exists(ark_path) and os.path.exists(ask_path)):
             self.logger.info("AMD CA certs not found. Fetching...")
             cmd = [self.snpguest_binary, "fetch", "ca", "pem", self.amd_certs_dir, self.cpu_model]
-            subprocess.run(cmd, capture_output=True)
+            self._run_with_retry(cmd, "fetch_ca_certs")
         else:
             self.logger.info("AMD CA certs already exist.")
 
@@ -78,7 +97,7 @@ class SNPAuthorizer(CCAuthorizer):
             request_file.write(nonce)
 
         cmd = [self.snpguest_binary, "report", REPORT_PATH, REQUEST_PATH]
-        subprocess.run(cmd, capture_output=True)
+        self._run_with_retry(cmd, "generate_report")
 
         with open(REPORT_PATH, "rb") as report_file:
             token = base64.b64encode(report_file.read())
@@ -87,24 +106,29 @@ class SNPAuthorizer(CCAuthorizer):
         return token
 
     def verify(self, token):
+        tmp_bin_file = uuid.uuid4().hex
         try:
             self._ensure_amd_ca_certs()
             report_bin = base64.b64decode(token)
-            tmp_bin_file = uuid.uuid4().hex
             with open(tmp_bin_file, "wb") as report_file:
                 report_file.write(report_bin)
+
+            # Fetch VCEK with retries
             cmd = [self.snpguest_binary, "fetch", "vcek", "pem", self.amd_certs_dir, tmp_bin_file]
-            cp = subprocess.run(cmd, capture_output=True)
-            if cp.returncode != 0:
-                return False
+            self._run_with_retry(cmd, "fetch_vcek")
+
+            # Verify attestation
             cmd = [self.snpguest_binary, "verify", "attestation", self.amd_certs_dir, tmp_bin_file]
-            cp = subprocess.run(cmd, capture_output=True)
-            if cp.returncode == 0:
+            result = self._run_with_retry(cmd, "verify_attestation")
+
+            if result.returncode == 0:
                 return self._check_nonce(tmp_bin_file)
             else:
+                self.logger.warning("Attestation verification failed.")
                 return False
+
         except Exception as e:
-            self.logger.info(f"Token verification failed {e=}")
+            self.logger.error(f"Token verification failed: {e}")
             return False
         finally:
             if os.path.exists(tmp_bin_file):

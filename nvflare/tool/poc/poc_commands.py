@@ -82,7 +82,7 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
 def get_service_command(cmd_type: str, prod_dir: str, service_dir, service_config: Dict) -> str:
     cmd = ""
     proj_admin_dir_name = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
-    admin_dirs = service_config.get(SC.FLARE_OTHER_ADMINS, [])
+    admin_dirs = list(service_config.get(SC.FLARE_OTHER_ADMINS, []))
     admin_dirs.append(proj_admin_dir_name)
 
     if cmd_type == SC.CMD_START:
