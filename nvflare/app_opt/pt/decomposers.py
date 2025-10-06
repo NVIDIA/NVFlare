@@ -21,7 +21,8 @@ import nvflare.fuel.utils.fobs.dots as dots
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
 
-MIN_SIZE_FOR_FILE = 10*1024*1024
+MIN_SIZE_FOR_FILE = 10 * 1024 * 1024
+
 
 class SerializationModule(torch.nn.Module):
     def __init__(self, tensor):
@@ -89,7 +90,8 @@ class TensorDecomposer(ViaFileDecomposer):
     def dump_to_file(self, items: dict, path: str, fobs_ctx: dict):
         try:
             meta = _safe_save(items, path)
-            self.logger.info(f"Saving {len(items)} tensors to file {path}: removed tensor info {meta}")
+            removed = len(meta) if meta else 0
+            self.logger.info(f"Saving {len(items)} tensors to file {path}: Number of duplicate removed: {removed}")
             return path, meta
         except Exception as e:
             self.logger.error(f"exception saving tensors to file: {e}")
