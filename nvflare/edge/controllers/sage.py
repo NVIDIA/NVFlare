@@ -280,8 +280,11 @@ class ScatterAndGatherForEdge(Controller):
                 )
 
     def _prepare_train_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
-        fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
-        self.fire_event(AppEventType.BEFORE_TRAIN_TASK, fl_ctx)
+        try:
+            fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
+            self.fire_event(AppEventType.BEFORE_TRAIN_TASK, fl_ctx)
+        finally:
+            fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, None, private=True, sticky=False)
 
     def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         result = client_task.result

@@ -209,9 +209,11 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         return task
 
     def _prepare_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
-        # This is not used. It causes memory leak due to FLContext leakage
-        # fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=True)
-        self.event(AppEventType.BEFORE_TRAIN_TASK)
+        try:
+            fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
+            self.event(AppEventType.BEFORE_TRAIN_TASK)
+        finally:
+            fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, None, private=True, sticky=False)
 
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx

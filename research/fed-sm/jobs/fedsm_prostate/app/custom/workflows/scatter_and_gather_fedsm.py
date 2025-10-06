@@ -242,13 +242,13 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 aggr_result = self.aggregator.aggregate(fl_ctx)
                 collection_dxo = from_shareable(aggr_result)
-                fl_ctx.set_prop(
-                    AppConstants.AGGREGATION_RESULT,
-                    aggr_result,
-                    private=True,
-                    sticky=False,
-                )
-                self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+
+                try:
+                    fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
+                    self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+                finally:
+                    fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
+
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 

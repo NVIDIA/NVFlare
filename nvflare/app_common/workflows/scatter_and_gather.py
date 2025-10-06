@@ -264,8 +264,11 @@ class ScatterAndGather(Controller):
                 self.log_info(fl_ctx, "Start aggregation.")
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 aggr_result = self.aggregator.aggregate(fl_ctx)
-                fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
-                self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+                try:
+                    fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
+                    self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+                finally:
+                    fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
                 self.log_info(fl_ctx, "End aggregation.")
 
                 if self._check_abort_signal(fl_ctx, abort_signal):
@@ -326,8 +329,11 @@ class ScatterAndGather(Controller):
                 )
 
     def _prepare_train_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
-        fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
-        self.fire_event(AppEventType.BEFORE_TRAIN_TASK, fl_ctx)
+        try:
+            fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
+            self.fire_event(AppEventType.BEFORE_TRAIN_TASK, fl_ctx)
+        finally:
+            fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, None, private=True, sticky=False)
 
     def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         result = client_task.result
