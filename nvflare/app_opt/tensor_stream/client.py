@@ -85,8 +85,6 @@ class TensorClientStreamer(FLComponent):
             self.system_panic(str(e), fl_ctx)
             return
 
-        self.sender = TensorSender(engine, FLContextKey.TASK_RESULT, self.format, self.tasks)
-
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """Handle events for the TensorSender component.
 
@@ -98,7 +96,9 @@ class TensorClientStreamer(FLComponent):
             self.initialize(fl_ctx)
         elif event_type == EventType.BEFORE_TASK_DATA_FILTER:
             self.receiver.set_ctx_with_tensors(fl_ctx)
+            self.receiver.tensors.clear()  # clear previous received tensors
         elif event_type == EventType.BEFORE_SEND_TASK_RESULT:
+            self.sender = TensorSender(self.engine, FLContextKey.TASK_RESULT, self.format, self.tasks)
             try:
                 self.send_tensors_to_server(fl_ctx)
             except Exception as e:
