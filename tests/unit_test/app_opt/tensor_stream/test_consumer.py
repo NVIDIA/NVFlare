@@ -19,8 +19,8 @@ import torch
 from safetensors.torch import save as save_tensors
 
 from nvflare.apis.shareable import ReturnCode, Shareable
-from nvflare.app_opt.tensor_stream.consumer import TorchTensorsConsumer, TorchTensorsConsumerFactory
-from nvflare.app_opt.tensor_stream.producer import TorchTensorsProducer
+from nvflare.app_opt.tensor_stream.consumer import TensorConsumer, TensorConsumerFactory
+from nvflare.app_opt.tensor_stream.producer import TensorProducer
 from nvflare.app_opt.tensor_stream.types import SAFE_TENSORS_PROP_KEY, TensorBlobKeys
 
 
@@ -54,10 +54,10 @@ class TestTorchTensorsConsumerFactory:
 
     def test_get_consumer(self, mock_stream_context, mock_fl_context):
         """Test that factory creates a consumer instance."""
-        factory = TorchTensorsConsumerFactory()
+        factory = TensorConsumerFactory()
         consumer = factory.get_consumer(mock_stream_context, mock_fl_context)
 
-        assert isinstance(consumer, TorchTensorsConsumer)
+        assert isinstance(consumer, TensorConsumer)
 
 
 class TestTorchTensorsConsumer:
@@ -65,7 +65,7 @@ class TestTorchTensorsConsumer:
 
     def test_init(self, mock_stream_context, mock_fl_context):
         """Test initialization of TorchTensorsConsumer."""
-        consumer = TorchTensorsConsumer(mock_stream_context, mock_fl_context)
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
         assert consumer.tensors == {}
         assert consumer.total_bytes == {}
@@ -74,7 +74,7 @@ class TestTorchTensorsConsumer:
 
     def test_consume_single_tensor(self, mock_stream_context, mock_fl_context):
         """Test consuming a single tensor shareable."""
-        consumer = TorchTensorsConsumer(mock_stream_context, mock_fl_context)
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
         # Create a test tensor
         test_tensor = torch.randn(3, 4)
@@ -103,7 +103,7 @@ class TestTorchTensorsConsumer:
 
     def test_consume_multiple_tensors_same_root_key(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test consuming multiple tensors with the same root key."""
-        consumer = TorchTensorsConsumer(mock_stream_context, mock_fl_context)
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
         root_key = "state_dict"
 
         # Create shareables from tensors
@@ -131,7 +131,7 @@ class TestTorchTensorsConsumer:
 
     def test_consume_multiple_tensors_different_root_keys(self, mock_stream_context, mock_fl_context):
         """Test consuming tensors with different root keys."""
-        consumer = TorchTensorsConsumer(mock_stream_context, mock_fl_context)
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
         # Create tensors for different root keys
         tensors_dict = {
@@ -170,7 +170,7 @@ class TestTorchTensorsConsumer:
     )
     def test_consume_error_cases(self, mock_stream_context, mock_fl_context, missing_field, setup_shareable):
         """Test consuming shareable with various missing or invalid fields."""
-        consumer = TorchTensorsConsumer(mock_stream_context, mock_fl_context)
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
         shareable = setup_shareable()
 
         success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
@@ -180,7 +180,7 @@ class TestTorchTensorsConsumer:
 
     def test_finalize_single_root_key_empty_string(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test finalize with single root key that is empty string."""
-        consumer = TorchTensorsConsumer(mock_stream_context, mock_fl_context)
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
         root_key = ""  # Empty string for top-level tensors
 
         # Consume tensors with empty root key
@@ -205,7 +205,7 @@ class TestTorchTensorsConsumer:
 
     def test_finalize_multiple_root_keys(self, mock_stream_context, mock_fl_context):
         """Test finalize with multiple root keys."""
-        consumer = TorchTensorsConsumer(mock_stream_context, mock_fl_context)
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
         # Create tensors for different root keys
         tensors_dict = {
@@ -241,10 +241,10 @@ class TestTorchTensorsConsumer:
         # Create producer
         original_tensors = random_torch_tensors.copy()
         root_key = "model_weights"
-        producer = TorchTensorsProducer(tensors=original_tensors, entry_timeout=5.0, root_key=root_key)
+        producer = TensorProducer(tensors=original_tensors, entry_timeout=5.0, root_key=root_key)
 
         # Create consumer
-        consumer = TorchTensorsConsumer(mock_stream_context, mock_fl_context)
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
         # Producer creates shareables, consumer consumes them
         shareables_created = []
@@ -274,7 +274,7 @@ class TestTorchTensorsConsumer:
 
     def test_bytes_tracking_accuracy(self, mock_stream_context, mock_fl_context):
         """Test that byte tracking is accurate across multiple consumptions."""
-        consumer = TorchTensorsConsumer(mock_stream_context, mock_fl_context)
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
         root_key = "model"
 
         # Create tensors of known sizes
@@ -299,7 +299,7 @@ class TestTorchTensorsConsumer:
 
     def test_different_tensor_dtypes_reconstruction(self, mock_stream_context, mock_fl_context):
         """Test reconstruction of tensors with different data types."""
-        consumer = TorchTensorsConsumer(mock_stream_context, mock_fl_context)
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
         root_key = "mixed_types"
 
         # Create tensors with different dtypes

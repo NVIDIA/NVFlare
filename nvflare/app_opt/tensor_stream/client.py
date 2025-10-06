@@ -30,7 +30,6 @@ class TensorClientStreamer(FLComponent):
     It uses a StreamableEngine, TensorReceiver, and TensorSender to manage tensor streaming on the client side.
     Attributes:
         format (str): The format of the tensors to send. Default is "pytorch".
-        root_keys (list[str]): The root keys to include in the tensor sending. Default is None, which means all keys.
         entry_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
         engine (StreamableEngine): The StreamableEngine used for tensor streaming.
         sender (TensorSender): The TensorSender used to send tensors to the server.
@@ -42,18 +41,21 @@ class TensorClientStreamer(FLComponent):
     """
 
     def __init__(
-        self, format: ExchangeFormat = ExchangeFormat.PYTORCH, root_keys: list[str] = None, entry_timeout=30.0
+        self,
+        format: ExchangeFormat = ExchangeFormat.PYTORCH,
+        tasks: list[str] = None,
+        entry_timeout=30.0,
     ):
         """Initialize the TensorClientStreamer component.
 
         Args:
             format (ExchangeFormat): The format of the tensors to send. Default is ExchangeFormat.TORCH.
-            root_keys (list[str]): The root keys to include in the tensor sending. Default is None, which means all keys.
+            tasks (list[str]): The list of tasks to send tensors for. Default is None, which means the "train" task.
             entry_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
         """
         super().__init__()
         self.format = format
-        self.root_keys = root_keys if root_keys is not None else [""]
+        self.tasks = tasks if tasks is not None else ["train"]
         self.entry_timeout = entry_timeout
         self.engine: StreamableEngine = None
         self.sender: TensorSender = None
@@ -83,7 +85,7 @@ class TensorClientStreamer(FLComponent):
             self.system_panic(str(e), fl_ctx)
             return
 
-        self.sender = TensorSender(engine, FLContextKey.TASK_RESULT, self.root_keys)
+        self.sender = TensorSender(engine, FLContextKey.TASK_RESULT, self.format, self.tasks)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """Handle events for the TensorSender component.
@@ -108,5 +110,5 @@ class TensorClientStreamer(FLComponent):
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
         """
-        self.sender.send(fl_ctx, self.entry_timeout)
-        clean_task_result(fl_ctx)
+        if self.sender.send(fl_ctx, self.entry_timeout):
+            clean_task_result(fl_ctx)
