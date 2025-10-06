@@ -11,13 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
+
 from nvflare.fox.api.app import ServerApp
+from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies import NPCyclic
 from nvflare.fox.sim.simulator import Simulator
 
 
 def main():
+    simple_logging(logging.DEBUG)
 
     simulator = Simulator(
         server_app=ServerApp(

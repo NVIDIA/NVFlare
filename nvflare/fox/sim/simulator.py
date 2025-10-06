@@ -21,6 +21,7 @@ from nvflare.fox.api.constants import ContextKey, EnvType
 from nvflare.fox.api.dec import get_object_collab_interface
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fox.sim.backend import SimBackend
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class Simulator:
@@ -71,6 +72,7 @@ class Simulator:
         if not isinstance(client_app, (ClientAppFactory, ClientApp)):
             raise ValueError(f"client_app must be ClientApp or ClientAppFactory but got {type(client_app)}")
 
+        self.logger = get_obj_logger(self)
         self.abort_signal = Signal()
         server_app.name = "server"
         server_app.env_type = EnvType.SIMULATION
@@ -109,17 +111,19 @@ class Simulator:
         try:
             self._try_run()
         except KeyboardInterrupt:
-            print("execution is aborted by user")
+            self.logger.info("execution is aborted by user")
             self.abort_signal.trigger(True)
+        finally:
+            self.thread_executor.shutdown(wait=False, cancel_futures=True)
 
     def _try_run(self):
         # initialize all apps
         server_ctx = self.server_app.new_context(caller=self.server_app.name, callee=self.server_app.name)
-        print("initializing server app")
+        self.logger.info("initializing server app")
         self.server_app.initialize(server_ctx)
 
         for n, app in self.client_apps.items():
-            print(f"initializing client app for {n}")
+            self.logger.info(f"initializing client app for {n}")
             app.initialize(app.new_context(n, n))
 
         # run the server
@@ -128,10 +132,8 @@ class Simulator:
 
         result = None
         for idx, strategy in enumerate(self.server_app.strategies):
-            print(f"Running Strategy #{idx+1} - {type(strategy).__name__}")
+            self.logger.info(f"Running Strategy #{idx+1} - {type(strategy).__name__}")
             self.server_app.current_strategy = strategy
             result = strategy.execute(context=server_ctx)
             server_ctx.set_prop(ContextKey.INPUT, result)
-
-        self.thread_executor.shutdown(wait=False, cancel_futures=True)
         return result

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import inspect
+import logging
 from typing import List
 
 from .constants import CollabMethodArgName
@@ -71,3 +72,7 @@ def check_call_args(func_name, func_itf, call_args, call_kwargs: dict):
     for arg_name in call_kwargs.keys():
         if arg_name not in func_itf:
             raise RuntimeError(f"call arg {arg_name} is not supported by func '{func_name}'")
+
+
+def simple_logging(level=logging.INFO):
+    logging.basicConfig(level=level, format="%(asctime)s - %(levelname)s - %(message)s")

@@ -27,9 +27,9 @@ class NPTrainer(ClientApp):
     @collab
     def train(self, current_round, weights, context: Context):
         if context.is_aborted():
-            print("training aborted")
+            self.logger.debug("training aborted")
             return 0
-        print(f"[{context.header_str()}] trained round {current_round}")
+        self.logger.debug(f"[{context.header_str()}] trained round {current_round}")
 
         # metric_receiver = self.server.get_target("metric_receiver")
         # if metric_receiver:
@@ -41,7 +41,7 @@ class NPTrainer(ClientApp):
 
     @collab
     def evaluate(self, model, context: Context):
-        print(f"[{context.header_str()}] evaluate")
+        self.logger.debug(f"[{context.header_str()}] evaluate")
         return random.random()
 
 

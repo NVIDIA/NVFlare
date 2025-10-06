@@ -16,6 +16,8 @@ import fnmatch
 from abc import ABC, abstractmethod
 from typing import List
 
+from nvflare.fuel.utils.log_utils import get_obj_logger
+
 from .constants import CollabMethodArgName, ContextKey, FilterDirection
 from .ctx import Context
 from .dec import collab, get_object_collab_interface, is_collab
@@ -42,6 +44,7 @@ class App:
         self._incoming_result_filter_chains = []
         self._outgoing_result_filter_chains = []
         self._collab_interface = {"": get_object_collab_interface(self)}
+        self.logger = get_obj_logger(self)
 
     @staticmethod
     def _add_filters(pattern: str, filters, to_list: list, filter_type):
@@ -206,7 +209,7 @@ class App:
         for name, obj in self._collab_objs.items():
             init_func = getattr(obj, "initialize", None)
             if init_func and callable(init_func):
-                print(f"initializing target object {name}")
+                self.logger.info(f"initializing target object {name}")
                 kwargs = {CollabMethodArgName.CONTEXT: context}
                 check_context_support(init_func, kwargs)
                 init_func(**kwargs)
