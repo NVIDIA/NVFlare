@@ -33,8 +33,8 @@ def define_parser():
 
 
 def download_data():
-    datasets.CIFAR10(root="${DATASET_ROOT}", train=True, download=True)
-    datasets.CIFAR10(root="${DATASET_ROOT}", train=False, download=True)
+    datasets.CIFAR10(root=DATASET_ROOT, train=True, download=True)
+    datasets.CIFAR10(root=DATASET_ROOT, train=False, download=True)
 
 
 def main():
