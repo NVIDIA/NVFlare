@@ -14,13 +14,13 @@
 
 import argparse
 
+import torchvision.datasets as datasets
 from model import LitNet
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe.sim_env import SimEnv
-import torchvision.datasets as datasets
 
-DATASET_ROOT="/tmp/nvflare/data"
+DATASET_ROOT = "/tmp/nvflare/data"
 
 
 def define_parser():
@@ -33,8 +33,8 @@ def define_parser():
 
 
 def download_data():
-    datasets.CIFAR10(root='${DATASET_ROOT}', train=True, download=True)
-    datasets.CIFAR10(root='${DATASET_ROOT}', train=False, download=True)
+    datasets.CIFAR10(root="${DATASET_ROOT}", train=True, download=True)
+    datasets.CIFAR10(root="${DATASET_ROOT}", train=False, download=True)
 
 
 def main():
