@@ -26,14 +26,27 @@ def pytest_collection_modifyitems(config, items):
     if not config.getoption('--nbmake', default=False):
         return
 
+    kernel_name = config.getoption('--kernel', default="")
+
     for item in items:
         if hasattr(item, 'path') and str(item.path).endswith('.ipynb'):
-            filter_notebook(item.path)
+            filter_notebook(item.path, kernel_name)
 
 
-def filter_notebook(notebook_path):
+def filter_notebook(notebook_path, kernel_name):
     """Remove cells tagged with 'skip-execution'"""
     nb = nbformat.read(notebook_path, as_version=4)
+    # skip the kernelspec
+    kernel_spec_updated = False
+    kernel_spec = nb.metadata.get("kernelspec", {})
+    if nb.metadata and kernel_spec:
+        if kernel_name != kernel_spec.get("name", ""):
+            nb.metadata["kernelspec"] = {
+                "display_name": kernel_name,
+                "language": "python",
+                "name": kernel_name
+            }
+            kernel_spec_updated = True
 
     filtered_cells = []
     for cell in nb.cells:
@@ -42,8 +55,11 @@ def filter_notebook(notebook_path):
             continue
         filtered_cells.append(cell)
 
-    if len(filtered_cells) != len(nb.cells):
+    cell_skipped = len(filtered_cells) != len(nb.cells)
+    if cell_skipped:
         nb.cells = filtered_cells
+
+    if cell_skipped or kernel_spec_updated:
         nbformat.write(nb, notebook_path)
 
 
@@ -54,6 +70,12 @@ def pytest_addoption(parser):
         default="on-success",
         choices=["always", "on-success", "never"],
         help="When to clear outputs from executed notebooks: always, on-success (default), never",
+    )
+    parser.addoption(
+        "--kernel",
+        action="store",
+        default="",
+        help="specify the kernel name",
     )
 
 _executed_notebooks = set()

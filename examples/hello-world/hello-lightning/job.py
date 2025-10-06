@@ -18,15 +18,23 @@ from model import LitNet
 
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.recipe.sim_env import SimEnv
+import torchvision.datasets as datasets
+
+DATASET_ROOT="/tmp/nvflare/data"
 
 
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--batch_size", type=int, default=24)
 
     return parser.parse_args()
+
+
+def download_data():
+    datasets.CIFAR10(root='${DATASET_ROOT}', train=True, download=True)
+    datasets.CIFAR10(root='${DATASET_ROOT}', train=False, download=True)
 
 
 def main():
@@ -49,4 +57,5 @@ def main():
 
 
 if __name__ == "__main__":
+    download_data()
     main()
