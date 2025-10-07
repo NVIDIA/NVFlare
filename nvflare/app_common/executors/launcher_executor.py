@@ -431,7 +431,8 @@ class LauncherExecutor(TaskExchanger):
                     fl_ctx,
                     msg,
                 )
-                self._abort_signal.trigger(msg)
+                if self._abort_signal:
+                    self._abort_signal.trigger(msg)
 
     def _clear_state(self):
         self._launcher_finish_time = None
