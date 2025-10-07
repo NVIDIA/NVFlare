@@ -26,7 +26,7 @@ from nvflare.job_config.script_runner import ScriptRunner
 
 def main():
     args = define_parser()
-    train_script = "src/hf_sft_peft_fl.py"
+    train_script = "src/client.py"
     client_ids = args.client_ids
     num_clients = len(client_ids)
 

@@ -23,11 +23,13 @@ from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
 from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 from nvflare.job_config.script_runner import ScriptRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
+from nvflare.recipe import ProdEnv
+from nvflare.recipe.spec import Recipe
 
 
 def main():
     args = define_parser()
-    train_script = "src/hf_sft_peft_fl.py"
+    train_script = "src/client.py"
     client_ids = args.client_ids
     num_clients = len(client_ids)
     # get the GPU assignments and ports
@@ -98,11 +100,17 @@ def main():
     # Send ScriptRunner to all clients
     for i in range(num_clients):
         client_id = client_ids[i]
-        site_name = f"site-{client_id}"
+        #site_name = f"site-{client_id}"
+        site_name = f"site-{i+1}"
         data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
 
         script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --num_rounds {num_rounds}"
+        
+        # Add WandB arguments if provided
+        if args.wandb_project:
+            wandb_run_name = args.wandb_run_name if args.wandb_run_name else f"nvflare_{train_mode.lower()}_{client_id}"
+            script_args += f" --wandb_project {args.wandb_project} --wandb_run_name {wandb_run_name}"
         if message_mode == "tensor":
             server_expected_format = "pytorch"
         elif message_mode == "numpy":
@@ -111,19 +119,42 @@ def main():
             raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
 
         if len(gpus[i]) == 1:
+            # Single-GPU training
+            print(f"Client {client_id}: Creating single-GPU training job with {len(gpus[i])} GPUs")
+
             runner = ScriptRunner(
                 script=train_script,
                 script_args=script_args,
                 server_expected_format=server_expected_format,
                 launch_external_process=True,
             )
-        else:
+        elif len(gpus[i]) > 1:
+            # Multi-GPU training
+            print(f"Client {client_id}: Creating multi-GPU training job with {len(gpus[i])} GPUs")
+
             runner = ScriptRunner(
                 script=train_script,
                 script_args=script_args,
                 server_expected_format=server_expected_format,
                 launch_external_process=True,
                 command=f"python3 -m torch.distributed.run --nnodes=1 --nproc_per_node={len(gpus[i])} --master_port={ports[i]}",
+            )
+        elif args.multi_node:
+            # Multi-GPU/Multi-node distributed training
+            # Use a wrapper script that handles srun coordination
+            # The wrapper script will detect if running on single or multiple nodes
+            print(f"Client {client_id}: Creating multi-node training job with {len(gpus[i])} GPUs per node")
+            
+            # Send the wrapper script to the client
+            job.to("run_multinode_training.sh", site_name)
+            
+            # Use the wrapper script which will call srun if needed
+            runner = ScriptRunner(
+                script=train_script,
+                script_args=script_args,
+                server_expected_format=server_expected_format,
+                launch_external_process=True,
+                command="bash custom/run_multinode_training.sh",
             )
         job.to(runner, site_name, tasks=["train"])
 
@@ -139,10 +170,18 @@ def main():
     print("job_dir=", job_dir)
     job.export_job(job_dir)
 
-    # Run the job
-    print("workspace_dir=", workspace_dir)
-    print("num_threads=", num_threads)
-    job.simulator_run(workspace_dir, threads=num_threads, gpu=args.gpu)
+    if args.startup_kit_location:
+        # Run the job in production mode
+        env = ProdEnv(startup_kit_location=args.startup_kit_location, username=args.username)
+        recipe = Recipe(job)
+        run = recipe.execute(env)
+        print("Job Status is:", run.get_status())
+        print("Job Result is:", run.get_result())
+    else:
+        # Run the job in simulation mode
+        print("workspace_dir=", workspace_dir)
+        print("num_threads=", num_threads)
+        job.simulator_run(workspace_dir, threads=num_threads, gpu=args.gpu)
 
 
 def define_parser():
@@ -218,6 +257,35 @@ def define_parser():
         nargs="+",
         default="7777",
         help="ports for the clients, default to one client 7777",
+    )
+    parser.add_argument(
+        "--multi_node",
+        action="store_true",
+        help="enable multi-node training, default to False",
+    )    
+    parser.add_argument(
+        "--startup_kit_location",
+        type=str,
+        default=None,
+        help="startup kit location, default to None",
+    )
+    parser.add_argument(
+        "--username",
+        type=str,
+        default="admin@nvidia.com",
+        help="username, default to None",
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default=None,
+        help="WandB project name (enables WandB tracking if provided)",
+    )
+    parser.add_argument(
+        "--wandb_run_name",
+        type=str,
+        default=None,
+        help="WandB run name (defaults to nvflare_<mode>_<client_id>)",
     )
     return parser.parse_args()
 
