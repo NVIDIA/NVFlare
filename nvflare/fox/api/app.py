@@ -229,11 +229,7 @@ class App:
                 init_func(**kwargs)
 
     def new_context(self, caller: str, callee: str, props: dict = None):
-        ctx = Context(self.env_type, caller, callee, self._abort_signal, props)
-        ctx.app = self
-        ctx.server = self.server
-        ctx.clients = self.clients
-        return ctx
+        return Context(self, caller, callee, self._abort_signal, props)
 
     def register_event_handler(self, event_type: str, handler, **handler_kwargs):
         handlers = self._event_handlers.get(event_type)

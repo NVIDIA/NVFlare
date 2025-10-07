@@ -49,7 +49,6 @@ def _preprocess(app: App, caller, target_obj_name, target_name, func_name, func,
         raise RuntimeError(f"cannot find interface for func '{func_name}' of object {target_obj_name}")
 
     check_call_args(func_name, func_itf, args, kwargs)
-    print(f"received kwargs is good: {kwargs}")
 
     kwargs[CollabMethodArgName.CONTEXT] = ctx
     adjust_kwargs(func, kwargs)

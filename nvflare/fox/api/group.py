@@ -199,7 +199,38 @@ def all_clients(
     return Group(
         ctx.app,
         ctx.abort_signal,
-        ctx.app.get_client_proxies(),
+        ctx.clients,
+        blocking,
+        timeout,
+        optional,
+        secure,
+        min_resps,
+        wait_after_min_resps,
+        process_resp_cb,
+        **cb_kwargs,
+    )
+
+
+def all_other_clients(
+    ctx: Context,
+    blocking: bool = True,
+    timeout: float = 5.0,
+    optional: bool = False,
+    secure: bool = False,
+    min_resps: int = None,
+    wait_after_min_resps: float = None,
+    process_resp_cb=None,
+    **cb_kwargs,
+):
+    candidates = ctx.clients
+    me = ctx.app.get_my_site()
+    if me in candidates:
+        candidates.remove(me)
+
+    return Group(
+        ctx.app,
+        ctx.abort_signal,
+        candidates,
         blocking,
         timeout,
         optional,
