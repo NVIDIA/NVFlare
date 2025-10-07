@@ -1,8 +1,8 @@
 .. _mobile_android_api:
 
-########################
+#########################
 Android SDK API Reference
-########################
+#########################
 
 This document provides a comprehensive API reference for the NVIDIA FLARE Android SDK, enabling federated learning on Android devices using ExecuTorch.
 
@@ -339,7 +339,7 @@ Closes the trainer and releases resources.
    override fun close()
 
 DataSource Interface
-===================
+====================
 
 Interface for providing training data to the FL system.
 
@@ -655,4 +655,4 @@ Best Practices
 * **Performance**: Monitor memory usage and optimize model size.
 * **Testing**: Test with various network conditions and device configurations.
 
-For more information, see the :ref:`mobile development guide <flare_mobile>` and :ref:`edge examples <edge_examples>`.
+For more information, see the :ref:`mobile development guide <flare_mobile>` and `edge examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_

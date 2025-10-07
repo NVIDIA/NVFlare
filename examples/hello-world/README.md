@@ -53,20 +53,20 @@ A **Job Recipe** is NVIDIA FLARE's high-level API for defining federated learnin
 
 Here's a complete example:
 
-```python
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv
-
-recipe = FedAvgRecipe(
-    name="hello-pt",
-    min_clients=2,
-    num_rounds=2,
-    initial_model=SimpleNetwork(),
-    train_script="client.py",
-)
-
-env = SimEnv(num_clients=2)
-run = recipe.execute(env)
+```
+   from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+   from nvflare.recipe import SimEnv
+   
+   recipe = FedAvgRecipe(
+       name="hello-pt",
+       min_clients=2,
+       num_rounds=2,
+       initial_model=SimpleNetwork(),
+       train_script="client.py",
+   )
+   
+   env = SimEnv(num_clients=2)
+   run = recipe.execute(env)
 ```
 
 ### Benefits of Job Recipes
@@ -177,40 +177,40 @@ hello-<framework>/
 
 The client code contains your training logic with minimal NVIDIA FLARE integration:
 
-```python
-import nvflare.client as flare
-
-flare.init()  # Initialize FLARE Client API
-
-while flare.is_running():
-    input_model = flare.receive()  # Receive global model
-    params = input_model.params
-    
-    # Your training code here
-    new_params = train(params)
-    
-    output_model = flare.FLModel(params=new_params)
-    flare.send(output_model)  # Send updated model
+```
+   import nvflare.client as flare
+   
+   flare.init()  # Initialize FLARE Client API
+   
+   while flare.is_running():
+       input_model = flare.receive()  # Receive global model
+       params = input_model.params
+       
+       # Your training code here
+       new_params = train(params)
+       
+       output_model = flare.FLModel(params=new_params)
+       flare.send(output_model)  # Send updated model
 ```
 
 ### Job Recipe (`job.py`)
 
 The job recipe defines the FL workflow:
 
-```python
-from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
-from nvflare.recipe import SimEnv
-
-recipe = FedAvgRecipe(
-    name="my-job",
-    min_clients=2,
-    num_rounds=3,
-    initial_model=MyModel(),
-    train_script="client.py",
-)
-
-env = SimEnv(num_clients=2)
-run = recipe.execute(env)
+```
+   from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
+   from nvflare.recipe import SimEnv
+   
+   recipe = FedAvgRecipe(
+       name="my-job",
+       min_clients=2,
+       num_rounds=3,
+       initial_model=MyModel(),
+       train_script="client.py",
+   )
+   
+   env = SimEnv(num_clients=2)
+   run = recipe.execute(env)
 ```
 
 ## Additional Examples
@@ -232,31 +232,31 @@ Learn how to convert existing ML/DL code to federated learning:
 
 ### Workflows
 Examples demonstrating different FL workflows:
-- [Scatter and Gather](./hello-numpy-sag/) - Basic FedAvg pattern
+- [Scatter and Gather](./hello-numpy/) - Basic FedAvg pattern
 - [Cross-Site Validation](./hello-numpy-cross-val/) - Model evaluation across sites
 - [Cyclic Weight Transfer](./hello-cyclic/) - Sequential client training
-- [Client Controlled Workflows](./hello-ccwf/) - Swarm learning patterns
+- [Client Controlled Workflows](../advanced/hello-ccwf/) - Swarm learning patterns
 
 ## Running with Different Environments
 
 The same Job Recipe can run in different environments by changing the `env` parameter:
 
 ### Simulation (Default)
-```python
-env = SimEnv(num_clients=2)
-recipe.execute(env)
+```
+   env = SimEnv(num_clients=2)
+   recipe.execute(env)
 ```
 
 ### POC Mode
-```python
-env = PoCEnv()
-recipe.execute(env)
+```
+   env = PoCEnv()
+   recipe.execute(env)
 ```
 
 ### Production
-```python
-env = ProdEnv()
-recipe.execute(env)
+```
+   env = ProdEnv()
+   recipe.execute(env)
 ```
 
 ## Accessing Results

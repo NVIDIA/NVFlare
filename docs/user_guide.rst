@@ -20,7 +20,7 @@ please check :ref:`data_scientist_guide`
 please check :ref:`researcher_guide`
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
 
    user_guide/core_concepts/application
    user_guide/core_concepts/job

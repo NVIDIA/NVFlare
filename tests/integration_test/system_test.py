@@ -17,7 +17,7 @@ import os
 import sys
 import tempfile
 import time
-from typing import Any, List, Tuple
+from typing import Any
 
 import pytest
 
@@ -230,14 +230,14 @@ class TestSystem:
         _print_test_report(yaml_path=test_yaml_path, validate_result=test_validate_results)
 
 
-def _print_test_report(yaml_path: str, validate_result: List[Tuple[str, Any]]):
+def _print_test_report(yaml_path: str, validate_result: list[tuple[str, Any]]):
     _print_newlines()
     print(f"Testing Report for {yaml_path}")
     _print_validate_result(validate_result=validate_result)
     _print_newlines()
 
 
-def _print_validate_result(validate_result: List[Tuple[str, Any]]):
+def _print_validate_result(validate_result: list[tuple[str, Any]]):
     test_name_length = 10
     result_length = 20
     failure = False

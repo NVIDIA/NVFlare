@@ -86,7 +86,7 @@ def main():
         model_name_or_path,
         device_map="auto",
         use_cache=False,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
     )
     torch.set_default_dtype(default_dtype)
 
@@ -127,7 +127,7 @@ def main():
         warmup_ratio=0.03,
         lr_scheduler_type="constant",
         disable_tqdm=True,
-        max_seq_length=1024,
+        max_length=1024,
         # safetensors has some issues in saving lm_head.weight, disable it for now
         save_safetensors=False,
     )
