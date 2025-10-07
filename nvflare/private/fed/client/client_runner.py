@@ -351,16 +351,11 @@ class ClientRunner(TBI):
         task.data = task_data
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
-        fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=True)
+        fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
         self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_EXECUTION")
-
-        try:
-            fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
-            self.fire_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
-        finally:
-            fl_ctx.set_prop(FLContextKey.TASK_DATA, value=None, private=True, sticky=False)
+        self.fire_event_with_data(EventType.BEFORE_TASK_EXECUTION, fl_ctx, FLContextKey.TASK_DATA, task.data)
 
         try:
             self.log_info(fl_ctx, f"invoking task executor {executor_name}")
@@ -458,13 +453,9 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.TASK_RESULT_FILTER_ERROR}",
             )
 
-        try:
-            fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
-            self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
-            self.fire_event(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx)
-            self.log_info(fl_ctx, "finished processing task")
-        finally:
-            fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=None, private=True, sticky=False)
+        self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
+        self.fire_event_with_data(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx, FLContextKey.TASK_RESULT, reply)
+        self.log_info(fl_ctx, "finished processing task")
 
         if not isinstance(reply, Shareable):
             self.log_error(

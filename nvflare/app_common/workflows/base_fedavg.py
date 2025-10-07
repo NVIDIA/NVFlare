@@ -140,11 +140,10 @@ class BaseFedAvg(ModelController):
             return FLModel()
         self._results = []
 
-        try:
-            self.fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
-            self.event(AppEventType.AFTER_AGGREGATION)
-        finally:
-            self.fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, None, private=True, sticky=False)
+        self.fire_event_with_data(
+            AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result
+        )
+
         self.debug("End aggregation.")
 
         return aggr_result
