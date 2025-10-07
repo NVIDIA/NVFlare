@@ -204,6 +204,7 @@ class FLContextKey:
     EVENT_PROCESSED = "__event_processed__"
     CELL_MESSAGE = "__cell_message__"
     CLIENT_HIERARCHY = "__client_hierarchy__"
+    FOX_MODE = "__fox_mode__"
 
     # Tensor streaming: minimum get_task_timeout required by server (stored in FLContext)
     MIN_GET_TASK_TIMEOUT = "__min_get_task_timeout__"
