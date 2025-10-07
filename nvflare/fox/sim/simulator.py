@@ -22,7 +22,6 @@ from nvflare.fox.api.dec import get_object_collab_interface
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fox.sim.backend import SimBackend
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.tree_utils import build_forest
 
 
 class Simulator:
@@ -70,12 +69,6 @@ class Simulator:
         for name, app in client_apps.items():
             p = self._prepare_proxy(for_app, app, backends[name])
             client_proxies.append(p)
-
-        # compute client proxy hierarchy
-        forest = build_forest(objs=client_proxies, get_fqn_f=lambda c: c.fqn, get_name_f=lambda c: c.name)
-        # d = forest_to_dict(forest, lambda c: c.name)
-        # print(f"client proxy forest: {d}")
-        for_app.client_hierarchy = forest
 
         return server_proxy, client_proxies
 

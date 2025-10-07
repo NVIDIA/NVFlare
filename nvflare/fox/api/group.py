@@ -199,7 +199,7 @@ def all_clients(
     return Group(
         ctx.app,
         ctx.abort_signal,
-        ctx.clients,
+        ctx.app.get_client_proxies(),
         blocking,
         timeout,
         optional,

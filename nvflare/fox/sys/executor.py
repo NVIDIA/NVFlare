@@ -44,6 +44,7 @@ class FoxExecutor(Executor):
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads)
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
+        fl_ctx.set_prop(FLContextKey.FOX_MODE, True, private=True, sticky=True)
         engine = fl_ctx.get_engine()
         client_app = engine.get_component(self.client_app_id)
         if not isinstance(client_app, (ClientApp, ClientAppFactory)):
@@ -84,14 +85,24 @@ class FoxExecutor(Executor):
             thread_executor=self.thread_executor,
         )
         proxy = Proxy(
-            app=self.client_app, target_name=server_name, backend=backend, target_interface=collab_interface.get("")
+            app=self.client_app,
+            target_name=server_name,
+            target_fqn=server_name,
+            backend=backend,
+            target_interface=collab_interface.get(""),
         )
 
         for name, itf in collab_interface.items():
             if name == "":
                 # this is the server app itself
                 continue
-            p = Proxy(app=self.client_app, target_name=f"{server_name}.{name}", backend=backend, target_interface=itf)
+            p = Proxy(
+                app=self.client_app,
+                target_name=f"{server_name}.{name}",
+                target_fqn="",
+                backend=backend,
+                target_interface=itf,
+            )
             proxy.add_child(name, p)
         return proxy
 
@@ -104,7 +115,11 @@ class FoxExecutor(Executor):
             thread_executor=self.thread_executor,
         )
         proxy = Proxy(
-            app=self.client_app, target_name=client.name, backend=backend, target_interface=collab_interface.get("")
+            app=self.client_app,
+            target_name=client.name,
+            target_fqn=client.get_fqsn(),
+            backend=backend,
+            target_interface=collab_interface.get(""),
         )
 
         if self.collab_obj_ids:
@@ -112,6 +127,7 @@ class FoxExecutor(Executor):
                 p = Proxy(
                     app=self.client_app,
                     target_name=f"{client.name}.{name}",
+                    target_fqn="",
                     backend=backend,
                     target_interface=collab_interface.get(name),
                 )

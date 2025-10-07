@@ -167,14 +167,24 @@ class FoxController(Controller):
     ):
         backend = self._prepare_client_backend(job_id, client, abort_signal)
         proxy = Proxy(
-            app=self.server_app, target_name=client.name, backend=backend, target_interface=collab_interface.get("")
+            app=self.server_app,
+            target_name=client.name,
+            target_fqn=client.get_fqsn(),
+            backend=backend,
+            target_interface=collab_interface.get(""),
         )
 
         for name, itf in collab_interface.items():
             if name == "":
                 continue
 
-            p = Proxy(app=self.server_app, target_name=f"{client.name}.{name}", backend=backend, target_interface=itf)
+            p = Proxy(
+                app=self.server_app,
+                target_name=f"{client.name}.{name}",
+                target_fqn="",
+                backend=backend,
+                target_interface=itf,
+            )
             proxy.add_child(name, p)
         return proxy
 
@@ -187,13 +197,18 @@ class FoxController(Controller):
         server_name = self.server_app.name
         backend = self._prepare_server_backend(job_id, abort_signal)
         proxy = Proxy(
-            app=self.server_app, target_name=server_name, backend=backend, target_interface=collab_interface.get("")
+            app=self.server_app,
+            target_name=server_name,
+            target_fqn=server_name,
+            backend=backend,
+            target_interface=collab_interface.get(""),
         )
 
         for name in self.server_collab_obj_ids:
             p = Proxy(
                 app=self.server_app,
                 target_name=f"{server_name}.{name}",
+                target_fqn="",
                 backend=backend,
                 target_interface=collab_interface.get(name),
             )

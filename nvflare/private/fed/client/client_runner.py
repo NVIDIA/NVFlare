@@ -732,6 +732,11 @@ class ClientRunner(TBI):
             self.log_debug(fl_ctx, "firing event EventType.START_RUN")
             self.fire_event(EventType.START_RUN, fl_ctx)
             self.log_info(fl_ctx, "client runner started")
+            fox_mode = fl_ctx.get_prop(FLContextKey.FOX_MODE, False)
+            if fox_mode:
+                # in fox mode, all tasks go to the server
+                self.logger.debug(f"changed parent target from {self.parent_target} to {FQCN.ROOT_SERVER}")
+                self.parent_target = FQCN.ROOT_SERVER
 
     def _handle_sync_runner(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         # simply ack

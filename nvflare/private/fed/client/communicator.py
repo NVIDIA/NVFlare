@@ -456,7 +456,7 @@ class Communicator:
             timeout = self.timeout
 
         parent_fqcn = determine_parent_fqcn(self.client_config, fl_ctx)
-        self.logger.debug(f"submitting update to parent FQCN: {parent_fqcn}")
+        self.logger.info(f"submitting update to parent FQCN: {parent_fqcn}")
 
         fqcn = FQCN.join([parent_fqcn, job_id])
         result = self.cell.send_request(

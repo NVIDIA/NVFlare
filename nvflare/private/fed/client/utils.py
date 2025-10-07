@@ -14,6 +14,7 @@
 from typing import Optional
 
 from nvflare.apis.client import Client
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.fed.utils.identity_utils import get_parent_site_name
@@ -49,6 +50,12 @@ def determine_parent_fqcn(client_config: dict, fl_ctx: FLContext) -> str:
     Returns: the FQCN of the parent cell
 
     """
+    fox_mode = fl_ctx.get_prop(FLContextKey.FOX_MODE, False)
+    my_identity = fl_ctx.get_identity_name()
+    print(f"FOX MODE FOR {my_identity}: {fox_mode}")
+    if fox_mode:
+        return FQCN.ROOT_SERVER
+
     parent_client_name = determine_parent_name(client_config)
     if parent_client_name:
         engine = fl_ctx.get_engine()

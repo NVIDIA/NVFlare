@@ -30,8 +30,6 @@ class Context:
         self.caller = caller
         self.callee = callee
         self.abort_signal = abort_signal
-        self.server = None
-        self.clients = None
         self.app = None
         self.props = {}
         if props:

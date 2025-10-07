@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.fuel.utils.tree_utils import Forest, Node
+from nvflare.fuel.utils.tree_utils import Forest, Node, build_forest
 
 from .constants import CollabMethodArgName, ContextKey, FilterDirection
 from .ctx import Context
@@ -48,6 +48,12 @@ class App:
         self._outgoing_result_filter_chains = []
         self._collab_interface = {"": get_object_collab_interface(self)}
         self.logger = get_obj_logger(self)
+
+    def get_server_proxy(self):
+        return self.server
+
+    def get_client_proxies(self):
+        return copy.copy(self.clients)
 
     @staticmethod
     def _add_filters(pattern: str, filters, to_list: list, filter_type):
@@ -172,6 +178,11 @@ class App:
 
         if not self._me:
             raise ValueError(f"cannot find site for {self.name}")
+
+        forest = build_forest(objs=clients, get_fqn_f=lambda c: c.fqn, get_name_f=lambda c: c.name)
+        # d = forest_to_dict(forest, lambda c: c.name)
+        # print(f"client proxy forest: {d}")
+        self.client_hierarchy = forest
 
     def get_my_site(self) -> Proxy:
         return self._me
