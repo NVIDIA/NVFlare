@@ -584,4 +584,20 @@ class Connection(private val context: Context) {
             throw e
         }
     }
+
+    /**
+     * Close the connection and clean up resources.
+     * This should be called when the connection is no longer needed.
+     */
+    fun close() {
+        Log.d(TAG, "Closing connection and cleaning up resources")
+        try {
+            // Close the HTTP client connection pool
+            httpClient.dispatcher.executorService.shutdown()
+            httpClient.connectionPool.evictAll()
+            Log.d(TAG, "Connection closed successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing connection", e)
+        }
+    }
 }
