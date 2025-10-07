@@ -2,6 +2,33 @@
 
 In this example, we will show how to generate federated statistics for tabular data that can be represented as Pandas Data Frame.
 
+## Code Structure
+First get the example code from github:
+
+```
+git clone https://github.com/NVIDIA/NVFlare.git
+```
+Then navigate to the hello-tabular-stats directory:
+
+```
+git switch <release branch>
+cd examples/hellow-world/hello-tabular-stats
+
+```
+
+``` bash
+hello-tabular-stats
+|
+├── client.py         # client local training script
+├── job.py            # job recipe that defines client and server configurations
+├── prepare_data.py   # utilies to download data
+├── install_cargo.sh  # scripts to install rust and cargo needed for quantil dependency, only needed if you plan to inistall quantile dependency
+└── requirements.txt  # dependencies
+├── demo
+│   └── visualization.ipynb # Visualization Notebook
+ 
+```
+
 ## NVIDIA FLARE Installation
 for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
 ```
@@ -58,21 +85,6 @@ Then you can install fastdigest again
 pip install fastdigest==0.4.0
 ```
 
-## Code Structure
-first get the example code from github:
-
-``` bash
-hello-tabular-stats
-|
-├── client.py         # client local training script
-├── job.py            # job recipe that defines client and server configurations
-├── prepare_data.py   # utilies to download data
-├── install_cargo.sh  # scripts to install rust and cargo needed for quantil dependency, only needed if you plan to inistall quantile dependency
-└── requirements.txt  # dependencies
-├── demo
-│   └── visualization.ipynb # Visualization Notebook
- 
-```
 
 ## Data
 
