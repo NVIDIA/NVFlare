@@ -51,7 +51,7 @@ class PrintCall(CallFilter):
     def filter_call(self, func_kwargs: dict, context: Context):
         direction = context.get_prop(ContextKey.DIRECTION)
         qual_func_name = context.get_prop(ContextKey.QUALIFIED_FUNC_NAME)
-        self.logger.debug(f"[{context.header_str()}] printing call: {func_kwargs=} {direction=} {qual_func_name=}")
+        self.logger.info(f"[{context.header_str()}] printing call: {func_kwargs=} {direction=} {qual_func_name=}")
         return func_kwargs
 
 
@@ -63,5 +63,5 @@ class PrintResult(ResultFilter):
     def filter_result(self, result, context: Context):
         direction = context.get_prop(ContextKey.DIRECTION)
         qual_func_name = context.get_prop(ContextKey.QUALIFIED_FUNC_NAME)
-        self.logger.debug(f"[{context.header_str()}] printing result: {result=} {direction=} {qual_func_name=}")
+        self.logger.info(f"[{context.header_str()}] printing result: {result=} {direction=} {qual_func_name=}")
         return result

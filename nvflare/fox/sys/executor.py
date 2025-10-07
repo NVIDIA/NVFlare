@@ -27,17 +27,34 @@ from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
+from .adaptor import FoxAdaptor
 from .backend import SysBackend
 from .constants import SYNC_TASK_NAME, SyncKey
 from .utils import prepare_for_remote_call
 
 
-class FoxExecutor(Executor):
+class FoxExecutor(Executor, FoxAdaptor):
 
-    def __init__(self, client_app_id: str, collab_obj_ids: Dict[str, str] = None, max_call_threads=100):
+    def __init__(
+        self,
+        client_app_id: str,
+        collab_obj_ids: Dict[str, str] = None,
+        incoming_call_filters=None,
+        outgoing_call_filters=None,
+        incoming_result_filters=None,
+        outgoing_result_filters=None,
+        max_call_threads=100,
+    ):
         Executor.__init__(self)
+        FoxAdaptor.__init__(
+            self,
+            collab_obj_ids=collab_obj_ids,
+            incoming_call_filters=incoming_call_filters,
+            outgoing_call_filters=outgoing_call_filters,
+            incoming_result_filters=incoming_result_filters,
+            outgoing_result_filters=outgoing_result_filters,
+        )
         self.client_app_id = client_app_id
-        self.collab_obj_ids = collab_obj_ids
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
         self.client_app = None
@@ -63,14 +80,9 @@ class FoxExecutor(Executor):
         self.client_app.name = client_name
         self.client_app.env_type = EnvType.SYSTEM
 
-        if self.collab_obj_ids:
-            for name, cid in self.collab_obj_ids:
-                obj = engine.get_component(cid)
-                if not obj:
-                    self.system_panic(f"component {cid} does not exist", fl_ctx)
-                    return
-
-                self.client_app.add_collab_object(name, obj)
+        err = self.process_config(self.client_app, fl_ctx)
+        if err:
+            self.system_panic(err, fl_ctx)
 
     def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
         self.thread_executor.shutdown(wait=False, cancel_futures=True)
