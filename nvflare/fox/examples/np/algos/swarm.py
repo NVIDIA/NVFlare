@@ -67,6 +67,7 @@ class NPSwarmClient(ClientApp):
 
     def sag(self, model, current_round, ctx: Context):
         results = all_clients(ctx, blocking=True).train(model, current_round)
+        # results = all_other_clients(ctx, blocking=True).train(model, current_round)
         results = list(results.values())
         total = results[0]
         for i in range(1, len(results)):
@@ -94,6 +95,7 @@ class NPSwarmClient(ClientApp):
         # determine next client
         next_round = current_round + 1
         next_client_idx = random.randint(0, len(self.clients) - 1)
+        self.logger.debug(f"chose aggr client for round {next_round}: {next_client_idx}")
         next_client = self.clients[next_client_idx]
         next_client.swarm_learn(num_rounds, new_model, next_round, _blocking=False)
 

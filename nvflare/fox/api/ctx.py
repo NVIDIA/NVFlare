@@ -16,24 +16,36 @@ from nvflare.apis.signal import Signal
 
 class Context:
 
-    def __init__(self, env_type: str, caller: str, callee: str, abort_signal: Signal, props: dict = None):
-        if not isinstance(env_type, str):
-            raise ValueError(f"env_type must be str but got {type(env_type)}")
-
+    def __init__(self, app, caller: str, callee: str, abort_signal: Signal, props: dict = None):
         if not isinstance(caller, str):
             raise ValueError(f"caller must be str but got {type(caller)}")
 
         if not isinstance(callee, str):
             raise ValueError(f"callee must be str but got {type(callee)}")
 
-        self.env_type = env_type
         self.caller = caller
         self.callee = callee
         self.abort_signal = abort_signal
-        self.app = None
+        self.app = app
         self.props = {}
         if props:
             self.props.update(props)
+
+    @property
+    def env_type(self):
+        return self.app.env_type
+
+    @property
+    def clients(self):
+        return self.app.get_client_proxies()
+
+    @property
+    def server(self):
+        return self.app.get_server_proxy()
+
+    @property
+    def client_hierarchy(self):
+        return self.app.client_hierarchy
 
     def set_prop(self, name: str, value):
         self.props[name] = value

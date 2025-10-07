@@ -97,7 +97,7 @@ class SimBackend(Backend):
             raise RuntimeError(f"cannot find interface for func '{func_name}' of object {self.target_obj_name}")
 
         check_call_args(func_name, func_itf, [], kwargs)
-        self.logger.debug(f"[{my_ctx.header_str()}] received kwargs is good: {kwargs}")
+        self.logger.debug(f"[{my_ctx.header_str()}] received kwargs is good for '{func_name}': {kwargs}")
 
         kwargs[CollabMethodArgName.CONTEXT] = my_ctx
         adjust_kwargs(func, kwargs)
