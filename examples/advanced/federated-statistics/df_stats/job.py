@@ -57,9 +57,8 @@ def main():
         min_count=15,
         min_noise_level=0.15,
         max_noise_level=0.30,
-        max_bins_percent=15
+        max_bins_percent=15,
     )
-
 
     env = SimEnv(clients=sites, num_threads=n_clients)
     recipe.execute(env=env)

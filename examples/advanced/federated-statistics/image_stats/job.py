@@ -14,6 +14,7 @@
 import argparse
 
 from client import ImageStatistics
+
 from nvflare.recipe import SimEnv
 from nvflare.recipe.fedstats import FedStatsRecipe
 
@@ -45,7 +46,7 @@ def main():
         sites=sites,
         statistic_configs=statistic_configs,
         stats_generator=stats_generator,
-        min_count = 10
+        min_count=10,
     )
 
     env = SimEnv(clients=sites, num_threads=n_clients)
