@@ -143,6 +143,7 @@ class NPFedAvgInTime(Strategy):
             current_model = self._do_one_round(i, current_model, context)
             score = self._do_eval(current_model, context)
             self.logger.info(f"[{context.header_str()}]: eval score in round {i}: {score}")
+        self.logger.info(f"FINAL MODEL: {current_model}")
         return current_model
 
     def _do_eval(self, model, ctx: Context):
@@ -161,13 +162,12 @@ class NPFedAvgInTime(Strategy):
             aggr_result=aggr_result,
         ).train(r, current_model)
 
-        self.logger.info(
-            f"[{ctx.header_str()}] round {r}: aggr result from {aggr_result.count} clients: {aggr_result.total}"
-        )
         if aggr_result.count == 0:
             return None
         else:
-            return aggr_result.total / aggr_result.count
+            result = aggr_result.total / aggr_result.count
+            self.logger.info(f"[{ctx.header_str()}] round {r}: aggr result from {aggr_result.count} clients: {result}")
+            return result
 
     def _accept_train_result(self, result, aggr_result: _AggrResult, context: Context):
         self.logger.info(f"[{context.header_str()}] got train result from {context.caller} {result}")

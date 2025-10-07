@@ -24,11 +24,11 @@ from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.constants import ContextKey, EnvType
-from nvflare.fox.api.filter import CallFilter, FilterChain
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
+from .adaptor import FoxAdaptor
 from .backend import SysBackend
 from .constants import SYNC_TASK_NAME, SyncKey
 from .utils import prepare_for_remote_call
@@ -45,24 +45,31 @@ class _ClientInfo:
         self.collab_interface = collab_interface
 
 
-class FoxController(Controller):
+class FoxController(Controller, FoxAdaptor):
 
     def __init__(
         self,
         strategy_ids: List[str],
         server_app_id: str = None,
         collab_obj_ids: List[str] = None,
+        incoming_call_filters=None,
         outgoing_call_filters=None,
-        sync_task_timeout=2,
+        incoming_result_filters=None,
+        outgoing_result_filters=None,
+        sync_task_timeout=5,
         max_call_threads=100,
     ):
         Controller.__init__(self)
-        if not collab_obj_ids:
-            collab_obj_ids = []
+        FoxAdaptor.__init__(
+            self,
+            collab_obj_ids=collab_obj_ids,
+            incoming_call_filters=incoming_call_filters,
+            outgoing_call_filters=outgoing_call_filters,
+            incoming_result_filters=incoming_result_filters,
+            outgoing_result_filters=outgoing_result_filters,
+        )
         self.server_app_id = server_app_id  # component name
-        self.outgoing_call_filters = outgoing_call_filters
         self.strategy_ids = strategy_ids  # component names
-        self.server_collab_obj_ids = collab_obj_ids  # component IDs
         self.sync_task_timeout = sync_task_timeout
         self.server_app = None
         self.client_info = {}  # client name => _ClientInfo
@@ -94,50 +101,10 @@ class FoxController(Controller):
 
             app.add_strategy(cid, strategy)
 
-        if self.server_collab_obj_ids:
-            for cid in self.server_collab_obj_ids:
-                obj = engine.get_component(cid)
-                if not obj:
-                    self.system_panic(f"component {cid} does not exist", fl_ctx)
-                    return
-
-                app.add_collab_object(cid, obj)
-
-        if self.outgoing_call_filters:
-            if not isinstance(self.outgoing_call_filters, list):
-                self.system_panic(
-                    f"outgoing_call_filters must be a list but got {type(self.outgoing_call_filters)}", fl_ctx
-                )
-                return
-
-            for chain_dict in self.outgoing_call_filters:
-                if not isinstance(chain_dict, dict):
-                    self.system_panic(
-                        f"element in outgoing_call_filters must be dict but got {type(chain_dict)}", fl_ctx
-                    )
-                    return
-
-                pattern = chain_dict.get("pattern")
-                if not pattern:
-                    self.system_panic("missing 'pattern' in outgoing_call_filters chain", fl_ctx)
-                    return
-
-                filter_ids = chain_dict.get("filters")
-                if not filter_ids:
-                    self.system_panic("missing 'filters' in outgoing_call_filters chain", fl_ctx)
-                    return
-
-                filters = []
-                for fid in filter_ids:
-                    f = engine.get_component(fid)
-                    if not f:
-                        self.system_panic(f"component {fid} does not exist", fl_ctx)
-                        return
-                    if not isinstance(f, CallFilter):
-                        self.system_panic(f"component {fid} should be a CallFilter but got {type(f)}", fl_ctx)
-                    filters.append(f)
-                app.add_outgoing_call_filters(pattern, filters)
-
+        err = self.process_config(app, fl_ctx)
+        if err:
+            self.system_panic(err, fl_ctx)
+            return
         self.server_app = app
 
     def _prepare_client_backend(self, job_id, client: ClientSite, abort_signal: Signal):
@@ -204,7 +171,7 @@ class FoxController(Controller):
             target_interface=collab_interface.get(""),
         )
 
-        for name in self.server_collab_obj_ids:
+        for name in self.collab_obj_ids:
             p = Proxy(
                 app=self.server_app,
                 target_name=f"{server_name}.{name}",
@@ -222,7 +189,7 @@ class FoxController(Controller):
         task = Task(
             name=SYNC_TASK_NAME,
             data=task_data,
-            timeout=self.sync_task_timeout,
+            timeout=int(self.sync_task_timeout),
             result_received_cb=self._process_sync_reply,
         )
 

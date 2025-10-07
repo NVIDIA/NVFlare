@@ -1,0 +1,104 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from typing import Dict
+
+from nvflare.apis.fl_context import FLContext
+from nvflare.fox.api.app import App
+from nvflare.fox.api.filter import CallFilter, ResultFilter
+
+
+class FoxAdaptor:
+
+    def __init__(
+        self,
+        collab_obj_ids: Dict[str, str] = None,
+        incoming_call_filters=None,
+        outgoing_call_filters=None,
+        incoming_result_filters=None,
+        outgoing_result_filters=None,
+    ):
+        if not collab_obj_ids:
+            collab_obj_ids = []
+        self.collab_obj_ids = collab_obj_ids
+        self.incoming_call_filters = incoming_call_filters
+        self.outgoing_call_filters = outgoing_call_filters
+        self.incoming_result_filters = incoming_result_filters
+        self.outgoing_result_filters = outgoing_result_filters
+
+    def process_config(self, app: App, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        if self.collab_obj_ids:
+            for cid in self.collab_obj_ids:
+                obj = engine.get_component(cid)
+                if not obj:
+                    return f"component {cid} does not exist"
+
+                app.add_collab_object(cid, obj)
+
+        err = self._parse_filters("incoming_call_filters", CallFilter, app.add_incoming_call_filters, fl_ctx)
+        if err:
+            return err
+
+        err = self._parse_filters("outgoing_call_filters", CallFilter, app.add_outgoing_call_filters, fl_ctx)
+        if err:
+            return err
+
+        err = self._parse_filters("incoming_result_filters", ResultFilter, app.add_incoming_result_filters, fl_ctx)
+        if err:
+            return err
+
+        err = self._parse_filters("outgoing_result_filters", ResultFilter, app.add_outgoing_result_filters, fl_ctx)
+        if err:
+            return err
+
+        return None
+
+    def _parse_filters(self, name, filter_type, add_f, fl_ctx):
+        filters = getattr(self, name)
+        if not filters:
+            return None
+
+        if not isinstance(filters, list):
+            return f"{name} must be a list but got {type(filters)}"
+
+        for chain_dict in filters:
+            pattern, filters, err = self._parse_filter_chain(name, chain_dict, filter_type, fl_ctx)
+            if err:
+                return err
+            add_f(pattern, filters)
+        return None
+
+    @staticmethod
+    def _parse_filter_chain(chain_name, chain_dict: dict, filter_type, fl_ctx):
+        if not isinstance(chain_dict, dict):
+            return None, None, f"element in {chain_name} must be dict but got {type(chain_dict)}"
+
+        pattern = chain_dict.get("pattern")
+        if not pattern:
+            return None, None, f"missing 'pattern' in {chain_name}"
+
+        filter_ids = chain_dict.get("filters")
+        if not filter_ids:
+            return None, None, f"missing 'filters' in {chain_name}"
+
+        engine = fl_ctx.get_engine()
+        filters = []
+        for fid in filter_ids:
+            f = engine.get_component(fid)
+            if not f:
+                return None, None, f"component {fid} does not exist"
+            if not isinstance(f, filter_type):
+                return None, None, f"component {fid} should be a {filter_type} but got {type(f)}"
+            filters.append(f)
+        return pattern, filters, None
