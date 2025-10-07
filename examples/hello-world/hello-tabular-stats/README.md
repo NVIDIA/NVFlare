@@ -181,5 +181,13 @@ The results are stored in workspace "/tmp/nvflare"
 
 
 
+```bash
+    cp /tmp/nvflare/simulation/stats_df/server/simulate_job/statistics/adults_stats.json demo/.
+    
+    cd demo
+    
+    jupyter notebook  visualization.ipynb
+```
+you should be able to get the visualization similar to the followings
 
- 
+![stats](demo/stats_df.png) and ![histogram plot](demo/hist_plot.png)

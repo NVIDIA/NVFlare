@@ -8,9 +8,9 @@ At each client site, we could have one or more datasets (such as "train" and "te
 features. For each feature in the dataset, we will calculate the statistics and then combine them to produce 
 global statistics for all the numeric features. The output would be complete statistics for all datasets in clients and global.    
 
-The statistics here are commonly used statistics: count, sum, mean, std_dev and histogram for the numerical features.
-The max, min are not included as it might violate the client's data privacy. Median is not included due to the complexity 
-of the algorithms. If the statistics sum and count are selected, the mean will be calculated with count and sum. 
+The statistics here are commonly used statistics: count, sum, mean, std_dev, quantiles and histogram for the numerical features.
+The max, min are not included as it might violate the client's data privacy. Quantiles require additional 
+dependency. If the statistics sum and count are selected, the mean will be calculated with count and sum. 
 
 A client will only need to implement the selected methods of "Statistics" class from statistics_spec.
 
@@ -340,5 +340,5 @@ sequenceDiagram
 
 ## Summary
 
-We provided federated statistics operators that can easily aggregate and visualize the local statistics for
+We provide federated statistics operators that can easily aggregate and visualize the local statistics for
 different data site and features. We hope this feature will make it easier to perform federated data analysis. 
