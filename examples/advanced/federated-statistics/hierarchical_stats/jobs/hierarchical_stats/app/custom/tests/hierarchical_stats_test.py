@@ -47,5 +47,6 @@
 #         count = self.local_stats_gen.count("default_set", "Percentage")
 #         assert count == 3
 
+
 class TestHierarchicalStats:
     pass
