@@ -1,6 +1,4 @@
-# Note: Hierarchical statistics feature is not a part of public release yet so
-# please get the latest NVFLARE source, built and install it to try out this
-# example.
+nvflare~=2.7.0rc
 ipywidgets
 numpy
 pandas
