@@ -72,7 +72,9 @@ def prepare_data(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_dir", type=str, required=True, help="Location of image files")
+    parser.add_argument(
+        "--input_dir", type=str, default="/tmp/nvflare/image_stats/data", help="Location of image files"
+    )
     parser.add_argument("--input_ext", type=str, default=".png", help="Search extension")
     parser.add_argument(
         "--output_dir", type=str, default="/tmp/nvflare/image_stats/data", help="Output location of data lists"
