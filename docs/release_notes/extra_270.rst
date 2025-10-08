@@ -7,13 +7,15 @@ Memory Management Improvements
 ------------------------------
 
 There are two main issues with sending large messages:
-A large memory space is required to serialize the message into bytes before sending it. Once memory is saturated, everything becomes very slow.
-A large byte array sent as one single message could cause the network to be saturated, which could also slow down the overall processing.
-These issues exists regardless the model is sent directly or via streaming. We have developed a few different ways to address theses issues.
 
-Another issue of LLM streaming is limited by Memory size, the model size must fit into the memory. File-based streaming then not limited by the memory size.
+- A large memory space is required to serialize the message into bytes before sending it. Once memory is saturated, everything becomes very slow.
+- A large byte array sent as one single message could cause the network to be saturated, which could also slow down the overall processing.
 
-We introduced FileStreamer in previous release :ref:`file_streaming`, we are now introducing FileDownloader
+These issues exist regardless of whether the model is sent directly or via streaming. We have developed a few different ways to address these issues.
+
+Another issue with LLM streaming is that it is limited by memory size; the model size must fit into the memory. File-based streaming is not limited by the memory size.
+
+We introduced FileStreamer in the previous release :ref:`file_streaming`. We are now introducing FileDownloader.
 
 Push vs. Pull
 ^^^^^^^^^^^^^
@@ -37,9 +39,7 @@ each containing a chunk of file data. The big file is never loaded into memory c
 Since only small messages are sent over the network, it is less likely to completely bog down the network.
 
 
-With pull, the file owner first prepares the file and gets the Reference ID (RID) for the file. I
-t then sends the RID to all recipients in whatever way it wants (e.g. broadcast). Once the RID is received,
-each recipient then pulls the file chunk by chunk until the whole file is received.
+With pull, the file owner first prepares the file and gets the Reference ID (RID) for the file. It then sends the RID to all recipients in whatever way it wants (e.g., broadcast). Once the RID is received, each recipient then pulls the file chunk by chunk until the whole file is received.
 
 As you can see, pulling is much more relaxed in that recipients are not synchronized in any way.
 Each recipient can pull the file at its own pace. This is very useful when sharing a file with multiple recipients.
@@ -50,17 +50,18 @@ The “pull” method is implemented with the **FileDownloader** class.
 FileDownloader
 ^^^^^^^^^^^^^^
 The file downloading process requires three steps:
-The data owner prepares the file(s) to be shared with recipients, and obtain one reference id (RID) for each file.
-The data owner sends the RID(s) to all recipients. This is usually done with a broadcast message.
-Recipients download the files one by one with received RIDs.
+
+1. The data owner prepares the file(s) to be shared with recipients, and obtains one reference ID (RID) for each file.
+2. The data owner sends the RID(s) to all recipients. This is usually done with a broadcast message.
+3. Recipients download the files one by one with received RIDs.
 
 
-Pre-Install CLI command
-------------------------
+Pre-Install CLI Command
+-----------------------
 
-In case where custom code /dynamic code is not allowed to deployed, we need to pre-install the application to the
-host. Although you can manually deploy these code without using any tool or command, the following pre-install tool
-my provide simpler method.
+In cases where custom code or dynamic code is not allowed to be deployed, we need to pre-install the application to the
+host. Although you can manually deploy this code without using any tool or command, the following pre-install tool
+may provide a simpler method.
 
 The code pre-installer handles:
 - Installation of application code
