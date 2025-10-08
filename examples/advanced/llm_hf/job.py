@@ -100,8 +100,7 @@ def main():
     # Send ScriptRunner to all clients
     for i in range(num_clients):
         client_id = client_ids[i]
-        #site_name = f"site-{client_id}"
-        site_name = f"site-{i+1}"
+        site_name = f"site-{client_id}"
         data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
 

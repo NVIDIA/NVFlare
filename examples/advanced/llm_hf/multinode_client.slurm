@@ -40,7 +40,7 @@ sleep 20
 
 # start client on first node (if using production mode)
 echo "Starting NVFlare client..."
-${NVFLARE_PROJECT}/site-1/startup/start.sh
+${NVFLARE_PROJECT}/dolly/startup/start.sh
 
 # wait for client to connect to server
 sleep 30

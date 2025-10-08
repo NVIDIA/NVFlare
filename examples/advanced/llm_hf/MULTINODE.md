@@ -38,7 +38,7 @@ SLURM Job (2 nodes allocated)
   │
   ├─> Master Node
   │   ├─> NVFlare Server
-  │   └─> NVFlare Client (site-1)
+  │   └─> NVFlare Client (dolly)
   │       └─> Receives training task
   │           └─> Executes: bash run_multinode_training.sh src/client.py --args...
   │               └─> Wrapper script uses srun to launch across nodes
@@ -286,7 +286,7 @@ export MASTER_PORT=29500
 
 # Start NVFlare server and client (on master node only)
 /path/to/server/startup/start.sh
-/path/to/site-1/startup/start.sh
+/path/to/dolly/startup/start.sh
 
 # Launch FL job (only on master node, no srun!)
 python3 job.py \
