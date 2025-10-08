@@ -130,8 +130,8 @@ class SGAPAssessor(Assessor):
                 self.system_panic(f"aggregation error: {secure_format_exception(ex)}", fl_ctx)
                 return
 
-        fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
-        self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+        self.fire_event_with_data(AppEventType.AFTER_AGGREGATION, fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result)
+
         self.log_info(fl_ctx, f"End aggregation for round {current_round}.")
 
         self.fire_event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE, fl_ctx)
