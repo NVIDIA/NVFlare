@@ -24,12 +24,12 @@ import datasets
 import numpy as np
 import torch
 import torch.distributed as dist
-from accelerate import PartialState
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, TrainerCallback, trainer_utils
 from trl import SFTConfig, SFTTrainer
 
 import nvflare.client as flare
+
 
 # Add callback to stop at each epoch
 class StopCallback(TrainerCallback):
@@ -112,7 +112,9 @@ def main():
     )
     parser.add_argument("--local_epoch", type=int, default=1)
     parser.add_argument("--num_rounds", type=int, default=3)
-    parser.add_argument("--wandb_project", type=str, default="fl_exp", help="WandB project name (enables WandB if provided)")
+    parser.add_argument(
+        "--wandb_project", type=str, default="fl_exp", help="WandB project name (enables WandB if provided)"
+    )
     parser.add_argument("--wandb_run_name", type=str, default="multinode", help="WandB run name")
     args = parser.parse_args()
 
@@ -122,7 +124,7 @@ def main():
     # Set up device for DDP
     # Use local_rank which is 0-7 on each node, not global rank which is 0-15 across all nodes
     device_map = {"": local_rank}
-    
+
     # Set WandB environment variables (only if API key is set and rank 0 will actually log)
     wandb_enabled = args.wandb_project and os.environ.get("WANDB_API_KEY")
     if wandb_enabled:
@@ -130,7 +132,9 @@ def main():
         if args.wandb_run_name:
             os.environ["WANDB_NAME"] = args.wandb_run_name
         # Add FL-specific tags
-        os.environ["WANDB_TAGS"] = f"nvflare,multi-node,{world_size}gpus,{os.environ.get('SLURM_JOB_NUM_NODES', '1')}nodes"
+        os.environ["WANDB_TAGS"] = (
+            f"nvflare,multi-node,{world_size}gpus,{os.environ.get('SLURM_JOB_NUM_NODES', '1')}nodes"
+        )
         if rank == 0:
             print(f"Rank 0: WandB enabled - project: {args.wandb_project}, run: {args.wandb_run_name}")
     elif rank == 0:
@@ -141,7 +145,7 @@ def main():
     # In multi-node training, rank 0 is on the master node where the FL client runs
     if rank == 0:
         flare.init()  # TODO: pass the global rank here instead of doing logic in script
-        print(f"Rank 0: NVFlare client initialized")
+        print(f"Rank 0: NVFlare client {flare.get_site_name()} initialized")
     else:
         print(f"Rank {rank} (local_rank {local_rank}): Skipping NVFlare init (only rank 0 communicates with FL server)")
 
@@ -274,7 +278,7 @@ def main():
                     stop_signal = [False]
                     dist.broadcast_object_list(stop_signal, src=0)
                 break
-            
+
             print("Rank 0: Waiting to receive model from FL server...")
             input_model = flare.receive(timeout=600)
             if input_model is None:
@@ -302,12 +306,12 @@ def main():
                 is_running_list = [None]
             dist.broadcast_object_list(is_running_list, src=0)
             is_running = is_running_list[0]
-            
+
             # If not running, break before doing any work
             if not is_running:
                 print(f"Rank {rank}: Received stop signal from rank 0")
                 break
-        
+
         # broadcast current round and global_model to all processes
         if dist.is_initialized():
             curr_round_list = [curr_round]

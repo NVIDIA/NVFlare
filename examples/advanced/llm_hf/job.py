@@ -105,7 +105,7 @@ def main():
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
 
         script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --num_rounds {num_rounds}"
-        
+
         # Add WandB arguments if provided
         if args.wandb_project:
             wandb_run_name = args.wandb_run_name if args.wandb_run_name else f"nvflare_{train_mode.lower()}_{client_id}"
@@ -143,10 +143,10 @@ def main():
             # Use a wrapper script that handles srun coordination
             # The wrapper script will detect if running on single or multiple nodes
             print(f"Client {client_id}: Creating multi-node training job with {len(gpus[i])} GPUs per node")
-            
+
             # Send the wrapper script to the client
             job.to("run_multinode_training.sh", site_name)
-            
+
             # Use the wrapper script which will call srun if needed
             runner = ScriptRunner(
                 script=train_script,
@@ -261,7 +261,7 @@ def define_parser():
         "--multi_node",
         action="store_true",
         help="enable multi-node training, default to False",
-    )    
+    )
     parser.add_argument(
         "--startup_kit_location",
         type=str,
