@@ -16,6 +16,8 @@ import threading
 import time
 from typing import Optional
 
+import numpy as np
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -262,6 +264,16 @@ class ModelUpdateAssessor(Assessor):
             device_selection_version=self.device_manager.current_selection_version,
             device_selection=self.device_manager.get_selection(fl_ctx),
         )
+        # compute model size in MB
+        # model.data is a dict of lists (converted from numpy arrays for serialization)
+        if model and model.data:
+            model_size = sum([np.array(v).nbytes for v in model.data.values()]) / (1024 * 1024)
+            # log reply info
+            self.log_info(
+                fl_ctx,
+                f"replying with model_version={reply.model_version}, model size {model_size} MB",
+            )
+
         return accepted, reply.to_shareable()
 
     def assess(self, fl_ctx: FLContext) -> Assessment:

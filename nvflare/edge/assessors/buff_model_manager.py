@@ -143,6 +143,9 @@ class BuffModelManager(ModelManager):
         # create the ModelState for the new model version
         self.updates[self.current_model_version] = _ModelState(ModelUpdateDXOAggregator())
         self.log_info(fl_ctx, f"generated new model version {self.current_model_version} with {num_updates} updates")
+        # print model size in MB
+        model_size = sum([v.nbytes for v in new_model.values()]) / (1024 * 1024)
+        self.log_info(fl_ctx, f"new model size: {model_size:.2f} MB")
 
         # update the current model
         # convert new_model items from numpy arrays to lists for serialization

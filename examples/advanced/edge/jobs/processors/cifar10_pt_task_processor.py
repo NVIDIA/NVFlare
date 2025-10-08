@@ -59,24 +59,21 @@ class Cifar10PTTaskProcessor(DeviceTaskProcessor):
         self.local_epochs = local_epochs
         self.local_lr = local_lr
         self.local_momentum = local_momentum
+        # Training
+        self.train_loader = None
+        self.net = None
+        self.optimizer = None
+        self.criterion = None
 
     def setup(self, job: JobResponse) -> None:
-        pass
-
-    def shutdown(self) -> None:
-        pass
-
-    def _pytorch_training(self, global_model):
-        # Data loading code
+        device_id = self.device.device_id if self.device else "unknown"
+        self.logger.info(f"Device {device_id}: setup...")
         transform = transforms.Compose([transforms.ToTensor()])
-        batch_size = self.local_batch_size
-
+        # CIFAR10 dataset
         # Add file lock to prevent multiple simultaneous downloads
         lock_file = os.path.join(self.data_root, "cifar10.lock")
         with filelock.FileLock(lock_file):
             train_set = datasets.CIFAR10(root=self.data_root, train=True, download=True, transform=transform)
-
-        # Generate seed according to device_id
         # Randomly select a subset of the training set
         # generate a random indices list
         indices = list(range(len(train_set)))
@@ -85,35 +82,48 @@ class Cifar10PTTaskProcessor(DeviceTaskProcessor):
         indices = indices[: self.subset_size]
         # create a new train_set from the selected indices
         train_subset = Subset(train_set, indices)
-        # create a dataloader for the train_subset
-        train_loader = torch.utils.data.DataLoader(train_subset, batch_size=batch_size, shuffle=True, num_workers=2)
+        # create dataloader for the train_subset
+        self.train_loader = torch.utils.data.DataLoader(
+            train_subset, batch_size=self.local_batch_size, shuffle=True, num_workers=2
+        )
 
-        # Network loading
-        net = Cifar10ConvNet()
-        net.load_state_dict(global_model)
-        criterion = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.SGD(net.parameters(), lr=self.local_lr, momentum=self.local_momentum)
-        net.to(DEVICE)
+        # Training-related components
+        self.net = Cifar10ConvNet()
+        self.net.to(DEVICE)
+        self.criterion = torch.nn.CrossEntropyLoss()
+        self.optimizer = torch.optim.SGD(self.net.parameters(), lr=self.local_lr, momentum=self.local_momentum)
+
+    def shutdown(self) -> None:
+        if self.train_loader:
+            del self.train_loader
+        if self.net:
+            del self.net
+        if self.optimizer:
+            del self.optimizer
+        if self.criterion:
+            del self.criterion
+
+    def _pytorch_training(self, global_model):
+        # Load global model params
+        self.net.load_state_dict(global_model)
 
         # Training loop
         # Let's do 4 local epochs
         for epoch in range(self.local_epochs):
-            for i, data in enumerate(train_loader, 0):
+            for i, data in enumerate(self.train_loader, 0):
                 # get the inputs; data is a list of [inputs, labels]
                 inputs, labels = data[0].to(DEVICE), data[1].to(DEVICE)
-
                 # zero the parameter gradients
-                optimizer.zero_grad()
-
+                self.optimizer.zero_grad()
                 # forward + backward + optimize
-                outputs = net(inputs)
-                loss = criterion(outputs, labels)
+                outputs = self.net(inputs)
+                loss = self.criterion(outputs, labels)
                 loss.backward()
-                optimizer.step()
+                self.optimizer.step()
 
         # Calculate the model param diff
         diff_dict = {}
-        for key, param in net.state_dict().items():
+        for key, param in self.net.state_dict().items():
             numpy_param = param.cpu().numpy() - global_model[key].numpy()
             # Convert numpy array to list for serialization
             diff_dict[key] = numpy_param.tolist()
