@@ -4,7 +4,7 @@
 Android SDK API Reference
 ########################
 
-This document provides comprehensive API reference for the NVFlare Android SDK, enabling federated learning on Android devices using ExecuTorch.
+This document provides a comprehensive API reference for the NVIDIA FLARE Android SDK, enabling federated learning on Android devices using ExecuTorch.
 
 .. note::
    This API reference assumes familiarity with the :ref:`mobile development guide <flare_mobile>` and basic Android development concepts.
@@ -17,11 +17,11 @@ The Android SDK provides native Kotlin/Java libraries for implementing federated
 Key Components
 ==============
 
-* **AndroidFlareRunner**: Main orchestrator for federated learning
-* **Connection**: HTTP/HTTPS communication with FLARE servers
-* **ETTrainer**: ExecuTorch-based model training
-* **DataSource**: Interface for providing training data
-* **Dataset**: Data interface for training examples
+* **AndroidFlareRunner**: Main orchestrator for federated learning.
+* **Connection**: HTTP/HTTPS communication with FLARE servers.
+* **ETTrainer**: ExecuTorch-based model training.
+* **DataSource**: Interface for providing training data.
+* **Dataset**: Data interface for training examples.
 
 AndroidFlareRunner
 ==================
@@ -49,16 +49,16 @@ Constructor
 Parameters
 ~~~~~~~~~~
 
-* ``context``: Android application context
-* ``connection``: Connection instance for server communication
-* ``jobName``: Name of the FL job to participate in
-* ``dataSource``: Data source providing training data
-* ``deviceInfo``: Device metadata (device_id, platform, etc.)
-* ``userInfo``: User metadata (user_id, etc.)
-* ``jobTimeout``: Timeout in seconds for job operations
-* ``inFilters``: Optional input filters for data processing
-* ``outFilters``: Optional output filters for result processing
-* ``resolverRegistry``: Optional component resolver registry
+* ``context``: Android application context.
+* ``connection``: Connection instance for server communication.
+* ``jobName``: Name of the FL job to participate in.
+* ``dataSource``: Data source providing training data.
+* ``deviceInfo``: Device metadata (``device_id``, ``platform``, etc.).
+* ``userInfo``: User metadata (``user_id``, etc.).
+* ``jobTimeout``: Timeout in seconds for job operations.
+* ``inFilters``: Optional input filters for data processing.
+* ``outFilters``: Optional output filters for result processing.
+* ``resolverRegistry``: Optional component resolver registry.
 
 What is a Resolver?
 -------------------
@@ -67,7 +67,7 @@ A **Resolver** is a component that maps string identifiers to actual class imple
 
 For example, when the server sends a job configuration that specifies a trainer component, the resolver looks up the string identifier (like "ETTrainerExecutor") and maps it to the actual class that should be instantiated. This allows for flexible, configuration-driven component loading without hardcoding specific implementations.
 
-The ``resolverRegistry`` parameter allows you to register custom resolvers for your own components, enabling the system to dynamically load and instantiate them when needed.
+The ``resolverRegistry`` parameter allows you to register custom resolvers for your own components, enabling the system to dynamically load and instantiate them as needed.
 
 Properties
 ----------
@@ -118,13 +118,13 @@ Stops the federated learning process and cleans up resources.
 Built-in Component Resolvers
 ----------------------------
 
-The AndroidFlareRunner includes built-in resolvers for common components:
+The ``AndroidFlareRunner`` includes built-in resolvers for common components:
 
-* ``Executor.ETTrainerExecutor``: ExecuTorch-based training executor
-* ``Trainer.DLTrainer``: Deep learning trainer (mapped to ETTrainerExecutor)
-* ``Filter.NoOpFilter``: No-operation filter
-* ``EventHandler.NoOpEventHandler``: No-operation event handler
-* ``Batch.SimpleBatch``: Simple batch processing
+* ``Executor.ETTrainerExecutor``: ExecuTorch-based training executor.
+* ``Trainer.DLTrainer``: Deep learning trainer (mapped to ``ETTrainerExecutor``).
+* ``Filter.NoOpFilter``: No-operation filter.
+* ``EventHandler.NoOpEventHandler``: No-operation event handler.
+* ``Batch.SimpleBatch``: Simple batch processing.
 
 Connection
 ==========
@@ -173,7 +173,7 @@ Sets device capabilities for the connection.
    fun setCapabilities(capabilities: Map<String, Any>)
 
 **Parameters:**
-* ``capabilities``: Map of device capabilities
+* ``capabilities``: Map of device capabilities.
 
 setUserInfo(userInfo)
 ~~~~~~~~~~~~~~~~~~~~~
@@ -185,7 +185,7 @@ Sets user information for the connection.
    fun setUserInfo(userInfo: Map<String, String>)
 
 **Parameters:**
-* ``userInfo``: Map of user information
+* ``userInfo``: Map of user information.
 
 setScheme(scheme)
 ~~~~~~~~~~~~~~~~~
@@ -197,7 +197,7 @@ Sets the HTTP scheme (http/https).
    fun setScheme(scheme: String)
 
 **Parameters:**
-* ``scheme``: "http" or "https"
+* ``scheme``: ``"http"`` or ``"https"``.
 
 setAllowSelfSignedCerts(allow)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -209,7 +209,7 @@ Configures whether to allow self-signed certificates.
    fun setAllowSelfSignedCerts(allow: Boolean)
 
 **Parameters:**
-* ``allow``: true to allow self-signed certificates
+* ``allow``: ``true`` to allow self-signed certificates.
 
 .. warning::
    Allowing self-signed certificates creates security vulnerabilities. Only use in development or controlled environments.
@@ -228,11 +228,11 @@ Requests a job from the server.
    ): JobResponse?
 
 **Parameters:**
-* ``jobName``: Name of the job to request
-* ``deviceInfo``: Device information
-* ``userInfo``: User information
+* ``jobName``: Name of the job to request.
+* ``deviceInfo``: Device information.
+* ``userInfo``: User information.
 
-**Returns:** JobResponse if successful, null otherwise
+**Returns:** ``JobResponse`` if successful, ``null`` otherwise.
 
 getTask(jobId, taskName)
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -247,10 +247,10 @@ Requests a task from the server.
    ): TaskResponse?
 
 **Parameters:**
-* ``jobId``: Job identifier
-* ``taskName``: Name of the task to request
+* ``jobId``: Job identifier.
+* ``taskName``: Name of the task to request.
 
-**Returns:** TaskResponse if successful, null otherwise
+**Returns:** ``TaskResponse`` if successful, ``null`` otherwise.
 
 reportResult(jobId, taskId, result)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -266,16 +266,16 @@ Reports task results to the server.
    ): ResultResponse?
 
 **Parameters:**
-* ``jobId``: Job identifier
-* ``taskId``: Task identifier
-* ``result``: Task execution results
+* ``jobId``: Job identifier.
+* ``taskId``: Task identifier.
+* ``result``: Task execution results.
 
-**Returns:** ResultResponse if successful, null otherwise
+**Returns:** ``ResultResponse`` if successful, ``null`` otherwise.
 
 ETTrainer
 =========
 
-ExecuTorch-based trainer for on-device model training. Implements AutoCloseable for proper resource management.
+ExecuTorch-based trainer for on-device model training. Implements ``AutoCloseable`` for proper resource management.
 
 Constructor
 -----------
@@ -291,9 +291,9 @@ Constructor
 Parameters
 ~~~~~~~~~~
 
-* ``context``: Android application context
-* ``meta``: Model metadata
-* ``dataset``: Optional dataset for training
+* ``context``: Android application context.
+* ``meta``: Model metadata.
+* ``dataset``: Optional dataset for training.
 
 Methods
 -------
@@ -313,13 +313,13 @@ Trains the model using the provided configuration and dataset.
    ): Map<String, Any>
 
 **Parameters:**
-* ``config``: Training configuration
-* ``dataset``: Training dataset
-* ``modelData``: Model data in ExecuTorch format
+* ``config``: Training configuration.
+* ``dataset``: Training dataset.
+* ``modelData``: Model data in ExecuTorch format.
 
-**Returns:** Training results including loss and predictions
+**Returns:** Training results including loss and predictions.
 
-**Throws:** Exception if training fails
+**Throws:** ``Exception`` if training fails.
 
 **Usage:**
 
@@ -365,10 +365,10 @@ Retrieves a dataset for the specified job.
    fun getDataset(jobName: String, context: Context): Dataset
 
 **Parameters:**
-* ``jobName``: Name of the federated learning job
-* ``context``: FLARE context
+* ``jobName``: Name of the federated learning job.
+* ``context``: FLARE context.
 
-**Returns:** Dataset instance for training
+**Returns:** ``Dataset`` instance for training.
 
 **Example Implementation:**
 
@@ -411,7 +411,7 @@ Returns the total number of examples in the dataset.
 
    fun size(): Int
 
-**Returns:** Number of examples
+**Returns:** Number of examples.
 
 getBatch(batchSize)
 ~~~~~~~~~~~~~~~~~~~
@@ -423,9 +423,9 @@ Retrieves a batch of training examples.
    fun getBatch(batchSize: Int): List<Map<String, Any>>
 
 **Parameters:**
-* ``batchSize``: Number of examples to return
+* ``batchSize``: Number of examples to return.
 
-**Returns:** List of training examples
+**Returns:** List of training examples.
 
 **Example Implementation:**
 
@@ -557,9 +557,9 @@ The Android SDK provides comprehensive error handling through exceptions and log
 Common Exceptions
 -----------------
 
-* ``NVFlareError`` (``com.nvidia.nvflare.sdk.core.NVFlareError``): Custom base exception for FLARE-related errors
-* ``IOException`` (``java.io.IOException``): Standard Java exception for network communication errors
-* ``RuntimeException`` (``java.lang.RuntimeException``): Standard Java exception for general runtime errors
+* ``NVFlareError`` (``com.nvidia.nvflare.sdk.core.NVFlareError``): Custom base exception for FLARE-related errors.
+* ``IOException`` (``java.io.IOException``): Standard Java exception for network communication errors.
+* ``RuntimeException`` (``java.lang.RuntimeException``): Standard Java exception for general runtime errors.
 
 Exception Hierarchy
 -------------------
@@ -587,7 +587,7 @@ The SDK uses a custom exception hierarchy where ``NVFlareError`` extends ``Excep
 Error Handling Best Practices
 -----------------------------
 
-The Android SDK uses a simplified error handling approach that catches generic exceptions and provides specific handling for `NVFlareError.ServerRequestedStop`:
+The Android SDK uses a simplified error handling approach that catches generic exceptions and provides specific handling for ``NVFlareError.ServerRequestedStop``:
 
 .. code-block:: kotlin
 
@@ -627,32 +627,32 @@ Common Issues
 -------------
 
 **Build Errors**
-* Ensure all dependencies are properly linked
-* Check ExecuTorch library compatibility
-* Verify SDK files are correctly copied
+* Ensure all dependencies are properly linked.
+* Check ExecuTorch library compatibility.
+* Verify SDK files are correctly copied.
 
 **Runtime Errors**
-* Check network connectivity
-* Verify server configuration
-* Review device logs for specific error messages
+* Check network connectivity.
+* Verify server configuration.
+* Review device logs for specific error messages.
 
 **Performance Issues**
-* Monitor memory usage during training
-* Optimize model architecture
-* Adjust batch sizes and training parameters
+* Monitor memory usage during training.
+* Optimize model architecture.
+* Adjust batch sizes and training parameters.
 
 **Certificate Errors**
-* Use proper certificate validation in production
-* Consider certificate pinning for enhanced security
-* Test with self-signed certificates in development only
+* Use proper certificate validation in production.
+* Consider certificate pinning for enhanced security.
+* Test with self-signed certificates in development only.
 
 Best Practices
 ==============
 
-* **Resource Management**: Always use try-with-resources or AutoCloseable for ETTrainer
-* **Error Handling**: Implement comprehensive error handling and logging
-* **Security**: Use proper certificate validation in production
-* **Performance**: Monitor memory usage and optimize model size
-* **Testing**: Test with various network conditions and device configurations
+* **Resource Management**: Always use try-with-resources or ``AutoCloseable`` for ``ETTrainer``.
+* **Error Handling**: Implement comprehensive error handling and logging.
+* **Security**: Use proper certificate validation in production.
+* **Performance**: Monitor memory usage and optimize model size.
+* **Testing**: Test with various network conditions and device configurations.
 
 For more information, see the :ref:`mobile development guide <flare_mobile>` and :ref:`edge examples <edge_examples>`.
