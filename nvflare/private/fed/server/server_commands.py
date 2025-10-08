@@ -224,7 +224,7 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         start_time = time.time()
         shared_fl_ctx = data.get_peer_context()
         data.set_peer_context(FLContext())
-        shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
+        shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True, sticky=True)
 
         client = data.get_header(ServerCommandKey.FL_CLIENT)
         fl_ctx.set_peer_context(shared_fl_ctx)

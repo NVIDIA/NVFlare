@@ -454,8 +454,6 @@ class ServerRunner(TBI):
             self.log_error(fl_ctx, "invalid result submission: must be Shareable but got {}".format(type(result)))
             return
 
-        # set the reply prop so log msg context could include RC from it
-        fl_ctx.set_prop(FLContextKey.REPLY, result, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=result, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)

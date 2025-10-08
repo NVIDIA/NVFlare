@@ -22,6 +22,8 @@ Clear
 -----
 Messages are not encrypted. This is typically used when the server is deployed behind a secure proxy, and the communication between the proxy and the server is already protected.
 
+.. _byoconn:
+
 BYOConn (Bring Your Own Connectivity)
 =====================================
 

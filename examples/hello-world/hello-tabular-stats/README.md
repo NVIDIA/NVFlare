@@ -2,21 +2,48 @@
 
 In this example, we will show how to generate federated statistics for tabular data that can be represented as Pandas Data Frame.
 
+## Code Structure
+First, get the example code from github:
+
+```
+git clone https://github.com/NVIDIA/NVFlare.git
+```
+Then navigate to the hello-tabular-stats directory:
+
+```
+git switch <release branch>
+cd examples/hello-world/hello-tabular-stats
+
+```
+
+``` bash
+hello-tabular-stats
+|
+├── client.py         # client local training script
+├── job.py            # job recipe that defines client and server configurations
+├── prepare_data.py   # utilities to download data
+├── install_cargo.sh  # scripts to install rust and cargo needed for quantile dependency, only needed if you plan to install quantile dependency
+└── requirements.txt  # dependencies
+├── demo
+│   └── visualization.ipynb # Visualization Notebook
+ 
+```
+
 ## NVIDIA FLARE Installation
-for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
+For the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
 ```
 pip install nvflare
 
 ```
 ## Install the dependency
 
-first get the example code from github:
+First, get the example code from github:
 
 ```
 git clone https://github.com/NVIDIA/NVFlare.git
 ```
 
-then navigate to the hello-tabular-stats directory:
+Then navigate to the hello-tabular-stats directory:
 
 ```
 cd NVFlare/examples/hello-world/hello-tabular-stats
@@ -35,7 +62,7 @@ Skip this step if you don't need quantile statistics.
 pip install fastdigest==0.4.0
 ```
 
-on Ubuntu, you might get the following error:
+On Ubuntu, you might get the following error:
 
   Cargo, the Rust package manager, is not installed or is not on PATH.
   This package requires Rust and Cargo to compile extensions. Install it through
@@ -58,37 +85,22 @@ Then you can install fastdigest again
 pip install fastdigest==0.4.0
 ```
 
-## Code Structure
-first get the example code from github:
-
-``` bash
-hello-tabular-stats
-|
-├── client.py         # client local training script
-├── job.py            # job recipe that defines client and server configurations
-├── prepare_data.py   # utilies to download data
-├── install_cargo.sh  # scripts to install rust and cargo needed for quantil dependency, only needed if you plan to inistall quantile dependency
-└── requirements.txt  # dependencies
-├── demo
-│   └── visualization.ipynb # Visualization Notebook
- 
-```
 
 ## Data
 
 In this example, we are using UCI (University of California, Irvine) [adult dataset](https://archive.ics.uci.edu/dataset/2/adult)
 
-The original dataset has already contains "training" and "test" datasets. Here we simply assume that "training" and test data sets are belong to different clients.
-so we assigned the training data and test data into two clients.
+The original dataset already contains "training" and "test" datasets. Here we simply assume that the "training" and test datasets belong to different clients.
+So we assigned the training data and test data into two clients.
  
-Now we use data utility to download UCI datasets to separate client package directory to /tmp/nvflare/data/ directory
+Now we use the data utility to download UCI datasets to separate client package directory to /tmp/nvflare/data/ directory
 
 Please note that the UCI's website may experience occasional downtime.
 
 ```shell
 python prepare_data.py
 ```
-it should show something like
+It should show something like
 ```
 prepare data for data directory /tmp/nvflare/df_stats/data
 
@@ -112,20 +124,20 @@ The statistics generator `AdultStatistics` implements `Statistics` spec.
 class AdultStatistics(DFStatisticsCore):
     # rest of code 
 ```
-Many of the functions needed for tabular statistics have already been implemented DFStatisticsCore
+Many of the functions needed for tabular statistics have already been implemented in DFStatisticsCore
 
-In the `AdultStatistics` class, we really need to have the followings
+In the `AdultStatistics` class, we really need to have the following
 * data_features -- here we hard-coded the feature name array. 
 * implement `load_data() -> Dict[str, pd.DataFrame]` function, where 
   the method will return a dictionary of panda DataFrames with one for each data source ("train", "test")
 * `data_path = f"{self.data_root_dir}/<site-name>/<filename>`
 
 ## Server Code
-The server aggregation have already implemented in Statistics Controller
+The server aggregation has already been implemented in Statistics Controller
 
 ## Job Recipe
 
-Job is defined via recipe, we will run it in Simulation Execution Env.
+The job is defined via a recipe, and we will run it in Simulation Execution Env.
 
 ```
     recipe = FedStatsRecipe(
@@ -141,7 +153,7 @@ Job is defined via recipe, we will run it in Simulation Execution Env.
 
 ```
 
-The statistics configuration determines which statistics we need generate
+The statistics configuration determines which statistics we need to generate
 Here is an example
 ```
     statistic_configs = {
@@ -155,7 +167,7 @@ Here is an example
 ```
 
 ## Run Job
-from terminal try to run the code
+From the terminal, try to run the code
  
 ```
 python job.py
@@ -176,10 +188,18 @@ The results are stored in workspace "/tmp/nvflare"
 ```
 
 ## Visualization
-   with json format, the data can be easily visualized via pandas dataframe and plots. 
-   download and copy the output adults_stats.json file to demo directory, then you can run jupyter notebook visualization.ipynb 
+   With the JSON format, the data can be easily visualized via pandas dataframe and plots. 
+   Download and copy the output adults_stats.json file to the demo directory, then you can run jupyter notebook visualization.ipynb 
 
 
 
+```bash
+    cp /tmp/nvflare/simulation/stats_df/server/simulate_job/statistics/adults_stats.json demo/.
+    
+    cd demo
+    
+    jupyter notebook  visualization.ipynb
+```
+you should be able to get the visualization similar to the followings
 
- 
+![stats](demo/stats_df.png) and ![histogram plot](demo/hist_plot.png)

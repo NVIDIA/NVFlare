@@ -4,30 +4,30 @@
 Develop Edge Applications with FLARE
 ####################################
 
-FLARE extends federated learning capabilities to edge devices. Edge device applications present some new challenges.
+FLARE extends federated learning capabilities to edge devices. Edge device applications present several unique challenges:
 
-- **Scalability**: Unlike cross-silo applications where the number of FL clients is relatively small, the number of devices could be in the millions. It's infeasible to treat the devices as simple FL clients and connect them directly to the FL server.
+- **Scalability**: Unlike cross-silo applications where the number of FL clients is relatively small, the number of devices can reach millions. It is infeasible to treat devices as simple FL clients and connect them directly to the FL server.
 
-- **Stability**: Unlike cross-silo applications where the FL clients are stable, edge devices come and go at any time. This requires the training strategy to accommodate this behavior.
+- **Stability**: Unlike cross-silo applications where FL clients are stable, edge devices can connect and disconnect at any time. This requires the training strategy to accommodate dynamic participation.
 
-- **Compute capability**: Compared to cross-silo applications, edge devices don't have as much computing power.
+- **Compute capability**: Compared to cross-silo applications, edge devices have limited computing power.
 
-- **Platform dependency**: There are multiple edge device platforms (e.g. iOS, Android, etc.), and each has a different application development environment.
+- **Platform dependency**: Multiple edge device platforms exist (e.g., iOS, Android), each with a different application development environment.
 
 Deployment Architecture
 =======================
 
-Edge devices could be in the millions and scattered in many places. These devices need to be able to connect to the FLARE host system from anywhere, using standard web technologies.
+Edge devices can number in the millions and be distributed across many locations. These devices must be able to connect to the FLARE host system from anywhere using standard web technologies.
 
 .. image:: ../../resources/deployment_architecture.png
     :height: 400px
 
-In the diagram, devices (D1 to Dn) connect to FLARE via web nodes (W1 to Wk), via HTTP protocol. The web nodes connect to FLARE via gRPC.
+In the diagram, devices (D1 to Dn) connect to FLARE via web nodes (W1 to Wk) using HTTP protocol. The web nodes connect to FLARE via gRPC.
 
 Hierarchical FLARE
 ==================
 
-Check more details in :ref:`flare_hierarchical_architecture` for the hierarchical deployment architecture.
+For more details on the hierarchical deployment architecture, see :ref:`flare_hierarchical_architecture`.
 
 Edge Training Algorithm
 =======================
@@ -35,11 +35,11 @@ Edge Training Algorithm
 Flexible Orchestration Patterns from Synchronous to Asynchronous Aggregation
 ----------------------------------------------------------------------------
 
-In cross-silo applications, the number of clients is small, and clients are stable. In a typical FedAvg algorithm, all clients participate in each round of training, and the server waits for training results from all clients. After aggregating results from clients, the server generates a new version of the model and starts the next round of training. This is called synchronous aggregation.
+In cross-silo applications, the number of clients is small and clients are stable. In a typical FedAvg algorithm, all clients participate in each round of training, and the server waits for training results from all clients. After aggregating results from clients, the server generates a new version of the model and starts the next round of training. This is called synchronous aggregation.
 
-The synchronous aggregation algorithm may not be feasible for edge device-based training. This is because the number of devices is usually very large, and connections to device clients are not as stable (the devices can come and go at any moment). It is also very hard to coordinate a large number of clients in a round-by-round fashion as devices can often join and leave at any time.
+The synchronous aggregation algorithm may not be feasible for edge device-based training because the number of devices is usually very large, and connections to device clients are less stable (devices can connect and disconnect at any moment). It is also challenging to coordinate a large number of clients in a round-by-round fashion when devices frequently join and leave.
 
-FLARE uses a more flexible orchestration mechanism to support a wide range of advanced algorithms, from synchronous to asynchronous, for device-based training. The general idea is as follows:
+FLARE uses a flexible orchestration mechanism to support a wide range of advanced algorithms, from synchronous to asynchronous, for device-based training. The general approach is as follows:
 
 1. **Device Availability**: The server (SJ) waits for enough devices to become available before starting training. Once device clients are started, they are reported to the server through the FL client hierarchy.
 
@@ -49,17 +49,17 @@ FLARE uses a more flexible orchestration mechanism to support a wide range of ad
 
 4. **Model Update and Device Replacement**: Each time a set of aggregated results is received from a CJ, the SJ updates the current version of the model. Devices that sent training results are moved out of the selection pool, and some other devices are selected to replace them in the pool. As soon as enough updates (a configuration parameter) are received, the SJ creates a new version of the model and sends the new model and selection list to the leaf CJs through the client hierarchy. Any model requests from selected devices will get this new model version.
 
-5. **Handling Device Variability**: Since devices are not equal, some devices train more quickly than others. You can imagine that some slow devices may still be training the old model version while others are training a new model version. There could be multiple versions of the model being trained by different devices at the same time. The number of concurrent models allowed is a configuration parameter. When a device's result is received, it is only aggregated into the version it is trained on. If the received version is too old (outside of the allowed concurrent versions), it is abandoned. When generating the next version of the model, the SJ considers all concurrent model versions. The SJ periodically evaluates the performance of the model against an evaluation dataset.
+5. **Handling Device Variability**: Since devices have varying capabilities, some devices train more quickly than others. Consequently, some slow devices may still be training an old model version while others are training a new model version. Multiple versions of the model can be trained by different devices simultaneously. The number of concurrent models allowed is a configuration parameter. When a device's result is received, it is only aggregated into the version it was trained on. If the received version is too old (outside the allowed concurrent versions), it is discarded. When generating the next version of the model, the SJ considers all concurrent model versions. The SJ periodically evaluates model performance against an evaluation dataset.
 
-There is no explicit concept of round. The whole process just keeps going until the SJ decides it's time to stop, either because it has produced a good model, or the performance is so bad that it makes no sense to continue.
+There is no explicit concept of rounds. The process continues until the SJ determines it is time to stop, either because it has produced a satisfactory model or because the performance indicates that continuing is not worthwhile.
 
-Such configurable orchestration gives us sufficient flexibility in determining the overall federated learning process, given two extreme cases if we have a number of N devices joining the learning:
+This configurable orchestration provides sufficient flexibility for determining the overall federated learning process. Given N devices participating in learning, we can configure two extreme cases:
 
-- **Synchronous FL**: We can set: 1) the replacement (selection of new devices and dispatching the global model to them) of the selection pool to only when it becomes empty; 2) a new version of the global model to only when it received all devices' updates.
+- **Synchronous FL**: Configure: 1) replacement (selection of new devices and dispatching the global model to them) of the selection pool only when it becomes empty; 2) a new version of the global model only when all devices' updates have been received.
 
-- **Asynchronous FL**: We can also set 1) the replacement of the selection pool whenever at least one device reports back and gets removed from the pool; 2) a new version of the global model to be updated with at least 1 device's updates.
+- **Asynchronous FL**: Configure: 1) replacement of the selection pool whenever at least one device reports back and is removed from the pool; 2) a new version of the global model to be updated with at least one device's updates.
 
-- **Custom Orchestration**: Further, we can set the parameters to anywhere between these two extremes to allow for other orchestration patterns like buffered asynchronous aggregation. Users can also define their own aggregation methods.
+- **Custom Orchestration**: Configure parameters anywhere between these two extremes to enable other orchestration patterns, such as buffered asynchronous aggregation. Users can also define their own aggregation methods.
 
 Edge Device Interaction Protocol (EDIP)
 =======================================
@@ -69,33 +69,33 @@ EDIP defines the rules that edge devices must follow to interact with the host, 
 Step 1 - Get a Job
 ------------------
 
-1. **Initiate Job Request**: The first step after starting is to get a job from the host. The device client keeps sending the getJob requests until either a job is received or the configured max amount of time to try is exceeded. If a job is not received, the client should exit.
+1. **Initiate Job Request**: The first step after starting is to obtain a job from the host. The device client continues sending ``getJob`` requests until either a job is received or the configured maximum time is exceeded. If a job is not received, the client should exit.
 
-2. **Include Job Name**: The request to the host must include a predefined job name. The LCP uses the job name to find the matching job. If multiple jobs have the same job name, one of them is randomly chosen.
+2. **Include Job Name**: The request to the host must include a predefined job name. The LCP uses the job name to find the matching job. If multiple jobs have the same job name, one is randomly chosen.
 
-3. **Provide Headers**: The request to the host also must include common headers such as device info and user info, both of them represented as a map (key/value pairs). Device Info includes information about the device platform, capabilities, and most importantly a unique device ID. User Info includes information about the user of the device. Currently, it is not being used.
+3. **Provide Headers**: The request to the host must also include common headers such as device info and user info, both represented as maps (key/value pairs). Device info includes information about the device platform, capabilities, and most importantly, a unique device ID. User info includes information about the device user and is currently not being used.
 
-4. **Receive Job Response**: The job response includes the job ID, which will be used for the training session.
+4. **Receive Job Response**: The job response includes the job ID, which is used for the training session.
 
-5. **Process Job Config Data**: The response also includes Job Config Data, which contains configuration information about the job such as the training components (trainer, loss function, optimizer, etc.) and their parameters (e.g., learning rate, number of epochs, etc.). The device client must process the job config data and create training components accordingly.
+5. **Process Job Config Data**: The response also includes job configuration data, which contains configuration information about the job, such as the training components (trainer, loss function, optimizer, etc.) and their parameters (e.g., learning rate, number of epochs). The device client must process the job configuration data and create training components accordingly.
 
-6. **Handle Cookies**: The response could include a cookie, which is a piece of information to be sent back to the host in subsequent requests.
+6. **Handle Cookies**: The response may include a cookie, which is information to be sent back to the host in subsequent requests.
 
 Step 2 - Get a Task
 -------------------
 
-Once the job is received and job configuration is processed, the device will try to get a task to execute from the host by sending the getTask request to the host.
+Once the job is received and job configuration is processed, the device attempts to obtain a task to execute from the host by sending a ``getTask`` request.
 
-In the getTask request, the client must include the job ID and the cookie (if available). Common headers like device info and user info are also included.
+In the ``getTask`` request, the client must include the job ID and the cookie (if available). Common headers such as device info and user info are also included.
 
-The device then must proceed based on the return code from the host:
+The device must then proceed based on the return code from the host:
 
-- **OK**: a task is assigned and the response includes task information. The device must proceed to execute the task.
-- **RETRY** or **NO_TASK**: the device must resend the getTask again at a later time.
-- **NO_JOB**: the requested job is no longer available. The device should go back to Step 1 to get the next job.
-- **DONE** or any error condition - the device should exit.
+- **OK**: A task is assigned and the response includes task information. The device must proceed to execute the task.
+- **RETRY** or **NO_TASK**: The device must resend the ``getTask`` request at a later time.
+- **NO_JOB**: The requested job is no longer available. The device should return to Step 1 to get the next job.
+- **DONE** or any error condition: The device should exit.
 
-If a task is assigned, the response from the host includes the task name and task data (e.g. model weights). The response could also include a cookie.
+If a task is assigned, the response from the host includes the task name and task data (e.g., model weights). The response may also include a cookie.
 
 .. note::
    This protocol is generic. The device client must choose the right component to execute the task based on the task name and the configured components in the job config data.
@@ -103,14 +103,14 @@ If a task is assigned, the response from the host includes the task name and tas
 Step 3 - Execute Task and Report Result
 ---------------------------------------
 
-If a task is received, the device should execute the task with the properly selected component. Once completed, the device sends the result back to the host by sending a reportResult request. The request includes the job ID, result, task name and ID, and the cookie. Common headers like device info and user info are also included.
+If a task is received, the device should execute the task with the properly selected component. Once completed, the device sends the result back to the host by sending a ``reportResult`` request. The request includes the job ID, result, task name and ID, and the cookie. Common headers such as device info and user info are also included.
 
-The device client then must proceed according to the return code from the host:
+The device client must then proceed according to the return code from the host:
 
-- **OK**: the report has been successfully processed. The device client should go to Step 2 to get the next task.
-- **NO_TASK**: the task is no longer available. The device client should go to Step 2 to get the next task.
-- **NO_JOB**: the job is no longer available. The device client should go to Step 1 to get the next job.
-- **END** or other error conditions - the device client should exit.
+- **OK**: The report has been successfully processed. The device client should return to Step 2 to get the next task.
+- **NO_TASK**: The task is no longer available. The device client should return to Step 2 to get the next task.
+- **NO_JOB**: The job is no longer available. The device client should return to Step 1 to get the next job.
+- **END** or other error conditions: The device client should exit.
 
 These steps can be best illustrated as a finite state machine as follows:
 
@@ -120,11 +120,11 @@ These steps can be best illustrated as a finite state machine as follows:
 Device Simulation
 =================
 
-Device-based model development requires a large number of devices. However, during algorithm development, it is impractical to expect a large number of real devices to be always available. FLARE provides a device simulator that can simulate a very large number of devices efficiently.
+Device-based model development requires a large number of devices. However, during algorithm development, it is impractical to expect a large number of real devices to be always available. FLARE provides a device simulator that can efficiently simulate a very large number of devices.
 
-The device simulator follows the EDIP discussed above, with an additional getSelection request. This request retrieves the currently selected device IDs from the host.
+The device simulator follows the EDIP discussed above, with an additional ``getSelection`` request. This request retrieves the currently selected device IDs from the host.
 
-A real device keeps sending getTask requests to get a task to execute. As discussed above, when there are millions of devices, a very small number of them actually get tasks. If we simulated this behavior, then it would take many wasteful messages and a long time to get a task to execute. Instead of going through all simulated devices to get a task, the simulator sends one getSelection request to get selected devices immediately, and then only sends the getTask request for the selected devices.
+A real device continuously sends ``getTask`` requests to obtain a task to execute. As discussed above, when there are millions of devices, only a very small number actually receive tasks. If we simulated this behavior, it would require many wasteful messages and a long time to obtain a task to execute. Instead of iterating through all simulated devices to get a task, the simulator sends one ``getSelection`` request to get selected devices immediately, and then only sends the ``getTask`` request for the selected devices.
 
 Simulation Logic
 ----------------
@@ -134,97 +134,97 @@ The following outlines the simulator's logic.
 Step 1 - Get a Job
 ------------------
 
-1. **Send Job Request**: The simulator sends the getJob request with a dummy device ID. It keeps doing so until a job is received or timed out.
+1. **Send Job Request**: The simulator sends the ``getJob`` request with a dummy device ID. It continues doing so until a job is received or the request times out.
 
 Step 2 - Get Selections
 -----------------------
 
-1. **Send Selection Request**: The simulator sends the getSelection request to the host until a selection list is received. This request serves another purpose as well: it tells the host the number of devices it simulates.
+1. **Send Selection Request**: The simulator sends the ``getSelection`` request to the host until a selection list is received. This request also serves to inform the host of the number of devices it simulates.
 
-2. **Device ID Pattern**: All simulated devices on this simulator share this pattern:
+2. **Device ID Pattern**: All simulated devices on this simulator share the following pattern:
 
    ``<uuid_prefix>#<index_number>``
 
-   Where uuid_prefix is a unique UUID, index_number is the index number of the simulated device, ranging from 1 to the number of simulated devices on this simulator (a configuration parameter).
+   Where ``uuid_prefix`` is a unique UUID and ``index_number`` is the index number of the simulated device, ranging from 1 to the number of simulated devices on this simulator (a configuration parameter).
 
-3. **Process Selection List**: When the leaf CJ processes the getSelection request, it reports the simulated device IDs to the SJ through the client hierarchy. When the selection list is available, the leaf CJ includes it in the response to the simulator.
+3. **Process Selection List**: When the leaf CJ processes the ``getSelection`` request, it reports the simulated device IDs to the SJ through the client hierarchy. When the selection list is available, the leaf CJ includes it in the response to the simulator.
 
-4. **Identify Devices**: Note that the selection list contains all devices selected, some of them are real devices, some are simulated devices on other simulators (yes, there could be multiple simulators running at the same time), and some are devices for this simulator. The simulator then finds the devices that belong to it.
+4. **Identify Devices**: Note that the selection list contains all selected devices: some are real devices, some are simulated devices on other simulators (multiple simulators can run simultaneously), and some are devices for this simulator. The simulator then identifies the devices that belong to it.
 
-5. **Continue if Necessary**: If the selection list does not contain any devices of this simulator, the simulator will continue to send getSelection.
+5. **Continue if Necessary**: If the selection list does not contain any devices from this simulator, the simulator continues to send ``getSelection`` requests.
 
 Step 3 - Get and Execute Task
 -----------------------------
 
-1. **Send Task Request**: The simulator sends the getTask request to the host sequentially for each selected device that belongs to it.
+1. **Send Task Request**: The simulator sends the ``getTask`` request to the host sequentially for each selected device that belongs to it.
 
-2. **Execute Task**: If a task is received (it is possible that the task is done already by the time the getTask request is sent to the host, even for the selected device), then the simulator submits the task to a thread pool for execution.
+2. **Execute Task**: If a task is received (it is possible that the task is already complete by the time the ``getTask`` request is sent to the host, even for the selected device), the simulator submits the task to a thread pool for execution.
 
-3. **Report Result**: Once the task is executed, the simulator reports it to the host by a reportResult request.
+3. **Report Result**: Once the task is executed, the simulator reports it to the host via a ``reportResult`` request.
 
-4. **Repeat Process**: Once all devices are processed, the simulator goes to Step 2 for the next set of selections.
+4. **Repeat Process**: Once all devices are processed, the simulator returns to Step 2 for the next set of selections.
 
 Simulation Completion
 ---------------------
 
-The simulator keeps going until one of the following conditions occurs:
+The simulator continues until one of the following conditions occurs:
 
-- **No_JOB** return code is received. In this case, the job is finished.
-- Any error code.
+- **NO_JOB** return code is received, indicating the job is finished.
+- Any error code is received.
 
 Simulator Configuration
 =======================
 
 The behavior of the simulator can be configured with the following parameters:
 
-- **Job Name (job_name)**: the name of the job
-- **Number of devices (num_devices)**: the number of devices to be simulated. The default is 10000.
-- **Number of workers (num_workers)**: the max number of worker threads to be used for executing training tasks. The default value is 10.
-- **GetJob timeout (get_job_timeout)**: the max amount of time to get a matching job from the host.
+- **Job Name (job_name)**: The name of the job.
+- **Number of devices (num_devices)**: The number of devices to be simulated. The default is 10,000.
+- **Number of workers (num_workers)**: The maximum number of worker threads to be used for executing training tasks. The default value is 10.
+- **GetJob timeout (get_job_timeout)**: The maximum amount of time to obtain a matching job from the host.
 
-The simulated device must be able to execute the assigned task. When a task is received for a device, the simulator calls the device's do_task() method. As part of the simulator configuration, a DeviceFactory object must be provided, which is called to create new devices by the simulator. The created devices must implement the do_task() method.
+The simulated device must be able to execute the assigned task. When a task is received for a device, the simulator calls the device's ``do_task()`` method. As part of the simulator configuration, a ``DeviceFactory`` object must be provided, which is called to create new devices by the simulator. The created devices must implement the ``do_task()`` method.
 
-In most cases, you do not need to write DeviceFactory. Instead, you only need to create a TaskProcessor. A special TaskProcessingDevice has been implemented that takes DeviceTaskProcessor and does the rest for you.
+In most cases, you do not need to write a ``DeviceFactory``. Instead, you only need to create a ``TaskProcessor``. A special ``TaskProcessingDevice`` has been implemented that takes a ``DeviceTaskProcessor`` and handles the rest for you.
 
 How to run simulation
 =====================
 
-The end-to-end communication path between devices and the host is illustrated with the following diagram.
+The end-to-end communication path between devices and the host is illustrated in the following diagram:
 
 .. image:: ../../resources/edge_simulation_communication_path.png
     :height: 400px
 
-The device sends a request to the web node (Routing Proxy) via HTTP.
+The device sends a request to the web node (routing proxy) via HTTP.
 
-The web node chooses the LCP based on the device ID of the request, and forwards the request to the LCP via gRPC.
+The web node selects the LCP based on the device ID in the request and forwards the request to the LCP via gRPC.
 
-Within the LCP, there are two components: the API Service and the Edge Task Dispatcher. The API Service receives the request from the web node, and fires the EDGE_REQUEST_RECEIVED event with the request data. The Edge Task Dispatcher listens to the event and finds the LCJ corresponding to the job ID. It then forwards the request to the LCJ.
+Within the LCP, there are two components: the API Service and the Edge Task Dispatcher. The API Service receives the request from the web node and fires the ``EDGE_REQUEST_RECEIVED`` event with the request data. The Edge Task Dispatcher listens to the event, finds the LCJ corresponding to the job ID, and forwards the request to the LCJ.
 
-There are two components in the LCJ: the Edge Task Receiver and the Edge Task Executor. The Edge Task Receiver receives the request from the LCP and fires the EDGE_REQUEST_RECEIVED event. The Edge Task Executor listens to this event and processes the request to produce a result, which is sent back to the device along the path of request.
+The LCJ contains two components: the Edge Task Receiver and the Edge Task Executor. The Edge Task Receiver receives the request from the LCP and fires the ``EDGE_REQUEST_RECEIVED`` event. The Edge Task Executor listens to this event and processes the request to produce a result, which is sent back to the device along the request path.
 
-With this end-to-end communication path, simulator can be installed in different places:
+With this end-to-end communication path, the simulator can be installed in different locations:
 
 - Embedded in the leaf CJs (LCJs)
-- Connect to LCPs directly
-- Connect to web nodes
+- Connected to LCPs directly
+- Connected to web nodes
 
-These options are shown in this diagram:
+These options are shown in the following diagram:
 
 .. image:: ../../resources/edge_simulator_installation_options.png
     :height: 450px
 
-Obviously the most efficient way to run the simulator is to install it in LCJs, since it avoids message hops to the web node and LCP. It is also the easiest to use - you don't even need to run the web node if you don't have any real devices. This method is ideal for algorithm development.
+The most efficient way to run the simulator is to install it in LCJs, as it avoids message hops to the web node and LCP. It is also the easiest to use—you do not even need to run the web node if you do not have any real devices. This method is ideal for algorithm development.
 
 Connecting the simulator to the routing proxy or to LCPs is useful for stress testing the system's communication capabilities.
 
-If you provision the project with the tree_prov tool described above, it generates convenience scripts in the "scripts" folder of the provision result:
+If you provision the project with the ``tree_prov`` tool described above, it generates convenience scripts in the ``scripts`` folder of the provision result:
 
-- `simulate_rp.sh`: Start the simulator and connect to the Routing Proxy
-- `simulate_lcp.sh`: Start the simulator and connect to LCPs
+- ``simulate_rp.sh``: Starts the simulator and connects to the routing proxy
+- ``simulate_lcp.sh``: Starts the simulator and connects to LCPs
 
-There is also the file simulation_config.json in the "scripts" folder. This file contains the simulation configuration parameters, as discussed above. You may want to edit these parameters to meet your requirements.
+The ``scripts`` folder also contains the ``simulation_config.json`` file. This file contains the simulation configuration parameters discussed above. You may want to edit these parameters to meet your requirements.
 
-The following is a sample simulation_config.json.
+The following is a sample ``simulation_config.json``:
 
 .. code-block:: json
 
@@ -241,9 +241,9 @@ The following is a sample simulation_config.json.
        }
    }
 
-Both simulate_rp.sh and simulate_lcp.sh require the simulation_config.json.
+Both ``simulate_rp.sh`` and ``simulate_lcp.sh`` require the ``simulation_config.json`` file.
 
-If you want to install the simulator in LCPs, you need to configure them in config_fed_client.json, as highlighted in the following example:
+If you want to install the simulator in LCPs, you need to configure them in ``config_fed_client.json``, as shown in the following example:
 
 .. code-block:: json
 
@@ -315,28 +315,28 @@ If you want to install the simulator in LCPs, you need to configure them in conf
    }
 
 .. note::
-   You do not need to manually create this file. Instead, you should use either EdgeJob API or EdgeRecipe to create the job configuration.
+   You do not need to manually create this file. Instead, you should use either the EdgeJob API or EdgeRecipe to create the job configuration.
 
 Model Development
 =================
 
-Ultimately, you want to develop a performant model with federated device training. FLARE provides ways for you to develop PyTorch models without needing to do any device programming.
+Ultimately, you want to develop a performant model with federated device training. FLARE provides methods for developing PyTorch models without requiring device-specific programming.
 
 Step 1 - Design Model Architecture
 ----------------------------------
 
-1. **Model Design**: In this step, you can design your model using PyTorch, just as you would for single-machine training. However, keep in mind that edge devices typically have limited computational resources, so the model architecture should be kept simple and lightweight to accommodate those constraints.
+1. **Model Design**: In this step, you can design your model using PyTorch, just as you would for single-machine training. However, keep in mind that edge devices typically have limited computational resources, so the model architecture should be kept simple and lightweight to accommodate these constraints.
 
-2. **Mobile Device Training**: For mobile devices, training is currently implemented using ExecuTorch. Please refer to the `ExecuTorch GitHub repository <https://github.com/pytorch/executorch>`_ for a list of supported layers, as they may differ from those in PyTorch.
+2. **Mobile Device Training**: For mobile devices, training is currently implemented using ExecuTorch. Refer to the `ExecuTorch GitHub repository <https://github.com/pytorch/executorch>`_ for a list of supported layers, as they may differ from those in PyTorch.
 
 Step 2 - Create DeviceModel
 ---------------------------
 
-1. **Applicability**: This step is applicable only when developing models for mobile devices.
+1. **Applicability**: This step applies only when developing models for mobile devices.
 
-2. **ExecuTorch Requirements**: ExecuTorch requires the model to return both the loss and the predictions during training. To meet this requirement, you need to wrap the model defined in Step 1 into a custom DeviceModel class that includes both the loss function and the prediction logic.
+2. **ExecuTorch Requirements**: ExecuTorch requires the model to return both the loss and the predictions during training. To meet this requirement, you need to wrap the model defined in Step 1 into a custom ``DeviceModel`` class that includes both the loss function and the prediction logic.
 
-3. **Example**: Below is an example of how to create a DeviceModel for a classification task using CrossEntropyLoss:
+3. **Example**: Below is an example of how to create a ``DeviceModel`` for a classification task using ``CrossEntropyLoss``:
 
 .. code-block:: python
 
@@ -352,11 +352,11 @@ Step 2 - Create DeviceModel
            pred = self.net(input)
            return self.loss(pred, label), pred.detach().argmax(dim=1)
 
-As you can see here, by default, it uses the CrossEntropyLoss loss function, which will be used by ExecuTorch in device training.
+As shown above, by default, it uses the ``CrossEntropyLoss`` loss function, which is used by ExecuTorch in device training.
 
-Your device model must extend from DeviceModel. You can choose to use a different loss function.
+Your device model must extend from ``DeviceModel``. You can choose to use a different loss function.
 
-Here is an example of how to create these models.
+Here is an example of how to create these models:
 
 .. code-block:: python
 
@@ -389,22 +389,22 @@ Here is an example of how to create these models.
        def __init__(self):
            DeviceModel.__init__(self, Cifar10ConvNet())
 
-The Cifar10ConvNet is a normal PyTorch model that you would create in Step 1.
-The TrainingNet is the device model you would create in Step 2.
+The ``Cifar10ConvNet`` is a standard PyTorch model that you would create in Step 1.
+The ``TrainingNet`` is the device model you would create in Step 2.
 
-Step 3 - Create Flare Job
--------------------------
+Step 3 - Create FLARE Job
+--------------------------
 
-In this step, you use a recipe to create and/or run a Flare job.
+In this step, you use a recipe to create and/or run a FLARE job.
 
-If you are developing models with mobile devices, you need to use the ETFedBuffRecipe; otherwise, you need to use the EdgeFedBuffRecipe.
+If you are developing models for mobile devices, you need to use the ``ETFedBuffRecipe``; otherwise, you need to use the ``EdgeFedBuffRecipe``.
 
 FedBuff is the algorithm that manages device selection and model updates.
 
 EdgeFedBuffRecipe
 ------------------
 
-This recipe helps you create jobs for training with regular PyTorch on other edge devices (e.g. NVIDIA Jetson devices). An example can be found in the :ref:`edge examples <edge_examples>`.
+This recipe helps you create jobs for training with standard PyTorch on other edge devices (e.g., NVIDIA Jetson devices). An example can be found in the :ref:`edge examples <edge_examples>`.
 
 .. code-block:: python
 
@@ -427,12 +427,12 @@ This recipe helps you create jobs for training with regular PyTorch on other edg
            custom_source_root=None,
        )
 
-Specifically, there are mainly 4 components to define: among them, the "evaluator_config" and "simulation_config" are easy to understand:
+Specifically, there are four main components to define. Among them, ``evaluator_config`` and ``simulation_config`` are straightforward:
 
-- **Evaluator** is a standalone widget, evaluating the global model with a dataset whenever the server generates a number of eval_frequency global model versions
-- **Simulation** is for simulating devices on LCJs as described earlier, so "num_devices" is per leaf client - the total number of devices involved in FL will be num_leaf * num_devices (12*num_devices if using the example tree we generated earlier)
+- **Evaluator**: A standalone widget that evaluates the global model with a dataset whenever the server generates a number of ``eval_frequency`` global model versions.
+- **Simulation**: Used for simulating devices on LCJs as described earlier. ``num_devices`` is per leaf client—the total number of devices involved in FL will be ``num_leaf * num_devices`` (``12 * num_devices`` if using the example tree we generated earlier).
 
-"Model_manager_config" and "device_manager_config" contain more parameters, they provide control over the server behavior - essentially 1) when to generate new global model, and 2) when and who should the global model be sent to:
+``model_manager_config`` and ``device_manager_config`` contain more parameters that provide control over server behavior—essentially: 1) when to generate a new global model, and 2) when and to whom the global model should be sent:
 
 .. code-block:: python
 
@@ -443,10 +443,10 @@ Specifically, there are mainly 4 components to define: among them, the "evaluato
                max_model_history= ,
           )
 
-- **global_lr** is used to define how the device model updates will contribute to the global model
-- **num_updates_for_model** defines how many device updates the server needs to receive before generating a new global model
-- **max_model_version** defines how many global models the server needs to generate before stopping the FL job
-- **max_model_history** defines how many models we keep record of, the ones older than this will be considered too old, and the updates will be discarded without being aggregated to the global model
+- **global_lr**: Defines how device model updates contribute to the global model.
+- **num_updates_for_model**: Defines how many device updates the server needs to receive before generating a new global model.
+- **max_model_version**: Defines how many global models the server needs to generate before stopping the FL job.
+- **max_model_history**: Defines how many models to keep on record. Models older than this are considered too old, and their updates are discarded without being aggregated to the global model.
 
 .. code-block:: python
 
@@ -456,30 +456,30 @@ Specifically, there are mainly 4 components to define: among them, the "evaluato
    device_reuse= ,
    )
 
-- **device_selection_size** defines the total number of devices that will be constantly maintained for concurrent active model training
-- **min_hole_to_fill** defines when should the current global model be dispatched to device: whenever a device reports back, it will be removed from the device selection list, creating a "hole" in the list, this hole will then be filled by sampling from the available devices and whoever gets selected to fill the holes will be given the current global model for training. This parameter defines the minimum number of holes before we sample and dispatch the current global model
-- **device_reuse** is a bool defining whether we allow devices that have participated in the training to be selected again
+- **device_selection_size**: Defines the total number of devices that will be constantly maintained for concurrent active model training.
+- **min_hole_to_fill**: Defines when the current global model should be dispatched to devices. Whenever a device reports back, it is removed from the device selection list, creating a "hole" in the list. This hole is then filled by sampling from the available devices, and whoever is selected to fill the holes receives the current global model for training. This parameter defines the minimum number of holes before sampling and dispatching the current global model.
+- **device_reuse**: A boolean defining whether devices that have already participated in training can be selected again.
 
-To give a realistic example, if we want to set the parameters such that we have a regular synchronous FL pipeline running M rounds, assuming we have a total number of devices N ("12*num_devices" as mentioned above), we can set the parameters as:
+To give a realistic example, if we want to configure a standard synchronous FL pipeline running M rounds with a total of N devices (``12 * num_devices`` as mentioned above), we can set the parameters as follows:
 
-On model_manager_config side:
+For ``model_manager_config``:
 
 - **global_lr=1.0**
 - **num_updates_for_model=N**
 - **max_model_version=M**
 - **max_model_history=1**
 
-Such that local updates gets aggregated with scale factor of 1.0, we need all devices' updates to generate a global model, in total we will have M global model versions ("M rounds"), and since everyone needs to report back before generating a new model version before starting new training, we do not need to keep track of more than 1 global model versions.
+This configuration ensures that local updates are aggregated with a scale factor of 1.0, all devices' updates are required to generate a global model, there will be M global model versions (M rounds), and since all devices must report back before generating a new model version, we only need to track one global model version.
 
-On device_manager_config side:
+For ``device_manager_config``:
 
 - **device_selection_size=N**
 - **min_hole_to_fill=N**
 - **device_reuse=True**
 
-Such that we maintain the selection of all N devices, we need to wait for all N devices to report back (become "hole") before new device sampling and model dispatching, and we need to toggle device_reuse on because we always use these N devices
+This configuration maintains the selection of all N devices, waits for all N devices to report back (become "holes") before new device sampling and model dispatching, and enables ``device_reuse`` because we always use these N devices.
 
-Similarly we can simulate async pipeline by setting them differently, see more details in the example.
+Similarly, we can simulate an asynchronous pipeline by setting these parameters differently. See more details in the example.
 
 ETFedBuffRecipe
 ---------------
@@ -514,9 +514,9 @@ This recipe helps you create jobs for training with ExecuTorch (ET) on mobile de
        device_training_params={"epoch": 3, "lr": 0.0001, "batch_size": batch_size},
    )
 
-The highlighted sections mean the following:
+The key parameters are as follows:
 
-- **Device_model**: This is the DeviceModel wrapper you created in Step 2, which encapsulates your base model along with the loss function and prediction logic required for ExecuTorch training on mobile devices.
-- **Input_shape, output_shape**: These specify the shapes of the input and output tensors expected by your device_model. They are crucial for the ExecuTorch model export process, helping to define tensor dimensions for compilation and deployment on edge devices.
-- **Device_training_params**: A dictionary containing additional training hyperparameters (e.g., number of epochs, learning rate, batch size). These parameters are passed down to each device during distributed training to control the local training loop.
+- **device_model**: This is the ``DeviceModel`` wrapper you created in Step 2, which encapsulates your base model along with the loss function and prediction logic required for ExecuTorch training on mobile devices.
+- **input_shape, output_shape**: These specify the shapes of the input and output tensors expected by your ``device_model``. They are crucial for the ExecuTorch model export process, helping to define tensor dimensions for compilation and deployment on edge devices.
+- **device_training_params**: A dictionary containing additional training hyperparameters (e.g., number of epochs, learning rate, batch size). These parameters are passed to each device during distributed training to control the local training loop.
 
