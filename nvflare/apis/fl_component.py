@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Union
+from typing import Any, List, Union
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -82,6 +82,16 @@ class FLComponent(StatePersistable):
 
         fl_ctx.set_prop(FLContextKey.EVENT_SCOPE, value=EventScope.LOCAL, private=True, sticky=False)
         self._fire(event_type, fl_ctx)
+
+    def fire_event_with_data(self, event_type: str, fl_ctx: FLContext, key: str, data: Any):
+        """
+        Set the data for the event and clean it up afterward
+        """
+        try:
+            fl_ctx.set_prop(key=key, value=data, private=True, sticky=False)
+            self.fire_event(event_type, fl_ctx)
+        finally:
+            fl_ctx.set_prop(key=key, value=None, private=True, sticky=False)
 
     def fire_fed_event(self, event_type: str, event_data: Shareable, fl_ctx: FLContext, targets=None):
         """Fires a federation event.

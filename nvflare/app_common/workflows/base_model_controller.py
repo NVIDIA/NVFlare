@@ -209,8 +209,9 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         return task
 
     def _prepare_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
-        fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
-        self.event(AppEventType.BEFORE_TRAIN_TASK)
+        self.fire_event_with_data(
+            AppEventType.BEFORE_TRAIN_TASK, fl_ctx, AppConstants.TRAIN_SHAREABLE, client_task.task.data
+        )
 
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         self.fl_ctx = fl_ctx
@@ -235,8 +236,8 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
         else:
             self._results.append(result_model)
 
-            # Cleanup task result
-            client_task.result = None
+        # Cleanup task result
+        client_task.result = None
 
         gc.collect()
 

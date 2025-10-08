@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,11 +20,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.statistics.df.df_core_statistics import DFStatisticsCore
 
 
-class DFStatistics(DFStatisticsCore):
-    def __init__(self, data_path):
+class AdultStatistics(DFStatisticsCore):
+    def __init__(self, filename, data_root_dir="/tmp/nvflare/df_stats/data"):
         super().__init__()
-        self.data_root_dir = "/tmp/nvflare/df_stats/data"
-        self.data_path = data_path
+        self.data_root_dir = data_root_dir
+        self.filename = filename
         self.data: Optional[Dict[str, pd.DataFrame]] = None
         self.data_features = [
             "Age",
@@ -57,7 +57,7 @@ class DFStatistics(DFStatisticsCore):
         self.log_info(fl_ctx, f"load data for client {client_name}")
         try:
             skip_rows = self.skip_rows[client_name]
-            data_path = f"{self.data_root_dir}/{fl_ctx.get_identity_name()}/{self.data_path}"
+            data_path = f"{self.data_root_dir}/{fl_ctx.get_identity_name()}/{self.filename}"
             # example of load data from CSV
             df: pd.DataFrame = pd.read_csv(
                 data_path, names=self.data_features, sep=r"\s*,\s*", skiprows=skip_rows, engine="python", na_values="?"

@@ -26,7 +26,7 @@ JOB_NAME=job
 python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.5.4" --bundle_dir ./${JOB_NAME}/app/config
 ``` 
 
-In this example, `JOB_NAME` can be either `job`, `job_multi_gpu` or `job_stats`, depending on the configuration you would like to run (see below).
+In this example, `JOB_NAME` can be either `job` or `job_stats`, depending on the configuration you would like to run (see below).
 The final folder structure under `JOB_NAME` will be:
 
 ```
@@ -87,22 +87,13 @@ and assign them to the appropriate GPU device using the `--gpu` argument.
 nvflare simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --clients site-1,site-2 --gpu 0,1
 ```
 
-#### 3.3 Multi-gpu training
-If you have several gpus in your system and want to simulate multi-gpu training on one client,
-please follow step 2 & 3 above but replace `JOB_NAME=job` with `JOB_NAME=job_multi_gpu`. This will use NVFlare's `PTMultiProcessExecutor`
-to start multi-gpu training using [torchrun](https://pytorch.org/docs/stable/elastic/run.html) on one client.
-
-```
-nvflare simulator job_multi_gpu --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 1 --n_clients 1
-```
-
-#### 3.4 TensorBoard visualization
+#### 3.3 TensorBoard visualization
 To monitor the training job, you can start tensorboard:
 ```
 tensorboard --logdir /tmp/nvflare/sim_spleen_ct_seg
 ```
 
-With the default setting and running on multiple gpus (section 4.2), the expected TensorBoard training curves look like this when training from scratch:
+With the default setting and running several clients on multiple gpus (section 3.2), the expected TensorBoard training curves look like this when training from scratch:
 
 ![training curve](./tb_plot.png)
 
@@ -120,7 +111,7 @@ In order to load a pretrained model provided in the MONAI bundle, define the `so
 
 > **_NOTE:_** For more information about the simulator, see [here](https://nvflare.readthedocs.io).
 
-#### 3.5 Federated statistics
+#### 3.4 Federated statistics
 
 To compute summary statistics on the datasets defined in the MONAI bundle, we can use NVFlare's `StatisticsController`.
 Again, please step 2 & 3 above but replace `JOB_NAME=job` with `JOB_NAME=job_stats`.

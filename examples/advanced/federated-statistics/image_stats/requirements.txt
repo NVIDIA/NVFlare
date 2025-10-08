@@ -1,3 +1,4 @@
+nvflare~=2.7.0rc
 numpy
 monai[itk]
 pandas
@@ -5,3 +6,4 @@ kaleido
 matplotlib
 jupyter
 notebook
+kagglehub

@@ -1,16 +1,15 @@
 # Federated Statistics Overview
 
 ## Objective
-NVIDIA FLARE will provide built-in federated statistics operators (controllers and executors) that 
+NVIDIA FLARE provides built-in federated statistics operators (controllers and executors) that 
 can generate global statistics based on local client-side statistics.
 
-At each client site, we could have one or more datasets (such as "train" and "test" datasets); each dataset may have many 
+At each client site, we can have one or more datasets (such as "train" and "test" datasets); each dataset may have many 
 features. For each feature in the dataset, we will calculate the statistics and then combine them to produce 
-global statistics for all the numeric features. The output would be complete statistics for all datasets in clients and global.    
+global statistics for all the numeric features. The output will be complete statistics for all datasets in clients and global.    
 
-The statistics here are commonly used statistics: count, sum, mean, std_dev and histogram for the numerical features.
-The max, min are not included as it might violate the client's data privacy. Median is not included due to the complexity 
-of the algorithms. If the statistics sum and count are selected, the mean will be calculated with count and sum. 
+The statistics here are commonly used statistics: count, sum, mean, std_dev, quantiles and histogram for the numerical features.
+The max, min are not included as it might violate the client's data privacy. Quantiles require an additional dependency. If sum and count statistics are selected, the mean will be calculated with count and sum. 
 
 A client will only need to implement the selected methods of "Statistics" class from statistics_spec.
 
@@ -20,7 +19,7 @@ The result should be visualized via the visualization utility in the notebook.
 ## Assumptions
  
 Assume that clients will provide the following:
-* Users need to provide target statistics such as count, histogram only
+* Users need to provide only target statistics such as count and histogram
 * Users need to provide the local statistics for the target statistics (by implementing the statistics_spec)
 * Users need to provide the datasets and dataset features (feature name, data type)
 * Note: count is always required as we use count to enforce data privacy policy
@@ -31,7 +30,7 @@ the non-numerical features will be removed.
 
 ## Statistics
 
-  Federated statistics includes numerics statistics measures for 
+  Federated statistics includes numeric statistical measures for 
   * count
   * mean 
   * sum
@@ -39,7 +38,7 @@ the non-numerical features will be removed.
   * histogram 
   * quantile
     
-  We did not include min, max value to avoid data privacy concern. 
+  We do not include min and max values to avoid data privacy concerns. 
 
 ### Quantile
 
@@ -62,14 +61,14 @@ Quantile statistics refers to statistical measures that divide a probability dis
 
 ## Examples
 
-We provide several examples to demonstrate how should the operators be used. 
+We provide several examples to demonstrate how the operators should be used. 
 
-Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
+Please make sure you set up a virtual environment and follow the [example root readme](../../README.md)
 
 ### Tabular Examples
 
 The first example is to calculate the statistics for **tabular** data. The data can be loaded into Pandas DataFrame, 
-the data can be cached in memory we can leverage DataFrame and Numpy to calculate the local statistics.
+the data can be cached in memory, and we can leverage DataFrame and Numpy to calculate the local statistics.
 
 [Data frame statistics](df_stats)
 
@@ -97,8 +96,8 @@ The second example provided is an image histogram example. Unlike the **Tabular*
 
 The image examples show the following:
 * The [image_statistics.py](image_stats/jobs/image_stats/app/custom/image_statistics.py) only needs
-to calculate the count and histogram target statistics. Users only need to provide the calculation count, failure_count and histogram functions. There is no need to implement other metrics functions
-(sum, mean, std_dev etc.) (get_failure_count by default returns 0)
+to calculate the count and histogram target statistics. Users only need to provide the count, failure_count, and histogram calculation functions. There is no need to implement other metrics functions
+(sum, mean, std_dev etc.) (by default, get_failure_count returns 0)
 * For each site's dataset, there are several thousand images; the local histogram is an aggregate histogram of all the image histograms
 * The image files are large, so we can't load everything into memory and then calculate the statistics. 
 We will need to iterate through files for each calculation. For a single feature, this is acceptable. If there are multiple features,
@@ -107,7 +106,7 @@ such as multiple channels, reloading images to memory for each channel to do his
 whereas in [Data frame statistics](df_stats/README.md), besides "Age", all other features' histogram global bin range
 is dynamically estimated based on local min/max values
 
-An example of image histogram (the underline image files have only 1 channel)
+An example of image histogram (the underlying image files have only 1 channel)
 
 ![histograms](image_stats/figs/image_histogram.png)
 
@@ -117,9 +116,9 @@ An example of image histogram (the underline image files have only 1 channel)
 This example [Spleen CT Image Statistics](../../../integration/monai/examples/spleen_ct_segmentation_sim) demonstrated
 few more details in Federated statistics.
 
-* instead of locally calculate the histogram on each image, this example shows how to get the local statistics from monai
+* instead of locally calculating the histogram on each image, this example shows how to get the local statistics from monai
 via the MONAI FLARE integration. 
-* to avoid the reloading the same image into memory for each feature. This example shows the one can use pre_run() method to 
+* to avoid reloading the same image into memory for each feature. This example shows that one can use pre_run() method to 
 load and cache the externally calculated statistics. The server side controller will pass the target metrics to pre_run method 
 so it can be used to load the statistics. 
 
@@ -192,24 +191,24 @@ The main steps are
 
 ## Privacy Policy and Privacy Filters
 
-NVFLARE provide data privacy protection through privacy filters [privacy-management](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/security/site_policy_management.html#privacy-management)
+NVFLARE provides data privacy protection through privacy filters [privacy-management](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/security/site_policy_management.html#privacy-management)
 Each site can have its own privacy policy. 
 
 ### Local privacy policy
 
 privacy.json provides local site specific privacy policy.
 The policy is likely setup by the company and implemented by organization admin
-for the project. For different type of scope or categories, there are might be type of policy. 
+for the project. For different types of scope or categories, there might be different types of policies. 
 
 ### Privacy configuration
 
-The NVFLARE privacy configuration is consists of set of task data filters and task result filters
+The NVFLARE privacy configuration consists of a set of task data filters and task result filters
 * The task data filter applies before client executor executes;
 * The task results filter applies after client executor before it sends to server;
 * for both data filter and result filter, they are groups via scope.
 
-Each job will need to have privacy scope. If not specified, the default scope will be used. If default scope is not
-defined and job doesn't specify the privacy scope, the job deployment will fail, and job will not executed
+Each job will need to have a privacy scope. If not specified, the default scope will be used. If the default scope is not
+defined and the job doesn't specify the privacy scope, the job deployment will fail, and the job will not be executed
 
 ### Privacy Policy Instrumentation 
 
@@ -248,7 +247,7 @@ Statistics privacy filters are task result filters. We already build one for Sta
 ```
 StatisticsPrivacyFilter
 ```
-The StatisticsPrivacyFilter is consists of several `StatisticsPrivacyCleanser`s focused on the statistics sent
+The StatisticsPrivacyFilter consists of several `StatisticsPrivacyCleanser`s focused on the statistics sent
 from client to server.
 
 `StatisticsPrivacyCleanser` can be considered as an interceptor before the results delivered to server.
@@ -258,14 +257,14 @@ Currently, we use three `StatisticsPrivacyCleanser`s to guard the data privacy. 
 #### MinCountCleanser:
 Check against the number of count returned from client for each dataset and each feature.
 
-If the min_count is not satisfied, there is potential risk of reveal client's real data. Then remove that feature's statistics
+If the min_count is not satisfied, there is a potential risk of revealing the client's real data. Then remove that feature's statistics
 from the result for this client.
 
 #### HistogramBinsCleanser:
-For histogram calculations, number of bins can't be too large compare to count. if the bins = count, then
-we also reveal the real data. This check to make sure that the number of bins be less than X percent of the count.
+For histogram calculations, the number of bins can't be too large compared to count. if the bins = count, then
+we also reveal the real data. This check ensures that the number of bins is less than X percent of the count.
 X = max_bins_percent in percentage, for 10 is for 10%
-if the number of bins for the histogram is not satisfy this specified condition, the resulting histogram will be removed
+if the number of bins for the histogram does not satisfy this specified condition, the resulting histogram will be removed
 from statistics before sending to server.
 
 #### AddNoiseToMinMax
@@ -290,13 +289,13 @@ est. global min value <
 
 ## How it works
 
-Some local statistics (such as count, failure count, sum etc.) can be calculated with one round; while others statistics
-such as stddev, histogram ( if the global bin range is not specified) will need to two round of calculations.
-We design a workflow to essentially issue three round of trip to client
+Some local statistics (such as count, failure count, sum etc.) can be calculated with one round; while other statistics
+such as stddev, histogram (if the global bin range is not specified) will need two rounds of calculations.
+We design a workflow to essentially issue three rounds of trips to clients
 
-* pre_run()  -- controller send clients the target metrics information
-* 1st statistics task -- controller  send clients 1st set of target metrics as well as local max/min if the global min/max estimation is needed
-* 2nd statistics task -- based on the aggregated global statistics, we do the 2nd round, we calculate the VAR (with global mean) and histogram
+* pre_run()  -- controller sends clients the target metrics information
+* 1st statistics task -- controller sends clients 1st set of target metrics as well as local max/min if the global min/max estimation is needed
+* 2nd statistics task -- based on the aggregated global statistics, we do the 2nd round and calculate the VAR (with global mean) and histogram
 based on the global range (or estimated global range)
 
 The sequence diagram provides the details. 
@@ -340,5 +339,5 @@ sequenceDiagram
 
 ## Summary
 
-We provided federated statistics operators that can easily aggregate and visualize the local statistics for
+We provide federated statistics operators that can easily aggregate and visualize the local statistics for
 different data site and features. We hope this feature will make it easier to perform federated data analysis. 

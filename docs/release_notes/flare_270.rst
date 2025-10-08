@@ -2,7 +2,7 @@
 What's New in FLARE v2.7.0
 **************************
 
-The new features can be divided into three categories
+The new features can be divided into three categories:
 
 
 Confidential Federated AI
@@ -13,7 +13,7 @@ Confidential Federated AI
     **Confidential Federated AI Applications:**
     -------------------------------------------
 
-    **Confidential Federated AI Applications:**: Where would you use this ?
+    **Confidential Federated AI Applications:** Where would you use this?
 
     - **Pharmaceutical and Biotech R&D:** Multiple organizations can jointly train or validate models while ensuring that each company’s proprietary model and data remain protected.
 
@@ -32,21 +32,20 @@ Confidential Federated AI
     - **Cross-Industry Consortia:** Support joint innovation (e.g., supply chain, energy, automotive) without risking leakage of competitive IP.
 
 
-With this release, we offer this first of kind product for end-to-end IP protection solution in federated setup
+With this release, we offer this first-of-its-kind product for end-to-end IP protection solution in federated setup
 using confidential computing.
 
 - The solution is for on-premise deployment on bare metal using AMD CPU and NVIDIA GPU with Confidential VM.
-- End-To-End Protection: by end-to-end protection, we are stating that it is not only protect the IP (model and code) in use at runtime,but also protect against the CVM tampering at deployment.
+- End-to-End Protection: By end-to-end protection, we mean that we not only protect the IP (model and code) in use at runtime, but also protect against CVM tampering at deployment.
 - The solution is able to perform
-    - **security aggregation** on the server-side to protection privacy leak via model
-    - **model theft Protection** on the client-side to safe guard the Model IP during collaboration
-    - **data leak prevention** on the client-side with the pre-approved,certified code.
-
+    - **Secure aggregation** on the server-side to protect against privacy leaks via model
+    - **Model theft protection** on the client-side to safeguard Model IP during collaboration
+    - **Data leak prevention** on the client-side with pre-approved, certified code.
 
 .. admonition:: Confidential Federated AI
 
     This feature is in **Technical Preview**.
-    Reach to NVIDIA FLARE team for CVM build scripts: federatedlearning@nvidia.com
+    Reach out to the NVIDIA FLARE team for CVM build scripts: federatedlearning@nvidia.com
 
     You can read more about the user usage at :ref:`confidential_computing`
 
@@ -95,10 +94,9 @@ When combined with the Client API (typically 4+ lines), building and running fed
 
 .. admonition:: Job Recipe
 
-    This feature is in **technical review**. Not all examples and code have been converted to use Job Recipe yet.
+    This feature is in **technical preview**. Not all examples and code have been converted to use Job Recipe yet.
     However, you can directly experience the recipe with recipe tutorial notebook `Job Recipe Tutorials <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/job_recipe.ipynb>`_
     or read the :ref:`job_recipe`, more than half a dozen ready-to-use recipes are provided: :ref:`quickstart`
-
 
 
 Simplified Deployment: Single-Port Server & Efficient HTTPS Driver
@@ -109,11 +107,11 @@ Simplified Deployment: Single-Port Server & Efficient HTTPS Driver
 
     **Port Consolidation**
 
-    Historically, FLARE’s FL Server required two communication ports: one for FL Client/Server communication and another for
+    Historically, FLARE's FL Server required two communication ports: one for FL Client/Server communication and another for
     Admin Client/Server communication. This posed challenges for customers with strict port management policies. With FLARE 2.7,
     the requirement is consolidated to a single port for both communication types. However, for those who prefer separate ports
     due to different network security policies, the system can still be configured to use two distinct ports.
-    reference :ref:`server_port_consolidation` for details
+    Reference :ref:`server_port_consolidation` for details.
 
     **New HTTPS Driver**
 
@@ -126,27 +124,23 @@ a single port, utilizing TLS, and introducing a new HTTPS driver that performs o
 the standard HTTPS port 443, significantly reducing the dependency on IT support.
 
 
-.. admonition:: implication
+.. admonition:: Key Benefit
 
-    enable to directly use HTTPS with 443 port
-    :ref:`check out FL server port consolidation details <server_port_consolidation>`.
-
-
+    Enables direct use of HTTPS with port 443.
+    :ref:`Check out FL server port consolidation details <server_port_consolidation>`.
 
 
 Security Enhancement
 --------------------
 
-Fix the following issues:
+Fixed the following issues:
 
--- Unsafe Deserialization - torch.jit.load  is replaced with safe-tensor based implementation
-
--- Unsafe Deserialization - Function Call -- FOB auto-registration is removed. A white listed FOBs are auto-registered.
-
--- Command Injection via Grep Parameters -- commands are reimplemented to avoid command injections
+- Unsafe Deserialization - torch.jit.load is replaced with safe-tensor based implementation
+- Unsafe Deserialization - Function Call - FOB auto-registration is removed. A whitelist of FOBs is auto-registered.
+- Command Injection via Grep Parameters - commands are reimplemented to avoid command injections
 
 
-.. admonition:: Enhancements
+.. admonition:: Security Enhancements
 
     Many similar issues are also fixed
 
@@ -162,15 +156,14 @@ FLARE 2.7 extends federated learning capabilities to edge devices. Edge device a
 
     To support scalability, we add the following features
 
-    - support for hierarchical federated architecture :ref:`flare_hierarchical_architecture`
-    - asynch federated learning algorithm based on FedBuff: :ref:`flare_edge`
-    - model development support for both iOS and Android :ref:`flare_mobile`
+    - Support for hierarchical federated architecture :ref:`flare_hierarchical_architecture`
+    - Asynchronous federated learning algorithm based on FedBuff: :ref:`flare_edge`
+    - Model development support for both iOS and Android :ref:`flare_mobile`
 
-- **Scalability**: Unlike cross-silo applications where the number of FL clients is relatively small, the number of devices could be in the millions. It’s infeasible to treat the devices as simple FL clients and connect them directly to the FL server.
+- **Scalability**: Unlike cross-silo applications where the number of FL clients is relatively small, the number of devices could be in the millions. It's infeasible to treat the devices as simple FL clients and connect them directly to the FL server.
 - **Stability**: Unlike cross-silo applications where the FL clients are stable, edge devices come and go at any time. This requires the training strategy to accommodate this behavior.
-- **Compute capability**: Compared to cross-silo applications, edge devices don’t have as much computing power.
+- **Compute capability**: Compared to cross-silo applications, edge devices don't have as much computing power.
 - **Platform dependency**: There are multiple edge device platforms (e.g. iOS, Android, etc.), and each has a different application development environment.
-
 
 .. admonition:: FLARE Edge
 
@@ -184,16 +177,16 @@ Welcome to the five-part course on Federated Learning with NVIDIA FLARE!
 This course covers everything from the fundamentals to advanced applications, system deployment, privacy, security,
 and real-world industry use cases.
 
-.. admonition:: Federated Learning with NVIDIA FLARE: Notebooks and videos
+.. admonition:: Federated Learning with NVIDIA FLARE
 
-    This tutorial has over **100+** notebooks, **80** videos
-    see details in :ref:`self_paced_training`
+    This tutorial has **100+ notebooks** and **80 videos**.
+    See details in :ref:`self_paced_training`
 
 
 Extra Features
 ==============
 
-There are additional new features released in version 2.7.0. You can find more details in :ref:`extra_270`.
+There are additional new features released in version 2.7.0, including memory management improvements with FileDownloader for large model streaming and a pre-install CLI command for environments where dynamic code deployment is restricted. You can find more details in :ref:`extra_270`.
 
 
 
