@@ -1,20 +1,20 @@
 # Tabular Federated Statistics: Deep dive into the implementations
 
 
-This example is the same as [Hello-tabular-stats](../../../hello-world/hello-tabular-stats/README.md), for basic example
+This example is the same as [Hello-tabular-stats](../../../hello-world/hello-tabular-stats/README.md). For a basic example,
 please read that example first. 
 
-Here we like to describe a few other advanced topics not described in [Hello-tabular-stats](../../../hello-world/hello-tabular-stats/README.md)
+Here we would like to describe a few other advanced topics not covered in [Hello-tabular-stats](../../../hello-world/hello-tabular-stats/README.md)
 
 ## Assumption
-* We are assuming each site has the same features (schema)
+* We assume each site has the same features (schema)
 * Each site can calculate the local statistics 
 
 ## Quantile Calculation
 
 The design choice of Quantile calculation: 
 
-To calculate federated quantiles, we needed to select a package that satisfies the following constraints:
+To calculate federated quantiles, we need to select a package that satisfies the following constraints:
 
 * Works in distributed systems
 * Does not copy the original data (avoiding privacy leaks)
@@ -28,18 +28,18 @@ to compress the coordinates, so the data won't leak. You can always override max
  
 ## Configuration and Code
 
-Since Flare has already developed the operators for the federated
-statistics computing, we will only need to provide the followings
+Since FLARE has already developed the operators for the federated
+statistics computing, we will only need to provide the following
 * config_fed_server.json (server side controller configuration)
 * config_client_server.json (client side executor configuration)
 * local statistics calculator
 
-The same configuration can be achieved via FLARE Job recipe API, but lets looks first
+The same configuration can be achieved via FLARE Job recipe API, but let's look at the configuration first
 
 ### server side configuration
 
-The server side configuration specifies what the overall statistics metrics one like to calculate: 
-such as stddev, histogram, how many bins in used for historgram for each feature, quantiles to be calculated or not. 
+The server side configuration specifies the overall statistics metrics one would like to calculate: 
+such as stddev, histogram, how many bins are used for histogram for each feature, whether quantiles should be calculated or not. 
 This can be specified via Job Recipe. 
 
 ```
@@ -54,25 +54,24 @@ This can be specified via Job Recipe.
  
 ```
  
-In above configuration, We ask the FLARE to calculate the following statistic
-statistics: "count", "mean", "sum", "stddev", "histogram" and "Age". Each statistic may have its own configuration.
-For example, Histogram statistic, we specify feature "Age" needs 5 bins and histogram range is within [0, 120), while for
-all other features ("*" indicate default feature), the bin is 10, range is not specified, i.e. the ranges will be dynamically estimated.
+In the above configuration, we ask FLARE to calculate the following statistics: "count", "mean", "sum", "stddev", "histogram", and "quantile". Each statistic may have its own configuration.
+For example, for the Histogram statistic, we specify feature "Age" needs 20 bins and the histogram range is within [0, 100), while for
+all other features ("*" indicates default feature), the bins are 20, and the range is not specified, i.e., the ranges will be dynamically estimated.
 
 
 
 ### Client side Implementation: Local statistics generator
  
-The statistics generator `DFStatistics` implements `Statistics` spec. In current example, the input data in the format of Pandas DataFrame. Although we used csv file, but this can be any
-tabular data format that be expressed in pandas dataframe.
+The statistics generator `DFStatistics` implements the `Statistics` spec. In the current example, the input data is in the format of Pandas DataFrame. Although we used a csv file, this can be any
+tabular data format that can be expressed as a pandas dataframe.
 
 ```
 class DFStatistics(Statistics):
     # rest of code 
 ```
-to calculate the local statistics, we will need to implements few methods
+to calculate the local statistics, we will need to implement a few methods
 ```
-    def features(self) -> Dict[str, List[Feature]] -> Dict[str, List[Feature]]:
+    def features(self) -> Dict[str, List[Feature]]:
 
     def count(self, dataset_name: str, feature_name: str) -> int:
  
@@ -89,31 +88,31 @@ to calculate the local statistics, we will need to implements few methods
     def quantiles(self, dataset_name: str, feature_name: str, percentiles: List) -> Dict:
 
 ```
-since some of features do not provide histogram bin range, we will need to calculate based on local min/max to estimate
-the global min/max, and then use the global bin/max as the range for all clients' histogram bin range.
+Since some features do not provide histogram bin range, we will need to calculate based on local min/max to estimate
+the global min/max, and then use the global min/max as the range for all clients' histogram bin range.
 
-so we need to provide local min/max calculation methods
+So we need to provide local min/max calculation methods
 ```
    def max_value(self, dataset_name: str, feature_name: str) -> float:
    def min_value(self, dataset_name: str, feature_name: str) -> float:
 ```
 
-For Tabular data, FLARE has implemented specification already with ```DFStatisticsCore```. We just need to subClass the ```DFStatisticsCore``` and implement
+For tabular data, FLARE has already implemented the specification with ```DFStatisticsCore```. We just need to subclass the ```DFStatisticsCore``` and implement
 a few methods
 ```
     def load_data(self, fl_ctx: FLContext) -> Dict[str, pd.DataFrame]:
 ```
 
-This method specifies how to load the data into different DataFrame, for example, "train" dataset and "test" dataset, one for each key in the dictionary.
+This method specifies how to load the data into different DataFrames, for example, "train" dataset and "test" dataset, one for each key in the dictionary.
 
 ```
    def features(self) -> Dict[str, List[Feature]]:
    
 ```
-The features for each dataset is also important. We are assuming each site has the same features. 
+The features for each dataset are also important. We assume each site has the same features. 
 
-by default ```DFStatisticsCore.features(self) -> Dict[str, List[Feature]]``` implementation assumes the DataFrame has feature names
-the method simply get the feature name from DataFrame 
+By default, the ```DFStatisticsCore.features(self) -> Dict[str, List[Feature]]``` implementation assumes the DataFrame has feature names.
+The method simply gets the feature names from the DataFrame. 
 
 ```
     def features(self) -> Dict[str, List[Feature]]:
@@ -128,10 +127,10 @@ the method simply get the feature name from DataFrame
         return results
 
 ```
-Therefore, the DataFrame must have the column names defined. In his example, the dataset has no headers from CVS file, 
-we hard-coded the feature names in the init() function.
+Therefore, the DataFrame must have the column names defined. In this example, the dataset has no headers from the CSV file, 
+so we hard-coded the feature names in the init() function.
 
-If you can't derived features, you can overwrite the this method and return list of features for each dataset. 
+If you can't derive features, you can overwrite this method and return a list of features for each dataset. 
 
 
 ```
@@ -162,7 +161,7 @@ class AdultStatistics(DFStatisticsCore):
 
         # the original dataset has no header,
         # we will use the adult.train dataset for site-1, the adult.test dataset for site-2
-        # the adult.test dataset has incorrect formatted row at 1st line, we will skip it.
+        # the adult.test dataset has an incorrectly formatted row at the 1st line, we will skip it.
         self.skip_rows = {
             "site-1": [],
             "site-2": [0],
@@ -195,11 +194,13 @@ class AdultStatistics(DFStatisticsCore):
 ### Client side data privacy configuration
 
 
-to make sure the privacy, for each site want to specify the min_count. For min value, we want to add 15%,
-the max value, we like to add 30%.  max_bins_percent:   max number of bins allowed in terms of percent of local data size.
+To ensure privacy, each site wants to specify the min_count. For the min value, we want to add 15% noise,
+and for the max value, we want to add 30% noise. 
 
-Set this number to avoid number of bins equal or close equal to the data size, which can lead to data leak.
-for example: max_bins_percent = 15, number of bins should not more than 15% * data count
+max_bins_percent: The maximum number of bins allowed in terms of percentage of local data size.
+
+Set this number to avoid the number of bins being equal to or close to the data size, which can lead to data leakage.
+For example: max_bins_percent = 15, the number of bins should not be more than 15% * data count
 
 ```
    min_count = 15
@@ -207,14 +208,14 @@ for example: max_bins_percent = 15, number of bins should not more than 15% * da
    max_noise_level = 0.3
    max_bins_percent = 15
 ```
-This privacy control can be expressed in the job recipe at job level. But it can also be applied at organization privacy 
-policy level. for example, using configuration file. in [local private policy](../local/privacy.json)
+This privacy control can be expressed in the job recipe at the job level. But it can also be applied at the organization privacy 
+policy level, for example, using a configuration file in the [local privacy policy](../local/privacy.json)
 
 
 ## Job Recipe
 
-* First follow the installation guide and data preparation step to get the data:  [Hello-tabular-stats](../../../hello-world/hello-tabular-stats/README.md)
-* Now run the Job with 
+* First, follow the installation guide and data preparation step to get the data:  [Hello-tabular-stats](../../../hello-world/hello-tabular-stats/README.md)
+* Now run the job with 
 
 ```bash
    python job.py

@@ -4,7 +4,7 @@ Compute the local and global image statistics.
 You can also follow the [notebook](../image_stats.ipynb) or the following:
 
 ## Code Structure
-First get the example code from github:
+First, get the example code from github:
 
 ```
 git clone https://github.com/NVIDIA/NVFlare.git
@@ -22,7 +22,7 @@ image_stats
 |-- client.py             # client local training script
 |-- job.py                # job recipe that defines client and server configurations
 |-- download_data.py      # download dataset from Kaggle
-|-- prepare_data.py       # prepare dataset by split them into multi sites
+|-- prepare_data.py       # prepare dataset by splitting them into multiple sites
 |-- requirements.txt      # dependencies
 ├── demo
 │   └── visualization.ipynb # Visualization Notebook
@@ -46,7 +46,7 @@ pip install -r requirements.txt
 ## Data
 
 We use the dataset from the ["COVID-19 Radiography Database"](https://www.kaggle.com/tawsifurrahman/covid19-radiography-database).
-it contains png image files in four different classes: `COVID`, `Lung_Opacity`, `Normal`, and `Viral Pneumonia`.
+It contains png image files in four different classes: `COVID`, `Lung_Opacity`, `Normal`, and `Viral Pneumonia`.
 First, download and extract to `/tmp/nvflare/image_stats/data/`.
 
 ```
@@ -55,7 +55,7 @@ python download_data.py
 
 Next, create the data lists simulating different clients with varying amounts and types of images. 
 The downloaded archive contains sub-folders for four different classes: `COVID`, `Lung_Opacity`, `Normal`, and `Viral Pneumonia`.
-Here we assume each class of image corresponds to a different sites.
+Here we assume each class of image corresponds to a different site.
 
 ```shell
 prepare_data.sh
@@ -73,9 +73,9 @@ Saved 1345 entries at /tmp/nvflare/image_stats/data/site-4_Viral Pneumonia.json
 
 ## Client Side Code: Local statistics generator
 
-The local statistics generator implements `Statistics` spec.
+The local statistics generator implements the `Statistics` spec.
 
-Besides loading data methods, the class mainly implements few functions
+Besides loading data methods, the class mainly implements a few functions
 
 ```
 
@@ -92,8 +92,7 @@ Besides loading data methods, the class mainly implements few functions
                   global_max_value: float) -> Histogram:
        ...
 ```
-additional optional failure_count methods is used if you would like to make sure the data privacy is against effective
-count - failure_count
+An additional optional failure_count method is used if you would like to ensure data privacy against the effective count (count - failure_count)
 
 ```
     def failure_count(self,
@@ -108,7 +107,7 @@ arguments for the statistics controller.
 ```
 class ImageStatistics(Statistics):
     def __init__(self, data_root: str = "/tmp/nvflare/image_stats/data", data_list_key: str = "data"):
-        <slip code>
+        <skip code>
         
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
@@ -141,15 +140,15 @@ class ImageStatistics(Statistics):
 ```
 
 ## Server Code
-The server aggregation have already implemented in Statistics Controller
+The server aggregation has already been implemented in Statistics Controller
 
 ## Job Recipe
 
-For histogram, we specified the histogram range, for all features ("*"), to be [0,256), and bins = 255.
+For histogram, we specify the histogram range for all features ("*") to be [0,256) and bins = 255.
 
 **Privacy Filter**
-You can experiment with different privacy policy, for example, what if you set
-```min_count``` to  1000 to avoid leaking information
+You can experiment with different privacy policies. For example, what if you set
+```min_count``` to 1000 to avoid leaking information
 
 ```
     statistic_configs = {"count": {}, "histogram": {"*": {"bins": 20, "range": [0, 256]}}}
@@ -178,12 +177,12 @@ The results are stored in workspace "/tmp/nvflare/simulation/stats_image/server/
 /tmp/nvflare/simulation/stats_image/server/simulate_job/statistics/image_statistics.json
 ```
 
-## 2.2 Visualization
+## Visualization
 
 ```bash
     cp /tmp/nvflare/simulation/stats_image/server/simulate_job/statistics/image_statistics.json demo/.
     cd demo
     jupyter notebook  visualization.ipynb
 ```
-you should see some histogram similar to this: 
+You should see a histogram similar to this: 
 ![compare all sites' histograms](figs/image_histogram.png)
