@@ -83,12 +83,6 @@ def filter_notebook(notebook_path, kernel_name):
     cell_skipped = len(filtered_cells) != len(nb.cells)
     if cell_skipped:
         nb.cells = filtered_cells
-    
-    # Write back if anything changed
-    if cell_skipped or kernel_spec_updated:
-        nbformat.write(nb, notebook_path)
-        if cell_skipped:
-            print(f"Filtered {len(nb.cells) - len(filtered_cells)} cells from {notebook_path.name}")
 
 
 def is_kernel_registered(kernel_name):
