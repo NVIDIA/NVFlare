@@ -89,7 +89,7 @@ class StreamingController(Controller):
             min_responses=1,
             abort_signal=abort_signal,
         )
-        clieresps = {}
+        client_resps = {}
         for ct in task.client_tasks:
             assert isinstance(ct, ClientTask)
             resp = ct.result
