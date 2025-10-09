@@ -11,22 +11,26 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import numpy as np
-
-
-def parse_array_def(array_def):
-    if array_def is None:
-        return array_def
-
-    if isinstance(array_def, np.ndarray):
-        return array_def
-
-    if isinstance(array_def, list):
-        return np.array(array_def, dtype=np.float32)
-    else:
-        raise ValueError(f"unsupported array def: {array_def}")
+import os
+from abc import ABC, abstractmethod
 
 
-def save_np_model(model: np.ndarray, file_name: str):
-    np.save(file_name, model)
+class Workspace(ABC):
+
+    @abstractmethod
+    def get_root_dir(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_work_dir(self) -> str:
+        pass
+
+    def get_subdir(self, name: str, create: bool = True) -> str:
+        p = f"{self.get_work_dir()}/{name}"
+        if not os.path.exists(p) and create:
+            os.makedirs(p, exist_ok=True)
+        return p
+
+    @abstractmethod
+    def get_experiment_dir(self) -> str:
+        pass

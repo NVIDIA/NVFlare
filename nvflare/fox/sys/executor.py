@@ -31,6 +31,7 @@ from .adaptor import FoxAdaptor
 from .backend import SysBackend
 from .constants import SYNC_TASK_NAME, SyncKey
 from .utils import prepare_for_remote_call
+from .ws import SysWorkspace
 
 
 class FoxExecutor(Executor, FoxAdaptor):
@@ -176,7 +177,8 @@ class FoxExecutor(Executor, FoxAdaptor):
             p = self._prepare_client_proxy(job_id, cell, c, abort_signal, client_collab_interface)
             client_proxies.append(p)
 
-        self.client_app.setup(server_proxy, client_proxies, abort_signal)
+        ws = SysWorkspace(fl_ctx)
+        self.client_app.setup(ws, server_proxy, client_proxies, abort_signal)
 
         ctx = self.client_app.new_context(self.client_app.name, self.client_app.name)
         self.client_app.initialize(ctx)

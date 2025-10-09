@@ -26,6 +26,7 @@ from .filter import CallFilter, FilterChain, ResultFilter
 from .proxy import Proxy
 from .strategy import Strategy
 from .utils import check_context_support, get_collab_object_name
+from .workspace import Workspace
 
 
 class App:
@@ -47,7 +48,11 @@ class App:
         self._incoming_result_filter_chains = []
         self._outgoing_result_filter_chains = []
         self._collab_interface = {"": get_object_collab_interface(self)}
+        self._workspace = None
         self.logger = get_obj_logger(self)
+
+    def get_workspace(self):
+        return self._workspace
 
     def get_server_proxy(self):
         return self.server
@@ -162,7 +167,8 @@ class App:
     def get_collab_objects(self):
         return self._collab_objs
 
-    def setup(self, server: Proxy, clients: List[Proxy], abort_signal):
+    def setup(self, workspace: Workspace, server: Proxy, clients: List[Proxy], abort_signal):
+        self._workspace = workspace
         self.server = server
         self._abort_signal = abort_signal
 

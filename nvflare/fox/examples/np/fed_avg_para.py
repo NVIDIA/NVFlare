@@ -31,6 +31,8 @@ def main():
     server_app.add_collab_object("metric_receiver", MetricReceiver())
 
     simulator = Simulator(
+        root_dir="/tmp/fox",
+        experiment_name="fedavg_para",
         server_app=server_app,
         client_app=NPTrainer(delta=1.0),
         num_clients=10,

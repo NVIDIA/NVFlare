@@ -28,6 +28,8 @@ def main():
     client_app = NPSwarmClient(delta=1.0)
 
     simulator = Simulator(
+        root_dir="/tmp/fox",
+        experiment_name="swarm",
         server_app=server_app,
         client_app=client_app,
         num_clients=3,
