@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict
+from typing import Any, Dict, List
 
 from nvflare.apis.client import Client, from_dict
 from nvflare.apis.event_type import EventType
@@ -22,7 +22,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.fox.api.app import ClientApp, ClientAppFactory
+from nvflare.fox.api.app import ClientApp
 from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -39,17 +39,19 @@ class FoxExecutor(Executor, FoxAdaptor):
     def __init__(
         self,
         client_app_id: str,
-        collab_obj_ids: Dict[str, str] = None,
+        collab_obj_ids: List[str] = None,
         incoming_call_filters=None,
         outgoing_call_filters=None,
         incoming_result_filters=None,
         outgoing_result_filters=None,
+        props: Dict[str, Any] = None,
         max_call_threads=100,
     ):
         Executor.__init__(self)
         FoxAdaptor.__init__(
             self,
             collab_obj_ids=collab_obj_ids,
+            props=props,
             incoming_call_filters=incoming_call_filters,
             outgoing_call_filters=outgoing_call_filters,
             incoming_result_filters=incoming_result_filters,
@@ -65,18 +67,20 @@ class FoxExecutor(Executor, FoxAdaptor):
         fl_ctx.set_prop(FLContextKey.FOX_MODE, True, private=True, sticky=True)
         engine = fl_ctx.get_engine()
         client_app = engine.get_component(self.client_app_id)
-        if not isinstance(client_app, (ClientApp, ClientAppFactory)):
+        if not isinstance(client_app, ClientApp):
             self.system_panic(
-                f"component {self.client_app_id} must be ClientApp or ClientAppFactory but got {type(client_app)}",
+                f"component {self.client_app_id} must be ClientApp but got {type(client_app)}",
                 fl_ctx,
             )
             return
 
         client_name = fl_ctx.get_identity_name()
-        if isinstance(client_app, ClientApp):
-            self.client_app = client_app
+
+        make_client_app_f = getattr(self.client_app, "make_client_app", None)
+        if make_client_app_f and callable(make_client_app_f):
+            self.client_app = make_client_app_f(client_name)
         else:
-            self.client_app = client_app.make_client_app(client_name)
+            self.client_app = client_app
 
         self.client_app.name = client_name
         self.client_app.env_type = EnvType.SYSTEM

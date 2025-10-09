@@ -31,12 +31,13 @@ class NPFedAvgSequential(Strategy):
         Strategy.__init__(self)
         self.name = "NPFedAvgSequential"
         self.num_rounds = num_rounds
-        self.initial_model = parse_array_def(initial_model)
+        self.initial_model = initial_model  # need to remember init for job API to work!
+        self._initial_model = parse_array_def(initial_model)
         self.logger = get_obj_logger(self)
 
     def execute(self, context: Context):
         self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
-        current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
+        current_model = context.get_prop(ContextKey.INPUT, self._initial_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model, context)
 
@@ -60,13 +61,14 @@ class NPFedAvgParallel(Strategy):
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
-        self.initial_model = parse_array_def(initial_model)
+        self.initial_model = initial_model
+        self._initial_model = parse_array_def(initial_model)
         self.name = "NPFedAvgParallel"
         self.logger = get_obj_logger(self)
 
     def execute(self, context: Context):
         self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
-        current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
+        current_model = context.get_prop(ContextKey.INPUT, self._initial_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model, context)
             score = self._do_eval(current_model, context)
@@ -94,7 +96,8 @@ class NPHierarchicalFedAvg(Strategy):
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
-        self.initial_model = parse_array_def(initial_model)
+        self.initial_model = initial_model
+        self._initial_model = parse_array_def(initial_model)
         self.name = self.__class__.__name__
         self.logger = get_obj_logger(self)
 
@@ -136,14 +139,15 @@ class NPFedAvgInTime(Strategy):
 
     def __init__(self, initial_model, num_rounds=10, timeout=2.0):
         self.num_rounds = num_rounds
-        self.initial_model = parse_array_def(initial_model)
+        self.initial_model = initial_model
         self.timeout = timeout
         self.name = "NPFedAvgInTime"
         self.logger = get_obj_logger(self)
+        self._init_model = parse_array_def(initial_model)
 
     def execute(self, context: Context):
         self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
-        current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
+        current_model = context.get_prop(ContextKey.INPUT, self._init_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model, context)
             score = self._do_eval(current_model, context)
@@ -185,11 +189,12 @@ class NPCyclic(Strategy):
 
     def __init__(self, initial_model, num_rounds=(2, 3)):
         self.num_rounds = num_rounds
-        self.initial_model = parse_array_def(initial_model)
+        self.initial_model = initial_model
+        self._initial_model = parse_array_def(initial_model)
         self.logger = get_obj_logger(self)
 
     def execute(self, context: Context):
-        current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
+        current_model = context.get_prop(ContextKey.INPUT, self._initial_model)
         for current_round in range(self.num_rounds):
             current_model = self._do_one_round(current_round, current_model, context)
         self.logger.info(f"[{context.header_str()}] final result: {current_model}")

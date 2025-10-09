@@ -19,7 +19,9 @@ from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, PrintCall, PrintResult
 from nvflare.fox.examples.np.algos.strategies import NPFedAvgInTime
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sys.recipe import FoxRecipe
+
+JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
 
 
 def main():
@@ -38,17 +40,14 @@ def main():
     client_app = NPTrainer(delta=1.0)
     client_app.add_incoming_call_filters("*.train", [PrintCall()])
     client_app.add_outgoing_result_filters("*.train", [PrintResult()])
-    server_app.set_prop("default_timeout", 8.0)
+    client_app.set_prop("default_timeout", 8.0)
 
-    simulator = Simulator(
-        root_dir="/tmp/fox",
-        experiment_name="fedavg_intime",
+    recipe = FoxRecipe(
+        job_name="fedavg_intime",
         server_app=server_app,
         client_app=client_app,
-        num_clients=2,
     )
-
-    simulator.run()
+    recipe.export(JOB_ROOT_DIR)
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Tuple, Union
 
 from nvflare.apis.signal import Signal
-from nvflare.fox.api.app import App, ClientApp, ClientAppFactory, ServerApp
+from nvflare.fox.api.app import App, ClientApp, ServerApp
 from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.dec import get_object_collab_interface
 from nvflare.fox.api.proxy import Proxy
@@ -57,10 +57,12 @@ class Simulator:
         return app_proxy
 
     def _make_app(self, name, fqn):
-        if isinstance(self.client_app, ClientApp):
-            app = copy.deepcopy(self.client_app)
+        make_client_app_f = getattr(self.client_app, "make_client_app", None)
+        if make_client_app_f and callable(make_client_app_f):
+            app = make_client_app_f(name)
         else:
-            app = self.client_app.make_client_app(name)
+            app = copy.deepcopy(self.client_app)
+
         app.name = name
         app.fqn = fqn
         app.env_type = EnvType.SIMULATION
@@ -80,15 +82,15 @@ class Simulator:
         root_dir: str,
         experiment_name: str,
         server_app: ServerApp,
-        client_app: Union[ClientAppFactory, ClientApp],
+        client_app: ClientApp,
         max_workers: int = 100,
         num_clients: Union[int, Tuple[int, int]] = 2,
     ):
         if not isinstance(server_app, ServerApp):
             raise ValueError(f"server_app must be ServerApp but got {type(server_app)}")
 
-        if not isinstance(client_app, (ClientAppFactory, ClientApp)):
-            raise ValueError(f"client_app must be ClientApp or ClientAppFactory but got {type(client_app)}")
+        if not isinstance(client_app, ClientApp):
+            raise ValueError(f"client_app must be ClientApp but got {type(client_app)}")
 
         self.logger = get_obj_logger(self)
         self.abort_signal = Signal()
