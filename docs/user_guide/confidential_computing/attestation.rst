@@ -4,34 +4,26 @@
 Confidential Computing: Attestation Service Integration
 #######################################################
 
-In NVFlare, data is encrypted during transmission between participants
-—including the server, clients, and admin—to ensure strong protection
-for data in transit. To secure data at rest, users can leverage existing
-infrastructure such as storage encryption.
+Please refer to the :ref:`NVFLARE CC Architecture <cc_architecture>`
+for the introduction and detailed architecture of the Confidential Computing.
 
-However, traditional security approaches leave a critical gap: **data in use**.
-This is where confidential computing (CC) plays a key role. CC enables NVFlare
-to protect data while it is being processed, completing full-lifecycle security:
-at rest, in transit, and in use.
+This document will introduce the cc attestation integration in NVFlare.
 
-Confidential computing in NVFlare is also central to establishing trust between
-participants in a federated learning job. Before participating in a job, each
-participant must generate a set of cryptographically verifiable evidence about
-its computing environment—including details about hardware (e.g., GPU),
-software (e.g., GPU driver and VBIOS), and other platform components.
+Each participant will use the corresponding CCAuthorizer to generate the CC token.
 
-This evidence is validated, signed, and packaged into a Confidential Computing
-token (CC token). The participant can then present its CC token to others to
-prove the integrity and trustworthiness of its environment.
+For example, the SNPAuthorizer utilizes the AMD's snpguest utility to generate
+an attestation report and package it into a CC token.
 
-When a participant (the "relying party") receives a CC token, it verifies the
-claims inside the token against its own security policy. This check ensures
-that the token owner is using the required hardware, software, and
-configurations to meet the relying party's security standards.
+In NVFlare, the participant will first generate the CC token, then present its
+CC token to others to prove the integrity and trustworthiness of its environment.
 
-If the verification fails—i.e., the CC token does not meet the relying party's
-policy—the relying party may choose to reject participation in the job. It will
-not exchange models or collaborate further.
+Upon receiving a CC token, the participant verifies its claims against its own
+security policy. This check ensures that the token owner is using the required
+hardware, software, and configurations to meet the security standards.
+
+If verification fails—i.e., the CC token does not meet the policy—the site
+may choose not to participate in the job. It will not exchange models or
+collaborate further.
 
 This mechanism ensures that only mutually trusted participants take part in a
 federated learning job, reinforcing both security and integrity across the
@@ -44,7 +36,7 @@ Currently, we support the following CCAuthorizer components:
 - ACIAuthorizer
 - TDXAuthorizer
 
-You can configure it using the provision step in the [cc deployment guide](cc_deployment_guide.rst).
+You can configure it using the provision step in the :ref:`NVFLARE CC Deployment Guide <cc_deployment_guide>`.
 
 ****************
 Runtime behavior
