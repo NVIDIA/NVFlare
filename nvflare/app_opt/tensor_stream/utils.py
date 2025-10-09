@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.apis.shareable import Shareable
@@ -139,16 +139,16 @@ def get_dxo_from_ctx(fl_ctx: FLContext, ctx_prop_key: FLContextKey, tasks: list[
     Returns:
         dict[str, torch.Tensor]: A dictionary of data extracted from the FLContext.
     """
-    task: Shareable = fl_ctx.get_prop(ctx_prop_key)
-    if task is None:
-        raise ValueError(f"No task found in FLContext. Looked for: {ctx_prop_key}.")
-
-    task_name = task.get_header(ReservedKey.TASK_NAME)
+    task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
     if not task_name:
-        raise ValueError("No task name found in Shareable header.")
+        raise ValueError("No task name found in FLContext.")
 
     if task_name not in tasks:
         raise ValueError(f"Task name '{task_name}' not part of configured tasks: {tasks}")
+
+    task: Shareable = fl_ctx.get_prop(ctx_prop_key)
+    if task is None:
+        raise ValueError(f"No task found in FLContext. Looked for for shareable in '{ctx_prop_key}'.")
 
     dxo = from_shareable(task)
     if dxo.data_kind not in (DataKind.WEIGHTS, DataKind.WEIGHT_DIFF):

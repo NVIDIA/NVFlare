@@ -67,7 +67,7 @@ class TensorSender:
         try:
             dxo = get_dxo_from_ctx(fl_ctx, self.ctx_prop_key, self.tasks)
         except ValueError as exc:
-            self.logger.warning(f"{exc}. Nothing to send.")
+            self.logger.warning(f"{exc} Nothing to send.")
             return False
 
         for key, value in dxo.data.items():
@@ -80,7 +80,10 @@ class TensorSender:
         for key in self.root_keys:
             tensors = get_tensors_from_dxo(dxo, key, self.format)
             producer = TensorProducer(tensors, entry_timeout, root_key=key)
-            self.logger.info(f"Starting to send {len(producer.tensors_keys)} tensors for root key '{key}'")
+            msg = f"Starting to send tensors to peer '{peer_name}'. "
+            if key:
+                msg += f"With root key '{key}'"
+            self.logger.info(msg)
             self._send_tensors(targets, producer, fl_ctx)
 
         return True

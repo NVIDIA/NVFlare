@@ -19,9 +19,8 @@ import pytest
 import torch
 
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.job_def import SERVER_SITE_NAME
-from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.tensor_stream.types import TensorTopics
 from nvflare.app_opt.tensor_stream.utils import (
     clean_task_data,
@@ -501,25 +500,45 @@ class TestGetDxoFromCtx:
         # Setup task shareable
         dxo = DXO(data_kind=DataKind.WEIGHTS, data={"model": torch.tensor([1.0, 2.0])})
         task_shareable = dxo.to_shareable()
-        task_shareable.set_header(ReservedKey.TASK_NAME, "train")
 
-        mock_fl_context.get_prop.return_value = task_shareable
+        # Mock FLContext to return task name and shareable separately
+        def mock_get_prop(key):
+            if key == FLContextKey.TASK_NAME:
+                return "train"
+            elif key == FLContextKey.TASK_DATA:
+                return task_shareable
+            return None
+
+        mock_fl_context.get_prop.side_effect = mock_get_prop
 
         # Test extraction
         result_dxo = get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_DATA, ["train", "validate"])
 
         assert isinstance(result_dxo, DXO)
         assert result_dxo.data_kind == DataKind.WEIGHTS
-        mock_fl_context.get_prop.assert_called_once_with(FLContextKey.TASK_DATA)
+        # Verify both calls were made
+        expected_calls = [
+            mock_fl_context.get_prop.call_args_list[0][0][0],  # First call arg
+            mock_fl_context.get_prop.call_args_list[1][0][0],  # Second call arg
+        ]
+        assert FLContextKey.TASK_NAME in expected_calls
+        assert FLContextKey.TASK_DATA in expected_calls
 
     def test_get_dxo_weight_diff(self, mock_fl_context):
         """Test successful DXO extraction with WEIGHT_DIFF data kind."""
         # Setup task shareable with WEIGHT_DIFF
         dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data={"diff": torch.tensor([0.1, 0.2])})
         task_shareable = dxo.to_shareable()
-        task_shareable.set_header(ReservedKey.TASK_NAME, "aggregate")
 
-        mock_fl_context.get_prop.return_value = task_shareable
+        # Mock FLContext to return task name and shareable separately
+        def mock_get_prop(key):
+            if key == FLContextKey.TASK_NAME:
+                return "aggregate"
+            elif key == FLContextKey.TASK_RESULT:
+                return task_shareable
+            return None
+
+        mock_fl_context.get_prop.side_effect = mock_get_prop
 
         # Test extraction
         result_dxo = get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_RESULT, ["aggregate"])
@@ -529,25 +548,44 @@ class TestGetDxoFromCtx:
 
     def test_no_task_in_context_raises_error(self, mock_fl_context):
         """Test that missing task in context raises ValueError."""
-        mock_fl_context.get_prop.return_value = None
+
+        # Mock FLContext to return task name but no shareable
+        def mock_get_prop(key):
+            if key == FLContextKey.TASK_NAME:
+                return "train"
+            elif key == FLContextKey.TASK_DATA:
+                return None
+            return None
+
+        mock_fl_context.get_prop.side_effect = mock_get_prop
 
         with pytest.raises(ValueError, match="No task found in FLContext"):
             get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_DATA, ["train"])
 
     def test_no_task_name_raises_error(self, mock_fl_context):
         """Test that missing task name raises ValueError."""
-        task_shareable = Shareable()
-        # No task name set in header
-        mock_fl_context.get_prop.return_value = task_shareable
 
-        with pytest.raises(ValueError, match="No task name found in Shareable header"):
+        # Mock FLContext to return no task name
+        def mock_get_prop(key):
+            if key == FLContextKey.TASK_NAME:
+                return None  # No task name found
+            return None
+
+        mock_fl_context.get_prop.side_effect = mock_get_prop
+
+        with pytest.raises(ValueError, match="No task name found in FLContext"):
             get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_DATA, ["train"])
 
     def test_invalid_task_name_raises_error(self, mock_fl_context):
         """Test that invalid task name raises ValueError."""
-        task_shareable = Shareable()
-        task_shareable.set_header(ReservedKey.TASK_NAME, "invalid_task")
-        mock_fl_context.get_prop.return_value = task_shareable
+
+        # Mock FLContext to return invalid task name
+        def mock_get_prop(key):
+            if key == FLContextKey.TASK_NAME:
+                return "invalid_task"  # Invalid task name
+            return None
+
+        mock_fl_context.get_prop.side_effect = mock_get_prop
 
         with pytest.raises(ValueError, match="Task name 'invalid_task' not part of configured tasks"):
             get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_DATA, ["train", "validate"])
@@ -556,9 +594,16 @@ class TestGetDxoFromCtx:
         """Test that invalid data kind raises ValueError."""
         dxo = DXO(data_kind=DataKind.METRICS, data={"accuracy": 0.95})  # Invalid data kind
         task_shareable = dxo.to_shareable()
-        task_shareable.set_header(ReservedKey.TASK_NAME, "train")
 
-        mock_fl_context.get_prop.return_value = task_shareable
+        # Mock FLContext to return task name and shareable separately
+        def mock_get_prop(key):
+            if key == FLContextKey.TASK_NAME:
+                return "train"
+            elif key == FLContextKey.TASK_DATA:
+                return task_shareable
+            return None
+
+        mock_fl_context.get_prop.side_effect = mock_get_prop
 
         with pytest.raises(ValueError, match="Skipping task, data kind is not WEIGHTS or WEIGHT_DIFF"):
             get_dxo_from_ctx(mock_fl_context, FLContextKey.TASK_DATA, ["train"])
@@ -568,9 +613,16 @@ class TestGetDxoFromCtx:
         """Test various valid task names."""
         dxo = DXO(data_kind=DataKind.WEIGHTS, data={"model": torch.tensor([1.0])})
         task_shareable = dxo.to_shareable()
-        task_shareable.set_header(ReservedKey.TASK_NAME, task_name)
 
-        mock_fl_context.get_prop.return_value = task_shareable
+        # Mock FLContext to return task name and shareable separately
+        def mock_get_prop(key):
+            if key == FLContextKey.TASK_NAME:
+                return task_name
+            elif key == FLContextKey.TASK_DATA:
+                return task_shareable
+            return None
+
+        mock_fl_context.get_prop.side_effect = mock_get_prop
 
         result_dxo = get_dxo_from_ctx(
             mock_fl_context, FLContextKey.TASK_DATA, ["train", "validate", "aggregate", "submit_model"]

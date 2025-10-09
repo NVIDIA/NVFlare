@@ -97,7 +97,7 @@ class TensorClientStreamer(FLComponent):
         elif event_type == EventType.BEFORE_TASK_DATA_FILTER:
             self.receiver.set_ctx_with_tensors(fl_ctx)
             self.receiver.tensors.clear()  # clear previous received tensors
-        elif event_type == EventType.BEFORE_SEND_TASK_RESULT:
+        elif event_type == EventType.AFTER_TASK_RESULT_FILTER:
             self.sender = TensorSender(self.engine, FLContextKey.TASK_RESULT, self.format, self.tasks)
             try:
                 self.send_tensors_to_server(fl_ctx)

@@ -135,8 +135,12 @@ class TensorConsumer(ObjectConsumer):
             peer_name (str): The name of the peer.
             tensor_keys (list[str]): The keys of the received tensors.
         """
-        self.logger.info(
+        total_bytes = self.total_bytes.get(root_key, 0)
+        msg = (
             f"Peer '{identity}': consumed blobs from peer '{peer_name}' "
-            f"with {len(tensor_keys)} tensors from root_key='{root_key}' and "
-            f"{round(self.total_bytes.get(root_key, 0) / (1024 * 1024), 2)} Mbytes."
+            f"with {len(tensor_keys)} tensors, total size: "
+            f"{round(total_bytes / (1024 * 1024), 2)} Mbytes ({total_bytes} bytes)"
         )
+        if root_key:
+            msg += f", root key: '{root_key}'"
+        self.logger.info(msg)

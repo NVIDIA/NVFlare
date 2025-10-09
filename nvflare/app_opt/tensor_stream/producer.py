@@ -89,11 +89,15 @@ class TensorProducer(ObjectProducer):
         self.current += 1
         if self.last:
             peer_name = fl_ctx.get_peer_context().get_identity_name()
-            self.logger.info(
+            msg = (
                 f"Peer '{fl_ctx.get_identity_name()}': produced blobs for peer '{peer_name}' "
-                f"with {len(self.tensors_keys)} tensors from root_key='{self.root_key}' and "
-                f"{round(self.total_bytes / (1024 * 1024), 2)} Mbytes."
+                f"with {len(self.tensors_keys)} tensors, total size: "
+                f"{round(self.total_bytes / (1024 * 1024), 2)} Mbytes ({self.total_bytes} bytes)"
             )
+            if self.root_key:
+                msg += f", root key: '{self.root_key}'"
+            self.logger.info(msg)
+
         return data, self.entry_timeout
 
     def process_replies(
