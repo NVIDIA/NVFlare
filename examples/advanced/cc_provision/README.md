@@ -24,7 +24,6 @@ role: server
 # All drive sizes are in GB
 root_drive_size: 10
 applog_drive_size: 1
-user_data_drive_size: 1
 user_config_drive_size: 1
 user_data_drive_size: 1
 

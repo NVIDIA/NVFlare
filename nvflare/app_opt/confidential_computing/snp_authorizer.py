@@ -203,7 +203,7 @@ class SNPAuthorizer(CCAuthorizer):
             self.logger.info("AMD CA certs already exist.")
 
     def _ensure_amd_vcek(self, vcek_cache_key, report_bin_file, timeout=60):
-        """Ensures AMD VCEK are inside the amd_certs_dir."""
+        """Ensures AMD VCEK is inside the amd_certs_dir."""
         cache_path = os.path.join(self.amd_certs_dir, vcek_cache_key)
         vcek_file = os.path.join(self.amd_certs_dir, AMD_VCEK)
         lock_file = cache_path + ".lock"
@@ -223,7 +223,7 @@ class SNPAuthorizer(CCAuthorizer):
     def _parse_report(self, report_bin_file):
         """Parses the Reported TCB and Chip ID info.
 
-        This method is for generate a unique id to cache VCEK.
+        This method is used to generate a unique id to cache VCEK.
         Because AMD KDS has rate limitation, we should avoid keep polling.
         """
         cmd = [self.snpguest_binary, "display", "report", report_bin_file]
