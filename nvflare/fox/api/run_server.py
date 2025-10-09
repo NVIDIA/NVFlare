@@ -26,12 +26,12 @@ def run_server(server_app: ServerApp, logger):
         raise RuntimeError("server app does not have any strategies!")
 
     result = None
-    for idx, strategy in enumerate(server_app.strategies):
+    for name, strategy in server_app.strategies:
         if server_ctx.is_aborted():
             break
 
         try:
-            logger.info(f"Running Strategy #{idx + 1} - {type(strategy).__name__}")
+            logger.info(f"Running Strategy {name} - {type(strategy).__name__}")
             server_app.current_strategy = strategy
             result = strategy.execute(context=server_ctx)
             server_ctx.set_prop(ContextKey.INPUT, result)

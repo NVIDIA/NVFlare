@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict
+from typing import Any, Dict, List
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.fox.api.app import App
@@ -22,7 +22,8 @@ class FoxAdaptor:
 
     def __init__(
         self,
-        collab_obj_ids: Dict[str, str] = None,
+        collab_obj_ids: List[str] = None,
+        props: Dict[str, Any] = None,
         incoming_call_filters=None,
         outgoing_call_filters=None,
         incoming_result_filters=None,
@@ -30,6 +31,7 @@ class FoxAdaptor:
     ):
         if not collab_obj_ids:
             collab_obj_ids = []
+        self.props = props
         self.collab_obj_ids = collab_obj_ids
         self.incoming_call_filters = incoming_call_filters
         self.outgoing_call_filters = outgoing_call_filters

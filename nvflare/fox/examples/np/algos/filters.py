@@ -40,6 +40,7 @@ class AddNoiseToModel(CallFilter):
         self.logger.debug(f"[{context.header_str()}] adding noise {noise}")
         weights += noise
         func_kwargs[weights_key] = weights
+        self.logger.info(f"[{context.header_str()}] weights after adding noise {noise}: {weights}")
         return func_kwargs
 
 

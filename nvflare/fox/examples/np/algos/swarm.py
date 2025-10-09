@@ -28,7 +28,8 @@ class NPSwarm(Strategy):
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
-        self.initial_model = parse_array_def(initial_model)
+        self.initial_model = initial_model
+        self._initial_model = parse_array_def(initial_model)
         self.waiter = threading.Event()
         self.logger = get_obj_logger(self)
 
@@ -38,7 +39,7 @@ class NPSwarm(Strategy):
         # randomly pick a client to start
         start_client_idx = random.randint(0, len(context.clients) - 1)
         start_client = context.clients[start_client_idx]
-        start_client.start(self.num_rounds, self.initial_model)
+        start_client.start(self.num_rounds, self._initial_model)
         while not context.is_aborted():
             if self.waiter.wait(timeout=0.5):
                 break

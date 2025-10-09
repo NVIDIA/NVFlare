@@ -13,7 +13,6 @@
 # limitations under the License.
 import copy
 import fnmatch
-from abc import ABC, abstractmethod
 from typing import List
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -79,14 +78,26 @@ class App:
     def add_incoming_call_filters(self, pattern: str, filters: List[CallFilter]):
         self._add_filters(pattern, filters, self._incoming_call_filter_chains, CallFilter)
 
+    def get_incoming_call_filters(self):
+        return self._incoming_call_filter_chains
+
     def add_outgoing_call_filters(self, pattern: str, filters: List[CallFilter]):
         self._add_filters(pattern, filters, self._outgoing_call_filter_chains, CallFilter)
+
+    def get_outgoing_call_filters(self):
+        return self._outgoing_call_filter_chains
 
     def add_incoming_result_filters(self, pattern: str, filters: List[ResultFilter]):
         self._add_filters(pattern, filters, self._incoming_result_filter_chains, ResultFilter)
 
+    def get_incoming_result_filters(self):
+        return self._incoming_result_filter_chains
+
     def add_outgoing_result_filters(self, pattern: str, filters: List[ResultFilter]):
         self._add_filters(pattern, filters, self._outgoing_result_filter_chains, ResultFilter)
+
+    def get_outgoing_result_filters(self):
+        return self._outgoing_result_filter_chains
 
     @staticmethod
     def _find_filter_chain(chains: List[FilterChain], target_name: str, func_name: str, ctx: Context):
@@ -149,6 +160,13 @@ class App:
 
     def get_prop(self, name: str, default=None):
         return self._props.get(name, default)
+
+    def get_props(self):
+        return self._props
+
+    def update_props(self, props: dict):
+        if isinstance(props, dict):
+            self._props.update(props)
 
     def get_default_collab_object(self):
         return None
@@ -293,7 +311,7 @@ class ServerApp(App):
     def add_strategy(self, strategy_name: str, strategy):
         if not isinstance(strategy, Strategy):
             raise ValueError(f"strategy must be Controller but got {type(strategy)}")
-        self.strategies.append(strategy)
+        self.strategies.append((strategy_name, strategy))
         self.add_collab_object(strategy_name, strategy)
 
     def get_default_collab_object(self):
@@ -327,10 +345,3 @@ class ClientApp(App):
             return True
         else:
             return False
-
-
-class ClientAppFactory(ABC):
-
-    @abstractmethod
-    def make_client_app(self, name: str) -> ClientApp:
-        pass

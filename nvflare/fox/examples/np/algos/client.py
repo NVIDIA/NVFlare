@@ -13,7 +13,7 @@
 # limitations under the License.
 import random
 
-from nvflare.fox.api.app import ClientApp, ClientAppFactory
+from nvflare.fox.api.app import ClientApp
 from nvflare.fox.api.ctx import Context
 from nvflare.fox.api.dec import collab
 from nvflare.fox.api.group import all_children
@@ -91,10 +91,13 @@ class NPHierarchicalTrainer(ClientApp):
         return random.random()
 
 
-class TrainerFactory(ClientAppFactory):
+class NPTrainerMaker(ClientApp):
 
     def __init__(self, delta):
+        ClientApp.__init__(self)
         self.delta = delta
 
     def make_client_app(self, name: str) -> ClientApp:
-        return NPTrainer(self.delta)
+        app = NPTrainer(self.delta)
+        app.name = name
+        return app

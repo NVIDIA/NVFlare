@@ -15,7 +15,7 @@ import logging
 
 from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
-from nvflare.fox.examples.np.algos.client import TrainerFactory
+from nvflare.fox.examples.np.algos.client import NPTrainerMaker
 from nvflare.fox.examples.np.algos.strategies import NPFedAvgSequential
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
 from nvflare.fox.sim.simulator import Simulator
@@ -37,7 +37,7 @@ def main():
         root_dir="/tmp/fox",
         experiment_name="fedavg_seq",
         server_app=server_app,
-        client_app=TrainerFactory(delta=1.0),
+        client_app=NPTrainerMaker(delta=1.0),
         num_clients=2,
     )
 
