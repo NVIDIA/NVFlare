@@ -47,6 +47,10 @@ class Context:
     def client_hierarchy(self):
         return self.app.client_hierarchy
 
+    @property
+    def workspace(self):
+        return self.app.get_workspace()
+
     def set_prop(self, name: str, value):
         self.props[name] = value
 

@@ -34,6 +34,8 @@ def main():
     server_app.add_collab_object("metric_receiver", MetricReceiver())
 
     simulator = Simulator(
+        root_dir="/tmp/fox",
+        experiment_name="fedavg_seq",
         server_app=server_app,
         client_app=TrainerFactory(delta=1.0),
         num_clients=2,

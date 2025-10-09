@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import time
-import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
@@ -23,8 +22,9 @@ from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import ServerApp
-from nvflare.fox.api.constants import ContextKey, EnvType
+from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.proxy import Proxy
+from nvflare.fox.api.run_server import run_server
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
@@ -32,6 +32,7 @@ from .adaptor import FoxAdaptor
 from .backend import SysBackend
 from .constants import SYNC_TASK_NAME, SyncKey
 from .utils import prepare_for_remote_call
+from .ws import SysWorkspace
 
 
 class _ClientInfo:
@@ -238,24 +239,9 @@ class FoxController(Controller, FoxAdaptor):
             assert isinstance(info, _ClientInfo)
             client_proxies.append(self._prepare_client_proxy(job_id, c, info.collab_interface, abort_signal))
 
-        self.server_app.setup(server_proxy, client_proxies, abort_signal)
-
-        server_ctx = self.server_app.new_context(caller=self.server_app.name, callee=self.server_app.name)
-        self.log_info(fl_ctx, "initializing server app")
-        self.server_app.initialize(server_ctx)
-
-        for idx, strategy in enumerate(self.server_app.strategies):
-            if abort_signal.triggered:
-                break
-
-            try:
-                self.log_info(fl_ctx, f"Running Strategy #{idx + 1} - {type(strategy).__name__}")
-                self.server_app.current_strategy = strategy
-                result = strategy.execute(context=server_ctx)
-                server_ctx.set_prop(ContextKey.INPUT, result)
-            except:
-                traceback.print_exc()
-                break
+        ws = SysWorkspace(fl_ctx)
+        self.server_app.setup(ws, server_proxy, client_proxies, abort_signal)
+        run_server(self.server_app, self.logger)
 
     def _process_sync_reply(self, client_task: ClientTask, fl_ctx: FLContext):
         result = client_task.result

@@ -22,13 +22,16 @@ from nvflare.fox.sim.simulator import Simulator
 
 def main():
     simple_logging(logging.DEBUG)
+    exp_name = "cyclic_avg"
 
     server_app = ServerApp(
-        strategy_name="cyclic", strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)
+        strategy_name=exp_name, strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)
     )
     server_app.add_strategy("fed_avg_parallel", NPFedAvgParallel(initial_model=None, num_rounds=2))
 
     simulator = Simulator(
+        root_dir="/tmp/fox",
+        experiment_name=exp_name,
         server_app=server_app,
         client_app=NPTrainer(delta=1.0),
         num_clients=2,

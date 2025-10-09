@@ -30,7 +30,13 @@ def main():
     )
     server_app.add_collab_object("metric_receiver", MetricReceiver())
 
-    simulator = Simulator(server_app=server_app, client_app=NPHierarchicalTrainer(delta=1.0), num_clients=(3, 2))
+    simulator = Simulator(
+        root_dir="/tmp/fox",
+        experiment_name="fedavg_h",
+        server_app=server_app,
+        client_app=NPHierarchicalTrainer(delta=1.0),
+        num_clients=(3, 2),
+    )
 
     simulator.run()
 

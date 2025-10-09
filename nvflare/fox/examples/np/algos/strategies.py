@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import random
 
 import numpy as np
@@ -21,7 +22,7 @@ from nvflare.fox.api.group import all_children, all_clients, all_leaf_clients
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-from .utils import parse_array_def
+from .utils import parse_array_def, save_np_model
 
 
 class NPFedAvgSequential(Strategy):
@@ -38,6 +39,10 @@ class NPFedAvgSequential(Strategy):
         current_model = context.get_prop(ContextKey.INPUT, self.initial_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model, context)
+
+        # save model to work dir
+        file_name = os.path.join(context.workspace.get_work_dir(), "model.npy")
+        save_np_model(current_model, file_name)
         return current_model
 
     def _do_one_round(self, r, current_model, context: Context):

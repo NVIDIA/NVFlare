@@ -39,6 +39,8 @@ def main():
     client_app.add_outgoing_result_filters("*.train", [PrintResult()])
 
     simulator = Simulator(
+        root_dir="/tmp/fox",
+        experiment_name="fedavg_intime",
         server_app=server_app,
         client_app=client_app,
         num_clients=2,

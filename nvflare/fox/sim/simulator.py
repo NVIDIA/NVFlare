@@ -12,15 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Tuple, Union
 
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import App, ClientApp, ClientAppFactory, ServerApp
-from nvflare.fox.api.constants import ContextKey, EnvType
+from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.dec import get_object_collab_interface
 from nvflare.fox.api.proxy import Proxy
+from nvflare.fox.api.run_server import run_server
 from nvflare.fox.sim.backend import SimBackend
+from nvflare.fox.sim.ws import SimWorkspace
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -74,6 +77,8 @@ class Simulator:
 
     def __init__(
         self,
+        root_dir: str,
+        experiment_name: str,
         server_app: ServerApp,
         client_app: Union[ClientAppFactory, ClientApp],
         max_workers: int = 100,
@@ -113,7 +118,7 @@ class Simulator:
             if height <= 0 or num_children_per_parent <= 0:
                 raise ValueError(f"num_clients must contain positive ints but got {num_clients}")
 
-            print(f"creating clients {height} x {num_children_per_parent}")
+            self.logger.info(f"creating clients {height} x {num_children_per_parent}")
             client_apps = self._build_hierarchical_clients(height, num_children_per_parent)
         else:
             raise ValueError(f"num_clients must be an int or tuple(int, int) but got {type(num_clients)}")
@@ -125,15 +130,19 @@ class Simulator:
         for name, app in client_apps.items():
             backends[name] = self._prepare_app_backends(app)
 
+        exp_id = str(uuid.uuid4())
+
         for name, app in client_apps.items():
             server_proxy, client_proxies = self._prepare_proxies(app, server_app, client_apps, backends)
-            app.setup(server_proxy, client_proxies, self.abort_signal)
+            ws = SimWorkspace(root_dir=root_dir, experiment_name=experiment_name, site_name=name, exp_id=exp_id)
+            app.setup(ws, server_proxy, client_proxies, self.abort_signal)
 
         # prepare server
         server_proxy, client_proxies = self._prepare_proxies(server_app, server_app, client_apps, backends)
-        server_app.setup(server_proxy, client_proxies, self.abort_signal)
-
+        ws = SimWorkspace(root_dir=root_dir, experiment_name=experiment_name, site_name=server_app.name, exp_id=exp_id)
+        server_app.setup(ws, server_proxy, client_proxies, self.abort_signal)
         self.client_apps = client_apps
+        self.exp_dir = ws.get_experiment_dir()
 
     def _build_hierarchical_clients(self, height: int, num_children_per_parent: int):
         client_apps = {}
@@ -168,25 +177,13 @@ class Simulator:
             self.abort_signal.trigger(True)
         finally:
             self.thread_executor.shutdown(wait=False, cancel_futures=True)
+        self.logger.info(f"Experiment results are in {self.exp_dir}")
 
     def _try_run(self):
         # initialize all apps
-        server_ctx = self.server_app.new_context(caller=self.server_app.name, callee=self.server_app.name)
-        self.logger.info("initializing server app")
-        self.server_app.initialize(server_ctx)
-
         for n, app in self.client_apps.items():
             self.logger.info(f"initializing client app for {n}")
             app.initialize(app.new_context(n, n))
 
         # run the server
-        if not self.server_app.strategies:
-            raise RuntimeError("server app does not have any strategies!")
-
-        result = None
-        for idx, strategy in enumerate(self.server_app.strategies):
-            self.logger.info(f"Running Strategy #{idx+1} - {type(strategy).__name__}")
-            self.server_app.current_strategy = strategy
-            result = strategy.execute(context=server_ctx)
-            server_ctx.set_prop(ContextKey.INPUT, result)
-        return result
+        return run_server(self.server_app, self.logger)

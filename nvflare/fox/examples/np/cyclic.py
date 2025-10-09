@@ -24,6 +24,8 @@ def main():
     simple_logging(logging.DEBUG)
 
     simulator = Simulator(
+        root_dir="/tmp/fox",
+        experiment_name="cyclic",
         server_app=ServerApp(
             strategy_name="cyclic", strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)
         ),
