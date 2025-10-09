@@ -24,7 +24,6 @@ import datasets
 import numpy as np
 import torch
 import torch.distributed as dist
-from accelerate import PartialState
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, TrainerCallback, trainer_utils
 from trl import SFTConfig, SFTTrainer
@@ -113,14 +112,42 @@ def main():
     )
     parser.add_argument("--local_epoch", type=int, default=1)
     parser.add_argument("--num_rounds", type=int, default=3)
+    parser.add_argument(
+        "--wandb_project", type=str, default="fl_exp", help="WandB project name (enables WandB if provided)"
+    )
+    parser.add_argument("--wandb_run_name", type=str, default="multinode", help="WandB run name")
     args = parser.parse_args()
 
     # Setup distributed training
     rank, world_size, local_rank = setup_distributed_training()
 
     # Set up device for DDP
-    device_string = PartialState().process_index
-    device_map = {"": device_string}
+    # Use local_rank which is 0-7 on each node, not global rank which is 0-15 across all nodes
+    device_map = {"": local_rank}
+
+    # Set WandB environment variables (only if API key is set and rank 0 will actually log)
+    wandb_enabled = args.wandb_project and os.environ.get("WANDB_API_KEY")
+    if wandb_enabled:
+        os.environ["WANDB_PROJECT"] = args.wandb_project
+        if args.wandb_run_name:
+            os.environ["WANDB_NAME"] = args.wandb_run_name
+        # Add FL-specific tags
+        os.environ["WANDB_TAGS"] = (
+            f"nvflare,multi-node,{world_size}gpus,{os.environ.get('SLURM_JOB_NUM_NODES', '1')}nodes"
+        )
+        if rank == 0:
+            print(f"Rank 0: WandB enabled - project: {args.wandb_project}, run: {args.wandb_run_name}")
+    elif rank == 0:
+        print("Rank 0: WandB disabled (WANDB_API_KEY not set), using TensorBoard for logging")
+
+    # initializes NVFlare client API
+    # IMPORTANT: Only global rank 0 should interact with NVFlare
+    # In multi-node training, rank 0 is on the master node where the FL client runs
+    if rank == 0:
+        flare.init()  # TODO: pass the global rank here instead of doing logic in script
+        print(f"Rank 0: NVFlare client {flare.get_site_name()} initialized")
+    else:
+        print(f"Rank {rank} (local_rank {local_rank}): Skipping NVFlare init (only rank 0 communicates with FL server)")
 
     # If output path exists, remove it (only on main process)
     if local_rank == 0:
@@ -216,6 +243,11 @@ def main():
         # Multi-GPU specific settings
         ddp_find_unused_parameters=False,
         dataloader_pin_memory=False,
+        # WandB integration (only rank 0 logs, and only if API key is set)
+        # Otherwise use TensorBoard for logging
+        report_to="wandb" if wandb_enabled and rank == 0 else ("tensorboard" if rank == 0 else "none"),
+        run_name=args.wandb_run_name if wandb_enabled else None,
+        logging_dir=os.path.join(args.output_path, "logs") if not wandb_enabled and rank == 0 else None,
     )
 
     # Trainer
@@ -230,17 +262,34 @@ def main():
         callbacks=[StopCallback()],
     )
 
-    # initializes NVFlare client API
-    flare.init()
-
     # Train federated rounds
     # start with global model at the beginning of each round
-    while flare.is_running():
-        # receives golobal model from NVFlare (only on main process)
-        if local_rank == 0:
-            input_model = flare.receive()
+    # Only rank 0 checks if FL is running; other ranks will follow via broadcast
+    is_running = True
+    while is_running:
+        # receives golobal model from NVFlare (only on rank 0)
+        if rank == 0:
+            # Check if FL is still running
+            is_running = flare.is_running()
+            if not is_running:
+                print("Rank 0: FL training complete, signaling all ranks to stop")
+                # Broadcast stop signal to all ranks
+                if dist.is_initialized():
+                    stop_signal = [False]
+                    dist.broadcast_object_list(stop_signal, src=0)
+                break
+
+            print("Rank 0: Waiting to receive model from FL server...")
+            input_model = flare.receive(timeout=600)
+            if input_model is None:
+                print("Rank 0: Received None from FL server, stopping training")
+                is_running = False
+                if dist.is_initialized():
+                    stop_signal = [False]
+                    dist.broadcast_object_list(stop_signal, src=0)
+                break
             curr_round = input_model.current_round
-            print(f"current_round={curr_round}")
+            print(f"Rank 0: Received model for round {curr_round}")
             # Update the key name received from global model if using model def file
             global_model = copy.deepcopy(input_model.params)
             for key in list(global_model.keys()):
@@ -248,6 +297,20 @@ def main():
         else:
             curr_round = None
             global_model = None
+
+        # broadcast is_running status from rank 0 to all other ranks
+        if dist.is_initialized():
+            if rank == 0:
+                is_running_list = [is_running]
+            else:
+                is_running_list = [None]
+            dist.broadcast_object_list(is_running_list, src=0)
+            is_running = is_running_list[0]
+
+            # If not running, break before doing any work
+            if not is_running:
+                print(f"Rank {rank}: Received stop signal from rank 0")
+                break
 
         # broadcast current round and global_model to all processes
         if dist.is_initialized():
@@ -286,8 +349,9 @@ def main():
                     # continue training
                     trainer.train(resume_from_checkpoint=True)
         else:
-            # replace local resume weights with global weights (only on main process)
-            if local_rank == 0:
+            # replace local resume weights with global weights (only on global rank 0)
+            # Use rank (not local_rank) since all nodes share the same filesystem
+            if rank == 0:
                 resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
                 if train_mode:
                     # PEFT model small, directly save via torch.save
@@ -314,8 +378,8 @@ def main():
         if dist.is_initialized():
             dist.barrier()
 
-        # compose output model to send back to server (only on main process)
-        if local_rank == 0:
+        # compose output model to send back to server (only on rank 0)
+        if rank == 0:
             if train_mode:
                 # PEFT, load PEFT part from trainer model
                 out_param = get_peft_model_state_dict(trainer.model)
