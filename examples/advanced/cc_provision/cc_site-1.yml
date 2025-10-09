@@ -16,10 +16,6 @@ docker_archive: /tmp/base_images/app.tar.gz
 # hosts_entries:
 #   server1: 1.2.3.4
 
-# will be mount inside docker "/user_config/nvflare"
-user_config:
-  nvflare: /tmp/startup_kits
-
 cc_issuers:
   - id: snp_authorizer
     path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
