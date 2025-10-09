@@ -355,7 +355,9 @@ class ClientRunner(TBI):
         self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_EXECUTION")
-        self.fire_event_with_data(EventType.BEFORE_TASK_EXECUTION, fl_ctx, FLContextKey.TASK_DATA, task.data)
+        fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
+        self.fire_event(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
+        # Task_data is needed in the executor, don't clean it here
 
         try:
             self.log_info(fl_ctx, f"invoking task executor {executor_name}")
@@ -411,6 +413,8 @@ class ClientRunner(TBI):
                 fl_ctx=fl_ctx,
                 msg=f"submit result: {ReturnCode.EXECUTION_EXCEPTION}",
             )
+        finally:
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, value=None, private=True, sticky=False)
 
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 
