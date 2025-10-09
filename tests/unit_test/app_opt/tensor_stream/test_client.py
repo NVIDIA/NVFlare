@@ -151,14 +151,14 @@ class TestTensorClientStreamer:
         mock_receiver.tensors.clear.assert_called_once()
 
     @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
-    def test_handle_event_before_send_task_result(self, mock_sender_class, mock_fl_context, mock_engine_with_clients):
-        """Test handling BEFORE_SEND_TASK_RESULT event."""
+    def test_handle_event_after_task_result_filter(self, mock_sender_class, mock_fl_context, mock_engine_with_clients):
+        """Test handling AFTER_TASK_RESULT_FILTER event."""
         streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"])
         streamer.engine = mock_engine_with_clients
         streamer.send_tensors_to_server = Mock()
 
-        # Handle BEFORE_SEND_TASK_RESULT event
-        streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+        # Handle AFTER_TASK_RESULT_FILTER event
+        streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
 
         # Verify sender was created with correct parameters
         mock_sender_class.assert_called_once_with(
@@ -169,33 +169,33 @@ class TestTensorClientStreamer:
         streamer.send_tensors_to_server.assert_called_once_with(mock_fl_context)
 
     @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
-    def test_handle_event_before_send_task_result_exception(
+    def test_handle_event_after_task_result_filter_exception(
         self, mock_sender_class, mock_fl_context, mock_engine_with_clients
     ):
-        """Test handling BEFORE_SEND_TASK_RESULT event when send_tensors_to_server raises exception."""
+        """Test handling AFTER_TASK_RESULT_FILTER event when send_tensors_to_server raises exception."""
         streamer = TensorClientStreamer()
         streamer.engine = mock_engine_with_clients
         streamer.send_tensors_to_server = Mock(side_effect=Exception("Send failed"))
         streamer.system_panic = Mock()
 
-        # Handle BEFORE_SEND_TASK_RESULT event
-        streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+        # Handle AFTER_TASK_RESULT_FILTER event
+        streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
 
         # Verify system_panic was called
         streamer.system_panic.assert_called_once_with("Send failed", mock_fl_context)
 
     @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
-    def test_handle_event_before_send_task_result_sender_creation_exception(
+    def test_handle_event_after_task_result_filter_sender_creation_exception(
         self, mock_sender_class, mock_fl_context, mock_engine_with_clients
     ):
-        """Test handling BEFORE_SEND_TASK_RESULT event when TensorSender creation fails."""
+        """Test handling AFTER_TASK_RESULT_FILTER event when TensorSender creation fails."""
         streamer = TensorClientStreamer()
         streamer.engine = mock_engine_with_clients
         mock_sender_class.side_effect = Exception("Sender creation failed")
 
-        # Handle BEFORE_SEND_TASK_RESULT event - should raise exception since sender creation is not wrapped in try-catch
+        # Handle AFTER_TASK_RESULT_FILTER event - should raise exception since sender creation is not wrapped in try-catch
         with pytest.raises(Exception, match="Sender creation failed"):
-            streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+            streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
 
     @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
     def test_send_tensors_to_server_success(self, mock_clean_task_result, mock_fl_context):
@@ -249,11 +249,11 @@ class TestTensorClientStreamer:
         # Verify receiver.tensors.clear() was called
         mock_receiver_instance.tensors.clear.assert_called_once()
 
-        # Step 3: Handle BEFORE_SEND_TASK_RESULT event (send tensors to server)
+        # Step 3: Handle AFTER_TASK_RESULT_FILTER event (send tensors to server)
         with patch("nvflare.app_opt.tensor_stream.client.clean_task_result") as mock_clean:
             # Mock sender to return True for successful send
             mock_sender_instance.send.return_value = True
-            streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+            streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
 
             # Verify sender was created and called
             mock_sender_class.assert_called_once_with(
@@ -290,8 +290,8 @@ class TestTensorClientStreamer:
                 # Verify sender is not created during initialization
                 mock_sender_class.assert_not_called()
 
-                # Now trigger BEFORE_SEND_TASK_RESULT event to create sender
-                streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+                # Now trigger AFTER_TASK_RESULT_FILTER event to create sender
+                streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
 
                 # Verify sender created with correct parameters
                 mock_sender_class.assert_called_once_with(
@@ -372,8 +372,8 @@ class TestTensorClientStreamer:
                 assert streamer.sender is None
                 assert streamer.receiver == mock_receiver_instance
 
-                # Sender should be created only when handling BEFORE_SEND_TASK_RESULT
-                streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+                # Sender should be created only when handling AFTER_TASK_RESULT_FILTER
+                streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
                 assert streamer.sender == mock_sender_instance
 
     def test_error_propagation_in_event_handling(self, mock_fl_context):
@@ -417,7 +417,7 @@ class TestTensorClientStreamer:
                 assert call_order == ["receiver"]
 
                 # Now trigger sender creation
-                streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+                streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
 
                 # Verify sender is created after receiver
                 assert call_order == ["receiver", "sender"]
@@ -464,11 +464,11 @@ class TestTensorClientStreamer:
                 mock_receiver_instance.set_ctx_with_tensors.assert_called_once()
                 mock_receiver_instance.tensors.clear.assert_called_once()
 
-                # 3. BEFORE_SEND_TASK_RESULT - should create sender and call send
+                # 3. AFTER_TASK_RESULT_FILTER - should create sender and call send
                 with patch("nvflare.app_opt.tensor_stream.client.clean_task_result"):
                     # Mock sender to return True for successful send
                     mock_sender_instance.send.return_value = True
-                    streamer.handle_event(EventType.BEFORE_SEND_TASK_RESULT, mock_fl_context)
+                    streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
 
                     # Verify sender was created
                     mock_sender_class.assert_called_once()

@@ -310,9 +310,14 @@ class TestTensorReceiver:
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
         mock_fl_context.get_prop.return_value = sample_shareable_with_dxo
 
-        # Should raise RuntimeError
-        with pytest.raises(RuntimeError, match="No tensors found for peer test_client"):
-            receiver.set_ctx_with_tensors(mock_fl_context)
+        # Should log warning and return early (not raise an exception)
+        receiver.set_ctx_with_tensors(mock_fl_context)
+
+        # Verify that set_prop was not called since the method returned early
+        mock_fl_context.set_prop.assert_not_called()
+
+        # Verify that get_prop was not called since the method returned early before accessing shareable
+        mock_fl_context.get_prop.assert_not_called()
 
     def test_set_ctx_with_tensors_no_shareable(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
         """Test set_ctx_with_tensors when no shareable is found in context."""
