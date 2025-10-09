@@ -42,8 +42,9 @@ class TensorProducer(ObjectProducer):
         process_replies(replies, stream_ctx, fl_ctx): Processes replies from peers after sending tensors.
     """
 
-    def __init__(self, tensors: dict[str, torch.Tensor], entry_timeout: float, root_key: str = ""):
+    def __init__(self, tensors: dict[str, torch.Tensor], peer_name: str, entry_timeout: float, root_key: str = ""):
         self.logger = get_obj_logger(self)
+        self.peer_name = peer_name
         self.entry_timeout = entry_timeout
         self.root_key = root_key
         self.last = False
@@ -88,9 +89,8 @@ class TensorProducer(ObjectProducer):
         self.last = self.current >= self.end - 1
         self.current += 1
         if self.last:
-            peer_name = fl_ctx.get_peer_context().get_identity_name()
             msg = (
-                f"Peer '{fl_ctx.get_identity_name()}': produced blobs for peer '{peer_name}' "
+                f"Peer '{fl_ctx.get_identity_name()}': produced blobs for peer '{self.peer_name}' "
                 f"with {len(self.tensors_keys)} tensors, total size: "
                 f"{round(self.total_bytes / (1024 * 1024), 2)} Mbytes ({self.total_bytes} bytes)"
             )

@@ -19,7 +19,8 @@ import torch
 TENSORS_CHANNEL = "tensor_stream"
 SAFE_TENSORS_PROP_KEY = "_safe_tensors_blob_"
 
-TensorsMap = Union[dict[str, torch.Tensor], dict[str, dict[str, torch.Tensor]]]
+TensorParams = dict[str, torch.Tensor]
+TensorsMap = Union[TensorParams, dict[str, TensorParams]]
 
 
 class TensorTopics:
@@ -31,3 +32,10 @@ class TensorBlobKeys:
     SAFETENSORS_BLOB = "safetensors_blob"
     TENSOR_KEYS = "tensor_keys"
     ROOT_KEY = "root_key"
+
+
+class TensorEventTypes:
+    SEND_TENSORS_FOR_TASK_DATA = "SEND_TENSORS_FOR_TASK_DATA"
+    SEND_TENSORS_FOR_TASK_RESULT = "SEND_TENSORS_FOR_TASK_RESULT"
+    TASK_DATA_TENSORS_SENT = "TASK_DATA_TENSORS_SENT"
+    TASK_RESULT_TENSORS_SENT = "TASK_RESULT_TENSORS_SENT"

@@ -24,7 +24,7 @@ from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.apis.shareable import Shareable
 from nvflare.client.config import ExchangeFormat
 
-from .types import TensorTopics
+from .types import TensorParams, TensorTopics
 
 
 def clean_task_data(fl_ctx: FLContext):
@@ -35,8 +35,9 @@ def clean_task_data(fl_ctx: FLContext):
     """
     task_data: Shareable = fl_ctx.get_prop(FLContextKey.TASK_DATA)
     # set data to empty to avoid sending large data within the task data
-    task_data["DXO"]["data"] = {}
-    fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
+    if task_data["DXO"]["data"]:
+        task_data["DXO"]["data"] = {}
+        fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
 
 
 def clean_task_result(fl_ctx: FLContext):
@@ -47,8 +48,9 @@ def clean_task_result(fl_ctx: FLContext):
     """
     task_result: Shareable = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
     # set data to empty to avoid sending large data within the task result
-    task_result["DXO"]["data"] = {}
-    fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=task_result, private=True, sticky=False)
+    if task_result["DXO"]["data"]:
+        task_result["DXO"]["data"] = {}
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=task_result, private=True, sticky=False)
 
 
 def get_topic_for_ctx_prop_key(ctx_prop_key: str) -> str:
@@ -157,11 +159,11 @@ def get_dxo_from_ctx(fl_ctx: FLContext, ctx_prop_key: FLContextKey, tasks: list[
     return dxo
 
 
-def get_tensors_from_dxo(dxo: DXO, key: str, format: ExchangeFormat) -> dict[str, torch.Tensor]:
-    """Extract tensors from the FLContext based on the provided property key.
+def validate_and_extract_tensors(params: TensorParams, key: str, format: ExchangeFormat) -> dict[str, torch.Tensor]:
+    """Extract tensors from the given tensors map based on the specified key and format.
 
     Args:
-        dxo (DXO): The DXO containing the data.
+        params (TensorParams): The tensors map containing the data.
         key (str): The key to extract tensors for.
 
     Returns:
@@ -170,26 +172,21 @@ def get_tensors_from_dxo(dxo: DXO, key: str, format: ExchangeFormat) -> dict[str
         TypeError: If the tensor data type is unsupported.
         ValueError: If no tensors are found in the context shareable.
     """
-    if not key:
-        data = dxo.data
-    else:
-        data = dxo.data.get(key)
-
-    if not data:
+    if not params:
         msg = "No tensor data found on the context shareable."
         if key:
             msg += f" Key='{key}'"
         raise ValueError(msg)
 
-    if not isinstance(data, dict):
-        raise ValueError(f"Expected tensor data to be a dict, but got {type(data)}")
+    if not isinstance(params, dict):
+        raise ValueError(f"Expected tensor data to be a dict, but got {type(params)}")
 
     if format == ExchangeFormat.PYTORCH:
-        validate_torch_dict_params_recursive(data)
-        tensors = data
+        validate_torch_dict_params_recursive(params)
+        tensors = params
     elif format == ExchangeFormat.NUMPY:
-        validate_numpy_dict_params_recursive(data)
-        tensors = to_torch_recursive(data)
+        validate_numpy_dict_params_recursive(params)
+        tensors = to_torch_recursive(params)
     else:
         raise TypeError(f"Unsupported tensor data type: {format}")
 

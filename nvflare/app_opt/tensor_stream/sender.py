@@ -19,8 +19,9 @@ from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .producer import TensorProducer
+from .store import TensorStore
 from .types import TENSORS_CHANNEL
-from .utils import get_dxo_from_ctx, get_targets_for_ctx_and_prop_key, get_tensors_from_dxo, get_topic_for_ctx_prop_key
+from .utils import get_topic_for_ctx_prop_key, validate_and_extract_tensors
 
 
 class TensorSender:
@@ -31,7 +32,6 @@ class TensorSender:
         engine: StreamableEngine,
         ctx_prop_key: FLContextKey,
         format: ExchangeFormat,
-        tasks: list[str],
         channel: str = TENSORS_CHANNEL,
     ):
         """Initialize the TensorSender.
@@ -43,50 +43,35 @@ class TensorSender:
         """
         self.engine = engine
         self.ctx_prop_key = ctx_prop_key
-        self.root_keys = []
         self.format = format
-        self.tasks = tasks
         self.channel = channel
         self.logger = get_obj_logger(self)
 
     def send(
         self,
         fl_ctx: FLContext,
+        store: TensorStore,
+        targets: list[str],
         entry_timeout: float,
-    ) -> bool:
+    ):
         """Send tensors to the peer.
 
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
         """
-        peer_name = fl_ctx.get_peer_context().get_identity_name()
-        targets = get_targets_for_ctx_and_prop_key(fl_ctx, self.ctx_prop_key)
-
-        self.logger.debug(f"Sending tensors to peer: {peer_name}")
-
-        try:
-            dxo = get_dxo_from_ctx(fl_ctx, self.ctx_prop_key, self.tasks)
-        except ValueError as exc:
-            self.logger.warning(f"{exc} Nothing to send.")
-            return False
-
-        for key, value in dxo.data.items():
-            # auto-detect tensor stored on root keys
-            if not isinstance(value, dict) and "" not in self.root_keys:
-                self.root_keys.append("")
-            elif isinstance(value, dict) and key not in self.root_keys:
-                self.root_keys.append(key)
-
-        for key in self.root_keys:
-            tensors = get_tensors_from_dxo(dxo, key, self.format)
-            producer = TensorProducer(tensors, entry_timeout, root_key=key)
-            msg = f"Starting to send tensors to peer '{peer_name}'. "
+        tensors_map = store.get()
+        peer_name = targets[0]
+        for key, tensors in tensors_map.items():
+            tensors = validate_and_extract_tensors(tensors, key, self.format)
+            producer = TensorProducer(tensors, peer_name, entry_timeout, key)
+            msg = f"Starting to send {len(tensors)} tensors to peer '{peer_name}' and task id '{store.task_id}'."
             if key:
                 msg += f"With root key '{key}'"
             self.logger.info(msg)
             self._send_tensors(targets, producer, fl_ctx)
+            self.logger.info(f"Finished sending tensors to peer '{peer_name}' and task id '{store.task_id}'.")
 
-        return True
+        store.clear()
 
     def _send_tensors(self, targets: list[str], producer: TensorProducer, fl_ctx: FLContext):
         """Send tensors to the peer using the StreamableEngine."""

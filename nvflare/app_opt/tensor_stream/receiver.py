@@ -48,10 +48,18 @@ class TensorReceiver:
         self.ctx_prop_key = ctx_prop_key
         self.format = format
         self.channel = channel
-        # key: peer_name, value: tensors received from the peer
+        # key: task_id, value: tensors received from the peer
         self.tensors: dict[str, TensorsMap] = {}
         self.logger = get_obj_logger(self)
         self._register()
+
+    def has_tensors(self, task_id: str) -> bool:
+        """Check if any tensors have been received.
+
+        Returns:
+            bool: True if any tensors have been received, False otherwise.
+        """
+        return task_id in self.tensors
 
     def _register(self):
         """Register the consumer factory with the engine."""
@@ -79,16 +87,16 @@ class TensorReceiver:
             self.logger.error(f"Failed to receive tensors from peer {peer_name}.")
             return
 
-        tensors = fl_ctx.get_custom_prop(SAFE_TENSORS_PROP_KEY)
-        if not tensors:
+        tensors_data = fl_ctx.get_custom_prop(SAFE_TENSORS_PROP_KEY)
+        if not tensors_data:
             self.logger.error(f"No tensors found from peer {peer_name}.")
             return
 
         # add or update (when multiple root keys are present) the tensors received from the peer
         if peer_name not in self.tensors:
-            self.tensors[peer_name] = tensors
+            self.tensors[peer_name] = tensors_data
         else:
-            self.tensors[peer_name].update(tensors)
+            self.tensors[peer_name].update(tensors_data)
 
         self.logger.debug(f"Storing tensors received from peer {peer_name}.")
 
@@ -99,6 +107,7 @@ class TensorReceiver:
             fl_ctx (FLContext): The FLContext for the current operation.
         """
         peer_name = fl_ctx.get_peer_context().get_identity_name()
+        # important: we pop the tensors to clean up memory, as we only need to set the tensors once
         tensors = self.tensors.pop(peer_name, None)
         if not tensors:
             msg = f"No tensors found in FLContext for peer {peer_name} to be set."

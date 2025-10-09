@@ -151,14 +151,14 @@ class TestTensorServerStreamer:
         """Test handling BEFORE_TASK_DATA_FILTER event with different data cleaned states."""
         streamer = TensorServerStreamer()
         streamer.data_cleaned = data_cleaned_initial
-        streamer.num_task_data_sent = 5
+        streamer.num_task_data_stored = 5
         streamer.num_task_skipped = 2
 
         # Handle BEFORE_TASK_DATA_FILTER event
         streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
 
         # Verify counters behavior based on data_cleaned state
-        assert streamer.num_task_data_sent == expected_sent_after
+        assert streamer.num_task_data_stored == expected_sent_after
         assert streamer.num_task_skipped == expected_skipped_after
         assert streamer.data_cleaned == expected_data_cleaned_after
 
@@ -285,7 +285,7 @@ class TestTensorServerStreamer:
         streamer.sender = mock_sender
 
         # Initial state
-        assert streamer.num_task_data_sent == 0
+        assert streamer.num_task_data_stored == 0
         assert streamer.num_task_skipped == 0
 
         # Send tensors
@@ -295,7 +295,7 @@ class TestTensorServerStreamer:
         mock_sender.send.assert_called_once_with(mock_fl_context, 5.0)
 
         # Verify counters were updated correctly
-        assert streamer.num_task_data_sent == expected_sent
+        assert streamer.num_task_data_stored == expected_sent
         assert streamer.num_task_skipped == expected_skipped
 
     def test_send_tensors_to_client_value_error(self, mock_fl_context):
@@ -346,7 +346,7 @@ class TestTensorServerStreamer:
         """Test waiting for clients to complete in various scenarios."""
         streamer = TensorServerStreamer(wait_all_clients_timeout=timeout)
         streamer.start_sending_time = start_time
-        streamer.num_task_data_sent = num_sent
+        streamer.num_task_data_stored = num_sent
         streamer.num_task_skipped = num_skipped
         streamer.system_panic = Mock()
 
@@ -395,7 +395,7 @@ class TestTensorServerStreamer:
         """Test cleaning task data based on different client reception scenarios."""
         streamer = TensorServerStreamer()
         streamer.engine = mock_engine_with_clients
-        streamer.num_task_data_sent = num_sent
+        streamer.num_task_data_stored = num_sent
         streamer.data_cleaned = False
         streamer.log_info = Mock()
 

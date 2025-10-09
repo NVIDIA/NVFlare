@@ -11,16 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import time
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import SERVER_SITE_NAME
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import StreamableEngine
 from nvflare.client.config import ExchangeFormat
 
 from .receiver import TensorReceiver
 from .sender import TensorSender
+from .store import TensorStore
+from .types import TensorEventTypes
 from .utils import clean_task_result
 
 
@@ -57,6 +62,7 @@ class TensorClientStreamer(FLComponent):
         self.format = format
         self.tasks = tasks if tasks is not None else ["train"]
         self.entry_timeout = entry_timeout
+        self.task_to_store: dict[str, TensorStore] = {}
         self.engine: StreamableEngine = None
         self.sender: TensorSender = None
         self.receiver: TensorReceiver = None
@@ -85,6 +91,8 @@ class TensorClientStreamer(FLComponent):
             self.system_panic(str(e), fl_ctx)
             return
 
+        self.sender = TensorSender(self.engine, FLContextKey.TASK_RESULT, self.format)
+
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """Handle events for the TensorSender component.
 
@@ -94,21 +102,33 @@ class TensorClientStreamer(FLComponent):
         """
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
-        elif event_type == EventType.BEFORE_TASK_DATA_FILTER:
+        elif event_type == EventType.BEFORE_TASK_EXECUTION:
+            # fire event requesting server to send tensors
+            peer_name = fl_ctx.get_peer_context().get_identity_name()
+            targets = [SERVER_SITE_NAME]
+            task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
+            event_data = Shareable()
+            event_data["task_id"] = task_id
+            event_data["task_name"] = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+            self.log_info(fl_ctx, f"Requesting tensors from server {peer_name} for task {task_id}.")
+            self.fire_fed_event(TensorEventTypes.SEND_TENSORS_FOR_TASK_DATA, event_data, fl_ctx, targets)
+
+            while not self.receiver.has_tensors(peer_name):
+                self.log_debug(fl_ctx, f"Waiting to receive tensors from peer {peer_name}.")
+                # TODO: add max timeout to receive tensors
+                time.sleep(0.1)
+                if fl_ctx.get_run_abort_signal():
+                    return
+
             self.receiver.set_ctx_with_tensors(fl_ctx)
-            self.receiver.tensors.clear()  # clear previous received tensors
+
         elif event_type == EventType.AFTER_TASK_RESULT_FILTER:
-            self.sender = TensorSender(self.engine, FLContextKey.TASK_RESULT, self.format, self.tasks)
+            task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
+            task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
+            store = TensorStore(task_id, task_name, FLContextKey.TASK_RESULT)
+            store.parse(fl_ctx)
+            clean_task_result(fl_ctx)
             try:
-                self.send_tensors_to_server(fl_ctx)
+                self.sender.send(fl_ctx, store, [SERVER_SITE_NAME], self.entry_timeout)
             except Exception as e:
                 self.system_panic(str(e), fl_ctx)
-
-    def send_tensors_to_server(self, fl_ctx: FLContext):
-        """Sends tensors to the server before sending the task result.
-
-        Args:
-            fl_ctx (FLContext): The FLContext for the current operation.
-        """
-        if self.sender.send(fl_ctx, self.entry_timeout):
-            clean_task_result(fl_ctx)

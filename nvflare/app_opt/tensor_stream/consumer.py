@@ -14,6 +14,7 @@
 
 from safetensors.torch import load as load_safetensors
 
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, StreamContext
@@ -123,7 +124,6 @@ class TensorConsumer(ObjectConsumer):
             tensors = self.tensors
 
         fl_ctx.set_custom_prop(SAFE_TENSORS_PROP_KEY, tensors)
-
         # Clear tensors after setting them in the context
         self.tensors = {}
 

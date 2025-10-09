@@ -27,10 +27,10 @@ from nvflare.app_opt.tensor_stream.utils import (
     clean_task_result,
     get_dxo_from_ctx,
     get_targets_for_ctx_and_prop_key,
-    get_tensors_from_dxo,
     get_topic_for_ctx_prop_key,
     to_numpy_recursive,
     to_torch_recursive,
+    validate_and_prepare_tensors,
     validate_numpy_dict_params_recursive,
     validate_torch_dict_params_recursive,
 )
@@ -637,7 +637,7 @@ class TestGetTensorsFromDxo:
 
     def test_get_tensors_pytorch_format(self, sample_dxo_weights):
         """Test extracting tensors from DXO in PyTorch format."""
-        result = get_tensors_from_dxo(sample_dxo_weights, "", ExchangeFormat.PYTORCH)
+        result = validate_and_prepare_tensors(sample_dxo_weights, "", ExchangeFormat.PYTORCH)
 
         assert isinstance(result, dict)
         for key, value in result.items():
@@ -650,7 +650,7 @@ class TestGetTensorsFromDxo:
         numpy_data = {"weight": np.array([[1.0, 2.0], [3.0, 4.0]]), "bias": np.array([0.1, 0.2])}
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=numpy_data)
 
-        result = get_tensors_from_dxo(dxo, "", ExchangeFormat.NUMPY)
+        result = validate_and_prepare_tensors(dxo, "", ExchangeFormat.NUMPY)
 
         assert isinstance(result, dict)
         for key, value in result.items():
@@ -659,7 +659,7 @@ class TestGetTensorsFromDxo:
 
     def test_get_tensors_with_key(self, sample_dxo_nested_weights):
         """Test extracting tensors with specific key."""
-        result = get_tensors_from_dxo(sample_dxo_nested_weights, "encoder", ExchangeFormat.PYTORCH)
+        result = validate_and_prepare_tensors(sample_dxo_nested_weights, "encoder", ExchangeFormat.PYTORCH)
 
         assert isinstance(result, dict)
         for key, value in result.items():
@@ -668,7 +668,7 @@ class TestGetTensorsFromDxo:
 
     def test_get_tensors_empty_key_uses_all_data(self, sample_dxo_weights):
         """Test that empty key extracts all data."""
-        result = get_tensors_from_dxo(sample_dxo_weights, "", ExchangeFormat.PYTORCH)
+        result = validate_and_prepare_tensors(sample_dxo_weights, "", ExchangeFormat.PYTORCH)
 
         assert len(result) == len(sample_dxo_weights.data)
         for key in sample_dxo_weights.data.keys():
@@ -679,12 +679,12 @@ class TestGetTensorsFromDxo:
         dxo = DXO(data_kind=DataKind.WEIGHTS, data={})
 
         with pytest.raises(ValueError, match="No tensor data found on the context shareable"):
-            get_tensors_from_dxo(dxo, "", ExchangeFormat.PYTORCH)
+            validate_and_prepare_tensors(dxo, "", ExchangeFormat.PYTORCH)
 
     def test_missing_key_raises_error(self, sample_dxo_weights):
         """Test that missing key raises ValueError."""
         with pytest.raises(ValueError, match="No tensor data found on the context shareable. Key='missing_key'"):
-            get_tensors_from_dxo(sample_dxo_weights, "missing_key", ExchangeFormat.PYTORCH)
+            validate_and_prepare_tensors(sample_dxo_weights, "missing_key", ExchangeFormat.PYTORCH)
 
     def test_non_dict_data_raises_error(self):
         """Test that non-dictionary data raises ValueError."""
@@ -700,7 +700,7 @@ class TestGetTensorsFromDxo:
         dxo.data = "not_a_dict"
 
         with pytest.raises(ValueError, match="Expected tensor data to be a dict"):
-            get_tensors_from_dxo(dxo, "", ExchangeFormat.PYTORCH)
+            validate_and_prepare_tensors(dxo, "", ExchangeFormat.PYTORCH)
 
     def test_unsupported_format_raises_error(self, sample_dxo_weights):
         """Test that unsupported format raises TypeError."""
@@ -708,7 +708,7 @@ class TestGetTensorsFromDxo:
         fake_format = "UNSUPPORTED_FORMAT"
 
         with pytest.raises(TypeError, match="Unsupported tensor data type"):
-            get_tensors_from_dxo(sample_dxo_weights, "", fake_format)
+            validate_and_prepare_tensors(sample_dxo_weights, "", fake_format)
 
     def test_pytorch_format_validation_error(self):
         """Test that PyTorch format with invalid data raises error."""
@@ -717,7 +717,7 @@ class TestGetTensorsFromDxo:
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=mixed_data)
 
         with pytest.raises(ValueError, match="Expected torch.Tensor for key 'invalid'"):
-            get_tensors_from_dxo(dxo, "", ExchangeFormat.PYTORCH)
+            validate_and_prepare_tensors(dxo, "", ExchangeFormat.PYTORCH)
 
     def test_numpy_format_validation_error(self):
         """Test that NumPy format with invalid data raises error."""
@@ -726,7 +726,7 @@ class TestGetTensorsFromDxo:
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=mixed_data)
 
         with pytest.raises(ValueError, match="Expected np.ndarray for key 'invalid'"):
-            get_tensors_from_dxo(dxo, "", ExchangeFormat.NUMPY)
+            validate_and_prepare_tensors(dxo, "", ExchangeFormat.NUMPY)
 
     def test_nested_data_with_key(self):
         """Test extracting nested data with specific key."""
@@ -736,7 +736,7 @@ class TestGetTensorsFromDxo:
         }
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=nested_data)
 
-        result = get_tensors_from_dxo(dxo, "encoder", ExchangeFormat.PYTORCH)
+        result = validate_and_prepare_tensors(dxo, "encoder", ExchangeFormat.PYTORCH)
 
         assert len(result) == 2
         assert "weight" in result and "bias" in result
