@@ -20,6 +20,10 @@ try:
 except Exception:
     nbformat = None
 
+_executed_notebooks = set()
+_passed_notebooks = set()
+_backup_notebooks = set()  # Track notebooks with backup files
+
 
 def pytest_collection_modifyitems(config, items):
     """Filter tagged cells from notebooks before nbmake runs"""
@@ -128,7 +132,7 @@ def restore_notebooks():
     
     restored = []
     for notebook_path in _backup_notebooks:
-        backup_path = Path(notebook_path).with_suffix(Path(notebook_path).suffix + '.backup')
+        backup_path = notebook_path.with_suffix(Path(notebook_path).suffix + '.backup')
         if backup_path.exists():
             shutil.move(backup_path, notebook_path)
             restored.append(str(notebook_path))
@@ -153,9 +157,6 @@ def pytest_addoption(parser):
         help="specify the kernel name",
     )
 
-_executed_notebooks = set()
-_passed_notebooks = set()
-_backup_notebooks = set()  # Track notebooks with backup files
 
 def _is_notebook_item(item):
     """Check if item is a notebook, compatible with old and new pytest versions"""
