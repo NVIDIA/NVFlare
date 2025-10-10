@@ -158,7 +158,7 @@ def main():
         model_name_or_path,
         device_map=device_map,
         use_cache=False,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
     )
     torch.set_default_dtype(default_dtype)
 
