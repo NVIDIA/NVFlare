@@ -264,14 +264,18 @@ class ModelUpdateAssessor(Assessor):
             device_selection_version=self.device_manager.current_selection_version,
             device_selection=self.device_manager.get_selection(fl_ctx),
         )
+
         # compute model size in MB
-        # model.data is a dict of lists (converted from numpy arrays for serialization)
+        # model.data is a dict of numpy arrays, providing .nbytes
         if model and model.data:
-            model_size = sum([np.array(v).nbytes for v in model.data.values()]) / (1024 * 1024)
+            model_size = 0
+            for v in model.data.values():
+                model_size += v.nbytes
+            model_size = model_size / (1024 * 1024)  # Convert to MB
             # log reply info
             self.log_info(
                 fl_ctx,
-                f"replying with model_version={reply.model_version}, model size {model_size} MB",
+                f"replying with model_version={reply.model_version}, model size {model_size:.1f} MB",
             )
 
         return accepted, reply.to_shareable()

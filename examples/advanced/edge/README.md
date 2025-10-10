@@ -275,3 +275,13 @@ You will see the following results:
 <img src="./figs/cifar10_adv_acc.png" alt="Cifar10 Advanced Results" width="800" >
 
 As shown, due to the large number of devices and the limited number of samples for each device, the training process can be much slower than the previous experiments, and the accuracy converges to a lower level. 
+
+### General Hierarchical FL System
+Note that the above cross-edge FL example is based on the hierarchical FL system with 1 layer of relays, such system is not limited to cross-edge FL, but can also be used for general hierarchical FL scenarios, where the relays can be data centers or edge servers.
+
+To illustrate this, we can use the same system to run a cross-silo FL example with 4 silos, each with 1 client running language model training, which is much heavier than the CIFAR10 training:
+
+```commandline
+python3 jobs/hf_sft_job.py --subset_size 3000 --no_delay
+```
+This will run a cross-silo FL with 4 silos, each with 1 client, and each client will use a subset of 3000 samples for local training.

@@ -148,8 +148,10 @@ class BuffModelManager(ModelManager):
         self.log_info(fl_ctx, f"new model size: {model_size:.2f} MB")
 
         # update the current model
-        # convert new_model items from numpy arrays to lists for serialization
-        new_model = {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in new_model.items()}
+        # Keep numpy arrays for efficient FOBS serialization through the hierarchy
+        # If converting to list, the model size will be much larger and slower to serialize
+        # Note that for cases where the device expects list (e.g. ExecuTorch simulation),
+        # the conversion can be done at the device side if needed
         self.current_model = DXO(data_kind=DataKind.WEIGHTS, data=new_model)
 
         # reset the num_updates_counter

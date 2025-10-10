@@ -17,7 +17,7 @@ import os
 
 import torch
 from processors.hf_sft_task_processor import HFSFTTaskProcessor
-from transformers import AutoModelForCausalLM
+from processors.models.hf_sft_model import CausalLMModel
 
 from nvflare.edge.tools.edge_fed_buff_recipe import (
     DeviceManagerConfig,
@@ -26,46 +26,6 @@ from nvflare.edge.tools.edge_fed_buff_recipe import (
     SimulationConfig,
 )
 from nvflare.recipe.prod_env import ProdEnv
-
-
-def load_hf_model(model_name_or_path: str):
-    """Load the actual HuggingFace model for EdgeFedBuffRecipe.
-
-    Args:
-        model_name_or_path (str): HuggingFace model name or path
-
-    Returns:
-        torch.nn.Module: The loaded HuggingFace model
-    """
-    print(f"Loading HuggingFace model: {model_name_or_path}")
-
-    # Load model with appropriate settings for federated learning
-    default_dtype = torch.get_default_dtype()
-    torch.set_default_dtype(torch.bfloat16)
-
-    try:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name_or_path,
-            device_map="cpu",  # Load on CPU first for recipe creation
-            use_cache=False,
-            torch_dtype=torch.bfloat16,
-            trust_remote_code=True,  # Allow custom model code if needed
-        )
-        model.config.pretraining_tp = 1
-
-        # Move to CPU and set to eval mode for recipe initialization
-        model = model.cpu()
-        model.eval()
-
-        print(f"Successfully loaded model with {sum(p.numel() for p in model.parameters())} parameters")
-
-    except Exception as e:
-        print(f"Error loading model {model_name_or_path}: {e}")
-        raise
-    finally:
-        torch.set_default_dtype(default_dtype)
-
-    return model
 
 
 def create_hf_sft_recipe(
@@ -125,6 +85,7 @@ def create_hf_sft_recipe(
         communication_delay=communication_delay,
         device_speed=device_speed,
         subset_size=subset_size,
+        total_epochs=local_epochs * global_rounds,
         local_epochs=local_epochs,
         local_batch_size=local_batch_size,
         local_lr=local_lr,
@@ -151,13 +112,10 @@ def create_hf_sft_recipe(
         device_reuse=True,
     )
 
-    # Load the actual HuggingFace model for recipe initialization
-    hf_model = load_hf_model(model_name_or_path)
-
     # Create the recipe
     recipe = EdgeFedBuffRecipe(
         job_name=f"hf_sft_job_sync{suffix}",
-        model=hf_model,
+        model=CausalLMModel(model_name_or_path=model_name_or_path),
         model_manager_config=model_manager_config,
         device_manager_config=device_manager_config,
         evaluator_config=None,  # No built-in evaluator for HF models
@@ -180,15 +138,15 @@ def main():
         "--model_name_or_path", type=str, default="facebook/opt-125m", help="HuggingFace model name or path"
     )
     parser.add_argument(
-        "--data_path_train", type=str, default="./dataset/dolly/training.jsonl", help="Path to training data"
+        "--data_path_train", type=str, default="/tmp/nvflare/dataset/dolly/training.jsonl", help="Path to training data"
     )
     parser.add_argument(
-        "--data_path_valid", type=str, default="./dataset/dolly/validation.jsonl", help="Path to validation data"
+        "--data_path_valid", type=str, default="/tmp/nvflare/dataset/dolly/validation.jsonl", help="Path to validation data"
     )
     parser.add_argument(
         "--output_path",
         type=str,
-        default="./workspace_federated/llama-3.2-1b-dolly-sft",
+        default="./workspace_federated/opt-125m-dolly-sft",
         help="Output directory for model checkpoints",
     )
     parser.add_argument(
