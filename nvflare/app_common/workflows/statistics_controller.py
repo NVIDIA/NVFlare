@@ -354,7 +354,9 @@ class StatisticsController(Controller):
         for statistic in client_statistics:
             clients = client_statistics[statistic].keys()
             if len(clients) < min_clients:
-                self.logger.warning(f"Only {len(clients)} of {min_clients} statistics received for '{statistic}', aborting the job.")
+                self.logger.warning(
+                    f"Only {len(clients)} of {min_clients} statistics received for '{statistic}', aborting the job."
+                )
                 return False
             for client in clients:
                 ds_feature_statistics = client_statistics[statistic][client]
@@ -367,7 +369,9 @@ class StatisticsController(Controller):
 
         for ds in resulting_clients:
             if len(resulting_clients[ds]) < min_clients:
-                self.logger.warning(f"Only {len(resulting_clients[ds])} of {min_clients} statistics received for '{ds}', aborting the job.")
+                self.logger.warning(
+                    f"Only {len(resulting_clients[ds])} of {min_clients} statistics received for '{ds}', aborting the job."
+                )
                 return False
         return True
 
