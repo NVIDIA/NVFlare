@@ -10,9 +10,6 @@ user_data_drive_size: 1
 # Docker image archive saved using:
 # docker save <image_name> | gzip > app.tar.gz
 docker_archive: /tmp/base_images/app.tar.gz
-# will be mount inside docker "/user_config/nvflare"
-user_config:
-  nvflare: /tmp/startup_kits
 
 allowed_ports:
 - 8002

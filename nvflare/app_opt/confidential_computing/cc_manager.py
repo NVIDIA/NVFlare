@@ -98,6 +98,7 @@ class CCManager(FLComponent):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_BOOTSTRAP:
+            err = None
             try:
                 self._setup_cc_authorizers(fl_ctx)
 
@@ -200,7 +201,7 @@ class CCManager(FLComponent):
 
         if peer_cc_info:
             self.participant_cc_info[token_owner] = peer_cc_info
-            self.logger.info(f"Added CC client: {token_owner} tokens: {peer_cc_info}")
+            self.logger.info(f"Added CC client: {token_owner}")
 
         if not self.verify_time or time.time() - self.verify_time > self.verify_frequency:
             self._verify_running_jobs(fl_ctx)
@@ -363,7 +364,6 @@ class CCManager(FLComponent):
         _, invalid_participant_list = self._verify_participants_tokens(participants_tokens)
         if invalid_participant_list:
             invalid_participant_string = ",".join(invalid_participant_list)
-            self.logger.debug(f"{invalid_participant_list=}")
             return f"Participant {invalid_participant_string}" + CC_VERIFICATION_FAILED
         else:
             return ""
@@ -400,7 +400,7 @@ class CCManager(FLComponent):
                         invalid_participant_list.append(k + " namespace: {" + namespace + "}")
                 except CCTokenVerifyError:
                     invalid_participant_list.append(k + " namespace: {" + namespace + "}")
-        self.logger.info(f"CC - results from _verify_participants_tokens: {result}")
+        self.logger.info(f"CC - results from _verify_participants_tokens: {result}, {invalid_participant_list=}")
         return result, invalid_participant_list
 
     def _block_job(self, reason: str, fl_ctx: FLContext):
