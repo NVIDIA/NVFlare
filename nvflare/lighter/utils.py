@@ -63,11 +63,11 @@ def generate_cert(
         .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=valid_days))
         .add_extension(
             x509.SubjectKeyIdentifier.from_public_key(subject_pub_key),
-            critical=True,
+            critical=False,
         )
         .add_extension(
             x509.AuthorityKeyIdentifier.from_issuer_public_key(signing_pri_key.public_key()),
-            critical=True,
+            critical=False,
         )
     )
 
@@ -84,7 +84,7 @@ def generate_cert(
                 encipher_only=False,
                 decipher_only=False,
             ),
-            critical=True,
+            critical=False,
         )
 
     if server_default_host:
