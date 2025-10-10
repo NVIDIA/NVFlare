@@ -71,7 +71,7 @@ def generate_cert(
         )
     )
     if ca:
-        builder = builder.add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=False)
+        builder = builder.add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
 
     if server_default_host:
         # This is to generate a server cert.
