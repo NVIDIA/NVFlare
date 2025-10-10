@@ -14,8 +14,10 @@ Hardware Prerequisites
 ^^^^^^^^^^^^^^^^^^^^^^
 
 - The machine that needs to run CC needs to have AMD SNP-SEV enabled CPU.
-- To run GPU, the machine needs to have a “production” board of NVIDIA GPU that is CC-enabled.
-- The AMD firmware is updated to at least 1.55. Here is how to update the firmware:
+- To run GPU, the machine needs to have an NVIDIA GPU that is CC-enabled.
+- The AMD firmware is updated to at least 1.55.
+
+Here is how to update the firmware:
 
 .. code-block:: bash
 
