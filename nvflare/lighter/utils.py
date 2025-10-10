@@ -61,19 +61,17 @@ def generate_cert(
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.datetime.utcnow())
         .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=valid_days))
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(subject_pub_key),
+            critical=False,
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(signing_pri_key.public_key()),
+            critical=False,
+        )
     )
     if ca:
-        builder = (
-            builder.add_extension(
-                x509.SubjectKeyIdentifier.from_public_key(subject_pub_key),
-                critical=False,
-            )
-            .add_extension(
-                x509.AuthorityKeyIdentifier.from_issuer_public_key(subject_pub_key),
-                critical=False,
-            )
-            .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=False)
-        )
+        builder = builder.add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=False)
 
     if server_default_host:
         # This is to generate a server cert.
