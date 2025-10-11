@@ -75,14 +75,7 @@ class NPHierarchicalTrainer(ClientApp):
         if context.is_aborted():
             self.logger.debug("training aborted")
             return 0
-        self.logger.debug(f"[{context.header_str()}] trained round {current_round}")
-
-        # metric_receiver = self.server.get_target("metric_receiver")
-        # if metric_receiver:
-        #     self.server.accept_metric({"round": r, "y": 2})
-        #     self.server.metric_receiver.accept_metric({"round": r, "y": 2})
-        #
-        self.server.fire_event("metrics", {"round": current_round, "y": 10}, _blocking=False)
+        self.logger.info(f"[{context.header_str()}] local trained round {current_round} {weights} {type(weights)}")
         return weights + self.delta
 
     @collab

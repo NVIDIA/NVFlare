@@ -140,7 +140,7 @@ class FoxExecutor(Executor, FoxAdaptor):
         )
 
         if self.collab_obj_ids:
-            for name in self.collab_obj_ids.keys():
+            for name in self.collab_obj_ids:
                 p = Proxy(
                     app=self.client_app,
                     target_name=f"{client.name}.{name}",

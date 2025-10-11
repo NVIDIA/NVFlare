@@ -16,7 +16,7 @@ import logging
 from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPHierarchicalTrainer
-from nvflare.fox.examples.np.algos.strategies import NPHierarchicalFedAvg
+from nvflare.fox.examples.np.algos.strategies.avg_h import NPHierarchicalFedAvg
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
 from nvflare.fox.sim.simulator import Simulator
 

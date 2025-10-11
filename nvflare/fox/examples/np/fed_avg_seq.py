@@ -16,7 +16,7 @@ import logging
 from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainerMaker
-from nvflare.fox.examples.np.algos.strategies import NPFedAvgSequential
+from nvflare.fox.examples.np.algos.strategies.avg_seq import NPFedAvgSequential
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
 from nvflare.fox.sim.simulator import Simulator
 

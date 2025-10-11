@@ -32,6 +32,10 @@ class Context:
             self.props.update(props)
 
     @property
+    def backend(self):
+        return self.app.get_backend()
+
+    @property
     def env_type(self):
         return self.app.env_type
 

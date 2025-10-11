@@ -15,30 +15,28 @@ import logging
 
 from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
-from nvflare.fox.examples.np.algos.client import NPTrainer
-from nvflare.fox.examples.np.algos.strategies.avg_para import NPFedAvgParallel
-from nvflare.fox.examples.np.algos.widgets import MetricReceiver
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.examples.np.algos.avg_stream import NPFedAvgStream, NPTrainer
+from nvflare.fox.sys.recipe import FoxRecipe
+
+JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
 
 
 def main():
     simple_logging(logging.DEBUG)
 
     server_app = ServerApp(
-        strategy_name="fed_avg",
-        strategy=NPFedAvgParallel(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]], num_rounds=2),
+        strategy_name="fedavg_stream",
+        strategy=NPFedAvgStream(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
     )
-    server_app.add_collab_object("metric_receiver", MetricReceiver())
 
-    simulator = Simulator(
-        root_dir="/tmp/fox",
-        experiment_name="fedavg_para",
+    client_app = NPTrainer(delta=1.0)
+
+    recipe = FoxRecipe(
+        job_name="fedavg_stream",
         server_app=server_app,
-        client_app=NPTrainer(delta=1.0),
-        num_clients=10,
+        client_app=client_app,
     )
-
-    simulator.run()
+    recipe.export(JOB_ROOT_DIR)
 
 
 if __name__ == "__main__":
