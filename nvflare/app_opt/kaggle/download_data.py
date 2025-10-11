@@ -12,9 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_opt.kaggle.download_data import download
+import shutil
+from pathlib import Path
 
-# Download latest version
-input_path = "tawsifurrahman/covid19-radiography-database"
-output_path = "/tmp/nvflare/image_stats/data"
-download(input_path, output_path)
+import kagglehub
+
+
+def download(input_path:str, output_path:str):
+    # Download latest version
+    path = kagglehub.dataset_download(input_path)
+    print("Path to dataset files:", path)
+
+    # Move downloaded data to output path
+    output = Path(output_path)
+    if output.exists():
+        shutil.rmtree(output)  # Remove if exists
+
+    shutil.move(path, output_path)
+    print(f"Dataset moved to: {output_path}")
