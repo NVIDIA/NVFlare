@@ -50,6 +50,9 @@ class App:
         self._workspace = None
         self.logger = get_obj_logger(self)
 
+    def get_backend(self):
+        return self._me.backend
+
     def get_workspace(self):
         return self._workspace
 

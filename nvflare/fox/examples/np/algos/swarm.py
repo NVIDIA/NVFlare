@@ -70,8 +70,8 @@ class NPSwarmClient(ClientApp):
         results = all_clients(ctx, blocking=True).train(model, current_round)
         # results = all_other_clients(ctx, blocking=True).train(model, current_round)
         results = list(results.values())
-        total = results[0]
-        for i in range(1, len(results)):
+        total = 0
+        for i in range(len(results)):
             total += results[i]
         return total / len(results)
 

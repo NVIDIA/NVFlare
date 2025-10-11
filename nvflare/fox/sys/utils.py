@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import traceback
+
 from nvflare.fox.api.app import App
 from nvflare.fox.api.constants import CollabMethodArgName
 from nvflare.fox.api.dec import adjust_kwargs
@@ -123,4 +125,5 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
             headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, payload={CallReplyKey.RESULT: result}
         )
     except Exception as ex:
+        traceback.print_exc()
         return _error_reply(f"exception {type(ex)}", logger)

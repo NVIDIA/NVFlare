@@ -15,9 +15,7 @@ import logging
 
 from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
-from nvflare.fox.examples.np.algos.client import NPTrainer
-from nvflare.fox.examples.np.algos.strategies.avg_para import NPFedAvgParallel
-from nvflare.fox.examples.np.algos.widgets import MetricReceiver
+from nvflare.fox.examples.np.algos.avg_stream import NPFedAvgStream, NPTrainer
 from nvflare.fox.sim.simulator import Simulator
 
 
@@ -25,17 +23,18 @@ def main():
     simple_logging(logging.DEBUG)
 
     server_app = ServerApp(
-        strategy_name="fed_avg",
-        strategy=NPFedAvgParallel(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]], num_rounds=2),
+        strategy_name="fed_avg_in_time",
+        strategy=NPFedAvgStream(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=4),
     )
-    server_app.add_collab_object("metric_receiver", MetricReceiver())
+
+    client_app = NPTrainer(delta=1.0)
 
     simulator = Simulator(
         root_dir="/tmp/fox",
-        experiment_name="fedavg_para",
+        experiment_name="fedavg_intime",
         server_app=server_app,
-        client_app=NPTrainer(delta=1.0),
-        num_clients=10,
+        client_app=client_app,
+        num_clients=2,
     )
 
     simulator.run()
