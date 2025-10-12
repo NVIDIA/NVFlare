@@ -7,19 +7,28 @@ for the complete installation instructions, see [Installation](https://nvflare.r
 pip install nvflare
 ```
 
-## Code Structure
-first get the example code from github: git clone https://github.com/NVIDIA/NVFlare.git then navigate to the hello-pt directory:
+Get the example code from github: 
 ```
-git switch <release branch>
-cd examples/hello-world/hello-lightning
-.
-hello-lightning
-|
-|-- client.py        # client local training script
-|-- model.py         # model definition
-|-- job.py           # job recipe that defines client and server configurations
-|-- requirements.txt # dependencies
-|-- prepare_data.sh  # prepare data utils 
+    git clone https://github.com/NVIDIA/NVFlare.git
+```
+
+then navigate to the hello-pt directory:
+
+```
+    git switch <release branch>
+    cd examples/hello-world/hello-lightning
+```
+
+## Code Structure
+
+```
+    hello-lightning
+    |
+    |-- client.py        # client local training script
+    |-- model.py         # model definition
+    |-- job.py           # job recipe that defines client and server configurations
+    |-- requirements.txt # dependencies
+    |-- prepare_data.sh  # prepare data utils 
 ```
 
 ## Data
@@ -175,26 +184,26 @@ The main flow of the code logic in the client.py file involves running a federat
 With this method, the developers can use the Client API
 to change their centralized training code to an FL scenario with
 these simple code changes shown below.
-```python
-# (1) import nvflare lightning client API
-import nvflare.client.lightning as flare
-
-# (2) patch the lightning trainer
-flare.patch(trainer)
-
-while flare.is_running():
-    # Note that we can optionally receive the FLModel from NVFLARE.
-    # We don't need to pass this input_model to trainer because after flare.patch 
-    # the trainer.fit/validate will get the global model internally
-    input_model = flare.receive()
-
-    trainer.validate(...)
-
-    trainer.fit(...)
-
-    trainer.test(...)
-
-    trainer.predict(...)
+```
+    # (1) import nvflare lightning client API
+    import nvflare.client.lightning as flare
+    
+    # (2) patch the lightning trainer
+    flare.patch(trainer)
+    
+    while flare.is_running():
+        # Note that we can optionally receive the FLModel from NVFLARE.
+        # We don't need to pass this input_model to trainer because after flare.patch 
+        # the trainer.fit/validate will get the global model internally
+        input_model = flare.receive()
+    
+        trainer.validate(...)
+    
+        trainer.fit(...)
+    
+        trainer.test(...)
+    
+        trainer.predict(...)
 ```
 
 

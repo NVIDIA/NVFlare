@@ -13,24 +13,25 @@ for the complete installation instructions, see `installation <../../installatio
     pip install nvflare
 
 
-Install the dependency
-----------------------
-
-first get the example code from github:
-
+get the example code from github:
 
 .. code-block:: text
 
     git clone https://github.com/NVIDIA/NVFlare.git
 
-
 then navigate to the hello-tabular-stats directory:
 
 .. code-block:: text
 
-    cd NVFlare/examples/hello-world/hello-tabular-stats
+    git switch <release branch>
+    cd examples/hello-world/hello-tabular-stats
+
+
+Install the dependency
+----------------------
 
     pip install -r requirements.txt
+
 
 Install Optional Quantile Dependency -- fastdigest
 ------------------------------------------------------------
@@ -74,12 +75,7 @@ Then you can install fastdigest again
 Code Structure
 --------------
 
-navigate to the hello-tabular-stats directory:
-
 .. code-block:: text
-
-    git switch <release branch>
-    cd examples/hello-world/hello-tabular-stats
 
     hello-tabular-stats
     |

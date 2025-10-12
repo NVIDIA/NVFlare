@@ -6,27 +6,30 @@ This example demonstrates how to use NVIDIA FLARE with Flower to train an image 
 
 For the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
 ```
-pip install nvflare
+  pip install nvflare
+```
+Get the example code from github:
+
+```
+  git clone https://github.com/NVIDIA/NVFlare.git
+```
+
+then navigate to the hello-flower directory:
+
+```
+  git switch <release branch>
+  cd examples/hello-world/hello-flower
 ```
 
 Install the dependency
+
 ```
-pip install -r requirements.txt
+  pip install -r requirements.txt
 ```
 
 ## Code Structure
 
-First get the example code from github:
-```
-git clone https://github.com/NVIDIA/NVFlare.git
-```
-then navigate to the hello-flower directory:
-```
-git switch <release branch>
-cd examples/hello-world/hello-flower
-```
-
-``` bash
+``` 
 hello-flower
 |
 |-- flwr-pt/           # Flower PyTorch app
