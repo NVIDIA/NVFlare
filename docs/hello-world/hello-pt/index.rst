@@ -3,8 +3,14 @@ Hello PyTorch
 
 This example demonstrates how to use NVIDIA FLARE with PyTorch to train an image classifier using federated averaging (FedAvg). The complete example code can be found in the `hello-pt directory <examples/hello-world/hello-pt/>`. It is recommended to create a virtual environment and run everything within a virtualenv.
 
-Code Structure
---------------
+Install NVFLARE and Dependencies
+--------------------------------
+
+for the complete installation instructions, see `Installation <https://nvflare.readthedocs.io/en/main/installation.html>`_
+
+.. code-block:: text
+
+    pip install nvflare
 
 First get the example code from github:
 
@@ -18,6 +24,18 @@ Then navigate to the hello-pt directory:
 
    git switch <release branch>
    cd examples/hello-world/hello-pt
+
+
+Install the dependency
+
+.. code-block:: text
+
+    pip install -r requirements.txt
+
+
+
+Code Structure
+--------------
 
 .. code-block:: bash
 

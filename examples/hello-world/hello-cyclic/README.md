@@ -32,19 +32,14 @@ TF_FORCE_GPU_ALLOW_GROWTH=true TF_GPU_ALLOCATOR=cuda_malloc_async
 
 for the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
 ```
-pip install nvflare
+    pip install nvflare
 
 ```
-Install the dependency
-
+get the example code from github:
 ```
-pip install -r requirements.txt
+    git clone https://github.com/NVIDIA/NVFlare.git
 ```
 
-## Code Structure
-
-first get the example code from github:
-git clone https://github.com/NVIDIA/NVFlare.git
 then navigate to the hello-cyclic directory:
 
 ```bash
@@ -53,7 +48,14 @@ then navigate to the hello-cyclic directory:
     cd examples/hello-world/hello-cyclic
     
 ```
-code structure
+
+Install the dependency
+
+```
+    pip install -r requirements.txt
+```
+
+## Code Structure
 
 ```
 hello-cyclic
@@ -66,10 +68,12 @@ hello-cyclic
 ```
 
 ## Data
+
 In this example, We will use Mnist datasets, which is provided by 
 Tensorflow Keras API 
 
 ## Model
+
 In Tensorflow, we define a simple model via Keras API
 
 ```
@@ -84,17 +88,19 @@ class Net(models.Sequential):
 ```
 
 ## Client Code
+
 The client code ```client.py``` is responsible for Notice the training code is almost identical to the pytorch standard training code.
 The only difference is that we added a few lines to receive and send data to the server.
 
 ## Server Code
+
 In cyclic transfer, the server code is responsible for
 replay model updates from client to another.We will directly use 
 the default federated cyclic algorithm provided by NVFlare.
 
 ## Job Recipe
 
-```python
+```
     n_clients = 2
     num_rounds = 3
     train_script = "client.py"
