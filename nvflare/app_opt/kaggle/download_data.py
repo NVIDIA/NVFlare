@@ -18,7 +18,7 @@ from pathlib import Path
 import kagglehub
 
 
-def download(input_path:str, output_path:str):
+def download(input_path: str, output_path: str):
     # Download latest version
     path = kagglehub.dataset_download(input_path)
     print("Path to dataset files:", path)
