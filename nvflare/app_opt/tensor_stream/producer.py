@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Generator, Tuple
 
 import torch
 from safetensors.torch import save as save_tensors
@@ -23,6 +23,24 @@ from nvflare.apis.streaming import ObjectProducer, StreamContext
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .types import TensorBlobKeys
+
+
+def tensors_serializer_generator(
+    tensors: dict[str, torch.Tensor], chunk_size: int = 25
+) -> Generator[Tuple[list[str], bytes], None, None]:
+    """Generator that yields chunks of tensors serialized as safetensors blobs.
+    Args:
+        tensors: Dictionary of tensors to be serialized.
+        chunk_size: Number of tensors to include in each chunk.
+    Yields:
+        Tuple[list[str], bytes]: A tuple containing the list of tensor keys in the chunk and
+                                 the serialized safetensors blob.
+    """
+    keys = list(tensors.keys())
+    for i in range(0, len(keys), chunk_size):
+        chunk_keys = keys[i : i + chunk_size]
+        chunk_tensors = {key: tensors[key] for key in chunk_keys}
+        yield chunk_keys, save_tensors(chunk_tensors)
 
 
 class TensorProducer(ObjectProducer):
@@ -47,12 +65,12 @@ class TensorProducer(ObjectProducer):
         self.entry_timeout = entry_timeout
         self.root_key = root_key
         self.last = False
-        self.tensors = tensors
-        self.tensors_keys = list(tensors.keys()) if tensors else []
-        self.start = 0
-        self.current = self.start
-        self.end = len(self.tensors_keys)
         self.total_bytes = 0
+        if tensors is None:
+            raise ValueError("No tensors received. Cannot produce.")
+
+        self.tensors_keys = list(tensors.keys())
+        self.serializer = tensors_serializer_generator(tensors)
 
     def produce(
         self,
@@ -71,34 +89,34 @@ class TensorProducer(ObjectProducer):
         Raises:
             Warning: If no tensors are found in the FLContext.
         """
-        tensors = self.tensors
-        if tensors is None:
-            self.logger.warning("No tensors found in FLContext")
-            return None, self.entry_timeout
-
         data = Shareable()
-        key = self.tensors_keys[self.current]
-        tensor = {key: self.tensors[key]}
+        try:
+            tensor_keys, tensors_blob = next(self.serializer, (None, None))
+        except StopIteration:
+            return None, self.entry_timeout
+        else:
+            if tensor_keys is None:
+                self.last = True
+                self.log_completion(fl_ctx)
+                return None, self.entry_timeout
 
-        data[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors(tensor)
-        data[TensorBlobKeys.TENSOR_KEYS] = [key]
-        data[TensorBlobKeys.ROOT_KEY] = self.root_key
-
-        self.total_bytes += len(data[TensorBlobKeys.SAFETENSORS_BLOB])
-        self.last = self.current >= self.end - 1
-        self.current += 1
-        if self.last:
-            peer_name = fl_ctx.get_peer_context().get_identity_name()
-            msg = (
-                f"Peer '{fl_ctx.get_identity_name()}': produced blobs for peer '{peer_name}' "
-                f"with {len(self.tensors_keys)} tensors, total size: "
-                f"{round(self.total_bytes / (1024 * 1024), 2)} Mbytes ({self.total_bytes} bytes)"
-            )
-            if self.root_key:
-                msg += f", root key: '{self.root_key}'"
-            self.logger.info(msg)
+            data[TensorBlobKeys.SAFETENSORS_BLOB] = tensors_blob
+            data[TensorBlobKeys.TENSOR_KEYS] = tensor_keys
+            data[TensorBlobKeys.ROOT_KEY] = self.root_key
+            self.total_bytes += len(tensors_blob)
 
         return data, self.entry_timeout
+
+    def log_completion(self, fl_ctx: FLContext):
+        peer_name = fl_ctx.get_peer_context().get_identity_name()
+        msg = (
+            f"Peer '{fl_ctx.get_identity_name()}': produced blobs for peer '{peer_name}' "
+            f"with {len(self.tensors_keys)} tensors, total size: "
+            f"{round(self.total_bytes / (1024 * 1024), 2)} Mbytes ({self.total_bytes} bytes)"
+        )
+        if self.root_key:
+            msg += f", root key: '{self.root_key}'"
+        self.logger.info(msg)
 
     def process_replies(
         self,
@@ -127,11 +145,9 @@ class TensorProducer(ObjectProducer):
 
         if has_error:
             # done - failed
-            self.tensors = {}
             return False
         elif self.last:
             # done - succeeded
-            self.tensors = {}
             return True
         else:
             # not done yet - continue streaming

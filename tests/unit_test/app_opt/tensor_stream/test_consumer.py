@@ -67,9 +67,8 @@ class TestTorchTensorsConsumer:
         """Test initialization of TorchTensorsConsumer."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
-        assert consumer.tensors == {}
+        assert consumer.tensors_map == {}
         assert consumer.total_bytes == {}
-        assert consumer.root_keys == []
         assert consumer.logger is not None
 
     def test_consume_single_tensor(self, mock_stream_context, mock_fl_context):
@@ -94,10 +93,9 @@ class TestTorchTensorsConsumer:
         assert reply.get_return_code() == ReturnCode.OK
 
         # Verify tensor was stored correctly
-        assert root_key in consumer.tensors
-        assert tensor_name in consumer.tensors[root_key]
-        assert torch.allclose(consumer.tensors[root_key][tensor_name], test_tensor)
-        assert root_key in consumer.root_keys
+        assert root_key in consumer.tensors_map
+        assert tensor_name in consumer.tensors_map[root_key]
+        assert torch.allclose(consumer.tensors_map[root_key][tensor_name], test_tensor)
         assert root_key in consumer.total_bytes
         assert consumer.total_bytes[root_key] > 0
 
@@ -116,14 +114,13 @@ class TestTorchTensorsConsumer:
             assert reply.get_return_code() == ReturnCode.OK
 
         # Verify all tensors were stored correctly
-        assert root_key in consumer.tensors
-        assert len(consumer.tensors[root_key]) == len(random_torch_tensors)
-        assert consumer.root_keys == [root_key]
+        assert root_key in consumer.tensors_map
+        assert len(consumer.tensors_map[root_key]) == len(random_torch_tensors)
 
         # Verify tensor contents
         for tensor_name, original_tensor in random_torch_tensors.items():
-            assert tensor_name in consumer.tensors[root_key]
-            assert torch.allclose(consumer.tensors[root_key][tensor_name], original_tensor)
+            assert tensor_name in consumer.tensors_map[root_key]
+            assert torch.allclose(consumer.tensors_map[root_key][tensor_name], original_tensor)
 
         # Verify bytes tracking
         assert root_key in consumer.total_bytes
@@ -149,22 +146,20 @@ class TestTorchTensorsConsumer:
                 assert reply.get_return_code() == ReturnCode.OK
 
         # Verify all root keys and tensors are stored
-        assert set(consumer.root_keys) == {"encoder", "decoder"}
 
         for root_key, expected_tensors in tensors_dict.items():
-            assert root_key in consumer.tensors
-            assert len(consumer.tensors[root_key]) == len(expected_tensors)
+            assert root_key in consumer.tensors_map
+            assert len(consumer.tensors_map[root_key]) == len(expected_tensors)
 
             for tensor_name, original_tensor in expected_tensors.items():
-                assert tensor_name in consumer.tensors[root_key]
-                assert torch.allclose(consumer.tensors[root_key][tensor_name], original_tensor)
+                assert tensor_name in consumer.tensors_map[root_key]
+                assert torch.allclose(consumer.tensors_map[root_key][tensor_name], original_tensor)
 
     @pytest.mark.parametrize(
         "missing_field,setup_shareable",
         [
             ("SAFETENSORS_BLOB", lambda: _create_shareable_missing_blob()),
             ("TENSOR_KEYS", lambda: _create_shareable_missing_keys()),
-            ("ROOT_KEY", lambda: _create_shareable_missing_root()),
             ("MISMATCHED_KEYS", lambda: _create_shareable_mismatched_keys()),
         ],
     )
@@ -177,6 +172,24 @@ class TestTorchTensorsConsumer:
 
         assert success is False
         assert reply.get_return_code() == ReturnCode.ERROR
+
+    def test_consume_missing_root_key_defaults_to_empty_string(self, mock_stream_context, mock_fl_context):
+        """Test that missing ROOT_KEY defaults to empty string."""
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+        test_tensor = torch.randn(2, 2)
+        shareable = Shareable()
+        shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
+        shareable[TensorBlobKeys.TENSOR_KEYS] = ["test"]
+        # Note: ROOT_KEY is missing
+
+        success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
+
+        assert success is True
+        assert reply.get_return_code() == ReturnCode.OK
+        # Should be stored under empty string root key
+        assert "" in consumer.tensors_map
+        assert "test" in consumer.tensors_map[""]
+        assert torch.allclose(consumer.tensors_map[""]["test"], test_tensor)
 
     def test_finalize_single_root_key_empty_string(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test finalize with single root key that is empty string."""
@@ -201,7 +214,7 @@ class TestTorchTensorsConsumer:
             assert torch.allclose(stored_tensors[tensor_name], original_tensor)
 
         # Verify tensors are cleared after finalization
-        assert consumer.tensors == {}
+        assert consumer.tensors_map == {}
 
     def test_finalize_multiple_root_keys(self, mock_stream_context, mock_fl_context):
         """Test finalize with multiple root keys."""
@@ -234,7 +247,7 @@ class TestTorchTensorsConsumer:
                 assert torch.allclose(stored_tensors[root_key][tensor_name], original_tensor)
 
         # Verify tensors are cleared after finalization
-        assert consumer.tensors == {}
+        assert consumer.tensors_map == {}
 
     def test_producer_consumer_integration(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Integration test: producer creates shareables, consumer reconstructs tensors."""
@@ -248,8 +261,10 @@ class TestTorchTensorsConsumer:
 
         # Producer creates shareables, consumer consumes them
         shareables_created = []
-        while producer.current < producer.end:
+        for _ in range(len(random_torch_tensors)):
             shareable, _ = producer.produce(mock_stream_context, mock_fl_context)
+            if shareable is None:
+                break
             shareables_created.append(shareable)
 
             success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
@@ -259,8 +274,8 @@ class TestTorchTensorsConsumer:
         # Finalize consumer
         consumer.finalize(mock_stream_context, mock_fl_context)
 
-        # Verify that all shareables were created
-        assert len(shareables_created) == len(random_torch_tensors)
+        # Verify that shareables were created (may be fewer than tensors due to chunking)
+        assert len(shareables_created) > 0
 
         # Verify reconstructed tensors match original
         stored_tensors = mock_fl_context.get_custom_prop(SAFE_TENSORS_PROP_KEY)
@@ -325,6 +340,117 @@ class TestTorchTensorsConsumer:
             reconstructed_tensor = stored_tensors[root_key][tensor_name]
             assert reconstructed_tensor.dtype == original_tensor.dtype
             assert torch.equal(reconstructed_tensor, original_tensor)
+
+    def test_consume_large_number_of_tensors(self, mock_stream_context, mock_fl_context):
+        """Test consuming a large number of tensors (tests generator behavior)."""
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+        root_key = "large_model"
+
+        # Create 50 tensors
+        large_tensor_dict = {f"layer_{i}": torch.randn(10, 10) for i in range(50)}
+
+        # Consume all tensors
+        shareables = create_shareables_from_tensors(large_tensor_dict, root_key)
+        for shareable in shareables:
+            success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
+            assert success is True
+            assert reply.get_return_code() == ReturnCode.OK
+
+        # Verify all tensors were stored
+        assert root_key in consumer.tensors_map
+        assert len(consumer.tensors_map[root_key]) == 50
+
+        # Finalize and verify
+        consumer.finalize(mock_stream_context, mock_fl_context)
+        stored_tensors = mock_fl_context.get_custom_prop(SAFE_TENSORS_PROP_KEY)
+        assert len(stored_tensors[root_key]) == 50
+
+    def test_consume_empty_blob_error(self, mock_stream_context, mock_fl_context):
+        """Test that consuming an empty blob raises an error."""
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+
+        shareable = Shareable()
+        shareable[TensorBlobKeys.SAFETENSORS_BLOB] = b""  # Empty blob
+        shareable[TensorBlobKeys.TENSOR_KEYS] = ["test"]
+        shareable[TensorBlobKeys.ROOT_KEY] = "model"
+
+        success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
+
+        assert success is False
+        assert reply.get_return_code() == ReturnCode.ERROR
+
+    def test_consume_empty_tensor_keys_error(self, mock_stream_context, mock_fl_context):
+        """Test that consuming with empty tensor keys raises an error."""
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+
+        test_tensor = torch.randn(2, 2)
+        shareable = Shareable()
+        shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
+        shareable[TensorBlobKeys.TENSOR_KEYS] = []  # Empty list
+        shareable[TensorBlobKeys.ROOT_KEY] = "model"
+
+        success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
+
+        assert success is False
+        assert reply.get_return_code() == ReturnCode.ERROR
+
+    def test_bytes_tracking_multiple_root_keys(self, mock_stream_context, mock_fl_context):
+        """Test byte tracking with multiple root keys."""
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+
+        tensors_dict = {
+            "encoder": {"layer1": torch.randn(10, 10)},
+            "decoder": {"layer1": torch.randn(20, 20)},
+        }
+
+        for root_key, tensors in tensors_dict.items():
+            shareables = create_shareables_from_tensors(tensors, root_key)
+            for shareable in shareables:
+                consumer.consume(shareable, mock_stream_context, mock_fl_context)
+
+        # Verify separate byte tracking for each root key
+        assert "encoder" in consumer.total_bytes
+        assert "decoder" in consumer.total_bytes
+        assert consumer.total_bytes["encoder"] > 0
+        assert consumer.total_bytes["decoder"] > 0
+        assert consumer.total_bytes["decoder"] > consumer.total_bytes["encoder"]  # decoder has bigger tensors
+
+    def test_finalize_clears_tensors_map(self, random_torch_tensors, mock_stream_context, mock_fl_context):
+        """Test that finalize clears the internal tensors_map."""
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+
+        shareables = create_shareables_from_tensors(random_torch_tensors, "model")
+        for shareable in shareables:
+            consumer.consume(shareable, mock_stream_context, mock_fl_context)
+
+        # Before finalize, tensors_map should have data
+        assert len(consumer.tensors_map) > 0
+
+        # After finalize, tensors_map should be empty
+        consumer.finalize(mock_stream_context, mock_fl_context)
+        assert consumer.tensors_map == {}
+
+    def test_consume_multiple_times_same_root_key_accumulates(self, mock_stream_context, mock_fl_context):
+        """Test that consuming multiple times with the same root key accumulates tensors."""
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+        root_key = "model"
+
+        # First batch
+        batch1 = {"tensor1": torch.randn(2, 2), "tensor2": torch.randn(3, 3)}
+        shareables1 = create_shareables_from_tensors(batch1, root_key)
+        for shareable in shareables1:
+            consumer.consume(shareable, mock_stream_context, mock_fl_context)
+
+        # Second batch
+        batch2 = {"tensor3": torch.randn(4, 4), "tensor4": torch.randn(5, 5)}
+        shareables2 = create_shareables_from_tensors(batch2, root_key)
+        for shareable in shareables2:
+            consumer.consume(shareable, mock_stream_context, mock_fl_context)
+
+        # Verify all tensors are accumulated under the same root key
+        assert root_key in consumer.tensors_map
+        assert len(consumer.tensors_map[root_key]) == 4
+        assert set(consumer.tensors_map[root_key].keys()) == {"tensor1", "tensor2", "tensor3", "tensor4"}
 
 
 # Helper functions for parameterized tests

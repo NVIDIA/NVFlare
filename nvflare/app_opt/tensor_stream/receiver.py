@@ -62,7 +62,7 @@ class TensorReceiver:
             factory=TensorConsumerFactory(),
             stream_done_cb=self._save_tensors_cb,
         )
-        self.logger.info(
+        self.logger.debug(
             f"Registered tensor receiver for context property '{self.ctx_prop_key}' "
             f"on '{self.channel}:{topic}' with format '{self.format}'.",
         )

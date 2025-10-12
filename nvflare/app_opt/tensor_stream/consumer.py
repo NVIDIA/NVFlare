@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Generator
 
 from safetensors.torch import load as load_safetensors
 
@@ -20,6 +21,53 @@ from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, StreamContex
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .types import SAFE_TENSORS_PROP_KEY, TensorBlobKeys, TensorsMap
+
+
+def tensor_deserializer_generator(
+    tensors_map: TensorsMap, total_bytes: dict[str, int]
+) -> Generator[None, Shareable, None]:
+    """Generator that receives safetensors blobs and updates the tensors dictionary.
+
+    Args:
+        tensors_map: Empty dictionary to be populated with received tensors
+        total_bytes: Dictionary to track total bytes received per root key
+
+    Yields:
+        None: Indicates ready to receive a Shareable object containing a safetensors blob
+
+    Receives:
+        shareable (Shareable): A Shareable object containing:
+            - TensorBlobKeys.SAFETENSORS_BLOB: The safetensors blob as bytes
+            - TensorBlobKeys.TENSOR_KEYS: List of tensor keys included in the blob
+            - TensorBlobKeys.ROOT_KEY: The root key associated with the tensors
+    Updates:
+        tensors_map: Populated with tensors extracted from received blobs
+        total_bytes: Updated with the total bytes received for each root key
+    """
+    while True:
+        data = yield
+        if data is None:
+            break
+
+        tensors_blob = data.get(TensorBlobKeys.SAFETENSORS_BLOB, b"")
+        if not tensors_blob:
+            raise ValueError("Received empty tensor blob")
+        tensor_keys = data.get(TensorBlobKeys.TENSOR_KEYS, [])
+        if not tensor_keys:
+            raise ValueError("Received empty tensor keys list")
+        root_key = data.get(TensorBlobKeys.ROOT_KEY, "")
+
+        total_bytes[root_key] = total_bytes.get(root_key, 0) + len(tensors_blob)
+        loaded_tensors = load_safetensors(tensors_blob)
+
+        if set(tensor_keys) != set(loaded_tensors.keys()):
+            raise ValueError(
+                f"Mismatch in tensor keys. Expected: {tensor_keys}, Received: {list(loaded_tensors.keys())}"
+            )
+
+        if root_key not in tensors_map:
+            tensors_map[root_key] = {}
+        tensors_map[root_key].update(loaded_tensors)
 
 
 class TensorConsumerFactory(ConsumerFactory):
@@ -38,7 +86,9 @@ class TensorConsumer(ObjectConsumer):
 
     Attributes:
         logger: Logger for logging messages.
-        tensors: Dictionary to store received tensors.
+        tensors_map: Dictionary to store received tensors.
+        total_bytes: Dictionary to track total bytes received per root key.
+        deserializer: Generator to handle deserialization of received tensor blobs.
     """
 
     def __init__(self, stream_ctx: StreamContext, fl_ctx: FLContext):
@@ -49,9 +99,10 @@ class TensorConsumer(ObjectConsumer):
             fl_ctx (FLContext): The FL context for the current operation. (not used)
         """
         self.logger = get_obj_logger(self)
-        self.tensors: TensorsMap = {}
-        self.total_bytes = {}
-        self.root_keys = []
+        self.tensors_map: TensorsMap = {}
+        self.total_bytes: dict[str, int] = {}
+        self.deserializer = tensor_deserializer_generator(self.tensors_map, self.total_bytes)
+        next(self.deserializer)  # Prime the generator
 
     def consume(
         self,
@@ -69,34 +120,14 @@ class TensorConsumer(ObjectConsumer):
         Returns:
             tuple[bool, Shareable]: A tuple containing a success flag and a reply shareable.
         """
-        tensor_blob = shareable.get(TensorBlobKeys.SAFETENSORS_BLOB, b"")
-        if not tensor_blob:
-            self.logger.error("No tensor blob found in the shareable.")
-            return False, make_reply(ReturnCode.ERROR)
-
-        tensor_keys = shareable.get(TensorBlobKeys.TENSOR_KEYS, [])
-        if not tensor_keys:
-            self.logger.error("No tensor keys found in the shareable.")
-            return False, make_reply(ReturnCode.ERROR)
-
-        root_key = shareable.get(TensorBlobKeys.ROOT_KEY, None)
-        if root_key is None:
-            self.logger.error("No root key found in the shareable.")
-            return False, make_reply(ReturnCode.ERROR)
-
-        # Update total bytes received for this root key
-        self.total_bytes[root_key] = self.total_bytes.get(root_key, 0) + len(tensor_blob)
-        tensor = load_safetensors(tensor_blob)
-        if set(tensor_keys) != set(tensor.keys()):
-            self.logger.error(f"Mismatch in tensor keys. Expected: {tensor_keys}, Received: {list(tensor.keys())}")
-            return False, make_reply(ReturnCode.ERROR)
-
-        # handle tensors stores in root key, i.e. inside "state_dict" or without root key which is ""
-        if root_key not in self.tensors:
-            self.tensors[root_key] = {}
-        self.tensors[root_key].update(tensor)
-        if root_key not in self.root_keys:
-            self.root_keys.append(root_key)
+        try:
+            self.deserializer.send(shareable)
+        except ValueError as ve:
+            self.logger.error(f"Error deserializing tensors: {ve}")
+            return False, make_reply(ReturnCode.ERROR, str(ve))
+        except Exception as e:
+            self.logger.error(f"Unexpected error deserializing tensors: {e}")
+            return False, make_reply(ReturnCode.ERROR, str(e))
 
         return True, make_reply(ReturnCode.OK)
 
@@ -109,23 +140,30 @@ class TensorConsumer(ObjectConsumer):
             stream_ctx (StreamContext): The stream context. (not used)
             fl_ctx (FLContext): The FL context. (not used)
         """
+        # Close the generator
+        try:
+            self.deserializer.send(None)
+        except StopIteration:
+            pass  # Normal termination of the generator
+
         identity = fl_ctx.get_identity_name()
         peer_name = fl_ctx.get_peer_context().get_identity_name()
+        root_keys = list(self.tensors_map.keys())
 
-        for root_key in self.root_keys:
-            tensor_keys = list(self.tensors[root_key].keys())
+        for root_key in root_keys:
+            tensor_keys = list(self.tensors_map[root_key].keys())
             self._log_received_tensors(identity, peer_name, root_key, tensor_keys)
 
         # If there's only one root key which is an empty string, it means all tensors are at the top level
-        if self.root_keys == [""]:
-            tensors = self.tensors[""]
+        if root_keys == [""]:
+            tensors = self.tensors_map[""]
         else:
-            tensors = self.tensors
+            tensors = self.tensors_map
 
         fl_ctx.set_custom_prop(SAFE_TENSORS_PROP_KEY, tensors)
 
         # Clear tensors after setting them in the context
-        self.tensors = {}
+        self.tensors_map = {}
 
     def _log_received_tensors(self, identity: str, peer_name: str, root_key: str, tensor_keys: list[str]):
         """Log the received tensors for debugging purposes.

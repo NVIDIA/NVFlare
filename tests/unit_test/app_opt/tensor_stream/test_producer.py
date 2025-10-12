@@ -25,14 +25,13 @@ class TestTorchTensorsProducer:
     """Test cases for TorchTensorsProducer class."""
 
     @pytest.mark.parametrize(
-        "tensors,expected_keys_len,expected_end",
+        "tensors,expected_keys_len",
         [
-            ({"layer1.weight": torch.randn(2, 3), "layer1.bias": torch.randn(2)}, 2, 2),  # Valid tensors
-            ({}, 0, 0),  # Empty tensors
-            (None, 0, 0),  # None tensors
+            ({"layer1.weight": torch.randn(2, 3), "layer1.bias": torch.randn(2)}, 2),  # Valid tensors
+            ({}, 0),  # Empty tensors
         ],
     )
-    def test_init_with_various_tensors(self, tensors, expected_keys_len, expected_end):
+    def test_init_with_various_tensors(self, tensors, expected_keys_len):
         """Test initialization with various tensor configurations."""
         entry_timeout = 5.0
         root_key = "model"
@@ -42,15 +41,16 @@ class TestTorchTensorsProducer:
         assert producer.entry_timeout == entry_timeout
         assert producer.root_key == root_key
         assert producer.last is False
-        assert producer.tensors == tensors
         assert len(producer.tensors_keys) == expected_keys_len
-        assert producer.start == 0
-        assert producer.current == 0
-        assert producer.end == expected_end
         assert producer.total_bytes == 0
 
         if tensors:
             assert producer.tensors_keys == list(tensors.keys())
+
+    def test_init_with_none_tensors(self):
+        """Test initialization with None tensors raises ValueError."""
+        with pytest.raises(ValueError, match="No tensors received"):
+            TensorProducer(tensors=None, entry_timeout=5.0, root_key="model")
 
     def test_produce_single_tensor(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test producing a single tensor."""
@@ -76,11 +76,13 @@ class TestTorchTensorsProducer:
         assert "test_tensor" in loaded_tensors
         assert torch.allclose(loaded_tensors["test_tensor"], single_tensor["test_tensor"])
 
-        # After producing, the tensor should **not** be removed from producer's tensors
-        assert "test_tensor" in producer.tensors
-        assert producer.last is True
-        assert producer.current == 1
+        # After producing, check that last is not yet set (need to call produce again)
+        assert producer.last is False
         assert producer.total_bytes > 0
+
+        # Produce again to check for completion
+        shareable2, _ = producer.produce(mock_stream_context, mock_fl_context)
+        assert shareable2 is None  # No more data
 
     def test_produce_multiple_tensors(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test producing multiple tensors sequentially."""
@@ -89,9 +91,12 @@ class TestTorchTensorsProducer:
 
         produced_keys = []
 
-        # Produce all tensors
-        for i in range(original_tensor_count):
+        # Produce all tensors (may be in chunks)
+        while True:
             shareable, timeout = producer.produce(mock_stream_context, mock_fl_context)
+
+            if shareable is None:
+                break
 
             assert timeout == 3.0
             assert isinstance(shareable, Shareable)
@@ -102,35 +107,23 @@ class TestTorchTensorsProducer:
             assert TensorBlobKeys.ROOT_KEY in shareable
             assert shareable[TensorBlobKeys.ROOT_KEY] == "model"
 
-            # Each shareable should contain exactly one tensor
+            # Collect the tensor keys from this shareable
             tensor_keys = shareable[TensorBlobKeys.TENSOR_KEYS]
-            assert len(tensor_keys) == 1
             produced_keys.extend(tensor_keys)
 
             # Verify the tensor data
             blob = shareable[TensorBlobKeys.SAFETENSORS_BLOB]
             loaded_tensors = load_tensors(blob)
-            assert len(loaded_tensors) == 1
-
-            # Check if it's the last tensor
-            if i == original_tensor_count - 1:
-                assert producer.last is True
-            else:
-                assert producer.last is False
+            assert len(loaded_tensors) == len(tensor_keys)
 
         # Verify all tensors were produced
         assert len(produced_keys) == original_tensor_count
         assert set(produced_keys) == set(random_torch_tensors.keys())
-        assert len(producer.tensors) == 10  # All tensors should still be present
 
     def test_produce_with_none_tensors(self, mock_stream_context, mock_fl_context):
-        """Test producing when tensors is None."""
-        producer = TensorProducer(tensors=None, entry_timeout=5.0, root_key="model")
-
-        result, timeout = producer.produce(mock_stream_context, mock_fl_context)
-
-        assert result is None
-        assert timeout == 5.0
+        """Test that initializing producer with None tensors raises ValueError."""
+        with pytest.raises(ValueError, match="No tensors received"):
+            TensorProducer(tensors=None, entry_timeout=5.0, root_key="model")
 
     def test_process_replies_success(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test processing successful replies."""
@@ -148,7 +141,6 @@ class TestTorchTensorsProducer:
         producer.last = True
         result = producer.process_replies(replies, mock_stream_context, mock_fl_context)
         assert result is True
-        assert len(producer.tensors) == 0  # Tensors should be cleared
 
     def test_process_replies_with_errors(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test processing replies with errors."""
@@ -165,7 +157,6 @@ class TestTorchTensorsProducer:
 
         result = producer.process_replies(replies, mock_stream_context, mock_fl_context)
         assert result is False  # Should return False due to error
-        assert len(producer.tensors) == 0  # Tensors should be cleared on error
 
     def test_tensor_sizes_and_bytes_tracking(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test that tensor sizes are properly tracked."""
@@ -192,8 +183,10 @@ class TestTorchTensorsProducer:
         expected_order = ["a_first", "b_second", "c_third"]
         produced_keys = []
 
-        for _ in range(len(ordered_tensors)):
+        while True:
             shareable, _ = producer.produce(mock_stream_context, mock_fl_context)
+            if shareable is None:
+                break
             tensor_keys = shareable[TensorBlobKeys.TENSOR_KEYS]
             produced_keys.extend(tensor_keys)
 
@@ -211,15 +204,90 @@ class TestTorchTensorsProducer:
 
         producer = TensorProducer(tensors=mixed_dtype_tensors.copy(), entry_timeout=5.0, root_key="model")
 
-        for tensor_name in mixed_dtype_tensors.keys():
-            original_tensor = mixed_dtype_tensors[tensor_name].clone()
+        # Collect all produced tensors
+        all_loaded_tensors = {}
+        while True:
             shareable, _ = producer.produce(mock_stream_context, mock_fl_context)
+            if shareable is None:
+                break
 
-            # Load and verify the tensor
+            # Load and verify the tensors in this shareable
             blob = shareable[TensorBlobKeys.SAFETENSORS_BLOB]
             loaded_tensors = load_tensors(blob)
+            all_loaded_tensors.update(loaded_tensors)
 
-            assert tensor_name in loaded_tensors
-            loaded_tensor = loaded_tensors[tensor_name]
+        # Verify all tensors and their dtypes
+        for tensor_name, original_tensor in mixed_dtype_tensors.items():
+            assert tensor_name in all_loaded_tensors
+            loaded_tensor = all_loaded_tensors[tensor_name]
             assert loaded_tensor.dtype == original_tensor.dtype
             assert torch.equal(loaded_tensor, original_tensor)
+
+    def test_chunking_behavior_with_default_chunk_size(self, mock_stream_context, mock_fl_context):
+        """Test that producer chunks tensors correctly with default chunk size (25)."""
+        # Create 30 tensors to test chunking (should be 2 chunks: 25 + 5)
+        large_tensor_dict = {f"tensor_{i}": torch.randn(2, 2) for i in range(30)}
+
+        producer = TensorProducer(tensors=large_tensor_dict, entry_timeout=5.0, root_key="model")
+
+        chunks = []
+        while True:
+            shareable, _ = producer.produce(mock_stream_context, mock_fl_context)
+            if shareable is None:
+                break
+            chunks.append(shareable[TensorBlobKeys.TENSOR_KEYS])
+
+        # Should have 2 chunks: 25 and 5
+        assert len(chunks) == 2
+        assert len(chunks[0]) == 25
+        assert len(chunks[1]) == 5
+
+        # Verify all tensors are present
+        all_keys = []
+        for chunk in chunks:
+            all_keys.extend(chunk)
+        assert set(all_keys) == set(large_tensor_dict.keys())
+
+    def test_empty_tensors_dict(self, mock_stream_context, mock_fl_context):
+        """Test producing from an empty tensors dictionary."""
+        producer = TensorProducer(tensors={}, entry_timeout=5.0, root_key="model")
+
+        shareable, timeout = producer.produce(mock_stream_context, mock_fl_context)
+
+        # Should return None immediately for empty dict
+        assert shareable is None
+        assert timeout == 5.0
+
+    def test_log_completion_called(self, random_torch_tensors, mock_stream_context, mock_fl_context):
+        """Test that log_completion is called when production is complete."""
+        producer = TensorProducer(tensors=random_torch_tensors, entry_timeout=5.0, root_key="model")
+
+        # Produce all tensors
+        while True:
+            shareable, _ = producer.produce(mock_stream_context, mock_fl_context)
+            if shareable is None:
+                break
+
+        # Verify last flag is set
+        assert producer.last is True
+
+    def test_total_bytes_accumulation(self, mock_stream_context, mock_fl_context):
+        """Test that total_bytes accumulates correctly across multiple produces."""
+        tensors = {
+            "tensor1": torch.randn(10, 10),
+            "tensor2": torch.randn(20, 20),
+            "tensor3": torch.randn(5, 5),
+        }
+
+        producer = TensorProducer(tensors=tensors, entry_timeout=5.0, root_key="model")
+
+        total_bytes = 0
+        while True:
+            shareable, _ = producer.produce(mock_stream_context, mock_fl_context)
+            if shareable is None:
+                break
+            blob_size = len(shareable[TensorBlobKeys.SAFETENSORS_BLOB])
+            total_bytes += blob_size
+
+        assert producer.total_bytes == total_bytes
+        assert producer.total_bytes > 0
