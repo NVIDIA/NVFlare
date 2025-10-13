@@ -62,6 +62,7 @@ def define_provision_parser(parser):
     parser.add_argument("-c", "--custom_folder", type=str, default=".", help="additional folder to load python codes")
     parser.add_argument("--add_user", type=str, default="", help="yaml file for added user")
     parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
+    parser.add_argument("-s", "--script", action="store_true", help="generate test scripts like start_all.sh")
 
 
 def copy_project(project: str, dest: str):
@@ -101,7 +102,7 @@ def handle_provision(args):
     add_user_full_path = os.path.join(current_path, args.add_user) if args.add_user else None
     add_client_full_path = os.path.join(current_path, args.add_client) if args.add_client else None
 
-    provision(project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
+    provision(args, project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
 
 
 def gen_default_project_config(src_project_name, dest_project_file):
@@ -122,12 +123,14 @@ def provision_for_edge(params, project_dict):
 
 
 def provision(
+    args,
     project_full_path: str,
     workspace_full_path: str,
     add_user_full_path: Optional[str] = None,
     add_client_full_path: Optional[str] = None,
 ):
     project_dict = load_yaml(project_full_path)
+    project_dict["gen_script"] = args.script
     edge_params = project_dict.get("edge")
     if edge_params:
         try:
