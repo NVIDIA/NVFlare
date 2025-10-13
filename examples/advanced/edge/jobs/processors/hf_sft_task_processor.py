@@ -178,8 +178,6 @@ class HFSFTTaskProcessor(DeviceTaskProcessor):
             # Try to properly cleanup trainer components
             if hasattr(self.trainer, "model") and self.trainer.model:
                 self.trainer.model.cpu()  # Move model to CPU
-            if hasattr(self.trainer, "tokenizer"):
-                del self.trainer.tokenizer
             del self.trainer
             self.trainer = None
 

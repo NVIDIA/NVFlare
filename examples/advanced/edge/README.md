@@ -277,11 +277,19 @@ You will see the following results:
 As shown, due to the large number of devices and the limited number of samples for each device, the training process can be much slower than the previous experiments, and the accuracy converges to a lower level. 
 
 ### General Hierarchical FL System
-Note that the above cross-edge FL example is based on the hierarchical FL system with 1 layer of relays, such system is not limited to cross-edge FL, but can also be used for general hierarchical FL scenarios, where the relays can be data centers or edge servers.
+Note that the above FL system is not limited to cross-edge FL, but can also be used for general hierarchical FL scenarios, where the hierarchy can be deployed to any types of servers.
 
 To illustrate this, we can use the same system to run a cross-silo FL example with 4 silos, each with 1 client running language model training, which is much heavier than the CIFAR10 training:
 
+We first prepare the data, same as our [HF_SFT example](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf/README.md):
+```commandline
+mkdir /tmp/nvflare/dataset
+git clone https://huggingface.co/datasets/databricks/databricks-dolly-15k /tmp/nvflare/dataset
+mkdir /tmp/nvflare/dataset/dolly
+python ./utils/preprocess_dolly.py --training_file /tmp/nvflare/dataset/databricks-dolly-15k.jsonl --output_dir /tmp/nvflare/dataset/dolly
+```
+
+Assuming we have the same provisioning and setting steps following the same procedure as above, then we can submit the job to run cross-silo FL with 4 silos, each with 1 client, and each client will use a subset of 3000 samples for local training.
 ```commandline
 python3 jobs/hf_sft_job.py --subset_size 3000 --no_delay
 ```
-This will run a cross-silo FL with 4 silos, each with 1 client, and each client will use a subset of 3000 samples for local training.
