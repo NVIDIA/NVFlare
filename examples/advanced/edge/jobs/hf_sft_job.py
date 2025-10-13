@@ -57,7 +57,6 @@ def create_hf_sft_recipe(
         subset_size (int): Size of data subset for each device (None for full dataset)
         local_epochs (int): Number of local training epochs per round
         batch_size (int): Training batch size
-        gradient_accumulation_steps (int): Gradient accumulation steps
         learning_rate (float): Learning rate for training
         lr_scheduler (str): Learning rate scheduler type
         no_delay (bool): If True, set communication delay and device speed to 0.0
@@ -159,7 +158,6 @@ def main():
     parser.add_argument("--global_rounds", type=int, default=3, help="Number of global federated rounds")
     parser.add_argument("--local_epochs", type=int, default=1, help="Number of local training epochs per round")
     parser.add_argument("--batch_size", type=int, default=4, help="Training batch size")
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=10, help="Gradient accumulation steps")
     parser.add_argument("--learning_rate", type=float, default=5e-4, help="Learning rate for training")
     parser.add_argument("--lr_scheduler", type=str, default="constant", help="Learning rate scheduler type")
     parser.add_argument("--workspace_dir", type=str, default="/tmp/nvflare/workspaces", help="Workspace directory")
