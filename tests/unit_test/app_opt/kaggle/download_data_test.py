@@ -15,7 +15,7 @@
 import shutil
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -180,10 +180,11 @@ class TestDownloadData:
         output_path.mkdir()
         marker_file = output_path / ".kaggle_download_marker"
         marker_file.touch()
-        
+
         # Modify marker file timestamp
         import os
         import time
+
         old_time = time.time() - 1000  # 1000 seconds ago
         os.utime(marker_file, (old_time, old_time))
         old_mtime = marker_file.stat().st_mtime
@@ -198,4 +199,3 @@ class TestDownloadData:
         # Verify marker file was refreshed (newer timestamp)
         new_mtime = marker_file.stat().st_mtime
         assert new_mtime > old_mtime
-

@@ -25,19 +25,19 @@ def download(input_path: str, output_path: str, overwrite: bool = False):
 
     # Move downloaded data to output path
     output = Path(output_path)
-    
+
     if output.exists():
         if not overwrite:
             raise FileExistsError(
                 f"Output path '{output_path}' already exists. "
                 f"Use overwrite=True to replace it, or manually remove the directory."
             )
-        
+
         # Safety: Only remove if it looks like a previous kaggle download
         # Check for expected structure/marker file
         if not output.is_dir():
             raise ValueError(f"{output_path} exists but is not a directory")
-        
+
         # Check for marker file we created in previous runs
         marker_file = output / ".kaggle_download_marker"
         if not marker_file.exists():
@@ -45,13 +45,13 @@ def download(input_path: str, output_path: str, overwrite: bool = False):
                 f"{output_path} exists but doesn't appear to be a previous "
                 f"kaggle download. Remove it manually to proceed."
             )
-        
+
         shutil.rmtree(output)
         print(f"Removed previous download: {output}")
 
     shutil.move(path, output_path)
-    
+
     # Create marker for future safety checks
     (Path(output_path) / ".kaggle_download_marker").touch()
-    
+
     print(f"Dataset moved to: {output_path}")
