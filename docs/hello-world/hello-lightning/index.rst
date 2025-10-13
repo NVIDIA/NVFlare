@@ -17,18 +17,27 @@ for the complete installation instructions, see `installation <../../installatio
     pip install nvflare
 
 
+get the example code from github:
 
-Code Structure
---------------
+.. code-block:: text
 
-first get the example code from github:
-git clone https://github.com/NVIDIA/NVFlare.git
+   git clone https://github.com/NVIDIA/NVFlare.git
+
 then navigate to the hello-lightning directory:
 
 .. code-block:: text
 
     git switch <release branch>
     cd examples/hello-world/hello-lightning
+
+Install the dependency
+
+.. code-block:: bash
+
+   pip install -r requirements.txt
+
+Code Structure
+--------------
 
 .. code-block:: text
 

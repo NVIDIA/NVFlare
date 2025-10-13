@@ -2,52 +2,31 @@
 
 In this example, we will show how to generate federated statistics for tabular data that can be represented as Pandas Data Frame.
 
-## Code Structure
-First, get the example code from github:
-
-```
-git clone https://github.com/NVIDIA/NVFlare.git
-```
-Then navigate to the hello-tabular-stats directory:
-
-```
-git switch <release branch>
-cd examples/hello-world/hello-tabular-stats
-
-```
-
-``` bash
-hello-tabular-stats
-|
-├── client.py         # client local training script
-├── job.py            # job recipe that defines client and server configurations
-├── prepare_data.py   # utilities to download data
-├── install_cargo.sh  # scripts to install rust and cargo needed for quantile dependency, only needed if you plan to install quantile dependency
-└── requirements.txt  # dependencies
-├── demo
-│   └── visualization.ipynb # Visualization Notebook
- 
-```
 
 ## NVIDIA FLARE Installation
 For the complete installation instructions, see [Installation](https://nvflare.readthedocs.io/en/main/installation.html)
-```
-pip install nvflare
 
 ```
-## Install the dependency
-
-First, get the example code from github:
+    pip install nvflare
 
 ```
-git clone https://github.com/NVIDIA/NVFlare.git
+
+Get the example code from github:
+
+```
+    git clone https://github.com/NVIDIA/NVFlare.git
 ```
 
 Then navigate to the hello-tabular-stats directory:
 
 ```
-cd NVFlare/examples/hello-world/hello-tabular-stats
+    git switch <release branch>
+    cd NVFlare/examples/hello-world/hello-tabular-stats
+```
 
+## Install the dependency
+
+```
 pip install -r requirements.txt
 ```
 
@@ -59,7 +38,7 @@ If you intend to calculate quantiles, you need to install fastdigest.
 Skip this step if you don't need quantile statistics. 
 
 ```
-pip install fastdigest==0.4.0
+    pip install fastdigest==0.4.0
 ```
 
 On Ubuntu, you might get the following error:
@@ -77,14 +56,28 @@ Install Rust and Cargo
 Run the following command to install Rust using rustup:
 
 ```
-./install_cargo.sh
+    ./install_cargo.sh
 ```
 
 Then you can install fastdigest again
 ```
-pip install fastdigest==0.4.0
+    pip install fastdigest==0.4.0
 ```
 
+## Code Structure
+
+``` bash
+hello-tabular-stats
+    |
+    ├── client.py         # client local training script
+    ├── job.py            # job recipe that defines client and server configurations
+    ├── prepare_data.py   # utilities to download data
+    ├── install_cargo.sh  # scripts to install rust and cargo needed for quantile dependency, only needed if you plan to install quantile dependency
+    └── requirements.txt  # dependencies
+    ├── demo
+    │   └── visualization.ipynb # Visualization Notebook
+ 
+```
 
 ## Data
 
