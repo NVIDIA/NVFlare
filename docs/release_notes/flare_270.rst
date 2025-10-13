@@ -10,26 +10,13 @@ Confidential Federated AI
 
 .. sidebar::
 
-    **Confidential Federated AI Applications:**
-    -------------------------------------------
+   **Confidential Federated AI Applications:**
 
-    **Confidential Federated AI Applications:** Where would you use this?
+   - **Collaborative R&D & Analytics**: Joint model training and agent-based analytics inside Confidential Computing enclaves, protecting data and IP.
+   - **Model Protection**: Secure use and fine-tuning of proprietary or licensed foundation models.
+   - **Regulated & Cross-Border AI**: Enable collaboration across finance, healthcare, defense, and global partners while maintaining privacy, sovereignty, and compliance.
+   - **Secure Deployment**: Prevent model or data leakage during inference in untrusted environments.
 
-    - **Pharmaceutical and Biotech R&D:** Multiple organizations can jointly train or validate models while ensuring that each company’s proprietary model and data remain protected.
-
-    - **Licensed or Proprietary Foundation Models:** Models can be used as starting points without risking leakage or violating license agreements.
-
-    - **AI Sovereignty Across Borders:** Organizations can collaborate globally while ensuring models remain under sovereign control and do not cross restricted boundaries.
-
-    - **Secure Inference Serving:** Safeguard models from being exposed to infrastructure providers, cloud platforms, or third-party serving environments.
-
-    - **Financial Services:** Add an extra layer of protection for highly regulated sectors such as banking, insurance, and trading.
-
-    - **Healthcare Collaborations:** Enable hospitals and research institutes to co-train models without risking sensitive patient data or revealing proprietary clinical models.
-
-    - **Defense and National Security:** Allow cross-agency AI projects while preserving strict confidentiality of algorithms and data.
-
-    - **Cross-Industry Consortia:** Support joint innovation (e.g., supply chain, energy, automotive) without risking leakage of competitive IP.
 
 
 With this release, we offer this first-of-its-kind product for end-to-end IP protection solution in federated setup
@@ -38,6 +25,7 @@ using confidential computing.
 - The solution is for on-premise deployment on bare metal using AMD CPU and NVIDIA GPU with Confidential VM.
 - End-to-End Protection: By end-to-end protection, we mean that we not only protect the IP (model and code) in use at runtime, but also protect against CVM tampering at deployment.
 - The solution is able to perform
+
     - **Secure aggregation** on the server-side to protect against privacy leaks via model
     - **Model theft protection** on the client-side to safeguard Model IP during collaboration
     - **Data leak prevention** on the client-side with pre-approved, certified code.
@@ -99,34 +87,29 @@ When combined with the Client API (typically 4+ lines), building and running fed
     or read the :ref:`job_recipe`, more than half a dozen ready-to-use recipes are provided: :ref:`quickstart`
 
 
-Simplified Deployment: Single-Port Server & Efficient HTTPS Driver
-------------------------------------------------------------------
-
+FLARE 2.7.0: Federated Learning with Just One Port
+--------------------------------------------------
 
 .. sidebar::
 
     **Port Consolidation**
-
-    Historically, FLARE's FL Server required two communication ports: one for FL Client/Server communication and another for
-    Admin Client/Server communication. This posed challenges for customers with strict port management policies. With FLARE 2.7,
-    the requirement is consolidated to a single port for both communication types. However, for those who prefer separate ports
-    due to different network security policies, the system can still be configured to use two distinct ports.
-    Reference :ref:`server_port_consolidation` for details.
+    Previously, FLARE’s server required two separate ports: one for FL client/server communication and another for
+    Admin client/server communication. In 2.7, these are merged into a single configurable port, reducing network configuration complexity.
+    Dual-port mode remains available for environments with stricter network policies.
 
     **New HTTPS Driver**
-
-    Prior to version 2.7.0, the HTTP driver was slow. The new driver, rewritten using the `aiohttp` library, resolves these
-    performance issues, matching the efficiency of the gRPC driver. The usage remains unchanged, ensuring a seamless transition.
-
-Deploying a Federated Learning system often requires IT support to open new ports, which can be time-consuming due to
-additional security reviews and approvals. FLARE 2.7.0 addresses this challenge by consolidating the port requirements to
-a single port, utilizing TLS, and introducing a new HTTPS driver that performs on par with gRPC. This allows the use of
-the standard HTTPS port 443, significantly reducing the dependency on IT support.
+    The HTTP driver has been rewritten using aiohttp to address prior performance limitations. It now matches gRPC performance,
+    while maintaining the same API, TLS support, and backward compatibility with existing deployments.
 
 
-.. admonition:: Key Benefit
+- **Consolidated Port**: Reduced from two ports to a single port, simplifying deployment.
+- **No IT Support Needed**: With TLS + HTTPS driver, the standard HTTPS port 443 can be used, eliminating IT support to open new port(s)
+- **High Performance**: new HTTP driver matches gRPC in speed and reliability.
 
-    Enables direct use of HTTPS with port 443.
+.. admonition:: Why it matters
+
+    **Faster Deployment**: Less IT dependency, faster setup for federated learning projects.
+    FLARE 2.7.0 simplifies network requirements and allows fully secure deployments without waiting for IT approvals.
     :ref:`Check out FL server port consolidation details <server_port_consolidation>`.
 
 
@@ -146,28 +129,41 @@ Fixed the following issues:
 
 
 
-
 Develop Edge Applications with FLARE
 ====================================
 
-FLARE 2.7 extends federated learning capabilities to edge devices. Edge device applications present some new challenges.
-
 .. sidebar::
 
-    To support scalability, we add the following features
+   .. image:: resources/hierarchical_fl.png
+        :height: 150px
+   .. image:: resources/edge_cross_device_fl.png
+        :height: 150px
+   .. image:: resources/edge_simplify_device_programming.png
+        :height: 150px
 
     - Support for hierarchical federated architecture: :ref:`Hierarchical FLARE <flare_hierarchical_architecture>`
     - Asynchronous federated learning algorithm based on FedBuff: :ref:`flare_edge`
     - Model development support for both iOS and Android: :ref:`flare_mobile`
 
-- **Scalability**: Unlike cross-silo applications where the number of FL clients is relatively small, the number of devices could be in the millions. It's infeasible to treat the devices as simple FL clients and connect them directly to the FL server.
-- **Stability**: Unlike cross-silo applications where the FL clients are stable, edge devices come and go at any time. This requires the training strategy to accommodate this behavior.
-- **Compute capability**: Compared to cross-silo applications, edge devices don't have as much computing power.
-- **Platform dependency**: There are multiple edge device platforms (e.g. iOS, Android, etc.), and each has a different application development environment.
+FLARE 2.7 extends federated learning to edge devices with features that directly address the unique challenges of edge
+environments:
+
+**Scalability**: **Hierarchical federated architecture** :ref:`flare_hierarchical_architecture` allows millions of edge devices
+to participate efficiently without connecting each directly to the server.
+
+**Intermittent Device Participation**: **Asynchronous FL** based on FedBuff :ref:`flare_edge` handles devices that may join,
+leave, or fail to return local training results due to network or power interruptions.
+
+**Cross-Platform & No Device Programming Required**: Data scientists can deploy models to iOS and Android :ref:`flare_mobile`
+without writing Swift, Objective-C, Java, or Kotlin. FLARE handles PyTorch → Executorch conversion and device training code automatically.
+
+**Simulation Tools**: device simulator for large scale testing
+
 
 .. admonition:: FLARE Edge
 
     Try FLARE edge development following the `edge examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_
+
 
 
 Self-Paced-Training Tutorials

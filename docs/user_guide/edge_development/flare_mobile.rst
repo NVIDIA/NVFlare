@@ -22,7 +22,7 @@ The FLARE Mobile SDK provides native libraries for Android (Kotlin/Java) and iOS
 * **Error handling and recovery**: For mobile-specific scenarios
 
 .. tip::
-   For a quick start with mobile development, see the complete examples in :ref:`edge examples <edge_examples>`.
+   For a quick start with mobile development, see the complete examples in `edge examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_.
 
 Platform Support
 ================
@@ -271,6 +271,9 @@ The main orchestrator for Android federated learning.
    
    // Get current status
    fun getStatus(): String
+
+For more on android sdk API: check :ref:`mobile_android_api`.
+
 
 NVFlareRunner (iOS)
 -------------------

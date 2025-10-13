@@ -404,7 +404,8 @@ FedBuff is the algorithm that manages device selection and model updates.
 EdgeFedBuffRecipe
 ------------------
 
-This recipe helps you create jobs for training with standard PyTorch on other edge devices (e.g., NVIDIA Jetson devices). An example can be found in the :ref:`edge examples <edge_examples>`.
+This recipe helps you create jobs for training with standard PyTorch on other edge devices (e.g., NVIDIA Jetson devices).
+An example can be found in the `edge examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_.
 
 .. code-block:: python
 
@@ -481,10 +482,18 @@ This configuration maintains the selection of all N devices, waits for all N dev
 
 Similarly, we can simulate an asynchronous pipeline by setting these parameters differently. See more details in the example.
 
+Federated Training on Mobile Devices
+====================================
+
+FLARE 2.7 introduces comprehensive mobile development support for both Android and iOS platforms,
+enabling federated learning directly on edge devices. Please refer to FLARE mobile development guide :ref:`flare_mobile` for detailed on mobile SDK integration, API usage, and
+best practices for developing FL applications on mobile platforms. Here we will quickly illustrate the
+recipe for ExecuTorch(ET) Recipe for FedBuff-based Async FL algorithm.
+
 ETFedBuffRecipe
 ---------------
 
-This recipe helps you create jobs for training with ExecuTorch (ET) on mobile devices. Examples can be found in the :ref:`edge examples <edge_examples>`.
+This recipe helps you create jobs for training with ExecuTorch (ET) on mobile devices. Examples can be found in the `edge examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_.
 
 .. code-block:: python
 

@@ -1,11 +1,10 @@
 .. _confidential_computing:
 
-##########################################
-FLARE Confidential Federated AI User Guide
-##########################################
+################################
+FLARE Confidential Federated AI
+################################
 
-
-Confidential Computing User Guide
+Confidential Computing with FLARE
 
 .. toctree::
    :maxdepth: 1

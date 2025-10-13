@@ -162,13 +162,13 @@ You can also install with optional dependencies from source:
 Note on branches:
 
 * The `main <https://github.com/NVIDIA/NVFlare/tree/main>`_ branch is the default (unstable) development branch
-* The 2.1, 2.2, 2.3, 2.4, 2.5, etc. branches are the branches for each major release and there are tags based on these with a third digit for minor patches
+* The 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7 etc. branches are the branches for each major release and there are tags based on these with a third digit for minor patches
 
 To switch to a specific branch:
 
 .. code-block:: shell
 
-  $ git switch 2.6  # Replace with desired version
+  $ git switch 2.7  # Replace with desired version
 
 Building Wheels
 ---------------

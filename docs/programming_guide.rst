@@ -53,7 +53,14 @@ Please refer to :ref:`application` for more details.
    programming_guide/global_model_initialization
    programming_guide/experiment_tracking
    programming_guide/message_quantization
-
+   programming_guide/tensor_downloader
+   programming_guide/hierarchical_architecture
+   programming_guide/hierarchical_communication
+   programming_guide/migrating_to_flare_api
+   programming_guide/file_streaming.rst
+   programming_guide/decomposer_for_large_object
+   programming_guide/dashboard_api
+   user_guide/confidential_computing/index
 
 .. rubric:: Code Structure
 
