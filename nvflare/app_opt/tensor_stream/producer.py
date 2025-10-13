@@ -26,7 +26,7 @@ from .types import TensorBlobKeys
 
 
 def tensors_serializer_generator(
-    tensors: dict[str, torch.Tensor], chunk_size: int = 25
+    tensors: dict[str, torch.Tensor], chunk_size: int = 10
 ) -> Generator[Tuple[list[str], bytes], None, None]:
     """Generator that yields chunks of tensors serialized as safetensors blobs.
 
@@ -48,6 +48,10 @@ def tensors_serializer_generator(
         # Delete chunk_tensors to free memory before yielding
         del chunk_tensors
         yield chunk_keys, serialized_blob
+        del serialized_blob  # Free memory after yielding
+
+    # Indicate completion
+    yield None, None
 
 
 class TensorProducer(ObjectProducer):
@@ -101,7 +105,7 @@ class TensorProducer(ObjectProducer):
         """
         data = Shareable()
         try:
-            tensor_keys, tensors_blob = next(self.serializer, (None, None))
+            tensor_keys, tensors_blob = next(self.serializer)
         except StopIteration:
             return None, self.entry_timeout
         else:

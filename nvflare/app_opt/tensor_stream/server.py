@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import gc
 import time
 from threading import Lock
 
@@ -121,7 +120,6 @@ class TensorServerStreamer(FLComponent):
             self.try_to_clean_task_data(num_clients, fl_ctx)
         elif event_type == EventType.BEFORE_TASK_RESULT_FILTER:
             self.receiver.set_ctx_with_tensors(fl_ctx)
-            self.receiver.tensors.clear()  # clear previous received tensors
 
     def reset_counters(self):
         """Reset the counters for the number of task data sent and skipped."""
@@ -194,4 +192,3 @@ class TensorServerStreamer(FLComponent):
                 )
                 clean_task_data(fl_ctx)
                 self.data_cleaned = True
-                gc.collect()  # force garbage collection to free memory sooner

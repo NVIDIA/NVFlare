@@ -234,9 +234,6 @@ class TestTensorServerStreamer:
         # Verify receiver.set_ctx_with_tensors was called
         mock_receiver.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
 
-        # Verify receiver.tensors.clear() was called
-        mock_receiver.tensors.clear.assert_called_once()
-
     @patch("nvflare.app_opt.tensor_stream.server.TensorSender")
     def test_sender_creation_on_after_task_data_filter(
         self, mock_sender_class, mock_fl_context, mock_engine_with_clients
@@ -477,9 +474,6 @@ class TestTensorServerStreamer:
 
         # Verify receiver was called
         mock_receiver_instance.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
-
-        # Verify receiver.tensors.clear() was called
-        mock_receiver_instance.tensors.clear.assert_called_once()
 
     @pytest.mark.parametrize(
         "format_param,tasks_param,expected_format,expected_tasks",
