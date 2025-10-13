@@ -15,7 +15,6 @@
 import argparse
 import os
 
-import torch
 from processors.hf_sft_task_processor import HFSFTTaskProcessor
 from processors.models.hf_sft_model import CausalLMModel
 
@@ -141,7 +140,10 @@ def main():
         "--data_path_train", type=str, default="/tmp/nvflare/dataset/dolly/training.jsonl", help="Path to training data"
     )
     parser.add_argument(
-        "--data_path_valid", type=str, default="/tmp/nvflare/dataset/dolly/validation.jsonl", help="Path to validation data"
+        "--data_path_valid",
+        type=str,
+        default="/tmp/nvflare/dataset/dolly/validation.jsonl",
+        help="Path to validation data",
     )
     parser.add_argument(
         "--output_path",

@@ -231,17 +231,19 @@ class HFSFTTaskProcessor(DeviceTaskProcessor):
                 self.trainer.train()
         else:
             # If the resume_from_checkpoint_folder is not none, it means the subsequent rounds of training, first replace the resume weights with global weights
-            self.trainer.model.save_pretrained(resume_from_checkpoint_folder, state_dict=global_model, safe_serialization=False)
+            self.trainer.model.save_pretrained(
+                resume_from_checkpoint_folder, state_dict=global_model, safe_serialization=False
+            )
             # then do resume training
             for epoch in range(self.local_epochs):
                 self.trainer.train(resume_from_checkpoint=True)
-        
+
         self.logger.info(f"Device {device_id}: Local training completed")
 
         # Get the trained model state dict
         trained_model = self.trainer.model.cpu().state_dict()
 
-        # Return the diff trained model state dict 
+        # Return the diff trained model state dict
         # also update the key name sent to global model
         result_dict = {}
         for key, param in trained_model.items():
@@ -273,7 +275,7 @@ class HFSFTTaskProcessor(DeviceTaskProcessor):
             raise ValueError("bad global model")
         self.logger.info(f"Device {device_id}: Received global model with {len(global_model)} parameter groups")
 
-        # Update the key name received from global model 
+        # Update the key name received from global model
         for key in list(global_model.keys()):
             global_model[key.replace("model.", "", 1)] = global_model.pop(key)
 
