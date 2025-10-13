@@ -16,8 +16,6 @@ import threading
 import time
 from typing import Optional
 
-import numpy as np
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
