@@ -11,36 +11,39 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os.path
-import uuid
+import logging
 
-from nvflare.fox.api.app import ClientApp
+import torch
+
+from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.constants import ContextKey, EnvType
 from nvflare.fox.api.ctx import Context
 from nvflare.fox.api.dec import collab
 from nvflare.fox.api.group import all_clients
 from nvflare.fox.api.strategy import Strategy
-from nvflare.fox.examples.np.algos.utils import load_np_model, parse_array_def, save_np_model
-from nvflare.fox.sys.file_downloader import download_file, prepare_file_for_download
+from nvflare.fox.api.utils import simple_logging
+from nvflare.fox.examples.pt.utils import parse_state_dict
+from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sys.tensor_downloader import download_state_dict, prepare_for_download
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class _AggrResult:
 
     def __init__(self):
-        self.total = 0
+        self.total = {}
         self.count = 0
 
 
-class NPFedAvgStream(Strategy):
+class PTFedAvgStream(Strategy):
 
     def __init__(self, initial_model, num_rounds=10, timeout=2.0):
         self.num_rounds = num_rounds
         self.initial_model = initial_model
         self.timeout = timeout
-        self.name = "NPFedAvgStream"
+        self.name = "PTFedAvgStream"
         self.logger = get_obj_logger(self)
-        self._init_model = parse_array_def(initial_model)
+        self._init_model = parse_state_dict(initial_model)
 
     def execute(self, context: Context):
         self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
@@ -54,15 +57,12 @@ class NPFedAvgStream(Strategy):
         aggr_result = _AggrResult()
 
         # pretend the model is big
-        file_name = None
         if ctx.env_type == EnvType.SYSTEM:
-            file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
-            save_np_model(current_model, file_name)
-            model = prepare_file_for_download(
-                file_name=file_name,
+            model = prepare_for_download(
+                state_dict=current_model,
                 ctx=ctx,
                 timeout=5.0,
-                file_downloaded_cb=self._model_downloaded,
+                num_tensors_per_chunk=2,
             )
             model_type = "ref"
             self.logger.info(f"prepared model as ref: {model}")
@@ -76,13 +76,12 @@ class NPFedAvgStream(Strategy):
             aggr_result=aggr_result,
         ).train(r, model, model_type)
 
-        if file_name:
-            os.remove(file_name)
-
         if aggr_result.count == 0:
             return None
         else:
-            result = aggr_result.total / aggr_result.count
+            result = {}
+            for k, v in aggr_result.total.items():
+                result[k] = torch.div(v, aggr_result.count)
             self.logger.info(f"[{ctx.header_str()}] round {r}: aggr result from {aggr_result.count} clients: {result}")
             return result
 
@@ -91,22 +90,36 @@ class NPFedAvgStream(Strategy):
 
         model, model_type = result
         if model_type == "ref":
-            err, file_path = download_file(ref=model, per_request_timeout=5.0, ctx=context)
+            err, model = download_state_dict(
+                ref=model,
+                per_request_timeout=5.0,
+                ctx=context,
+                tensors_received_cb=self._aggregate_tensors,
+                aggr_result=aggr_result,
+                context=context,
+            )
             if err:
-                raise RuntimeError(f"failed to download model file {model}: {err}")
-            self.logger.info(f"downloaded model file to {file_path}")
-            model = load_np_model(file_path)
-            os.remove(file_path)
+                raise RuntimeError(f"failed to download model {model}: {err}")
+        else:
+            for k, v in model.items():
+                if k not in aggr_result.total:
+                    aggr_result.total[k] = v
+                else:
+                    aggr_result.total[k] += v
 
-        aggr_result.total += model
         aggr_result.count += 1
         return None
 
-    def _model_downloaded(self, ref_id: str, to_site: str, status: str, file_name):
-        self.logger.info(f"model file {file_name} downloaded by {to_site}: {ref_id=} {status=}")
+    def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult, context: Context):
+        self.logger.info(f"[{context.header_str()}] aggregating received tensor: {td}")
+        for k, v in td.items():
+            if k not in aggr_result.total:
+                aggr_result.total[k] = v
+            else:
+                aggr_result.total[k] += v
 
 
-class NPTrainer(ClientApp):
+class PTTrainer(ClientApp):
 
     def __init__(self, delta: float):
         ClientApp.__init__(self)
@@ -119,24 +132,23 @@ class NPTrainer(ClientApp):
             return 0
         self.logger.debug(f"[{context.header_str()}] training round {current_round}: {model_type=} {weights=}")
         if model_type == "ref":
-            err, file_path = download_file(ref=weights, per_request_timeout=5.0, ctx=context)
+            err, model = download_state_dict(ref=weights, per_request_timeout=5.0, ctx=context)
             if err:
-                raise RuntimeError(f"failed to download model file {weights}: {err}")
-            self.logger.info(f"downloaded model file to {file_path}")
-            weights = load_np_model(file_path)
-            self.logger.info(f"loaded model from file: {weights}")
-            os.remove(file_path)
+                raise RuntimeError(f"failed to download model {weights}: {err}")
+            self.logger.info(f"downloaded model {model}")
+            weights = model
 
-        result = weights + self.delta
+        result = {}
+        for k, v in weights.items():
+            result[k] = v + self.delta
+
         if model_type == "ref":
             # stream it
-            file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
-            save_np_model(result, file_name)
-            model = prepare_file_for_download(
-                file_name=file_name,
+            model = prepare_for_download(
+                state_dict=result,
                 ctx=context,
                 timeout=5.0,
-                file_downloaded_cb=self._result_downloaded,
+                num_tensors_per_chunk=2,
             )
             model_type = "ref"
             self.logger.info(f"prepared result as ref: {model}")
@@ -145,6 +157,34 @@ class NPTrainer(ClientApp):
             model_type = "model"
         return model, model_type
 
-    def _result_downloaded(self, ref_id: str, to_site: str, status: str, file_name):
-        self.logger.info(f"file {file_name} downloaded to {to_site}: {ref_id=} {status=}")
-        os.remove(file_name)
+
+def main():
+    simple_logging(logging.DEBUG)
+
+    server_app = ServerApp(
+        strategy_name="fed_avg_in_time",
+        strategy=PTFedAvgStream(
+            initial_model={
+                "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+                "y": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+                "z": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+            },
+            num_rounds=4,
+        ),
+    )
+
+    client_app = PTTrainer(delta=1.0)
+
+    simulator = Simulator(
+        root_dir="/tmp/fox",
+        experiment_name="pt_fedavg_intime",
+        server_app=server_app,
+        client_app=client_app,
+        num_clients=2,
+    )
+
+    simulator.run()
+
+
+if __name__ == "__main__":
+    main()
