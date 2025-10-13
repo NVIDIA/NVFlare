@@ -247,7 +247,14 @@ class HFSFTTaskProcessor(DeviceTaskProcessor):
         # also update the key name sent to global model
         result_dict = {}
         for key, param in trained_model.items():
-            result_dict["model." + key] = param.numpy() - global_model[key].numpy()
+            # Try to find the matching key in global_model
+            if key in global_model:
+                global_param = global_model[key]
+            elif "model." + key in global_model:
+                global_param = global_model["model." + key]
+            else:
+                raise KeyError(f"Key '{key}' or 'model.{key}' not found in global_model")
+            result_dict["model." + key] = param.numpy() - global_param.numpy()
 
         self.logger.info(f"Device {device_id}: Prepared {len(result_dict)} parameters for transmission")
         return result_dict
