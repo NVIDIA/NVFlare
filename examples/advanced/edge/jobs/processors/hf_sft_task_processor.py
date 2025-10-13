@@ -72,6 +72,8 @@ class HFSFTTaskProcessor(DeviceTaskProcessor):
 
         # Device speed type for simulation
         mean_speed = self.device_speed.get("mean")
+        if not mean_speed or not isinstance(mean_speed, (list, tuple)) or len(mean_speed) == 0:
+            raise ValueError("device_speed['mean'] must be a non-empty list or tuple.")
         self.device_speed_type = random.randint(0, len(mean_speed) - 1)
 
         # Training
