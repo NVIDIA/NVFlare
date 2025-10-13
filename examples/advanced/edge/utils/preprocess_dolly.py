@@ -24,8 +24,8 @@ def data_args():
     parser = argparse.ArgumentParser(description="Preprocess data to train and validation files in jsonl format")
     parser.add_argument("--training_file", type=str, required=True, help="Path to training set")
     parser.add_argument("--validation_file", type=str, help="Path to validation set, if given, append to training data")
-    parser.add_argument("--validation_ratio", type=float, default=0.1, help="Ratio of validation set, defult to 10%")
-    parser.add_argument("--testing_ratio", type=float, default=0.1, help="Ratio of testing set, defult to 10%")
+    parser.add_argument("--validation_ratio", type=float, default=0.1, help="Ratio of validation set, default to 10%")
+    parser.add_argument("--testing_ratio", type=float, default=0.1, help="Ratio of testing set, default to 10%")
     parser.add_argument("--output_dir", type=str, required=True, help="Path to output folder")
     args = parser.parse_args()
     return args
