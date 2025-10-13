@@ -1,3 +1,3 @@
-nvflare~=2.7.0
+nvflare~=2.7.0rc
 flamby @ git+https://github.com/owkin/FLamby.git@main
 wget==3.2

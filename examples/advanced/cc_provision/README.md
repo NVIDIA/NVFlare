@@ -24,8 +24,8 @@ role: server
 # All drive sizes are in GB
 root_drive_size: 10
 applog_drive_size: 1
+user_config_drive_size: 1
 user_data_drive_size: 1
-secure_drive_size: 10
 
 # Docker image archive saved using:
 # docker save <image_name> | gzip > app.tar.gz
@@ -38,6 +38,8 @@ cc_issuers:
   - id: snp_authorizer
     path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
     token_expiration: 100 # seconds, needs to be less than check_frequency
+    args:
+      snpguest_binary: "/host/bin/snpguest"
 cc_attestation:
   check_frequency: 120 # seconds
   failure_action: stop_job

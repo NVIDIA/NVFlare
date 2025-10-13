@@ -12,16 +12,8 @@ For the complete installation instructions, see `Installation <https://nvflare.r
 
    pip install nvflare
 
-Install the dependency
 
-.. code-block:: bash
-
-   pip install -r requirements.txt
-
-Code Structure
---------------
-
-First get the example code from github:
+get the example code from github:
 
 .. code-block:: bash
 
@@ -33,6 +25,15 @@ then navigate to the hello-flower directory:
 
    git switch <release branch>
    cd examples/hello-world/hello-flower
+
+Install the dependency
+
+.. code-block:: bash
+
+   pip install -r requirements.txt
+
+Code Structure
+--------------
 
 .. code-block:: bash
 

@@ -1076,9 +1076,7 @@ References
 - Microsoft Secure the Windows boot process. https://learn.microsoft.com/en-us/windows/security/operating-system-security/system-security/secure-the-windows-10-boot-process
 - Microsoft Secure Boot. Note these links to the above article.
   - https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/oem-secure-boot
-- Real-world Linux boot process (https://0pointer.net/blog/brave-new-trusted-boot-world.html)
-- Authenticating each boot stages (https://0pointer.net/blog/authenticated-boot-and-disk-encryption-on-linux.html)
-- https://github.com/virtee/sev-snp-measure
+- SEV-SNP measurement tool: https://github.com/virtee/sev-snp-measure
 
 
 

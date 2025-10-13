@@ -323,7 +323,7 @@ class StatisticsController(Controller):
             client_result = dxo.data
 
             statistics_task = client_result[StC.STATISTICS_TASK_KEY]
-            self.log_info(fl_ctx, f"handle client {client_name} results for statistics task: {statistics_task}")
+            self.log_info(fl_ctx, f"Handle client {client_name} results for statistics task: {statistics_task}")
             statistics = fobs.loads(client_result[statistics_task])
 
             for statistic in statistics:
@@ -348,12 +348,15 @@ class StatisticsController(Controller):
         client_task.result = None
 
     def _validate_min_clients(self, min_clients: int, client_statistics: dict) -> bool:
-        self.logger.info("check if min_client result received for all features")
+        self.logger.info("Check if min_client result received for all features")
 
         resulting_clients = {}
         for statistic in client_statistics:
             clients = client_statistics[statistic].keys()
             if len(clients) < min_clients:
+                self.logger.warning(
+                    f"Only {len(clients)} of {min_clients} statistics received for '{statistic}', aborting the job."
+                )
                 return False
             for client in clients:
                 ds_feature_statistics = client_statistics[statistic][client]
@@ -366,6 +369,9 @@ class StatisticsController(Controller):
 
         for ds in resulting_clients:
             if len(resulting_clients[ds]) < min_clients:
+                self.logger.warning(
+                    f"Only {len(resulting_clients[ds])} of {min_clients} statistics received for '{ds}', aborting the job."
+                )
                 return False
         return True
 
@@ -373,11 +379,11 @@ class StatisticsController(Controller):
 
         ok_to_proceed = self._validate_min_clients(self.min_clients, self.client_statistics)
         if not ok_to_proceed:
-            self.system_panic(f"not all required {self.min_clients} received, abort the job.", fl_ctx)
+            self.system_panic(f"Not all required {self.min_clients} statistics received, aborted the job.", fl_ctx)
         else:
-            self.log_info(fl_ctx, "combine all clients' statistics")
+            self.log_info(fl_ctx, "Combine all clients' statistics")
             ds_stats = self._combine_all_statistics()
-            self.log_info(fl_ctx, "save statistics result to persistence store")
+            self.log_info(fl_ctx, "Save statistics result to persistence store")
             writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
             writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
 

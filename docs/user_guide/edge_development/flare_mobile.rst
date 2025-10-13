@@ -7,19 +7,19 @@ FLARE Mobile Development
 FLARE 2.7 introduces comprehensive mobile development support for both Android and iOS platforms, enabling federated learning directly on edge devices. This guide covers mobile SDK integration, API usage, and best practices for developing FL applications on mobile platforms.
 
 .. note::
-   This guide assumes familiarity with the :ref:`edge development concepts <flare_edge>` and :ref:`hierarchical architecture <flare_hierarchical_architecture>`. For a complete understanding of the edge system, please review the main :ref:`edge development guide <flare_edge>` first.
+   This guide assumes familiarity with the :ref:`edge development concepts <flare_edge>` and :ref:`hierarchical architecture <flare_hierarchical_architecture>`. For a complete understanding of the edge system, review the main :ref:`edge development guide <flare_edge>` first.
 
 Overview
 ========
 
 The FLARE Mobile SDK provides native libraries for Android (Kotlin/Java) and iOS (Swift/Objective-C) that enable:
 
-* **On-device training** using ExecuTorch for mobile-optimized model execution
-* **Federated learning integration** with NVFlare's hierarchical edge system
-* **Real-time communication** with FLARE servers via HTTP/HTTPS
-* **Model management** including loading, training, and updating models
-* **Data handling** with flexible dataset interfaces
-* **Error handling and recovery** for mobile-specific scenarios
+* **On-device training**: Using ExecuTorch for mobile-optimized model execution
+* **Federated learning integration**: With NVIDIA FLARE's hierarchical edge system
+* **Real-time communication**: With FLARE servers via HTTP/HTTPS
+* **Model management**: Including loading, training, and updating models
+* **Data handling**: With flexible dataset interfaces
+* **Error handling and recovery**: For mobile-specific scenarios
 
 .. tip::
    For a quick start with mobile development, see the complete examples in :ref:`edge examples <edge_examples>`.
@@ -46,24 +46,24 @@ iOS
 Architecture
 ============
 
-The Mobile SDK architecture consists of modular components including FlareRunner, Connection, DataSource, ETTrainer, and Dataset. Each component is responsible for a specific aspect of federated learning on mobile devices, such as orchestration, communication, data handling, and model training. Please refer to the component descriptions below for details.
+The Mobile SDK architecture consists of modular components including ``FlareRunner``, ``Connection``, ``DataSource``, ``ETTrainer``, and ``Dataset``. Each component is responsible for a specific aspect of federated learning on mobile devices, such as orchestration, communication, data handling, and model training. Refer to the component descriptions below for details.
 
 Core Components
 ---------------
 
-**FlareRunner** (Android: AndroidFlareRunner, iOS: NVFlareRunner)
+**FlareRunner** (Android: ``AndroidFlareRunner``, iOS: ``NVFlareRunner``)
     Main orchestrator that handles job fetching, task execution, and result reporting.
 
-**Connection** (Android: Connection, iOS: NVFlareConnection)
+**Connection** (Android: ``Connection``, iOS: ``NVFlareConnection``)
     Manages HTTP/HTTPS communication with FLARE servers.
 
-**DataSource** (Android: DataSource, iOS: NVFlareDataSource)
+**DataSource** (Android: ``DataSource``, iOS: ``NVFlareDataSource``)
     Interface for providing training data to the FL system.
 
-**ETTrainer** (Android: ETTrainer, iOS: ETTrainer)
+**ETTrainer** (Android: ``ETTrainer``, iOS: ``ETTrainer``)
     ExecuTorch-based trainer for on-device model training.
 
-**Dataset** (Android: Dataset, iOS: NVFlareDataset)
+**Dataset** (Android: ``Dataset``, iOS: ``NVFlareDataset``)
     Data interface for feeding training examples to the trainer.
 
 Getting Started
@@ -74,11 +74,11 @@ Prerequisites
 
 Before starting mobile development, ensure you have:
 
-1. **NVFlare Server**: A running FLARE server with hierarchical edge configuration (see :ref:`hierarchical architecture <flare_hierarchical_architecture>`)
+1. **NVIDIA FLARE Server**: A running FLARE server with hierarchical edge configuration (see :ref:`hierarchical architecture <flare_hierarchical_architecture>`)
 2. **ExecuTorch**: Mobile-optimized PyTorch runtime (`ExecuTorch documentation <https://pytorch.org/executorch/>`_)
 3. **Development Environment**: 
    * Android Studio (Android) - `Download <https://developer.android.com/studio>`_
-   * Xcode (iOS) - Available from Mac App Store
+   * Xcode (iOS) - Available from the Mac App Store
 4. **Model**: A PyTorch model converted to ExecuTorch format
 5. **Edge Examples**: Working examples in ``examples/advanced/edge/``
 
@@ -119,7 +119,7 @@ Installation
    cp -r nvflare/edge/device/android/sdk \
          app/src/main/java/com/nvidia/nvflare/
 
-3. **Add ExecuTorch Libraries** to ``app/libs/`` directory.
+3. **Add ExecuTorch Libraries** to the ``app/libs/`` directory.
 
 Basic Usage
 -----------
@@ -173,14 +173,14 @@ iOS Setup
 Installation
 ------------
 
-1. **Add ExecuTorch Framework** to your Xcode project
+1. **Add ExecuTorch Framework** to your Xcode project.
 2. **Copy NVFlareSDK** to your project:
 
 .. code-block:: bash
 
    cp -r nvflare/edge/device/ios/NVFlareSDK YourProject/
 
-3. **Add Framework** to your Xcode project target
+3. **Add Framework** to your Xcode project target.
 
 Basic Usage
 -----------
@@ -248,16 +248,16 @@ The main orchestrator for Android federated learning.
 
 **Parameters**
 
-- ``context``: Android application context
-- ``connection``: Connection instance for server communication
-- ``jobName``: Name of the FL job to participate in
-- ``dataSource``: Data source providing training data
-- ``deviceInfo``: Device metadata (device_id, platform, etc.)
-- ``userInfo``: User metadata (user_id, etc.)
-- ``jobTimeout``: Timeout in seconds for job operations
-- ``inFilters``: Optional input filters for data processing
-- ``outFilters``: Optional output filters for result processing
-- ``resolverRegistry``: Optional component resolver registry
+- ``context``: Android application context.
+- ``connection``: Connection instance for server communication.
+- ``jobName``: Name of the FL job to participate in.
+- ``dataSource``: Data source providing training data.
+- ``deviceInfo``: Device metadata (``device_id``, ``platform``, etc.).
+- ``userInfo``: User metadata (``user_id``, etc.).
+- ``jobTimeout``: Timeout in seconds for job operations.
+- ``inFilters``: Optional input filters for data processing.
+- ``outFilters``: Optional output filters for result processing.
+- ``resolverRegistry``: Optional component resolver registry.
 
 **Methods**
 
@@ -296,16 +296,16 @@ The main orchestrator for iOS federated learning.
 
 **Parameters**
 
-- ``jobName``: Name of the FL job to participate in
-- ``dataSource``: Data source providing training data
-- ``deviceInfo``: Device metadata (device_id, platform, etc.)
-- ``userInfo``: User metadata (user_id, etc.)
-- ``jobTimeout``: Timeout in seconds for job operations
-- ``serverURL``: FLARE server URL
-- ``allowSelfSignedCerts``: Allow self-signed certificates
-- ``inFilters``: Optional input filters for data processing
-- ``outFilters``: Optional output filters for result processing
-- ``resolverRegistry``: Optional component resolver registry
+- ``jobName``: Name of the FL job to participate in.
+- ``dataSource``: Data source providing training data.
+- ``deviceInfo``: Device metadata (``device_id``, ``platform``, etc.).
+- ``userInfo``: User metadata (``user_id``, etc.).
+- ``jobTimeout``: Timeout in seconds for job operations.
+- ``serverURL``: FLARE server URL.
+- ``allowSelfSignedCerts``: Allow self-signed certificates.
+- ``inFilters``: Optional input filters for data processing.
+- ``outFilters``: Optional output filters for result processing.
+- ``resolverRegistry``: Optional component resolver registry.
 
 **Methods**
 
@@ -392,10 +392,10 @@ Mobile FL training uses ExecuTorch for optimized model execution. Models must be
 
 **Model Requirements**
 
-- Models must be compatible with ExecuTorch's supported operations
-- Input/output shapes must be fixed at conversion time
-- Custom operations may require ExecuTorch extensions
-- Use the official ExecuTorch export APIs for model conversion
+- Models must be compatible with ExecuTorch's supported operations.
+- Input/output shapes must be fixed at conversion time.
+- Custom operations may require ExecuTorch extensions.
+- Use the official ExecuTorch export APIs for model conversion.
 
 Best Practices
 ==============
@@ -403,26 +403,26 @@ Best Practices
 Performance Optimization
 ------------------------
 
-1. **Model Size**: Keep models lightweight for mobile constraints
-2. **Batch Size**: Use appropriate batch sizes for device memory
-3. **Training Frequency**: Balance training frequency with battery life
-4. **Data Caching**: Cache frequently used data locally
+1. **Model Size**: Keep models lightweight for mobile constraints.
+2. **Batch Size**: Use appropriate batch sizes for device memory.
+3. **Training Frequency**: Balance training frequency with battery life.
+4. **Data Caching**: Cache frequently used data locally.
 
 Error Handling
 --------------
 
-1. **Network Errors**: Implement retry logic for network failures
-2. **Model Errors**: Handle model loading and training errors gracefully
-3. **Data Errors**: Validate data before training
-4. **Timeout Handling**: Implement appropriate timeouts
+1. **Network Errors**: Implement retry logic for network failures.
+2. **Model Errors**: Handle model loading and training errors gracefully.
+3. **Data Errors**: Validate data before training.
+4. **Timeout Handling**: Implement appropriate timeouts.
 
 Security Considerations
 -----------------------
 
-1. **Certificate Validation**: Use proper certificate validation in production
-2. **Data Privacy**: Ensure sensitive data is handled securely
-3. **Model Protection**: Consider model encryption for sensitive applications
-4. **Network Security**: Use HTTPS for all server communication
+1. **Certificate Validation**: Use proper certificate validation in production.
+2. **Data Privacy**: Ensure sensitive data is handled securely.
+3. **Model Protection**: Consider model encryption for sensitive applications.
+4. **Network Security**: Use HTTPS for all server communication.
 
 Troubleshooting
 ===============
@@ -431,28 +431,28 @@ Common Issues
 -------------
 
 **Build Errors**
-* Ensure all dependencies are properly linked
-* Check ExecuTorch library compatibility
-* Verify SDK files are correctly copied
+* Ensure all dependencies are properly linked.
+* Check ExecuTorch library compatibility.
+* Verify SDK files are correctly copied.
 
 **Runtime Errors**
-* Check network connectivity
-* Verify server configuration
-* Review device logs for specific error messages
+* Check network connectivity.
+* Verify server configuration.
+* Review device logs for specific error messages.
 
 **Performance Issues**
-* Monitor memory usage during training
-* Optimize model architecture
-* Adjust batch sizes and training parameters
+* Monitor memory usage during training.
+* Optimize model architecture.
+* Adjust batch sizes and training parameters.
 
 Examples and Tutorials
 ======================
 
-Complete working examples are available in the NVFlare repository:
+Complete working examples are available in the NVIDIA FLARE repository:
 
 * **iOS Example App**: `iOS Example Project <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/edge/device/ios/ExampleProject>`_
 * **Android Example App**: `Android Example Project <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/edge/device/android>`_
-* **How to run NVFlare with Edge**: `Edge Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_ - includes both simulation and real devices
+* **How to Run NVIDIA FLARE with Edge**: `Edge Examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_ - includes both simulation and real devices
 
 .. tip::
    Start with the examples to understand the complete integration flow before building your own application.
@@ -460,9 +460,9 @@ Complete working examples are available in the NVFlare repository:
 Getting Help
 ============
 
-* **Documentation**: Refer to the main :ref:`FLARE documentation <user_guide>`
-* **Examples**: Check the examples in ``examples/advanced/edge/``
-* **Issues**: Report issues on the `NVFlare GitHub repository <https://github.com/NVIDIA/NVFlare>`_
-* **Community**: Join the NVFlare community discussions
-* **ExecuTorch Support**: `ExecuTorch documentation <https://pytorch.org/executorch/>`_ for mobile-specific issues
+* **Documentation**: Refer to the main :ref:`FLARE documentation <user_guide>`.
+* **Examples**: Check the examples in ``examples/advanced/edge/``.
+* **Issues**: Report issues on the `NVIDIA FLARE GitHub repository <https://github.com/NVIDIA/NVFlare>`_.
+* **Community**: Join the NVIDIA FLARE community discussions.
+* **ExecuTorch Support**: `ExecuTorch documentation <https://pytorch.org/executorch/>`_ for mobile-specific issues.
 
