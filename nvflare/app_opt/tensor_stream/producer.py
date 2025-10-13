@@ -29,6 +29,10 @@ def tensors_serializer_generator(
     tensors: dict[str, torch.Tensor], chunk_size: int = 25
 ) -> Generator[Tuple[list[str], bytes], None, None]:
     """Generator that yields chunks of tensors serialized as safetensors blobs.
+
+    Memory optimization: Processes tensors in chunks to avoid loading all serialized
+    data into memory at once.
+
     Args:
         tensors: Dictionary of tensors to be serialized.
         chunk_size: Number of tensors to include in each chunk.
@@ -40,7 +44,10 @@ def tensors_serializer_generator(
     for i in range(0, len(keys), chunk_size):
         chunk_keys = keys[i : i + chunk_size]
         chunk_tensors = {key: tensors[key] for key in chunk_keys}
-        yield chunk_keys, save_tensors(chunk_tensors)
+        serialized_blob = save_tensors(chunk_tensors)
+        # Delete chunk_tensors to free memory before yielding
+        del chunk_tensors
+        yield chunk_keys, serialized_blob
 
 
 class TensorProducer(ObjectProducer):
@@ -70,6 +77,9 @@ class TensorProducer(ObjectProducer):
             raise ValueError("No tensors received. Cannot produce.")
 
         self.tensors_keys = list(tensors.keys())
+        # Pass tensors to generator; they're not stored in this class to minimize memory usage.
+        # The generator will handle serialization and the tensors can be garbage collected
+        # after the generator completes.
         self.serializer = tensors_serializer_generator(tensors)
 
     def produce(
@@ -145,9 +155,11 @@ class TensorProducer(ObjectProducer):
 
         if has_error:
             # done - failed
+            del self.serializer  # free memory
             return False
         elif self.last:
             # done - succeeded
+            del self.serializer  # free memory
             return True
         else:
             # not done yet - continue streaming

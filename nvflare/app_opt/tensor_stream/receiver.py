@@ -141,6 +141,9 @@ class TensorReceiver:
         s["DXO"] = dxo
         fl_ctx.set_prop(self.ctx_prop_key, s, private=True, sticky=False)
 
+        # Explicitly delete local reference to aid garbage collection
+        del tensors
+
         self.logger.info(
             f"Peer '{fl_ctx.get_identity_name()}': updated task data with tensors received from peer '{peer_name}'."
         )

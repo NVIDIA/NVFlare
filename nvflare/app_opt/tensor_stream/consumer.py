@@ -69,6 +69,11 @@ def tensor_deserializer_generator(
             tensors_map[root_key] = {}
         tensors_map[root_key].update(loaded_tensors)
 
+        # Free memory
+        del loaded_tensors
+        del tensors_blob
+        del data
+
 
 class TensorConsumerFactory(ConsumerFactory):
     """Factory for creating TensorConsumer instances.
@@ -162,8 +167,11 @@ class TensorConsumer(ObjectConsumer):
 
         fl_ctx.set_custom_prop(SAFE_TENSORS_PROP_KEY, tensors)
 
-        # Clear tensors after setting them in the context
+        # Clear temporary references to free memory
         self.tensors_map = {}
+        self.total_bytes = {}
+        del self.deserializer
+        del tensors
 
     def _log_received_tensors(self, identity: str, peer_name: str, root_key: str, tensor_keys: list[str]):
         """Log the received tensors for debugging purposes.

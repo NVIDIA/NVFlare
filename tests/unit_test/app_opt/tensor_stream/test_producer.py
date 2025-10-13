@@ -224,9 +224,9 @@ class TestTorchTensorsProducer:
             assert torch.equal(loaded_tensor, original_tensor)
 
     def test_chunking_behavior_with_default_chunk_size(self, mock_stream_context, mock_fl_context):
-        """Test that producer chunks tensors correctly with default chunk size (25)."""
-        # Create 30 tensors to test chunking (should be 2 chunks: 25 + 5)
-        large_tensor_dict = {f"tensor_{i}": torch.randn(2, 2) for i in range(30)}
+        """Test that producer chunks tensors correctly with default chunk size (10)."""
+        # Create 76 tensors to test chunking (should be 4 chunks: 25 + 25 + 25 + 1)
+        large_tensor_dict = {f"tensor_{i}": torch.randn(2, 2) for i in range(76)}
 
         producer = TensorProducer(tensors=large_tensor_dict, entry_timeout=5.0, root_key="model")
 
@@ -237,10 +237,12 @@ class TestTorchTensorsProducer:
                 break
             chunks.append(shareable[TensorBlobKeys.TENSOR_KEYS])
 
-        # Should have 2 chunks: 25 and 5
-        assert len(chunks) == 2
+        # Should have 4 chunks: 25, 25, 25, and 1
+        assert len(chunks) == 4
         assert len(chunks[0]) == 25
-        assert len(chunks[1]) == 5
+        assert len(chunks[1]) == 25
+        assert len(chunks[2]) == 25
+        assert len(chunks[3]) == 1
 
         # Verify all tensors are present
         all_keys = []

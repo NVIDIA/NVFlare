@@ -85,6 +85,8 @@ class TensorSender:
                 msg += f"With root key '{key}'"
             self.logger.info(msg)
             self._send_tensors(targets, producer, fl_ctx)
+            # Explicitly delete tensors after streaming to free memory
+            del tensors
 
         return True
 

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
@@ -112,3 +114,7 @@ class TensorClientStreamer(FLComponent):
         """
         if self.sender.send(fl_ctx, self.entry_timeout):
             clean_task_result(fl_ctx)
+            # Clear sender root_keys after successful send to free memory
+            self.sender.root_keys.clear()
+            self.sender = None
+            gc.collect()

@@ -85,10 +85,26 @@ def get_targets_for_ctx_and_prop_key(fl_ctx: FLContext, ctx_prop_key: str) -> li
 
 
 def to_numpy_recursive(obj: Union[torch.Tensor, dict[str, torch.Tensor]]) -> Union[dict[str, np.ndarray], np.ndarray]:
-    """Recursively convert objects with a `numpy` method to numpy arrays."""
+    """Recursively convert torch tensors to numpy arrays with minimal memory duplication.
+
+    Note: For CPU tensors, .numpy() returns a view sharing memory with the original tensor (zero-copy).
+    For GPU tensors, data must be moved to CPU first, which creates a copy.
+    Only the dictionary structure is duplicated, not the underlying tensor data (for CPU tensors).
+
+    Args:
+        obj: A torch.Tensor or dict containing torch.Tensors (possibly nested)
+
+    Returns:
+        A numpy array or dict containing numpy arrays. Tensor data is shared where possible (CPU tensors).
+    """
     if hasattr(obj, "numpy"):
+        # .numpy() returns a view for CPU tensors (no data copy)
+        # For GPU tensors, must call .cpu() first which creates a copy
+        if obj.is_cuda:
+            return obj.cpu().numpy()
         return obj.numpy()
     elif isinstance(obj, dict):
+        # Create new dict structure but reuse converted tensors (which share memory with originals)
         return {k: to_numpy_recursive(v) for k, v in obj.items()}
     else:
         raise ValueError(f"Unsupported object type: {type(obj)}")
@@ -97,10 +113,28 @@ def to_numpy_recursive(obj: Union[torch.Tensor, dict[str, torch.Tensor]]) -> Uni
 def to_torch_recursive(
     obj: Union[np.ndarray, dict[str, np.ndarray]], device: torch.device = "cpu"
 ) -> Union[dict[str, torch.Tensor], torch.Tensor]:
-    """Recursively convert numpy arrays to torch tensors."""
+    """Recursively convert numpy arrays to torch tensors with minimal memory duplication.
+
+    Note: torch.from_numpy() creates a tensor that shares memory with the numpy array (zero-copy).
+    However, .to(device) creates a copy if device != 'cpu'. Only the dictionary structure
+    is duplicated, not the underlying tensor data (when device='cpu').
+
+    Args:
+        obj: A numpy array or dict containing numpy arrays (possibly nested)
+        device: Target device for tensors. Using 'cpu' avoids data duplication (shares memory with numpy).
+
+    Returns:
+        A torch tensor or dict containing torch tensors. Tensor data is shared where possible (device='cpu').
+    """
     if isinstance(obj, np.ndarray):
-        return torch.from_numpy(obj).to(device)
+        # torch.from_numpy() shares memory with the numpy array (no data copy)
+        tensor = torch.from_numpy(obj)
+        # .to(device) only creates a copy if device != 'cpu'
+        if str(device) != "cpu":
+            tensor = tensor.to(device)
+        return tensor
     elif isinstance(obj, dict):
+        # Create new dict structure but reuse converted tensors (which share memory with originals when device='cpu')
         return {k: to_torch_recursive(v, device) for k, v in obj.items()}
     else:
         raise ValueError(f"Unsupported object type: {type(obj)}")

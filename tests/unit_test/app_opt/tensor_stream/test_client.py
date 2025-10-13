@@ -205,6 +205,7 @@ class TestTensorClientStreamer:
         # Mock sender to return True (successful send)
         mock_sender = Mock(spec=TensorSender)
         mock_sender.send.return_value = True
+        mock_sender.root_keys = []  # Add root_keys attribute that will be cleared
         streamer.sender = mock_sender
 
         # Send tensors
@@ -325,6 +326,7 @@ class TestTensorClientStreamer:
         # Mock sender for successful case (returns True)
         mock_sender = Mock(spec=TensorSender)
         mock_sender.send.return_value = True
+        mock_sender.root_keys = []  # Add root_keys attribute that will be cleared
         streamer.sender = mock_sender
 
         # Call send_tensors_to_server

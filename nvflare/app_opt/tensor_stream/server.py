@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import time
 from threading import Lock
 
@@ -130,6 +131,10 @@ class TensorServerStreamer(FLComponent):
                 self.num_task_skipped = 0
                 self.start_sending_time = None
                 self.data_cleaned = False
+                # Clear sender to release any references to tensors or root_keys
+                if self.sender:
+                    self.sender.root_keys.clear()
+                    self.sender = None
 
     def send_tensors_to_client(self, fl_ctx: FLContext):
         """Send tensors to the client after task data filtering.
@@ -189,3 +194,4 @@ class TensorServerStreamer(FLComponent):
                 )
                 clean_task_data(fl_ctx)
                 self.data_cleaned = True
+                gc.collect()  # force garbage collection to free memory sooner
