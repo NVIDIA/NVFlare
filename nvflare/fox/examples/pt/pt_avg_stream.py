@@ -30,6 +30,8 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 class _AggrResult:
 
+    # Used for aggregation
+
     def __init__(self):
         self.total = {}
         self.count = 0
