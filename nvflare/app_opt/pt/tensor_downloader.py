@@ -56,14 +56,20 @@ class _ChunkProducer(Producer):
 
         start = num_received_tensors
         end = min(num_received_tensors + self.num_tensors_per_chunk, obj.size)
-        tensor_to_send = {}
+        chunks = []
+        total_len = 0
+
+        # NOTE: we call save_tensors for one tensor at a time. This is because save_tensors won't work for
+        # multiple tensors if there are shared memory among them!
         for i in range(start, end):
             next_key = obj.keys[i]
-            tensor_to_send[next_key] = obj.state_dict[next_key]
+            tensor_to_send = {next_key: obj.state_dict[next_key]}
+            chunk = save_tensors(tensor_to_send)
+            chunks.append(chunk)
+            total_len += len(chunk)
 
-        chunk = save_tensors(tensor_to_send)
-        self.logger.debug(f"{num_received_tensors=}; sending {len(chunk)} bytes")
-        return ProduceRC.OK, chunk, {_StateKey.NUM_TENSORS_INCLUDED: len(tensor_to_send)}
+        self.logger.debug(f"{num_received_tensors=}; sending {total_len} bytes")
+        return ProduceRC.OK, chunks, {_StateKey.NUM_TENSORS_INCLUDED: end - start}
 
 
 class _ChunkConsumer(Consumer):
@@ -79,23 +85,26 @@ class _ChunkConsumer(Consumer):
             raise ValueError("tensors_received_cb must be callable")
 
     def consume(self, ref_id, state: dict, data: Any) -> dict:
-        assert isinstance(data, bytes)
-        td = load_tensors(data)
-        if not isinstance(td, dict):
-            raise ValueError("cannot load received bytes to tensors")
+        assert isinstance(data, list)
+        tensors = {}
+        for chunk in data:
+            td = load_tensors(chunk)
+            if not isinstance(td, dict):
+                raise ValueError("cannot load received bytes to tensors")
+            tensors.update(td)
 
         num_tensors_included = state.get(_StateKey.NUM_TENSORS_INCLUDED, 0)
-        if num_tensors_included != len(td):
-            raise ValueError(f"tensor count mismatch: {num_tensors_included=}, received={len(td)}")
+        if num_tensors_included != len(tensors):
+            raise ValueError(f"tensor count mismatch: {num_tensors_included=}, received={len(tensors)}")
 
         if self.tensors_received_cb:
-            result = self.tensors_received_cb(td, **self.cb_kwargs)
+            result = self.tensors_received_cb(tensors, **self.cb_kwargs)
             if isinstance(result, dict):
                 self.result.update(result)
         else:
-            self.result.update(td)
+            self.result.update(tensors)
         self.num_tensors_received += num_tensors_included
-        self.logger.debug(f"received {len(td)} tensor(s)")
+        self.logger.debug(f"received {len(tensors)} tensor(s)")
         return {_StateKey.NUM_RECEIVED_TENSORS: self.num_tensors_received}
 
     def download_failed(self, ref_id, reason: str):
