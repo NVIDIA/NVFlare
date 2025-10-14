@@ -36,7 +36,6 @@ class TensorReceiver:
         ctx_prop_key: FLContextKey,
         format: ExchangeFormat = ExchangeFormat.PYTORCH,
         channel: str = TENSORS_CHANNEL,
-        wait_for_save_tensors_cb_secs: float = 5.0,
     ):
         """Initialize the TensorReceiver.
 
@@ -51,8 +50,7 @@ class TensorReceiver:
         self.ctx_prop_key = ctx_prop_key
         self.format = format
         self.channel = channel
-        self.wait_for_save_tensors_cb_secs = wait_for_save_tensors_cb_secs
-        # key: peer_name, value: tensors received from the peer
+        # key: task_id, value: tensors received from the peer
         self.tensors: dict[str, TensorsMap] = {}
         self.logger = get_obj_logger(self)
         self._register()
@@ -101,33 +99,40 @@ class TensorReceiver:
         fl_ctx.set_custom_prop(TensorCustomKeys.TASK_ID, None)
         del tensors
 
+    def wait_for_tensors(self, fl_ctx: FLContext, timeout: float = 5.0):
+        """Wait for tensors to be received from the peer.
+
+        Args:
+            fl_ctx (FLContext): The FLContext for the current operation.
+            timeout (float): The maximum time to wait for tensors. Default is 30.0 seconds.
+        Raises:
+            TimeoutError: If no tensors are received within the timeout period.
+        """
+        peer_name = fl_ctx.get_peer_context().get_identity_name()
+        task_id = fl_ctx.get_prop(FLContextKey.TASK_ID, None)
+        if not task_id:
+            raise ValueError("No task_id found in FLContext.")
+
+        start_wait = time.time()
+        while task_id not in self.tensors:
+            self.logger.debug(f"Waiting for tensors for task_id '{task_id}'...")
+            time.sleep(0.1)  # wait for tensors to be received
+            if time.time() - start_wait > timeout:
+                raise TimeoutError(f"No tensors received from peer '{peer_name}'. Task ID: '{task_id}'.")
+
     def set_ctx_with_tensors(self, fl_ctx: FLContext):
         """Update the context with the received tensors.
 
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
         """
+        peer_name = fl_ctx.get_peer_context().get_identity_name()
         task_id = fl_ctx.get_prop(FLContextKey.TASK_ID, None)
         if not task_id:
             raise ValueError("No task_id found in FLContext.")
 
-        # there is a race condition where the event is fired before the tensors are set in self.tensors
-        # wait for a short period of time to allow the callback to set the tensors
-        start_wait = time.time()
-        while task_id not in self.tensors:
-            self.logger.debug(f"Waiting for tensors for task_id '{task_id}'...")
-            time.sleep(0.1)  # wait for tensors to be received
-            if time.time() - start_wait > self.wait_for_save_tensors_cb_secs:
-                self.logger.error(f"Timeout waiting for tensors for task_id '{task_id}'.")
-                return  # exit without setting tensors
-
-        peer_name = fl_ctx.get_peer_context().get_identity_name()
-        tensors = self.tensors.pop(task_id, None)
-        if not tensors:
-            msg = f"No tensors found in FLContext for peer '{peer_name}' and task '{task_id}' to be set."
-            self.logger.warning(msg)
-            return
-
+        # get and remove the tensors from the local store
+        tensors = self.tensors.pop(task_id)
         s: Shareable = fl_ctx.get_prop(self.ctx_prop_key)
         if not s:
             msg = f"No shareable found in FLContext for key {self.ctx_prop_key}."

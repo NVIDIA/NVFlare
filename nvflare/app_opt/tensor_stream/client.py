@@ -95,8 +95,11 @@ class TensorClientStreamer(FLComponent):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
         elif event_type == EventType.BEFORE_TASK_DATA_FILTER:
-            self.receiver.set_ctx_with_tensors(fl_ctx)
-            self.receiver.tensors.clear()  # clear previous received tensors
+            try:
+                self.receiver.wait_for_tensors(fl_ctx)
+                self.receiver.set_ctx_with_tensors(fl_ctx)
+            except Exception as e:
+                self.system_panic(str(e), fl_ctx)
         elif event_type == EventType.AFTER_TASK_RESULT_FILTER:
             self.sender = TensorSender(self.engine, FLContextKey.TASK_RESULT, self.format, self.tasks)
             try:

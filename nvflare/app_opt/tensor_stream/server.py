@@ -125,7 +125,11 @@ class TensorServerStreamer(FLComponent):
             self.wait_clients_to_complete(num_clients, fl_ctx)
             self.try_to_clean_task_data(num_clients, fl_ctx)
         elif event_type == EventType.BEFORE_TASK_RESULT_FILTER:
-            self.receiver.set_ctx_with_tensors(fl_ctx)
+            try:
+                self.receiver.wait_for_tensors(fl_ctx)
+                self.receiver.set_ctx_with_tensors(fl_ctx)
+            except Exception as e:
+                self.system_panic(str(e), fl_ctx)
         elif event_type == AppEventType.ROUND_DONE:
             current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
             # Clear received tensors in case they were set back to the FLContext

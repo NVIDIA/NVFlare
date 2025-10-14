@@ -17,7 +17,6 @@ from typing import Union
 import torch
 
 TENSORS_CHANNEL = "tensor_stream"
-SAFE_TENSORS_PROP_KEY = "_safe_tensors_blob_"
 
 TensorsMap = Union[dict[str, torch.Tensor], dict[str, dict[str, torch.Tensor]]]
 

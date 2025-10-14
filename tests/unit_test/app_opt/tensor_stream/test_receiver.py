@@ -22,7 +22,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.tensor_stream.consumer import TensorConsumerFactory
 from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
-from nvflare.app_opt.tensor_stream.types import SAFE_TENSORS_PROP_KEY, TENSORS_CHANNEL, TensorTopics
+from nvflare.app_opt.tensor_stream.types import TENSORS_CHANNEL, TensorCustomKeys, TensorTopics
 from nvflare.client.config import ExchangeFormat
 
 from .conftest import setup_mock_get_prop_with_task_id
@@ -101,7 +101,7 @@ class TestTensorReceiver:
         task_id = "test_task_123"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
         mock_fl_context.set_custom_prop("task_id", task_id)
-        mock_fl_context.set_custom_prop(SAFE_TENSORS_PROP_KEY, random_torch_tensors)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, random_torch_tensors)
 
         # Call the callback with success=True
         receiver._save_tensors_cb(True, mock_fl_context)
@@ -139,7 +139,7 @@ class TestTensorReceiver:
         task_id = "test_task_789"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
         mock_fl_context.set_custom_prop("task_id", task_id)
-        mock_fl_context.set_custom_prop(SAFE_TENSORS_PROP_KEY, None)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, None)
 
         # Call the callback with success=True but no tensors - should raise ValueError
         with pytest.raises(ValueError, match=f"No tensors found from peer '{peer_name}' and task '{task_id}'"):
@@ -159,7 +159,7 @@ class TestTensorReceiver:
         task_id = "test_task_nested"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
         mock_fl_context.set_custom_prop("task_id", task_id)
-        mock_fl_context.set_custom_prop(SAFE_TENSORS_PROP_KEY, sample_nested_tensors)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, sample_nested_tensors)
 
         # Call the callback
         receiver._save_tensors_cb(True, mock_fl_context)
@@ -478,7 +478,7 @@ class TestTensorReceiver:
         # Step 1: Simulate receiving tensors (callback called by streaming engine)
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
         mock_fl_context.set_custom_prop("task_id", task_id)
-        mock_fl_context.set_custom_prop(SAFE_TENSORS_PROP_KEY, random_torch_tensors)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, random_torch_tensors)
 
         receiver._save_tensors_cb(True, mock_fl_context)
 
