@@ -158,9 +158,7 @@ def cc_test_env_with_mock_refresh(cc_test_env) -> Generator[Tuple[CCManager, FLC
         the CC manager, FL context, and TDX authorizer with mocked refresh
     """
     cc_manager, fl_ctx, tdx_authorizer = cc_test_env
-    with patch(
-        "nvflare.app_opt.confidential_computing.cc_manager.CCManager._refresh_tokens"
-    ) as mock_refresh_tokens:
+    with patch("nvflare.app_opt.confidential_computing.cc_manager.CCManager._refresh_tokens") as mock_refresh_tokens:
         yield cc_manager, fl_ctx, tdx_authorizer
 
 
