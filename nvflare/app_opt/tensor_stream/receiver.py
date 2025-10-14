@@ -21,7 +21,7 @@ from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .consumer import TensorConsumerFactory
-from .types import SAFE_TENSORS_PROP_KEY, TENSORS_CHANNEL, TensorsMap
+from .types import TENSORS_CHANNEL, TensorCustomKeys, TensorsMap
 from .utils import get_topic_for_ctx_prop_key, to_numpy_recursive
 
 
@@ -75,22 +75,22 @@ class TensorReceiver:
             fl_ctx (FLContext): the FLContext for the current operation
         """
         peer_name = fl_ctx.get_peer_context().get_identity_name()
+        task_id = fl_ctx.get_custom_prop(TensorCustomKeys.TASK_ID)
+        if not task_id:
+            raise ValueError(f"No task_id found from peer {peer_name}.")
+
         if not success:
-            self.logger.error(f"Failed to receive tensors from peer {peer_name}.")
-            return
+            raise ValueError(f"Failed to receive tensors from peer '{peer_name}' and task '{task_id}'.")
 
-        tensors = fl_ctx.get_custom_prop(SAFE_TENSORS_PROP_KEY)
+        tensors = fl_ctx.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
         if not tensors:
-            self.logger.error(f"No tensors found from peer {peer_name}.")
-            return
+            raise ValueError(f"No tensors found from peer '{peer_name}' and task '{task_id}'.")
 
-        # add or update (when multiple root keys are present) the tensors received from the peer
-        if peer_name not in self.tensors:
-            self.tensors[peer_name] = tensors
+        # add or update (when multiple root keys are present) the tensors received from the same task_id
+        if task_id not in self.tensors:
+            self.tensors[task_id] = tensors
         else:
-            self.tensors[peer_name].update(tensors)
-
-        self.logger.debug(f"Storing tensors received from peer {peer_name}.")
+            self.tensors[task_id].update(tensors)
 
     def set_ctx_with_tensors(self, fl_ctx: FLContext):
         """Update the context with the received tensors.
@@ -98,10 +98,14 @@ class TensorReceiver:
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
         """
+        task_id = fl_ctx.get_prop(FLContextKey.TASK_ID, None)
+        if not task_id:
+            raise ValueError("No task_id found in FLContext.")
+
         peer_name = fl_ctx.get_peer_context().get_identity_name()
-        tensors = self.tensors.pop(peer_name, None)
+        tensors = self.tensors.pop(task_id, None)
         if not tensors:
-            msg = f"No tensors found in FLContext for peer {peer_name} to be set."
+            msg = f"No tensors found in FLContext for peer '{peer_name}' and task '{task_id}' to be set."
             self.logger.warning(msg)
             return
 
@@ -125,7 +129,7 @@ class TensorReceiver:
         if len(dxo["data"]) == 0 and not tensors:
             self.logger.error(
                 f"Peer '{fl_ctx.get_identity_name()}':received task with empty data, no tensors "
-                f"are present for '{peer_name}'.",
+                f"are present for '{peer_name}'. Task ID: '{task_id}'.",
             )
             raise RuntimeError(msg)
 
@@ -145,5 +149,6 @@ class TensorReceiver:
         del tensors
 
         self.logger.info(
-            f"Peer '{fl_ctx.get_identity_name()}': updated task data with tensors received from peer '{peer_name}'."
+            f"Peer '{fl_ctx.get_identity_name()}': updated task data with tensors received from peer "
+            f"'{peer_name}'. Task ID: '{task_id}'."
         )

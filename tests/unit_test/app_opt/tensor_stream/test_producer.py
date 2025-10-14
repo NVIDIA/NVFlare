@@ -35,8 +35,9 @@ class TestTorchTensorsProducer:
         """Test initialization with various tensor configurations."""
         entry_timeout = 5.0
         root_key = "model"
+        task_id = "test_task_123"
 
-        producer = TensorProducer(tensors=tensors, entry_timeout=entry_timeout, root_key=root_key)
+        producer = TensorProducer(tensors=tensors, task_id=task_id, entry_timeout=entry_timeout, root_key=root_key)
 
         assert producer.entry_timeout == entry_timeout
         assert producer.root_key == root_key
@@ -50,13 +51,14 @@ class TestTorchTensorsProducer:
     def test_init_with_none_tensors(self):
         """Test initialization with None tensors raises ValueError."""
         with pytest.raises(ValueError, match="No tensors received"):
-            TensorProducer(tensors=None, entry_timeout=5.0, root_key="model")
+            TensorProducer(tensors=None, task_id="test_task_123", entry_timeout=5.0, root_key="model")
 
     def test_produce_single_tensor(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test producing a single tensor."""
         # Use only one tensor for this test
         single_tensor = {"test_tensor": random_torch_tensors["layer1.weight"]}
-        producer = TensorProducer(tensors=single_tensor.copy(), entry_timeout=5.0, root_key="model")
+        task_id = "test_task_123"
+        producer = TensorProducer(tensors=single_tensor.copy(), task_id=task_id, entry_timeout=5.0, root_key="model")
 
         shareable, timeout = producer.produce(mock_stream_context, mock_fl_context)
 
@@ -86,7 +88,10 @@ class TestTorchTensorsProducer:
 
     def test_produce_multiple_tensors(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test producing multiple tensors sequentially."""
-        producer = TensorProducer(tensors=random_torch_tensors.copy(), entry_timeout=3.0, root_key="model")
+        task_id = "test_task_123"
+        producer = TensorProducer(
+            tensors=random_torch_tensors.copy(), task_id=task_id, entry_timeout=3.0, root_key="model"
+        )
         original_tensor_count = len(random_torch_tensors)
 
         produced_keys = []
@@ -122,12 +127,13 @@ class TestTorchTensorsProducer:
 
     def test_produce_with_none_tensors(self, mock_stream_context, mock_fl_context):
         """Test that initializing producer with None tensors raises ValueError."""
-        with pytest.raises(ValueError, match="No tensors received"):
-            TensorProducer(tensors=None, entry_timeout=5.0, root_key="model")
+        with pytest.raises(ValueError, match="No tensors received for serialization."):
+            TensorProducer(tensors=None, task_id="test_task_123", entry_timeout=5.0, root_key="model")
 
     def test_process_replies_success(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test processing successful replies."""
-        producer = TensorProducer(tensors=random_torch_tensors, entry_timeout=5.0, root_key="model")
+        task_id = "test_task_123"
+        producer = TensorProducer(tensors=random_torch_tensors, task_id=task_id, entry_timeout=5.0, root_key="model")
 
         # Mock successful replies
         replies = {"peer1": Shareable(), "peer2": Shareable()}
@@ -144,7 +150,8 @@ class TestTorchTensorsProducer:
 
     def test_process_replies_with_errors(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test processing replies with errors."""
-        producer = TensorProducer(tensors=random_torch_tensors, entry_timeout=5.0, root_key="model")
+        task_id = "test_task_123"
+        producer = TensorProducer(tensors=random_torch_tensors, task_id=task_id, entry_timeout=5.0, root_key="model")
 
         # Mock replies with errors
         error_reply = Shareable()
@@ -160,7 +167,10 @@ class TestTorchTensorsProducer:
 
     def test_tensor_sizes_and_bytes_tracking(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test that tensor sizes are properly tracked."""
-        producer = TensorProducer(tensors=random_torch_tensors.copy(), entry_timeout=5.0, root_key="model")
+        task_id = "test_task_123"
+        producer = TensorProducer(
+            tensors=random_torch_tensors.copy(), task_id=task_id, entry_timeout=5.0, root_key="model"
+        )
 
         initial_total_bytes = producer.total_bytes
         assert initial_total_bytes == 0
@@ -177,8 +187,9 @@ class TestTorchTensorsProducer:
         """Test that tensors are produced in the order of their keys."""
         # Create tensors with specific ordering
         ordered_tensors = {"a_first": torch.randn(2, 2), "b_second": torch.randn(3, 3), "c_third": torch.randn(4, 4)}
+        task_id = "test_task_123"
 
-        producer = TensorProducer(tensors=ordered_tensors, entry_timeout=5.0, root_key="model")
+        producer = TensorProducer(tensors=ordered_tensors, task_id=task_id, entry_timeout=5.0, root_key="model")
 
         expected_order = ["a_first", "b_second", "c_third"]
         produced_keys = []
@@ -201,8 +212,11 @@ class TestTorchTensorsProducer:
             "int64_tensor": torch.randint(0, 100, (2, 2), dtype=torch.int64),
             "bool_tensor": torch.randint(0, 2, (2, 2), dtype=torch.bool),
         }
+        task_id = "test_task_123"
 
-        producer = TensorProducer(tensors=mixed_dtype_tensors.copy(), entry_timeout=5.0, root_key="model")
+        producer = TensorProducer(
+            tensors=mixed_dtype_tensors.copy(), task_id=task_id, entry_timeout=5.0, root_key="model"
+        )
 
         # Collect all produced tensors
         all_loaded_tensors = {}
@@ -227,8 +241,9 @@ class TestTorchTensorsProducer:
         """Test that producer chunks tensors correctly with default chunk size (10)."""
         # Create 76 tensors to test chunking (should be 4 chunks: 10 + 10 + 10 + 1)
         large_tensor_dict = {f"tensor_{i}": torch.randn(2, 2) for i in range(31)}
+        task_id = "test_task_123"
 
-        producer = TensorProducer(tensors=large_tensor_dict, entry_timeout=5.0, root_key="model")
+        producer = TensorProducer(tensors=large_tensor_dict, task_id=task_id, entry_timeout=5.0, root_key="model")
 
         chunks = []
         while True:
@@ -252,7 +267,8 @@ class TestTorchTensorsProducer:
 
     def test_empty_tensors_dict(self, mock_stream_context, mock_fl_context):
         """Test producing from an empty tensors dictionary."""
-        producer = TensorProducer(tensors={}, entry_timeout=5.0, root_key="model")
+        task_id = "test_task_123"
+        producer = TensorProducer(tensors={}, task_id=task_id, entry_timeout=5.0, root_key="model")
 
         shareable, timeout = producer.produce(mock_stream_context, mock_fl_context)
 
@@ -262,7 +278,8 @@ class TestTorchTensorsProducer:
 
     def test_log_completion_called(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test that log_completion is called when production is complete."""
-        producer = TensorProducer(tensors=random_torch_tensors, entry_timeout=5.0, root_key="model")
+        task_id = "test_task_123"
+        producer = TensorProducer(tensors=random_torch_tensors, task_id=task_id, entry_timeout=5.0, root_key="model")
 
         # Produce all tensors
         while True:
@@ -280,8 +297,9 @@ class TestTorchTensorsProducer:
             "tensor2": torch.randn(20, 20),
             "tensor3": torch.randn(5, 5),
         }
+        task_id = "test_task_123"
 
-        producer = TensorProducer(tensors=tensors, entry_timeout=5.0, root_key="model")
+        producer = TensorProducer(tensors=tensors, task_id=task_id, entry_timeout=5.0, root_key="model")
 
         total_bytes = 0
         while True:

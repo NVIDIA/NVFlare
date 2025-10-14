@@ -25,6 +25,8 @@ from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
 from nvflare.app_opt.tensor_stream.types import SAFE_TENSORS_PROP_KEY, TENSORS_CHANNEL, TensorTopics
 from nvflare.client.config import ExchangeFormat
 
+from .conftest import setup_mock_get_prop_with_task_id
+
 
 class TestTensorReceiver:
     """Test cases for TensorReceiver class."""
@@ -96,15 +98,17 @@ class TestTensorReceiver:
 
         # Setup FL context with received tensors
         peer_name = "test_peer"
+        task_id = "test_task_123"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop("task_id", task_id)
         mock_fl_context.set_custom_prop(SAFE_TENSORS_PROP_KEY, random_torch_tensors)
 
         # Call the callback with success=True
         receiver._save_tensors_cb(True, mock_fl_context)
 
-        # Verify tensors were stored
-        assert peer_name in receiver.tensors
-        assert receiver.tensors[peer_name] == random_torch_tensors
+        # Verify tensors were stored using task_id as the key
+        assert task_id in receiver.tensors
+        assert receiver.tensors[task_id] == random_torch_tensors
 
     def test_save_tensors_cb_failure(self, mock_streamable_engine, mock_fl_context):
         """Test _save_tensors_cb with failed tensor reception."""
@@ -113,13 +117,16 @@ class TestTensorReceiver:
         )
 
         peer_name = "test_client"
+        task_id = "test_task_456"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop("task_id", task_id)
 
-        # Call the callback with success=False
-        receiver._save_tensors_cb(False, mock_fl_context)
+        # Call the callback with success=False - should raise ValueError
+        with pytest.raises(ValueError, match=f"Failed to receive tensors from peer '{peer_name}' and task '{task_id}'"):
+            receiver._save_tensors_cb(False, mock_fl_context)
 
         # Verify no tensors were stored
-        assert peer_name not in receiver.tensors
+        assert task_id not in receiver.tensors
         assert len(receiver.tensors) == 0
 
     def test_save_tensors_cb_no_tensors(self, mock_streamable_engine, mock_fl_context):
@@ -129,14 +136,17 @@ class TestTensorReceiver:
         )
 
         peer_name = "test_client"
+        task_id = "test_task_789"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop("task_id", task_id)
         mock_fl_context.set_custom_prop(SAFE_TENSORS_PROP_KEY, None)
 
-        # Call the callback with success=True but no tensors
-        receiver._save_tensors_cb(True, mock_fl_context)
+        # Call the callback with success=True but no tensors - should raise ValueError
+        with pytest.raises(ValueError, match=f"No tensors found from peer '{peer_name}' and task '{task_id}'"):
+            receiver._save_tensors_cb(True, mock_fl_context)
 
         # Verify no tensors were stored
-        assert peer_name not in receiver.tensors
+        assert task_id not in receiver.tensors
         assert len(receiver.tensors) == 0
 
     def test_save_tensors_cb_nested_tensors(self, mock_streamable_engine, mock_fl_context, sample_nested_tensors):
@@ -146,17 +156,19 @@ class TestTensorReceiver:
         )
 
         peer_name = "test_client"
+        task_id = "test_task_nested"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop("task_id", task_id)
         mock_fl_context.set_custom_prop(SAFE_TENSORS_PROP_KEY, sample_nested_tensors)
 
         # Call the callback
         receiver._save_tensors_cb(True, mock_fl_context)
 
-        # Verify nested tensors were stored correctly
-        assert peer_name in receiver.tensors
-        assert receiver.tensors[peer_name] == sample_nested_tensors
-        assert "encoder" in receiver.tensors[peer_name]
-        assert "decoder" in receiver.tensors[peer_name]
+        # Verify nested tensors were stored correctly using task_id as the key
+        assert task_id in receiver.tensors
+        assert receiver.tensors[task_id] == sample_nested_tensors
+        assert "encoder" in receiver.tensors[task_id]
+        assert "decoder" in receiver.tensors[task_id]
 
     def test_set_ctx_with_tensors_torch_format(
         self, mock_streamable_engine, mock_fl_context, sample_shareable_with_dxo, random_torch_tensors
@@ -166,13 +178,16 @@ class TestTensorReceiver:
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
         )
 
-        # Setup: store tensors from peer
+        # Setup: store tensors using task_id as the key
         peer_name = "test_client"
-        receiver.tensors[peer_name] = random_torch_tensors
+        task_id = "test_task_torch"
+        receiver.tensors[task_id] = random_torch_tensors
 
         # Setup FL context
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
         mock_fl_context.get_prop.return_value = sample_shareable_with_dxo
+        # Mock get_prop for FLContextKey.TASK_ID specifically
+        setup_mock_get_prop_with_task_id(mock_fl_context, task_id, sample_shareable_with_dxo)
 
         # Call set_ctx_with_tensors
         receiver.set_ctx_with_tensors(mock_fl_context)
@@ -195,7 +210,7 @@ class TestTensorReceiver:
             assert isinstance(dxo_data[name], torch.Tensor)
 
         # Verify tensors were removed from receiver after use
-        assert peer_name not in receiver.tensors
+        assert task_id not in receiver.tensors
 
     def test_set_ctx_with_tensors_numpy_format(
         self, mock_streamable_engine, mock_fl_context, sample_shareable_with_dxo, random_torch_tensors
@@ -207,13 +222,15 @@ class TestTensorReceiver:
             format=ExchangeFormat.NUMPY,  # Different format
         )
 
-        # Setup: store tensors from peer
+        # Setup: store tensors using task_id as the key
         peer_name = "test_client"
-        receiver.tensors[peer_name] = random_torch_tensors
+        task_id = "test_task_numpy"
+        receiver.tensors[task_id] = random_torch_tensors
 
         # Setup FL context
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
-        mock_fl_context.get_prop.return_value = sample_shareable_with_dxo
+        # Mock get_prop for FLContextKey.TASK_ID specifically
+        setup_mock_get_prop_with_task_id(mock_fl_context, task_id, sample_shareable_with_dxo)
 
         # Call set_ctx_with_tensors
         receiver.set_ctx_with_tensors(mock_fl_context)
@@ -242,13 +259,15 @@ class TestTensorReceiver:
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_RESULT, format=ExchangeFormat.PYTORCH
         )
 
-        # Setup: store tensors from peer
+        # Setup: store tensors using task_id as the key
         peer_name = "test_client"
-        receiver.tensors[peer_name] = random_torch_tensors
+        task_id = "test_task_weight_diff"
+        receiver.tensors[task_id] = random_torch_tensors
 
         # Setup FL context
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
-        mock_fl_context.get_prop.return_value = sample_shareable_with_weight_diff_dxo
+        # Mock get_prop for FLContextKey.TASK_ID specifically
+        setup_mock_get_prop_with_task_id(mock_fl_context, task_id, sample_shareable_with_weight_diff_dxo)
 
         # Call set_ctx_with_tensors
         receiver.set_ctx_with_tensors(mock_fl_context)
@@ -272,13 +291,15 @@ class TestTensorReceiver:
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
         )
 
-        # Setup: store nested tensors from peer
+        # Setup: store nested tensors using task_id as the key
         peer_name = "test_client"
-        receiver.tensors[peer_name] = sample_nested_tensors
+        task_id = "test_task_nested_set"
+        receiver.tensors[task_id] = sample_nested_tensors
 
         # Setup FL context
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
-        mock_fl_context.get_prop.return_value = sample_shareable_with_dxo
+        # Mock get_prop for FLContextKey.TASK_ID specifically
+        setup_mock_get_prop_with_task_id(mock_fl_context, task_id, sample_shareable_with_dxo)
 
         # Call set_ctx_with_tensors
         receiver.set_ctx_with_tensors(mock_fl_context)
@@ -300,15 +321,17 @@ class TestTensorReceiver:
     def test_set_ctx_with_tensors_no_tensors_for_peer(
         self, mock_streamable_engine, mock_fl_context, sample_shareable_with_dxo
     ):
-        """Test set_ctx_with_tensors when no tensors are stored for peer."""
+        """Test set_ctx_with_tensors when no tensors are stored for task_id."""
         receiver = TensorReceiver(
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
         )
 
-        # Setup FL context without storing any tensors
+        # Setup FL context without storing any tensors for this task_id
         peer_name = "test_client"
+        task_id = "test_task_no_tensors"
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
-        mock_fl_context.get_prop.return_value = sample_shareable_with_dxo
+        # Mock get_prop to return task_id
+        mock_fl_context.get_prop.return_value = task_id
 
         # Should log warning and return early (not raise an exception)
         receiver.set_ctx_with_tensors(mock_fl_context)
@@ -316,8 +339,9 @@ class TestTensorReceiver:
         # Verify that set_prop was not called since the method returned early
         mock_fl_context.set_prop.assert_not_called()
 
-        # Verify that get_prop was not called since the method returned early before accessing shareable
-        mock_fl_context.get_prop.assert_not_called()
+        # Verify that get_prop was called only once for TASK_ID (not for shareable)
+        assert mock_fl_context.get_prop.call_count == 1
+        mock_fl_context.get_prop.assert_called_once_with(FLContextKey.TASK_ID, None)
 
     def test_set_ctx_with_tensors_no_shareable(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
         """Test set_ctx_with_tensors when no shareable is found in context."""
@@ -327,10 +351,12 @@ class TestTensorReceiver:
 
         # Setup: store tensors but no shareable in context
         peer_name = "test_client"
-        receiver.tensors[peer_name] = random_torch_tensors
+        task_id = "test_task_no_shareable"
+        receiver.tensors[task_id] = random_torch_tensors
 
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
-        mock_fl_context.get_prop.return_value = None  # No shareable
+        # Mock get_prop to return task_id first, then None for shareable
+        setup_mock_get_prop_with_task_id(mock_fl_context, task_id, None)
 
         # Should raise RuntimeError
         with pytest.raises(RuntimeError, match="No shareable found in FLContext"):
@@ -344,11 +370,13 @@ class TestTensorReceiver:
 
         # Setup: store tensors and empty shareable
         peer_name = "test_client"
-        receiver.tensors[peer_name] = random_torch_tensors
+        task_id = "test_task_no_dxo"
+        receiver.tensors[task_id] = random_torch_tensors
 
         empty_shareable = Shareable()  # No DXO key
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
-        mock_fl_context.get_prop.return_value = empty_shareable
+        # Mock get_prop to return task_id first, then empty shareable
+        setup_mock_get_prop_with_task_id(mock_fl_context, task_id, empty_shareable)
 
         # Should raise RuntimeError
         with pytest.raises(RuntimeError, match="No DXO found in shareable"):
@@ -364,39 +392,43 @@ class TestTensorReceiver:
 
         # Setup: store tensors and shareable with invalid data kind
         peer_name = "test_client"
-        receiver.tensors[peer_name] = random_torch_tensors
+        task_id = "test_task_invalid_kind"
+        receiver.tensors[task_id] = random_torch_tensors
 
         invalid_shareable = Shareable()
         invalid_shareable["DXO"] = {"kind": DataKind.METRICS, "data": {}}  # Invalid data kind
 
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
-        mock_fl_context.get_prop.return_value = invalid_shareable
+        # Mock get_prop to return task_id first, then invalid shareable
+        setup_mock_get_prop_with_task_id(mock_fl_context, task_id, invalid_shareable)
 
         # Should raise RuntimeError
         with pytest.raises(RuntimeError, match="Task data kind is not WEIGHTS or WEIGHT_DIFF"):
             receiver.set_ctx_with_tensors(mock_fl_context)
 
     def test_multiple_peers_tensors(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
-        """Test handling tensors from multiple peers."""
+        """Test handling tensors from multiple tasks."""
         receiver = TensorReceiver(
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
         )
 
-        # Simulate receiving tensors from multiple peers
-        peer1_tensors = {k: v for k, v in list(random_torch_tensors.items())[:5]}
-        peer2_tensors = {k: v for k, v in list(random_torch_tensors.items())[5:]}
+        # Simulate receiving tensors from multiple tasks
+        task_id_1 = "test_task_multi_1"
+        task_id_2 = "test_task_multi_2"
+        task_1_tensors = {k: v for k, v in list(random_torch_tensors.items())[:5]}
+        task_2_tensors = {k: v for k, v in list(random_torch_tensors.items())[5:]}
 
-        # Store tensors for both peers
-        receiver.tensors["client1"] = peer1_tensors
-        receiver.tensors["client2"] = peer2_tensors
+        # Store tensors for both tasks
+        receiver.tensors[task_id_1] = task_1_tensors
+        receiver.tensors[task_id_2] = task_2_tensors
 
         assert len(receiver.tensors) == 2
-        assert "client1" in receiver.tensors
-        assert "client2" in receiver.tensors
+        assert task_id_1 in receiver.tensors
+        assert task_id_2 in receiver.tensors
 
-        # Verify each peer's tensors are stored correctly
-        assert receiver.tensors["client1"] == peer1_tensors
-        assert receiver.tensors["client2"] == peer2_tensors
+        # Verify each task's tensors are stored correctly
+        assert receiver.tensors[task_id_1] == task_1_tensors
+        assert receiver.tensors[task_id_2] == task_2_tensors
 
     def test_tensor_cleanup_after_use(
         self, mock_streamable_engine, mock_fl_context, sample_shareable_with_dxo, random_torch_tensors
@@ -406,19 +438,23 @@ class TestTensorReceiver:
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
         )
 
-        # Setup: store tensors for multiple peers
-        receiver.tensors["client1"] = random_torch_tensors
-        receiver.tensors["client2"] = {k: v * 2 for k, v in random_torch_tensors.items()}
+        # Setup: store tensors for multiple tasks
+        task_id_1 = "test_task_cleanup_1"
+        task_id_2 = "test_task_cleanup_2"
+        receiver.tensors[task_id_1] = random_torch_tensors
+        receiver.tensors[task_id_2] = {k: v * 2 for k, v in random_torch_tensors.items()}
 
-        # Use tensors from client1
-        mock_fl_context.get_peer_context().get_identity_name.return_value = "client1"
-        mock_fl_context.get_prop.return_value = sample_shareable_with_dxo
+        # Use tensors from task_id_1
+        peer_name = "test_client"
+        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        # Mock get_prop for FLContextKey.TASK_ID specifically
+        setup_mock_get_prop_with_task_id(mock_fl_context, task_id_1, sample_shareable_with_dxo)
 
         receiver.set_ctx_with_tensors(mock_fl_context)
 
-        # Verify client1 tensors were removed but client2 tensors remain
-        assert "client1" not in receiver.tensors
-        assert "client2" in receiver.tensors
+        # Verify task_id_1 tensors were removed but task_id_2 tensors remain
+        assert task_id_1 not in receiver.tensors
+        assert task_id_2 in receiver.tensors
         assert len(receiver.tensors) == 1
 
     @patch("nvflare.app_opt.tensor_stream.receiver.get_topic_for_ctx_prop_key")
@@ -434,19 +470,22 @@ class TestTensorReceiver:
         )
 
         peer_name = "integration_client"
+        task_id = "test_task_integration"
 
         # Step 1: Simulate receiving tensors (callback called by streaming engine)
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop("task_id", task_id)
         mock_fl_context.set_custom_prop(SAFE_TENSORS_PROP_KEY, random_torch_tensors)
 
         receiver._save_tensors_cb(True, mock_fl_context)
 
-        # Verify tensors were stored
-        assert peer_name in receiver.tensors
-        assert receiver.tensors[peer_name] == random_torch_tensors
+        # Verify tensors were stored using task_id as key
+        assert task_id in receiver.tensors
+        assert receiver.tensors[task_id] == random_torch_tensors
 
         # Step 2: Set context with received tensors
-        mock_fl_context.get_prop.return_value = sample_shareable_with_dxo
+        # Mock get_prop to return task_id first, then shareable
+        setup_mock_get_prop_with_task_id(mock_fl_context, task_id, sample_shareable_with_dxo)
 
         receiver.set_ctx_with_tensors(mock_fl_context)
 
@@ -462,4 +501,4 @@ class TestTensorReceiver:
             assert torch.allclose(dxo_data[name], original_tensor)
 
         # Verify cleanup
-        assert peer_name not in receiver.tensors
+        assert task_id not in receiver.tensors

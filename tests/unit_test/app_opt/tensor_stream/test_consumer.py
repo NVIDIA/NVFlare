@@ -21,15 +21,18 @@ from safetensors.torch import save as save_tensors
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.app_opt.tensor_stream.consumer import TensorConsumer, TensorConsumerFactory
 from nvflare.app_opt.tensor_stream.producer import TensorProducer
-from nvflare.app_opt.tensor_stream.types import SAFE_TENSORS_PROP_KEY, TensorBlobKeys
+from nvflare.app_opt.tensor_stream.types import TensorBlobKeys, TensorCustomKeys
 
 
-def create_shareables_from_tensors(tensors: Dict[str, torch.Tensor], root_key: str = "") -> List[Shareable]:
+def create_shareables_from_tensors(
+    tensors: Dict[str, torch.Tensor], root_key: str = "", task_id: str = "test_task_123"
+) -> List[Shareable]:
     """Helper function to create shareables from tensors using the producer logic.
 
     Args:
         tensors: Dictionary of tensors to convert to shareables
         root_key: Root key for the tensors
+        task_id: Task ID for the tensors
 
     Returns:
         List of Shareable objects that would be produced by TorchTensorsProducer
@@ -43,6 +46,7 @@ def create_shareables_from_tensors(tensors: Dict[str, torch.Tensor], root_key: s
         shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors(single_tensor)
         shareable[TensorBlobKeys.TENSOR_KEYS] = [tensor_name]
         shareable[TensorBlobKeys.ROOT_KEY] = root_key
+        shareable[TensorBlobKeys.TASK_ID] = task_id
 
         shareables.append(shareable)
 
@@ -79,12 +83,14 @@ class TestTorchTensorsConsumer:
         test_tensor = torch.randn(3, 4)
         tensor_name = "test_tensor"
         root_key = "model"
+        task_id = "test_task_123"
 
         # Create shareable
         shareable = Shareable()
         shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({tensor_name: test_tensor})
         shareable[TensorBlobKeys.TENSOR_KEYS] = [tensor_name]
         shareable[TensorBlobKeys.ROOT_KEY] = root_key
+        shareable[TensorBlobKeys.TASK_ID] = task_id
 
         # Consume the shareable
         success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
@@ -177,9 +183,11 @@ class TestTorchTensorsConsumer:
         """Test that missing ROOT_KEY defaults to empty string."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
         test_tensor = torch.randn(2, 2)
+        task_id = "test_task_123"
         shareable = Shareable()
         shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
         shareable[TensorBlobKeys.TENSOR_KEYS] = ["test"]
+        shareable[TensorBlobKeys.TASK_ID] = task_id
         # Note: ROOT_KEY is missing
 
         success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
@@ -205,7 +213,7 @@ class TestTorchTensorsConsumer:
         consumer.finalize(mock_stream_context, mock_fl_context)
 
         # Verify that tensors are stored directly in the context (not nested under root key)
-        stored_tensors = mock_fl_context.get_custom_prop(SAFE_TENSORS_PROP_KEY)
+        stored_tensors = mock_fl_context.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
         assert isinstance(stored_tensors, dict)
         assert len(stored_tensors) == len(random_torch_tensors)
 
@@ -236,7 +244,7 @@ class TestTorchTensorsConsumer:
         consumer.finalize(mock_stream_context, mock_fl_context)
 
         # Verify nested structure is preserved
-        stored_tensors = mock_fl_context.get_custom_prop(SAFE_TENSORS_PROP_KEY)
+        stored_tensors = mock_fl_context.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
         assert isinstance(stored_tensors, dict)
         assert set(stored_tensors.keys()) == {"encoder", "decoder"}
 
@@ -254,7 +262,8 @@ class TestTorchTensorsConsumer:
         # Create producer
         original_tensors = random_torch_tensors.copy()
         root_key = "model_weights"
-        producer = TensorProducer(tensors=original_tensors, entry_timeout=5.0, root_key=root_key)
+        task_id = "test_task_123"
+        producer = TensorProducer(tensors=original_tensors, task_id=task_id, entry_timeout=5.0, root_key=root_key)
 
         # Create consumer
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
@@ -278,7 +287,7 @@ class TestTorchTensorsConsumer:
         assert len(shareables_created) > 0
 
         # Verify reconstructed tensors match original
-        stored_tensors = mock_fl_context.get_custom_prop(SAFE_TENSORS_PROP_KEY)
+        stored_tensors = mock_fl_context.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
         assert root_key in stored_tensors
         reconstructed_tensors = stored_tensors[root_key]
 
@@ -334,7 +343,7 @@ class TestTorchTensorsConsumer:
 
         # Finalize and verify dtypes are preserved
         consumer.finalize(mock_stream_context, mock_fl_context)
-        stored_tensors = mock_fl_context.get_custom_prop(SAFE_TENSORS_PROP_KEY)
+        stored_tensors = mock_fl_context.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
 
         for tensor_name, original_tensor in mixed_dtype_tensors.items():
             reconstructed_tensor = stored_tensors[root_key][tensor_name]
@@ -362,17 +371,19 @@ class TestTorchTensorsConsumer:
 
         # Finalize and verify
         consumer.finalize(mock_stream_context, mock_fl_context)
-        stored_tensors = mock_fl_context.get_custom_prop(SAFE_TENSORS_PROP_KEY)
+        stored_tensors = mock_fl_context.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
         assert len(stored_tensors[root_key]) == 50
 
     def test_consume_empty_blob_error(self, mock_stream_context, mock_fl_context):
         """Test that consuming an empty blob raises an error."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+        task_id = "test_task_123"
 
         shareable = Shareable()
         shareable[TensorBlobKeys.SAFETENSORS_BLOB] = b""  # Empty blob
         shareable[TensorBlobKeys.TENSOR_KEYS] = ["test"]
         shareable[TensorBlobKeys.ROOT_KEY] = "model"
+        shareable[TensorBlobKeys.TASK_ID] = task_id
 
         success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
 
@@ -382,12 +393,14 @@ class TestTorchTensorsConsumer:
     def test_consume_empty_tensor_keys_error(self, mock_stream_context, mock_fl_context):
         """Test that consuming with empty tensor keys raises an error."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+        task_id = "test_task_123"
 
         test_tensor = torch.randn(2, 2)
         shareable = Shareable()
         shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
         shareable[TensorBlobKeys.TENSOR_KEYS] = []  # Empty list
         shareable[TensorBlobKeys.ROOT_KEY] = "model"
+        shareable[TensorBlobKeys.TASK_ID] = task_id
 
         success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
 
@@ -459,6 +472,7 @@ def _create_shareable_missing_blob():
     shareable = Shareable()
     shareable[TensorBlobKeys.TENSOR_KEYS] = ["test_tensor"]
     shareable[TensorBlobKeys.ROOT_KEY] = "model"
+    shareable[TensorBlobKeys.TASK_ID] = "test_task_123"
     return shareable
 
 
@@ -468,6 +482,7 @@ def _create_shareable_missing_keys():
     shareable = Shareable()
     shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
     shareable[TensorBlobKeys.ROOT_KEY] = "model"
+    shareable[TensorBlobKeys.TASK_ID] = "test_task_123"
     return shareable
 
 
@@ -477,6 +492,7 @@ def _create_shareable_missing_root():
     shareable = Shareable()
     shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
     shareable[TensorBlobKeys.TENSOR_KEYS] = ["test"]
+    shareable[TensorBlobKeys.TASK_ID] = "test_task_123"
     return shareable
 
 
@@ -487,4 +503,5 @@ def _create_shareable_mismatched_keys():
     shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"actual_tensor": test_tensor})
     shareable[TensorBlobKeys.TENSOR_KEYS] = ["expected_tensor"]  # Different key
     shareable[TensorBlobKeys.ROOT_KEY] = "model"
+    shareable[TensorBlobKeys.TASK_ID] = "test_task_123"
     return shareable

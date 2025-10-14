@@ -221,15 +221,15 @@ class TestTensorServerStreamer:
         streamer.wait_clients_to_complete.assert_not_called()
         streamer.try_to_clean_task_data.assert_not_called()
 
-    def test_handle_event_before_task_result_filter(self, mock_fl_context):
-        """Test handling BEFORE_TASK_RESULT_FILTER event."""
+    def test_handle_event_task_result_received(self, mock_fl_context):
+        """Test handling TASK_RESULT_RECEIVED event."""
         streamer = TensorServerStreamer()
         mock_receiver = Mock(spec=TensorReceiver)
         mock_receiver.tensors = Mock()  # Make tensors a mock so we can verify clear() is called
         streamer.receiver = mock_receiver
 
-        # Handle BEFORE_TASK_RESULT_FILTER event
-        streamer.handle_event(EventType.BEFORE_TASK_RESULT_FILTER, mock_fl_context)
+        # Handle TASK_RESULT_RECEIVED event
+        streamer.handle_event(EventType.TASK_RESULT_RECEIVED, mock_fl_context)
 
         # Verify receiver.set_ctx_with_tensors was called
         mock_receiver.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
@@ -440,8 +440,8 @@ class TestTensorServerStreamer:
         assert streamer.sender is None  # Sender not created yet
         assert streamer.receiver == mock_receiver_instance
 
-        # Step 2: Handle BEFORE_TASK_DATA_FILTER event
-        streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
+        # Step 2: Handle TASK_RESULT_RECEIVED event
+        streamer.handle_event(EventType.TASK_RESULT_RECEIVED, mock_fl_context)
         assert streamer.data_cleaned is False
 
         # Step 3: Handle AFTER_TASK_DATA_FILTER event (create sender and send tensors)

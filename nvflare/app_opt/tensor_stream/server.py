@@ -16,6 +16,7 @@ import time
 from threading import Lock
 
 from nvflare.apis.event_type import EventType
+from nvflare.app_common.app_event_type import AppEventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -110,8 +111,6 @@ class TensorServerStreamer(FLComponent):
         """
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
-        elif event_type == EventType.BEFORE_TASK_DATA_FILTER:
-            self.reset_counters()
         elif event_type == EventType.AFTER_TASK_DATA_FILTER:
             self.sender = TensorSender(self.engine, FLContextKey.TASK_DATA, self.format, self.tasks)
             num_clients = len(self.engine.get_clients())
@@ -120,6 +119,15 @@ class TensorServerStreamer(FLComponent):
             self.try_to_clean_task_data(num_clients, fl_ctx)
         elif event_type == EventType.BEFORE_TASK_RESULT_FILTER:
             self.receiver.set_ctx_with_tensors(fl_ctx)
+        elif event_type == AppEventType.ROUND_DONE:
+            self.reset_counters()
+            # Clear sender to release any references to tensors or root_keys
+            if self.sender:
+                self.sender.root_keys.clear()
+                self.sender = None
+            # Clear receiver tensors to release any references to tensors
+            if self.receiver:
+                self.receiver.tensors.clear()
 
     def reset_counters(self):
         """Reset the counters for the number of task data sent and skipped."""
@@ -129,10 +137,6 @@ class TensorServerStreamer(FLComponent):
                 self.num_task_skipped = 0
                 self.start_sending_time = None
                 self.data_cleaned = False
-                # Clear sender to release any references to tensors or root_keys
-                if self.sender:
-                    self.sender.root_keys.clear()
-                    self.sender = None
 
     def send_tensors_to_client(self, fl_ctx: FLContext):
         """Send tensors to the client after task data filtering.

@@ -71,20 +71,30 @@ class TensorProducer(ObjectProducer):
         process_replies(replies, stream_ctx, fl_ctx): Processes replies from peers after sending tensors.
     """
 
-    def __init__(self, tensors: dict[str, torch.Tensor], entry_timeout: float, root_key: str = ""):
-        self.logger = get_obj_logger(self)
+    def __init__(self, tensors: dict[str, torch.Tensor], task_id: str, entry_timeout: float, root_key: str = ""):
+        """Initialize the TensorProducer.
+
+        Args:
+            tensors (dict): A dictionary of tensors to be sent.
+            task_id (str): The task ID associated with the tensors.
+            entry_timeout (float): The timeout for each entry in the stream.
+            root_key (str): The root key for the tensors. Default is an empty string.
+        Raises:
+            ValueError: If no tensors are provided.
+        """
+        if tensors is None:
+            raise ValueError("No tensors received for serialization.")
+        self.task_id = task_id
         self.entry_timeout = entry_timeout
         self.root_key = root_key
         self.last = False
         self.total_bytes = 0
-        if tensors is None:
-            raise ValueError("No tensors received. Cannot produce.")
-
-        self.tensors_keys = list(tensors.keys())
         # Pass tensors to generator; they're not stored in this class to minimize memory usage.
         # The generator will handle serialization and the tensors can be garbage collected
         # after the generator completes.
         self.serializer = tensors_serializer_generator(tensors)
+        self.tensors_keys = list(tensors.keys())
+        self.logger = get_obj_logger(self)
 
     def produce(
         self,
@@ -117,6 +127,7 @@ class TensorProducer(ObjectProducer):
             data[TensorBlobKeys.SAFETENSORS_BLOB] = tensors_blob
             data[TensorBlobKeys.TENSOR_KEYS] = tensor_keys
             data[TensorBlobKeys.ROOT_KEY] = self.root_key
+            data[TensorBlobKeys.TASK_ID] = self.task_id
             self.total_bytes += len(tensors_blob)
 
         return data, self.entry_timeout
@@ -126,7 +137,8 @@ class TensorProducer(ObjectProducer):
         msg = (
             f"Peer '{fl_ctx.get_identity_name()}': produced blobs for peer '{peer_name}' "
             f"with {len(self.tensors_keys)} tensors, total size: "
-            f"{round(self.total_bytes / (1024 * 1024), 2)} Mbytes ({self.total_bytes} bytes)"
+            f"{round(self.total_bytes / (1024 * 1024), 2)} Mbytes ({self.total_bytes} bytes). "
+            f"Task ID: {self.task_id}"
         )
         if self.root_key:
             msg += f", root key: '{self.root_key}'"

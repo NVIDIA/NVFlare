@@ -20,9 +20,27 @@ import pytest
 import torch
 
 from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import StreamableEngine, StreamContext
+
+
+def setup_mock_get_prop_with_task_id(mock_fl_context, task_id, shareable):
+    """Helper function to setup mock get_prop that returns task_id and shareable.
+
+    Args:
+        mock_fl_context: The mock FL context to configure
+        task_id: The task ID to return when FLContextKey.TASK_ID is requested
+        shareable: The shareable to return for other property requests
+    """
+
+    def mock_get_prop_side_effect(key, default=None):
+        if key == FLContextKey.TASK_ID:
+            return task_id
+        return shareable
+
+    mock_fl_context.get_prop.side_effect = mock_get_prop_side_effect
 
 
 @pytest.fixture

@@ -60,9 +60,10 @@ class TensorSender:
             fl_ctx (FLContext): The FLContext for the current operation.
         """
         peer_name = fl_ctx.get_peer_context().get_identity_name()
+        task_id = fl_ctx.get_prop(FLContextKey.TASK_ID, None)
+        if not task_id:
+            raise ValueError("No task_id found in FLContext.")
         targets = get_targets_for_ctx_and_prop_key(fl_ctx, self.ctx_prop_key)
-
-        self.logger.debug(f"Sending tensors to peer: {peer_name}")
 
         try:
             dxo = get_dxo_from_ctx(fl_ctx, self.ctx_prop_key, self.tasks)
@@ -79,10 +80,11 @@ class TensorSender:
 
         for key in self.root_keys:
             tensors = get_tensors_from_dxo(dxo, key, self.format)
-            producer = TensorProducer(tensors, entry_timeout, root_key=key)
-            msg = f"Starting to send tensors to peer '{peer_name}'. "
+            producer = TensorProducer(tensors, task_id, entry_timeout, root_key=key)
+            msg = f"Starting to send tensors to peer '{peer_name}'."
             if key:
-                msg += f"With root key '{key}'"
+                msg += f" Root Key: '{key}'."
+            msg += f" Task ID: '{task_id}'."
             self.logger.info(msg)
             self._send_tensors(targets, producer, fl_ctx)
             # Explicitly delete tensors after streaming to free memory

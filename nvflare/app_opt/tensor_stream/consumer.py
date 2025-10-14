@@ -19,7 +19,7 @@ from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, StreamContext
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-from .types import SAFE_TENSORS_PROP_KEY, TensorBlobKeys, TensorsMap
+from .types import TensorBlobKeys, TensorCustomKeys, TensorsMap
 
 
 class TensorConsumerFactory(ConsumerFactory):
@@ -53,6 +53,7 @@ class TensorConsumer(ObjectConsumer):
         self.logger = get_obj_logger(self)
         self.tensors_map: TensorsMap = {}
         self.total_bytes: dict[str, int] = {}
+        self.task_ids: set[str] = set()
 
     def consume(
         self,
@@ -100,13 +101,17 @@ class TensorConsumer(ObjectConsumer):
         if not tensor_keys:
             raise ValueError("Received empty tensor keys list")
         root_key = shareable.get(TensorBlobKeys.ROOT_KEY, "")
+        task_id = shareable.get(TensorBlobKeys.TASK_ID)
+        if not task_id:
+            raise ValueError("Received shareable without task_id")
 
+        self.task_ids.add(task_id)
         self.total_bytes[root_key] = self.total_bytes.get(root_key, 0) + len(tensors_blob)
         loaded_tensors = load_safetensors(tensors_blob)
 
         if set(tensor_keys) != set(loaded_tensors.keys()):
             raise ValueError(
-                f"Mismatch in tensor keys. Edel self.deserializerxpected: {tensor_keys}, Received: {list(loaded_tensors.keys())}"
+                f"Mismatch in tensor keys. Expected: {tensor_keys}, Received: {list(loaded_tensors.keys())}"
             )
 
         if root_key not in self.tensors_map:
@@ -122,19 +127,19 @@ class TensorConsumer(ObjectConsumer):
             stream_ctx (StreamContext): The stream context. (not used)
             fl_ctx (FLContext): The FL context. (not used)
         """
-        # # Close the generator
-        # try:
-        #     self.deserializer.send(None)
-        # except StopIteration:
-        #     pass  # Normal termination of the generator
-
         identity = fl_ctx.get_identity_name()
         peer_name = fl_ctx.get_peer_context().get_identity_name()
         root_keys = list(self.tensors_map.keys())
+        if len(self.task_ids) > 1:
+            raise ValueError(f"Expected one task_id, but found multiple: {self.task_ids}")
+
+        task_id = self.task_ids.pop()
+        if not task_id:
+            raise ValueError("No valid task_id found in received shareables")
 
         for root_key in root_keys:
             tensor_keys = list(self.tensors_map[root_key].keys())
-            self._log_received_tensors(identity, peer_name, root_key, tensor_keys)
+            self.log_received(task_id, identity, peer_name, root_key, tensor_keys)
 
         # If there's only one root key which is an empty string, it means all tensors are at the top level
         if root_keys == [""]:
@@ -142,14 +147,15 @@ class TensorConsumer(ObjectConsumer):
         else:
             tensors = self.tensors_map
 
-        fl_ctx.set_custom_prop(SAFE_TENSORS_PROP_KEY, tensors)
+        fl_ctx.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, tensors)
+        fl_ctx.set_custom_prop(TensorCustomKeys.TASK_ID, task_id)
 
         # Clear temporary references to free memory
         self.tensors_map = {}
         self.total_bytes = {}
         del tensors
 
-    def _log_received_tensors(self, identity: str, peer_name: str, root_key: str, tensor_keys: list[str]):
+    def log_received(self, task_id: str, identity: str, peer_name: str, root_key: str, tensor_keys: list[str]):
         """Log the received tensors for debugging purposes.
 
         Args:
@@ -161,7 +167,8 @@ class TensorConsumer(ObjectConsumer):
         msg = (
             f"Peer '{identity}': consumed blobs from peer '{peer_name}' "
             f"with {len(tensor_keys)} tensors, total size: "
-            f"{round(total_bytes / (1024 * 1024), 2)} Mbytes ({total_bytes} bytes)"
+            f"{round(total_bytes / (1024 * 1024), 2)} Mbytes ({total_bytes} bytes). "
+            f"Task ID: {task_id}"
         )
         if root_key:
             msg += f", root key: '{root_key}'"

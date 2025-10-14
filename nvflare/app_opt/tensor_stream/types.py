@@ -22,6 +22,11 @@ SAFE_TENSORS_PROP_KEY = "_safe_tensors_blob_"
 TensorsMap = Union[dict[str, torch.Tensor], dict[str, dict[str, torch.Tensor]]]
 
 
+class TensorCustomKeys:
+    TASK_ID = "task_id"
+    SAFE_TENSORS_PROP_KEY = "_safe_tensors_blob_"
+
+
 class TensorTopics:
     TASK_RESULT = "task_result"
     TASK_DATA = "task_data"
@@ -31,3 +36,4 @@ class TensorBlobKeys:
     SAFETENSORS_BLOB = "safetensors_blob"
     TENSOR_KEYS = "tensor_keys"
     ROOT_KEY = "root_key"
+    TASK_ID = "task_id"
