@@ -236,6 +236,17 @@ These measurements are rooted in hardware and cannot be forged by the host. Any 
 
    You do not need to sign or measure the entire CVM disk image. Focusing on these critical boot-time components is sufficient to establish a robust and verifiable chain of trust.
 
+
+Interactions of NVFlare and Trustee KBS
+=======================================
+
+The following block diagram shows the interaction among NVFlare CVM, Attestation Agent (AA), Key Broker Service (KBS), Trustee, and Attestation Service (AS).
+
+.. image:: ../../resources/cc_arch_diagram.png
+    :height: 500px
+    :align: center
+
+
 Process of Build and Boot up CVM Image
 ======================================
 

@@ -322,7 +322,8 @@ c. Enable KV engine:
 Phase 3: Deploy Trustee KBS (Key Broker Service)
 ================================================
 
-After Vault is ready, we deploy KBS as the core proxy connecting clients and Vault.
+After Vault is ready, we deploy KBS as the core proxy connecting clients and Vault.  Optionally, you can
+build a docker image and run it directly.  To build docker images, please follow the Appendix.
 
 Clone and checkout specific version of code
 -------------------------------------------
@@ -771,3 +772,55 @@ How to confirm successful operation:
 - Use echo "base64content" | base64 -d to decode and verify content correctness
 - In test environments, these warning messages are completely normal and expected
 
+Appendix
+========
+
+Build KBS docker images
+-----------------------
+
+
+You can build docker images for kbs based on the Dockerfile in the kbs/docker folder.
+However, that file in the current trustee repo at commit id a2570329cc33daf9ca16370a1948b5379bb17fbe
+either fails to build or produces docker images with missing dependencies.
+You can patch that file with the following diff.
+
+.. code-block:: diff
+
+   $ git diff
+   diff --git a/kbs/docker/Dockerfile b/kbs/docker/Dockerfile
+   index e529716..45b9271 100644
+   --- a/kbs/docker/Dockerfile
+   +++ b/kbs/docker/Dockerfile
+   @@ -39,17 +39,17 @@ RUN if [ "${ARCH}" = "x86_64" ]; then curl -fsSL https://download.01.org/intel-s
+   WORKDIR /usr/src/trustee
+   COPY . .
+   
+   -RUN cd kbs && make AS_FEATURE=coco-as-builtin ALIYUN=${ALIYUN} ARCH=${ARCH} && \
+   +RUN cd kbs && make VAULT=true AS_FEATURE=coco-as-builtin ALIYUN=${ALIYUN} ARCH=${ARCH} background-check-kbs && \
+      make ARCH=${ARCH} install-kbs
+   
+   -FROM ubuntu:22.04
+   +FROM ubuntu:24.04
+   ARG ARCH=x86_64
+   
+   WORKDIR /tmp
+   
+   RUN apt-get update && \
+      apt-get install -y \
+   -    curl \
+   +    curl gpg \
+      gnupg-agent && \
+      if [ "${ARCH}" = "x86_64" ]; then curl -fsSL https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | \
+      gpg --dearmor --output /usr/share/keyrings/intel-sgx.gpg && \
+
+To build the kbs docker image, run the following inside trustee folder
+
+.. code-block:: bash
+
+   docker build -f kbs/docker/Dockerfile .
+
+You can run KBS inside a Docker container with ports exposed using the -p option. For example:
+
+.. code-block:: bash
+
+   docker run -p 8080:8080 <image_name>
