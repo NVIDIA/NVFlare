@@ -23,7 +23,7 @@ At deployment time, the model IP is particularly vulnerable if introduced into a
 Runtime Risks
 -------------
 
-Even after deployment, model IP remains exposed to runtime threats. A host system—whether trusted or compromised—can still leak the model if sufficient safeguards are not maintained. Attackers may exploit vulnerabilities to gain remote access, copy the model from memory, intercept it over the network, or extract it from disk-based checkpoints. Insider threats or physical access to a machine can also lead to data exfiltration. While VM-based Trusted Execution Environments (TEEs) provided by Confidential Computing offer strong isolation guarantees, these mechanisms are not infallible. If the attacker can directly access the CVM TEE or modify the application inside the TEE, then the TEE protection doesn’t help the IP protection: here are a few possible ways that model IP can be leaked out at runtime:
+Even after deployment, model IP remains exposed to runtime threats. A host system—whether trusted or compromised—can still leak the model if sufficient safeguards are not maintained. Attackers may exploit vulnerabilities to gain remote access, copy the model from memory, intercept it over the network, or extract it from disk-based checkpoints. Insider threats or physical access to a machine can also lead to data exfiltration. While VM-based Trusted Execution Environments (TEEs) provided by Confidential Computing offer strong isolation guarantees, these mechanisms are not infallible. If the attacker can directly access the CVM TEE or modify the application inside the TEE, then the TEE protection doesn't help the IP protection: here are a few possible ways that model IP can be leaked out at runtime:
 
 - Compromised participant machines
 - Unauthorized access to the remote training machine (via direct access or network access)
@@ -54,7 +54,7 @@ A secure deployment architecture combining:
 Security Guarantee
 ------------------
 
-Our Minimum Viable Product (MVP) product design ensures model IP remains protected throughout the entire lifecycle, from deployment through execution, even in potentially compromised environments.
+Our Minimum Viable Product (MVP) design ensures model IP remains protected throughout the entire lifecycle, from deployment through execution, even in potentially compromised environments.
 
 IP Protection Security Architecture
 ===================================
@@ -64,9 +64,9 @@ The Approach
 
 The high-level approach for generating a Confidential VM (CVM) image involves embedding the application workload within a secure virtual machine that leverages VM-based Trusted Execution Environment (TEE) architecture. To ensure strong security guarantees, the CVM is fully locked down—no shell access, no open ports except for explicitly whitelisted ones, and all data access restricted to encrypted disk partitions.
 
-To protect against tampering during deployment, the boot process is anchored in Confidential Computing’s chain of trust, extending from hardware up to the application layer. Critical disk partitions are encrypted, and decryption keys are withheld until remote attestations are successfully completed. This attestation verifies both the base system and the application against expected measurements at a remote trustee service. Only after passing this check does the trustee’s key broker service release the decryption key, allowing the CVM to proceed securely.
+To protect against tampering during deployment, the boot process is anchored in Confidential Computing's chain of trust, extending from hardware up to the application layer. Critical disk partitions are encrypted, and decryption keys are withheld until remote attestations are successfully completed. This attestation verifies both the base system and the application against expected measurements at a remote trustee service. Only after passing this check does the trustee's key broker service release the decryption key, allowing the CVM to proceed securely.
 
-The attestations will be completed with two-stages, once the kernel is booted normally, the attestation service will perform 2nd stage attestation (both CPU + GPU attestation), if the attestation is verified then the normal workload will be started.
+The attestations will be completed in two stages. Once the kernel is booted normally, the attestation service will perform second-stage attestation (both CPU and GPU attestation). If the attestation is verified, the normal workload will be started.
 
 Assumptions
 -----------
@@ -74,7 +74,7 @@ Assumptions
 - We fully trust the individual who builds the CVM image, as well as the host machine used during the image creation process. This ensures that the CVM is constructed in a secure and controlled environment.
 - We trust the remote trustee service, including its integrated key broker service, to be secure and reliable. The internal protection mechanisms of the trustee service are considered out of scope for this design.
 - To verify the integrity and confidentiality of the CVM application's boot process, we assume that CPU-based attestation at boot time is sufficient. Specifically, we rely on a one-time, hardware-backed attestation during CVM startup to establish trust, without requiring ongoing or continuous runtime verification.
-- On-going continuous attestation will be handled at Application level (with both GPU and CPU attestation, such as NVFLARE).
+- Ongoing continuous attestation will be handled at the application level (with both GPU and CPU attestation, such as NVFlare).
 
 Security Architecture
 =====================
@@ -82,19 +82,19 @@ Security Architecture
 Key Challenges in Securing Application-Level Integrity
 ------------------------------------------------------
 
-By default, Chain of Trust Stops at the Kernel:
+**By Default, Chain of Trust Stops at the Kernel:**
 Confidential Computing's hardware-backed chain of trust typically ends at the kernel. User-level application code is not included in the default measurement and attestation process.
 
-Application Integrity Risk:
-Without extending the chain of trust to cover the application, malicious modifications can occur at boot time. This risks compromising both the application’s integrity and the overall confidentiality of the system, even if kernel-level attestation is successful.
+**Application Integrity Risk:**
+Without extending the chain of trust to cover the application, malicious modifications can occur at boot time. This risks compromising both the application's integrity and the overall confidentiality of the system, even if kernel-level attestation is successful.
 
-Necessity of Application Measurement:
+**Necessity of Application Measurement:**
 To ensure end-to-end trust, application-level measurements must be automatically calculated by the kernel and cryptographically signed by CC-enabled hardware. Relying on external or manual hash values creates potential attack vectors.
 
-Use Case Consideration – Disk Content Not Measured:
+**Use Case Consideration – Disk Content Not Measured:**
 Confidential Computing attestation is designed to measure memory-loaded components during boot. Application binaries and data stored on disk are not covered. This is not a flaw in the architecture but a challenge that must be addressed for use cases requiring full application trust.
 
-Security Implication for Application Deployment:
+**Security Implication for Application Deployment:**
 If the application and its associated data are not part of the attested set, the CVM cannot ensure their integrity or confidentiality—posing a significant risk for secure deployment in sensitive scenarios.
 
 Design Approach
@@ -108,14 +108,15 @@ This design addresses the above challenges with the following approaches:
 
 - **Attestation-Bound Key Release**: The decryption key is released only upon successful CPU-based attestation, ensuring it is provided exclusively to trusted environments that match both CVM and application measurements and possess valid cryptographic signatures.
 
-- **Two-stage attestation & two-stage-key release**:
-  - CPU verification ⇒ GPU verification (extending the chain of the trust from CPU to GPU)
-  - Two-stage key releases with partition dm-verity.
+- **Two-Stage Attestation & Two-Stage Key Release**:
+  
+  - CPU verification → GPU verification (extending the chain of trust from CPU to GPU)
+  - Two-stage key releases with partition ``dm-verity``.
 
 Additional Security Hardening
 ------------------------------
 
-- **Disk Security**: Leverage both dm-crypt for encryption and dm-verity for integrity verification of disk partitions. Disable auto-mount.
+- **Disk Security**: Leverage both ``dm-crypt`` for encryption and ``dm-verity`` for integrity verification of disk partitions. Disable auto-mount.
 - **Access Control**: Disable login mechanisms, including SSH and console access, to prevent unauthorized entry into the CVM.
 - **Network Hardening**: Configure strict firewall rules and disable all unnecessary services and ports, allowing only explicitly whitelisted network access.
 
@@ -128,14 +129,14 @@ There are different approaches to store the reference values, leveraging:
 - Trusted Platform Module (TPM)
 - Virtual TPM (vTPM)
 
-For our most common deployment scenarios, we will build a CVM image in one trusted host (Host A), then distribute and deploy it to another untrusted host (Host B). In this design, we choose to use the remote trustee service.
+For our most common deployment scenarios, we will build a CVM image on one trusted host (Host A), then distribute and deploy it to another untrusted host (Host B). In this design, we choose to use the remote trustee service.
 
-Design of the CVM Boot Up Process
-=================================
+Design of the CVM Boot-Up Process
+==================================
 
-The sequence diagram of the boot up process:
+The sequence diagram of the boot-up process:
 
-Here, we are leveraging the Initapp in a TEE context to enable application-level attestation, using the kernel as an indirect attesting environment.
+Here, we are leveraging the InitApp in a TEE context to enable application-level attestation, using the kernel as an indirect attesting environment.
 
 Kernel as an Attesting Environment – via InitApp in TEE
 -------------------------------------------------------
@@ -150,20 +151,22 @@ Key Design Principles
 
 - **Trusted Kernel Base**: The kernel serves as the base of trust. It is measured by the TEE platform during boot, forming part of the trusted launch.
 - **InitApp as Attesting Agent**: InitApp is responsible for:
+
   - Performing application-level attestation.
   - Interacting with the trustee service and key broker.
 
 Placement and Measurement
 -------------------------
 
-- The measurement must include initramfs, kernel, and kernel arguments (command line). With AMD, this is achieved by kernel-hashes=on flag.
+- The measurement must include initramfs, kernel, and kernel arguments (command line). With AMD, this is achieved by the ``kernel-hashes=on`` flag.
 - InitApp must be included in the initramfs, ensuring it is loaded into kernel memory and automatically measured as part of the attested launch context.
-- Avoid placing InitApp outside initramfs (e.g., in /oem/initapp), as this bypasses automatic measurement and increases attack surface via replay attacks.
+- Avoid placing InitApp outside initramfs (e.g., in ``/oem/initapp``), as this bypasses automatic measurement and increases attack surface via replay attacks.
 
 Measurement Integrity
 ---------------------
 
 Embedding InitApp within initramfs ensures:
+
 - It is measured with initramfs via attestation SDK.
 - Replay or tampering is prevented.
 - No need for custom measurement mechanisms.
@@ -187,7 +190,7 @@ Bootup Sequence Overview
   - Contacts trustee and key broker service
   - Decrypts and mounts secure root filesystem
 
-- InitApp executes: switch_root /new_root /sbin/init
+- InitApp executes: ``switch_root /new_root /sbin/init``
 
 Secure Filesystem Layout for initramfs
 --------------------------------------
@@ -215,7 +218,7 @@ QEMU Launch Example
     -kernel vmlinuz \
     -initrd initramfs.img
 
-In this setup, initramfs.img is loaded into kernel memory and included in the TEE measurement, securing both InitApp and its logic. Placing InitApp elsewhere (e.g., mounted later from disk) breaks the measurement chain and introduces the risk of replay or tampering.
+In this setup, ``initramfs.img`` is loaded into kernel memory and included in the TEE measurement, securing both InitApp and its logic. Placing InitApp elsewhere (e.g., mounted later from disk) breaks the measurement chain and introduces the risk of replay or tampering.
 
 What Needs to Be Measured and Signed?
 =====================================
@@ -237,10 +240,10 @@ These measurements are rooted in hardware and cannot be forged by the host. Any 
    You do not need to sign or measure the entire CVM disk image. Focusing on these critical boot-time components is sufficient to establish a robust and verifiable chain of trust.
 
 
-Interactions of NVFlare and Trustee KBS
-=======================================
+Interactions Between NVFlare and Trustee KBS
+=============================================
 
-The following block diagram shows the interaction among NVFlare CVM, Attestation Agent (AA), Key Broker Service (KBS), Trustee, and Attestation Service (AS).
+The following block diagram shows the interaction among the NVFlare CVM, Attestation Agent (AA), Key Broker Service (KBS), Trustee, and Attestation Service (AS).
 
 .. image:: ../../resources/cc_arch_diagram.png
     :height: 500px
@@ -299,7 +302,7 @@ Goal: Produce a secure CVM image with all trusted measurements registered in the
 6. **Install the Workload**
 
    - Deploy the pre-approved workload (e.g., a Docker image).
-   - Install the workload on the CVM’s encrypted disk.
+   - Install the workload on the CVM's encrypted disk.
 
 7. **Apply Additional Security Enhancements**
 
@@ -315,41 +318,41 @@ Goal: Produce a secure CVM image with all trusted measurements registered in the
    - Generate an encryption key.
    - Encrypt the root FS using LUKS.
 
-9. **Get the CVM measurement**
+9. **Get the CVM Measurement**
 
-   - Boot up the CVM, the CVM kernel panics because it can't retrieve the key due to the measurement not registered yet. The InitApp prints measurements in the log.
-   - Todo: It's much faster to calculate the measurement with this tool but it generates invalid result: https://github.com/virtee/sev-snp-measure
+   - Boot up the CVM. The CVM kernel panics because it can't retrieve the key due to the measurement not being registered yet. The InitApp prints measurements in the log.
+   - **TODO**: It's much faster to calculate the measurement with this tool, but it generates invalid results: https://github.com/virtee/sev-snp-measure
 
-10. **Update the resource policy or reference values to the Trustee**
+10. **Update the Resource Policy or Reference Values to the Trustee**
 
     - Update the policy in Trustee with measurement.
-    - Store the encryption key with Trustee with the namespace /keys/root/$CVM_ID.
+    - Store the encryption key with Trustee with the namespace ``/keys/root/$CVM_ID``.
 
 11. **Package the CVM Bundle**
 
-    - All the files generated by CVM builder is packaged a gzipped tar.
+    - All the files generated by the CVM builder are packaged as a gzipped tar.
 
 Runtime Boot-Up Process (CVM)
 =============================
 
-Boot up Sequence in host B
+Boot-Up Sequence on Host B
 --------------------------
 
 - Boot up CVM image on host.
 - Launch CVM instance.
-- UEFI loads kernel and initramfs (via initrd=/boot/initramfs.img).
+- UEFI loads kernel and initramfs (via ``initrd=/boot/initramfs.img``).
 - Initramfs starts network.
-- Initramfs starts initApp.
-- initApp requests CPU attestation report.
-- initApp send key requests to trustee with its attestation report.
+- Initramfs starts InitApp.
+- InitApp requests CPU attestation report.
+- InitApp sends key requests to trustee with its attestation report.
 - Receives encryption key if system is not tampered with.
 - Decrypt encrypted filesystem using received key.
-- Pivot root to the decrypted rootfs mapper (switch_root).
+- Pivot root to the decrypted rootfs mapper (``switch_root``).
 - systemd takes over and continues normal runtime.
-- Attestation agent service perform 2nd stage attestation for CPU and GPU report.
+- Attestation agent service performs second-stage attestation for CPU and GPU report.
 - Workload is started.
-- Monitor /bootlog to verify CVM boot health.
-- Monitor /applog logs for application issue.
+- Monitor ``/bootlog`` to verify CVM boot health.
+- Monitor ``/applog`` logs for application issues.
 - User may optionally mount external NFS volume data (such as training data in FL case).
 
 Design Secure CVM Image
@@ -398,12 +401,13 @@ Expanding Disk Size Later
 -------------------------
 
 If needed, we can expand the disk dynamically using:
-- Virtual Disk (QCOW2, RAW, VHDX) – Use qemu-img resize + growpart + resize2fs.
+
+- Virtual Disk (QCOW2, RAW, VHDX) – Use ``qemu-img resize`` + ``growpart`` + ``resize2fs``.
 
 Disk Security
 =============
 
-Disk layout and Partitions
+Disk Layout and Partitions
 --------------------------
 
 .. list-table::
@@ -469,10 +473,11 @@ Disk Encryption and Integrity Protection
 ----------------------------------------
 
 Encryption is performed during the image build stage. The decryption key is securely stored in a remote key broker service. The disk image includes multiple partitions with encryption and integrity protection:
-- Root partition (/): Encrypted using dm-crypt
-- /boot partition: Protected with root FS.
-- /workspace partition: A writable partition encrypted with dm-crypt, providing both confidentiality and integrity. The NVFLARE workspace is stored here.
-- /tmp as tmpfs: This maps to RAM. In a Confidential VM, the TEE ensures this memory is encrypted.
+
+- Root partition (``/``): Encrypted using ``dm-crypt``
+- ``/boot`` partition: Protected with root FS.
+- ``/workspace`` partition: A writable partition encrypted with ``dm-crypt``, providing both confidentiality and integrity. The NVFlare workspace is stored here.
+- ``/tmp`` as tmpfs: This maps to RAM. In a Confidential VM, the TEE ensures this memory is encrypted.
 - Swap is disabled to prevent the operating system from unintentionally writing sensitive data to disk.
 
 Mount Security
@@ -509,6 +514,7 @@ Firewall Configuration
 All ports are blocked by default using ipTables, except for explicitly whitelisted ports.
 
 Whitelisted ports include:
+
 - Application communication ports
 - Attestation service ports
 - Experiment tracking ports (e.g., MLflow for FL training)
@@ -519,11 +525,11 @@ Other Disk Partitions
 Logging
 -------
 
-/bootlog:
-This log records the boot process and is essential during setup and debugging, especially when diagnosing boot failures. Initially, the boot log is writable. After the system completes its transition, it becomes read-only to preserve integrity.
+``/bootlog``
+  This log records the boot process and is essential during setup and debugging, especially when diagnosing boot failures. Initially, the boot log is writable. After the system completes its transition, it becomes read-only to preserve integrity.
 
-/applog:
-This log captures application-level output (e.g., FLARE logs). It is writable to aid debugging—for instance, when investigating connectivity issues between clients and servers. The log is visible to the host and implemented as a separate image file. This allows log analysis to continue even after the CVM is shut down.
+``/applog``
+  This log captures application-level output (e.g., FLARE logs). It is writable to aid debugging—for instance, when investigating connectivity issues between clients and servers. The log is visible to the host and implemented as a separate image file. This allows log analysis to continue even after the CVM is shut down.
 
 Input Data
 ==========
@@ -531,25 +537,28 @@ Input Data
 The user provides a predefined command to mount input data (e.g., training data), which is mounted to the data partition on the FL client. No dynamically attached disks are allowed.
 
 For this design:
+
 - Input data is assumed to be unencrypted.
 - Only NFS-based mounts are supported.
 
 Input Data Volume NFS Mount Design
 ==================================
 
-Requirements:
-This block device must have one partition and its label must be DATAPART. This partition must be formatted as ext4 file system. Its group and user id must be set to 1000 (the default user).
+Requirements
+------------
 
-The CVM instance will automatically mount this DATAPART to /data folder.
+This block device must have one partition and its label must be ``DATAPART``. This partition must be formatted as ext4 file system. Its group and user ID must be set to 1000 (the default user).
 
-Automatic NFS mount with NFS client
------------------------------------
+The CVM instance will automatically mount this ``DATAPART`` to the ``/data`` folder.
 
-Currently, only NFS mount is supported if CVM instances need to access files outside the DATAPART (i.e., the additional .qcow2 file).
+Automatic NFS Mount with NFS Client
+------------------------------------
 
-CVM instance will locate ext_mount.conf file in the /data directory. If found, it will run nfs client to mount the exported nfs server directory to /data/mnt folder.
+Currently, only NFS mount is supported if CVM instances need to access files outside the ``DATAPART`` (i.e., the additional ``.qcow2`` file).
 
-The format of ext_mount.conf for NFS mount is:
+The CVM instance will locate the ``ext_mount.conf`` file in the ``/data`` directory. If found, it will run the NFS client to mount the exported NFS server directory to the ``/data/mnt`` folder.
+
+The format of ``ext_mount.conf`` for NFS mount is:
 
 .. code-block:: text
 
@@ -567,48 +576,52 @@ The CVM instance will run:
 
    sudo mount -t nfs $NFS_EXPORT /data/mnt
 
-We must create the /data/mnt folder for mount point before we run the command.
+We must create the ``/data/mnt`` folder as the mount point before running the command.
 
 CVM Image Components
 ====================
 
-Based on the current design, the special CVM Image design will essentially consist of the following:
+Based on the current design, the special CVM image will essentially consist of the following:
 
 - Base Confidential VM image with hardened security measures and CC drivers (GPU, CPU)
-- Initramfs.img which contains initApp
-- initApp contains:
-  - trustee client, attestation agent
+- ``Initramfs.img`` which contains InitApp
+- InitApp contains:
+
+  - Trustee client, attestation agent
   - AMD SEV-SNP or Intel TDX attestation SDKs
   - Workload docker
   - Application code and dependencies
   - Attestation service agent
   - No need for FLARE
-  - Needed for all other non-CC aware applications.
-  - Systemd service that will start the workload docker
+  - Needed for all other non-CC aware applications
+  - systemd service that will start the workload docker
 
 CVM Image Services and Workload Interface
 =========================================
 
-In this section, we will discuss the contract and interaction between services (systemd) and workload, two types of service we have in mind:
+In this section, we will discuss the contract and interaction between services (systemd) and workload. Two types of services we have in mind:
 
-- Attestation service agent performs initial self-attestation and periodically self-attestation.
+- Attestation service agent performs initial self-attestation and periodic self-attestation.
+
   - If succeeded, trigger workload start.
-  - docker run
-  - If failed,
-    - Initial self-attestation failed, won’t call start.
-    - Periodical check failed ⇒
+  - ``docker run``
+  - If failed:
+
+    - Initial self-attestation failed, won't call start.
+    - Periodic check failed →
     - Kill docker
-  - How to deal with the network interruptions, do we tolerate occasional attestation failure due to network interruptions?
+
+  - How to deal with network interruptions? Do we tolerate occasional attestation failure due to network interruptions?
 
 CVM Image Build Configuration
 =============================
 
-For each CVM (NVFLARE will build many CVM images, one for each client/site), we will have configuration:
+For each CVM (NVFlare will build many CVM images, one for each client/site), we will have configuration files:
 
-- cc_params.yml
-- cc_build.yml
+- ``cc_params.yml``
+- ``cc_build.yml``
 
-Here is an example of cc_params.yml:
+Here is an example of ``cc_params.yml``:
 
 .. code-block:: yaml
 
@@ -698,7 +711,9 @@ Components
 - **Reference Value Provider Service**: The RVPS manages reference values used to verify TEE evidence. This is related to the discussion in section 7.5 of the RATS document.
 - **KBS Client Tool**: This is a simple tool which can be used to test or configure the KBS and AS.
 
-Note: We are not using the RVPS component. There are no supported APIs to use. We are not using the CDH (Confidential Data Hub) component.
+.. note::
+
+   We are not using the RVPS component. There are no supported APIs to use. We are not using the CDH (Confidential Data Hub) component.
 
 CoCo Trustee Services
 ---------------------
@@ -761,9 +776,9 @@ Here is the command for KBS client to set and get resources:
    kbs-client --url https://$TRUSTEE_ADDRESS:$PORT --cert-file $ROOTCA config --auth-private-key $PRIVATE_KEY set-resource --resource-file $SECRET_FILE --path $URL_PATH
    kbs-client --url https://$TRUSTEE_ADDRESS:$PORT --cert-file $ROOTCA get-resource --path $URL_PATH
 
-NOTE:
-- --path $URL_PATH
-  This is used for identity namespace isolation for now.
+.. note::
+
+   ``--path $URL_PATH``: This is used for identity namespace isolation for now.
 
 CVM Image Measurement
 =====================
@@ -805,7 +820,7 @@ The SEV-SNP measurement is a SHA-384 hash of:
 
 As long as:
 - Provide the same inputs to both sev-snp-measure and the runtime SEV-SNP launch process (i.e., QEMU/KVM with SEV-SNP enabled),
-- Don’t introduce randomness between build and runtime (e.g., dynamic kernel arguments, timestamps, UUIDs),
+- Don't introduce randomness between build and runtime (e.g., dynamic kernel arguments, timestamps, UUIDs),
 
 The measurement will match exactly.
 
@@ -845,13 +860,13 @@ FLARE: Federated Learning Application & Security
 Federated Learning Provision Process
 ------------------------------------
 
-Federated learning provision is a process to prepare the software packages (FLARE’s startup kits) for each participating organization. Clients and the server will obtain different startup kits. The package is prepared by the system owned by the project admin and then distributed to each participant. Then, FL Server needs to start first, FL Client site will start the startup kit, connect to FL server.
+Federated learning provision is a process to prepare the software packages (FLARE's startup kits) for each participating organization. Clients and the server will obtain different startup kits. The package is prepared by the system owned by the project admin and then distributed to each participant. Then, FL Server needs to start first, FL Client site will start the startup kit, connect to FL server.
 
 There are three distinguished phases:
 
 - **Provision processes** – prepare the software artifacts (the startup kits).
 - **Distribution process** – software packages are distributed to participants.
-- **Run-time processes** – At each participant’s host machine, the participant deploys the package, starts the FL system, and establishes the communication between the FL server and the participant.
+- **Run-time processes** – At each participant's host machine, the participant deploys the package, starts the FL system, and establishes the communication between the FL server and the participant.
 
 Terminology
 -----------
@@ -876,7 +891,7 @@ The Process
 FLARE Attestation Verification
 ------------------------------
 
-FLARE’s CC manager performs three different attestations:
+FLARE's CC manager performs three different attestations:
 
 - **Self-attestation**
 - **Cross-verification among client and server**
@@ -1071,7 +1086,7 @@ This table describes potential threats and mitigation strategies related to work
      - Defensive parsing code in the workload.
      - Input data is strictly validated and parsed securely.
      - Workload
-   * - An attacker passes a skewed or poisoned dataset to the workload to learn from others’ data.
+   * - An attacker passes a skewed or poisoned dataset to the workload to learn from others' data.
      - Out of scope in current design; differential privacy can mitigate.
      - Google Confidential Space mentions using differential privacy for this threat.
      - Workload

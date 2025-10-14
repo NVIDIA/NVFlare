@@ -4,14 +4,14 @@
 Confidential Computing: Attestation Service Integration
 #######################################################
 
-Please refer to the :ref:`NVFLARE CC Architecture <cc_architecture>`
-for the introduction and detailed architecture of the Confidential Computing.
+Please refer to the :ref:`NVFlare CC Architecture <cc_on_prem_cvm_architecture>`
+for the introduction and detailed architecture of Confidential Computing.
 
-This document will introduce the cc attestation integration in NVFlare.
+This document introduces the CC attestation integration in NVFlare.
 
-Each participant will use the corresponding CCAuthorizer to generate the CC token.
+Each participant will use the corresponding ``CCAuthorizer`` to generate the CC token.
 
-For example, the SNPAuthorizer utilizes the AMD's snpguest utility to generate
+For example, the ``SNPAuthorizer`` utilizes AMD's ``snpguest`` utility to generate
 an attestation report and package it into a CC token.
 
 In NVFlare, the participant will first generate the CC token, then present its
@@ -29,28 +29,29 @@ This mechanism ensures that only mutually trusted participants take part in a
 federated learning job, reinforcing both security and integrity across the
 NVFlare system.
 
-We provided a CCManager component and several CCAuthorizer components for different hardware platforms.
-Currently, we support the following CCAuthorizer components:
-- SNPAuthorizer
-- GPUAuthorizer
-- ACIAuthorizer
-- TDXAuthorizer
+We provide a ``CCManager`` component and several ``CCAuthorizer`` components for different hardware platforms.
+Currently, we support the following ``CCAuthorizer`` components:
 
-You can configure it using the provision step in the :ref:`NVFLARE CC Deployment Guide <cc_deployment_guide>`.
+- ``SNPAuthorizer``
+- ``GPUAuthorizer``
+- ``ACIAuthorizer``
+- ``TDXAuthorizer``
+
+You can configure it using the provision step in the :ref:`NVFlare CC Deployment Guide <cc_deployment_guide>`.
 
 ****************
-Runtime behavior
+Runtime Behavior
 ****************
 
-When a participant—either the server or a client—starts up, the CCManager
-responds to the EventType.SYSTEM_BOOTSTRAP event by generating its own
-CC token using the configured CCAuthorizers.
+When a participant—either the server or a client—starts up, the ``CCManager``
+responds to the ``EventType.SYSTEM_BOOTSTRAP`` event by generating its own
+CC token using the configured ``CCAuthorizers``.
 
 When a client registers with the server, it includes its CC token as part
 of the registration data. If the registration is successful, the server
 collects and stores the client's CC token.
 
-The server's CCManager maintains both its own CC token and the tokens of all
+The server's ``CCManager`` maintains both its own CC token and the tokens of all
 registered clients.
 
 Once a job is submitted and scheduled for deployment, the server verifies the
