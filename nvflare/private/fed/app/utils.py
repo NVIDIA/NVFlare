@@ -74,6 +74,7 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None)
         file_upload_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
         file_download_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
         download_job_url=server_conf.get("download_job_url", "http://"),
+        timeout=server_conf.get("admin_timeout", 10.0),
     )
     return admin_server
 
