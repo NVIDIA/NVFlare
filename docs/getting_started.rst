@@ -38,8 +38,8 @@ Next Steps
 ==========
 Now that you understand the different ways to run NVFlare:
 
-1. Try the getting started `tutorials <https://github.com/NVIDIA/NVFlare/tree/main/examples/getting_started>`__ to learn more about each mode
-2. Explore more advanced examples and `step-by-step <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/step-by-step>`__ walk-throughs
-3. Learn how to convert your standalone/centralized training code to `federated learning code <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/ml-to-fl>`__
+1. Try the getting started `tutorials <https://github.com/NVIDIA/NVFlare/tree/2.6/examples/getting_started>`__ to learn more about each mode
+2. Explore more advanced examples and `step-by-step <https://github.com/NVIDIA/NVFlare/tree/2.6/examples/hello-world/step-by-step>`__ walk-throughs
+3. Learn how to convert your standalone/centralized training code to `federated learning code <https://github.com/NVIDIA/NVFlare/tree/2.6/examples/hello-world/ml-to-fl>`__
 4. When ready for production, see :ref:`real_world_fl` for deployment guidance
 5. For development, see :ref:`programming_guide` for detailed programming instructions

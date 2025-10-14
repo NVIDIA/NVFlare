@@ -1,12 +1,12 @@
 # Hello TensorFlow
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
+Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.6/index.html) to train an image classifier
 using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629))
 and [TensorFlow](https://tensorflow.org/) as the deep learning training framework.
 
 > **_NOTE:_** This example uses the [MNIST](https://www.tensorflow.org/datasets/catalog/mnist) handwritten digits dataset and will load its data within the trainer code.
 
-See the [Hello TensorFlow](https://nvflare.readthedocs.io/en/main/examples/hello_tf_job_api.html#hello-tf-job-api) example documentation page for details on this
+See the [Hello TensorFlow](https://nvflare.readthedocs.io/en/2.6/examples/hello_tf_job_api.html#hello-tf-job-api) example documentation page for details on this
 example.
 
 We recommend to use [NVIDIA TensorFlow docker](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorflow) if you want to use GPU.

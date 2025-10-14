@@ -10,7 +10,7 @@ This example will demonstrate how to generate and visualize hierarchical statist
 
 
 ## Setup NVFLARE
-Follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to setup virtual environment, get the latest NVFLARE source, build it and  install NVFLARE.
+Follow the [Getting Started](https://nvflare.readthedocs.io/en/2.6/getting_started.html) to setup virtual environment, get the latest NVFLARE source, build it and  install NVFLARE.
 
 Let's first install required packages.
 

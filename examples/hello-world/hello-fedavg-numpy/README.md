@@ -7,7 +7,7 @@ This example showcases Federated Averaging ([FedAvg](https://arxiv.org/abs/1602.
 You can follow the [Getting Started with NVFlare (NumPy)](hello-fedavg-numpy_getting_started.ipynb)
 for a detailed walkthrough of the basic concepts.
 
-See the [Hello FedAvg with NumPy](https://nvflare.readthedocs.io/en/main/examples/hello_fedavg_numpy.html) example documentation page for details on this
+See the [Hello FedAvg with NumPy](https://nvflare.readthedocs.io/en/2.6/examples/hello_fedavg_numpy.html) example documentation page for details on this
 example.
 
 To run this example with the FLARE API, you can follow the [hello_world notebook](../hello_world.ipynb), or you can quickly get

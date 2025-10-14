@@ -8,7 +8,7 @@ Several mechanisms have been proposed for training an XGBoost model in a federat
 In this example, we further extend the existing horizontal and vertical federated learning approaches to support secure federated learning using homomorphic encryption. Depending on the characteristics of the data to be encrypted, we can choose between [CKKS](https://github.com/OpenMined/TenSEAL) and [Paillier](https://github.com/intel/pailliercryptolib_python).
 
 In the following, we illustrate both *horizontal* and *vertical* federated XGBoost, *without* and *with* homomorphic encryption.
-Please refer to our [documentation](https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html) for more details on the pipeline design and the encryption logic.
+Please refer to our [documentation](https://nvflare.readthedocs.io/en/2.6/user_guide/federated_xgboost/secure_xgboost_user_guide.html) for more details on the pipeline design and the encryption logic.
 
 ## Requirements
 To be able to run all the examples, please install the requirements first from the main folder.
@@ -80,7 +80,7 @@ This will cover baseline centralized training, federated xgboost run in the same
 > The actual encyption plugin will be used in the next step.
 
 ## Federated Experiments with NVFlare
-We then run the federated XGBoost training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html), without and with homomorphic encryption.
+We then run the federated XGBoost training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/2.6/programming_guide/fed_job_api.html), without and with homomorphic encryption.
 The running time of each job depends mainly on the encryption workload. 
 
 Assuming we use libnvflare.so plugin located in `/tmp/nvflare/plugins/libnvflare.so`, to run vertical simulations, we have  
@@ -170,4 +170,4 @@ experiments conducted with NVFlare produce results that are identical
 to those obtained from standalone scripts.
 
 For more information on the secure xgboost user guide please refer to
-https://nvflare.readthedocs.io/en/main/user_guide/federated_xgboost/secure_xgboost_user_guide.html
+https://nvflare.readthedocs.io/en/2.6/user_guide/federated_xgboost/secure_xgboost_user_guide.html

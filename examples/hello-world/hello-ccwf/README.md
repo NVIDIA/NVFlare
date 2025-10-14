@@ -1,6 +1,6 @@
 # Hello Client Controlled Workflow (CCWF)
 
-[Client Controlled Workflows](https://nvflare.readthedocs.io/en/main/programming_guide/controllers/client_controlled_workflows.html) are managed
+[Client Controlled Workflows](https://nvflare.readthedocs.io/en/2.6/programming_guide/controllers/client_controlled_workflows.html) are managed
 by logic from clients. This example shows the components used in a job for a client controlled workflow.
 
 ### 1. Install NVIDIA FLARE

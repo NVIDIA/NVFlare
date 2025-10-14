@@ -93,7 +93,7 @@ python3 data/split_financial_phrase_data.py --data_path data/FinancialPhraseBank
 ```
 
 ## Federated learning simulations
-Next, we are using NVFlare's [POC mode](https://nvflare.readthedocs.io/en/main/getting_started.html#setting-up-poc) to simulate 
+Next, we are using NVFlare's [POC mode](https://nvflare.readthedocs.io/en/2.6/getting_started.html#setting-up-poc) to simulate 
 each client training on their own dataset locally and all three clients training together using the 
 [FedAvg](https://arxiv.org/abs/1602.05629) algorithm implemented in NVFlare.
 
@@ -107,7 +107,7 @@ Next, we start the NVFlare system distributing the three clients to use two GPUs
 ```
 nvflare poc start --gpu 0 1 2 3 4 5
 ```
-For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt):
+For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/2.6/real_world_fl/operation.html#admin-command-prompt):
 ```
 nvflare poc start --service admin@nvidia.com
 ```

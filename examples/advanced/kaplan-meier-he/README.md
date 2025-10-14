@@ -100,7 +100,7 @@ Then we prepare HE context for clients and server, note that this step is done b
 python utils/prepare_he_context.py --out_path "/tmp/nvflare/he_context"
 ```
 
-Next, we run the federated training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html), both without and with HE:
+Next, we run the federated training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/2.6/programming_guide/fed_job_api.html), both without and with HE:
 ```commandline
 python km_job.py 
 python km_job.py --encryption

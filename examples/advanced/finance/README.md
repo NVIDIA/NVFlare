@@ -1,5 +1,5 @@
 # Financial Application with Federated XGBoost Methods
-This example illustrates the use of [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on a financial application. 
+This example illustrates the use of [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.6/index.html) on a financial application. 
 These examples show how to use [XGBoost](https://github.com/dmlc/xgboost) in various ways to train a model in a federated manner to perform fraud detection with a 
 [finance dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud).
 

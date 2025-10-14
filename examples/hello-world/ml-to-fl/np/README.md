@@ -27,7 +27,7 @@ We use the mock training script in [./src/train_full.py](./src/train_full.py)
 And we send back the FLModel with "params_type"="FULL" in [./src/train_full.py](./src/train_full.py)
 
 After we modify our training script, we can create a job using the ScriptRunner: [np_client_api_job.py](./np_client_api_job.py).
-(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) for more details on formulating a job)
+(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/2.6/programming_guide/fed_job_api.html) for more details on formulating a job)
 
 Then we can run the job using the simulator with the Job API. (This is equivalent to using the CLI command `nvflare simulator <job_folder>`)
 

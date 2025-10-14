@@ -35,9 +35,9 @@ NVFlare natively supports various communication and orchestration patterns, incl
 
 To implement custom P2P/distributed optimization algorithms, we'll delve into its lower level APIs to build a framework facilitate building P2P algorithms. In particular, we'll use
 
-- [Controllers](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.apis.impl.controller.html#module-nvflare.apis.impl.controller): Server-side components that manage job execution and orchestrate tasks.
-- [Executors](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.apis.executor.html#module-nvflare.apis.executor): Client-side components that perform computations and handle tasks received from the controller.
-- [Messages via aux channes](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.private.aux_runner.html#nvflare.private.aux_runner.AuxRunner.send_aux_request): Custom messages that enable direct communication between clients.
+- [Controllers](https://nvflare.readthedocs.io/en/2.6/apidocs/nvflare.apis.impl.controller.html#module-nvflare.apis.impl.controller): Server-side components that manage job execution and orchestrate tasks.
+- [Executors](https://nvflare.readthedocs.io/en/2.6/apidocs/nvflare.apis.executor.html#module-nvflare.apis.executor): Client-side components that perform computations and handle tasks received from the controller.
+- [Messages via aux channes](https://nvflare.readthedocs.io/en/2.6/apidocs/nvflare.private.aux_runner.html#nvflare.private.aux_runner.AuxRunner.send_aux_request): Custom messages that enable direct communication between clients.
 
 #### What to expect
 We'll start by defining a way to easily define and share configurations across the network. Then we'll implement a base controller and executor, serving as the backbone to implement arbitrary p2p algorithms. Finally we'll build upon the base executor to implement a specific algorithm, the Consensus algorithm.
