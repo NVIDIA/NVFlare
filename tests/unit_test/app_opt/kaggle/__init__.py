@@ -11,10 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from nvflare.app_opt.kaggle.download_data import download
-
-# Download latest version
-input_path = "tawsifurrahman/covid19-radiography-database"
-output_path = "/tmp/nvflare/image_stats/data"
-download(input_path, output_path)

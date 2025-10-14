@@ -80,7 +80,9 @@ class FedAvg(BaseFedAvg):
 
             clients = self.sample_clients(self.num_clients)
 
-            results: List[FLModel] = self.send_model_and_wait(targets=clients, data=model)
+            results: List[FLModel] = self.send_model_and_wait(
+                targets=clients, data=model, min_responses=self.num_clients
+            )
             aggregate_results = self.aggregate(
                 results, aggregate_fn=self.aggregate_fn
             )  # using default aggregate_fn with `WeightedAggregationHelper`. Can overwrite self.aggregate_fn with signature Callable[List[FLModel], FLModel]
