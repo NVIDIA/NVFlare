@@ -20,6 +20,7 @@ from bionemo.core.data.load import load
 
 from nvflare import FilterType
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import BaseScriptRunner
@@ -38,6 +39,7 @@ def main(args):
         num_rounds=args.num_rounds,
     )
     job.to_server(controller)
+    job.to_server(DecomposerRegister(["nvflare.app_opt.pt.decomposers.TensorDecomposer"]))
 
     checkpoint_path = load(f"esm2/{args.model}:2.0")
     print(f"Downloaded {args.model} to {checkpoint_path}")
@@ -87,6 +89,7 @@ def main(args):
             BioNeMoParamsFilter(precision), client_name, tasks=["train", "validate"], filter_type=FilterType.TASK_DATA
         )
         job.to(BioNeMoStateDictFilter(), client_name, tasks=["train", "validate"], filter_type=FilterType.TASK_RESULT)
+        job.to(DecomposerRegister(["nvflare.app_opt.pt.decomposers.TensorDecomposer"]), client_name)
 
     job.export_job("./exported_jobs")
     job.simulator_run(f"/tmp/nvflare/bionemo/sabdab/{job.name}", gpu=args.sim_gpus)
