@@ -18,6 +18,7 @@ import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.tensor_stream.receiver import TensorReceiver
 from nvflare.app_opt.tensor_stream.sender import TensorSender
 from nvflare.app_opt.tensor_stream.server import TensorServerStreamer
@@ -52,9 +53,10 @@ class TestTensorServerStreamer:
         assert streamer.engine is None
         assert streamer.sender is None
         assert streamer.receiver is None
-        assert streamer.num_task_data_sent == 0
-        assert streamer.num_task_skipped == 0
-        assert streamer.data_cleaned is False
+        # Counters are now defaultdict instances
+        assert isinstance(streamer.num_task_data_sent, dict)
+        assert isinstance(streamer.num_task_skipped, dict)
+        assert isinstance(streamer.data_cleaned, dict)
 
     @patch("nvflare.app_opt.tensor_stream.server.TensorReceiver")
     def test_initialize_success(self, mock_receiver_class, mock_fl_context, mock_engine_with_clients):
@@ -133,34 +135,23 @@ class TestTensorServerStreamer:
         # Sender should still be None after START_RUN event
         assert streamer.sender is None
 
-    @pytest.mark.parametrize(
-        "data_cleaned_initial,expected_sent_after,expected_skipped_after,expected_data_cleaned_after",
-        [
-            (True, 0, 0, False),  # Data was cleaned, counters should reset
-            (False, 5, 2, False),  # Data was not cleaned, counters should not reset
-        ],
-    )
-    def test_handle_event_before_task_data_filter(
-        self,
-        data_cleaned_initial,
-        expected_sent_after,
-        expected_skipped_after,
-        expected_data_cleaned_after,
-        mock_fl_context,
-    ):
-        """Test handling BEFORE_TASK_DATA_FILTER event with different data cleaned states."""
+    def test_handle_event_before_task_data_filter(self, mock_fl_context):
+        """Test handling BEFORE_TASK_DATA_FILTER event - tracks task IDs."""
         streamer = TensorServerStreamer()
-        streamer.data_cleaned = data_cleaned_initial
-        streamer.num_task_data_sent = 5
-        streamer.num_task_skipped = 2
+
+        # Mock the context to return current_round and task_id
+        current_round = 1
+        task_id = "task_123"
+        mock_fl_context.get_prop.side_effect = lambda key: {
+            AppConstants.CURRENT_ROUND: current_round,
+            FLContextKey.TASK_ID: task_id,
+        }.get(key)
 
         # Handle BEFORE_TASK_DATA_FILTER event
         streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
 
-        # Verify counters behavior based on data_cleaned state
-        assert streamer.num_task_data_sent == expected_sent_after
-        assert streamer.num_task_skipped == expected_skipped_after
-        assert streamer.data_cleaned == expected_data_cleaned_after
+        # Verify task_id was added to seen_tasks for the current round
+        assert task_id in streamer.seen_tasks[current_round]
 
     @patch("nvflare.app_opt.tensor_stream.server.TensorSender")
     def test_handle_event_after_task_data_filter(self, mock_sender_class, mock_fl_context, mock_engine_with_clients):
@@ -221,15 +212,14 @@ class TestTensorServerStreamer:
         streamer.wait_clients_to_complete.assert_not_called()
         streamer.try_to_clean_task_data.assert_not_called()
 
-    def test_handle_event_task_result_received(self, mock_fl_context):
-        """Test handling TASK_RESULT_RECEIVED event."""
+    def test_handle_event_before_task_result_filter(self, mock_fl_context):
+        """Test handling BEFORE_TASK_RESULT_FILTER event."""
         streamer = TensorServerStreamer()
         mock_receiver = Mock(spec=TensorReceiver)
-        mock_receiver.tensors = Mock()  # Make tensors a mock so we can verify clear() is called
         streamer.receiver = mock_receiver
 
-        # Handle TASK_RESULT_RECEIVED event
-        streamer.handle_event(EventType.TASK_RESULT_RECEIVED, mock_fl_context)
+        # Handle BEFORE_TASK_RESULT_FILTER event
+        streamer.handle_event(EventType.BEFORE_TASK_RESULT_FILTER, mock_fl_context)
 
         # Verify receiver.set_ctx_with_tensors was called
         mock_receiver.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
@@ -273,6 +263,9 @@ class TestTensorServerStreamer:
         self, send_result, expected_sent, expected_skipped, mock_fl_context, mock_engine_with_clients
     ):
         """Test tensor sending to client with different outcomes."""
+        current_round = 1
+        mock_fl_context.get_prop.return_value = current_round
+
         streamer = TensorServerStreamer(entry_timeout=5.0)
         streamer.engine = mock_engine_with_clients
 
@@ -281,9 +274,9 @@ class TestTensorServerStreamer:
         mock_sender.send.return_value = send_result
         streamer.sender = mock_sender
 
-        # Initial state
-        assert streamer.num_task_data_sent == 0
-        assert streamer.num_task_skipped == 0
+        # Initial state - counters should be empty dicts
+        assert streamer.num_task_data_sent[current_round] == 0
+        assert streamer.num_task_skipped[current_round] == 0
 
         # Send tensors
         streamer.send_tensors_to_client(mock_fl_context)
@@ -291,9 +284,9 @@ class TestTensorServerStreamer:
         # Verify sender.send was called with correct parameters
         mock_sender.send.assert_called_once_with(mock_fl_context, 5.0)
 
-        # Verify counters were updated correctly
-        assert streamer.num_task_data_sent == expected_sent
-        assert streamer.num_task_skipped == expected_skipped
+        # Verify counters were updated correctly for the current round
+        assert streamer.num_task_data_sent[current_round] == expected_sent
+        assert streamer.num_task_skipped[current_round] == expected_skipped
 
     def test_send_tensors_to_client_value_error(self, mock_fl_context):
         """Test tensor sending when sender raises ValueError."""
@@ -322,7 +315,6 @@ class TestTensorServerStreamer:
         [
             (1000.0, 2, 1, 3, 300.0, None, False),  # Success: all clients processed
             (1000.0, 1, 0, 3, 1.0, [1000.5, 1001.5], True),  # Timeout scenario
-            (None, 0, 0, 3, 300.0, None, False),  # No start time, should return immediately
         ],
     )
     @patch("time.sleep")
@@ -341,10 +333,13 @@ class TestTensorServerStreamer:
         mock_fl_context,
     ):
         """Test waiting for clients to complete in various scenarios."""
+        current_round = 1
+        mock_fl_context.get_prop.return_value = current_round
+
         streamer = TensorServerStreamer(wait_all_clients_timeout=timeout)
-        streamer.start_sending_time = start_time
-        streamer.num_task_data_sent = num_sent
-        streamer.num_task_skipped = num_skipped
+        streamer.start_sending_time[current_round] = start_time
+        streamer.num_task_data_sent[current_round] = num_sent
+        streamer.num_task_skipped[current_round] = num_skipped
         streamer.system_panic = Mock()
 
         if time_progression:
@@ -353,11 +348,7 @@ class TestTensorServerStreamer:
         # Execute the method
         streamer.wait_clients_to_complete(num_clients, mock_fl_context)
 
-        if start_time is None:
-            # Should return immediately without sleeping
-            mock_sleep.assert_not_called()
-            streamer.system_panic.assert_not_called()
-        elif should_timeout:
+        if should_timeout:
             # Should have called sleep and system_panic due to timeout
             mock_sleep.assert_called_with(0.1)
             streamer.system_panic.assert_called_once()
@@ -390,10 +381,13 @@ class TestTensorServerStreamer:
         mock_engine_with_clients,
     ):
         """Test cleaning task data based on different client reception scenarios."""
+        current_round = 1
+        mock_fl_context.get_prop.return_value = current_round
+
         streamer = TensorServerStreamer()
         streamer.engine = mock_engine_with_clients
-        streamer.num_task_data_sent = num_sent
-        streamer.data_cleaned = False
+        streamer.num_task_data_sent[current_round] = num_sent
+        streamer.data_cleaned[current_round] = False
         streamer.log_info = Mock()
 
         # Clean task data
@@ -402,8 +396,8 @@ class TestTensorServerStreamer:
         if should_clean:
             # Verify clean_task_data was called
             mock_clean_task_data.assert_called_once_with(mock_fl_context)
-            # Verify state was updated
-            assert streamer.data_cleaned is True
+            # Verify state was updated for the current round
+            assert streamer.data_cleaned[current_round] is True
             # Verify log message
             streamer.log_info.assert_called_once()
             log_args = streamer.log_info.call_args[0]
@@ -412,8 +406,8 @@ class TestTensorServerStreamer:
         else:
             # Verify clean_task_data was NOT called
             mock_clean_task_data.assert_not_called()
-            # Verify state was not updated
-            assert streamer.data_cleaned is False
+            # Verify state was not updated for the current round
+            assert streamer.data_cleaned[current_round] is False
             # Verify no log message
             streamer.log_info.assert_not_called()
 
@@ -421,8 +415,18 @@ class TestTensorServerStreamer:
     @patch("nvflare.app_opt.tensor_stream.server.TensorReceiver")
     def test_complete_workflow(self, mock_receiver_class, mock_sender_class, mock_fl_context, mock_engine_with_clients):
         """Test complete workflow: initialization, event handling, and tensor operations."""
+        current_round = 1
+        task_id = "task_123"
+
         # Setup mocks
         mock_fl_context.get_engine.return_value = mock_engine_with_clients
+        mock_fl_context.get_prop.side_effect = lambda key: {
+            "AppConstants.CURRENT_ROUND": current_round,
+            FLContextKey.TASK_ID: task_id,
+        }.get(
+            key, current_round
+        )  # Default to current_round for other keys
+
         mock_sender_instance = Mock(spec=TensorSender)
         mock_receiver_instance = Mock(spec=TensorReceiver)
         mock_receiver_instance.tensors = {}
@@ -440,9 +444,9 @@ class TestTensorServerStreamer:
         assert streamer.sender is None  # Sender not created yet
         assert streamer.receiver == mock_receiver_instance
 
-        # Step 2: Handle TASK_RESULT_RECEIVED event
-        streamer.handle_event(EventType.TASK_RESULT_RECEIVED, mock_fl_context)
-        assert streamer.data_cleaned is False
+        # Step 2: Handle BEFORE_TASK_DATA_FILTER event (track task)
+        streamer.handle_event(EventType.BEFORE_TASK_DATA_FILTER, mock_fl_context)
+        assert streamer.data_cleaned[current_round] is False
 
         # Step 3: Handle AFTER_TASK_DATA_FILTER event (create sender and send tensors)
         with patch.object(streamer, "wait_clients_to_complete") as mock_wait:
@@ -459,8 +463,8 @@ class TestTensorServerStreamer:
                 # Verify sender was called
                 mock_sender_instance.send.assert_called_once_with(mock_fl_context, 10.0)
 
-                # Verify counter incremented
-                assert streamer.num_task_data_sent == 1
+                # Verify counter incremented for the current round
+                assert streamer.num_task_data_sent[current_round] == 1
 
                 # Verify wait was called
                 mock_wait.assert_called_once_with(3, mock_fl_context)
@@ -469,7 +473,6 @@ class TestTensorServerStreamer:
                 mock_clean.assert_called_once_with(3, mock_fl_context)
 
         # Step 4: Handle BEFORE_TASK_RESULT_FILTER event
-        mock_receiver_instance.tensors = Mock()  # Make tensors a mock so we can verify clear() is called
         streamer.handle_event(EventType.BEFORE_TASK_RESULT_FILTER, mock_fl_context)
 
         # Verify receiver was called

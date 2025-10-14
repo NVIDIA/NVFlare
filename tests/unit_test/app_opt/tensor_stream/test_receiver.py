@@ -323,7 +323,10 @@ class TestTensorReceiver:
     ):
         """Test set_ctx_with_tensors when no tensors are stored for task_id."""
         receiver = TensorReceiver(
-            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+            engine=mock_streamable_engine,
+            ctx_prop_key=FLContextKey.TASK_DATA,
+            format=ExchangeFormat.PYTORCH,
+            wait_for_save_tensors_cb_secs=0,  # Short wait time for test
         )
 
         # Setup FL context without storing any tensors for this task_id

@@ -36,6 +36,7 @@ class TensorReceiver:
         ctx_prop_key: FLContextKey,
         format: ExchangeFormat = ExchangeFormat.PYTORCH,
         channel: str = TENSORS_CHANNEL,
+        wait_for_save_tensors_cb_secs: float = 5.0,
     ):
         """Initialize the TensorReceiver.
 
@@ -50,6 +51,7 @@ class TensorReceiver:
         self.ctx_prop_key = ctx_prop_key
         self.format = format
         self.channel = channel
+        self.wait_for_save_tensors_cb_secs = wait_for_save_tensors_cb_secs
         # key: peer_name, value: tensors received from the peer
         self.tensors: dict[str, TensorsMap] = {}
         self.logger = get_obj_logger(self)
@@ -112,11 +114,10 @@ class TensorReceiver:
         # there is a race condition where the event is fired before the tensors are set in self.tensors
         # wait for a short period of time to allow the callback to set the tensors
         start_wait = time.time()
-        max_wait = 5  # seconds
         while task_id not in self.tensors:
             self.logger.debug(f"Waiting for tensors for task_id '{task_id}'...")
             time.sleep(0.1)  # wait for tensors to be received
-            if time.time() - start_wait > max_wait:
+            if time.time() - start_wait > self.wait_for_save_tensors_cb_secs:
                 self.logger.error(f"Timeout waiting for tensors for task_id '{task_id}'.")
                 return  # exit without setting tensors
 

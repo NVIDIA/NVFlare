@@ -53,7 +53,6 @@ class TestTensorSender:
 
         assert sender.engine == mock_streamable_engine
         assert sender.ctx_prop_key == ctx_prop_key
-        assert sender.root_keys == []  # Should start empty and be auto-detected
         assert sender.format == format
         assert sender.tasks == tasks
         assert sender.channel == expected_channel
@@ -300,12 +299,6 @@ class TestTensorSender:
 
         # Verify return value
         assert result is True
-
-        # Verify that root_keys were auto-detected correctly
-        if "" in expected_root_keys:
-            assert sender.root_keys == expected_root_keys
-        else:
-            assert set(sender.root_keys) == set(expected_root_keys)
 
         # Verify correct number of calls
         assert mock_get_tensors.call_count == len(expected_root_keys)

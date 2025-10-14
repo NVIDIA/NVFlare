@@ -260,7 +260,8 @@ class TestTensorClientStreamer:
             mock_sender_class.assert_called_once_with(
                 mock_engine_with_clients, FLContextKey.TASK_RESULT, ExchangeFormat.PYTORCH, ["train"]
             )
-            assert streamer.sender == mock_sender_instance
+            # After successful send, sender is set to None to release references
+            assert streamer.sender is None
             mock_sender_instance.send.assert_called_once_with(mock_fl_context, 5.0)
 
             # Verify cleanup was called
@@ -353,30 +354,35 @@ class TestTensorClientStreamer:
         """Test that components are properly set up after initialization."""
         with patch("nvflare.app_opt.tensor_stream.client.TensorSender") as mock_sender_class:
             with patch("nvflare.app_opt.tensor_stream.client.TensorReceiver") as mock_receiver_class:
-                mock_fl_context.get_engine.return_value = mock_engine_with_clients
-                mock_sender_instance = Mock(spec=TensorSender)
-                mock_receiver_instance = Mock(spec=TensorReceiver)
-                mock_sender_class.return_value = mock_sender_instance
-                mock_receiver_class.return_value = mock_receiver_instance
+                with patch("nvflare.app_opt.tensor_stream.client.clean_task_result"):
+                    mock_fl_context.get_engine.return_value = mock_engine_with_clients
+                    mock_sender_instance = Mock(spec=TensorSender)
+                    mock_receiver_instance = Mock(spec=TensorReceiver)
+                    # Mock send to return False so sender is not cleared
+                    mock_sender_instance.send.return_value = False
+                    mock_sender_class.return_value = mock_sender_instance
+                    mock_receiver_class.return_value = mock_receiver_instance
 
-                streamer = TensorClientStreamer()
+                    streamer = TensorClientStreamer()
 
-                # Before initialization
-                assert streamer.engine is None
-                assert streamer.sender is None
-                assert streamer.receiver is None
+                    # Before initialization
+                    assert streamer.engine is None
+                    assert streamer.sender is None
+                    assert streamer.receiver is None
 
-                # Initialize
-                streamer.initialize(mock_fl_context)
+                    # Initialize
+                    streamer.initialize(mock_fl_context)
 
-                # After initialization - only receiver should be created
-                assert streamer.engine == mock_engine_with_clients
-                assert streamer.sender is None
-                assert streamer.receiver == mock_receiver_instance
+                    # After initialization - only receiver should be created
+                    assert streamer.engine == mock_engine_with_clients
+                    assert streamer.sender is None
+                    assert streamer.receiver == mock_receiver_instance
 
-                # Sender should be created only when handling AFTER_TASK_RESULT_FILTER
-                streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
-                assert streamer.sender == mock_sender_instance
+                    # Sender should be created when handling AFTER_TASK_RESULT_FILTER
+                    # but cleared if send returns True, so we mock send to return False
+                    streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
+                    # Since send returns False, sender is NOT cleared
+                    assert streamer.sender == mock_sender_instance
 
     def test_error_propagation_in_event_handling(self, mock_fl_context):
         """Test that exceptions in event handling are properly handled."""
@@ -474,7 +480,8 @@ class TestTensorClientStreamer:
 
                     # Verify sender was created
                     mock_sender_class.assert_called_once()
-                    assert streamer.sender is not None
+                    # After successful send, sender is set to None to release references
+                    assert streamer.sender is None
                     mock_sender_instance.send.assert_called_once()
 
                 # Verify all components were used
