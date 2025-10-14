@@ -156,9 +156,9 @@ FLARE 2.7 extends federated learning capabilities to edge devices. Edge device a
 
     To support scalability, we add the following features
 
-    - Support for hierarchical federated architecture :ref:`flare_hierarchical_architecture`
+    - Support for hierarchical federated architecture: :ref:`Hierarchical FLARE <flare_hierarchical_architecture>`
     - Asynchronous federated learning algorithm based on FedBuff: :ref:`flare_edge`
-    - Model development support for both iOS and Android :ref:`flare_mobile`
+    - Model development support for both iOS and Android: :ref:`flare_mobile`
 
 - **Scalability**: Unlike cross-silo applications where the number of FL clients is relatively small, the number of devices could be in the millions. It's infeasible to treat the devices as simple FL clients and connect them directly to the FL server.
 - **Stability**: Unlike cross-silo applications where the FL clients are stable, edge devices come and go at any time. This requires the training strategy to accommodate this behavior.

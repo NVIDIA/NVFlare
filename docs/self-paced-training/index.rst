@@ -3,11 +3,11 @@
 Self-Paced-Training Tutorials
 ==============================
 
-Federated Learning with NVIDIA FLARE: Notebooks and videos
+Federated Learning with NVIDIA FLARE: Notebooks and Videos
 ----------------------------------------------------------
 Welcome to the five-part course on Federated Learning with NVIDIA FLARE!
 This course covers everything from the fundamentals to advanced applications, system deployment, privacy, security, and real-world industry use cases.
-it has **100+** notebooks, **80** videos
+It has **100+** notebooks and **80** videos.
 
 
 What You'll Learn
@@ -107,7 +107,7 @@ This section explores the architecture and deployment of federated computing sys
 Part 3: Security and Privacy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Federated Learning (FL) enables decentralized model training while preserving data privacy, making it ideal for sensitive domains like healthcare and finance. However, FL introduces security and privacy risks, such as data leakage, adversarial attacks, and model integrity threats.
+Federated learning enables decentralized model training while preserving data privacy, making it ideal for sensitive domains like healthcare and finance. However, federated learning introduces security and privacy risks, such as data leakage, adversarial attacks, and model integrity threats.
 
 **What You'll Learn**
 
@@ -195,11 +195,14 @@ This section demonstrates how NVIDIA FLARE is applied in real-world industry set
 **What You'll Learn**
 
 - How NVIDIA FLARE powers collaborative machine learning in healthcare and life sciences, including:
+
   - Medical image analysis (e.g., cancer detection, radiology)
   - Survival analysis (e.g., Kaplan-Meier)
   - Genomics and multi-institutional research
-  - Drug discovery (if specifically covered)
+  - Drug discovery
+
 - Financial services applications, such as:
+
   - Fraud detection
   - Anomaly detection in transactions
 
