@@ -96,8 +96,7 @@ class StaticFileBuilder(Builder):
         return conn_security
 
     def _determine_scheme(self, participant: Participant, scheme=None) -> str:
-        # use AIO for server by default
-        use_aio = participant.get_prop(PropKey.USE_AIO, participant.type == ParticipantType.SERVER)
+        use_aio = participant.get_prop(PropKey.USE_AIO, False)
         if not scheme:
             scheme = self.scheme
 
@@ -866,7 +865,9 @@ class StaticFileBuilder(Builder):
                 )
 
         # create start_all.sh
-        self._create_start_all(project, ctx)
+        gen_scripts = project.props.get("gen_scripts", False)
+        if gen_scripts:
+            self._create_start_all(project, ctx)
 
     @staticmethod
     def _append(content: str, participant: Participant) -> str:
