@@ -1,6 +1,6 @@
 .. _poc:
 
-PoC: Prove of Concept: Simulate Production deployment locally
+POC: Prove of Concept: Simulate Production deployment locally
 =============================================================
 
 
@@ -10,7 +10,7 @@ Setting Up the Application Environment in POC Mode
 --------------------------------------------------
 
 To get started with a proof of concept (POC) setup after :ref:`installation`, run this command to generate a poc folder
-with an overseer, server, two clients, and one admin client:
+with an server, two clients, and one admin client:
 
 .. code-block:: shell
 
@@ -52,4 +52,4 @@ We can use the :ref:`job_cli` to easily submit a job to the POC system. (Note: W
 
 For more details, see :ref:`poc_command`.
 
-For `Poc Tutorials: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/setup_poc.ipynb>`_
+For `POC Tutorials: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/setup_poc.ipynb>`_

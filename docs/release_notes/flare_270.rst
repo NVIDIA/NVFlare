@@ -87,8 +87,8 @@ When combined with the Client API (typically 4+ lines), building and running fed
     or read the :ref:`job_recipe`, more than half a dozen ready-to-use recipes are provided: :ref:`quickstart`
 
 
-FLARE 2.7.0: Federated Learning with Just One Port
---------------------------------------------------
+Port Consolidation: Simplified Deployment with Single-Port Architecture
+-----------------------------------------------------------------------
 
 .. sidebar::
 
@@ -103,15 +103,14 @@ FLARE 2.7.0: Federated Learning with Just One Port
 
 
 - **Consolidated Port**: Reduced from two ports to a single port, simplifying deployment.
-- **No IT Support Needed**: With TLS + HTTPS driver, the standard HTTPS port 443 can be used, eliminating IT support to open new port(s)
-- **High Performance**: new HTTP driver matches gRPC in speed and reliability.
+- **Standard Port Compatibility**: Use standard HTTPS port 443 - no need for IT to open additional ports
+- **High Performance**: New HTTP driver matches gRPC in speed and reliability.
 
 .. admonition:: Why it matters
 
-    **Faster Deployment**: Less IT dependency, faster setup for federated learning projects.
-    FLARE 2.7.0 simplifies network requirements and allows fully secure deployments without waiting for IT approvals.
+    **Faster Deployment**: Eliminates network configuration delays and IT approvals for opening custom ports.
+    FLARE 2.7.0 simplifies network requirements and allows fully secure deployments on standard infrastructure.
     :ref:`Check out FL server port consolidation details <server_port_consolidation>`.
-
 
 Security Enhancement
 --------------------
