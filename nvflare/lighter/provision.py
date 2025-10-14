@@ -86,7 +86,7 @@ def handle_provision(args):
         copy_project("dummy_project.yml", current_project_yml)
         return
 
-    if args.edge:
+    if args.gen_edge:
         copy_project("edge_project.yml", current_project_yml)
         return
 
