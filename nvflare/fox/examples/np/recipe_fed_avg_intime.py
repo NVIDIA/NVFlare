@@ -21,7 +21,7 @@ from nvflare.fox.examples.np.algos.strategies.avg_intime import NPFedAvgInTime
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
+JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfer"
 
 
 def main():

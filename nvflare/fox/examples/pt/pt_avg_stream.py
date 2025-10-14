@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import threading
 
 import torch
 
@@ -30,11 +31,10 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 class _AggrResult:
 
-    # Used for aggregation
-
     def __init__(self):
         self.total = {}
         self.count = 0
+        self.lock = threading.Lock()  # ensure update integrity
 
 
 class PTFedAvgStream(Strategy):
@@ -114,11 +114,12 @@ class PTFedAvgStream(Strategy):
 
     def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult, context: Context):
         self.logger.info(f"[{context.header_str()}] aggregating received tensor: {td}")
-        for k, v in td.items():
-            if k not in aggr_result.total:
-                aggr_result.total[k] = v
-            else:
-                aggr_result.total[k] += v
+        with aggr_result.lock:
+            for k, v in td.items():
+                if k not in aggr_result.total:
+                    aggr_result.total[k] = v
+                else:
+                    aggr_result.total[k] += v
 
 
 class PTTrainer(ClientApp):

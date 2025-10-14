@@ -18,7 +18,7 @@ from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.pt.pt_avg_stream import PTFedAvgStream, PTTrainer
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
+JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfer"
 
 
 def main():
