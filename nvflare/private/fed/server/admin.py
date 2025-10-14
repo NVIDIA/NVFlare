@@ -108,6 +108,7 @@ class FedAdminServer(AdminServer):
         server_key_file_name,
         accepted_client_cns=None,
         download_job_url="",
+        timeout: float = 10.0,
     ):
         """The FedAdminServer is the framework for developing admin commands.
 
@@ -124,6 +125,7 @@ class FedAdminServer(AdminServer):
             server_key_file_name: server's private key file
             accepted_client_cns: list of accepted Common Names from client, if specified
             download_job_url: download job url
+            timeout: admin command timeouts
         """
         cmd_reg = new_command_register_with_builtin_module(app_ctx=fed_admin_interface)
         self.sai = fed_admin_interface
@@ -190,7 +192,7 @@ class FedAdminServer(AdminServer):
         )
 
         self.clients = {}  # token => _Client
-        self.timeout = 10.0
+        self.timeout = timeout
 
     def client_heartbeat(self, token, name: str, fqcn: str):
         """Receive client heartbeat.
