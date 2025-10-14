@@ -54,7 +54,7 @@ def define_provision_parser(parser):
     # Create mutually exclusive group for the main action
     action_group = parser.add_mutually_exclusive_group(required=True)
     action_group.add_argument("-g", "--generate", action="store_true", help="generate a sample project.yml")
-    action_group.add_argument("-e", "--edge", action="store_true", help="generate a sample edge project.yml")
+    action_group.add_argument("-e", "--gen_edge", action="store_true", help="generate a sample edge project.yml")
     action_group.add_argument("-p", "--project_file", type=str, help="file to describe FL project")
 
     # Optional arguments
@@ -62,7 +62,7 @@ def define_provision_parser(parser):
     parser.add_argument("-c", "--custom_folder", type=str, default=".", help="additional folder to load python codes")
     parser.add_argument("--add_user", type=str, default="", help="yaml file for added user")
     parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
-    parser.add_argument("-s", "--script", action="store_true", help="generate test scripts like start_all.sh")
+    parser.add_argument("-s", "--gen_scripts", action="store_true", help="generate test scripts like start_all.sh")
 
 
 def copy_project(project: str, dest: str):
