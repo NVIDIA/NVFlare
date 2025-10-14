@@ -865,8 +865,8 @@ class StaticFileBuilder(Builder):
                 )
 
         # create start_all.sh
-        gen_script = project.props.get("gen_script", False)
-        if gen_script:
+        gen_scripts = project.props.get("gen_scripts", False)
+        if gen_scripts:
             self._create_start_all(project, ctx)
 
     @staticmethod

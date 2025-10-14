@@ -130,7 +130,7 @@ def provision(
     add_client_full_path: Optional[str] = None,
 ):
     project_dict = load_yaml(project_full_path)
-    project_dict["gen_script"] = args.script
+    project_dict["gen_scripts"] = args.gen_scripts
     edge_params = project_dict.get("edge")
     if edge_params:
         try:
