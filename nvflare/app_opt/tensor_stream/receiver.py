@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
+
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -92,6 +94,11 @@ class TensorReceiver:
         else:
             self.tensors[task_id].update(tensors)
 
+        # Clean up custom properties to reduce memory usage
+        fl_ctx.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, None)
+        fl_ctx.set_custom_prop(TensorCustomKeys.TASK_ID, None)
+        del tensors
+
     def set_ctx_with_tensors(self, fl_ctx: FLContext):
         """Update the context with the received tensors.
 
@@ -101,6 +108,17 @@ class TensorReceiver:
         task_id = fl_ctx.get_prop(FLContextKey.TASK_ID, None)
         if not task_id:
             raise ValueError("No task_id found in FLContext.")
+
+        # there is a race condition where the event is fired before the tensors are set in self.tensors
+        # wait for a short period of time to allow the callback to set the tensors
+        start_wait = time.time()
+        max_wait = 5  # seconds
+        while task_id not in self.tensors:
+            self.logger.debug(f"Waiting for tensors for task_id '{task_id}'...")
+            time.sleep(0.1)  # wait for tensors to be received
+            if time.time() - start_wait > max_wait:
+                self.logger.error(f"Timeout waiting for tensors for task_id '{task_id}'.")
+                return  # exit without setting tensors
 
         peer_name = fl_ctx.get_peer_context().get_identity_name()
         tensors = self.tensors.pop(task_id, None)
