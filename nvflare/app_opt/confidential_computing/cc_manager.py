@@ -184,7 +184,7 @@ class CCManager(FLComponent):
 
     def _prepare_cc_info(self, fl_ctx: FLContext):
         # client side
-        self._refresh_tokens(force=True)
+        self._ensure_fresh_tokens(force=True)
 
         if not self.token_submitted:
             site_cc_info = self.participant_cc_info[self.site_name]
@@ -217,7 +217,7 @@ class CCManager(FLComponent):
                 for _, client in job_participants.items():
                     participants.append(client.name)
 
-                self._refresh_tokens()
+                self._ensure_fresh_tokens()
                 participants_tokens = self._collect_participants_tokens(participants)
                 err = self._validate_participants_tokens(participants_tokens)
                 if err:
@@ -302,7 +302,7 @@ class CCManager(FLComponent):
         # server side to collect tokens from all participants including itself
         # must ask each participant to generate new tokens since this method
         # is called when a job is to be scheduled
-        self._refresh_tokens(force=True)
+        self._ensure_fresh_tokens(force=True)
         participants_tokens = self._collect_participants_tokens(participants)
         err = self._validate_participants_tokens(participants_tokens)
         if err:
@@ -346,7 +346,7 @@ class CCManager(FLComponent):
             cc_info.append({CC_TOKEN: token, CC_NAMESPACE: namespace, CC_TOKEN_VALIDATED: False})
         return cc_info
 
-    def _refresh_tokens(self, force=False):
+    def _ensure_fresh_tokens(self, force=False):
         """Refresh CC tokens for the current site by requesting each issuer to generate a new token.
 
         If `force` is True, generates and replaces all tokens regardless of expiration.

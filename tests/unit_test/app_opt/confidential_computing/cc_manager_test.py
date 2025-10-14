@@ -158,7 +158,9 @@ def cc_test_env_with_mock_refresh(cc_test_env) -> Generator[Tuple[CCManager, FLC
         the CC manager, FL context, and TDX authorizer with mocked refresh
     """
     cc_manager, fl_ctx, tdx_authorizer = cc_test_env
-    with patch("nvflare.app_opt.confidential_computing.cc_manager.CCManager._refresh_tokens") as mock_refresh_tokens:
+    with patch(
+        "nvflare.app_opt.confidential_computing.cc_manager.CCManager._ensure_fresh_tokens"
+    ) as mock_ensure_fresh_tokens:
         yield cc_manager, fl_ctx, tdx_authorizer
 
 
@@ -298,7 +300,7 @@ class TestCCManager:
         cc_info[0][TOKEN_GENERATION_TIME] = 0
 
         # Refresh expired tokens
-        cc_manager._refresh_tokens()
+        cc_manager._ensure_fresh_tokens()
 
         # Verify token was refreshed
         assert cc_info[0][TOKEN_GENERATION_TIME] > initial_time
