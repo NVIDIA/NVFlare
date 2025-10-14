@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from processors.cifar10_pt_task_processor import Cifar10PTTaskProcessor
-from processors.models.cifar10_model import Cifar10ConvNet
+from client import Cifar10PTTaskProcessor
+from model import Cifar10ConvNet
 
 from nvflare.edge.tools.edge_fed_buff_recipe import (
     DeviceManagerConfig,

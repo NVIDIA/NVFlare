@@ -15,8 +15,8 @@
 import argparse
 import os
 
-from processors.cifar10_pt_task_processor import Cifar10PTTaskProcessor
-from processors.models.cifar10_model import Cifar10ConvNet
+from client import Cifar10PTTaskProcessor
+from model import Cifar10ConvNet
 
 from nvflare.edge.tools.edge_fed_buff_recipe import (
     DeviceManagerConfig,
@@ -28,18 +28,14 @@ from nvflare.edge.tools.edge_fed_buff_recipe import (
 from nvflare.recipe.prod_env import ProdEnv
 
 
-def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds, no_delay=False):
+def create_edge_recipe(devices_per_leaf, num_leaf_nodes, global_rounds, no_delay=False):
     """
-    Create an edge recipe based on the specified federated learning mode and parameters.
-    Supports both sync and async modes - both modes use the basic setting:
-    - Sync assumes all devices participate in each global model version
-    - Async assumes generating a new global model version and immediately dispatch it once receiving an update from device
+    Create an edge recipe for asynchronous federated learning with CIFAR10.
 
     Args:
-        fl_mode (str): Either 'sync' or 'async'
         devices_per_leaf (int): Number of devices at each leaf node
         num_leaf_nodes (int): Number of leaf nodes in the hierarchy
-        global_rounds (int): Number of global model versions, i.e., number of federated rounds for sync mode
+        global_rounds (int): Number of global federated rounds (will be multiplied by total devices for async)
         no_delay (bool): If True, set communication delay and device speed to 0.0
     """
     dataset_root = "/tmp/nvflare/datasets/cifar10"
@@ -66,48 +62,30 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
         device_speed=device_speed,
     )
 
-    # Configure model manager based on FL mode
-    if fl_mode == "sync":
-        model_manager_config = ModelManagerConfig(
-            global_lr=1.0,
-            # need all devices to train for one global model version
-            num_updates_for_model=total_devices,
-            max_model_version=global_rounds,
-        )
-        device_manager_config = DeviceManagerConfig(
-            # each leaf node has devices_per_leaf devices
-            device_selection_size=total_devices,
-            # wait for all devices to finish training before starting
-            # dispatching the next global model version
-            min_hole_to_fill=total_devices,
-            # always reuse the same devices for federated learning
-            device_reuse=True,
-        )
-        eval_frequency = 1
-    else:  # async mode
-        model_manager_config = ModelManagerConfig(
-            global_lr=0.05,
-            num_updates_for_model=1,
-            # to be comparable to sync mode w.r.t. the data amount visited by global model,
-            # sync - each global model covers total_devices data
-            # async - each global model covers 1 device's data
-            max_model_version=global_rounds * total_devices,
-            # increase the update timeout to allow for the slowest device to finish
-            update_timeout=500,
-        )
-        device_manager_config = DeviceManagerConfig(
-            # each leaf node has devices_per_leaf devices
-            device_selection_size=total_devices,
-            # immediately dispatch the current global model
-            # once receiving an update from device
-            min_hole_to_fill=1,
-            # always reuse the same devices for federated learning
-            device_reuse=True,
-        )
-        eval_frequency = total_devices
+    # Configure model manager for asynchronous FL
+    model_manager_config = ModelManagerConfig(
+        global_lr=0.05,
+        num_updates_for_model=1,
+        # to be comparable to sync mode w.r.t. the data amount visited by global model,
+        # sync - each global model covers total_devices data
+        # async - each global model covers 1 device's data
+        max_model_version=global_rounds * total_devices,
+        # increase the update timeout to allow for the slowest device to finish
+        update_timeout=500,
+    )
+    device_manager_config = DeviceManagerConfig(
+        # each leaf node has devices_per_leaf devices
+        device_selection_size=total_devices,
+        # immediately dispatch the current global model
+        # once receiving an update from device
+        min_hole_to_fill=1,
+        # always reuse the same devices for federated learning
+        device_reuse=True,
+    )
+    eval_frequency = total_devices
 
     recipe = EdgeFedBuffRecipe(
-        job_name=f"pt_job_{fl_mode}{suffix}",
+        job_name=f"pt_job_async{suffix}",
         model=Cifar10ConvNet(),
         model_manager_config=model_manager_config,
         device_manager_config=device_manager_config,
@@ -128,17 +106,14 @@ def create_edge_recipe(fl_mode, devices_per_leaf, num_leaf_nodes, global_rounds,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create edge recipe for federated learning")
-    parser.add_argument(
-        "--fl_mode", type=str, choices=["sync", "async"], required=True, help="Federated learning mode: sync or async"
-    )
+    parser = argparse.ArgumentParser(description="Create edge recipe for asynchronous federated learning")
     parser.add_argument("--devices_per_leaf", type=int, default=4, help="Number of devices on each leaf node")
     parser.add_argument("--num_leaf_nodes", type=int, default=4, help="Number of leaf nodes in the hierarchy")
     parser.add_argument(
         "--global_rounds",
         type=int,
         default=10,
-        help="Number of global federated rounds under sync mode, total globalmodel version under async mode will multiply this number by the total number of devices",
+        help="Number of global federated rounds (total global model versions will be this number multiplied by total devices)",
     )
     parser.add_argument("--workspace_dir", type=str, default="/tmp/nvflare/workspaces", help="Workspace directory")
     parser.add_argument(
@@ -149,7 +124,7 @@ def main():
     parser.add_argument(
         "--export_job",
         action="store_true",
-        help="If set, export the recipe to the admin'stransfer directory",
+        help="If set, export the recipe to the admin's transfer directory",
     )
     parser.add_argument("--project_name", type=str, default="edge_example", help="Project name")
 
@@ -159,10 +134,9 @@ def main():
     admin_startup_kit_dir = os.path.join(prod_dir, "admin@nvidia.com")
 
     try:
-        print(f"Creating {args.fl_mode} federated learning recipe...")
+        print("Creating asynchronous federated learning recipe...")
 
         recipe = create_edge_recipe(
-            fl_mode=args.fl_mode,
             devices_per_leaf=args.devices_per_leaf,
             num_leaf_nodes=args.num_leaf_nodes,
             global_rounds=args.global_rounds,

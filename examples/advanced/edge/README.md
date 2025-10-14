@@ -104,7 +104,7 @@ Remember to enable allow self signed certs from the device SDK side.
 
 After the startup of NVFlare system, we can start the job with:
 ```
-python jobs/et_job.py --total_num_of_devices 4 --num_of_simulated_devices_on_each_leaf 1
+python jobs/et_cifar10/job.py --total_num_of_devices 4 --num_of_simulated_devices_on_each_leaf 1
 ```
 
 This is going to run 1 simulated device on each leaf client, so a total of 4 devices.
@@ -115,7 +115,7 @@ This is going to run 1 simulated device on each leaf client, so a total of 4 dev
 We could submit the job to NVFlare system with:
 
 ```
-python jobs/et_job.py --total_num_of_devices 5 --num_of_simulated_devices_on_each_leaf 1
+python jobs/et_cifar10/job.py --total_num_of_devices 5 --num_of_simulated_devices_on_each_leaf 1
 ```
 
 Note that we are using 1 simulated_devices_on_each_leaf and we have 4 leaf clients, so total of 4 simulated devices but we set total_num_of_devices to be 5, the additional 1 is the real device.
@@ -180,10 +180,10 @@ This will generate two job configurations and submit them to run on the FL syste
 - async assumes server updates the global model and immediately dispatch it after receiving ONE device's update.
 
 ```commandline
-python3 jobs/pt_job.py --fl_mode sync
-python3 jobs/pt_job.py --fl_mode async
-python3 jobs/pt_job.py --fl_mode sync --no_delay
-python3 jobs/pt_job.py --fl_mode async --no_delay
+python3 jobs/pt_cifar10_sync/job.py 
+python3 jobs/pt_cifar10_async/job.py
+python3 jobs/pt_cifar10_sync/job.py --no_delay
+python3 jobs/pt_cifar10_async/job.py --no_delay
 ```
 
 You will then see the simulated devices start receiving the model from the server and complete local trainings.
@@ -264,7 +264,7 @@ These settings will simulate a realistic cross-device federated learning scenari
 In admin console, submit the job:
 
 ```commandline
-python3 jobs/pt_job_adv.py 
+python3 jobs/pt_cifar10_adv/job.py 
 ```
 
 Upon finishing, we can visualize the results in TensorBoard as before:
@@ -291,5 +291,5 @@ python ./utils/preprocess_dolly.py --training_file /tmp/nvflare/dataset/databric
 
 Assuming we have the same provisioning and setting steps following the same procedure as above, then we can submit the job to run cross-silo FL with 4 silos, each with 1 client, and each client will use a subset of 3000 samples for local training.
 ```commandline
-python3 jobs/hf_sft_job.py --subset_size 3000 --no_delay
+python3 jobs/pt_hf_sft/job.py --subset_size 3000 --no_delay
 ```

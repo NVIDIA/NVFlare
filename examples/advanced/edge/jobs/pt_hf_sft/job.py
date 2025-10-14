@@ -15,8 +15,8 @@
 import argparse
 import os
 
-from processors.hf_sft_task_processor import HFSFTTaskProcessor
-from processors.models.hf_sft_model import CausalLMModel
+from client import HFSFTTaskProcessor
+from model import CausalLMModel
 
 from nvflare.edge.tools.edge_fed_buff_recipe import (
     DeviceManagerConfig,

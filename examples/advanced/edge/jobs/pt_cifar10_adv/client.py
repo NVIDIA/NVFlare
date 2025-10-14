@@ -18,6 +18,7 @@ import time
 
 import filelock
 import torch
+from model import Cifar10ConvNet
 from torch.utils.data import Subset
 from torchvision import datasets, transforms
 
@@ -25,8 +26,6 @@ from nvflare.apis.dxo import DXO, DataKind, from_dict
 from nvflare.edge.simulation.device_task_processor import DeviceTaskProcessor
 from nvflare.edge.web.models.job_response import JobResponse
 from nvflare.edge.web.models.task_response import TaskResponse
-
-from .models.cifar10_model import Cifar10ConvNet
 
 log = logging.getLogger(__name__)
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
