@@ -13,5 +13,6 @@ Data Scientist Guide
    ../../quickstart.rst
    ../../tutorials
    flare_api
+   poc
    flower_integration/flower_integration
    federated_xgboost/federated_xgboost

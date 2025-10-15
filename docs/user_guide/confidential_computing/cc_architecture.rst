@@ -1,8 +1,16 @@
-.. _cc_on_prem_cvm_architecture:
+.. _cc_architecture:
 
 ##############################################################
 FLARE Confidential Computing Based IP Protection Architecture
 ##############################################################
+
+.. admonition:: CVM on-prem with AMD CPU + NVIDIA GPU
+
+    The current architecture is based on Confidential VMs with AMD CPUs and NVIDIA GPUs for on-premise deployment.
+    While the design principles are the same for Intel TDX CPUs with NVIDIA GPUs, the current implementation targets
+    on-premise AMD/NVIDIA systems. TDX support and cloud-based deployment will be available soon.
+
+
 
 .. contents::
    :local:
