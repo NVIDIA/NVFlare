@@ -390,11 +390,11 @@ log_config: |
       "formatters": {
           "baseFormatter": {
               "()": "nvflare.fuel.utils.log_utils.BaseFormatter",
-              "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s"
+              "fmt": "%(asctime)s-%(process)d|%(thread)d-%(name)s-%(levelname)s-%(fl_ctx)s - %(message)s"
           },
           "consoleFormatter": {
               "()": "nvflare.fuel.utils.log_utils.ColorFormatter",
-              "fmt": "%(asctime)s - %(name)s - %(levelname)s - %(fl_ctx)s - %(message)s"
+              "fmt": "%(asctime)s-%(process)d|%(thread)d-%(name)s-%(levelname)s-%(fl_ctx)s - %(message)s"
           },
           "jsonFormatter": {
               "()": "nvflare.fuel.utils.log_utils.JsonFormatter",
