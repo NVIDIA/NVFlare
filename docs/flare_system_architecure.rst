@@ -12,9 +12,11 @@ NVIDIA FLARE ARCHITECTURE
    :align: center
    :height: 300px
 
+This document describes the overall system architecture of NVIDIA FLARE, including its layered structure, major subsystems,
+and how they interact. It covers the runtime components on both server and client sides, the communication framework,
+and the process model.
 
 The FLARE architecture (shown above) comprises three main layers:
-
 **Foundation Layer**: Communication infrastructure, messaging protocols, privacy preservation tools, and secure platform management.
 **Application Layer**: Building blocks for federated learning, including federation workflows and learning algorithms.
 **Tooling**: FL Simulator and POC CLI for experimentation and simulation, plus deployment and management tools for production workflows.
@@ -60,7 +62,7 @@ Here's the simplified table without file paths:
 
 
 Process Responsibilities
-------------------------
+#########################
 
 **Server Parent (SP)**
 
@@ -99,7 +101,7 @@ Houses ServerEngine which orchestrates job scheduling via JobRunner
 - Communicates with CJ via FilePipe (file-based) or CellPipe (network-based)
 
 Communication Mechanisms
-------------------------
+########################
 
 **Cell Network**: All parent and job processes communicate via F3 Cell objects that provide:
 
@@ -115,107 +117,169 @@ Communication Mechanisms
 - CellPipe: Network-based IPC allowing training process on different machine
 
 Deployment Modes
+################
+
 NVFLARE provides three deployment modes that share the same core runtime but differ in packaging, security, and deployment complexity. This design ensures consistency from development to production.
 
 Deployment Modes Comparison
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. list-table:: Deployment Modes Comparison
+   :header-rows: 1
+   :widths: 15 30 15 20 20
+
+   * - Mode
+     - Use Case
+     - Security
+     - Processes
+     - Setup Time
+   * - Simulator
+     - Rapid prototyping, algorithm testing
+     - None
+     - multiple threads, some cases if may create multiple process
+     - Seconds
+   * - POC
+     - Local multi-client testing, workflow validation
+     - Optional
+     - Multiple processes on one machine
+     - Minutes
+   * - Production
+     - Real-world deployment
+     - Full PKI/TLS
+     - Distributed processes across machines
+     - Hours (with provisioning)
 
 
+Run Mode
+^^^^^^^^
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Mode Characteristics
-Mode	Use Case	Security	Processes	Setup Time
-Simulator	Rapid prototyping, algorithm testing	None	Single process, threads	Seconds
-POC	Local multi-client testing, workflow validation	Optional	Multiple processes on one machine	Minutes
-Production	Real-world deployment	Full PKI/TLS	Distributed processes across machines	Hours (with provisioning)
-Simulator Mode
+**Simulator Mode**
 Entry Point: SimulatorRunner class
-nvflare/private/fed/app/simulator/simulator_runner.py
-84-159
+
 Usage: Run via Python script or nvflare simulator command
 Architecture: Server in main process, clients in threads/subprocesses
 Best For: Quick algorithm iteration, debugging workflows
-POC Mode
+
+**POC Mode**
 Entry Point: nvflare poc commands
-nvflare/tool/poc/poc_commands.py
 Usage: nvflare poc prepare, nvflare poc start, nvflare poc stop
 Architecture: Separate processes for server, clients, and admin console on single machine
 Best For: Testing multi-client scenarios, validating job configurations
-Production Mode
+
+**Production Mode**
 Entry Point: Dashboard provisioning or Lighter CLI
-nvflare/lighter/provision.py
 Usage: Generate startup kits with PKI certificates, deploy to distributed machines
 Architecture: Fully distributed with secure TLS communication
 Best For: Real-world federated learning deployments, multi-organization collaboration
+
 All three modes execute the same ServerEngine, ClientEngine, and workflow implementations, ensuring behavior consistency across development stages.
 
-Sources:
-nvflare/private/fed/app/simulator/simulator_runner.py
-84-311
 
-nvflare/tool/poc/poc_commands.py
 
-nvflare/lighter/provision.py
 
-nvflare/dashboard/cli.py
+Core FL Runtime
+---------------
 
-docs/getting_started.rst
-16-20
+The Core FL Runtime is the execution engine that manages federated learning job processes and orchestration.
+This page documents the runtime components responsible for process lifecycle management, task coordination, and execution modes.
 
-Key Installation and Dependencies
-NVFLARE is distributed as a Python package with modular optional dependencies:
+Scope and Components
+####################
 
-Core Installation
-python -m pip install nvflare
-Optional Component Groups
-HE: Homomorphic Encryption (tenseal==0.3.15)
-PSI: Private Set Intersection (openmined.psi==2.0.5)
-PT: PyTorch support (torch, torchvision)
-SKLEARN: Scikit-learn support (scikit-learn, pandas)
-TRACKING: MLflow, Weights & Biases, TensorBoard support
-MONITORING: Datadog monitoring support
-CONFIG: OmegaConf configuration support
-The platform requires Python 3.9+ and supports Linux and macOS operating systems.
+The Core FL Runtime consists of:
 
-Sources:
-setup.cfg
-18-84
+- **ServerEngine** : Server-side process orchestration and job lifecycle management
+- **ClientEngine** : Client-side process management and communication handling
+- **JobRunner** : Job scheduling, deployment, and monitoring
+- **SimulatorRunner** : Single-machine simulation for development
 
-docs/installation.rst
-73-143
+ 
+Process Types
+#############
 
-Entry Points and Command Interface
-NVFLARE provides a unified command-line interface through the nvflare console script:
+.. list-table:: **Process Types**
+   :header-rows: 1
+   :widths: 20 35 45
 
-nvflare=nvflare.cli:main
-This CLI system provides commands for:
+   * - Process Type
+     - Code Symbol
+     - Description
+   * - SP
+     - ProcessType.SERVER_PARENT
+     - Server parent process running ServerEngine
+   * - SJ
+     - ProcessType.SERVER_JOB
+     - Server job process running ServerRunner
+   * - CP
+     - ProcessType.CLIENT_PARENT
+     - Client parent process running ClientEngine
+   * - CJ
+     - ProcessType.CLIENT_JOB
+     - Client job process running ClientRunner
+  
 
-POC mode setup and management (nvflare poc)
-Job creation and submission (nvflare job)
-Simulator execution
-Dashboard operations
-Provisioning and deployment
-The CLI architecture supports extensible subcommands and integrates with all major system components.
+Inter-Process Communication
+###########################
+
+The runtime uses Cell-based communication between parent and job processes.
+
+Cell Communication Channels
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. list-table:: **Cell Communication Channels**
+   :header-rows: 1
+   :widths: 35 35 30
+
+   * - Channel
+     - Purpose
+     - Used By
+   * - CellChannel.SERVER_MAIN
+     - Client-to-server FL messages
+     - CP to SP
+   * - CellChannel.CLIENT_MAIN
+     - Server-to-client FL messages
+     - SP to CP
+   * - CellChannel.SERVER_COMMAND
+     - Commands to server job
+     - SP to SJ
+   * - CellChannel.CLIENT_COMMAND
+     - Commands to client job
+     - CP to CJ
+   * - CellChannel.SERVER_PARENT_LISTENER
+     - Parent commands from SJ
+     - SJ to SP
+   * - CellChannel.AUX_COMMUNICATION
+     - Auxiliary messages
+     - All processes
+
+
+JobRunner Architecture
+######################
+
+JobRunner Component Structure
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. image:: resources/job_runner_architecture.png
+   :alt: FLARE Job Runner Architecture
+   :align: center
+   :height: 300px
+
+Communication Framework
+-----------------------
+
+Purpose and Scope
+#################
+
+The Communication Framework, also known as F3 (FLARE Foundation Framework) and Cellnet, provides the foundational messaging infrastructure for all
+communication in NVIDIA FLARE. It implements a secure, scalable, and feature-rich messaging layer that handles all
+interactions between servers, clients, and administrative components.
+
+This section provides an overview of the communication framework architecture, core components, and basic concepts. 
+
+**CellNet Architecture** - Detailed architecture and design patterns
+**Cell Communication Patterns** - Message sending patterns and channel routing
+**Streaming and Data Transfer** - Large data transfer and streaming protocols
+**Security and Encryption** - Certificate management and message encryption
+
+for mode details please refer to cellnet architecture :ref:`cellnet_architecture`
+
