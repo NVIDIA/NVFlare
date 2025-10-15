@@ -117,9 +117,6 @@ For detailed information on the security overview, please refer to the :ref:`fla
 
 
 
-
-
-
 Design Principles
 =================
 
