@@ -156,33 +156,6 @@ Deployment Modes Comparison
      - Hours (with provisioning)
 
 
-Run Mode
-^^^^^^^^
-
-**Simulator Mode**
-Entry Point: SimulatorRunner class
-
-Usage: Run via Python script or nvflare simulator command
-Architecture: Server in main process, clients in threads/subprocesses
-Best For: Quick algorithm iteration, debugging workflows
-
-**POC Mode**
-Entry Point: nvflare poc commands
-Usage: nvflare poc prepare, nvflare poc start, nvflare poc stop
-Architecture: Separate processes for server, clients, and admin console on single machine
-Best For: Testing multi-client scenarios, validating job configurations
-
-**Production Mode**
-Entry Point: Dashboard provisioning or Lighter CLI
-Usage: Generate startup kits with PKI certificates, deploy to distributed machines
-Architecture: Fully distributed with secure TLS communication
-Best For: Real-world federated learning deployments, multi-organization collaboration
-
-All three modes execute the same ServerEngine, ClientEngine, and workflow implementations, ensuring behavior consistency across development stages.
-
-
-
-
 Core FL Runtime
 ---------------
 
