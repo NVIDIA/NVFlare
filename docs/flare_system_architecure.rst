@@ -1,7 +1,7 @@
 .. _flare_system_architecture:
 
-NVIDIA FLARE SYSTEM ARCHITECTURE
-================================
+NVIDIA FLARE System Architecture
+=================================
 
 .. |flare_overview| image:: resources/flare_overview.png
    :alt: FLARE Architecture Overview
