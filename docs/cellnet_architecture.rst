@@ -19,9 +19,11 @@ the network transport layer (gRPC, TCP, HTTP drivers). All NVFLARE components co
 
 - **Server-to-client task distribution**
 - **Client-to-server result submission**
+- **peer-to-peer communication**
 - **Admin command execution**
 - **Cross-site auxiliary communication**
 - **Job deployment and management**
+
 
 Key Design Goals:
 #################
@@ -53,7 +55,7 @@ provides fundamental messaging infrastructure:
 
 **Key Responsibilities**:
 
-- **Message Routing** - Routes messages to appropriate handlers based on channel/topic
+- **Message Handling** - Routes messages to appropriate handlers based on channel/topic
 - **Connection Management** - Manages listeners (incoming) and connectors (outgoing)
 - **Callback Registry** - Stores message handlers in req_reg: Registry
 - **Agent Tracking** - Maintains agents: Dict[str, CellAgent] for remote cells
@@ -77,7 +79,6 @@ The StreamCell adds large data transfer capabilities on top of CoreCell:
 - **byte_streamer**: ByteStreamer - Sends data as chunked streams
 - **byte_receiver**: ByteReceiver - Receives and reassembles chunks
 - **blob_streamer**: BlobStreamer - Optimized for in-memory BLOBs
-- **blob_streamer**: BlobStreamer - Optimized for in-memory BLOBs
 
 **Streaming Methods**:
 
@@ -91,11 +92,10 @@ The StreamCell adds large data transfer capabilities on top of CoreCell:
 - Automatic chunking into configurable chunk sizes (default 1MB)
 - Flow control with sliding window and ACKs
 - Progress tracking via StreamFuture
-- Error recovery with retransmission
 
 Layer 3: **Cell** - Intelligent Request/Reply
 
-The **Cell** class provides intelligent routing between streaming and non-streaming channels:
+The **Cell** class provides unified interface for streaming and non-streaming messages:
 
 **Key Features**:
 
@@ -133,6 +133,8 @@ The **Cell** class provides intelligent routing between streaming and non-stream
 Every cell is identified by a Fully Qualified Cell Name (FQCN), which is a dot-separated hierarchical name:
 
 <site_name>[.<job_id>[.<rank>]]
+
+6. **End-to-end encryption**
 
 Message Structure and Addressing
 ###############################
