@@ -28,7 +28,7 @@ The CIFAR-10 data will be downloaded to a common location, so it will not need t
 
 to download data
 ```
-cd cifar10/data
+cd data
 ```
 
 ```bash
