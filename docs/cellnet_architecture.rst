@@ -53,12 +53,12 @@ provides fundamental messaging infrastructure:
 
 **Key Responsibilities**:
 
-- **Message Routing**: Routes messages to appropriate handlers based on channel/topic
-- **Connection Management**: Manages listeners (incoming) and connectors (outgoing)
-- **Callback Registry**: Stores message handlers in req_reg: Registry
-- **Agent Tracking**: Maintains agents: Dict[str, CellAgent] for remote cells
-- **Request Tracking**: Tracks pending requests in waiters: Dict[str, _Waiter]
-- **Security**: Delegates to credential_manager: CredentialManager for encryption
+- **Message Routing** - Routes messages to appropriate handlers based on channel/topic
+- **Connection Management** - Manages listeners (incoming) and connectors (outgoing)
+- **Callback Registry** - Stores message handlers in req_reg: Registry
+- **Agent Tracking** - Maintains agents: Dict[str, CellAgent] for remote cells
+- **Request Tracking** - Tracks pending requests in waiters: Dict[str, _Waiter]
+- **Security** - Delegates to credential_manager: CredentialManager for encryption
 
 **Core Methods**:
 
