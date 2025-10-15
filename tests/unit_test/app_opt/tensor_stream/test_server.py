@@ -42,7 +42,7 @@ class TestTensorServerStreamer:
             format=format_type,
             tasks=tasks,
             entry_timeout=entry_timeout,
-            wait_all_clients_timeout=wait_all_clients_timeout,
+            wait_task_data_sent_to_all_clients_timeout=wait_all_clients_timeout,
         )
 
         assert streamer.format == format_type
@@ -159,7 +159,7 @@ class TestTensorServerStreamer:
         streamer = TensorServerStreamer()
         streamer.engine = mock_engine_with_clients
         streamer.send_tensors_to_client = Mock()
-        streamer.wait_clients_to_complete = Mock()
+        streamer.wait_sending_task_data_all_clients = Mock()
         streamer.try_to_clean_task_data = Mock()
 
         mock_sender_instance = Mock(spec=TensorSender)
@@ -177,7 +177,7 @@ class TestTensorServerStreamer:
         # Verify send_tensors_to_client was called
         streamer.send_tensors_to_client.assert_called_once_with(mock_fl_context)
         # Verify wait_clients_to_complete was called
-        streamer.wait_clients_to_complete.assert_called_once_with(3, mock_fl_context)
+        streamer.wait_sending_task_data_all_clients.assert_called_once_with(3, mock_fl_context)
         # Verify try_to_clean_task_data was called
         streamer.try_to_clean_task_data.assert_called_once_with(3, mock_fl_context)
 
@@ -189,7 +189,7 @@ class TestTensorServerStreamer:
         streamer = TensorServerStreamer()
         streamer.engine = mock_engine_with_clients
         streamer.send_tensors_to_client = Mock(side_effect=Exception("Send failed"))
-        streamer.wait_clients_to_complete = Mock()
+        streamer.wait_sending_task_data_all_clients = Mock()
         streamer.try_to_clean_task_data = Mock()
 
         mock_sender_instance = Mock(spec=TensorSender)
@@ -209,7 +209,7 @@ class TestTensorServerStreamer:
         streamer.send_tensors_to_client.assert_called_once_with(mock_fl_context)
 
         # Other methods should not be called due to the exception
-        streamer.wait_clients_to_complete.assert_not_called()
+        streamer.wait_sending_task_data_all_clients.assert_not_called()
         streamer.try_to_clean_task_data.assert_not_called()
 
     def test_handle_event_before_task_result_filter(self, mock_fl_context):
@@ -237,7 +237,7 @@ class TestTensorServerStreamer:
 
         # Mock other methods to avoid side effects
         streamer.send_tensors_to_client = Mock()
-        streamer.wait_clients_to_complete = Mock()
+        streamer.wait_sending_task_data_all_clients = Mock()
         streamer.try_to_clean_task_data = Mock()
 
         # Initially sender should be None
@@ -336,7 +336,7 @@ class TestTensorServerStreamer:
         current_round = 1
         mock_fl_context.get_prop.return_value = current_round
 
-        streamer = TensorServerStreamer(wait_all_clients_timeout=timeout)
+        streamer = TensorServerStreamer(wait_task_data_sent_to_all_clients_timeout=timeout)
         streamer.start_sending_time[current_round] = start_time
         streamer.num_task_data_sent[current_round] = num_sent
         streamer.num_task_skipped[current_round] = num_skipped
@@ -346,7 +346,7 @@ class TestTensorServerStreamer:
             mock_time.side_effect = time_progression
 
         # Execute the method
-        streamer.wait_clients_to_complete(num_clients, mock_fl_context)
+        streamer.wait_sending_task_data_all_clients(num_clients, mock_fl_context)
 
         if should_timeout:
             # Should have called sleep and system_panic due to timeout

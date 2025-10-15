@@ -36,3 +36,6 @@ class TensorBlobKeys:
     TENSOR_KEYS = "tensor_keys"
     ROOT_KEY = "root_key"
     TASK_ID = "task_id"
+
+class TensorEventTypes:
+    SEND_TENSORS_FOR_TASK_DATA = "SEND_TENSORS_FOR_TASK_DATA"
