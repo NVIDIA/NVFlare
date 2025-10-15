@@ -3,19 +3,15 @@
 NVIDIA FLARE ARCHITECTURE
 =========================
 
-.. list-table::
-   :widths: 50 50
-   :class: borderless
+.. |flare_overview| image:: resources/flare_overview.png
+   :alt: FLARE Architecture Overview
+   :width: 45%
 
-   * - .. image:: resources/flare_overview.png
-          :alt: FLARE Architecture Overview
-          :align: center
-          :width: 100%
+.. |system_arch| image:: resources/system_architecture.png
+   :alt: FLARE Job Processing Architecture
+   :width: 45%
 
-     - .. image:: resources/system_architecture.png
-          :alt: FLARE Job Processing Architecture
-          :align: center
-          :width: 100%
+|flare_overview| |system_arch|
 
 
 This document describes the overall system architecture of NVIDIA FLARE, including its layered structure, major subsystems,
