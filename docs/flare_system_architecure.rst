@@ -23,9 +23,9 @@ and how they interact. It covers the runtime components on both server and clien
 and the process model.
 
 The FLARE architecture (shown above) comprises three main layers:
-**Foundation Layer**: Communication infrastructure, messaging protocols, privacy preservation tools, and secure platform management.
-**Application Layer**: Building blocks for federated learning, including federation workflows and learning algorithms.
-**Tooling**: FL Simulator and POC CLI for experimentation and simulation, plus deployment and management tools for production workflows.
+- **Foundation Layer**: Communication infrastructure, messaging protocols, privacy preservation tools, and secure platform management.
+- **Application Layer**: Building blocks for federated learning, including federation workflows and learning algorithms.
+- **Tooling**: FL Simulator and POC CLI for experimentation and simulation, plus deployment and management tools for production workflows.
 
 
 
