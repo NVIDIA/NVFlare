@@ -3,17 +3,20 @@
 NVIDIA FLARE ARCHITECTURE
 =========================
 
-.. table::
+.. list-table::
+   :widths: 50 50
    :class: borderless
-   :align: center
 
-   +-------------------------------------------+-------------------------------------------+
-   | .. image:: resources/flare_overview.png   | .. image:: resources/system_architecture.png |
-   |    :alt: FLARE Architecture Overview      |    :alt: FLARE Job Processing Architecture   |
-   |    :align: center                         |    :align: center                            |
-   |    :width: 95%                            |    :width: 95%                               |
-   +-------------------------------------------+-------------------------------------------+
- 
+   * - .. image:: resources/flare_overview.png
+          :alt: FLARE Architecture Overview
+          :align: center
+          :width: 100%
+
+     - .. image:: resources/system_architecture.png
+          :alt: FLARE Job Processing Architecture
+          :align: center
+          :width: 100%
+
 
 This document describes the overall system architecture of NVIDIA FLARE, including its layered structure, major subsystems,
 and how they interact. It covers the runtime components on both server and client sides, the communication framework,

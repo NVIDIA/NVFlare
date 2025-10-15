@@ -81,10 +81,10 @@ The StreamCell adds large data transfer capabilities on top of CoreCell:
 
 **Streaming Methods**:
 
-- **send_stream**(channel, topic, target, message, ...) - Send byte stream with flow control
-- **send_blob**(channel, topic, target, message, ...) - Send BLOB (fits in memory)
-- **register_stream_cb**(channel, topic, stream_cb, ...) - Register stream receiver
-- **register_blob_cb**(channel, topic, blob_cb, ...) - Register BLOB receiver
+- **send_stream** (channel, topic, target, message, ...) - Send byte stream with flow control
+- **send_blob** (channel, topic, target, message, ...) - Send BLOB (fits in memory)
+- **register_stream_cb** (channel, topic, stream_cb, ...) - Register stream receiver
+- **register_blob_cb** (channel, topic, blob_cb, ...) - Register BLOB receiver
 
 **Streaming Protocol**:
 
@@ -188,25 +188,19 @@ Key Streaming Classes:
 
 .. list-table:: **Key Streaming Classes**
    :header-rows: 1
-   :widths: 25 35 40
+   :widths: 25 40
 
    * - Class
-     - File
      - Purpose
    * - ByteStreamer
-     - [file path needed]
      - Sends byte streams as chunks
    * - ByteReceiver
-     - [file path needed]
      - Receives and reassembles chunks
    * - BlobStreamer
-     - [file path needed]
      - Wraps blobs for streaming
    * - TxTask
-     - [file path needed]
      - Per-stream sending task
    * - RxTask
-     - [file path needed]
      - Per-stream receiving task
 
 
