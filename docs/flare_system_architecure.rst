@@ -1,3 +1,4 @@
+.. _flare_system_architecture:
 
 NVIDIA FLARE ARCHITECTURE
 =========================
