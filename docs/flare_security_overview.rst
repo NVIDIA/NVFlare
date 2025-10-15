@@ -234,7 +234,7 @@ To address this, NVFLARE employs a secure serialization framework called FOBS (F
 FOBS Overview
 -------------
 
-FOBS is a secure, Pickle-compatible replacement built on MessagePack. It ensures that only explicitly supported and registered object types can be serialized, preventing code execution or tampering attacks.
+FOBS is a secure, Pickle replacement built on MessagePack. It ensures that only explicitly supported and registered object types can be serialized, preventing code execution or tampering attacks.
 
 Instead of relying on Python introspection, FOBS uses registered Decomposers to define how each object is safely converted into MessagePack-supported types. This strict registration model enforces type control and eliminates unsafe dynamic behavior.
 

@@ -45,7 +45,6 @@ Here's the simplified table without file paths:
      - ServerEngine, ClientEngine, JobRunner
      - Core federated learning orchestration and execution
    * - Job Management
-     - FedJob, JobDefManagerSpec
      - Job definition, storage, scheduling
    * - Communication
      - Cell, CoreCell, StreamCell, Pipe
