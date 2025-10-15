@@ -14,32 +14,26 @@ Hardware Prerequisites
 ^^^^^^^^^^^^^^^^^^^^^^
 
 - The machine that needs to run CC needs to have AMD SNP-SEV enabled CPU.
+- Host OS must be Ubuntu 25.04.
 - To run GPU, the machine needs to have an NVIDIA GPU that is CC-enabled.
-- The AMD firmware is updated to at least 1.55.
+- The AMD firmware that supports SEV.
 
-Here is how to update the firmware:
-
-.. code-block:: bash
-
-   wget https://download.amd.com/developer/eula/sev/amd_sev_fam19h_model0xh_1.55.29.zip
-   unzip amd_sev_fam19h_model0xh_1.55.29.zip
-   sudo mkdir -p /lib/firmware/amd
-   sudo cp amd_sev_fam19h_model0xh_1.55.29.sbin /lib/firmware/amd/amd_sev_fam19h_model0xh.sbin
-   sudo reboot
-
-After reboot, verify the firmware is updated:
+Here is how to get the firmware:
 
 .. code-block:: bash
+    echo 'deb http://archive.ubuntu.com/ubuntu plucky-proposed main restricted universe multiverse' | \
+      sudo tee /etc/apt/sources.list.d/plucky-proposed.list
 
-   $ sudo dmesg | grep -i sev
-   [    0.000000] SEV-SNP: RMP table physical range [0x0000000035600000 - 0x0000000075bfffff]
-   [    5.030228] ccp 0000:45:00.1: sev enabled
-   [    5.128124] ccp 0000:45:00.1: SEV firmware update successful
-   [    8.265240] ccp 0000:45:00.1: SEV API:1.55 build:29
-   [    8.265248] ccp 0000:45:00.1: SEV-SNP API:1.55 build:29
-   [    8.273638] kvm_amd: SEV enabled (ASIDs 100 - 509)
-   [    8.273640] kvm_amd: SEV-ES enabled (ASIDs 1 - 99)
-   [    8.273642] kvm_amd: SEV-SNP enabled (ASIDs 1 - 99)
+    sudo tee /etc/apt/preferences.d/99-plucky-proposed <<'EOF'
+    Package: *
+    Pin: release a=plucky-proposed
+    Pin-Priority: 100
+    EOF
+
+    sudo apt update
+    sudo apt install -t plucky-proposed ovmf
+
+The firmware will installed as ``/usr/share/ovmf/OVMF.amdsev.fd``.
 
 Software Prerequisites
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -50,10 +44,12 @@ Software Prerequisites
 - Get image builder codes:
   - Get the image builder codes from NVFlare team (email federatedlearning@nvidia.com)
 - Get base images from NVFlare team.
-- Let's assume the image builder code are in `~/nvflare-github/nvflare/lighter/cc/image_builder`.
-- Copy the base images inside `~/nvflare-github/nvflare/lighter/cc/image_builder/base_images`.
+- Let's assume the image builder code are in `~/cc/image_builder`.
+- Copy the base images to `~/cc/image_builder/base_images`.
 - Get or build your own kbs client that needs to match the kbs server, we are using commit: `a2570329cc33daf9ca16370a1948b5379bb17fbe`.
-- Copy the kbs client inside `~/nvflare-github/nvflare/lighter/cc/image_builder/kbs`.
+- Copy the kbs-client and credentials to `~/cc/image_builder/binaries`.
+- Build snpguest with version v0.9.2.
+- Copy snpguest and credentials to `~/cc/image_builder/binaries`
 
 .. note::
     The current KBS does'’t support updating individual rules.
@@ -435,7 +431,12 @@ Reference YAMLs for machine with AMD SNP-SEV enabled CPU
      nvflare: /tmp/startup_kits
 
    allowed_ports:
+    - 8002
+
+   allowed_out_ports:
+   - 443
    - 8002
+   - 8999
 
    cc_issuers:
      - id: snp_authorizer
