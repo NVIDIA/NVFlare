@@ -14,7 +14,7 @@ Thus, the memory demand can be reduced to the size of the largest entry for cont
 streaming. For example, if sending a dict with 10 1GB entries, without streaming, it will take 10GB extra space to send the dict. 
 With container streaming, it only requires extra 1GB; and if saved to a file before sending, it only requires 1MB extra space to send the file.
 
-All examples are run with NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
+All examples are run with NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/2.6/programming_guide/fed_job_api.html).
 ## Concepts
 
 ### Object Streamer

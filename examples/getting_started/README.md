@@ -31,7 +31,7 @@ In each example folder, install required packages for training:
 Note that if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare.
 
 For more detailed installation instructions including virtual environment setup, cloning the repository and checking out the examples,
-or how to use Docker, see the installation section of the [documentation](https://nvflare.readthedocs.io/en/main/quickstart.html).
+or how to use Docker, see the installation section of the [documentation](https://nvflare.readthedocs.io/en/2.6/quickstart.html).
 
 ### Examples
 We provide several examples to quickly get you started using NVFlare's Job API. 

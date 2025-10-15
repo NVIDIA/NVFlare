@@ -4,7 +4,7 @@ Please make sure you set up virtual environment and Jupyterlab follows [example 
 
 ## Introduction to Scikit-learn, tabular data, and federated k-Means
 ### Scikit-learn
-This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.
+This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.6/index.html) on tabular data.
 It uses [Scikit-learn](https://scikit-learn.org/),
 a widely used open-source machine learning library that supports supervised 
 and unsupervised learning.
@@ -73,7 +73,7 @@ number, e.g. `K=20`, exponential for smaller client number, e.g. `K=5` as
 it will be too aggressive for a larger number of clients)
 
 In this example, we experiment with 3 clients under a uniform data split. 
-We run the federated training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html):
+We run the federated training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/2.6/programming_guide/fed_job_api.html):
 ```commandline
 python kmeans_job.py --num_clients 3 --split_mode uniform
 ```

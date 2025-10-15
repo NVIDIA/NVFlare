@@ -93,7 +93,7 @@ Optional: Change the data path to an absolute path and use ```./prepare_data.sh`
 The modified code can be found in [./src/cifar10_fl.py](./src/cifar10_fl.py)
 
 After we modify our training script, we can create a job using the in-process ScriptRunner: [pt_client_api_job.py](pt_client_api_job.py).
-(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) for more details on formulating a job)
+(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/2.6/programming_guide/fed_job_api.html) for more details on formulating a job)
 
 Then we can run it using the NVFlare Simulator:
 

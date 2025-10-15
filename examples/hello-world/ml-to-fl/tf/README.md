@@ -61,7 +61,7 @@ Notice that we need to get / load the model weights as a ``dict`` of arrays beca
 The modified code can be found here: [./src/cifar10_tf_fl.py](./src/cifar10_tf_fl.py), [./src/tf_net.py](./src/tf_net.py).
 
 After we modify our training script, we can create a job using the in-process ScriptRunner: [tf_client_api_job.py](tf_client_api_job.py).
-(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html) for more details on formulating a job)
+(Please refer to [FedJob API](https://nvflare.readthedocs.io/en/2.6/programming_guide/fed_job_api.html) for more details on formulating a job)
 
 Then we can run the job using the simulator:
 

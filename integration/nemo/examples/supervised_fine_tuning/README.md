@@ -89,7 +89,7 @@ python utils/combine_jsonl.py --file_list Data/Processed/alpaca/testing.jsonl Da
 ```
 
 ## Federated learning simulations
-We can either use NVFlare's [FL Simulator](https://nvflare.readthedocs.io/en/main/getting_started.html#the-fl-simulator) or [POC mode](https://nvflare.readthedocs.io/en/main/getting_started.html#setting-up-poc) to simulate federated learning experiments.
+We can either use NVFlare's [FL Simulator](https://nvflare.readthedocs.io/en/2.6/getting_started.html#the-fl-simulator) or [POC mode](https://nvflare.readthedocs.io/en/2.6/getting_started.html#setting-up-poc) to simulate federated learning experiments.
 
 First, we create the configuration files and modify them to include the current directory path to access the dataset and pre-trained LLM.
 At this point, we also modify the data path and local number of clients.
@@ -128,7 +128,7 @@ nvflare simulator jobs/gpt_sft_1.3B_fedavg -w workspace_simulator_fedavg -n 3 -g
 ```
 
 ### Use POC mode
-Alternatively, we can also use NVFlare's [POC mode](https://nvflare.readthedocs.io/en/main/getting_started.html#setting-up-poc) to simulate 
+Alternatively, we can also use NVFlare's [POC mode](https://nvflare.readthedocs.io/en/2.6/getting_started.html#setting-up-poc) to simulate 
 
 #### 1. Local and Centralized SFT
 For single-site and centralized training experiments, we create the poc workspaces:
@@ -139,7 +139,7 @@ For 1.3B model experiment, we start the NVFlare system with one GPU:
 ```
 nvflare poc start --gpu 0
 ```
-For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt):
+For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/2.6/real_world_fl/operation.html#admin-command-prompt):
 ```
 nvflare poc start -p admin@nvidia.com
 ```
@@ -174,7 +174,7 @@ For 1.3B model experiment, each client needs ~24 GB memory, here we start the NV
 ```
 nvflare poc start --gpu 0
 ```
-For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt):
+For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/2.6/real_world_fl/operation.html#admin-command-prompt):
 ```
 nvflare poc start -p admin@nvidia.com
 ```

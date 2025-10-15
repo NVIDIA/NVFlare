@@ -42,15 +42,15 @@ Depends your preference of the experiment tracking framework, we offers differen
 
 Please make sure you set up a virtual environment and follow the installation steps on the [example root readme](../../README.md).
 
-This folder contains examples for [experiment tracking](https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html)
-using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to
+This folder contains examples for [experiment tracking](https://nvflare.readthedocs.io/en/2.6/programming_guide/experiment_tracking.html)
+using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.6/index.html) to
 train an image classifier using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and
 [PyTorch](https://pytorch.org/) as the deep learning training framework.
 
 ### Tensorboard
 
 The `tensorboard` folder contains the [TensorBoard Streaming](./tensorboard/README.md) example
-showcasing the [TensorBoard streaming](https://nvflare.readthedocs.io/en/main/examples/tensorboard_streaming.html)
+showcasing the [TensorBoard streaming](https://nvflare.readthedocs.io/en/2.6/examples/tensorboard_streaming.html)
 capability of streaming from the clients to the server.
 
 ### MLflow
