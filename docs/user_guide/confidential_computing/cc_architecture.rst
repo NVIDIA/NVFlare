@@ -189,10 +189,12 @@ Bootup Sequence Overview
   - vmlinuz
   - initramfs (includes InitApp and minimal network tools)
 
-- initramfs executes /bin/init-app  ↓
+- initramfs executes /bin/init_app.sh  ↓
 
 - InitApp ↓
 
+  - Fetches CVM ID from kernel command-line
+  - Gets measurement by calling TEE and prints it
   - Brings up network interface (e.g., eth0)
   - Performs attestation using CPU TEE
   - Contacts trustee and key broker service
@@ -207,7 +209,7 @@ Secure Filesystem Layout for initramfs
 
    initramfs/
    ├── bin/
-   │   └── init-app         # Attesting agent
+   │   └── init_app.sh      # Attesting agent
    ├── init                 # Stub to call /bin/init-app
    ├── dev/
    ├── etc/
@@ -223,10 +225,13 @@ QEMU Launch Example
 .. code-block:: bash
 
    qemu-system-x86_64 \
+    -bios OVMF.amdsev.fd \
+    -initrd initrd.img \
     -kernel vmlinuz \
-    -initrd initramfs.img
+    -append "root=/dev/mapper/crypt_root rw console=ttyS0 pci=realloc,nocrs vm_id=79487b9c50e9" \
+    # Other non-measured options are skipped
 
-In this setup, ``initramfs.img`` is loaded into kernel memory and included in the TEE measurement, securing both InitApp and its logic. Placing InitApp elsewhere (e.g., mounted later from disk) breaks the measurement chain and introduces the risk of replay or tampering.
+In this setup, ``initrd.img`` is loaded into kernel memory and included in the TEE measurement, securing both InitApp and its logic. Placing InitApp elsewhere (e.g., mounted later from disk) breaks the measurement chain and introduces the risk of replay or tampering.
 
 What Needs to Be Measured and Signed?
 =====================================
@@ -299,7 +304,9 @@ Goal: Produce a secure CVM image with all trusted measurements registered in the
    - Generate a unique CVM_ID for this VM.
    - Add to kernel boot arguments:
 
-     - initrd=/boot/initramfs.img
+     - bios=OVMF.amdsev.fd
+     - initrd=/boot/initrd.img
+     - kernel=/boot/vmlinuz
      - append(vm_id=”$CVM_ID")
 
 5. **Partition Disks & Apply Security Hardening**
@@ -348,7 +355,7 @@ Boot-Up Sequence on Host B
 
 - Boot up CVM image on host.
 - Launch CVM instance.
-- UEFI loads kernel and initramfs (via ``initrd=/boot/initramfs.img``).
+- UEFI loads kernel and initramfs (via ``initrd=/boot/initrd.img``).
 - Initramfs starts network.
 - Initramfs starts InitApp.
 - InitApp requests CPU attestation report.
@@ -359,7 +366,7 @@ Boot-Up Sequence on Host B
 - systemd takes over and continues normal runtime.
 - Attestation agent service performs second-stage attestation for CPU and GPU report.
 - Workload is started.
-- Monitor ``/bootlog`` to verify CVM boot health.
+- Monitor ``bootlog`` to verify CVM boot health.
 - Monitor ``/applog`` logs for application issues.
 - User may optionally mount external NFS volume data (such as training data in FL case).
 
@@ -441,11 +448,10 @@ Disk Layout and Partitions
      - Kernel image, basic initramfs
      - ❌
      - This is not protected. The tampered image will cause measurement change so encryption key can't be retrieved.
-   * - Boot Logging Partition
-     - /bootlog
+   * - Boot Logging File
+     - boot.log
      - Early logs from initramfs and InitApp
-     - (Write-once, then RO)
-     - Write-once early, mount read-only after transition. Visible to host.
+     - This file is specified in the launch_vm.sh script.
    * - Root Filesystem
      - /
      - Full Ubuntu/OS install
@@ -453,7 +459,7 @@ Disk Layout and Partitions
      - root OS.
    * - Encrypted vault
      - /vault
-     - Logs, scratch
+     - This folder is always encrypted, even when the root filesystem is not encrypted.
      - ✅ (LUKS or dm-crypt)
      - Writable at runtime.
    * - Encrypted workspace
@@ -464,13 +470,11 @@ Disk Layout and Partitions
    * - App Logging Partition
      - /applog
      - Record app logs, especially client server communication failure etc.
-     - 
      - We may not need to expose the training log. Writable at runtime. App Log is designed as a separate image, so that when CVM shutdown the log can be still read.
-   * - (Optional) User Data Volume
-     - /data
+   * - User Data Volume
+     - /user_data
      - User-mounted data
-     - Optional
-     - Separate image attached. Can be S3/NFS/external encrypted volume.
+     - Separate image attached. Can be NFS external volume
    * - Temporary Filesystem
      - /tmp,
      - Runtime files (RAM only)
@@ -482,11 +486,9 @@ Disk Encryption and Integrity Protection
 
 Encryption is performed during the image build stage. The decryption key is securely stored in a remote key broker service. The disk image includes multiple partitions with encryption and integrity protection:
 
-- Root partition (``/``): Encrypted using ``dm-crypt``
-- ``/boot`` partition: Protected with root FS.
-- ``/workspace`` partition: A writable partition encrypted with ``dm-crypt``, providing both confidentiality and integrity. The NVFlare workspace is stored here.
+- Root partition (``/``): Encrypted using ``dm-crypt``. Everything under root partition is encrypted.
 - ``/tmp`` as tmpfs: This maps to RAM. In a Confidential VM, the TEE ensures this memory is encrypted.
-- Swap is disabled to prevent the operating system from unintentionally writing sensitive data to disk.
+- Swap is also encrypted by TEE.
 
 Mount Security
 --------------
@@ -519,10 +521,11 @@ All network connections are authenticated and encrypted. We use TLS for secure c
 Firewall Configuration
 ----------------------
 
-All ports are blocked by default using ipTables, except for explicitly whitelisted ports.
+All ports are blocked by default using iptables, except for explicitly whitelisted ports.
 
 Whitelisted ports include:
 
+- DNS ports
 - Application communication ports
 - Attestation service ports
 - Experiment tracking ports (e.g., MLflow for FL training)
@@ -533,58 +536,73 @@ Other Disk Partitions
 Logging
 -------
 
-``/bootlog``
-  This log records the boot process and is essential during setup and debugging, especially when diagnosing boot failures. Initially, the boot log is writable. After the system completes its transition, it becomes read-only to preserve integrity.
-
 ``/applog``
   This log captures application-level output (e.g., FLARE logs). It is writable to aid debugging—for instance, when investigating connectivity issues between clients and servers. The log is visible to the host and implemented as a separate image file. This allows log analysis to continue even after the CVM is shut down.
 
-Input Data
+User Configuration
+------------------
+
+``/user_config``
+  This partition stores user configuration. This partition is not encrypted. Operator can modify the content
+  before launching CVM.
+
+User Data
 ==========
 
-The user provides a predefined command to mount input data (e.g., training data), which is mounted to the data partition on the FL client. No dynamically attached disks are allowed.
+The user data is provided in an unencrypted drive image called ``user_data.qcow2`` and this drive is mounted on
+``/user_data`` in CVM. User can copy any data needed for workload onto this drive before CVM is launched.
+
 
 For this design:
 
-- Input data is assumed to be unencrypted.
-- Only NFS-based mounts are supported.
+- User data is assumed to be unencrypted.
+- Only NFS-based mounts are supported for remote volume
 
-Input Data Volume NFS Mount Design
+User Data Volume NFS Mount Design
 ==================================
 
 Requirements
 ------------
 
-This block device must have one partition and its label must be ``DATAPART``. This partition must be formatted as ext4 file system. Its group and user ID must be set to 1000 (the default user).
+The block device must not have partitions. The filesystem is created on the raw drive. The drive must be formatted as ext4 filesystem.
 
-The CVM instance will automatically mount this ``DATAPART`` to the ``/data`` folder.
+The CVM instance will automatically mount this drive on the ``/user_data`` folder.
 
 Automatic NFS Mount with NFS Client
 ------------------------------------
 
-Currently, only NFS mount is supported if CVM instances need to access files outside the ``DATAPART`` (i.e., the additional ``.qcow2`` file).
+Currently, only NFS mount is supported if CVM instances need to access files outside the ``user_data.qcow2``.
 
-The CVM instance will locate the ``ext_mount.conf`` file in the ``/data`` directory. If found, it will run the NFS client to mount the exported NFS server directory to the ``/data/mnt`` folder.
+The CVM instance will locate the ``ext_mount.conf`` file in the ``/user_data`` directory. If found, it will
+treat the first non-empty line as NFS remote server path and mount the exported NFS server directory to the
+``/user_data/mnt`` folder.
 
 The format of ``ext_mount.conf`` for NFS mount is:
 
 .. code-block:: text
 
-   NFS_EXPORT=$NFS_SERVER_NAME_or_IP:$EXPORT_DIR
+   $NFS_SERVER_NAME_or_IP:$EXPORT_DIR
 
 example:
 
 .. code-block:: text
 
-   NFS_EXPORT=172.31.53.113:/var/tmp/nfs_export
+   172.31.53.113:/var/tmp/nfs_export
 
-The CVM instance will run:
+The CVM instance will run this command to mount the NFS volume:
 
 .. code-block:: bash
 
-   sudo mount -t nfs $NFS_EXPORT /data/mnt
+   sudo mount -t nfs -o resvport $NFS_EXPORT /data/mnt
 
-We must create the ``/data/mnt`` folder as the mount point before running the command.
+.. note::
+
+If NAT is used in the network path to the NFS server, the source port of the NFS connection
+will be random, and secure exported mountpoints will reject the mount request.
+The mountpoint needs to be exported as insecure. For example:
+
+.. code-block:: bash
+    /training_data *(rw,sync,no_subtree_check,insecure)
 
 CVM Image Components
 ====================
@@ -592,102 +610,102 @@ CVM Image Components
 Based on the current design, the special CVM image will essentially consist of the following:
 
 - Base Confidential VM image with hardened security measures and CC drivers (GPU, CPU)
-- ``Initramfs.img`` which contains InitApp
+- ``initrd.img`` which is initramfs that contains InitApp
 - InitApp contains:
-
   - Trustee client, attestation agent
   - AMD SEV-SNP or Intel TDX attestation SDKs
+  - Attestation service agent
+- The CVM root filesystem contains:
   - Workload docker
   - Application code and dependencies
   - Attestation service agent
   - No need for FLARE
   - Needed for all other non-CC aware applications
   - systemd service that will start the workload docker
+  - systemd service that mounts user data
+  - systemd service that invokes attestation agent
 
-CVM Image Services and Workload Interface
-=========================================
+CVM Attestation Agents
+======================
 
-In this section, we will discuss the contract and interaction between services (systemd) and workload. Two types of services we have in mind:
+The attestation agents for CPU and GPU will be started on bootup of the CVM.
 
-- Attestation service agent performs initial self-attestation and periodic self-attestation.
-
-  - If succeeded, trigger workload start.
-  - ``docker run``
-  - If failed:
-
-    - Initial self-attestation failed, won't call start.
-    - Periodic check failed →
-    - Kill docker
-
-  - How to deal with network interruptions? Do we tolerate occasional attestation failure due to network interruptions?
+There are initial attestation and periodic attestations. If attestation fails repeatedly, the
+OS will be shutdown.
 
 CVM Image Build Configuration
 =============================
 
-For each CVM (NVFlare will build many CVM images, one for each client/site), we will have configuration files:
+For each CVM (NVFlare will build many CVM images, one for each client/site), we will have 2 configuration files:
 
-- ``cc_params.yml``
-- ``cc_build.yml``
+- Site configuration
+- Project configuration
 
-Here is an example of ``cc_params.yml``:
-
-.. code-block:: yaml
-
-   computer_env: onprem_cvm
-   cc_cpu_mechanism: amd_sev_snp
-   cc_gpu_mechanism: nvidia_cc
-   role: client
-   root_drive_size: 256
-   secure_drive_size: 128
-   nvflare_version: 2.6.0
-   data_source: /tmp/data
-   nfs_mount: nfs-server.local:/data
-   custom_code: /tmp/custom
-
-   site_required_python_packages:
-    - "numpy==1.21.5"
-    - "pandas==1.3.5"
-    - "pyarrow==11.0.0"
-    - "pydantic==2.3.1"
-    - "pyyaml==6.0.1"
-    - "requests==2.26.0"
-
-cc_build.yml
-------------
+Here is an example of the site configuration yaml file:
 
 .. code-block:: yaml
+    compute_env: onprem_cvm
+    cc_cpu_mechanism: amd_sev_snp
+    cc_gpu_mechanism: none
+    role: server
+    root_drive_size: 15
+    applog_drive_size: 1
+    user_config_drive_size: 1
+    user_data_drive_size: 1
+    allowed_ports: [8002, 8003]
+    allowed_out_ports: [443, 8999]
 
-   vault_file: ~/vault.img
-   nvflare_folder: /vault/nvflare
-   workspace_folder: /vault/workspace
-   venv_folder: /vault/venv
-   service_folder: /vault/service
-   logging_folder: /applogs
+    # A saved archive in gzipped tar format
+    docker_archive: base_images/app.tar.gz
+    user_config:
+      nvflare: /tmp/nvflare/poc
 
-   required_system_packages:
-      - "cryptsetup:2.2"
-      - "lvm2:2.03"
-      - "parted:3.3"
-      - "iptables:1.8"
-      - "systemd:245"
-      - "dmsetup:1.02"
-      # Additional security packages
-      - "apparmor:3.0"
-      - "selinux-utils:3.1"
-      - "auditd:3.0"
-      - "fail2ban:0.11"
-      - "rkhunter:1.4"
-      # Monitoring packages
-      - "sysstat:12.0"
-      - "prometheus-node-exporter:1.0"
-      # Backup tools
-      - "rsync:3.1"
-      - "duplicity:0.8"
+Project configuration file (``cc_build.yml``)
+---------------------------------------------
 
-   required_python_packages:
-      - "ansible"
-      - "libvirt-python==11.3.0"
-      - "pyyaml"
+.. code-block:: yaml
+    vault_file: /root/vault.img
+    vault_folder: /vault
+    vault_key_file: /run/vault_key.txt
+    workspace_folder: /vault/workspace
+    venv_folder: /vault/venv
+    service_folder: /vault/services
+    packages_folder: /vault/packages
+    script_folder: /vault/scripts
+    encrypted_drive_name: vault
+    logging_folder: /applog
+    user_config_folder: /user_config
+    user_data_folder: /user_data
+    kbs_host: trustee-azsnptpm.eastus.cloudapp.azure.com
+    kbs_port: 8999
+    kbs_cert: binaries/kbs.cert
+    kbs_auth_key: binaries/private.key
+
+    required_system_packages:
+        - nfs-common
+        - yq
+        - apt-transport-https
+        - gnupg-agent
+
+    required_python_packages:
+        - ansible
+        - pyyaml
+        - nv_attestation_sdk
+        - passlib
+
+    cpu_scripts_to_copy:
+        - mount_user_data.sh
+        - cpu_attestation.sh
+        - self_attestation.sh
+
+    gpu_scripts_to_copy:
+        - gpu_attestation.py
+
+    services_to_install:
+        - mount_user_data.service
+        - cvm_app.service
+        - periodic_attestation.service
+        - periodic_attestation.timer
 
 Trustee Service and Attestations
 ================================
@@ -705,7 +723,7 @@ Design Rationale
 
 This design is chosen based on the following key factors:
 - Our main focus is on protecting the integrity and confidentiality of initApp during boot up.
-- The initApp is a small Rust program that runs independently of the GPU, so GPU attestation is not required at this stage.
+- The initApp is a small script that runs independently of the GPU, so GPU attestation is not required at this stage.
 - We need an open-source trustee service that has both key broker service and attestation, and basic configuration support. CoCo Trustee Service is the only option we can find at the moment.
 
 CoCo Trustee Architecture
@@ -756,6 +774,7 @@ Here is a policy example. The resource policy we set to ensure only CVM with the
 
    package policy
    default allow = false
+
    allow {
        input["submods"]["cpu0"]["ear.veraison.annotated-evidence"]["snp"]["measurement"] == "Cwa8qBJimP2freTTrrpvAZVbEQEyAhPY4fZGgSn9z4qtt0CAGmcS+Otz96qQZ92k"
    }
@@ -791,10 +810,8 @@ Here is the command for KBS client to set and get resources:
 CVM Image Measurement
 =====================
 
-Measurement Tool:
-For AMD, here is the tool to perform the measurements, the value (hashes) can be used for resource policy or reference values.
-
-🔗 https://github.com/virtee/sev-snp-measure
+The InitApp does a CVM image measurement using ``snpguest`` tool. This meansurement is printed in the boot log always,
+even in case of a boot failure.
 
 What does it measure:
 
