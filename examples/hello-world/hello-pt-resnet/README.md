@@ -1,6 +1,6 @@
 # Hello PyTorch ResNet
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
+Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.6/index.html) to train an image classifier
 using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629))
 and [PyTorch](https://pytorch.org/) as the deep learning training framework. Comparing with the Hello PyTorch example, it uses the torchvision ResNet, 
 instead of the SimpleNetwork.

@@ -89,7 +89,7 @@ is similar to the classic
   from base class
   [`ModelController`](../../../nvflare/app_common/workflows/model_controller.py),
   which relies on the
-  [`ModelPersistor`](https://nvflare.readthedocs.io/en/main/glossary.html#persistor). A
+  [`ModelPersistor`](https://nvflare.readthedocs.io/en/2.6/glossary.html#persistor). A
   custom
   [`NewtonRaphsonModelPersistor`](./src/newton_raphson_persistor.py)
   is implemented in this example, which is based on the
@@ -106,7 +106,7 @@ is similar to the classic
   method. Once
   the clients finish their local training, results will be collected
   and sent back to server as
-  [`FLModel`](https://nvflare.readthedocs.io/en/main/programming_guide/fl_model.html#flmodel)s.
+  [`FLModel`](https://nvflare.readthedocs.io/en/2.6/programming_guide/fl_model.html#flmodel)s.
 - Results sent by clients contain their locally computed gradient and
   Hessian. A [custom aggregation
   function](./src/newton_raphson_workflow.py)
@@ -129,7 +129,7 @@ is similar to the classic
 On the client side, the local training logic is implemented
 [here](./src/newton_raphson_train.py). The
 implementation is based on the [`Client
-API`](https://nvflare.readthedocs.io/en/main/programming_guide/execution_api_type.html#client-api). This
+API`](https://nvflare.readthedocs.io/en/2.6/programming_guide/execution_api_type.html#client-api). This
 allows user to add minimum `nvflare`-specific codes to turn a typical
 centralized training script to a federated client side local training
 script.

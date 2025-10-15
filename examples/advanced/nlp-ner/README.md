@@ -54,7 +54,7 @@ Let's take a closer look at the word-label correspondence:
 As shown above, the task is to capture the keywords related to medical findings.
 
 ## Run automated experiments
-We run the federated training on a single client using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
+We run the federated training on a single client using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/2.6/programming_guide/fed_job_api.html).
 ```
 python3 nlp_fl_job.py --model_name Bert 
 python3 nlp_fl_job.py --model_name GPT

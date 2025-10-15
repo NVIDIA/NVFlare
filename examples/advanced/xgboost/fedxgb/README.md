@@ -111,7 +111,7 @@ PSI will be performed first to identify and match the overlapping samples, then 
 
 
 ## Experiments
-We first run the centralized trainings to get the baseline performance, then run the federated XGBoost training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
+We first run the centralized trainings to get the baseline performance, then run the federated XGBoost training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/2.6/programming_guide/fed_job_api.html).
 
 ### Centralized Baselines
 For centralize training, we train the XGBoost model on the whole dataset, as well as subsets with different subsample rates

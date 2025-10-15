@@ -67,7 +67,7 @@ tensorboard --logdir /tmp/nvflare/hello-flower
 
 ## 3. Run with real deployment
 
-First, check real-world deployment guide: https://nvflare.readthedocs.io/en/main/real_world_fl/overview.html
+First, check real-world deployment guide: https://nvflare.readthedocs.io/en/2.6/real_world_fl/overview.html
 
 Second, export the corresponding NVFlare job:
 ```bash

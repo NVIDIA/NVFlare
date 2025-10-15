@@ -192,7 +192,7 @@ The main steps are
 
 ## Privacy Policy and Privacy Filters
 
-NVFLARE provide data privacy protection through privacy filters [privacy-management](https://nvflare.readthedocs.io/en/main/user_guide/security/site_policy_management.html#privacy-management)
+NVFLARE provide data privacy protection through privacy filters [privacy-management](https://nvflare.readthedocs.io/en/2.6/user_guide/security/site_policy_management.html#privacy-management)
 Each site can have its own privacy policy. 
 
 ### Local privacy policy

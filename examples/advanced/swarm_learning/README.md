@@ -1,5 +1,5 @@
 # Swarm Learning with Cross-Site Evaluation
-This example shows how to use swarm learning with [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) using PyTorch with the CIFAR-10 dataset.
+This example shows how to use swarm learning with [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.6/index.html) using PyTorch with the CIFAR-10 dataset.
 
 Before starting please make sure you set up a [virtual environment](../../../README.md#set-up-a-virtual-environment) and install the additional requirements:
 ```
