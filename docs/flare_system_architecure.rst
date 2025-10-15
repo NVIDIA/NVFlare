@@ -45,8 +45,8 @@ Here's the simplified table without file paths:
      - ServerEngine, ClientEngine, JobRunner
      - Core federated learning orchestration and execution
    * - Job Management
-     - FedJob, JobDefManagerSpec, SimulatorRunner
-     - Job definition, storage, scheduling, and simulation
+     - FedJob, JobDefManagerSpec
+     - Job definition, storage, scheduling
    * - Communication
      - Cell, CoreCell, StreamCell, Pipe
      - Secure inter-party communication with streaming support
@@ -54,10 +54,9 @@ Here's the simplified table without file paths:
      - ClientAPI (flare.receive(), flare.send()), LauncherExecutor
      - ML framework integration and external process management
    * - Administration
-     - FLAdminAPI, AdminCommandModule, Dashboard
-     - Programmatic and GUI-based system management
+     - Dashboard and Programmatic and GUI-based system management
    * - Deployment
-     - Lighter, ProvisionerSpec, WorkspaceBuilder
+     - ProvisionerSpec, WorkspaceBuilder
      - Certificate generation, configuration, and secure deployment
    * - Workflows
      - ScatterAndGather, FedAvg, ModelController
@@ -71,8 +70,8 @@ Process Responsibilities
 
 - Runs FederatedServer 
 - Manages client registration and heartbeat monitoring
-Houses ServerEngine which orchestrates job scheduling via JobRunner
-- Spawns Server Job (SJ) processes for each active job
+- Houses ServerEngine which orchestrates job scheduling via JobRunner
+- Spawns Server Job (SJ) processes or docker/pod for each active job for different job launcher.
 
 **Server Job (SJ)**
 

@@ -389,6 +389,5 @@ For example, if you use HTTP as a communication protocol, connections through a 
 
 **Additional Resources:**
 
-- What's new: https://nvflare.readthedocs.io/en/main/whats_new.html
 - Server port consolidation: https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/configurations/server_port_consolidation.html#server-port-consolidation
 - Communication security: https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/security/communication_security.html
