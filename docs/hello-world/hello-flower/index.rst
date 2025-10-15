@@ -1,7 +1,9 @@
 Hello Flower (PyTorch)
 ========================
 
-This example demonstrates how to use NVIDIA FLARE with Flower to train an image classifier using federated averaging (FedAvg). The complete example code can be found in the :doc:`hello-flower directory <examples/hello-world/hello-flower/>`. It is recommended to create a virtual environment and run everything within a virtualenv.
+This example demonstrates how to use NVIDIA FLARE with Flower to train an image classifier using federated averaging (FedAvg).
+The complete example code can be found in the `hello-flower directory <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-flower>`_.
+It is recommended to create a virtual environment and run everything within a virtualenv.
 
 NVIDIA FLARE Installation
 -------------------------

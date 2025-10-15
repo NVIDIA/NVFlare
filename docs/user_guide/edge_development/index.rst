@@ -399,12 +399,13 @@ In this step, you use a recipe to create and/or run a FLARE job.
 
 If you are developing models for mobile devices, you need to use the ``ETFedBuffRecipe``; otherwise, you need to use the ``EdgeFedBuffRecipe``.
 
-FedBuff is the algorithm that manages device selection and model updates.
+FedBuff [1]_ is the algorithm that manages device selection and model updates.
 
 EdgeFedBuffRecipe
 ------------------
 
-This recipe helps you create jobs for training with standard PyTorch on other edge devices (e.g., NVIDIA Jetson devices). An example can be found in the :ref:`edge examples <edge_examples>`.
+This recipe helps you create jobs for training with standard PyTorch on other edge devices (e.g., NVIDIA Jetson devices).
+An example can be found in the `edge examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_.
 
 .. code-block:: python
 
@@ -481,10 +482,18 @@ This configuration maintains the selection of all N devices, waits for all N dev
 
 Similarly, we can simulate an asynchronous pipeline by setting these parameters differently. See more details in the example.
 
+Federated Training on Mobile Devices
+====================================
+
+FLARE 2.7 introduces comprehensive mobile development support for both Android and iOS platforms,
+enabling federated learning directly on edge devices. Please refer to FLARE mobile development guide :ref:`flare_mobile` for detailed on mobile SDK integration, API usage, and
+best practices for developing FL applications on mobile platforms. Here we will quickly illustrate the
+recipe for ExecuTorch(ET) Recipe for FedBuff-based [1]_ Async FL algorithm.
+
 ETFedBuffRecipe
 ---------------
 
-This recipe helps you create jobs for training with ExecuTorch (ET) on mobile devices. Examples can be found in the :ref:`edge examples <edge_examples>`.
+This recipe helps you create jobs for training with ExecuTorch (ET) on mobile devices. Examples can be found in the `edge examples <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/edge>`_.
 
 .. code-block:: python
 
@@ -520,3 +529,9 @@ The key parameters are as follows:
 - **input_shape, output_shape**: These specify the shapes of the input and output tensors expected by your ``device_model``. They are crucial for the ExecuTorch model export process, helping to define tensor dimensions for compilation and deployment on edge devices.
 - **device_training_params**: A dictionary containing additional training hyperparameters (e.g., number of epochs, learning rate, batch size). These parameters are passed to each device during distributed training to control the local training loop.
 
+
+**Reference**
+
+.. [1] Nguyen, J., Malik, K., Zhan, H., Yousefpour, A., Rabbat, M., Malek, M., & Huba, D. (2023). 
+   Asynchronous Federated Learning with Bidirectional Quantized Communications and Buffered Aggregation. 
+   arXiv preprint arXiv:2308.00263. https://arxiv.org/pdf/2308.00263
