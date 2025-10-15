@@ -5,8 +5,7 @@ FLARE CellNet Architecture
 
 .. image:: resources/cellnet.png
    :alt: FLARE CellNet Architecture
-   :align: center
-   :height: 300px
+
 
 Purpose and Scope
 #################
@@ -54,19 +53,19 @@ provides fundamental messaging infrastructure:
 
 **Key Responsibilities**:
 
-**Message Routing**: Routes messages to appropriate handlers based on channel/topic
-**Connection Management**: Manages listeners (incoming) and connectors (outgoing)
-**Callback Registry**: Stores message handlers in req_reg: Registry
-**Agent Tracking**: Maintains agents: Dict[str, CellAgent] for remote cells
-**Request Tracking**: Tracks pending requests in waiters: Dict[str, _Waiter]
-**Security**: Delegates to credential_manager: CredentialManager for encryption
+- **Message Routing**: Routes messages to appropriate handlers based on channel/topic
+- **Connection Management**: Manages listeners (incoming) and connectors (outgoing)
+- **Callback Registry**: Stores message handlers in req_reg: Registry
+- **Agent Tracking**: Maintains agents: Dict[str, CellAgent] for remote cells
+- **Request Tracking**: Tracks pending requests in waiters: Dict[str, _Waiter]
+- **Security**: Delegates to credential_manager: CredentialManager for encryption
 
 **Core Methods**:
 
-**send_request**(channel, target, topic, request, timeout, ...) - Send message and wait for reply
-**fire_and_forget**(channel, topic, targets, message, ...) - Send without waiting
-**broadcast_request**(channel, topic, targets, request, ...) - Send to multiple targets
-**register_request_cb**(channel, topic, cb, ...) - Register callback for channel/topic
+- **send_request**(channel, target, topic, request, timeout, ...) - Send message and wait for reply
+- **fire_and_forget**(channel, topic, targets, message, ...) - Send without waiting
+- **broadcast_request**(channel, topic, targets, request, ...) - Send to multiple targets
+- **register_request_cb**(channel, topic, cb, ...) - Register callback for channel/topic
 
 Layer 2: **StreamCell** - Large Data Transfer
 
@@ -74,17 +73,18 @@ The StreamCell adds large data transfer capabilities on top of CoreCell:
 
 **Key Components**:
 
-**self.cell**: CoreCell - Wrapped CoreCell for basic messaging
-**self.byte_streamer**: ByteStreamer - Sends data as chunked streams
-**self.byte_receiver**: ByteReceiver - Receives and reassembles chunks
-**self.blob_streamer**: BlobStreamer - Optimized for in-memory BLOBs
+- **cell**: CoreCell - Wrapped CoreCell for basic messaging
+- **byte_streamer**: ByteStreamer - Sends data as chunked streams
+- **byte_receiver**: ByteReceiver - Receives and reassembles chunks
+- **blob_streamer**: BlobStreamer - Optimized for in-memory BLOBs
+- **blob_streamer**: BlobStreamer - Optimized for in-memory BLOBs
 
 **Streaming Methods**:
 
-**send_stream**(channel, topic, target, message, ...) - Send byte stream with flow control
-**send_blob**(channel, topic, target, message, ...) - Send BLOB (fits in memory)
-**register_stream_cb**(channel, topic, stream_cb, ...) - Register stream receiver
-**register_blob_cb**(channel, topic, blob_cb, ...) - Register BLOB receiver
+- **send_stream**(channel, topic, target, message, ...) - Send byte stream with flow control
+- **send_blob**(channel, topic, target, message, ...) - Send BLOB (fits in memory)
+- **register_stream_cb**(channel, topic, stream_cb, ...) - Register stream receiver
+- **register_blob_cb**(channel, topic, blob_cb, ...) - Register BLOB receiver
 
 **Streaming Protocol**:
 
