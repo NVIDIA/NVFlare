@@ -92,6 +92,7 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None,
         server_key_file_name=server_key,
         accepted_client_cns=None,
         download_job_url=server_conf.get("download_job_url", "http://"),
+        timeout=server_conf.get("admin_timeout", 10.0),
     )
     return admin_server
 
