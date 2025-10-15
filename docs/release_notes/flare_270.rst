@@ -87,8 +87,8 @@ When combined with the Client API (typically 4+ lines), building and running fed
     or read the :ref:`job_recipe`, more than half a dozen ready-to-use recipes are provided: :ref:`quickstart`
 
 
-Port Consolidation: Simplified Deployment with Single-Port Architecture
------------------------------------------------------------------------
+Enhanced Communication: Port Consolidation and new HTTP Driver
+--------------------------------------------------------------
 
 .. sidebar::
 
