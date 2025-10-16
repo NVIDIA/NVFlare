@@ -32,8 +32,6 @@ Core Components and Code Structure
 Primary System Modules
 ######################
 
-Here's the simplified table without file paths:
-
 .. list-table:: **FLARE Core Components**
    :header-rows: 1
    :widths: 20 35 45
@@ -84,7 +82,7 @@ Process Responsibilities
 - Runs FederatedClient 
 - Manages client registration with server
 - Houses ClientEngine which coordinates job execution
-- Spawns Client Job (CJ) processes for each assigned job
+- Spawns Client Job (CJ) processes or docker/pod for each assigned job for different job launcher.
 
 **Client Job (CJ)**
 
@@ -97,8 +95,7 @@ Process Responsibilities
 **Training Process**
 
 - User's ML training script
-- Uses Client API: flare.init(), flare.receive(), flare.send() 
-- nvflare/client/api.py
+- Uses Client API: flare.init(), flare.receive(), flare.send()
 - Communicates with CJ via FilePipe (file-based) or CellPipe (network-based)
 
 Communication Mechanisms
@@ -113,8 +110,7 @@ Communication Mechanisms
   
 **Pipe Abstraction**: CJ-to-training-process communication uses Pipe interface:
 
-- FilePipe: File system-based IPC for same-machine processes 
-- nvflare/app_opt/pt/file_pipe.py
+- FilePipe: File system-based IPC for same-machine processes
 - CellPipe: Network-based IPC allowing training process on different machine
 
 Deployment Modes
@@ -250,10 +246,10 @@ interactions between servers, clients, and administrative components.
 
 This section provides an overview of the communication framework architecture, core components, and basic concepts. 
 
-**CellNet Architecture** - Detailed architecture and design patterns
-**Cell Communication Patterns** - Message sending patterns and channel routing
-**Streaming and Data Transfer** - Large data transfer and streaming protocols
-**Security and Encryption** - Certificate management and message encryption
+- **CellNet Architecture** - Detailed architecture and design patterns
+- **Cell Communication Patterns** - Message sending patterns and channel routing
+- **Streaming and Data Transfer** - Large data transfer and streaming protocols
+- **Security and Encryption** - Certificate management and message encryption
 
 for mode details please refer to cellnet architecture :ref:`cellnet_architecture`
 

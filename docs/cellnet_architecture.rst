@@ -50,7 +50,7 @@ Three-Layer Design
 
 The CellNet architecture consists of three layers, each extending the previous:
 
-Layer 1: **CoreCell** - Basic Message Infrastructure
+**Layer 1: CoreCell** - Basic Message Infrastructure
 provides fundamental messaging infrastructure:
 
 **Key Responsibilities**:
@@ -64,12 +64,12 @@ provides fundamental messaging infrastructure:
 
 **Core Methods**:
 
-- **send_request**(channel, target, topic, request, timeout, ...) - Send message and wait for reply
-- **fire_and_forget**(channel, topic, targets, message, ...) - Send without waiting
-- **broadcast_request**(channel, topic, targets, request, ...) - Send to multiple targets
-- **register_request_cb**(channel, topic, cb, ...) - Register callback for channel/topic
+- **send_request** (channel, target, topic, request, timeout, ...) - Send message and wait for reply
+- **fire_and_forget** (channel, topic, targets, message, ...) - Send without waiting
+- **broadcast_request** (channel, topic, targets, request, ...) - Send to multiple targets
+- **register_request_cb** (channel, topic, cb, ...) - Register callback for channel/topic
 
-Layer 2: **StreamCell** - Large Data Transfer
+**Layer 2: StreamCell** - Large Data Transfer
 
 The StreamCell adds large data transfer capabilities on top of CoreCell:
 
@@ -93,7 +93,7 @@ The StreamCell adds large data transfer capabilities on top of CoreCell:
 - Flow control with sliding window and ACKs
 - Progress tracking via StreamFuture
 
-Layer 3: **Cell** - Intelligent Request/Reply
+**Layer 3: Cell** - Intelligent Request/Reply
 
 The **Cell** class provides unified interface for streaming and non-streaming messages:
 
@@ -145,11 +145,6 @@ Channel and Topic Addressing
 F3 CellNet routes messages using a two-level addressing scheme: channel and topic.
 This is stored in message headers:
 
-Title: Channel/Topic Routing in CoreCell
-
-
-Predefined Channels (CellChannel constants):
-
 .. list-table:: **Predefined Channels**
    :header-rows: 1
    :widths: 35 25 40
@@ -176,13 +171,12 @@ Predefined Channels (CellChannel constants):
 
 Communication Patterns
 ^^^^^^^^^^^^^^^^^^^^^^
-Request-Reply Pattern -- send request and wait for reply
-Fire-and-Forget Pattern -- send message without waiting for reply
-Broadcast Pattern -- send to multiple targets
+- **Request-Reply Pattern** -- send request and wait for reply
+- **Fire-and-Forget Pattern** -- send message without waiting for reply
+- **Broadcast Pattern** -- send to multiple targets
 
 Streaming Components Overview
 #############################
-
 
 The streaming system is organized into sender components, receiver components,and stream abstractions:
 
@@ -208,7 +202,7 @@ Key Streaming Classes:
 
 Performance and Statistics
 ##########################
-Statistics Collection
+Statistics Collection:
 CellNet includes comprehensive statistics collection for monitoring and debugging:
 Statistics are collected via StatsPoolManager with categories for different operation types and cell FQCNs.
 
