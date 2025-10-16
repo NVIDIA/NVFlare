@@ -11,8 +11,8 @@ user_data_drive_size: 1
 # docker save <image_name> | gzip > app.tar.gz
 docker_archive: /tmp/base_images/app.tar.gz
 
-allowed_ports:
-- 8002
+allowed_ports: [8002]
+allowed_out_ports: [443, 8999]
 
 cc_issuers:
   - id: snp_authorizer
