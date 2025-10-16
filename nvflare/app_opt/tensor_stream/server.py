@@ -169,6 +169,7 @@ class TensorServerStreamer(FLComponent):
                 self.start_sending_time[current_round] = time.time()
 
         try:
+            self.sender.store_tensors(fl_ctx)
             success = self.sender.send(fl_ctx, self.entry_timeout)
         except ValueError as e:
             self.system_panic(f"Failed to send tensors: {e}", fl_ctx)

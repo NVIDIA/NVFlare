@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections import defaultdict
+
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.streaming import StreamableEngine, StreamContext
@@ -19,7 +21,7 @@ from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .producer import TensorProducer
-from .types import TENSORS_CHANNEL
+from .types import TENSORS_CHANNEL, TensorsMap
 from .utils import get_dxo_from_ctx, get_targets_for_ctx_and_prop_key, get_tensors_from_dxo, get_topic_for_ctx_prop_key
 
 
@@ -46,14 +48,12 @@ class TensorSender:
         self.format = format
         self.tasks = tasks
         self.channel = channel
+        # key: task_id, value: dict with key: root_key, value: tensors sent to the peer
+        self.tensors: dict[str, dict[str, TensorsMap]] = defaultdict(dict)
         self.logger = get_obj_logger(self)
 
-    def send(
-        self,
-        fl_ctx: FLContext,
-        entry_timeout: float,
-    ) -> bool:
-        """Send tensors to the peer.
+    def store_tensors(self, fl_ctx: FLContext):
+        """ "Parse tensors from the FLContext and store them for sending.
 
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
@@ -62,7 +62,6 @@ class TensorSender:
         task_id = fl_ctx.get_prop(FLContextKey.TASK_ID, None)
         if not task_id:
             raise ValueError("No task_id found in FLContext.")
-        targets = get_targets_for_ctx_and_prop_key(fl_ctx, self.ctx_prop_key)
 
         try:
             dxo = get_dxo_from_ctx(fl_ctx, self.ctx_prop_key, self.tasks)
@@ -80,8 +79,43 @@ class TensorSender:
 
         for key in root_keys:
             tensors = get_tensors_from_dxo(dxo, key, self.format)
+            self.tensors[task_id][key] = tensors
+            msg = f"Stored {len(tensors)} tensors for peer '{peer_name}'."
+            if key:
+                msg += f" Root Key: '{key}'."
+            msg += f" Task ID: '{task_id}'."
+            self.logger.info(msg)
+            del tensors
+
+    def send(
+        self,
+        fl_ctx: FLContext,
+        entry_timeout: float,
+    ) -> bool:
+        """Send tensors to the peer.
+
+        Args:
+            fl_ctx (FLContext): The FLContext for the current operation.
+        """
+        peer_name = fl_ctx.get_peer_context().get_identity_name()
+        task_id = fl_ctx.get_prop(FLContextKey.TASK_ID, None)
+        if not task_id:
+            raise ValueError("No task_id found in FLContext.")
+        targets = get_targets_for_ctx_and_prop_key(fl_ctx, self.ctx_prop_key)
+
+        tensors_for_task = self.tensors.get(task_id, None)
+        if not tensors_for_task:
+            raise ValueError(f"No tensors stored for peer '{peer_name}' and task '{task_id}'.")
+
+        root_keys = list(tensors_for_task.keys())
+        if not root_keys:
+            raise ValueError(f"No tensors found to send for peer '{peer_name}' and task '{task_id}'.")
+
+        for key in root_keys:
+            # important: pop the tensors to release memory after sending
+            tensors = tensors_for_task.pop(key)
             producer = TensorProducer(tensors, task_id, entry_timeout, root_key=key)
-            msg = f"Starting to send tensors to peer '{peer_name}'."
+            msg = f"Starting to send len(tensors) tensors to peer '{peer_name}'."
             if key:
                 msg += f" Root Key: '{key}'."
             msg += f" Task ID: '{task_id}'."

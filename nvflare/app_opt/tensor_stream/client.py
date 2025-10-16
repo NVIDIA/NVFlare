@@ -143,6 +143,7 @@ class TensorClientStreamer(FLComponent):
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
         """
+        self.sender.store_tensors(fl_ctx)
         if self.sender.send(fl_ctx, self.entry_timeout):
             clean_task_result(fl_ctx)
             # Clear sender to release any references to tensors
