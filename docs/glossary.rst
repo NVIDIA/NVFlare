@@ -160,8 +160,8 @@ component that converts between Shareable objects and model objects. The Shareab
 Startup kit
 ===========
 Startup kits are products of the provisioning process and contain the configuration and certificates necessary to establish
-secure connections between FL servers, FL clients, and Admin clients. These files are used to establish identity
-and authorization policies between server and clients. Startup kits are distributed to FL servers, clients,
+secure connections between the FL server, FL clients, and Admin clients. These files are used to establish identity
+and authorization policies between server and clients. Startup kits are distributed to the FL server, clients,
 and Admin clients depending on role.
 
 Task

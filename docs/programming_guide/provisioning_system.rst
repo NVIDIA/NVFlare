@@ -131,10 +131,10 @@ The builders in the above diagram are provided as a convenient way to generate c
 NVIDIA FLARE system.  Developers are encouraged to add / modify or even remove those builders to fit their own requirements.
 
 Each builder is responsible for taking the information from project, its own __init__ arguments, and provisioner to
-generate data.  For example, the HEBuilder is responsible for generating tenseal context files for server and client,
-but not admin.  Additionally, the context for servers does not include either public key or secret key while the
-context for clients include both.  Its __init__ arguments consist of poly_modules_degree, coeff_mod_bit_sizes,
-scale_bits and scheme.  With all of the information, HEBuilder can output context files correctly.
+generate data. For example, the HEBuilder is responsible for generating tenseal context files for server and client,
+but not admin. Additionally, the context for the server does not include either public key or secret key while the
+context for clients include both. Its __init__ arguments consist of poly_modules_degree, coeff_mod_bit_sizes,
+scale_bits and scheme. With all of the information, HEBuilder can output context files correctly.
 
 Provisioner calls each builder's initialize method first during provisioning time in a loop.  This allows builders to
 prepare information and to populate their instance variables.  After calling each builder's initialize method, the
@@ -456,11 +456,11 @@ Edit the project.yml configuration file to meet your project requirements:
     - "api_version" must be 3 for current release of provisioning tool
     - "name" is used to identify this project.
     - "participants" describes the different parties in the FL system, distinguished by type. For all participants, "name"
-      should be unique, and "org" should be defined in AuthPolicyBuilder. The "name" of servers should
-      be in the format of fully qualified domain names. It is possible to use a unique hostname rather than FQDN, with
+      should be unique, and "org" should be defined in AuthPolicyBuilder. The "name" of the server should
+      be in the format of a fully qualified domain name. It is possible to use a unique hostname rather than FQDN, with
       the IP mapped to the hostname by having it added to ``/etc/hosts``:
 
-        - Type "server" describes the FL servers, with the "org", "name", "fed_learn_port", "admin_port", and "enable_byoc":
+        - Type "server" describes the FL server, with the "org", "name", "fed_learn_port", "admin_port", and "enable_byoc":
 
             - "fed_learn_port" is the port number for communication between the FL server and FL clients
             - "admin_port" is the port number for communication between the FL server and FL administration client
