@@ -119,6 +119,8 @@ def main():
         ),
     )
 
+    client_app = PTTrainer(delta=1.0)
+
     simulator = Simulator(
         root_dir="/tmp/fox",
         experiment_name="pt_fedavg_intime",
