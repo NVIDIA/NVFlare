@@ -64,7 +64,7 @@ federated learning, for example:
     flare.send(output_model) # 5. Sends the model to NVFlare side.
 
 With 5 lines of code changes, we convert the centralized training code to
-federated learning setting.
+a federated learning setting.
 
 After this, we can utilize the job templates and the :ref:`job_cli`
 to generate a job so it can be run using :ref:`fl_simulator`
