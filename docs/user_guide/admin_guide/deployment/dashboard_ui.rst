@@ -19,8 +19,8 @@ for client sites and then download startup kits for each client site after it is
 
 Finally, the ``Project Admin`` or project administrator is responsible for overall site management from setting up the project
 to approving the users and client sites after inviting users to sign up (for details on how the project administrator can set up
-the site, see :ref:`dashboard_api`). The ``Project Admin`` can also download startup kits
-for the server(s).
+the site, see :ref:`dashboard_api`). The ``Project Admin`` can also download the startup kit
+for the server.
 
 Member and Lead User Experience
 ===============================
@@ -218,7 +218,7 @@ Server Configuration
 
     Server Configuration page.
 
-On the Server Configuration page, the Project Admin can set the information for the FL Server(s).
+On the Server Configuration page, the Project Admin can set the information for the FL Server.
 
 .. _dashboard_users_dashboard:
 
@@ -280,9 +280,9 @@ Project Admin Downloads
 
 The Project Admin has the same ``Download FLARE Console`` button as the other users at the top of the page. The application docker image location visible
 to Org Admins will be on the Project Admin Downloads page as well. In addition to this, the Project Admin has the ability to download the startup kit
-for the FL Server(s).
+for the FL Server.
 
-Downloads will be available after the project has been frozen. The name of the FL Server startup kit(s) will be the DNS name that was configured
+Downloads will be available after the project has been frozen. The name of the FL Server startup kit will be the DNS name that was configured
 on the :ref:`Server Configuration <dashboard_server_configuration>` page followed by the extension ".zip".
 
 .. figure:: ../resources/dashboard_proj_admin_downloads.png
