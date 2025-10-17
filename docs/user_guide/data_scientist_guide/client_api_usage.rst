@@ -104,7 +104,7 @@ Below is a table overview of key Client APIs.
      - Returns whether the current task is a training task.
      - :func:`is_train<nvflare.client.api.is_train>`
    * - is_evaluate
-     - Returns whether the current task is an evaluate task.
+     - Returns whether the current task is an evaluation task.
      - :func:`is_evaluate<nvflare.client.api.is_evaluate>`
    * - is_submit_model
      - Returns whether the current task is a submit_model task.
