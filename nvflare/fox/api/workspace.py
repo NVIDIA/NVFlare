@@ -17,6 +17,14 @@ from abc import ABC, abstractmethod
 
 class Workspace(ABC):
 
+    def __init__(self):
+        self.resource_dirs = {}
+
+    def add_resource_dir(self, name, resource_dir):
+        if not os.path.isdir(resource_dir):
+            raise ValueError(f"Resource dir {resource_dir} does not exist")
+        self.resource_dirs[name] = resource_dir
+
     @abstractmethod
     def get_root_dir(self) -> str:
         pass
@@ -26,7 +34,11 @@ class Workspace(ABC):
         pass
 
     def get_subdir(self, name: str, create: bool = True) -> str:
-        p = f"{self.get_work_dir()}/{name}"
+        resource_dir = self.resource_dirs.get(name)
+        if resource_dir:
+            return resource_dir
+
+        p = os.path.join(self.get_work_dir(), name)
         if not os.path.exists(p) and create:
             os.makedirs(p, exist_ok=True)
         return p

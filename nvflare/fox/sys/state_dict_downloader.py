@@ -18,32 +18,48 @@ from nvflare.fox.api.ctx import Context
 from nvflare.fox.sys.backend import SysBackend
 
 
-def prepare_for_download(
-    state_dict: dict[str, torch.Tensor],
-    timeout: float,
-    ctx: Context,
-    num_tensors_per_chunk: int = 1,
-    state_dict_downloaded_cb=None,
-    **cb_kwargs,
-):
-    backend = ctx.backend
-    if not isinstance(backend, SysBackend):
-        raise ValueError(f"backend must be SysBackend but got {type(backend)}")
+class StateDictDownloader:
 
-    cell = backend.cell
-    tx_id = TensorDownloader.new_transaction(
-        cell=cell,
-        num_tensors_per_chunk=num_tensors_per_chunk,
-        timeout=timeout,
-        timeout_cb=None,
-    )
-    rid = TensorDownloader.add_state_dict(
-        transaction_id=tx_id,
-        state_dict=state_dict,
-        state_dict_downloaded_cb=state_dict_downloaded_cb,
+    def __init__(
+        self,
+        timeout: float,
+        ctx: Context,
+        state_dict: dict[str, torch.Tensor],
+        num_tensors_per_chunk: int = 1,
+        state_dict_downloaded_cb=None,
         **cb_kwargs,
-    )
-    return {"source": cell.get_fqcn(), "rid": rid}
+    ):
+        self.state_dict_downloaded_cb = state_dict_downloaded_cb
+        self.cb_kwargs = cb_kwargs
+        self.ctx = ctx
+
+        backend = ctx.backend
+        if not isinstance(backend, SysBackend):
+            raise ValueError(f"backend must be SysBackend but got {type(backend)}")
+
+        self.cell = backend.cell
+        self.tx_id = TensorDownloader.new_transaction(
+            cell=self.cell,
+            num_tensors_per_chunk=num_tensors_per_chunk,
+            timeout=timeout,
+            timeout_cb=None,
+        )
+
+        self.rid = TensorDownloader.add_state_dict(
+            transaction_id=self.tx_id,
+            state_dict=state_dict,
+            state_dict_downloaded_cb=self._state_dict_downloaded_cb,
+        )
+
+    def _state_dict_downloaded_cb(self, rid, to_site, status, obj):
+        if self.state_dict_downloaded_cb:
+            self.state_dict_downloaded_cb(self, to_site, status, self.ctx, **self.cb_kwargs)
+
+    def get_ref(self):
+        return {"source": self.cell.get_fqcn(), "rid": self.rid}
+
+    def clear(self):
+        TensorDownloader.delete_transaction(self.tx_id)
 
 
 def download_state_dict(ref: dict, per_request_timeout: float, ctx: Context, tensors_received_cb=None, **cb_kwargs):

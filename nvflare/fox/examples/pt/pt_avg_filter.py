@@ -25,7 +25,6 @@ from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.pt.utils import parse_state_dict
 from nvflare.fox.sim.simulator import Simulator
-from nvflare.fox.sys.state_dict_downloader import StateDictDownloader, download_state_dict
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -37,7 +36,7 @@ class _AggrResult:
         self.lock = threading.Lock()  # ensure update integrity
 
 
-class PTFedAvgStream(Strategy):
+class PTFedAvg(Strategy):
 
     def __init__(self, initial_model, num_rounds=10, timeout=2.0):
         self.num_rounds = num_rounds
@@ -58,30 +57,11 @@ class PTFedAvgStream(Strategy):
     def _do_one_round(self, r, current_model, ctx: Context):
         aggr_result = _AggrResult()
 
-        # pretend the model is big
-        downloader = None
-        if ctx.env_type == EnvType.SYSTEM:
-            downloader = StateDictDownloader(
-                state_dict=current_model,
-                ctx=ctx,
-                timeout=5.0,
-                num_tensors_per_chunk=2,
-            )
-            model_type = "ref"
-            model = downloader.get_ref()
-            self.logger.info(f"prepared model as ref: {model}")
-        else:
-            model = current_model
-            model_type = "model"
-
         all_clients(
             ctx,
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
-        ).train(r, model, model_type)
-
-        if downloader:
-            downloader.clear()
+        ).train(r, current_model)
 
         if aggr_result.count == 0:
             return None
@@ -95,36 +75,14 @@ class PTFedAvgStream(Strategy):
     def _accept_train_result(self, result, aggr_result: _AggrResult, context: Context):
         self.logger.info(f"[{context.header_str()}] got train result from {context.caller}: {result}")
 
-        model, model_type = result
-        if model_type == "ref":
-            err, model = download_state_dict(
-                ref=model,
-                per_request_timeout=5.0,
-                ctx=context,
-                tensors_received_cb=self._aggregate_tensors,
-                aggr_result=aggr_result,
-                context=context,
-            )
-            if err:
-                raise RuntimeError(f"failed to download model {model}: {err}")
-        else:
-            for k, v in model.items():
-                if k not in aggr_result.total:
-                    aggr_result.total[k] = v
-                else:
-                    aggr_result.total[k] += v
+        for k, v in result.items():
+            if k not in aggr_result.total:
+                aggr_result.total[k] = v
+            else:
+                aggr_result.total[k] += v
 
         aggr_result.count += 1
         return None
-
-    def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context.header_str()}] aggregating received tensor: {td}")
-        with aggr_result.lock:
-            for k, v in td.items():
-                if k not in aggr_result.total:
-                    aggr_result.total[k] = v
-                else:
-                    aggr_result.total[k] += v
 
 
 class PTTrainer(ClientApp):
@@ -134,42 +92,16 @@ class PTTrainer(ClientApp):
         self.delta = delta
 
     @collab
-    def train(self, current_round, weights, model_type: str, context: Context):
+    def train(self, current_round, weights, context: Context):
         if context.is_aborted():
             self.logger.debug("training aborted")
             return 0
-        self.logger.debug(f"[{context.header_str()}] training round {current_round}: {model_type=} {weights=}")
-        if model_type == "ref":
-            err, model = download_state_dict(ref=weights, per_request_timeout=5.0, ctx=context)
-            if err:
-                raise RuntimeError(f"failed to download model {weights}: {err}")
-            self.logger.info(f"downloaded model {model}")
-            weights = model
+        self.logger.debug(f"[{context.header_str()}] training round {current_round}: {weights=}")
 
         result = {}
         for k, v in weights.items():
             result[k] = v + self.delta
-
-        if model_type == "ref":
-            # stream it
-            downloader = StateDictDownloader(
-                state_dict=result,
-                ctx=context,
-                timeout=5.0,
-                num_tensors_per_chunk=2,
-                state_dict_downloaded_cb=self._download_done,
-            )
-            model_type = "ref"
-            model = downloader.get_ref()
-            self.logger.info(f"prepared result as ref: {model}")
-        else:
-            model = result
-            model_type = "model"
-        return model, model_type
-
-    def _download_done(self, downloader: StateDictDownloader, to_site: str, status: str, ctx: Context):
-        self.logger.info(f"[{ctx.header_str()}] finished downloading model to {to_site}: {status}")
-        downloader.clear()
+        return result
 
 
 def main():
@@ -177,7 +109,7 @@ def main():
 
     server_app = ServerApp(
         strategy_name="fed_avg_in_time",
-        strategy=PTFedAvgStream(
+        strategy=PTFedAvg(
             initial_model={
                 "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
                 "y": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
@@ -186,8 +118,6 @@ def main():
             num_rounds=4,
         ),
     )
-
-    client_app = PTTrainer(delta=1.0)
 
     simulator = Simulator(
         root_dir="/tmp/fox",

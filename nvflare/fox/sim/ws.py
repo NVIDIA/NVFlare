@@ -19,6 +19,7 @@ from nvflare.fox.api.workspace import Workspace
 class SimWorkspace(Workspace):
 
     def __init__(self, root_dir: str, experiment_name: str, exp_id: str, site_name: str):
+        super().__init__()
         if not isinstance(root_dir, str):
             raise ValueError(f"root_dir must be str but got {type(root_dir)}")
 
