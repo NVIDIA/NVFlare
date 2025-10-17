@@ -28,7 +28,7 @@ class FedXGBHistogramExecutor(XGBExecutor):
         per_msg_timeout=60.0,
         tx_timeout=600.0,
         model_file_name="model.json",
-        metrics_writer_id: str = None,
+        metrics_writer_id: Optional[str] = None,
         in_process=True,
     ):
         XGBExecutor.__init__(

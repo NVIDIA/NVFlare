@@ -215,7 +215,7 @@ class EdgeFedBuffRecipe(Recipe):
         device_manager_config: DeviceManagerConfig,
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
-        custom_source_root: str = None,
+        custom_source_root: Optional[str] = None,
     ):
         if not isinstance(model, nn.Module):
             raise ValueError(f"model must be a nn.Module but got {type(model)}")

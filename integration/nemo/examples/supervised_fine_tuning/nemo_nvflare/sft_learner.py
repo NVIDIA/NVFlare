@@ -100,14 +100,14 @@ def load_from_nemo(cls, cfg, trainer, gpt_cfg, modify_config_fn):
 class SFTLearner(Learner):
     def __init__(
         self,
-        config_path: str = None,
+        config_path: Optional[str] = None,
         train_ds_files: str = "financial_phrase_bank_train.jsonl",
         validation_ds_files: str = "financial_phrase_bank_val.jsonl",
         base_model_file_path: str = "megatron_gpt_345m.nemo",
         sft_model_file_path: str = "megatron_gpt_345m_sft.nemo",
         aggregation_epochs: int = 1,
         master_addr: str = "localhost",
-        master_port: int = None,
+        master_port: Optional[int] = None,
         devices: int = 1,
         key_metric: str = "val_loss",
     ):

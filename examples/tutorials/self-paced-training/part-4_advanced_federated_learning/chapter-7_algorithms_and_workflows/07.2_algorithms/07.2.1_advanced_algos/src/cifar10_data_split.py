@@ -48,7 +48,7 @@ from filelock import FileLock, Timeout
 from tensorflow.keras import datasets
 
 
-def cifar10_split(split_dir: str = None, num_sites: int = 8, alpha: float = 0.5, seed: int = 0):
+def cifar10_split(split_dir: Optional[str] = None, num_sites: int = 8, alpha: float = 0.5, seed: int = 0):
     if split_dir is None:
         raise ValueError("You need to define a valid `split_dir` for splitting the data.")
     if not os.path.isabs(split_dir):

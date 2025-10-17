@@ -44,7 +44,7 @@ class Shareable(dict):
     It is recommended that keys are strings. Values must be serializable.
     """
 
-    def __init__(self, data: dict = None):
+    def __init__(self, data: Optional[dict] = None):
         """Init the Shareable."""
         super().__init__()
         if data:

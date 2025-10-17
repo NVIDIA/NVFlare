@@ -314,7 +314,7 @@ def custom_logger(logger: logging.Logger) -> logging.Logger:
     return logging.getLogger(f"custom.{logger.name}")
 
 
-def configure_logging(workspace: Workspace, job_id: str = None, file_prefix: str = ""):
+def configure_logging(workspace: Workspace, job_id: Optional[str] = None, file_prefix: str = ""):
     # Read log_config.json from workspace, update with file_prefix, and apply to log_root of th workspace
     log_config_file_path = workspace.get_log_config_file_path()
     assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"

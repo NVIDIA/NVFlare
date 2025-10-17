@@ -61,7 +61,7 @@ class XorDataset(Dataset):
 class XorETTaskProcessor(ETTaskProcessor):
     """Task processor for XOR dataset."""
 
-    def __init__(self, data_path: str = "", training_config: dict = None):
+    def __init__(self, data_path: str = "", training_config: Optional[dict] = None):
         super().__init__(data_path=data_path, training_config=training_config)
 
     def create_dataset(self, data_path: str) -> Dataset:

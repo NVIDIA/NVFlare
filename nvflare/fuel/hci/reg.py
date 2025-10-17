@@ -63,7 +63,7 @@ class CommandSpec(object):
 
 
 class CommandModuleSpec(object):
-    def __init__(self, name: str, cmd_specs: List[CommandSpec], conn_props: dict = None):
+    def __init__(self, name: str, cmd_specs: List[CommandSpec], conn_props: Optional[dict] = None):
         """Specification for a command module containing a list of commands in the form of CommandSpec.
 
         Args:

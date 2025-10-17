@@ -38,7 +38,7 @@ class CIFAR10LearnerSplitNN(Learner):
     def __init__(
         self,
         dataset_root: str = "./dataset",
-        intersection_file: str = None,
+        intersection_file: Optional[str] = None,
         lr: float = 1e-2,
         model: dict = None,
         analytic_sender_id: str = "analytic_sender",

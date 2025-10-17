@@ -37,7 +37,7 @@ class CommandDescriptor:
         env=None,
         log_file_name: str = "",
         log_stdout: bool = True,
-        stdout_msg_prefix: str = None,
+        stdout_msg_prefix: Optional[str] = None,
         stop_method=StopMethod.KILL,
     ):
         """Constructor of CommandDescriptor.

@@ -65,7 +65,7 @@ class BaseScriptRunner:
         launcher: Optional[Launcher] = None,
         metric_relay: Optional[MetricRelay] = None,
         metric_pipe: Optional[Pipe] = None,
-        pipe_connect_type: str = None,
+        pipe_connect_type: Optional[str] = None,
     ):
         """BaseScriptRunner is used with FedJob API to run or launch a script.
 

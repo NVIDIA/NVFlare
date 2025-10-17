@@ -44,7 +44,7 @@ _KEY_DXO = "DXO"
 
 
 class DXO(object):
-    def __init__(self, data_kind: str, data: dict, meta: dict = None):
+    def __init__(self, data_kind: str, data: dict, meta: Optional[dict] = None):
         """Init the DXO.
 
         The Data Exchange Object standardizes the data passed between communicating parties.

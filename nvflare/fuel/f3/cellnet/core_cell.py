@@ -282,8 +282,8 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         secure: bool,
         credentials: dict,
         create_internal_listener: bool = False,
-        parent_url: str = None,
-        parent_resources: dict = None,
+        parent_url: Optional[str] = None,
+        parent_resources: Optional[dict] = None,
         max_timeout=3600,
         bulk_check_interval=0.5,
         bulk_process_interval=0.5,
@@ -513,7 +513,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             raise ValueError(f"props must be dict but got {type(props)}")
         self.fobs_ctx.update(props)
 
-    def get_fobs_context(self, props: dict = None):
+    def get_fobs_context(self, props: Optional[dict] = None):
         """Return a new copy of the fobs context
 
         Returns: a new copy of the fobs context

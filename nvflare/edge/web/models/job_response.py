@@ -20,11 +20,11 @@ class JobResponse(BaseModel):
     def __init__(
         self,
         status: str,
-        job_id: str = None,
-        job_name: str = None,
-        method: str = None,
+        job_id: Optional[str] = None,
+        job_name: Optional[str] = None,
+        method: Optional[str] = None,
         job_data: Optional[dict] = None,
-        retry_wait: int = None,
+        retry_wait: Optional[int] = None,
         **kwargs,
     ):
         super().__init__()

@@ -87,7 +87,7 @@ class DatumRef:
 
 
 class DatumManager:
-    def __init__(self, threshold=None, fobs_ctx: dict = None):
+    def __init__(self, threshold=None, fobs_ctx: Optional[dict] = None):
         if not threshold:
             threshold = TEN_MEGA
 

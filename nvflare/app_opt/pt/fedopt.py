@@ -30,8 +30,8 @@ from nvflare.security.logging import secure_format_exception
 class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
     def __init__(
         self,
-        optimizer_args: dict = None,
-        lr_scheduler_args: dict = None,
+        optimizer_args: Optional[dict] = None,
+        lr_scheduler_args: Optional[dict] = None,
         source_model="model",
         device=None,
     ):

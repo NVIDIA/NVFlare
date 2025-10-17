@@ -31,7 +31,7 @@ from .constants import XGB_TRAIN_TASK, XGBShareableHeader
 
 
 class XGBFedController(Controller):
-    def __init__(self, train_timeout: int = 300, port: int = None):
+    def __init__(self, train_timeout: int = 300, port: Optional[int] = None):
         """Federated XGBoost training controller for histogram-base collaboration.
 
         It starts the XGBoost federated server and kicks off all the XGBoost job on

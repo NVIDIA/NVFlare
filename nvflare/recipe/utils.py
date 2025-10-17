@@ -36,7 +36,7 @@ TRACKING_REGISTRY = {
 }
 
 
-def add_experiment_tracking(recipe: Recipe, tracking_type: str, tracking_config: dict = None):
+def add_experiment_tracking(recipe: Recipe, tracking_type: str, tracking_config: Optional[dict] = None):
     """Enable experiment tracking.
 
     Args:

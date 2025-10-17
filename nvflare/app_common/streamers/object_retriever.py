@@ -49,7 +49,7 @@ class ObjectRetriever(FLComponent, ABC):
 
     def __init__(
         self,
-        topic: str = None,
+        topic: Optional[str] = None,
     ):
         FLComponent.__init__(self)
         class_name = self.__class__.__name__
