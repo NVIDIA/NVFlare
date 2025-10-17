@@ -19,6 +19,7 @@ from nvflare.fox.api.workspace import Workspace
 class SysWorkspace(Workspace):
 
     def __init__(self, fl_ctx: FLContext):
+        super().__init__()
         ws_obj = fl_ctx.get_workspace()
         assert isinstance(ws_obj, FlareWorkspace)
         self.flare_ws = ws_obj
