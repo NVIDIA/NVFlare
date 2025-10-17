@@ -387,22 +387,11 @@ Reference YAMLs for machine with AMD SNP-SEV enabled CPU
          # if not set, no app_validator is included in fed_server.json
          # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
 
-         # download_job_url is set to http://download.server.com/ as default in fed_server.json.  You can override this
-         # to different url.
-         # download_job_url: http://download.server.com/
+        # download_job_url is set to http://download.server.com/ as default in fed_server.json.  You can override this
+        # to different url.
+        # download_job_url: http://download.server.com/
 
-         overseer_agent:
-           path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
-           # if overseer_exists is true, args here are ignored.  Provisioning
-           #   tool will fill role, name and other local parameters automatically.
-           # if overseer_exists is false, args in this section will be used and the sp_end_point
-           # must match the server defined above in the format of SERVER_NAME:FL_PORT:ADMIN_PORT
-           #
-           overseer_exists: false
-           args:
-             sp_end_point: server1:8002:8002
-
-     - path: nvflare.lighter.impl.cert.CertBuilder
+    - path: nvflare.lighter.impl.cert.CertBuilder
      - path: nvflare.lighter.impl.signature.SignatureBuilder
      - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
    packager:
