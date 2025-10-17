@@ -10,6 +10,7 @@ NVIDIA FLARE
    fl_introduction
    flare_overview
    whats_new
+   release_notes/previous_release
    Installation <installation>
    getting_started
    Quick Start <quickstart>
