@@ -48,7 +48,11 @@ class App:
         self._outgoing_result_filter_chains = []
         self._collab_interface = {"": get_object_collab_interface(self)}
         self._workspace = None
+        self._managed_objects = {}  # id => obj
         self.logger = get_obj_logger(self)
+
+    def _add_managed_object(self, obj):
+        self._managed_objects[id(obj)] = obj
 
     def get_backend(self):
         return self._me.backend
@@ -62,8 +66,7 @@ class App:
     def get_client_proxies(self):
         return copy.copy(self.clients)
 
-    @staticmethod
-    def _add_filters(pattern: str, filters, to_list: list, filter_type):
+    def _add_filters(self, pattern: str, filters, to_list: list, filter_type):
         if not filters:
             return
 
@@ -73,6 +76,7 @@ class App:
         for i, f in enumerate(filters):
             if not isinstance(f, filter_type):
                 raise ValueError(f"filter {i} must be {filter_type} but got {type(f)}")
+            self._add_managed_object(f)
 
         chain = FilterChain(pattern, filter_type)
         chain.add_filters(filters)
@@ -184,6 +188,7 @@ class App:
         setattr(self, name, obj)
         self._collab_objs[name] = obj
         self._collab_interface[name] = get_object_collab_interface(obj)
+        self._add_managed_object(obj)
 
     def get_collab_objects(self):
         return self._collab_objs
@@ -240,20 +245,20 @@ class App:
             return m
         return None
 
-    def initialize_app(self, context: Context):
-        pass
+    def _fox_init(self, obj, ctx: Context):
+        init_func = getattr(obj, "fox_init", None)
+        if init_func and callable(init_func):
+            self.logger.info(f"fox_init object {obj.__class__.__name__}")
+            kwargs = {CollabMethodArgName.CONTEXT: ctx}
+            check_context_support(init_func, kwargs)
+            init_func(**kwargs)
 
     def initialize(self, context: Context):
-        self.initialize_app(context)
+        self._fox_init(self, context)
 
         # initialize target objects
-        for name, obj in self._collab_objs.items():
-            init_func = getattr(obj, "initialize", None)
-            if init_func and callable(init_func):
-                self.logger.info(f"initializing target object {name}")
-                kwargs = {CollabMethodArgName.CONTEXT: context}
-                check_context_support(init_func, kwargs)
-                init_func(**kwargs)
+        for obj in self._managed_objects.values():
+            self._fox_init(obj, context)
 
     def new_context(self, caller: str, callee: str, props: dict = None):
         return Context(self, caller, callee, self._abort_signal, props)

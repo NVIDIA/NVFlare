@@ -19,6 +19,7 @@ from nvflare.apis.fl_exception import RunAborted
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
+from .app import App
 from .constants import CollabMethodArgName, CollabMethodOptionName
 from .ctx import Context
 from .proxy import Proxy
@@ -80,6 +81,7 @@ class Group:
             self._logger.debug(f"[{ctx.header_str()}] calling {func_name} of group {[p.name for p in self._proxies]}")
 
             # apply outgoing call filters
+            assert isinstance(self._app, App)
             adj_kwargs = self._app.apply_outgoing_call_filters(p.target_name, func_name, adj_kwargs, ctx)
             check_call_args(func_name, func_itf, adj_args, adj_kwargs)
 
