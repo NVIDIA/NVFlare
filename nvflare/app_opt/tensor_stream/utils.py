@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -22,7 +22,6 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import SERVER_SITE_NAME
 from nvflare.apis.shareable import Shareable
-from nvflare.client.config import ExchangeFormat
 
 from .types import TensorTopics
 
@@ -35,8 +34,8 @@ def clean_task_data(fl_ctx: FLContext):
     """
     task_data: Shareable = fl_ctx.get_prop(FLContextKey.TASK_DATA)
     # set data to empty to avoid sending large data within the task data
-    task_data["DXO"]["data"] = {}
-    fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
+    new_task_data = copy_non_tensor_params(task_data["DXO"]["data"])
+    fl_ctx.set_prop(FLContextKey.TASK_DATA, value=new_task_data, private=True, sticky=False)
 
 
 def clean_task_result(fl_ctx: FLContext):
@@ -47,8 +46,8 @@ def clean_task_result(fl_ctx: FLContext):
     """
     task_result: Shareable = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
     # set data to empty to avoid sending large data within the task result
-    task_result["DXO"]["data"] = {}
-    fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=task_result, private=True, sticky=False)
+    new_task_result = copy_non_tensor_params(task_result["DXO"]["data"])
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=new_task_result, private=True, sticky=False)
 
 
 def get_topic_for_ctx_prop_key(ctx_prop_key: str) -> str:
@@ -110,60 +109,6 @@ def to_numpy_recursive(obj: Union[torch.Tensor, dict[str, torch.Tensor]]) -> Uni
         raise ValueError(f"Unsupported object type: {type(obj)}")
 
 
-def to_torch_recursive(
-    obj: Union[np.ndarray, dict[str, np.ndarray]], device: torch.device = "cpu"
-) -> Union[dict[str, torch.Tensor], torch.Tensor]:
-    """Recursively convert numpy arrays to torch tensors with minimal memory duplication.
-
-    Note: torch.from_numpy() creates a tensor that shares memory with the numpy array (zero-copy).
-    However, .to(device) creates a copy if device != 'cpu'. Only the dictionary structure
-    is duplicated, not the underlying tensor data (when device='cpu').
-
-    Args:
-        obj: A numpy array or dict containing numpy arrays (possibly nested)
-        device: Target device for tensors. Using 'cpu' avoids data duplication (shares memory with numpy).
-
-    Returns:
-        A torch tensor or dict containing torch tensors. Tensor data is shared where possible (device='cpu').
-    """
-    if isinstance(obj, np.ndarray):
-        # torch.from_numpy() shares memory with the numpy array (no data copy)
-        tensor = torch.from_numpy(obj)
-        # .to(device) only creates a copy if device != 'cpu'
-        if str(device) != "cpu":
-            tensor = tensor.to(device)
-        return tensor
-    elif isinstance(obj, dict):
-        # Create new dict structure but reuse converted tensors (which share memory with originals when device='cpu')
-        return {k: to_torch_recursive(v, device) for k, v in obj.items()}
-    else:
-        raise ValueError(f"Unsupported object type: {type(obj)}")
-
-
-def validate_torch_dict_params_recursive(tensor_dict: dict):
-    """Recursively validate that all values in the dictionary are torch tensors."""
-    if not isinstance(tensor_dict, dict):
-        raise ValueError(f"Expected a dictionary, but got {type(tensor_dict)}")
-
-    for key, value in tensor_dict.items():
-        if isinstance(value, dict):
-            validate_torch_dict_params_recursive(value)
-        elif not isinstance(value, torch.Tensor):
-            raise ValueError(f"Expected torch.Tensor for key '{key}', but got {type(value)}")
-
-
-def validate_numpy_dict_params_recursive(tensor_dict: dict):
-    """Recursively validate that all values in the dictionary are numpy arrays."""
-    if not isinstance(tensor_dict, dict):
-        raise ValueError(f"Expected a dictionary, but got {type(tensor_dict)}")
-
-    for key, value in tensor_dict.items():
-        if isinstance(value, dict):
-            validate_numpy_dict_params_recursive(value)
-        elif not isinstance(value, np.ndarray):
-            raise ValueError(f"Expected np.ndarray for key '{key}', but got {type(value)}")
-
-
 def get_dxo_from_ctx(fl_ctx: FLContext, ctx_prop_key: FLContextKey, tasks: list[str]) -> DXO:
     """Extract model parameters from the FLContext based on the provided property key.
 
@@ -191,40 +136,121 @@ def get_dxo_from_ctx(fl_ctx: FLContext, ctx_prop_key: FLContextKey, tasks: list[
     return dxo
 
 
-def get_tensors_from_dxo(dxo: DXO, key: str, format: ExchangeFormat) -> dict[str, torch.Tensor]:
-    """Extract tensors from the FLContext based on the provided property key.
+def chunk_tensors_from_params(
+    params: Dict[str, Union[torch.Tensor, dict]],
+    parent_keys: Optional[List[str]] = None,
+    chunk_size: Optional[int] = 10,
+) -> Iterator[Tuple[Tuple[str], Dict[str, torch.Tensor]]]:
+    """
+    Generator that yields tensors grouped by their immediate parent dictionary keys.
 
     Args:
-        dxo (DXO): The DXO containing the data.
-        key (str): The key to extract tensors for.
+        params: Dictionary with string keys and values that are either torch.Tensor or nested dicts.
+        parent_keys: List of keys representing the current path (internal use, defaults to empty).
+        chunk_size: Optional maximum number of tensors to yield at once per parent.
+
+    Yields:
+        A tuple containing:
+        - List of parent keys (excluding the tensor key itself).
+        - Dictionary mapping tensor key names to torch.Tensor instances.
+    """
+    if chunk_size is not None and chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer or None")
+
+    if parent_keys is None:
+        parent_keys = []
+
+    tensors = {}
+    for key, value in params.items():
+        if isinstance(value, torch.Tensor):
+            tensors[key] = value
+        elif isinstance(value, np.ndarray):
+            tensors[key] = torch.from_numpy(value)
+        elif isinstance(value, dict):
+            yield from chunk_tensors_from_params(value, parent_keys + [key], chunk_size)
+
+    if tensors:
+        if chunk_size is None or chunk_size >= len(tensors):
+            yield parent_keys, tensors
+        else:
+            keys = list(tensors.keys())
+            for i in range(0, len(keys), chunk_size):
+                chunk_keys = keys[i : i + chunk_size]
+                chunk_tensors = {k: tensors[k] for k in chunk_keys}
+                yield tuple(parent_keys), chunk_tensors
+
+
+def update_params_with_tensors(
+    params: Dict, parents: List[str], tensors: Dict[str, torch.Tensor], to_ndarray: bool = False
+) -> None:
+    """
+    Updates the nested dictionary `params` at the location specified by
+    `parents` with the provided tensor values from `tensors`.
+
+    If `to_ndarray` is True, tensors are converted to numpy ndarrays before insertion.
+
+    Args:
+        params: The dictionary to update (possibly nested).
+        parents: List of keys that specify the nested path within `params`.
+        tensors: Dictionary mapping keys to torch.Tensor instances.
+        to_ndarray: Whether to convert tensors to numpy arrays before updating.
+    """
+    cur = params
+    for key in parents:
+        if key not in cur:
+            cur[key] = {}
+        elif not isinstance(cur[key], dict):
+            raise ValueError(f"Expected dict at key '{key}', but found {type(cur[key])}")
+        cur = cur[key]
+
+    for k, tensor in tensors.items():
+        if to_ndarray:
+            cur[k] = tensor.cpu().numpy() if tensor.is_cuda else tensor.numpy()
+        else:
+            cur[k] = tensor
+
+
+def merge_params_dicts(
+    base_params: Dict[str, dict],
+    new_params: Dict[str, dict],
+    to_ndarray: bool = False,
+) -> Dict[str, dict]:
+    """
+    Merges two nested dictionaries of parameters.
+
+    Args:
+        base_params: The base dictionary to merge into.
+        new_params: The new dictionary whose values will overwrite those in base_params.
 
     Returns:
-        dict[str, torch.Tensor]: A dictionary of tensors extracted from the FLContext.
-    Raises:
-        TypeError: If the tensor data type is unsupported.
-        ValueError: If no tensors are found in the context shareable.
+        The merged dictionary with values from new_params overwriting those in base_params.
     """
-    if not key:
-        data = dxo.data
-    else:
-        data = dxo.data.get(key)
+    for key, value in new_params.items():
+        if key in base_params and isinstance(base_params[key], dict) and isinstance(value, dict):
+            merge_params_dicts(base_params[key], value)
+        else:
+            if to_ndarray and isinstance(value, torch.Tensor):
+                base_params[key] = value.cpu().numpy() if value.is_cuda else value.numpy()
+            else:
+                base_params[key] = value
+    return base_params
 
-    if not data:
-        msg = "No tensor data found on the context shareable."
-        if key:
-            msg += f" Key='{key}'"
-        raise ValueError(msg)
 
-    if not isinstance(data, dict):
-        raise ValueError(f"Expected tensor data to be a dict, but got {type(data)}")
+def copy_non_tensor_params(params: Dict[str, dict]) -> Dict[str, dict]:
+    """Recursively copy non-tensor parameters in the given dictionary.
 
-    if format == ExchangeFormat.PYTORCH:
-        validate_torch_dict_params_recursive(data)
-        tensors = data
-    elif format == ExchangeFormat.NUMPY:
-        validate_numpy_dict_params_recursive(data)
-        tensors = to_torch_recursive(data)
-    else:
-        raise TypeError(f"Unsupported tensor data type: {format}")
+    Args:
+        params: The dictionary of parameters to copy from.
 
-    return tensors
+    Returns:
+        A new dictionary containing only non-tensor parameters.
+    """
+    non_tensor_params = {}
+    for key, value in params.items():
+        if isinstance(value, dict):
+            nested_non_tensors = copy_non_tensor_params(value)
+            if nested_non_tensors:
+                non_tensor_params[key] = nested_non_tensors
+        elif not isinstance(value, (torch.Tensor, np.ndarray)):
+            non_tensor_params[key] = value
+    return non_tensor_params

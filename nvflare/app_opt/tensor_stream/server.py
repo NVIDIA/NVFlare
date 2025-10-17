@@ -105,6 +105,7 @@ class TensorServerStreamer(FLComponent):
         self.engine = engine
         try:
             self.receiver = TensorReceiver(engine, FLContextKey.TASK_RESULT, self.format)
+            self.sender = TensorSender(engine, FLContextKey.TASK_DATA, self.format, self.tasks)
         except Exception as e:
             self.system_panic(str(e), fl_ctx)
             return
@@ -123,14 +124,18 @@ class TensorServerStreamer(FLComponent):
             task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
             self.seen_tasks[current_round].add(task_id)
         elif event_type == EventType.AFTER_TASK_DATA_FILTER:
-            self.sender = TensorSender(self.engine, FLContextKey.TASK_DATA, self.format, self.tasks)
-            num_clients = len(self.engine.get_clients())
+            # Store tensors after filtering (to get the filtered reference)
+            # Then send to each client
+            self.sender.store_tensors(fl_ctx)
             self.send_tensors_to_client(fl_ctx)
+            num_clients = len(self.engine.get_clients())
             self.wait_sending_task_data_all_clients(num_clients, fl_ctx)
             self.try_to_clean_task_data(num_clients, fl_ctx)
         elif event_type == EventType.BEFORE_TASK_RESULT_FILTER:
+            task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
+            peer_name = fl_ctx.get_peer_context().get_identity_name()
             try:
-                self.receiver.wait_for_tensors(fl_ctx)
+                self.receiver.wait_for_tensors(task_id, peer_name)
                 self.receiver.set_ctx_with_tensors(fl_ctx)
             except Exception as e:
                 self.system_panic(str(e), fl_ctx)
@@ -169,11 +174,12 @@ class TensorServerStreamer(FLComponent):
                 self.start_sending_time[current_round] = time.time()
 
         try:
-            self.sender.store_tensors(fl_ctx)
-            success = self.sender.send(fl_ctx, self.entry_timeout)
+            self.sender.send(fl_ctx, self.entry_timeout)
         except ValueError as e:
-            self.system_panic(f"Failed to send tensors: {e}", fl_ctx)
-            return
+            self.log_warning(fl_ctx, f"No tensors to send to client: {str(e)}")
+            success = False
+        else:
+            success = True
 
         with self.lock:
             if success:

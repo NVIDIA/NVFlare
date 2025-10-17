@@ -178,14 +178,17 @@ class TestTensorReceiver:
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
         )
 
-        # Setup: store tensors using task_id as the key
+        # Setup: simulate receiving tensors first via the callback
         peer_name = "test_client"
         task_id = "test_task_torch"
-        receiver.tensors[task_id] = random_torch_tensors
-
-        # Setup FL context
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
-        mock_fl_context.get_prop.return_value = sample_shareable_with_dxo
+        mock_fl_context.set_custom_prop(TensorCustomKeys.TASK_ID, task_id)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, random_torch_tensors)
+
+        # Call the callback to store tensors
+        receiver._save_tensors_cb(True, mock_fl_context)
+
+        # Setup FL context for set_ctx_with_tensors
         # Mock get_prop for FLContextKey.TASK_ID specifically
         setup_mock_get_prop_with_task_id(mock_fl_context, task_id, sample_shareable_with_dxo)
 
@@ -222,13 +225,17 @@ class TestTensorReceiver:
             format=ExchangeFormat.NUMPY,  # Different format
         )
 
-        # Setup: store tensors using task_id as the key
+        # Setup: simulate receiving tensors first via the callback
         peer_name = "test_client"
         task_id = "test_task_numpy"
-        receiver.tensors[task_id] = random_torch_tensors
-
-        # Setup FL context
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop(TensorCustomKeys.TASK_ID, task_id)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, random_torch_tensors)
+
+        # Call the callback to store tensors
+        receiver._save_tensors_cb(True, mock_fl_context)
+
+        # Setup FL context for set_ctx_with_tensors
         # Mock get_prop for FLContextKey.TASK_ID specifically
         setup_mock_get_prop_with_task_id(mock_fl_context, task_id, sample_shareable_with_dxo)
 
@@ -259,13 +266,17 @@ class TestTensorReceiver:
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_RESULT, format=ExchangeFormat.PYTORCH
         )
 
-        # Setup: store tensors using task_id as the key
+        # Setup: simulate receiving tensors first via the callback
         peer_name = "test_client"
         task_id = "test_task_weight_diff"
-        receiver.tensors[task_id] = random_torch_tensors
-
-        # Setup FL context
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop(TensorCustomKeys.TASK_ID, task_id)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, random_torch_tensors)
+
+        # Call the callback to store tensors
+        receiver._save_tensors_cb(True, mock_fl_context)
+
+        # Setup FL context for set_ctx_with_tensors
         # Mock get_prop for FLContextKey.TASK_ID specifically
         setup_mock_get_prop_with_task_id(mock_fl_context, task_id, sample_shareable_with_weight_diff_dxo)
 
@@ -277,11 +288,14 @@ class TestTensorReceiver:
         updated_shareable = call_args.args[1]
         dxo_data = updated_shareable["DXO"]["data"]
 
-        # Should contain the received tensors
-        assert len(dxo_data) == len(random_torch_tensors)
+        # Should contain both the received tensors AND the existing parameter from the fixture
+        # sample_shareable_with_weight_diff_dxo has 1 existing param: "existing_param"
+        assert len(dxo_data) == len(random_torch_tensors) + 1  # +1 for existing_param
         for name, tensor in random_torch_tensors.items():
             assert name in dxo_data
             assert torch.allclose(dxo_data[name], tensor)
+        # Verify existing parameter is still there
+        assert "existing_param" in dxo_data
 
     def test_set_ctx_with_tensors_nested_structure(
         self, mock_streamable_engine, mock_fl_context, sample_shareable_with_dxo, sample_nested_tensors
@@ -291,13 +305,17 @@ class TestTensorReceiver:
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
         )
 
-        # Setup: store nested tensors using task_id as the key
+        # Setup: simulate receiving tensors first via the callback
         peer_name = "test_client"
         task_id = "test_task_nested_set"
-        receiver.tensors[task_id] = sample_nested_tensors
-
-        # Setup FL context
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop(TensorCustomKeys.TASK_ID, task_id)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, sample_nested_tensors)
+
+        # Call the callback to store tensors
+        receiver._save_tensors_cb(True, mock_fl_context)
+
+        # Setup FL context for set_ctx_with_tensors
         # Mock get_prop for FLContextKey.TASK_ID specifically
         setup_mock_get_prop_with_task_id(mock_fl_context, task_id, sample_shareable_with_dxo)
 
@@ -326,7 +344,6 @@ class TestTensorReceiver:
             engine=mock_streamable_engine,
             ctx_prop_key=FLContextKey.TASK_DATA,
             format=ExchangeFormat.PYTORCH,
-            wait_for_save_tensors_cb_secs=0,  # Short wait time for test
         )
 
         # Setup FL context without storing any tensors for this task_id
@@ -336,15 +353,12 @@ class TestTensorReceiver:
         # Mock get_prop to return task_id
         mock_fl_context.get_prop.return_value = task_id
 
-        # Should log warning and return early (not raise an exception)
-        receiver.set_ctx_with_tensors(mock_fl_context)
+        # Should raise KeyError when tensors are not found
+        with pytest.raises(KeyError):
+            receiver.set_ctx_with_tensors(mock_fl_context)
 
-        # Verify that set_prop was not called since the method returned early
-        mock_fl_context.set_prop.assert_not_called()
-
-        # Verify that get_prop was called only once for TASK_ID (not for shareable)
-        assert mock_fl_context.get_prop.call_count == 1
-        mock_fl_context.get_prop.assert_called_once_with(FLContextKey.TASK_ID, None)
+        # Verify that get_prop was called for TASK_ID
+        mock_fl_context.get_prop.assert_called_with(FLContextKey.TASK_ID, None)
 
     def test_set_ctx_with_tensors_no_shareable(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
         """Test set_ctx_with_tensors when no shareable is found in context."""
@@ -441,15 +455,25 @@ class TestTensorReceiver:
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
         )
 
-        # Setup: store tensors for multiple tasks
+        # Setup: simulate receiving tensors for multiple tasks
+        peer_name = "test_client"
         task_id_1 = "test_task_cleanup_1"
         task_id_2 = "test_task_cleanup_2"
-        receiver.tensors[task_id_1] = random_torch_tensors
-        receiver.tensors[task_id_2] = {k: v * 2 for k, v in random_torch_tensors.items()}
+
+        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+
+        # Store first set of tensors
+        mock_fl_context.set_custom_prop(TensorCustomKeys.TASK_ID, task_id_1)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, random_torch_tensors)
+        receiver._save_tensors_cb(True, mock_fl_context)
+
+        # Store second set of tensors
+        tensors_2 = {k: v * 2 for k, v in random_torch_tensors.items()}
+        mock_fl_context.set_custom_prop(TensorCustomKeys.TASK_ID, task_id_2)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, tensors_2)
+        receiver._save_tensors_cb(True, mock_fl_context)
 
         # Use tensors from task_id_1
-        peer_name = "test_client"
-        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
         # Mock get_prop for FLContextKey.TASK_ID specifically
         setup_mock_get_prop_with_task_id(mock_fl_context, task_id_1, sample_shareable_with_dxo)
 

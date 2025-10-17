@@ -34,8 +34,8 @@ class TensorTopics:
 class TensorBlobKeys:
     SAFETENSORS_BLOB = "safetensors_blob"
     TENSOR_KEYS = "tensor_keys"
-    ROOT_KEY = "root_key"
     TASK_ID = "task_id"
+    PARENT_KEYS = "parent_keys"
 
 
 class TensorEventTypes:

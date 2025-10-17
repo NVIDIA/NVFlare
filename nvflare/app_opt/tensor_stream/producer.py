@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Generator, Tuple
+from typing import Any, Dict, Tuple
 
 import torch
 from safetensors.torch import save as save_tensors
@@ -23,35 +23,7 @@ from nvflare.apis.streaming import ObjectProducer, StreamContext
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .types import TensorBlobKeys
-
-
-def tensors_serializer_generator(
-    tensors: dict[str, torch.Tensor], chunk_size: int = 10
-) -> Generator[Tuple[list[str], bytes], None, None]:
-    """Generator that yields chunks of tensors serialized as safetensors blobs.
-
-    Memory optimization: Processes tensors in chunks to avoid loading all serialized
-    data into memory at once.
-
-    Args:
-        tensors: Dictionary of tensors to be serialized.
-        chunk_size: Number of tensors to include in each chunk.
-    Yields:
-        Tuple[list[str], bytes]: A tuple containing the list of tensor keys in the chunk and
-                                 the serialized safetensors blob.
-    """
-    keys = list(tensors.keys())
-    for i in range(0, len(keys), chunk_size):
-        chunk_keys = keys[i : i + chunk_size]
-        chunk_tensors = {key: tensors[key] for key in chunk_keys}
-        serialized_blob = save_tensors(chunk_tensors)
-        # Delete chunk_tensors to free memory before yielding
-        del chunk_tensors
-        yield chunk_keys, serialized_blob
-        del serialized_blob  # Free memory after yielding
-
-    # Indicate completion
-    yield None, None
+from .utils import chunk_tensors_from_params
 
 
 class TensorProducer(ObjectProducer):
@@ -71,14 +43,13 @@ class TensorProducer(ObjectProducer):
         process_replies(replies, stream_ctx, fl_ctx): Processes replies from peers after sending tensors.
     """
 
-    def __init__(self, tensors: dict[str, torch.Tensor], task_id: str, entry_timeout: float, root_key: str = ""):
+    def __init__(self, tensors: dict[str, torch.Tensor], task_id: str, entry_timeout: float):
         """Initialize the TensorProducer.
 
         Args:
             tensors (dict): A dictionary of tensors to be sent.
             task_id (str): The task ID associated with the tensors.
             entry_timeout (float): The timeout for each entry in the stream.
-            root_key (str): The root key for the tensors. Default is an empty string.
         Raises:
             ValueError: If no tensors are provided.
         """
@@ -86,13 +57,13 @@ class TensorProducer(ObjectProducer):
             raise ValueError("No tensors received for serialization.")
         self.task_id = task_id
         self.entry_timeout = entry_timeout
-        self.root_key = root_key
         self.last = False
         self.total_bytes = 0
+        self.num_tensors = 0
         # Pass tensors to generator; they're not stored in this class to minimize memory usage.
         # The generator will handle serialization and the tensors can be garbage collected
         # after the generator completes.
-        self.serializer = tensors_serializer_generator(tensors)
+        self.chunks_generator = chunk_tensors_from_params(tensors)
         self.tensors_keys = list(tensors.keys())
         self.logger = get_obj_logger(self)
 
@@ -115,20 +86,22 @@ class TensorProducer(ObjectProducer):
         """
         data = Shareable()
         try:
-            tensor_keys, tensors_blob = next(self.serializer)
+            parent_keys, tensors = next(self.chunks_generator, (None, None))
         except StopIteration:
             return None, self.entry_timeout
         else:
-            if tensor_keys is None:
+            if tensors is None:
                 self.last = True
                 self.log_completion(fl_ctx)
                 return None, self.entry_timeout
 
+            tensors_blob = save_tensors(tensors)
             data[TensorBlobKeys.SAFETENSORS_BLOB] = tensors_blob
-            data[TensorBlobKeys.TENSOR_KEYS] = tensor_keys
-            data[TensorBlobKeys.ROOT_KEY] = self.root_key
+            data[TensorBlobKeys.TENSOR_KEYS] = list(tensors.keys())
+            data[TensorBlobKeys.PARENT_KEYS] = parent_keys
             data[TensorBlobKeys.TASK_ID] = self.task_id
             self.total_bytes += len(tensors_blob)
+            self.num_tensors += len(tensors)
 
         return data, self.entry_timeout
 
@@ -136,12 +109,10 @@ class TensorProducer(ObjectProducer):
         peer_name = fl_ctx.get_peer_context().get_identity_name()
         msg = (
             f"Peer '{fl_ctx.get_identity_name()}': produced blobs for peer '{peer_name}' "
-            f"with {len(self.tensors_keys)} tensors, total size: "
+            f"with {self.num_tensors} tensors, total size: "
             f"{round(self.total_bytes / (1024 * 1024), 2)} Mbytes ({self.total_bytes} bytes). "
             f"Task ID: {self.task_id}"
         )
-        if self.root_key:
-            msg += f", root key: '{self.root_key}'"
         self.logger.info(msg)
 
     def process_replies(
@@ -171,11 +142,11 @@ class TensorProducer(ObjectProducer):
 
         if has_error:
             # done - failed
-            del self.serializer  # free memory
+            del self.chunks_generator  # free memory
             return False
         elif self.last:
             # done - succeeded
-            del self.serializer  # free memory
+            del self.chunks_generator  # free memory
             return True
         else:
             # not done yet - continue streaming

@@ -25,18 +25,21 @@ from nvflare.app_opt.tensor_stream.types import TensorBlobKeys, TensorCustomKeys
 
 
 def create_shareables_from_tensors(
-    tensors: Dict[str, torch.Tensor], root_key: str = "", task_id: str = "test_task_123"
+    tensors: Dict[str, torch.Tensor], parent_keys: List[str] = None, task_id: str = "test_task_123"
 ) -> List[Shareable]:
     """Helper function to create shareables from tensors using the producer logic.
 
     Args:
         tensors: Dictionary of tensors to convert to shareables
-        root_key: Root key for the tensors
+        parent_keys: Parent keys for the tensors (replaces root_key)
         task_id: Task ID for the tensors
 
     Returns:
         List of Shareable objects that would be produced by TorchTensorsProducer
     """
+    if parent_keys is None:
+        parent_keys = []
+
     shareables = []
 
     for tensor_name, tensor in tensors.items():
@@ -45,7 +48,7 @@ def create_shareables_from_tensors(
 
         shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors(single_tensor)
         shareable[TensorBlobKeys.TENSOR_KEYS] = [tensor_name]
-        shareable[TensorBlobKeys.ROOT_KEY] = root_key
+        shareable[TensorBlobKeys.PARENT_KEYS] = parent_keys
         shareable[TensorBlobKeys.TASK_ID] = task_id
 
         shareables.append(shareable)
@@ -71,8 +74,10 @@ class TestTorchTensorsConsumer:
         """Test initialization of TorchTensorsConsumer."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
-        assert consumer.tensors_map == {}
-        assert consumer.total_bytes == {}
+        assert consumer.params == {}
+        assert consumer.total_bytes == 0
+        assert consumer.num_tensors == 0
+        assert consumer.task_ids == set()
         assert consumer.logger is not None
 
     def test_consume_single_tensor(self, mock_stream_context, mock_fl_context):
@@ -82,14 +87,14 @@ class TestTorchTensorsConsumer:
         # Create a test tensor
         test_tensor = torch.randn(3, 4)
         tensor_name = "test_tensor"
-        root_key = "model"
+        parent_keys = ["model"]
         task_id = "test_task_123"
 
         # Create shareable
         shareable = Shareable()
         shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({tensor_name: test_tensor})
         shareable[TensorBlobKeys.TENSOR_KEYS] = [tensor_name]
-        shareable[TensorBlobKeys.ROOT_KEY] = root_key
+        shareable[TensorBlobKeys.PARENT_KEYS] = parent_keys
         shareable[TensorBlobKeys.TASK_ID] = task_id
 
         # Consume the shareable
@@ -99,19 +104,20 @@ class TestTorchTensorsConsumer:
         assert reply.get_return_code() == ReturnCode.OK
 
         # Verify tensor was stored correctly
-        assert root_key in consumer.tensors_map
-        assert tensor_name in consumer.tensors_map[root_key]
-        assert torch.allclose(consumer.tensors_map[root_key][tensor_name], test_tensor)
-        assert root_key in consumer.total_bytes
-        assert consumer.total_bytes[root_key] > 0
+        assert "model" in consumer.params
+        assert tensor_name in consumer.params["model"]
+        assert torch.allclose(consumer.params["model"][tensor_name], test_tensor)
+        assert consumer.total_bytes > 0
+        assert consumer.num_tensors == 1
+        assert task_id in consumer.task_ids
 
-    def test_consume_multiple_tensors_same_root_key(self, random_torch_tensors, mock_stream_context, mock_fl_context):
-        """Test consuming multiple tensors with the same root key."""
+    def test_consume_multiple_tensors_same_parent_key(self, random_torch_tensors, mock_stream_context, mock_fl_context):
+        """Test consuming multiple tensors with the same parent key."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
-        root_key = "state_dict"
+        parent_keys = ["state_dict"]
 
         # Create shareables from tensors
-        shareables = create_shareables_from_tensors(random_torch_tensors, root_key)
+        shareables = create_shareables_from_tensors(random_torch_tensors, parent_keys)
 
         # Consume all shareables
         for shareable in shareables:
@@ -120,52 +126,53 @@ class TestTorchTensorsConsumer:
             assert reply.get_return_code() == ReturnCode.OK
 
         # Verify all tensors were stored correctly
-        assert root_key in consumer.tensors_map
-        assert len(consumer.tensors_map[root_key]) == len(random_torch_tensors)
+        assert "state_dict" in consumer.params
+        assert len(consumer.params["state_dict"]) == len(random_torch_tensors)
 
         # Verify tensor contents
         for tensor_name, original_tensor in random_torch_tensors.items():
-            assert tensor_name in consumer.tensors_map[root_key]
-            assert torch.allclose(consumer.tensors_map[root_key][tensor_name], original_tensor)
+            assert tensor_name in consumer.params["state_dict"]
+            assert torch.allclose(consumer.params["state_dict"][tensor_name], original_tensor)
 
         # Verify bytes tracking
-        assert root_key in consumer.total_bytes
-        assert consumer.total_bytes[root_key] > 0
+        assert consumer.total_bytes > 0
+        assert consumer.num_tensors == len(random_torch_tensors)
 
-    def test_consume_multiple_tensors_different_root_keys(self, mock_stream_context, mock_fl_context):
-        """Test consuming tensors with different root keys."""
+    def test_consume_multiple_tensors_different_parent_keys(self, mock_stream_context, mock_fl_context):
+        """Test consuming tensors with different parent keys."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
-        # Create tensors for different root keys
+        # Create tensors for different parent keys
         tensors_dict = {
             "encoder": {"encoder.layer1": torch.randn(5, 5), "encoder.layer2": torch.randn(3, 3)},
             "decoder": {"decoder.layer1": torch.randn(4, 4), "decoder.layer2": torch.randn(2, 2)},
         }
 
-        # Create and consume shareables for each root key
-        for root_key, tensors in tensors_dict.items():
-            shareables = create_shareables_from_tensors(tensors, root_key)
+        # Create and consume shareables for each parent key
+        for parent_key, tensors in tensors_dict.items():
+            shareables = create_shareables_from_tensors(tensors, [parent_key])
 
             for shareable in shareables:
                 success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
                 assert success is True
                 assert reply.get_return_code() == ReturnCode.OK
 
-        # Verify all root keys and tensors are stored
-
-        for root_key, expected_tensors in tensors_dict.items():
-            assert root_key in consumer.tensors_map
-            assert len(consumer.tensors_map[root_key]) == len(expected_tensors)
+        # Verify all parent keys and tensors are stored
+        for parent_key, expected_tensors in tensors_dict.items():
+            assert parent_key in consumer.params
+            assert len(consumer.params[parent_key]) == len(expected_tensors)
 
             for tensor_name, original_tensor in expected_tensors.items():
-                assert tensor_name in consumer.tensors_map[root_key]
-                assert torch.allclose(consumer.tensors_map[root_key][tensor_name], original_tensor)
+                assert tensor_name in consumer.params[parent_key]
+                assert torch.allclose(consumer.params[parent_key][tensor_name], original_tensor)
 
     @pytest.mark.parametrize(
         "missing_field,setup_shareable",
         [
             ("SAFETENSORS_BLOB", lambda: _create_shareable_missing_blob()),
             ("TENSOR_KEYS", lambda: _create_shareable_missing_keys()),
+            ("TASK_ID", lambda: _create_shareable_missing_task_id()),
+            ("PARENT_KEYS", lambda: _create_shareable_missing_parent_keys()),
             ("MISMATCHED_KEYS", lambda: _create_shareable_mismatched_keys()),
         ],
     )
@@ -179,8 +186,8 @@ class TestTorchTensorsConsumer:
         assert success is False
         assert reply.get_return_code() == ReturnCode.ERROR
 
-    def test_consume_missing_root_key_defaults_to_empty_string(self, mock_stream_context, mock_fl_context):
-        """Test that missing ROOT_KEY defaults to empty string."""
+    def test_consume_empty_parent_keys_stores_at_root(self, mock_stream_context, mock_fl_context):
+        """Test that empty PARENT_KEYS stores tensors at root level."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
         test_tensor = torch.randn(2, 2)
         task_id = "test_task_123"
@@ -188,31 +195,30 @@ class TestTorchTensorsConsumer:
         shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
         shareable[TensorBlobKeys.TENSOR_KEYS] = ["test"]
         shareable[TensorBlobKeys.TASK_ID] = task_id
-        # Note: ROOT_KEY is missing
+        shareable[TensorBlobKeys.PARENT_KEYS] = []  # Empty parent keys
 
         success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
 
         assert success is True
         assert reply.get_return_code() == ReturnCode.OK
-        # Should be stored under empty string root key
-        assert "" in consumer.tensors_map
-        assert "test" in consumer.tensors_map[""]
-        assert torch.allclose(consumer.tensors_map[""]["test"], test_tensor)
+        # Should be stored at root level
+        assert "test" in consumer.params
+        assert torch.allclose(consumer.params["test"], test_tensor)
 
-    def test_finalize_single_root_key_empty_string(self, random_torch_tensors, mock_stream_context, mock_fl_context):
-        """Test finalize with single root key that is empty string."""
+    def test_finalize_empty_parent_keys(self, random_torch_tensors, mock_stream_context, mock_fl_context):
+        """Test finalize with empty parent keys (top-level tensors)."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
-        root_key = ""  # Empty string for top-level tensors
+        parent_keys = []  # Empty parent keys for top-level tensors
 
-        # Consume tensors with empty root key
-        shareables = create_shareables_from_tensors(random_torch_tensors, root_key)
+        # Consume tensors with empty parent keys
+        shareables = create_shareables_from_tensors(random_torch_tensors, parent_keys)
         for shareable in shareables:
             consumer.consume(shareable, mock_stream_context, mock_fl_context)
 
         # Finalize
         consumer.finalize(mock_stream_context, mock_fl_context)
 
-        # Verify that tensors are stored directly in the context (not nested under root key)
+        # Verify that tensors are stored directly in the context (not nested)
         stored_tensors = mock_fl_context.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
         assert isinstance(stored_tensors, dict)
         assert len(stored_tensors) == len(random_torch_tensors)
@@ -222,21 +228,25 @@ class TestTorchTensorsConsumer:
             assert torch.allclose(stored_tensors[tensor_name], original_tensor)
 
         # Verify tensors are cleared after finalization
-        assert consumer.tensors_map == {}
+        assert consumer.params == {}
 
-    def test_finalize_multiple_root_keys(self, mock_stream_context, mock_fl_context):
-        """Test finalize with multiple root keys."""
+        # Verify task_id was stored
+        task_id = mock_fl_context.get_custom_prop(TensorCustomKeys.TASK_ID)
+        assert task_id == "test_task_123"
+
+    def test_finalize_multiple_parent_keys(self, mock_stream_context, mock_fl_context):
+        """Test finalize with multiple parent keys."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
-        # Create tensors for different root keys
+        # Create tensors for different parent keys
         tensors_dict = {
             "encoder": {"layer1": torch.randn(3, 3), "layer2": torch.randn(2, 2)},
             "decoder": {"layer1": torch.randn(4, 4), "layer2": torch.randn(5, 5)},
         }
 
         # Consume tensors
-        for root_key, tensors in tensors_dict.items():
-            shareables = create_shareables_from_tensors(tensors, root_key)
+        for parent_key, tensors in tensors_dict.items():
+            shareables = create_shareables_from_tensors(tensors, [parent_key])
             for shareable in shareables:
                 consumer.consume(shareable, mock_stream_context, mock_fl_context)
 
@@ -248,29 +258,33 @@ class TestTorchTensorsConsumer:
         assert isinstance(stored_tensors, dict)
         assert set(stored_tensors.keys()) == {"encoder", "decoder"}
 
-        for root_key, expected_tensors in tensors_dict.items():
-            assert root_key in stored_tensors
+        for parent_key, expected_tensors in tensors_dict.items():
+            assert parent_key in stored_tensors
             for tensor_name, original_tensor in expected_tensors.items():
-                assert tensor_name in stored_tensors[root_key]
-                assert torch.allclose(stored_tensors[root_key][tensor_name], original_tensor)
+                assert tensor_name in stored_tensors[parent_key]
+                assert torch.allclose(stored_tensors[parent_key][tensor_name], original_tensor)
 
         # Verify tensors are cleared after finalization
-        assert consumer.tensors_map == {}
+        assert consumer.params == {}
+
+        # Verify task_id was stored
+        task_id = mock_fl_context.get_custom_prop(TensorCustomKeys.TASK_ID)
+        assert task_id == "test_task_123"
 
     def test_producer_consumer_integration(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Integration test: producer creates shareables, consumer reconstructs tensors."""
         # Create producer
-        original_tensors = random_torch_tensors.copy()
-        root_key = "model_weights"
+        # Producer expects nested tensors with parent keys, so we nest them
+        original_tensors = {"model_weights": random_torch_tensors.copy()}
         task_id = "test_task_123"
-        producer = TensorProducer(tensors=original_tensors, task_id=task_id, entry_timeout=5.0, root_key=root_key)
+        producer = TensorProducer(tensors=original_tensors, task_id=task_id, entry_timeout=5.0)
 
         # Create consumer
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
         # Producer creates shareables, consumer consumes them
         shareables_created = []
-        for _ in range(len(random_torch_tensors)):
+        for _ in range(len(random_torch_tensors) + 5):  # Extra iterations to ensure we exhaust the producer
             shareable, _ = producer.produce(mock_stream_context, mock_fl_context)
             if shareable is None:
                 break
@@ -288,8 +302,8 @@ class TestTorchTensorsConsumer:
 
         # Verify reconstructed tensors match original
         stored_tensors = mock_fl_context.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
-        assert root_key in stored_tensors
-        reconstructed_tensors = stored_tensors[root_key]
+        assert "model_weights" in stored_tensors
+        reconstructed_tensors = stored_tensors["model_weights"]
 
         assert len(reconstructed_tensors) == len(random_torch_tensors)
         for tensor_name, original_tensor in random_torch_tensors.items():
@@ -299,7 +313,7 @@ class TestTorchTensorsConsumer:
     def test_bytes_tracking_accuracy(self, mock_stream_context, mock_fl_context):
         """Test that byte tracking is accurate across multiple consumptions."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
-        root_key = "model"
+        parent_keys = ["model"]
 
         # Create tensors of known sizes
         tensors = {
@@ -309,7 +323,7 @@ class TestTorchTensorsConsumer:
         }
 
         total_expected_bytes = 0
-        shareables = create_shareables_from_tensors(tensors, root_key)
+        shareables = create_shareables_from_tensors(tensors, parent_keys)
 
         for shareable in shareables:
             blob_size = len(shareable[TensorBlobKeys.SAFETENSORS_BLOB])
@@ -318,13 +332,13 @@ class TestTorchTensorsConsumer:
             consumer.consume(shareable, mock_stream_context, mock_fl_context)
 
         # Verify byte tracking
-        assert root_key in consumer.total_bytes
-        assert consumer.total_bytes[root_key] == total_expected_bytes
+        assert consumer.total_bytes == total_expected_bytes
+        assert consumer.num_tensors == len(tensors)
 
     def test_different_tensor_dtypes_reconstruction(self, mock_stream_context, mock_fl_context):
         """Test reconstruction of tensors with different data types."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
-        root_key = "mixed_types"
+        parent_keys = ["mixed_types"]
 
         # Create tensors with different dtypes
         mixed_dtype_tensors = {
@@ -336,7 +350,7 @@ class TestTorchTensorsConsumer:
         }
 
         # Consume all tensors
-        shareables = create_shareables_from_tensors(mixed_dtype_tensors, root_key)
+        shareables = create_shareables_from_tensors(mixed_dtype_tensors, parent_keys)
         for shareable in shareables:
             success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
             assert success is True
@@ -346,33 +360,33 @@ class TestTorchTensorsConsumer:
         stored_tensors = mock_fl_context.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
 
         for tensor_name, original_tensor in mixed_dtype_tensors.items():
-            reconstructed_tensor = stored_tensors[root_key][tensor_name]
+            reconstructed_tensor = stored_tensors["mixed_types"][tensor_name]
             assert reconstructed_tensor.dtype == original_tensor.dtype
             assert torch.equal(reconstructed_tensor, original_tensor)
 
     def test_consume_large_number_of_tensors(self, mock_stream_context, mock_fl_context):
         """Test consuming a large number of tensors (tests generator behavior)."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
-        root_key = "large_model"
+        parent_keys = ["large_model"]
 
         # Create 50 tensors
         large_tensor_dict = {f"layer_{i}": torch.randn(10, 10) for i in range(50)}
 
         # Consume all tensors
-        shareables = create_shareables_from_tensors(large_tensor_dict, root_key)
+        shareables = create_shareables_from_tensors(large_tensor_dict, parent_keys)
         for shareable in shareables:
             success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
             assert success is True
             assert reply.get_return_code() == ReturnCode.OK
 
         # Verify all tensors were stored
-        assert root_key in consumer.tensors_map
-        assert len(consumer.tensors_map[root_key]) == 50
+        assert "large_model" in consumer.params
+        assert len(consumer.params["large_model"]) == 50
 
         # Finalize and verify
         consumer.finalize(mock_stream_context, mock_fl_context)
         stored_tensors = mock_fl_context.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
-        assert len(stored_tensors[root_key]) == 50
+        assert len(stored_tensors["large_model"]) == 50
 
     def test_consume_empty_blob_error(self, mock_stream_context, mock_fl_context):
         """Test that consuming an empty blob raises an error."""
@@ -382,7 +396,7 @@ class TestTorchTensorsConsumer:
         shareable = Shareable()
         shareable[TensorBlobKeys.SAFETENSORS_BLOB] = b""  # Empty blob
         shareable[TensorBlobKeys.TENSOR_KEYS] = ["test"]
-        shareable[TensorBlobKeys.ROOT_KEY] = "model"
+        shareable[TensorBlobKeys.PARENT_KEYS] = ["model"]
         shareable[TensorBlobKeys.TASK_ID] = task_id
 
         success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
@@ -399,7 +413,7 @@ class TestTorchTensorsConsumer:
         shareable = Shareable()
         shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
         shareable[TensorBlobKeys.TENSOR_KEYS] = []  # Empty list
-        shareable[TensorBlobKeys.ROOT_KEY] = "model"
+        shareable[TensorBlobKeys.PARENT_KEYS] = ["model"]
         shareable[TensorBlobKeys.TASK_ID] = task_id
 
         success, reply = consumer.consume(shareable, mock_stream_context, mock_fl_context)
@@ -407,8 +421,8 @@ class TestTorchTensorsConsumer:
         assert success is False
         assert reply.get_return_code() == ReturnCode.ERROR
 
-    def test_bytes_tracking_multiple_root_keys(self, mock_stream_context, mock_fl_context):
-        """Test byte tracking with multiple root keys."""
+    def test_bytes_tracking_multiple_parent_keys(self, mock_stream_context, mock_fl_context):
+        """Test byte tracking with multiple parent keys accumulates total."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
         tensors_dict = {
@@ -416,54 +430,81 @@ class TestTorchTensorsConsumer:
             "decoder": {"layer1": torch.randn(20, 20)},
         }
 
-        for root_key, tensors in tensors_dict.items():
-            shareables = create_shareables_from_tensors(tensors, root_key)
+        total_expected_bytes = 0
+        for parent_key, tensors in tensors_dict.items():
+            shareables = create_shareables_from_tensors(tensors, [parent_key])
             for shareable in shareables:
+                total_expected_bytes += len(shareable[TensorBlobKeys.SAFETENSORS_BLOB])
                 consumer.consume(shareable, mock_stream_context, mock_fl_context)
 
-        # Verify separate byte tracking for each root key
-        assert "encoder" in consumer.total_bytes
-        assert "decoder" in consumer.total_bytes
-        assert consumer.total_bytes["encoder"] > 0
-        assert consumer.total_bytes["decoder"] > 0
-        assert consumer.total_bytes["decoder"] > consumer.total_bytes["encoder"]  # decoder has bigger tensors
+        # Verify total byte tracking across all parent keys
+        assert consumer.total_bytes == total_expected_bytes
+        assert consumer.total_bytes > 0
+        assert consumer.num_tensors == 2
 
     def test_finalize_clears_tensors_map(self, random_torch_tensors, mock_stream_context, mock_fl_context):
         """Test that finalize clears the internal tensors_map."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
 
-        shareables = create_shareables_from_tensors(random_torch_tensors, "model")
+        shareables = create_shareables_from_tensors(random_torch_tensors, ["model"])
         for shareable in shareables:
             consumer.consume(shareable, mock_stream_context, mock_fl_context)
 
         # Before finalize, tensors_map should have data
-        assert len(consumer.tensors_map) > 0
+        assert len(consumer.params) > 0
 
         # After finalize, tensors_map should be empty
         consumer.finalize(mock_stream_context, mock_fl_context)
-        assert consumer.tensors_map == {}
+        assert consumer.params == {}
 
-    def test_consume_multiple_times_same_root_key_accumulates(self, mock_stream_context, mock_fl_context):
-        """Test that consuming multiple times with the same root key accumulates tensors."""
+    def test_consume_multiple_times_same_parent_key_accumulates(self, mock_stream_context, mock_fl_context):
+        """Test that consuming multiple times with the same parent key accumulates tensors."""
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)
-        root_key = "model"
+        parent_keys = ["model"]
 
         # First batch
         batch1 = {"tensor1": torch.randn(2, 2), "tensor2": torch.randn(3, 3)}
-        shareables1 = create_shareables_from_tensors(batch1, root_key)
+        shareables1 = create_shareables_from_tensors(batch1, parent_keys)
         for shareable in shareables1:
             consumer.consume(shareable, mock_stream_context, mock_fl_context)
 
         # Second batch
         batch2 = {"tensor3": torch.randn(4, 4), "tensor4": torch.randn(5, 5)}
-        shareables2 = create_shareables_from_tensors(batch2, root_key)
+        shareables2 = create_shareables_from_tensors(batch2, parent_keys)
         for shareable in shareables2:
             consumer.consume(shareable, mock_stream_context, mock_fl_context)
 
-        # Verify all tensors are accumulated under the same root key
-        assert root_key in consumer.tensors_map
-        assert len(consumer.tensors_map[root_key]) == 4
-        assert set(consumer.tensors_map[root_key].keys()) == {"tensor1", "tensor2", "tensor3", "tensor4"}
+        # Verify all tensors are accumulated under the same parent key
+        assert "model" in consumer.params
+        assert len(consumer.params["model"]) == 4
+        assert set(consumer.params["model"].keys()) == {"tensor1", "tensor2", "tensor3", "tensor4"}
+
+    def test_finalize_multiple_task_ids_error(self, mock_stream_context, mock_fl_context):
+        """Test that finalize raises error when multiple task_ids are present."""
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+
+        # Create tensors with different task_ids
+        batch1 = {"tensor1": torch.randn(2, 2)}
+        shareables1 = create_shareables_from_tensors(batch1, ["model"], task_id="task_1")
+        for shareable in shareables1:
+            consumer.consume(shareable, mock_stream_context, mock_fl_context)
+
+        batch2 = {"tensor2": torch.randn(3, 3)}
+        shareables2 = create_shareables_from_tensors(batch2, ["model"], task_id="task_2")
+        for shareable in shareables2:
+            consumer.consume(shareable, mock_stream_context, mock_fl_context)
+
+        # Finalize should raise ValueError due to multiple task_ids
+        with pytest.raises(ValueError, match="Expected one task_id, but found multiple"):
+            consumer.finalize(mock_stream_context, mock_fl_context)
+
+    def test_finalize_no_task_id_error(self, mock_stream_context, mock_fl_context):
+        """Test that finalize raises error when no task_id is present."""
+        consumer = TensorConsumer(mock_stream_context, mock_fl_context)
+
+        # Finalize without consuming any shareables should raise ValueError
+        with pytest.raises(ValueError, match="No valid task_id found in received shareables"):
+            consumer.finalize(mock_stream_context, mock_fl_context)
 
 
 # Helper functions for parameterized tests
@@ -471,7 +512,7 @@ def _create_shareable_missing_blob():
     """Create shareable missing SAFETENSORS_BLOB."""
     shareable = Shareable()
     shareable[TensorBlobKeys.TENSOR_KEYS] = ["test_tensor"]
-    shareable[TensorBlobKeys.ROOT_KEY] = "model"
+    shareable[TensorBlobKeys.PARENT_KEYS] = ["model"]
     shareable[TensorBlobKeys.TASK_ID] = "test_task_123"
     return shareable
 
@@ -481,13 +522,23 @@ def _create_shareable_missing_keys():
     test_tensor = torch.randn(2, 2)
     shareable = Shareable()
     shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
-    shareable[TensorBlobKeys.ROOT_KEY] = "model"
+    shareable[TensorBlobKeys.PARENT_KEYS] = ["model"]
     shareable[TensorBlobKeys.TASK_ID] = "test_task_123"
     return shareable
 
 
-def _create_shareable_missing_root():
-    """Create shareable missing ROOT_KEY."""
+def _create_shareable_missing_task_id():
+    """Create shareable missing TASK_ID."""
+    test_tensor = torch.randn(2, 2)
+    shareable = Shareable()
+    shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
+    shareable[TensorBlobKeys.TENSOR_KEYS] = ["test"]
+    shareable[TensorBlobKeys.PARENT_KEYS] = ["model"]
+    return shareable
+
+
+def _create_shareable_missing_parent_keys():
+    """Create shareable missing PARENT_KEYS."""
     test_tensor = torch.randn(2, 2)
     shareable = Shareable()
     shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"test": test_tensor})
@@ -502,6 +553,6 @@ def _create_shareable_mismatched_keys():
     shareable = Shareable()
     shareable[TensorBlobKeys.SAFETENSORS_BLOB] = save_tensors({"actual_tensor": test_tensor})
     shareable[TensorBlobKeys.TENSOR_KEYS] = ["expected_tensor"]  # Different key
-    shareable[TensorBlobKeys.ROOT_KEY] = "model"
+    shareable[TensorBlobKeys.PARENT_KEYS] = ["model"]
     shareable[TensorBlobKeys.TASK_ID] = "test_task_123"
     return shareable

@@ -104,15 +104,17 @@ class TensorClientStreamer(FLComponent):
         if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
         elif event_type == EventType.BEFORE_TASK_DATA_FILTER:
+            task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
+            peer_name = fl_ctx.get_peer_context().get_identity_name()
             try:
                 if self.enable_request_task_data_tensors:
                     self.request_task_data_tensors(fl_ctx)
                     # use longer timeout to wait for tensors from server
                     # it may take time for server to send all tensors depending on the size and network condition
-                    self.receiver.wait_for_tensors(fl_ctx, self.wait_for_task_data_tensors_timeout)
+                    self.receiver.wait_for_tensors(task_id, peer_name, self.wait_for_task_data_tensors_timeout)
                 else:
                     # use default short timeout to wait for tensors, data should already received
-                    self.receiver.wait_for_tensors(fl_ctx)
+                    self.receiver.wait_for_tensors(task_id, peer_name)
 
                 self.receiver.set_ctx_with_tensors(fl_ctx)
             except Exception as e:
@@ -144,7 +146,11 @@ class TensorClientStreamer(FLComponent):
             fl_ctx (FLContext): The FLContext for the current operation.
         """
         self.sender.store_tensors(fl_ctx)
-        if self.sender.send(fl_ctx, self.entry_timeout):
+        try:
+            self.sender.send(fl_ctx, self.entry_timeout)
+        except ValueError as e:
+            pass
+        else:
             clean_task_result(fl_ctx)
             # Clear sender to release any references to tensors
             self.sender = None
