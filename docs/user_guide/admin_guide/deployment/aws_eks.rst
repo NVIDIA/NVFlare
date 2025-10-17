@@ -3,9 +3,9 @@
 ############################################
 Amazon Elastic Kubernetes Service Deployment
 ############################################
-In this document, we will describe how to run the entire NVIDIA FLARE inside one Amazon Elastic Kubernetes Service (EKS).  For information
-how to run NVIDIA FLARE inside microk8s (local kubernetes cluster), please refer to :ref:`helm_chart`.  That document describes how to
-provision one NVIDIA FLARE system, configure your microk8s cluster, deploy the servers, the overseer and the clients to that cluster, and
+In this document, we will describe how to run the entire NVIDIA FLARE inside one Amazon Elastic Kubernetes Service (EKS). For information
+how to run NVIDIA FLARE inside microk8s (local kubernetes cluster), please refer to :ref:`helm_chart`. That document describes how to
+provision one NVIDIA FLARE system, configure your microk8s cluster, deploy the servers and the clients to that cluster, and
 control and submit jobs to that NVIDIA FLARE from admin console.
 
 
@@ -42,10 +42,10 @@ After this, you will have one cluster with two `t3.large` EC2 nodes.
 Provision
 =========
 
-With NVIDIA FLARE installed in your local machine, you can create one set of startup kits easily with ``nvflare provision``.  If there is a project.yml file
-in your current working directory, ``nvflare provision`` will create a workspace directory.  If that project.yml file does not exist, ``nvflare provision`` will
-create a sample project.yml for you.  For simplicity, we suggest you remove/rename any existing project.yml and workspace directory.  Then provision the
-set of startup kits from scratch.  When selecting the sample project.yml during provisioning, select a non-HA one, as most clusters support HA easily.
+With NVIDIA FLARE installed in your local machine, you can create one set of startup kits easily with ``nvflare provision``. If there is a project.yml file
+in your current working directory, ``nvflare provision`` will create a workspace directory. If that project.yml file does not exist, ``nvflare provision`` will
+create a sample project.yml for you. For simplicity, we suggest you remove/rename any existing project.yml and workspace directory. Then provision the
+set of startup kits from scratch.
 
 After provisioning, you will have a workspace/example_project/prod_00 folder, which includes server, site-1, site-2 and admin@nvidia.com folders.  If you
 would like to use other names instead of ``site-1``, ``site-2``, etc, you can remove the workspace folder and modify the project.yml file.  After that,
