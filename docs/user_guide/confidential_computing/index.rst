@@ -4,6 +4,12 @@
 FLARE Confidential Federated AI
 ################################
 
+.. admonition::
+
+    This feature is in **Technical Preview**.
+    Reach out to the NVIDIA FLARE team for CVM build scripts: federatedlearning@nvidia.com
+
+
 Introduction
 ============
 

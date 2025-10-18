@@ -521,7 +521,7 @@ The NFS export will be mounted to ``/user_data/mnt`` using:
       /training_data *(rw,sync,no_subtree_check,insecure)
 
 
-.. image:: user_data_mount.png
+.. image:: ../../resources/user_data_mount.png
    :height: 300px
 
 
