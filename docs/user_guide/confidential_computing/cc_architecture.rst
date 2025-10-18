@@ -672,7 +672,7 @@ The following table describes the attack surfaces that are available to attacker
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 20 20 40
+   :widths: 12 12 12 64
 
    * - Attacker
      - Target
@@ -727,7 +727,7 @@ Attacks on the Measured Boot Process
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 30 50
+   :widths: 15 20 65
 
    * - Threat
      - Mitigation
@@ -782,7 +782,7 @@ This table describes potential threats and mitigation strategies to Trustee Atte
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 30 40
+   :widths: 25 20 55
 
    * - Threat
      - Mitigation
@@ -800,7 +800,7 @@ This table describes potential threats and mitigation strategies related to work
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 20 30 20
+   :widths: 25 15 45 15
 
    * - Threat
      - Mitigation
