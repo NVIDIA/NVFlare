@@ -347,9 +347,9 @@ The "trustee policy" refers to the rules and configurations governing how secret
 - **Resource Policies**: These policies determine which secrets are released to a specific workload, typically scoped to the container. They control what secrets are available to the workload, ensuring that only necessary information is provided.
 - **Attestation Policies**: These policies define how the claims about the Trusted Computing Base (TCB) are compared to reference values to determine the trustworthiness of the workload. They specify how the attestation process verifies that the workload is running in a trusted environment.
 
-What we do: Currently, we only need to use resource policy, we will use the default attestation policy.
+We only need to use **resource policy** with the default attestation policy.
 
-One can set the policy to the needed measurement (hash values) or referring to the reference values. We choose to use the resource policy for now.
+One can set the policy to the needed measurement (hash values) or referring to the reference values.
 
 Set Policy
 ^^^^^^^^^^
@@ -637,8 +637,8 @@ For IP Protection Use Cases
 - Only the Project Admin is authorized to download results, including the global model and logs.
 - Download permissions are disabled for all other users and cannot be overridden at the individual site level.
 
-Threat Model and Mitigations
-============================
+Threat Model and Attack Surface
+================================
 
 This section describes the threat models that the current design helps to mitigate, and the new risks with this process.
 
@@ -650,15 +650,20 @@ Possible Attacks
 ----------------
 
 The current CVM architecture is designed to defend against the following possible attacks by an untrustworthy host workload operator:
-- Modify disk contents, intercept network connections, and attempt to compromise the TEE at runtime.
-- Tamper CVM image file at deployment time, before launch in the remote host:
+- Modify disk contents,
+- intercept network connections, and
+- attempt to compromise the TEE at runtime.
+
+Tamper CVM image file at deployment time
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+before launch in the remote host:
   - Modify boot process in the image to retrieve encryption key.
   - Modify workload code to write checkpoint path, save model to unencrypted disk.
   - Modify network port rules to allow model to send over the network to unauthorized location.
   - Modify access rules to enable access at runtime.
 
-CVM at Runtime
---------------
+Attack CVM at Runtime
+^^^^^^^^^^^^^^^^^^^^^
 
 - Add login console to directly login to CVM.
 - SSH to CVM.
@@ -711,8 +716,8 @@ The following table describes the attack surfaces that are available to attacker
      - Output result
      - User output dataset could be exposed to possible IP theft.
 
-Threats and Mitigations
-=======================
+Mitigation Strategies
+---------------------
 
 Confidential Computing is used to defend against various attack vectors on Confidential Virtual Machines (CVMs), including tampering, disk access, and network intrusion. Below is a breakdown of the threat surfaces and corresponding mitigations.
 
@@ -723,7 +728,7 @@ Confidential Computing is used to defend against various attack vectors on Confi
 The following tables describe the threats and mitigations:
 
 Attacks on the Measured Boot Process
-------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. list-table::
    :header-rows: 1
@@ -776,7 +781,7 @@ Attacks on the Measured Boot Process
        CVM design mostly mitigates the risk.
 
 Attacks on Trustee Attestation
-------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 This table describes potential threats and mitigation strategies to Trustee Attestation.
 
@@ -794,7 +799,7 @@ This table describes potential threats and mitigation strategies to Trustee Atte
        client (identity verified by attestation protocol).
 
 Attacks on Workloads
---------------------
+^^^^^^^^^^^^^^^^^^^^
 
 This table describes potential threats and mitigation strategies related to workloads.
 
