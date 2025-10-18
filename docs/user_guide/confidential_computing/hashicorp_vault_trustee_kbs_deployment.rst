@@ -32,49 +32,25 @@ This guide provides complete instructions for deploying HashiCorp Vault and Trus
 Understanding the Architecture
 ===============================
 
-Hardware Requirements
----------------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 20 15 20 45
-
-   * - Component
-     - TEE Hardware
-     - Deployment Location
-     - Description
-   * - HashiCorp Vault
-     - ❌ Not Required
-     - Regular Server
-     - Secure storage of secret data, protected by software layers (encryption, access control, auditing)
-   * - Trustee KBS
-     - ❌ Not Required
-     - Regular Server
-     - Verifies client TEE evidence, acts as proxy between Vault and clients
-   * - TEE Client
-     - ✅ Required
-     - TEE-enabled Device
-     - Runs in trusted execution environment, generates hardware-based attestation evidence
-
 Deployment Architecture
 -----------------------
 
 ::
 
-   ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-   │   TEE Client    │───▶│   Trustee KBS   │───▶│ HashiCorp Vault │
-   │ (TEE Hardware)  │    │ (Regular Server) │    │ (Regular Server) │
-   └─────────────────┘    └─────────────────┘    └─────────────────┘
-   │                 │    │                 │    │                 │
-   │ Hardware:       │    │ Functions:      │    │ Functions:      │
-   │ • Intel TDX     │    │ • Attestation   │    │ • Secret        │
-   │ • AMD SEV       │    │   Verification  │    │   Storage       │
-   │ • ARM TrustZone │    │ • Policy Engine │    │ • Access        │
-   │ • TPM 2.0       │    │ • Key Broker    │    │   Control       │
-   │                 │    │ • JWT Auth      │    │ • Audit Logs    │
-   │                 │    │                 │    │ • Encrypted     │
-   │                 │    │                 │    │   Transport     │
-   └─────────────────┘    └─────────────────┘    └─────────────────┘
+   ┌─────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+   │   TEE Client    │───▶│   Trustee KBS    │───▶│ HashiCorp Vault  │
+   │ (TEE Hardware)  │    │                  │    │                  │
+   └─────────────────┘    └──────────────────┘    └──────────────────┘
+   │                 │    │                  │    │                  │
+   │ Hardware:       │    │ Functions:       │    │ Functions:       │
+   │ • Intel TDX     │    │ • Attestation    │    │ • Secret         │
+   │ • AMD SEV       │    │   Verification   │    │   Storage        │
+   │ • ARM TrustZone │    │ • Policy Engine  │    │ • Access         │
+   │ • TPM 2.0       │    │ • Key Broker     │    │   Control        │
+   │                 │    │ • JWT Auth       │    │ • Audit Logs     │
+   │                 │    │                  │    │ • Encrypted      │
+   │                 │    │                  │    │   Transport      │
+   └─────────────────┘    └──────────────────┘    └──────────────────┘
 
 Environment Types
 -----------------
@@ -87,17 +63,14 @@ Environment Types
 
 **Production Environment**:
 
-- Vault and KBS still deployed on regular servers (data center)
+- Vault and KBS still deployed on secure environment (data center)
 - Clients **must** run on real TEE hardware
 - Clients generate real hardware-based attestation evidence
 
 Design Rationale
 ----------------
 
-**Why not require TEE hardware for Vault and KBS?**
-
 - **Security Separation**: Each component focuses on its specific responsibilities, reducing overall attack surface
-- **Cost Optimization**: Use expensive TEE hardware only where needed (clients)
 - **Flexible Deployment**: Vault and KBS can leverage mature data center management tools
 - **Easy Maintenance**: Regular servers are easier to scale, monitor, and maintain
 
