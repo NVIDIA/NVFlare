@@ -67,13 +67,6 @@ Environment Types
 - Clients **must** run on real TEE hardware
 - Clients generate real hardware-based attestation evidence
 
-Design Rationale
-----------------
-
-- **Security Separation**: Each component focuses on its specific responsibilities, reducing overall attack surface
-- **Flexible Deployment**: Vault and KBS can leverage mature data center management tools
-- **Easy Maintenance**: Regular servers are easier to scale, monitor, and maintain
-
 Deployment Phases
 =================
 
