@@ -4,7 +4,7 @@
 Confidential Computing: Attestation Service Integration
 #######################################################
 
-Please refer to the :ref:`NVFlare CC Architecture <cc_on_prem_cvm_architecture>`
+Please refer to the :ref:`NVFlare CC Architecture <cc_architecture>`
 for the introduction and detailed architecture of Confidential Computing.
 
 This document introduces the CC attestation integration in NVFlare.
