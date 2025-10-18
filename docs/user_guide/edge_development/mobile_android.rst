@@ -1,8 +1,8 @@
 .. _mobile_android_api:
 
-########################
+#########################
 Android SDK API Reference
-########################
+#########################
 
 This document provides a comprehensive API reference for the NVIDIA FLARE Android SDK, enabling federated learning on Android devices using ExecuTorch.
 
