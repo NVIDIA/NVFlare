@@ -13,7 +13,16 @@ FLARE Confidential Federated AI
 Introduction
 ============
 
-Federated Learning faces critical trust challenges even among collaborating organizations. **Trust of participants** is difficult to establish—participants may worry about **code tampering** during execution. **Model owners** are concerned about **model theft** and **model tampering** that could compromise their intellectual property. **Data owners** fear **model inversion attacks** that could extract training data and **data leakage** through gradients or model parameters. Traditional federated learning relies on organizational trust agreements, but these cannot guarantee runtime security or prevent malicious behavior during model training and aggregation.
+Federated Learning faces critical trust challenges even among collaborating organizations.
+
+- **Trust of participants** is difficult to establish
+- participants may worry about **code tampering** during execution.
+- **Model owners** are concerned about **model theft** and **model tampering** that could compromise their intellectual property.
+- **Data owners** fear **model inversion attacks** that could extract training data and
+- **data leakage** through gradients or model parameters or other accidental code changes
+
+Traditional federated learning relies on organizational trust agreements, but these cannot guarantee runtime security or
+prevent malicious behavior during model training and aggregation.
 
 Security Risks in Federated Learning
 --------------------------------------
@@ -22,14 +31,16 @@ Federated learning operations face multiple security risks throughout the entire
 
 **Deployment-Time Risks**
 
-At deployment time, model IP is particularly vulnerable when introduced into an untrusted or unverified environment. An untrusted host or malicious host owner can intercept the model by:
+At deployment time, code is particularly vulnerable when introduced into an untrusted or unverified environment.
+An untrusted host or malicious host owner can intercept the model by:
 
 - Modifying the application code before execution begins
 - Tampering with the execution environment
 - Delaying the activation of security mechanisms such as attestation and encryption
 - Injecting malicious code during the deployment phase before protections are activated
 
-Without strict controls over when and how models are decrypted or loaded, attackers can gain early access before protections are in place, making deployment a critical point of exposure.
+Without strict controls over when and how models are decrypted or loaded, attackers can gain early access before protections
+are in place, making deployment a critical point of exposure.
 
 **Runtime Risks**
 
@@ -47,7 +58,13 @@ These risks exist regardless of organizational trust agreements and cannot be fu
 What is Confidential Computing?
 --------------------------------
 
-Confidential Computing leverages hardware-based Trusted Execution Environments (TEEs) to protect data and code during execution. **VM-based confidential computing** uses technologies like **AMD SEV-SNP** (Secure Encrypted Virtualization-Secure Nested Paging) and **Intel TDX** (Trust Domain Extensions) to create isolated, encrypted virtual machines where memory is protected from the host OS, hypervisor, and even administrators. **NVIDIA GPU Confidential Computing** extends this protection to GPU workloads, enabling encrypted data transfer between CPU and GPU with hardware-accelerated encryption (H100 and Blackwell GPUs). These technologies provide a hardware root of trust through attestation, allowing participants to verify that workloads are running in genuine secure environments before sharing sensitive data or models.
+Confidential Computing leverages hardware-based Trusted Execution Environments (TEEs) to protect data and code during execution.
+
+- **VM-based confidential computing** uses technologies like **AMD SEV-SNP** (Secure Encrypted Virtualization-Secure Nested Paging) and **Intel TDX** (Trust Domain Extensions) to create isolated, encrypted virtual machines where memory is protected from the host OS, hypervisor,and even administrators.
+- **NVIDIA GPU Confidential Computing** extends this protection to GPU workloads, enabling encrypted data transfer between CPU and GPU with hardware-accelerated encryption (H100 and Blackwell GPUs).
+
+These technologies provide a hardware root of trust through attestation, allowing participants to verify that workloads
+are running in genuine secure environments before sharing sensitive data or models.
 
 Risk Mitigation with Confidential Computing
 --------------------------------------------
@@ -58,7 +75,9 @@ FLARE's Confidential Computing solution addresses the federated learning securit
 - **IP Protection on Client** - Model code and weights are protected within confidential VMs on client sites, preventing model theft and unauthorized access to proprietary algorithms or pre-trained models
 - **Data Leakage Prevention on Client** - Pre-approved, certified training code runs in isolated TEEs, ensuring that only authorized computations occur and preventing malicious code from exfiltrating training data
 
-FLARE's IP protection solution includes CVM lockdown features that disable login access, block SSH connections, and restrict network ports to prevent unauthorized access to the protected environment. These lockdown features apply to both server and client CVMs, with primary focus on client-side protection where model IP is most vulnerable.
+FLARE's IP protection solution includes CVM lockdown features that disk encryption, disable login access, block SSH connections, and restrict
+network ports to prevent unauthorized access to the protected environment. These lockdown features apply to both server and client CVMs,
+with primary focus on client-side protection where model IP is most vulnerable.
 
 FLARE's solution provides end-to-end security throughout the entire lifecycle:
 
@@ -73,18 +92,26 @@ Operational Risks Even with Confidential Computing
 
 While Confidential Computing significantly enhances security, certain operational risks remain that require additional safeguards:
 
-- **Deployment-time Code Injection** - If an attacker can modify the application code at deployment time before the CVM is sealed, they could add code to copy encryption keys, model checkpoints, or leak data during execution
+- **Deployment-time Code Injection** - If an attacker can modify the application code at deployment time before the CVM is launched, they could add code to copy encryption keys, model checkpoints, or leak data during execution
 - **Application-level Vulnerabilities** - If an attacker compromises the application running inside the TEE (through bugs, backdoors, or malicious updates), the TEE protection cannot prevent IP leakage
 - **Host-level Storage Vulnerabilities** - Model checkpoints written to host disk storage may be accessible from the host filesystem, bypassing runtime memory protection
 - **Side-channel Attacks** - Sophisticated attacks may exploit timing, power consumption, or other side channels to extract information
 
+.. warning::
+
+   **Critical Design Requirement:**
+
+   Even with Confidential Computing, without proper design of the CVM to extend the chain of trust from hardware
+   to the application workload, confidential computing attestation will **NOT** be able to detect deployment-time
+   code modifications or tampering. The CVM must be designed to ensure that attestation verifies the entire execution
+   stack—from hardware through the application layer—to provide meaningful security guarantees.
+
 These risks require additional safeguards including:
 
-- Secure deployment pipelines with code signing and integrity verification
-- Code integrity verification through attestation before CVM activation
+- Secure deployment pipelines with code integrity verification through attestation before CVM activation
 - Encrypted persistent storage with proper key management
+- CVM access and network lockdown to prevent unauthorized entry points
 - Regular security audits and vulnerability assessments
-- Monitoring and logging of all access to sensitive resources
 
 This comprehensive approach enables organizations to collaborate on federated learning while maintaining strong IP protection guarantees.
 
