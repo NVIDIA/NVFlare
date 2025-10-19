@@ -74,3 +74,18 @@ The tool provides two main commands:
 - `install`: Install packaged code to target sites
 
 :ref:`pre_installer`
+
+
+New documentations
+------------------
+Along with the new features, we add a lot documentations related to the features, in addition, we added the following
+new documentations:
+
+    - :ref:`flare_system_architecture`
+    - :ref:`flare_security_overview`
+    - :ref:`cellnet_architecture`
+
+
+
+
+

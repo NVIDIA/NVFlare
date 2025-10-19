@@ -2,7 +2,7 @@
 What's New in FLARE v2.7.0
 **************************
 
-The new features can be divided into three categories:
+The new features can be divided into following categories:
 
 
 Confidential Federated AI
