@@ -4,101 +4,118 @@
 HashiCorp Vault and Trustee KBS Joint Deployment Guide
 #############################################################
 
-This guide will walk you through the complete deployment of HashiCorp Vault and Trustee KBS (Key Broker Service). In this architecture, Vault serves as the secure backend for storing secrets, while KBS acts as the frontend proxy for verifying client identities. Therefore, we must deploy Vault first, then deploy KBS.
+Overview
+========
+
+This guide provides complete instructions for deploying HashiCorp Vault and Trustee KBS (Key Broker Service) as an integrated secret management system for Confidential Computing environments.
+
+**Architecture:**
+
+- **HashiCorp Vault**: Secure backend for storing secrets
+- **Trustee KBS**: Frontend proxy for verifying client identities and brokering keys
+- **Deployment Order**: Vault must be deployed first, then KBS
+
+**What You'll Learn:**
+
+- Understanding the deployment architecture and requirements
+- Setting up HashiCorp Vault with proper TLS configuration
+- Compiling and configuring Trustee KBS
+- Testing the complete system with client operations
+- Troubleshooting common issues
 
 .. note::
-   TEE Environment Deployment Requirements
 
-   Before starting deployment, please understand the hardware environment requirements for each component to properly plan your deployment architecture:
+   **TEE Environment Deployment Requirements**
 
-Hardware Requirements for Each Component
-========================================
+   Before starting deployment, please understand the hardware environment requirements for each component to properly plan your deployment architecture.
 
-.. list-table::
-   :header-rows: 1
-
-   * - Component
-     - TEE Hardware Required
-     - Deployment Location
-     - Description
-   * - HashiCorp Vault
-     - ❌ Not Required
-     - Regular Server
-     - Secure storage of secret data, protected by software layers (encryption, access control, auditing)
-   * - Trustee KBS
-     - ❌ Not Required
-     - Regular Server
-     - Verifies client TEE evidence, acts as proxy between Vault and clients
-   * - TEE Client
-     - ✅ Required
-     - TEE-enabled Device
-     - Runs in trusted execution environment, generates hardware-based attestation evidence
-
-Typical Deployment Architecture
+Understanding the Architecture
 ===============================
+
+Deployment Architecture
+-----------------------
 
 ::
 
-   ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-   │   TEE Client    │───▶│   Trustee KBS   │───▶│ HashiCorp Vault │
-   │ (TEE Hardware)  │    │ (Regular Server) │    │ (Regular Server) │
-   └─────────────────┘    └─────────────────┘    └─────────────────┘
-   │                 │    │                 │    │                 │
-   │ Hardware:       │    │ Functions:      │    │ Functions:      │
-   │ • Intel TDX     │    │ • Attestation   │    │ • Secret        │
-   │ • AMD SEV       │    │   Verification  │    │   Storage       │
-   │ • ARM TrustZone │    │ • Policy Engine │    │ • Access        │
-   │ • TPM 2.0       │    │ • Key Broker    │    │   Control       │
-   │                 │    │ • JWT Auth      │    │ • Audit Logs    │
-   │                 │    │                 │    │ • Encrypted     │
-   │                 │    │                 │    │   Transport     │
-   └─────────────────┘    └─────────────────┘    └─────────────────┘
+   ┌─────────────────┐    ┌──────────────────┐    ┌──────────────────┐
+   │   TEE Client    │───▶│   Trustee KBS    │───▶│ HashiCorp Vault  │
+   │ (TEE Hardware)  │    │                  │    │                  │
+   └─────────────────┘    └──────────────────┘    └──────────────────┘
+   │                 │    │                  │    │                  │
+   │ Hardware:       │    │ Functions:       │    │ Functions:       │
+   │ • Intel TDX     │    │ • Attestation    │    │ • Secret         │
+   │ • AMD SEV       │    │   Verification   │    │   Storage        │
+   │ • ARM TrustZone │    │ • Policy Engine  │    │ • Access         │
+   │ • TPM 2.0       │    │ • Key Broker     │    │   Control        │
+   │                 │    │ • JWT Auth       │    │ • Audit Logs     │
+   │                 │    │                  │    │ • Encrypted      │
+   │                 │    │                  │    │   Transport      │
+   └─────────────────┘    └──────────────────┘    └──────────────────┘
 
-Test Environment vs Production Environment
-==========================================
+Environment Types
+-----------------
 
-📋 **Test Environment** (covered in this guide):
+**Test Environment** (covered in this guide):
 
 - Vault and KBS deployed on regular servers
 - Client uses "sample attester" to simulate TEE evidence
-- Suitable for functionality verification, development debugging, system integration testing
+- Suitable for: functionality verification, development debugging, system integration testing
 
-🏭 **Production Environment**:
+**Production Environment**:
 
-- Vault and KBS still deployed on regular servers (data center)
-- Clients must run on real TEE hardware
+- Vault and KBS still deployed on secure environment (data center)
+- Clients **must** run on real TEE hardware
 - Clients generate real hardware-based attestation evidence
 
-Why This Design?
-================
+Deployment Phases
+=================
 
-- **Security Separation**: Each component focuses on its specific responsibilities, reducing overall attack surface
-- **Cost Optimization**: Use expensive TEE hardware only where needed
-- **Flexible Deployment**: Vault and KBS can use mature data center management tools
-- **Easy Maintenance**: Regular servers are easier to scale, monitor, and maintain
+This deployment consists of four phases:
+
+1. **Environment Preparation** - Install required tools and dependencies
+2. **Deploy HashiCorp Vault** - Set up the secure backend storage
+3. **Deploy Trustee KBS** - Set up the attestation and key broker service
+4. **Client Operations** - Test and verify the complete system
 
 Phase 1: Environment Preparation
-================================
+=================================
 
-Before starting, ensure your system (Ubuntu/Debian recommended) is up to date and install the tools required for deploying both systems.
+System Requirements
+-------------------
 
-Update system
--------------
+**Operating System:**
+
+- Ubuntu 22.04 or 24.04 (recommended)
+- Debian-based distributions
+
+**Required Tools:**
+
+- Git
+- Curl
+- OpenSSL
+- Build tools (gcc, clang)
+- Protobuf compiler
+- Rust (for KBS compilation)
+
+Installation Steps
+------------------
+
+**1.1 Update System**
 
 .. code-block:: bash
 
    sudo apt-get update
    sudo apt-get upgrade -y
 
-Install basic tools
--------------------
+**1.2 Install Basic Tools**
 
 .. code-block:: bash
 
    sudo apt-get install -y git curl build-essential clang libtss2-dev openssl pkg-config protobuf-compiler
 
-Install Rust language environment (required for KBS compilation)
-----------------------------------------------------------------
+**1.3 Install Rust**
+
+Rust is required for compiling Trustee KBS:
 
 .. code-block:: bash
 
@@ -107,10 +124,10 @@ Install Rust language environment (required for KBS compilation)
 
 During installation, choose the default option (1).
 
-Phase 2: Deploy HashiCorp Vault (Security Backend)
-==================================================
+Phase 2: Deploy HashiCorp Vault
+================================
 
-Now we begin deploying Vault as the secret storage backend.
+Vault serves as the secure backend for storing secrets. We'll configure it with TLS encryption and proper access controls.
 
 Install Vault
 -------------
@@ -147,25 +164,26 @@ Configure Vault (/etc/vault.d/vault.hcl)
 Use `sudo nano /etc/vault.d/vault.hcl` to edit the configuration file and replace with the following content:
 
 .. code-block::
-{
-  "ui": true,
-  "api_addr": "https://<your-server-IP-or-hostname>:8200",  // Example URL
-  "storage": {
-    "file": {
-      "path": "/opt/vault/data"
+
+    {
+      "ui": true,
+      "api_addr": "https://<your-server-IP-or-hostname>:8200",  // Example URL
+      "storage": {
+        "file": {
+          "path": "/opt/vault/data"
+        }
+      },
+      "listener": {
+        "tcp": {
+          "address": "<your-server-IP-or-hostname>:8200",  // Example address
+          "tls_cert_file": "/opt/vault/tls/vaultlocal.crt",
+          "tls_key_file": "/opt/vault/tls/vaultlocal.key"
+        }
+      }
     }
-  },
-  "listener": {
-    "tcp": {
-      "address": "<your-server-IP-or-hostname>:8200",  // Example address
-      "tls_cert_file": "/opt/vault/tls/vaultlocal.crt",
-      "tls_key_file": "/opt/vault/tls/vaultlocal.key"
-    }
-  }
-}
 
 Use CA-signed server certificates (for strict validation, recommended)
----------------------------------------------------------------------
+----------------------------------------------------------------------
 
 If you need to enable strict TLS validation on the client side (such as KBS), do not directly use CA certificates as server certificates. Follow these steps to generate a "server certificate" signed by a local CA (must include SAN, CA:FALSE, and EKU includes serverAuth), then use this server certificate in Vault:
 
@@ -202,7 +220,7 @@ Generate server certificate (with SAN, CA:FALSE + serverAuth)
    EOF
 
 Sign server certificate with CA (note: use ca.crt/ca.key generated in previous step)
------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------
 
 .. code-block:: bash
 
@@ -211,7 +229,7 @@ Sign server certificate with CA (note: use ca.crt/ca.key generated in previous s
    -out /opt/vault/tls/vault.crt -days 825 -sha256 -extfile /opt/vault/tls/san.cnf
 
 Quick verification of certificate key extensions (should see CA:FALSE, serverAuth, and SAN list)
------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------
 
 .. code-block:: bash
 
@@ -505,7 +523,7 @@ Option C (containers): mount file and set env SSL_CERT_FILE=/etc/ssl/certs/kbs-c
    Please use the Ed25519 algorithm key pair generated above; RSA public keys will cause KBS to report error "Invalid public key".
 
 Prepare KBS configuration file (kbs-config.toml)
------------------------------------------------
+------------------------------------------------
 
 Create a file named kbs-config.toml in the kbs directory and fill in the following content.
 
@@ -580,7 +598,7 @@ Recommend using absolute path to start, ensuring the correct version is running
 If the terminal shows no errors and displays that the service is listening on port 8999, then KBS has started successfully.
 
 Configure attestation policy (required for non-TEE environments)
----------------------------------------------------------------
+----------------------------------------------------------------
 
 When testing in non-TEE environments, you need to configure a permissive attestation policy to allow sample attester to pass verification.
 
@@ -630,7 +648,7 @@ Execute the following command to store the file content in Vault (admin operatio
    --resource-file test.txt
 
 Retrieve a secret (remote attestation operation)
------------------------------------------------
+------------------------------------------------
 
 First generate TEE private key (for simulating client):
 
@@ -794,17 +812,17 @@ You can patch that file with the following diff.
    @@ -39,17 +39,17 @@ RUN if [ "${ARCH}" = "x86_64" ]; then curl -fsSL https://download.01.org/intel-s
    WORKDIR /usr/src/trustee
    COPY . .
-   
+
    -RUN cd kbs && make AS_FEATURE=coco-as-builtin ALIYUN=${ALIYUN} ARCH=${ARCH} && \
    +RUN cd kbs && make VAULT=true AS_FEATURE=coco-as-builtin ALIYUN=${ALIYUN} ARCH=${ARCH} background-check-kbs && \
       make ARCH=${ARCH} install-kbs
-   
+
    -FROM ubuntu:22.04
    +FROM ubuntu:24.04
    ARG ARCH=x86_64
-   
+
    WORKDIR /tmp
-   
+
    RUN apt-get update && \
       apt-get install -y \
    -    curl \

@@ -4,405 +4,451 @@
 FLARE Confidential Federated AI Deployment Guide
 ################################################
 
-On Premise: AMD CVM and NVIDIA GPU
------------------------------------
+Overview
+========
+
+This guide provides step-by-step instructions for deploying NVIDIA FLARE with Confidential Computing (CC) capabilities on-premises using AMD SEV-SNP CPUs and NVIDIA GPUs.
+
+The deployment involves building a Confidential VM (CVM) image that contains the FLARE application, provisioning the system for participants, and launching the CVMs on each site.
+
+Deployment Environment
+======================
+
+This guide covers the following deployment configuration:
+
+- **Platform**: On-Premise AMD CVM with NVIDIA GPU
+- **CPU**: AMD SEV-SNP (Secure Encrypted Virtualization - Secure Nested Paging)
+- **GPU**: NVIDIA GPU with Confidential Computing support (optional)
+- **Host OS**: Ubuntu 25.04
 
 Prerequisites
 =============
 
-Hardware Prerequisites
-^^^^^^^^^^^^^^^^^^^^^^
+Hardware Requirements
+---------------------
 
-- The machine that needs to run CC needs to have AMD SNP-SEV enabled CPU.
-- Host OS must be Ubuntu 25.04.
-- To run GPU, the machine needs to have an NVIDIA GPU that is CC-enabled.
-- The AMD firmware that supports SEV.
+**CPU Requirements**
 
-Here is how to get the firmware:
+- AMD CPU with SEV-SNP enabled
+- AMD firmware supporting SEV-SNP
 
-.. code-block:: bash
-    echo 'deb http://archive.ubuntu.com/ubuntu plucky-proposed main restricted universe multiverse' | \
-      sudo tee /etc/apt/sources.list.d/plucky-proposed.list
+**GPU Requirements (Optional)**
 
-    sudo tee /etc/apt/preferences.d/99-plucky-proposed <<'EOF'
-    Package: *
-    Pin: release a=plucky-proposed
-    Pin-Priority: 100
-    EOF
+- NVIDIA GPU with Confidential Computing support (H100, Blackwell)
 
-    sudo apt update
-    sudo apt install -t plucky-proposed ovmf
+**Host System**
 
-The firmware will installed as ``/usr/share/ovmf/OVMF.amdsev.fd``.
+- Host OS: Ubuntu 25.04
 
-Software Prerequisites
-^^^^^^^^^^^^^^^^^^^^^^
+Software Requirements
+---------------------
+
+**Required Software**
 
 - Ubuntu 25.04
-- Has qemu on the machine.
-- Get the codes from NVFlare main GitHub repo: `git clone https://github.com/NVIDIA/NVFlare.git`
-- Get image builder codes:
-  - Get the image builder codes from NVFlare team (email federatedlearning@nvidia.com)
-- Get base images from NVFlare team.
-- Let's assume the image builder code are in `~/cc/image_builder`.
-- Copy the base images to `~/cc/image_builder/base_images`.
-- Get or build your own kbs client that needs to match the kbs server, we are using commit: `a2570329cc33daf9ca16370a1948b5379bb17fbe`.
-- Copy the kbs-client and credentials to `~/cc/image_builder/binaries`.
-- Build snpguest with version v0.9.2.
-- Copy snpguest and credentials to `~/cc/image_builder/binaries`
+- QEMU (for virtualization)
+- Docker
+
+**NVFlare Components**
+
+1. **NVFlare Source Code**
+
+   Clone from GitHub:
+
+   .. code-block:: bash
+
+      git clone https://github.com/NVIDIA/NVFlare.git
+
+2. **Image Builder**
+
+   - Obtain the image builder code from the NVFlare team
+   - Contact: federatedlearning@nvidia.com
+   - Install location: ``~/cc/image_builder``
+
+3. **Base Images**
+
+   - Obtain base images from the NVFlare team
+   - Copy to: ``~/cc/image_builder/base_images``
+
+4. **KBS Client**
+
+   - Build or obtain KBS client matching your KBS server
+   - Recommended commit: ``a2570329cc33daf9ca16370a1948b5379bb17fbe``
+   - Copy the kbs-client and credentials to: ``~/cc/image_builder/binaries``
+
+5. **SNPGuest Tool**
+
+   - Build SNPGuest version v0.9.2
+   - Copy snpguest and credentials to: ``~/cc/image_builder/binaries``
+
+**AMD Firmware Installation**
+
+To install the AMD SEV-SNP firmware:
+
+.. code-block:: bash
+
+   echo 'deb http://archive.ubuntu.com/ubuntu plucky-proposed main restricted universe multiverse' | \
+     sudo tee /etc/apt/sources.list.d/plucky-proposed.list
+
+   sudo tee /etc/apt/preferences.d/99-plucky-proposed <<'EOF'
+   Package: *
+   Pin: release a=plucky-proposed
+   Pin-Priority: 100
+   EOF
+
+   sudo apt update
+   sudo apt install -t plucky-proposed ovmf
+
+The firmware will be installed at ``/usr/share/ovmf/OVMF.amdsev.fd``.
+
+**Policy Files Setup**
 
 .. note::
-    The current KBS does'’t support updating individual rules.
-    So we have to update the whole rule file every time a new CVM is added.
-    We use that file as the master copy of the policy file.
-    You just need to create this folder `/shared/policy` and place the following files
-    there: `policy.rego`, `set-policy.sh`, `private.key`, please get these files from the NVFlare team.
 
-Project Admin Prerequisites
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
-- Learn `Trustee Service:<https://www.redhat.com/en/blog/introducing-confidential-containers-trustee-attestation-services-solution-overview-and-use-cases>`_
-- Following the Instruction of `Trustee:<https://github.com/confidential-containers/trustee?tab=readme-ov-file>`
-- Deploy the Trustee KBS server: Deployment Guide of Trustee KBS and HashiCorp Vault :ref:`hashicorp_vault_trustee_deployment`
+   The current KBS doesn't support updating individual rules. You must update the entire rule file when adding a new CVM.
 
+Create the policy directory and obtain the required files:
 
+.. code-block:: bash
 
-Usage
-=====
+   mkdir -p /shared/policy
 
-Docker Image Build Step
------------------------
+Place the following files in ``/shared/policy`` (obtain from the NVFlare team):
 
-The CC image builder is for any generic workload not restricted to NVFlare,
-it will load the docker_archive specified in the configs and launch it inside
-the CVM.
+- ``policy.rego`` - Master policy file
+- ``set-policy.sh`` - Policy update script
+- ``private.key`` - Authentication key
 
-To use with NVFlare, we need to first build a docker image, for example, we can
-use the following Dockerfile to build:
+Project Admin Requirements
+---------------------------
+
+As the project admin, you need to:
+
+1. **Understand Trustee Service**
+
+   - Learn about `Trustee Service <https://www.redhat.com/en/blog/introducing-confidential-containers-trustee-attestation-services-solution-overview-and-use-cases>`_
+   - Review the `Trustee documentation <https://github.com/confidential-containers/trustee?tab=readme-ov-file>`_
+
+2. **Deploy Trustee KBS Server**
+
+   Follow the :ref:`hashicorp_vault_trustee_deployment` guide to deploy the Trustee Key Broker Service with HashiCorp Vault.
+
+Deployment Workflow
+===================
+
+The deployment consists of four main steps:
+
+1. **Build Docker Image** - Create the application container
+2. **Provision** - Generate CVM images and startup kits
+3. **Distribute** - Send startup kits to each site
+4. **Launch** - Start CVMs at each site
+
+Step 1: Build Docker Image
+---------------------------
+
+The CC image builder supports any generic workload. For NVFlare, create a Docker image with the application pre-installed.
+
+**Example Dockerfile:**
 
 .. code-block:: dockerfile
 
-  ARG BASE_IMAGE=python:3.12
+   ARG BASE_IMAGE=python:3.12
 
-  FROM ${BASE_IMAGE}
+   FROM ${BASE_IMAGE}
 
-  ENV PYTHONDONTWRITEBYTECODE=1
-  ENV PIP_NO_CACHE_DIR=1
+   ENV PYTHONDONTWRITEBYTECODE=1
+   ENV PIP_NO_CACHE_DIR=1
 
-  RUN pip install -U pip &&\
-      pip install nvflare~=2.7.0rc
-  COPY code/ /local/custom
-  COPY requirements.txt .
-  RUN pip install -r requirements.txt
+   RUN pip install -U pip && \
+       pip install nvflare~=2.7.0rc
 
-  ENTRYPOINT ["/user_config/nvflare/startup/sub_start.sh", "--verify"]
+   COPY code/ /local/custom
+   COPY requirements.txt .
+   RUN pip install -r requirements.txt
 
-Note that for CC jobs, we don't allow custom codes, so we must include those
-codes inside the docker image.
+   ENTRYPOINT ["/user_config/nvflare/startup/sub_start.sh", "--verify"]
 
+.. note::
 
+   For CC jobs, custom code at runtime is not allowed. All application code must be included in the Docker image.
 
-Provision Step
---------------
+**Build and save the image:**
 
-1. Switch directory to NVFlare example: `NVFlare/examples/advanced/cc_provision`.
+.. code-block:: bash
 
-2. Edit the `project.yml` and change the following fields:
-  
-  - `build_image_cmd` under the `OnPremPackager`: change it to the absolute path of the image builder code, for example:
+   docker build -t nvflare-site:latest .
+   docker save nvflare-site:latest | gzip > nvflare-site.tar.gz
 
-    .. code-block:: yaml
+Step 2: Provision
+-----------------
 
-       packager:
-         path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
-         args:
-           # this needs to be replaced with the real path of the image build scripts
-           build_image_cmd: ~/nvflare-github/nvflare/lighter/cc/image_builder/cvm_build.sh
+Navigate to the example directory:
 
+.. code-block:: bash
 
-3. Customize the CC configuration for each site, please refer to the next section for each field’s meaning:
+   cd NVFlare/examples/advanced/cc_provision
 
-  - Edit the `cc_server1.yml`:
+**2.1 Configure Project**
 
-    - Edit the `docker_archive` field:
+Edit ``project.yml`` and update the ``build_image_cmd`` path:
 
-      .. code-block:: yaml
+.. code-block:: yaml
 
-          docker_archive: ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
+   packager:
+     path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
+     args:
+       # Update this path to your image builder location
+       build_image_cmd: ~/nvflare-github/nvflare/lighter/cc/image_builder/cvm_build.sh
 
-  - Edit the `cc_site-1.yml`:
+**2.2 Configure Server**
 
-    - Edit the `docker_archive` field:
+Edit ``cc_server1.yml`` and set the ``docker_archive`` path:
 
-      .. code-block:: yaml
+.. code-block:: yaml
 
-          docker_archive: ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
+   docker_archive: ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
 
-    - If the server name is NOT a public domain name, please add the following section:
+**2.3 Configure Client**
 
-      .. code-block:: yaml
+Edit ``cc_site-1.yml``:
 
-        host_entries:
-          server1: 10.176.4.244
+1. Set the ``docker_archive`` path:
 
-    - If you don't have GPU, please remove the GPU authorizer and `cc_gpu_mechanism` line
+   .. code-block:: yaml
 
-4. Run ``$ nvflare provision -p project.yml`` (takes around 1000 seconds to build each CVM).
+      docker_archive: ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
 
-5. The startup packages will be generated inside each site's folder:
+2. If the server name is not a public domain, add host entries:
+
+   .. code-block:: yaml
+
+      host_entries:
+        server1: 10.176.4.244
+
+3. If no GPU is available, remove the GPU authorizer and ``cc_gpu_mechanism`` configuration.
+
+**2.4 Run Provision**
+
+.. code-block:: bash
+
+   nvflare provision -p project.yml
+
+.. note::
+
+   Provisioning takes approximately 1000 seconds to build each CVM image.
+
+**2.5 Output**
+
+Startup packages are generated in:
 
 .. code-block:: text
 
    ./workspace/example_project/prod_00/
-      /server1/server1.tgz
-      /site-1/site-1.tgz
+      server1/server1.tgz
+      site-1/site-1.tgz
+      admin@nvidia.com/
 
-We can then distribute these folders to each site.
+Step 3: Distribute
+-------------------
 
+Distribute the generated startup kits to each participant:
 
-Content of the CC startup kit
------------------------------
-For the admin, they can see it the same as the non-cc provision.
-For the server and sites, we now generate the NEW startup kit which only contains "server1.tgz",
-Once you untar it you will see the following:
+- Send ``server1.tgz`` to the server site
+- Send ``site-1.tgz`` to client site-1
+- Admin keeps the admin package locally
 
-.. code-block:: bash
+CVM Startup Kit Contents
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-   $ ls server1/cvm_885fe8f608b3/
-applog.qcow2  crypt_root.qcow2  initrd.img  launch_vm.sh  OVMF.amdsev.fd  README.txt  user_config.qcow2  user_data.qcow2  vmlinuz
-
-Each file is explained as below:
-
-  - Applog.qcow2: the disk file to store the application logs, NVFlare app logs will be written inside, we will have a section below explaining how to mount a qcow2 to inspect its content. Drive image for /applog. This is an unencrypted drive and can be mounted on any VM.
-  - Crypt_root.qcow2: Encrypted root drive. A key is required to mount it.
-  - Initrd.img: initramfs with init-app
-  - Launch_vm.sh: The launch script for the CVM
-  - OVMF.amdsev.fd: The firmware with support for kernel-hashes=on
-  - README.txt: To explain the content of this folder
-  - User_config.qcow2: the disk file to store the application configuration file, NVFlare use this to store the startup kits, users can mount and modify the content
-  - User_data.qcow2: This is just a placeholder for user_data drive. It's very small. Users may need to extend it.
-
-
-Run step
---------
-
-Once each folder is distributed to each site, we can un-tar it:
+Each startup kit (e.g., ``server1.tgz``) contains:
 
 .. code-block:: bash
 
    $ tar -zxvf server1.tgz
+   $ ls server1/cvm_885fe8f608b3/
 
-Then we just start it using `launch_vm.sh`:
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - File
+     - Description
+   * - ``applog.qcow2``
+     - Application log storage (unencrypted, can be mounted and inspected)
+   * - ``crypt_root.qcow2``
+     - Encrypted root filesystem (requires decryption key)
+   * - ``initrd.img``
+     - Initramfs with InitApp for attestation
+   * - ``launch_vm.sh``
+     - CVM launch script
+   * - ``OVMF.amdsev.fd``
+     - AMD SEV-SNP firmware with kernel-hashes support
+   * - ``README.txt``
+     - Documentation
+   * - ``user_config.qcow2``
+     - User configuration storage containing NVFlare startup kits
+   * - ``user_data.qcow2``
+     - User data storage (placeholder, can be extended)
+   * - ``vmlinuz``
+     - Linux kernel
+
+Step 4: Launch CVMs
+--------------------
+
+**4.1 Launch Server**
+
+On the server machine:
 
 .. code-block:: bash
 
-   $ cd cvm_xxx
-   $ ./launch_vm.sh
+   tar -zxvf server1.tgz
+   cd server1/cvm_*
+   ./launch_vm.sh
 
-Similarly, do the same for client site-1:
+**4.2 Launch Client**
 
-.. code-block:: bash
-
-   $ tar -zxvf site-1.tgz
-   $ cd cvm_yyy
-   $ ./launch_vm.sh
-
-The server and client will be started automatically inside each CVM. We can then use the admin client to interact with the system.
-
-Switch directory to NVFlare example:
+On each client machine:
 
 .. code-block:: bash
 
-   $ cd NVFlare/examples/advanced/cc_provision
+   tar -zxvf site-1.tgz
+   cd site-1/cvm_*
+   ./launch_vm.sh
 
-Copy job inside admin client:
+The server and clients will automatically start the NVFlare system inside their respective CVMs.
 
-.. code-block:: bash
+**4.3 Start Admin Console**
 
-   $ cp -r jobs/* ./workspace/example_project/prod_00/admin@nvidia.com/transfer/
-
-(Optional) if the server name is NOT a public Domain Name, please add an entry in your `/etc/hosts` for the admin client machine.
-
-Start the admin:
+On the admin machine:
 
 .. code-block:: bash
 
-   $ ./workspace/example_project/prod_00/admin@nvidia.com/startup/fl_admin.sh
+   cd NVFlare/examples/advanced/cc_provision
 
-Inside the admin console, we can submit the job:
+   # Copy jobs to admin transfer folder
+   cp -r jobs/* ./workspace/example_project/prod_00/admin@nvidia.com/transfer/
+
+.. note::
+
+   If the server name is not a public domain, add an entry in ``/etc/hosts`` on the admin machine.
+
+Start the admin console:
+
+.. code-block:: bash
+
+   ./workspace/example_project/prod_00/admin@nvidia.com/startup/fl_admin.sh
+
+**4.4 Submit Job**
+
+In the admin console:
 
 .. code-block:: bash
 
    submit_job hello-pt_cifar10_fedavg
 
-CC Configuration
-================
+Configuration Reference
+=======================
+
+CC Configuration Parameters
+---------------------------
 
 .. list-table::
    :header-rows: 1
+   :widths: 25 25 50
 
-   * - Field name
-     - Field value
-     - Meaning
-   * - compute_env
-     - onprem_cvm
-     - Computation environment
-   * - cc_cpu_mechanism
-     - amd_sev_snp
-     - CC CPU mechanism
-   * - role
-     - Server / client
-     - Role in NVFlare system
-   * - root_drive_size
-     - An integer
-     - GBs for root drive
-   * - applog_drive_size
-     - An integer
-     - GBs for applog drive
-   * - user_config_drive_size
-     - An integer
-     - GBs for user_config drive
-   * - user_data_drive_size
-     - An integer
-     - GBs for user_data drive
-   * - docker_archive
-     - ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
-     - Absolute path to the docker image saved using: `docker save <image_name> | gzip > app.tar.gz`
-   * - user_config
-     - A list of key-value pairs,
-     - This “value” path will be mounted in the docker container inside “/user_config/[key]”
-   * - cc_issuers
-     - 
-     - Contains lists of issuers that are implemented in NVFlare
-   * - id
-     - snp_authorizer
-     - ID of the issuer
-   * - path
-     - "nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer"
-     - Path to the issuer class
-   * - token_expiration
-     - 100
-     - Token expiration in seconds, needs to be less than “check_frequency”
-   * - cc_attestation
-     - 
-     - 
-   * - check_frequency
-     - 120
-     - In seconds, how frequent should we do attestation check
+   * - Parameter
+     - Example Value
+     - Description
+   * - ``compute_env``
+     - ``onprem_cvm``
+     - Computation environment type
+   * - ``cc_cpu_mechanism``
+     - ``amd_sev_snp``
+     - CPU confidential computing mechanism
+   * - ``role``
+     - ``server`` / ``client``
+     - Role in the NVFlare system
+   * - ``root_drive_size``
+     - ``30`` (GB)
+     - Size of the root filesystem drive
+   * - ``applog_drive_size``
+     - ``1`` (GB)
+     - Size of the application log drive
+   * - ``user_config_drive_size``
+     - ``1`` (GB)
+     - Size of the user configuration drive
+   * - ``user_data_drive_size``
+     - ``1`` (GB)
+     - Size of the user data drive
+   * - ``docker_archive``
+     - ``~/path/to/app.tar.gz``
+     - Path to Docker image archive (created with ``docker save``)
+   * - ``user_config``
+     - Key-value pairs
+     - Paths mounted in container at ``/user_config/[key]``
+   * - ``allowed_ports``
+     - List of ports
+     - Inbound ports to whitelist
+   * - ``allowed_out_ports``
+     - List of ports
+     - Outbound ports to whitelist
+   * - ``cc_issuers``
+     - List of authorizers
+     - CC attestation token issuers
+   * - ``token_expiration``
+     - ``100`` (seconds)
+     - Token validity duration (must be < ``check_frequency``)
+   * - ``check_frequency``
+     - ``120`` (seconds)
+     - Attestation check interval
+   * - ``failure_action``
+     - ``stop_job``
+     - Action on attestation failure
 
-How to inspect content of a qcow2 file
-======================================
+Complete Configuration Examples
+--------------------------------
 
-You can use the following command to inspect the content of a qcow2 file:
-
-  - Load the nbd kernel module: 
-  
-  .. code-block:: bash
-
-    sudo modprobe nbd max_part=8
-
-  - Connect the QCOW2 image: sudo qemu-nbd --connect=/dev/nbd0 user_config.qcow2
-
-  .. code-block:: bash
-
-    sudo qemu-nbd --connect=/dev/nbd0 user_config.qcow2
-
-  - Mount the image to local file system: sudo mount /dev/nbd0 /mnt/user_config 
-
-  .. code-block:: bash
-
-    sudo mount /dev/nbd0 /mnt/user_config 
-
-  - Check the content inside: 
-
-  .. code-block:: bash
-
-    ls /mnt/user_config
-
-
-  - In NVFlare, we will put the startup kits inside user_config, so we can 
-    check inside it has the startup kit content:
-
-  .. code-block:: bash
-
-    ls /mnt/user_config/nvflare/
-
-  - Now we can safely unmount:
-
-  .. code-block:: bash
-
-    sudo umount /mnt/user_config
-
-  - And disconnect:
-
-  .. code-block:: bash
-
-    sudo qemu-nbd --disconnect /dev/nbd0
-
-
-Reference YAMLs for machine with AMD SNP-SEV enabled CPU
-========================================================
+**Project Configuration (project.yml)**
 
 .. code-block:: yaml
 
-   $ cat project_local.yml
    api_version: 3
    name: example_project
    description: NVIDIA FLARE sample project yaml file
 
    participants:
-     # Change the name of the server (server1) to the Fully Qualified Domain Name
-     # (FQDN) of the server, for example: server1.example.com.
-     # Ensure that the FQDN is correctly mapped in the /etc/hosts file.
      - name: server1
        type: server
        org: nvidia
        fed_learn_port: 8002
-       cc_config: cc_server1_local.yml
+       cc_config: cc_server1.yml
      - name: site-1
        type: client
        org: nvidia
-       cc_config: cc_site-1_local.yml
-       # Specifying listening_host will enable the creation of one pair of
-       # certificate/private key for this client, allowing the client to function
-       # as a server for 3rd-party integration.
-       # The value must be a hostname that the external trainer can reach via the network.
-       # listening_host: site-1-lh
+       cc_config: cc_site-1.yml
      - name: admin@nvidia.com
        type: admin
        org: nvidia
        role: project_admin
 
-   # The same methods in all builders are called in their order defined in builders section
    builders:
      - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
      - path: nvflare.lighter.impl.static_file.StaticFileBuilder
        args:
-         # config_folder can be set to inform NVIDIA FLARE where to get configuration
          config_folder: config
-
-         # scheme for communication driver (currently supporting the default, grpc, only).
-         # scheme: grpc
-
-         # app_validator is used to verify if uploaded app has proper structures
-         # if not set, no app_validator is included in fed_server.json
-         # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
-
-        # download_job_url is set to http://download.server.com/ as default in fed_server.json.  You can override this
-        # to different url.
-        # download_job_url: http://download.server.com/
-
-    - path: nvflare.lighter.impl.cert.CertBuilder
+     - path: nvflare.lighter.impl.cert.CertBuilder
      - path: nvflare.lighter.impl.signature.SignatureBuilder
      - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
+
    packager:
      path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
      args:
-       # this needs to be replace with the real path of the image build scripts
        build_image_cmd: ~/nvflare-github/nvflare/lighter/cc/image_builder/cvm_build.sh
+
+**Server Configuration (cc_server1.yml)**
 
 .. code-block:: yaml
 
-   $ cat cc_server1_local.yml
    compute_env: onprem_cvm
    cc_cpu_mechanism: amd_sev_snp
    role: server
@@ -412,33 +458,38 @@ Reference YAMLs for machine with AMD SNP-SEV enabled CPU
    applog_drive_size: 1
    user_config_drive_size: 1
    user_data_drive_size: 1
+
    # Docker image archive saved using:
    # docker save <image_name> | gzip > app.tar.gz
    docker_archive: ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
-   # will be mount inside docker "/user_config/nvflare"
+
+   # Will be mounted inside docker at "/user_config/nvflare"
    user_config:
      nvflare: /tmp/startup_kits
 
+   # Inbound ports whitelist
    allowed_ports:
-    - 8002
+     - 8002
 
+   # Outbound ports whitelist
    allowed_out_ports:
-   - 443
-   - 8002
-   - 8999
+     - 443    # HTTPS
+     - 8002   # NVFlare
+     - 8999   # Trustee KBS
 
    cc_issuers:
      - id: snp_authorizer
        path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
-       token_expiration: 100 # seconds, needs to be less than check_frequency
+       token_expiration: 100  # seconds, must be < check_frequency
 
    cc_attestation:
-     check_frequency: 120 # seconds
+     check_frequency: 120  # seconds
      failure_action: stop_job
+
+**Client Configuration (cc_site-1.yml)**
 
 .. code-block:: yaml
 
-   $ cat cc_site-1_local.yml
    compute_env: onprem_cvm
    cc_cpu_mechanism: amd_sev_snp
    role: client
@@ -448,24 +499,103 @@ Reference YAMLs for machine with AMD SNP-SEV enabled CPU
    applog_drive_size: 1
    user_config_drive_size: 1
    user_data_drive_size: 1
-   # Docker image archive saved using:
-   # docker save <image_name> | gzip > app.tar.gz
+
+   # Docker image archive
    docker_archive: ~/NVFlare/examples/advanced/cc_provision/docker/nvflare-site.tar.gz
 
-   # for debugging purpose
+   # For non-public domain server names
    hosts_entries:
-      server1: 10.176.200.152
+     server1: 10.176.200.152
 
-   # will be mount inside docker "/user_config/nvflare"
+   # Will be mounted inside docker at "/user_config/nvflare"
    user_config:
      nvflare: /tmp/startup_kits
 
    cc_issuers:
      - id: snp_authorizer
        path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
-       token_expiration: 100 # seconds, needs to be less than check_frequency
+       token_expiration: 100  # seconds, must be < check_frequency
 
    cc_attestation:
-     check_frequency: 120 # seconds
+     check_frequency: 120  # seconds
      failure_action: stop_job
 
+Troubleshooting
+===============
+
+Inspecting QCOW2 Disk Images
+-----------------------------
+
+To inspect the contents of a QCOW2 disk image (e.g., ``user_config.qcow2``):
+
+**1. Load the NBD kernel module:**
+
+.. code-block:: bash
+
+   sudo modprobe nbd max_part=8
+
+**2. Connect the QCOW2 image:**
+
+.. code-block:: bash
+
+   sudo qemu-nbd --connect=/dev/nbd0 user_config.qcow2
+
+**3. Mount the image:**
+
+.. code-block:: bash
+
+   sudo mount /dev/nbd0 /mnt/user_config
+
+**4. Inspect the contents:**
+
+.. code-block:: bash
+
+   ls /mnt/user_config
+
+For NVFlare startup kits:
+
+.. code-block:: bash
+
+   ls /mnt/user_config/nvflare/
+
+**5. Unmount:**
+
+.. code-block:: bash
+
+   sudo umount /mnt/user_config
+
+**6. Disconnect:**
+
+.. code-block:: bash
+
+   sudo qemu-nbd --disconnect /dev/nbd0
+
+Common Issues
+-------------
+
+**Issue: CVM fails to boot**
+
+- Check the ``applog.qcow2`` for boot logs
+- Verify firmware is correctly installed
+- Ensure kernel-hashes is enabled in the firmware
+
+**Issue: Attestation failure**
+
+- Verify Trustee KBS server is accessible
+- Check network connectivity to attestation service
+- Ensure correct ports are whitelisted in ``allowed_out_ports``
+
+**Issue: Server/Client connection fails**
+
+- Verify ``/etc/hosts`` entries if not using public domain
+- Check firewall rules
+- Ensure correct ports are configured in both server and client
+
+Next Steps
+==========
+
+After successfully deploying the system:
+
+- Review the :ref:`NVFlare CC Architecture <cc_architecture>` for understanding the security model
+- Consult :ref:`confidential_computing_attestation` for attestation details
+- Explore advanced configuration options for your specific use case

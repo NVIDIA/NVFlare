@@ -135,14 +135,14 @@ Develop Edge Applications with FLARE
 
    .. image:: resources/hierarchical_fl.png
         :height: 150px
+
    .. image:: resources/edge_cross_device_fl.png
         :height: 150px
+
    .. image:: resources/edge_simplify_device_programming.png
         :height: 150px
 
-    - Support for hierarchical federated architecture: :ref:`Hierarchical FLARE <flare_hierarchical_architecture>`
-    - Asynchronous federated learning algorithm based on FedBuff: :ref:`flare_edge`
-    - Model development support for both iOS and Android: :ref:`flare_mobile`
+
 
 FLARE 2.7 extends federated learning to edge devices with features that directly address the unique challenges of edge
 environments:
