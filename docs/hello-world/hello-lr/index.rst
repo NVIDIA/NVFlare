@@ -268,6 +268,7 @@ Running Job
 Execute the following command to launch federated logistic regression. This will run in nvflare's simulation mode.
 
 .. code-block:: text
+
     python job.py
 
 

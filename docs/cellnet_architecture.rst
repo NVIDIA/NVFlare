@@ -137,7 +137,7 @@ Every cell is identified by a Fully Qualified Cell Name (FQCN), which is a dot-s
 6. **End-to-end encryption**
 
 Message Structure and Addressing
-###############################
+################################
 
 Channel and Topic Addressing
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
