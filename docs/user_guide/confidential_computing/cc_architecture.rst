@@ -571,12 +571,12 @@ General Security Measure
 ------------------------
 
 For all applications, we need the following additional security measures:
-- **Attestation service agent**:
-  - Perform the self-attestation using both CPU and GPU attestation service at start.
-  - Boot level attestation is only for CPU, we need to attest GPU as well.
-  - Perform periodical self-tests to make sure the system is not compromised.
-- **Code Level security**:
-  - No dynamic code changes.
+    - **Attestation service agent**:
+        - Perform the self-attestation using both CPU and GPU attestation service at start.
+        - Boot level attestation is only for CPU, we need to attest GPU as well.
+        - Perform periodical self-tests to make sure the system is not compromised.
+    - **Code Level security**:
+        - No dynamic code changes.
 
 FLARE-Specific Security
 -----------------------

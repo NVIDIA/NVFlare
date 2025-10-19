@@ -339,7 +339,7 @@ Closes the trainer and releases resources.
    override fun close()
 
 DataSource Interface
-===================
+====================
 
 Interface for providing training data to the FL system.
 

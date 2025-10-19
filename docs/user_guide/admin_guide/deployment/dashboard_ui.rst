@@ -48,7 +48,7 @@ New User Registration
 
 After clicking ``Sign Up`` on the Home Page, the User Registration page has fields for filling out the user's email, name, and password.
 
-.. figure:: ../resources/dashboard_user_registration.png
+.. figure:: ../../../resources/dashboard_user_registration.png
     :height: 500px
 
     User Registration first page for email, name, and password.
@@ -56,7 +56,7 @@ After clicking ``Sign Up`` on the Home Page, the User Registration page has fiel
 Proceeding to the next page, fill out the field for organization and select a role. If these values need to be updated later, you will need to contact the Project
 Admin to help you update them.
 
-.. figure:: ../resources/dashboard_user_registration_2.png
+.. figure:: ../../../resources/dashboard_user_registration_2.png
     :height: 500px
 
     User Registration second page for organization and role.
@@ -72,7 +72,7 @@ On the User Dashboard, you can click ``Edit My Profile`` to update your password
 
 Note that immediately after registering, you will not be able to download your startup kit until you have been approved by the Project Admin.
 
-.. figure:: ../resources/dashboard_user_info.png
+.. figure:: ../../../resources/dashboard_user_info.png
     :height: 500px
 
     User Info after registration.
@@ -92,7 +92,7 @@ was previously called the Admin Client before NVIDIA FLARE 2.2.
 
     Download page with FLARE Console.
 
-.. figure:: ../resources/dashboard_download_pin.png
+.. figure:: ../../../resources/dashboard_download_pin.png
     :height: 200px
 
     PIN for unzipping the download.
@@ -213,7 +213,7 @@ that are of the role ``Org Admin``.
 Server Configuration
 ----------------------
 
-.. figure:: ../resources/dashboard_server_config.png
+.. figure:: ../../../resources/dashboard_server_config.png
     :height: 500px
 
     Server Configuration page.
@@ -228,7 +228,7 @@ Users Dashboard
 On the Users Dashboard, the Project Admin can see all of the users that have registered with the system and their name, email, organization,
 role, created time, approval status, and download count for their FLARE Console.
 
-.. figure:: ../resources/dashboard_users_dashboard.png
+.. figure:: ../../../resources/dashboard_users_dashboard.png
     :height: 500px
 
     Project Admin: Users Dashboard.
@@ -237,7 +237,7 @@ By clicking the organization or role, the Project Admin can update and change th
 their organization or role after setting it initially and only the Project Admin has the ability to change these values. The name and email
 cannot be changed for any users, so if it is necessary to change that, the Project Admin may need to delete the user and have the user sign up again.
 
-.. figure:: ../resources/dashboard_users_dash_actions.png
+.. figure:: ../../../resources/dashboard_users_dash_actions.png
     :height: 200px
 
     Project Admin: Approve, deny, or delete on Users Dashboard.
@@ -255,7 +255,7 @@ Client Sites Dashboard
 On the Client Sites Dashboard, the Project Admin can see the name and capacity specification for each client site in the system as well as the
 organization of the user that created the site, time of creation, approval status, and download count of that site's startup kit.
 
-.. figure:: ../resources/dashboard_sites_dashboard.png
+.. figure:: ../../../resources/dashboard_sites_dashboard.png
     :height: 500px
 
     Project Admin: Client Sites Dashboard.
@@ -263,7 +263,7 @@ organization of the user that created the site, time of creation, approval statu
 By clicking on the name of a client site, the Project Admin can change the client site name with inline editing. Note that client sites that
 have been approved cannot have the name changed anymore.
 
-.. figure:: ../resources/dashboard_client_sites_actions.png
+.. figure:: ../../../resources/dashboard_client_sites_actions.png
     :height: 200px
 
     Project Admin: Approve, deny, or delete client sites on the Client Sites Dashboard.
