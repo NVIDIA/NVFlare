@@ -13,9 +13,9 @@ For detailed information about provisioning, refer to :ref:`provisioning`. This 
 
 .. include:: nvflare_cli/dashboard_command.rst
 
-**********************************
+***********************************
 NVIDIA FLARE Dashboard Backend APIs
-**********************************
+***********************************
 
 Architecture
 ============

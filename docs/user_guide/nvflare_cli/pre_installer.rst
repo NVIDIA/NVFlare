@@ -1,8 +1,8 @@
 .. _pre_installer:
 
-########################
+##########################
 NVFLARE Code Pre-Installer
-########################
+##########################
 
 This tool helps install NVFLARE application code and libraries before running federated learning jobs.
 
