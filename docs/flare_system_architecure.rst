@@ -253,3 +253,8 @@ This section provides an overview of the communication framework architecture, c
 
 for mode details please refer to cellnet architecture :ref:`cellnet_architecture`
 
+
+Security Architecture
+---------------------
+
+Please refer to :ref:`flare_security_overview` for the security architecture.
