@@ -57,6 +57,9 @@ class PTFedAvgStream(Strategy):
 
     def _do_one_round(self, r, current_model, ctx: Context):
         aggr_result = _AggrResult()
+        model2 = {}
+        for k, v in current_model.items():
+            model2[k] = v + 2.0
 
         grp = all_clients(
             ctx,
@@ -72,12 +75,13 @@ class PTFedAvgStream(Strategy):
             )
             model_type = "ref"
             model = downloader.add_model(current_model, 2)
+            model2 = downloader.add_model(model2, 2)
             self.logger.info(f"prepared model as ref: {model}")
         else:
             model = current_model
             model_type = "model"
 
-        grp.train(r, model, model_type)
+        grp.train(r, model, model2, model_type)
 
         if aggr_result.count == 0:
             return None
@@ -130,17 +134,25 @@ class PTTrainer(ClientApp):
         self.delta = delta
 
     @collab
-    def train(self, current_round, weights, model_type: str, context: Context):
+    def train(self, current_round, model1, model2, model_type: str, context: Context):
         if context.is_aborted():
             self.logger.debug("training aborted")
             return 0
-        self.logger.debug(f"[{context.header_str()}] training round {current_round}: {model_type=} {weights=}")
+        self.logger.debug(f"[{context.header_str()}] training round {current_round}: {model_type=} {model1=} {model2=}")
         if model_type == "ref":
-            err, model = download_model(ref=weights, per_request_timeout=5.0, ctx=context)
+            err, model1 = download_model(ref=model1, per_request_timeout=5.0, ctx=context)
             if err:
-                raise RuntimeError(f"failed to download model {weights}: {err}")
-            self.logger.info(f"downloaded model {model}")
-            weights = model
+                raise RuntimeError(f"failed to download model1 {model1}: {err}")
+            self.logger.info(f"downloaded model1 {model1}")
+
+            err, model2 = download_model(ref=model2, per_request_timeout=5.0, ctx=context)
+            if err:
+                raise RuntimeError(f"failed to download model2 {model2}: {err}")
+            self.logger.info(f"downloaded model2 {model2}")
+
+        weights = {}
+        for k, v in model1.items():
+            weights[k] = v + model2[k]
 
         result = {}
         for k, v in weights.items():
