@@ -641,6 +641,7 @@ For IP Protection Use Cases
 References
 ==========
 
+- NVIDIA Deployment Guide for SecureAI: https://docs.nvidia.com/cc-deployment-guide-tdx.pdf
 - RATS architecture: https://www.rfc-editor.org/rfc/rfc9334.html
 - Google Confidential Space Security Overview: https://cloud.google.com/docs/security/confidential-space
 - Confidential containers trustee attestation service solution overview and use cases https://www.redhat.com/en/blog/introducing-confidential-containers-trustee-attestation-services-solution-overview-and-use-cases
