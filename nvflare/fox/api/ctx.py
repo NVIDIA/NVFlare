@@ -16,7 +16,7 @@ from nvflare.apis.signal import Signal
 
 class Context:
 
-    def __init__(self, app, caller: str, callee: str, abort_signal: Signal, props: dict = None):
+    def __init__(self, app, caller: str, callee: str, abort_signal: Signal, props: dict = None, target_group=None):
         if not isinstance(caller, str):
             raise ValueError(f"caller must be str but got {type(caller)}")
 
@@ -25,6 +25,7 @@ class Context:
 
         self.caller = caller
         self.callee = callee
+        self.target_group = target_group
         self.abort_signal = abort_signal
         self.app = app
         self.props = {}
@@ -54,6 +55,13 @@ class Context:
     @property
     def workspace(self):
         return self.app.get_workspace()
+
+    @property
+    def target_group_size(self):
+        if self.target_group:
+            return self.target_group.size
+        else:
+            return 1
 
     def set_prop(self, name: str, value):
         self.props[name] = value
