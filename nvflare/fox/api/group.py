@@ -65,6 +65,14 @@ class Group:
         if not wait_after_min_resps:
             self._wait_after_min_resps = 0
 
+    @property
+    def size(self):
+        return len(self._proxies)
+
+    @property
+    def members(self):
+        return self._proxies
+
     def __getattr__(self, func_name):
         """
         This method is called when Python cannot find an invoked method func_name of this class.
@@ -76,7 +84,7 @@ class Group:
             # filter once for all targets
             p = self._proxies[0]
             the_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
-            ctx = the_proxy.app.new_context(the_proxy.app.name, the_proxy.name)
+            ctx = the_proxy.app.new_context(the_proxy.app.name, the_proxy.name, target_group=self)
 
             self._logger.debug(f"[{ctx.header_str()}] calling {func_name} of group {[p.name for p in self._proxies]}")
 
@@ -88,7 +96,7 @@ class Group:
             for p in self._proxies:
                 the_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, adj_args, adj_kwargs)
                 call_kwargs = copy.copy(call_kwargs)
-                ctx = self._app.new_context(the_proxy.caller_name, the_proxy.name)
+                ctx = self._app.new_context(the_proxy.caller_name, the_proxy.name, target_group=self)
                 call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
                 # set the optional args to help backend decide how to call
@@ -116,7 +124,7 @@ class Group:
 
             # wait for responses
             if not self._blocking:
-                return
+                return None
 
             start_time = time.time()
             min_received_time = None

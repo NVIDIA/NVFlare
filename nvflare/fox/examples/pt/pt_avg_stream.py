@@ -25,7 +25,7 @@ from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.pt.utils import parse_state_dict
 from nvflare.fox.sim.simulator import Simulator
-from nvflare.fox.sys.state_dict_downloader import StateDictDownloader, download_state_dict
+from nvflare.fox.sys.model_downloader import ModelDownloader, download_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -58,30 +58,26 @@ class PTFedAvgStream(Strategy):
     def _do_one_round(self, r, current_model, ctx: Context):
         aggr_result = _AggrResult()
 
-        # pretend the model is big
-        downloader = None
+        grp = all_clients(
+            ctx,
+            process_resp_cb=self._accept_train_result,
+            aggr_result=aggr_result,
+        )
+
         if ctx.env_type == EnvType.SYSTEM:
-            downloader = StateDictDownloader(
-                state_dict=current_model,
+            downloader = ModelDownloader(
+                num_receivers=grp.size,
                 ctx=ctx,
                 timeout=5.0,
-                num_tensors_per_chunk=2,
             )
             model_type = "ref"
-            model = downloader.get_ref()
+            model = downloader.add_model(current_model, 2)
             self.logger.info(f"prepared model as ref: {model}")
         else:
             model = current_model
             model_type = "model"
 
-        all_clients(
-            ctx,
-            process_resp_cb=self._accept_train_result,
-            aggr_result=aggr_result,
-        ).train(r, model, model_type)
-
-        if downloader:
-            downloader.clear()
+        grp.train(r, model, model_type)
 
         if aggr_result.count == 0:
             return None
@@ -97,11 +93,11 @@ class PTFedAvgStream(Strategy):
 
         model, model_type = result
         if model_type == "ref":
-            err, model = download_state_dict(
+            err, model = download_model(
                 ref=model,
                 per_request_timeout=5.0,
                 ctx=context,
-                tensors_received_cb=self._aggregate_tensors,
+                model_received_cb=self._aggregate_tensors,
                 aggr_result=aggr_result,
                 context=context,
             )
@@ -140,7 +136,7 @@ class PTTrainer(ClientApp):
             return 0
         self.logger.debug(f"[{context.header_str()}] training round {current_round}: {model_type=} {weights=}")
         if model_type == "ref":
-            err, model = download_state_dict(ref=weights, per_request_timeout=5.0, ctx=context)
+            err, model = download_model(ref=weights, per_request_timeout=5.0, ctx=context)
             if err:
                 raise RuntimeError(f"failed to download model {weights}: {err}")
             self.logger.info(f"downloaded model {model}")
@@ -152,24 +148,18 @@ class PTTrainer(ClientApp):
 
         if model_type == "ref":
             # stream it
-            downloader = StateDictDownloader(
-                state_dict=result,
+            downloader = ModelDownloader(
+                num_receivers=1,
                 ctx=context,
                 timeout=5.0,
-                num_tensors_per_chunk=2,
-                state_dict_downloaded_cb=self._download_done,
             )
             model_type = "ref"
-            model = downloader.get_ref()
+            model = downloader.add_model(result, 2)
             self.logger.info(f"prepared result as ref: {model}")
         else:
             model = result
             model_type = "model"
         return model, model_type
-
-    def _download_done(self, downloader: StateDictDownloader, to_site: str, status: str, ctx: Context):
-        self.logger.info(f"[{ctx.header_str()}] finished downloading model to {to_site}: {status}")
-        downloader.clear()
 
 
 def main():
