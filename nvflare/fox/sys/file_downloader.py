@@ -13,6 +13,7 @@
 # limitations under the License.
 from nvflare.fox.api.ctx import Context
 from nvflare.fox.sys.backend import SysBackend
+from nvflare.fox.sys.constants import DownloaderKey
 from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
 
 
@@ -40,7 +41,7 @@ def prepare_file_for_download(
         file_downloaded_cb=file_downloaded_cb,
         **cb_kwargs,
     )
-    return {"source": cell.get_fqcn(), "rid": rid}
+    return {DownloaderKey.SOURCE: cell.get_fqcn(), DownloaderKey.REF_ID: rid}
 
 
 def download_file(ref: dict, per_request_timeout: float, ctx: Context):
@@ -49,8 +50,8 @@ def download_file(ref: dict, per_request_timeout: float, ctx: Context):
         raise ValueError(f"backend must be SysBackend but got {type(backend)}")
 
     err, file_path = FileDownloader.download_file(
-        from_fqcn=ref.get("source"),
-        ref_id=ref.get("rid"),
+        from_fqcn=ref.get(DownloaderKey.SOURCE),
+        ref_id=ref.get(DownloaderKey.REF_ID),
         per_request_timeout=per_request_timeout,
         cell=backend.cell,
         abort_signal=ctx.abort_signal,

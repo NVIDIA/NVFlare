@@ -130,23 +130,21 @@ class NPTrainer(ClientApp):
             os.remove(file_path)
 
         result = weights + self.delta
+
         if model_type == "ref":
             # stream it
             file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
             save_np_model(result, file_name)
-            model = prepare_file_for_download(
+            result = prepare_file_for_download(
                 num_receivers=1,
                 file_name=file_name,
                 ctx=context,
                 timeout=5.0,
                 file_downloaded_cb=self._result_downloaded,
             )
-            model_type = "ref"
-            self.logger.info(f"prepared result as ref: {model}")
-        else:
-            model = result
-            model_type = "model"
-        return model, model_type
+            self.logger.info(f"prepared result as ref: {result}")
+
+        return result, model_type
 
     def _result_downloaded(self, to_site: str, status: str, file_name):
         self.logger.info(f"model file {file_name} downloaded to {to_site}: {status=}")

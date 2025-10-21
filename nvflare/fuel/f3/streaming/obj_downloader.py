@@ -394,7 +394,7 @@ class ObjDownloader:
         assert isinstance(payload, dict)
         rid = payload.get(_PropKey.REF_ID)
         if not rid:
-            cls._logger.erro(f"missing {_PropKey.REF_ID} in request from {requester}")
+            cls._logger.error(f"missing {_PropKey.REF_ID} in request from {requester}")
             return make_reply(ReturnCode.INVALID_REQUEST)
 
         current_state = payload.get(_PropKey.STATE)
