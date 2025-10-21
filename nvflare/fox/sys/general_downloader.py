@@ -11,16 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import torch
-
-from nvflare.app_opt.pt.tensor_downloader import TensorDownloader
 from nvflare.fox.api.ctx import Context
 from nvflare.fox.sys.backend import SysBackend
+from nvflare.fuel.f3.streaming.obj_downloader import Downloadable, ObjDownloader
 
 from .constants import DownloaderKey
 
 
-class ModelDownloader:
+class GeneralDownloader:
 
     def __init__(
         self,
@@ -33,32 +31,15 @@ class ModelDownloader:
             raise ValueError(f"backend must be SysBackend but got {type(backend)}")
 
         self.cell = backend.cell
-        self.tx_id = TensorDownloader.new_transaction(
+        self.tx_id = ObjDownloader.new_transaction(
             cell=self.cell,
             timeout=timeout,
             num_receivers=num_receivers,
         )
 
-    def add_model(self, model: dict[str, torch.Tensor], num_tensors_per_chunk: int = 1):
-        rid = TensorDownloader.add_tensors(
+    def add_object(self, obj: Downloadable):
+        rid = ObjDownloader.add_object(
             transaction_id=self.tx_id,
-            tensors=model,
-            num_tensors_per_chunk=num_tensors_per_chunk,
+            obj=obj,
         )
         return {DownloaderKey.SOURCE: self.cell.get_fqcn(), DownloaderKey.REF_ID: rid}
-
-
-def download_model(ref: dict, per_request_timeout: float, ctx: Context, model_received_cb=None, **cb_kwargs):
-    backend = ctx.backend
-    if not isinstance(backend, SysBackend):
-        raise ValueError(f"backend must be SysBackend but got {type(backend)}")
-
-    return TensorDownloader.download_tensors(
-        from_fqcn=ref.get(DownloaderKey.SOURCE),
-        ref_id=ref.get(DownloaderKey.REF_ID),
-        per_request_timeout=per_request_timeout,
-        cell=backend.cell,
-        abort_signal=ctx.abort_signal,
-        tensors_received_cb=model_received_cb,
-        **cb_kwargs,
-    )

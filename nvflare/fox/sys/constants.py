@@ -34,3 +34,8 @@ class ObjectCallKey:
 class CallReplyKey:
     ERROR = "error"
     RESULT = "result"
+
+
+class DownloaderKey:
+    SOURCE = "source"
+    REF_ID = "ref_id"
