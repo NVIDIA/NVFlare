@@ -44,7 +44,7 @@ class BinaryTransfer:
         download_tid = FileDownloader.new_transaction(
             cell=engine.get_cell(),
             timeout=5,
-            timeout_cb=self._cleanup_tx,
+            transaction_done_cb=self._cleanup_tx,
             tx_path=tx_path,
         )
 

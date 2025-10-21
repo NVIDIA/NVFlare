@@ -272,7 +272,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             tx_id = self.file_downloader_class.new_transaction(
                 cell=cell,
                 timeout=timeout,
-                timeout_cb=self._delete_download_tx,
+                transaction_done_cb=self._delete_download_tx,
             )
 
         if msg_root_id:
@@ -385,7 +385,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
     def _delete_download_tx_on_msg_root(self, msg_root_id: str, download_tx_id: str):
         # this CB is triggered when msg root is deleted.
         self.logger.debug(f"deleting download_tx_id {download_tx_id} associated with {msg_root_id=}")
-        self.file_downloader_class.delete_transaction(download_tx_id, call_cb=True)
+        self.file_downloader_class.delete_transaction(download_tx_id)
 
     def _delete_download_tx(self, tx_id, file_names):
         # this CB is triggered when download tx times out or is deleted

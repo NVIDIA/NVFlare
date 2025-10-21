@@ -37,7 +37,6 @@ class ModelDownloader:
         self.tx_id = TensorDownloader.new_transaction(
             cell=self.cell,
             timeout=timeout,
-            timeout_cb=None,
             num_receivers=num_receivers,
         )
 

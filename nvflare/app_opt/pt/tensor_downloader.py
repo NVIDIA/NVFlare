@@ -18,15 +18,17 @@ from safetensors.torch import load as load_tensors
 from safetensors.torch import save as save_tensors
 
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.streaming.cached_obj_downloader import CachedObjDownloader, CountableObject, ItemConsumer
+from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
+from nvflare.fuel.f3.streaming.obj_downloader import ObjDownloader, download_object
 
 
-class _TensorSource(CountableObject):
+class TensorDownloadable(CacheableObject):
 
-    def __init__(self, tensors: dict[str, torch.Tensor]):
+    def __init__(self, tensors: dict[str, torch.Tensor], num_items_per_chunk: int):
         self.tensors = tensors
         self.size = len(tensors)
         self.keys = list(tensors.keys())
+        super().__init__(num_items_per_chunk)
 
     def get_item_count(self) -> int:
         return self.size
@@ -37,7 +39,7 @@ class _TensorSource(CountableObject):
         return save_tensors(tensor_to_send)
 
 
-class _ChunkConsumer(ItemConsumer):
+class TensorConsumer(ItemConsumer):
 
     def __init__(self, tensors_received_cb, cb_kwargs):
         ItemConsumer.__init__(self)
@@ -75,7 +77,7 @@ class TensorDownloader:
         cell: Cell,
         num_receivers: int,
         timeout: float = 5.0,
-        timeout_cb=None,
+        transaction_done_cb=None,
         **cb_kwargs,
     ):
         """Create a new tensor download transaction.
@@ -84,30 +86,30 @@ class TensorDownloader:
             cell: the cell for communication with recipients
             num_receivers: number of receivers
             timeout: timeout for the transaction
-            timeout_cb: CB to be called when the transaction is timed out
+            transaction_done_cb: CB to be called when the transaction is done
             **cb_kwargs: args to be passed to the CB
 
         Returns: transaction id
 
-        The timeout_cb must follow this signature:
+        The transaction_done_cb must follow this signature:
 
             cb(tx_id, tensors: List[dict[str, torch.Tensor], **cb_args)
 
         """
-        return CachedObjDownloader.new_transaction(
+        return ObjDownloader.new_transaction(
             cell=cell,
             num_receivers=num_receivers,
             timeout=timeout,
-            timeout_cb=cls._tx_timeout,
-            cb_info=(timeout_cb, cb_kwargs),
+            transaction_done_cb=cls._tx_done,
+            cb_info=(transaction_done_cb, cb_kwargs),
         )
 
     @classmethod
-    def _tx_timeout(cls, tx_id: str, objs: List[Any], cb_info: tuple):
-        app_timeout_cb, cb_kwargs = cb_info
-        if app_timeout_cb:
-            sds = [obj.tensors for obj in objs]
-            app_timeout_cb(tx_id, sds, **cb_kwargs)
+    def _tx_done(cls, tx_id: str, status: str, objs, cb_info):
+        transaction_done_cb, cb_kwargs = cb_info
+        if transaction_done_cb:
+            tensors = [obj.tensors for obj in objs]
+            transaction_done_cb(tx_id, tensors, **cb_kwargs)
 
     @classmethod
     def add_tensors(
@@ -126,11 +128,10 @@ class TensorDownloader:
         Returns: reference id for the state dict.
 
         """
-        obj = _TensorSource(tensors)
-        return CachedObjDownloader.add_object(
+        obj = TensorDownloadable(tensors, num_tensors_per_chunk)
+        return ObjDownloader.add_object(
             transaction_id=transaction_id,
             obj=obj,
-            num_items_per_chunk=num_tensors_per_chunk,
         )
 
     @classmethod
@@ -161,14 +162,15 @@ class TensorDownloader:
         Returns: tuple of (error message if any, downloaded state dict).
 
         """
-        consumer = _ChunkConsumer(tensors_received_cb, cb_kwargs)
-        return CachedObjDownloader.download_object(
+        consumer = TensorConsumer(tensors_received_cb, cb_kwargs)
+        download_object(
             from_fqcn=from_fqcn,
             ref_id=ref_id,
-            item_consumer=consumer,
+            consumer=consumer,
             per_request_timeout=per_request_timeout,
             cell=cell,
             secure=secure,
             optional=optional,
             abort_signal=abort_signal,
         )
+        return consumer.error, consumer.result

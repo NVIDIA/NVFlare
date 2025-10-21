@@ -14,11 +14,12 @@
 import os.path
 import tempfile
 import uuid
-from typing import Any, List, Optional
+from typing import Any, Optional, Tuple
 
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.streaming.obj_downloader import Consumer, ObjDownloader, Producer, ProduceRC, download_object
-from nvflare.fuel.utils.validation_utils import check_positive_int
+from nvflare.fuel.f3.streaming.obj_downloader import Consumer, Downloadable, ObjDownloader, ProduceRC, download_object
+from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.validation_utils import check_callable, check_positive_int
 
 DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024
 
@@ -32,9 +33,15 @@ class _StateKey:
     RECEIVED_BYTES = "received_bytes"
 
 
-class _File:
+class FileDownloadable(Downloadable):
 
-    def __init__(self, file_name):
+    def __init__(
+        self,
+        file_name: str,
+        chunk_size=None,
+        file_downloaded_cb=None,
+        **cb_kwargs,
+    ):
         """This is the "object" to be downloaded.
 
         Args:
@@ -43,38 +50,45 @@ class _File:
         self.name = file_name
         self.size = os.path.getsize(file_name)
 
-
-class _ChunkProducer(Producer):
-
-    def __init__(self, chunk_size=None):
-        Producer.__init__(self)
         if not chunk_size:
             chunk_size = DEFAULT_CHUNK_SIZE
 
         check_positive_int("chunk_size", chunk_size)
+        if file_downloaded_cb:
+            check_callable("file_downloaded_cb", file_downloaded_cb)
         self.chunk_size = chunk_size
+        self.file_downloaded_cb = file_downloaded_cb
+        self.cb_kwargs = cb_kwargs
+        self.logger = get_obj_logger(self)
 
-    def produce(self, ref_id: str, obj, state: dict, requester: str) -> (str, Any, dict):
-        assert isinstance(obj, _File)
+    def produce(self, state: dict, requester: str) -> Tuple[str, Any, dict]:
         received_bytes = 0
         if state:
             received_bytes = state.get(_StateKey.RECEIVED_BYTES, 0)
 
         if not isinstance(received_bytes, int) or received_bytes < 0:
             self.logger.error(f"bad {_StateKey.RECEIVED_BYTES} {received_bytes} from {requester}")
-            return ProduceRC.ERROR, None, None
+            return ProduceRC.ERROR, None, {}
 
-        if received_bytes >= obj.size:
+        if received_bytes >= self.size:
             # already done
-            return ProduceRC.EOF, None, None
+            return ProduceRC.EOF, None, {}
 
-        num_bytes_to_send = min(self.chunk_size, obj.size - received_bytes)
-        with open(obj.name, "rb") as f:
+        num_bytes_to_send = min(self.chunk_size, self.size - received_bytes)
+        with open(self.name, "rb") as f:
             f.seek(received_bytes)
             chunk = f.read(num_bytes_to_send)
 
         self.logger.debug(f"{received_bytes=}; sending {len(chunk)} bytes")
         return ProduceRC.OK, chunk, {_StateKey.RECEIVED_BYTES: received_bytes + len(chunk)}
+
+    def downloaded_to_one(self, to_site: str, status: str):
+        if self.file_downloaded_cb:
+            self.file_downloaded_cb(to_site, status, self.name, **self.cb_kwargs)
+
+    def downloaded_to_all(self):
+        if self.file_downloaded_cb:
+            self.file_downloaded_cb("", "", self.name, **self.cb_kwargs)
 
 
 class FileDownloader(ObjDownloader):
@@ -84,7 +98,8 @@ class FileDownloader(ObjDownloader):
         cls,
         cell: Cell,
         timeout: float,
-        timeout_cb,
+        num_receivers: int = 0,
+        transaction_done_cb=None,
         **cb_kwargs,
     ):
         """Create a new file download transaction.
@@ -92,36 +107,31 @@ class FileDownloader(ObjDownloader):
         Args:
             cell: the cell for communication with recipients
             timeout: timeout for the transaction
-            timeout_cb: CB to be called when the transaction is timed out
-            **cb_kwargs: args to be passed to the CB
+            num_receivers: number of receivers. 0 means unknown.
+            transaction_done_cb: callback function that will be called when the transaction is done.
 
         Returns: transaction id
-
-        The timeout_cb must follow this signature:
-
-            cb(tx_id, file_names: List[str], **cb_args)
-
         """
         return ObjDownloader.new_transaction(
             cell=cell,
-            producer=_ChunkProducer(),
             timeout=timeout,
-            timeout_cb=cls._tx_timeout,
-            app_timeout_cb=timeout_cb,
-            **cb_kwargs,
+            num_receivers=num_receivers,
+            transaction_done_cb=cls._transaction_done,
+            cb_info=(transaction_done_cb, cb_kwargs),
         )
 
     @classmethod
-    def _tx_timeout(cls, tx_id: str, objs: List[Any], app_timeout_cb, **cb_kwargs):
-        if app_timeout_cb:
-            file_names = [obj.name for obj in objs]
-            app_timeout_cb(tx_id, file_names, **cb_kwargs)
+    def _transaction_done(cls, tx_id: str, status: str, objs, cb_info):
+        transaction_done_cb, cb_kwargs = cb_info
+        if transaction_done_cb:
+            transaction_done_cb(tx_id, [obj.name for obj in objs], **cb_kwargs)
 
     @classmethod
     def add_file(
         cls,
         transaction_id: str,
         file_name: str,
+        chunk_size=None,
         ref_id=None,
         file_downloaded_cb=None,
         **cb_kwargs,
@@ -131,6 +141,7 @@ class FileDownloader(ObjDownloader):
         Args:
             transaction_id: ID of the transaction
             file_name: name of the file to be downloaded
+            chunk_size: chunk size in bytes
             ref_id: ref id to be used, if provided
             file_downloaded_cb: CB to be called when the file is done downloading
             **cb_kwargs: args to be passed to the CB
@@ -139,23 +150,15 @@ class FileDownloader(ObjDownloader):
 
         The file_downloaded_cb must follow this signature:
 
-            cb(ref_id: str, to_site: str, status: str, file_name: str, **cb_kwargs)
+            cb(to_site: str, status: str, file_name: str, **cb_kwargs)
 
         """
-        obj = _File(file_name)
-        return ObjDownloader.add_download_object(
+        obj = FileDownloadable(file_name, chunk_size=chunk_size, file_downloaded_cb=file_downloaded_cb, **cb_kwargs)
+        return ObjDownloader.add_object(
             transaction_id=transaction_id,
             obj=obj,
             ref_id=ref_id,
-            obj_downloaded_cb=cls._file_downloaded,
-            app_downloaded_cb=file_downloaded_cb,
-            **cb_kwargs,
         )
-
-    @classmethod
-    def _file_downloaded(cls, ref_id: str, to_site: str, status: str, obj: _File, app_downloaded_cb, **cb_kwargs):
-        if app_downloaded_cb:
-            app_downloaded_cb(ref_id, to_site, status, obj.name, **cb_kwargs)
 
     @classmethod
     def download_file(
@@ -168,7 +171,7 @@ class FileDownloader(ObjDownloader):
         secure=False,
         optional=False,
         abort_signal=None,
-    ) -> (str, Optional[str]):
+    ) -> Tuple[str, Optional[str]]:
         """Download the referenced file from the file owner.
 
         Args:
@@ -245,7 +248,14 @@ def download_file(
     secure=False,
     optional=False,
     abort_signal=None,
-) -> (str, Optional[str]):
+) -> Tuple[str, Optional[str]]:
     return FileDownloader.download_file(
-        from_fqcn, ref_id, per_request_timeout, cell, location, secure, optional, abort_signal
+        from_fqcn=from_fqcn,
+        ref_id=ref_id,
+        per_request_timeout=per_request_timeout,
+        cell=cell,
+        location=location,
+        secure=secure,
+        optional=optional,
+        abort_signal=abort_signal,
     )
