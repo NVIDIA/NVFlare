@@ -69,7 +69,8 @@ class TestCleanTaskData:
         assert call_args[1]["sticky"] is False
 
         # Verify the tensors were removed but non-tensor params preserved
-        cleaned_data = call_args[1]["value"]
+        cleaned_task_data = call_args[1]["value"]
+        cleaned_data = cleaned_task_data["DXO"]["data"]
         assert "model" not in cleaned_data
         assert cleaned_data["metadata"]["shape_info"] == "preserved_data"
         assert cleaned_data["config"]["learning_rate"] == 0.01
@@ -96,7 +97,8 @@ class TestCleanTaskData:
 
         # Verify tensors removed but structure and non-tensor params preserved
         call_args = mock_fl_context.set_prop.call_args
-        cleaned_data = call_args[1]["value"]
+        cleaned_task_data = call_args[1]["value"]
+        cleaned_data = cleaned_task_data["DXO"]["data"]
 
         assert "weight" not in cleaned_data["encoder"]
         assert "bias" not in cleaned_data["encoder"]
@@ -104,6 +106,91 @@ class TestCleanTaskData:
         assert "weight" not in cleaned_data["decoder"]
         assert cleaned_data["decoder"]["info"] == "decoder_info"
         assert cleaned_data["config"]["learning_rate"] == 0.01
+
+    def test_clean_task_data_empty_after_removal(self, mock_fl_context):
+        """Test that data is empty dict when only tensors existed."""
+        task_data = {
+            "DXO": {
+                "data": {
+                    "weight": torch.tensor([1.0, 2.0]),
+                    "bias": np.array([0.1]),
+                }
+            }
+        }
+        mock_fl_context.get_prop.return_value = task_data
+
+        clean_task_data(mock_fl_context)
+
+        call_args = mock_fl_context.set_prop.call_args
+        cleaned_task_data = call_args[1]["value"]
+        cleaned_data = cleaned_task_data["DXO"]["data"]
+
+        assert cleaned_data == {}
+        assert "weight" not in cleaned_data
+        assert "bias" not in cleaned_data
+
+    def test_clean_task_data_preserves_dxo_structure(self, mock_fl_context):
+        """Test that DXO structure outside of 'data' is preserved."""
+        task_data = {
+            "DXO": {
+                "data_kind": "WEIGHTS",
+                "data": {
+                    "model": torch.tensor([1.0, 2.0]),
+                    "config": {"lr": 0.01},
+                },
+                "meta": {"round": 5, "client": "client_1"},
+            }
+        }
+        mock_fl_context.get_prop.return_value = task_data
+
+        clean_task_data(mock_fl_context)
+
+        call_args = mock_fl_context.set_prop.call_args
+        cleaned_task_data = call_args[1]["value"]
+
+        # Verify DXO structure is preserved
+        assert "DXO" in cleaned_task_data
+        assert "data_kind" in cleaned_task_data["DXO"]
+        assert cleaned_task_data["DXO"]["data_kind"] == "WEIGHTS"
+        assert "meta" in cleaned_task_data["DXO"]
+        assert cleaned_task_data["DXO"]["meta"]["round"] == 5
+        assert cleaned_task_data["DXO"]["meta"]["client"] == "client_1"
+
+        # Verify data was cleaned
+        cleaned_data = cleaned_task_data["DXO"]["data"]
+        assert "model" not in cleaned_data
+        assert cleaned_data["config"]["lr"] == 0.01
+
+    def test_clean_task_data_deeply_nested_structure(self, mock_fl_context):
+        """Test cleaning with deeply nested structure."""
+        task_data = {
+            "DXO": {
+                "data": {
+                    "level1": {
+                        "level2": {
+                            "tensor": torch.tensor([1.0]),
+                            "level3": {
+                                "value": "keep",
+                                "tensor_deep": np.array([2.0]),
+                            },
+                        },
+                        "config": "config_value",
+                    }
+                }
+            }
+        }
+        mock_fl_context.get_prop.return_value = task_data
+
+        clean_task_data(mock_fl_context)
+
+        call_args = mock_fl_context.set_prop.call_args
+        cleaned_task_data = call_args[1]["value"]
+        cleaned_data = cleaned_task_data["DXO"]["data"]
+
+        assert "tensor" not in cleaned_data["level1"]["level2"]
+        assert "tensor_deep" not in cleaned_data["level1"]["level2"]["level3"]
+        assert cleaned_data["level1"]["level2"]["level3"]["value"] == "keep"
+        assert cleaned_data["level1"]["config"] == "config_value"
 
 
 class TestCleanTaskResult:
@@ -136,10 +223,140 @@ class TestCleanTaskResult:
         assert call_args[1]["sticky"] is False
 
         # Verify the tensors were removed but non-tensor params preserved
-        cleaned_data = call_args[1]["value"]
+        cleaned_task_result = call_args[1]["value"]
+        cleaned_data = cleaned_task_result["DXO"]["data"]
         assert "updated_model" not in cleaned_data
         assert cleaned_data["metrics"]["accuracy"] == 0.95
         assert cleaned_data["metrics"]["loss"] == 0.05
+
+    def test_clean_task_result_with_nested_tensors(self, mock_fl_context):
+        """Test cleaning task result with nested tensor structure."""
+        task_result = {
+            "DXO": {
+                "data": {
+                    "model_updates": {
+                        "weight_diff": torch.tensor([0.1, 0.2]),
+                        "statistics": {"mean": 0.15, "std": 0.05},
+                    },
+                    "gradients": {
+                        "layer1": np.array([0.01, 0.02]),
+                        "layer2": torch.tensor([0.03, 0.04]),
+                    },
+                    "metadata": {"epoch": 10, "client_id": "client_1"},
+                }
+            }
+        }
+        mock_fl_context.get_prop.return_value = task_result
+
+        clean_task_result(mock_fl_context)
+
+        call_args = mock_fl_context.set_prop.call_args
+        cleaned_task_result = call_args[1]["value"]
+        cleaned_data = cleaned_task_result["DXO"]["data"]
+
+        # Verify tensors removed
+        assert "weight_diff" not in cleaned_data["model_updates"]
+        assert "gradients" not in cleaned_data
+
+        # Verify non-tensor data preserved
+        assert cleaned_data["model_updates"]["statistics"]["mean"] == 0.15
+        assert cleaned_data["model_updates"]["statistics"]["std"] == 0.05
+        assert cleaned_data["metadata"]["epoch"] == 10
+        assert cleaned_data["metadata"]["client_id"] == "client_1"
+
+    def test_clean_task_result_empty_after_removal(self, mock_fl_context):
+        """Test that result data is empty dict when only tensors existed."""
+        task_result = {
+            "DXO": {
+                "data": {
+                    "weight_diff": torch.tensor([1.0, 2.0]),
+                    "gradients": np.array([0.1, 0.2]),
+                }
+            }
+        }
+        mock_fl_context.get_prop.return_value = task_result
+
+        clean_task_result(mock_fl_context)
+
+        call_args = mock_fl_context.set_prop.call_args
+        cleaned_task_result = call_args[1]["value"]
+        cleaned_data = cleaned_task_result["DXO"]["data"]
+
+        assert cleaned_data == {}
+        assert "weight_diff" not in cleaned_data
+        assert "gradients" not in cleaned_data
+
+    def test_clean_task_result_preserves_dxo_structure(self, mock_fl_context):
+        """Test that DXO structure outside of 'data' is preserved."""
+        task_result = {
+            "DXO": {
+                "data_kind": "WEIGHT_DIFF",
+                "data": {
+                    "diff": torch.tensor([0.1, 0.2]),
+                    "info": {"num_samples": 100},
+                },
+                "meta": {"aggregation": "weighted", "round": 3},
+            }
+        }
+        mock_fl_context.get_prop.return_value = task_result
+
+        clean_task_result(mock_fl_context)
+
+        call_args = mock_fl_context.set_prop.call_args
+        cleaned_task_result = call_args[1]["value"]
+
+        # Verify DXO structure is preserved
+        assert "DXO" in cleaned_task_result
+        assert "data_kind" in cleaned_task_result["DXO"]
+        assert cleaned_task_result["DXO"]["data_kind"] == "WEIGHT_DIFF"
+        assert "meta" in cleaned_task_result["DXO"]
+        assert cleaned_task_result["DXO"]["meta"]["aggregation"] == "weighted"
+        assert cleaned_task_result["DXO"]["meta"]["round"] == 3
+
+        # Verify data was cleaned
+        cleaned_data = cleaned_task_result["DXO"]["data"]
+        assert "diff" not in cleaned_data
+        assert cleaned_data["info"]["num_samples"] == 100
+
+    def test_clean_task_result_with_mixed_types(self, mock_fl_context):
+        """Test cleaning with various non-tensor data types."""
+        task_result = {
+            "DXO": {
+                "data": {
+                    "tensor": torch.tensor([1.0, 2.0]),
+                    "int_val": 42,
+                    "float_val": 3.14,
+                    "str_val": "test_string",
+                    "bool_val": True,
+                    "list_val": [1, 2, 3],
+                    "none_val": None,
+                    "nested": {
+                        "array": np.array([1, 2]),
+                        "dict_val": {"key": "value"},
+                    },
+                }
+            }
+        }
+        mock_fl_context.get_prop.return_value = task_result
+
+        clean_task_result(mock_fl_context)
+
+        call_args = mock_fl_context.set_prop.call_args
+        cleaned_task_result = call_args[1]["value"]
+        cleaned_data = cleaned_task_result["DXO"]["data"]
+
+        # Verify tensors removed
+        assert "tensor" not in cleaned_data
+        assert "array" not in cleaned_data["nested"]
+
+        # Verify all other types preserved
+        assert cleaned_data["int_val"] == 42
+        assert cleaned_data["float_val"] == 3.14
+        assert cleaned_data["str_val"] == "test_string"
+        assert cleaned_data["bool_val"] is True
+        assert cleaned_data["list_val"] == [1, 2, 3]
+        assert cleaned_data["none_val"] is None
+        assert cleaned_data["nested"]["dict_val"]["key"] == "value"
 
 
 class TestGetTopicForCtxPropKey:
@@ -743,6 +960,7 @@ class TestUtilsIntegration:
 
         # Verify cleaned data has only non-tensor params
         call_args = mock_fl_context.set_prop.call_args
-        cleaned_data = call_args[1]["value"]
+        cleaned_task_data = call_args[1]["value"]
+        cleaned_data = cleaned_task_data["DXO"]["data"]
         assert "model" not in cleaned_data
         assert cleaned_data["metadata"]["epoch"] == 5

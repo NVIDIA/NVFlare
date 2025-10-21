@@ -33,9 +33,10 @@ def clean_task_data(fl_ctx: FLContext):
         fl_ctx (FLContext): The FLContext to clean the task data from.
     """
     task_data: Shareable = fl_ctx.get_prop(FLContextKey.TASK_DATA)
-    # set data to empty to avoid sending large data within the task data
+    # keep only the non-tensor in the task data since tensors are sent separately
     new_task_data = copy_non_tensor_params(task_data["DXO"]["data"])
-    fl_ctx.set_prop(FLContextKey.TASK_DATA, value=new_task_data, private=True, sticky=False)
+    task_data["DXO"]["data"] = new_task_data
+    fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
 
 
 def clean_task_result(fl_ctx: FLContext):
@@ -45,9 +46,10 @@ def clean_task_result(fl_ctx: FLContext):
         fl_ctx (FLContext): The FLContext to clean the task result from.
     """
     task_result: Shareable = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
-    # set data to empty to avoid sending large data within the task result
+    # keep only the non-tensor in the task result since tensors are sent separately
     new_task_result = copy_non_tensor_params(task_result["DXO"]["data"])
-    fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=new_task_result, private=True, sticky=False)
+    task_result["DXO"]["data"] = new_task_result
+    fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=task_result, private=True, sticky=False)
 
 
 def get_topic_for_ctx_prop_key(ctx_prop_key: str) -> str:
