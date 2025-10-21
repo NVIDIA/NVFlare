@@ -15,23 +15,128 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.streaming.download_service import Downloadable, DownloadService
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.message import Message
+from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.security.logging import secure_format_exception
+
+OBJ_DOWNLOADER_CHANNEL = "obj_downloader__"
+OBJ_DOWNLOADER_TOPIC = "obj_downloader__download"
+
+"""
+This package provides a framework for building object downloading capability (e.g. file download).
+
+A large object takes a lot of memory space. Sending a large object in one message needs even more memory space since
+the object needs to be serialized into large number of bytes. Additional memory space may still be needed for the
+transport layer to send the message. If the message is to be sent to multiple endpoints, even more memory is needed.
+
+Object Downloading can drastically reduce memory consumption:
+- Instead of sending the large object in one message, it is divided into many smaller objects;
+- Instead of pushing the message to the endpoints, each endpoint will come to request. This makes it more reliable when
+different endpoints have different speed.
+
+Object Downloading works as follows:
+- The sender prepares the object(s) for downloading. It first creates a transaction to get a tx_id. It then adds each
+object to be downloaded to the transaction, and get a reference id (ref_id).
+- The sender sends the ref_id(s) to all recipients through a separate message.
+- Each recipient then calls the download_object function to download each referenced large object.
+
+To develop the downloading capability for a type of object (e.g. a file, a large dict, etc.), you need to provide
+the implementation of a Producer and a Consumer.
+- On the sending side, the Producer is responsible for producing the next small object to be sent (a chunk of bytes;
+a small subset of the large dict; etc.).
+- On the receiving side, the Consumer is responsible for processing the received small objects (writing the received
+bytes to a temp file; putting the received small dict to the end result; etc.).
+
+One issue with object downloading is object life cycle management. Since the large objects to be downloaded are usually
+temporary, you need to remove them when they are downloaded by all sites. But the problem is that you don't know how
+quickly each site can finish downloading these large objects. When a transaction contains multiple objects to be
+downloaded, it's even harder to know it.
+
+There are two ways to handle this issue: object downloaded callback, and transaction timeout.
+
+You can register an object_downloaded CB when adding an object to transaction. When the object is fully downloaded
+to a site, this CB will be called. The obj_downloaded CB must follow this signature:
+
+    downloaded_cb(ref_id: str, to_site: str, status: str, obj: Any, **cb_kwargs)
+
+where ref_id is the reference id of the object;
+to_site is the FQCN of the site that has just finished downloading;
+status is the status of downloading, as defined in DownloadStatus class;
+obj is the large object that was just downloaded;
+cb_kwargs are the kw args registered with the CB.
+
+Transaction timeout is the amount of time after the last downloading activity on any object in the
+transaction from any site. For example, suppose you want to send 2 large files to 3 sites, each time a download
+request is received on any file from any of the 3 sites, the last activity time of the transaction is updated to now.
+If no downloading activity is received from any site on any objects in the transaction for the specified timeout,
+the transaction is considered "timed out", and the timeout callback registered with the transaction is called.
+The transaction timeout CB must follow this signature:
+
+    timeout_cb(tx_id: str, objs: List[Any], **cb_kwargs)
+
+where tx_id is the ID of the transaction;
+objs is the list of large objects registered with the transaction;
+cb_kwargs are the kw args registered with the CB.
+
+You may need to use both mechanisms to fully take care of object life cycles. The object downloaded CB may never be
+called since the site somehow didn't finish the downloading. In reality the timeout mechanism may be sufficient.
+
+Unlike with Object Streamer that the object owner pushes small objects to the recipients; with Object Downloader,
+each recipient pulls the data from the object owner.
+"""
 
 
-class ObjectDownloader:
-    """Defines a universal object downloader that can be used to download any Downloadable objects."""
+class Downloadable(ABC):
+
+    def set_transaction(self, tx_id, ref_id):
+        pass
+
+    @abstractmethod
+    def produce(self, state: dict, requester: str) -> Tuple[str, Any, dict]:
+        """Produce a small object to be sent (on object sender side).
+
+        Args:
+            state: current state of downloading, received from the downloading site
+            requester: the FQCN of the site that is downloading
+
+        Returns: a tuple of (return code, a small object to be sent, new state to be sent).
+
+        """
+        pass
+
+    def downloaded_to_one(self, to_site: str, status: str):
+        """Called when an object is downloaded to a site."""
+        pass
+
+    def downloaded_to_all(self):
+        """Called when the object is fully downloaded to all sites."""
+        pass
+
+    def transaction_done(self, transaction_id: str, status: str):
+        """Called when the transaction is finished."""
+        pass
+
+
+class _PropKey:
+    REF_ID = "ref_id"
+    STATE = "state"
+    DATA = "data"
+    STATUS = "status"
+
+
+class _Ref:
 
     def __init__(
         self,
         tx,
-        obj: Any,
+        obj: Downloadable,
         ref_id=None,
-        obj_downloaded_cb=None,
-        **cb_kwargs,
     ):
         if ref_id:
             # use provided ref_id
@@ -41,24 +146,20 @@ class ObjectDownloader:
         self.tx = tx
         self.obj = obj
         self.num_sites_done = 0
-        self.obj_downloaded_cb = obj_downloaded_cb
-        self.cb_kwargs = cb_kwargs
 
     def mark_active(self):
         self.tx.mark_active()
 
     def obj_downloaded(self, to_site: str, status: str):
         self.num_sites_done += 1
-        if self.obj_downloaded_cb:
-            self.obj_downloaded_cb(self.rid, to_site, status, self.obj, **self.cb_kwargs)
 
-        assert isinstance(self.tx.producer, Producer)
-        self.tx.producer.object_downloaded(self.rid, self.obj, to_site, status)
+        assert isinstance(self.obj, Downloadable)
+        self.obj.downloaded_to_one(to_site, status)
 
         assert isinstance(self.tx, _Transaction)
         if 0 < self.tx.num_receivers <= self.num_sites_done:
             # this object is done for all sites
-            self.tx.producer.object_done(self.rid, self.obj)
+            self.obj.downloaded_to_all()
 
 
 class ProduceRC:
@@ -80,90 +181,33 @@ class TransactionDoneStatus:
     DELETED = "deleted"
 
 
-class Producer(ABC):
-
-    def __init__(self):
-        self.logger = get_obj_logger(self)
-
-    @abstractmethod
-    def produce(self, ref_id: str, obj: Any, state: dict, requester: str) -> Tuple[str, Any, dict]:
-        """Produce a small object to be sent (on object sender side).
-
-        Args:
-            ref_id: the ref id of the object being downloaded
-            obj: the large object
-            state: current state of downloading, received from the downloading site
-            requester: the FQCN of the site that is downloading
-
-        Returns: a tuple of (return code, a small object to be sent, new state to be sent).
-
-        """
-        pass
-
-    def object_downloaded(self, ref_id: str, obj: Any, to_site: str, status: str):
-        """Called when an object is downloaded to a site."""
-        pass
-
-    def object_done(self, ref_id: str, obj: Any):
-        """Called when the object is fully downloaded to all sites."""
-        pass
-
-    def transaction_done(self, transaction_id: str, objs: List[Any], status: str):
-        """Called when the transaction is finished."""
-        pass
-
-
 class _Transaction:
 
     def __init__(
         self,
-        producer: Producer,
         timeout: float,
         num_receivers: int,
         tx_id=None,
         transaction_done_cb=None,
-        progress_cb=None,
-        progress_interval: float = 30.0,
-        outcome_cb=None,
-        **cb_kwargs,
+        cb_kwargs=None,
     ):
         """Constructor of ObjectDownloader.
 
         Args:
-            producer: the Producer object to produce small objects.
             timeout: amount of time since last activity
             num_receivers: number of receivers. 0 means unlimited.
             tx_id: if provided, use it; otherwise create one
-            timeout_cb: the CB to be called when the transaction timed out
-            **cb_kwargs: args to be passed to the timeout CB
         """
-        check_callable("timeout_cb", timeout_cb)
-        check_object_type("producer", producer, Producer)
         if tx_id:
             self.tid = tx_id
         else:
             self.tid = "T" + str(uuid.uuid4())
-        self.producer = producer
         self.timeout = timeout
         self.num_receivers = num_receivers
-        self.timeout_cb = timeout_cb
-        self.cb_kwargs = cb_kwargs
         self.last_active_time = time.time()
+        self.transaction_done_cb = transaction_done_cb
+        self.cb_kwargs = cb_kwargs
         self.refs = []
-
-    def produce(self, ref_id: str, obj: Any, state: dict, requester: str):
-        """Called to produce the next small object to be sent.
-
-        Args:
-            ref_id: ref id of the object being downloaded
-            obj: the large object being downloaded
-            state: current state received from the downloading site (requester).
-            requester: FQCN of the requester
-
-        Returns:
-
-        """
-        return self.producer.produce(ref_id, obj, state, requester)
 
     def mark_active(self):
         """Called to update the last active time of the transaction.
@@ -173,26 +217,23 @@ class _Transaction:
         """
         self.last_active_time = time.time()
 
-    def add_download_object(
+    def add_object(
         self,
-        obj: Any,
+        obj: Downloadable,
         ref_id=None,
-        obj_downloaded_cb=None,
-        **cb_kwargs,
     ):
         """Add a large object (to be downloaded) to the transaction.
 
         Args:
             obj: the large object to be downloaded
             ref_id: the ref id to be used, if specified
-            obj_downloaded_cb: the CB to be called when the object is fully downloaded
-            **cb_kwargs: args to be passed to the CB.
 
         Returns:
 
         """
-        r = _Ref(self, obj, ref_id, obj_downloaded_cb, **cb_kwargs)
+        r = _Ref(self, obj, ref_id)
         self.refs.append(r)
+        obj.set_transaction(self.tid, r.rid)
         return r
 
     def timed_out(self):
@@ -201,8 +242,7 @@ class _Transaction:
         Returns:
 
         """
-        if self.timeout_cb:
-            self.timeout_cb(self.tid, [r.obj for r in self.refs], **self.cb_kwargs)
+        self.transaction_done(TransactionDoneStatus.TIMEOUT)
 
     def is_finished(self):
         """Check whether the transaction is finished (all objects are downloaded)."""
@@ -217,13 +257,18 @@ class _Transaction:
 
     def transaction_done(self, status: str):
         """Called when the transaction is finished."""
-        self.producer.transaction_done(self.tid, [r.obj for r in self.refs], status)
+        for ref in self.refs:
+            obj = ref.obj
+            assert isinstance(obj, Downloadable)
+            obj.transaction_done(self.tid, status)
+
+        if self.transaction_done_cb:
+            self.transaction_done_cb(self.tid, status, [ref.obj for ref in self.refs], **self.cb_kwargs)
 
 
 class TransactionInfo:
 
     def __init__(self, tx: _Transaction):
-        self.producer = tx.producer
         self.timeout = tx.timeout
         self.num_receivers = tx.num_receivers
         self.objects = [r.obj for r in tx.refs]
@@ -263,47 +308,44 @@ class ObjDownloader:
     def new_transaction(
         cls,
         cell: Cell,
-        producer: Producer,
         timeout: float,
         num_receivers: int = 0,
         tx_id=None,
-        timeout_cb=None,
+        transaction_done_cb=None,
         **cb_kwargs,
     ):
         cls._initialize(cell)
-        tx = _Transaction(producer, timeout, num_receivers, tx_id, timeout_cb, **cb_kwargs)
+        tx = _Transaction(timeout, num_receivers, tx_id, transaction_done_cb, cb_kwargs)
         with cls._tx_lock:
             cls._tx_table[tx.tid] = tx
         return tx.tid
 
     @classmethod
-    def add_download_object(
+    def add_object(
         cls,
         transaction_id: str,
-        obj: Any,
+        obj: Downloadable,
         ref_id=None,
-        obj_downloaded_cb=None,
-        **cb_kwargs,
     ) -> str:
-        if obj_downloaded_cb is not None:
-            check_callable("obj_downloaded_cb", obj_downloaded_cb)
+        if not issubclass(type(obj), Downloadable):
+            raise ValueError(f"obj must be of type {Downloadable} but got {type(obj)}")
 
         tx = cls._tx_table.get(transaction_id)
         if not tx:
             raise ValueError(f"no such transaction {transaction_id}")
 
         assert isinstance(tx, _Transaction)
-        ref = tx.add_download_object(obj, ref_id, obj_downloaded_cb, **cb_kwargs)
+        ref = tx.add_object(obj, ref_id)
         with cls._tx_lock:
             cls._ref_table[ref.rid] = ref
         return ref.rid
 
     @classmethod
-    def delete_transaction(cls, transaction_id: str, call_cb=False):
+    def delete_transaction(cls, transaction_id: str):
         with cls._tx_lock:
             tx = cls._tx_table.get(transaction_id)
             if tx:
-                cls._delete_tx(tx, call_cb)
+                cls._delete_tx(tx)
                 tx.transaction_done(TransactionDoneStatus.DELETED)
 
     @classmethod
@@ -317,17 +359,11 @@ class ObjDownloader:
             tx_list = list(cls._tx_table.values())
             if tx_list:
                 for tx in tx_list:
-                    cls._delete_tx(tx, True)
+                    cls._delete_tx(tx)
                     tx.transaction_done(TransactionDoneStatus.DELETED)
 
     @classmethod
-    def _delete_tx(cls, tx: _Transaction, call_cb=False):
-        if call_cb:
-            try:
-                tx.timed_out()
-            except Exception as ex:
-                cls._logger.error(f"exception from timeout_cb: {secure_format_exception(ex)}")
-
+    def _delete_tx(cls, tx: _Transaction):
         cls._tx_table.pop(tx.tid, None)
 
         # remove all refs
@@ -374,9 +410,11 @@ class ObjDownloader:
         assert isinstance(tx, _Transaction)
 
         try:
-            rc, data, new_state = tx.produce(rid, ref.obj, current_state, requester)
+            rc, data, new_state = ref.obj.produce(current_state, requester)
         except Exception as ex:
-            cls._logger.error(f"Producer {type(tx.producer)} encountered exception: {secure_format_exception(ex)}")
+            cls._logger.error(
+                f"Object {type(ref.obj)} encountered exception when produce: {secure_format_exception(ex)}"
+            )
             return make_reply(ReturnCode.PROCESS_EXCEPTION)
 
         if rc != ProduceRC.OK:
@@ -415,11 +453,11 @@ class ObjDownloader:
                 for tx in expired_tx:
                     assert isinstance(tx, _Transaction)
                     tx.transaction_done(TransactionDoneStatus.TIMEOUT)
-                    cls._delete_tx(tx, True)
+                    cls._delete_tx(tx)
 
                 for tx in finished_tx:
                     tx.transaction_done(TransactionDoneStatus.FINISHED)
-                    cls._delete_tx(tx, False)
+                    cls._delete_tx(tx)
 
             time.sleep(5.0)
 

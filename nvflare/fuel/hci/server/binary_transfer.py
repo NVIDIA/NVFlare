@@ -47,7 +47,7 @@ class BinaryTransfer:
         downloader = ObjectDownloader(
             num_receivers=1,
             cell=engine.get_cell(),
-            timeout=timeout,
+            timeout=5,
             transaction_done_cb=self._cleanup_tx,
             tx_path=tx_path,
         )

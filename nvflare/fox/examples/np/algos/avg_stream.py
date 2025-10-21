@@ -52,6 +52,11 @@ class NPFedAvgStream(Strategy):
 
     def _do_one_round(self, r, current_model, ctx: Context):
         aggr_result = _AggrResult()
+        grp = all_clients(
+            ctx,
+            process_resp_cb=self._accept_train_result,
+            aggr_result=aggr_result,
+        )
 
         # pretend the model is big
         file_name = None
@@ -59,6 +64,7 @@ class NPFedAvgStream(Strategy):
             file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
             save_np_model(current_model, file_name)
             model = prepare_file_for_download(
+                num_receivers=grp.size,
                 file_name=file_name,
                 ctx=ctx,
                 timeout=5.0,
@@ -70,11 +76,7 @@ class NPFedAvgStream(Strategy):
             model = current_model
             model_type = "model"
 
-        all_clients(
-            ctx,
-            process_resp_cb=self._accept_train_result,
-            aggr_result=aggr_result,
-        ).train(r, model, model_type)
+        grp.train(r, model, model_type)
 
         if file_name:
             os.remove(file_name)
@@ -102,8 +104,8 @@ class NPFedAvgStream(Strategy):
         aggr_result.count += 1
         return None
 
-    def _model_downloaded(self, ref_id: str, to_site: str, status: str, file_name):
-        self.logger.info(f"model file {file_name} downloaded by {to_site}: {ref_id=} {status=}")
+    def _model_downloaded(self, to_site: str, status: str, file_name):
+        self.logger.info(f"model file {file_name} downloaded by {to_site}: {status=}")
 
 
 class NPTrainer(ClientApp):
@@ -133,6 +135,7 @@ class NPTrainer(ClientApp):
             file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
             save_np_model(result, file_name)
             model = prepare_file_for_download(
+                num_receivers=1,
                 file_name=file_name,
                 ctx=context,
                 timeout=5.0,
@@ -145,6 +148,9 @@ class NPTrainer(ClientApp):
             model_type = "model"
         return model, model_type
 
-    def _result_downloaded(self, ref_id: str, to_site: str, status: str, file_name):
-        self.logger.info(f"file {file_name} downloaded to {to_site}: {ref_id=} {status=}")
-        os.remove(file_name)
+    def _result_downloaded(self, to_site: str, status: str, file_name):
+        self.logger.info(f"model file {file_name} downloaded to {to_site}: {status=}")
+        if not to_site:
+            # downloaded to all sites
+            os.remove(file_name)
+            self.logger.info(f"model file {file_name} removed")

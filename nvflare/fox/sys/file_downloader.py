@@ -19,6 +19,7 @@ from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
 def prepare_file_for_download(
     file_name: str,
     timeout: float,
+    num_receivers: int,
     ctx: Context,
     file_downloaded_cb=None,
     **cb_kwargs,
@@ -31,7 +32,7 @@ def prepare_file_for_download(
     tx_id = FileDownloader.new_transaction(
         cell=cell,
         timeout=timeout,
-        timeout_cb=None,
+        num_receivers=num_receivers,
     )
     rid = FileDownloader.add_file(
         tx_id,
