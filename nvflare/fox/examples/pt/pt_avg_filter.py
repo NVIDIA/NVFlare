@@ -17,7 +17,7 @@ import threading
 import torch
 
 from nvflare.fox.api.app import ClientApp, ServerApp
-from nvflare.fox.api.constants import ContextKey, EnvType
+from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
 from nvflare.fox.api.dec import collab
 from nvflare.fox.api.group import all_clients
@@ -129,7 +129,8 @@ def main():
         num_clients=2,
     )
 
-    simulator.run()
+    result = simulator.run()
+    print(f"final result: {result}")
 
 
 if __name__ == "__main__":

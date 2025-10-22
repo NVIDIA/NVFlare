@@ -17,12 +17,12 @@ import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import nvflare.fuel.utils.app_config_utils as acu
 from nvflare.apis.fl_constant import ConfigVarName
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
+from nvflare.fuel.f3.streaming.file_downloader import ObjectDownloader, add_file, download_file
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumType
 from nvflare.fuel.utils.fobs.lobs import get_datum_dir
@@ -98,20 +98,11 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         self.prefix = self.__class__.__name__
         self.decompose_ctx_key = f"{self.prefix}_dc"  # kept in fobs_ctx: each target type has its own DecomposeCtx
         self.items_key = f"{self.prefix}_items"  # in fobs_ctx: each target type has its own set of items
-        self.file_downloader_class = FileDownloader
         self.min_size_for_file = min_size_for_file
         self.config_var_prefix = config_var_prefix
 
-    def set_file_downloader_class(self, file_downloader_class):
-        # used only for offline testing!
-        self.file_downloader_class = file_downloader_class
-
-    def set_min_size_for_file(self, size: int):
-        # used only for testing!
-        self.min_size_for_file = size
-
     @abstractmethod
-    def dump_to_file(self, items: dict, path: str, fobs_ctx: dict) -> (Optional[str], Optional[dict]):
+    def dump_to_file(self, items: dict, path: str, fobs_ctx: dict) -> Tuple[Optional[str], Optional[dict]]:
         """Dump the items to the file with the specified path
 
         Args:
@@ -191,7 +182,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             manager.register_post_cb(self._process_items_to_datum)
         return item_id, target_id
 
-    def _create_file(self, fobs_ctx: dict) -> (str, int, dict):
+    def _create_file(self, fobs_ctx: dict) -> Tuple[str, int, dict]:
         dc = fobs_ctx.get(self.decompose_ctx_key)
         assert isinstance(dc, _DecomposeCtx)
         items = dc.target_items
@@ -253,7 +244,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         self.logger.debug(f"ViaFile: created ref for target {target_id}: {item_id}")
         return {EncKey.TYPE: EncType.REF, EncKey.DATA: item_id}
 
-    def _create_download_tx(self, fobs_ctx: dict):
+    def _create_downloader(self, fobs_ctx: dict):
         msg_root_id, msg_root_ttl = self._determine_msg_root(fobs_ctx)
 
         if msg_root_ttl:
@@ -266,10 +257,11 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
 
         self.logger.debug(f"determined: {msg_root_id=} {timeout=}")
 
-        tx_id = None
+        downloader = None
         cell = fobs_ctx.get(fobs.FOBSContextKey.CELL)
         if cell:
-            tx_id = self.file_downloader_class.new_transaction(
+            downloader = ObjectDownloader(
+                num_receivers=1,
                 cell=cell,
                 timeout=timeout,
                 transaction_done_cb=self._delete_download_tx,
@@ -279,10 +271,10 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
             subscribe_to_msg_root(
                 msg_root_id=msg_root_id,
                 cb=self._delete_download_tx_on_msg_root,
-                download_tx_id=tx_id,
+                downloader=downloader,
             )
 
-        return tx_id
+        return downloader
 
     def _process_items_to_datum(self, mgr: DatumManager):
         """This method is called during serialization after all target items are serialized.
@@ -373,23 +365,23 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         files = fobs_ctx.get(_CtxKey.FILES)
 
         if files:
-            download_tx_id = self._create_download_tx(fobs_ctx)
+            downloader = self._create_downloader(fobs_ctx)
             for file_ref_id, file_name in files:
-                self.logger.debug(f"ViaFile: adding file to downloader: {download_tx_id=} {file_name=}")
-                self.file_downloader_class.add_file(
-                    transaction_id=download_tx_id,
+                self.logger.debug(f"ViaFile: adding file to downloader: {file_name=}")
+                add_file(
+                    downloader=downloader,
                     file_name=file_name,
                     ref_id=file_ref_id,
                 )
 
-    def _delete_download_tx_on_msg_root(self, msg_root_id: str, download_tx_id: str):
+    def _delete_download_tx_on_msg_root(self, msg_root_id: str, downloader: ObjectDownloader):
         # this CB is triggered when msg root is deleted.
-        self.logger.debug(f"deleting download_tx_id {download_tx_id} associated with {msg_root_id=}")
-        self.file_downloader_class.delete_transaction(download_tx_id)
+        self.logger.debug(f"deleting download transaction associated with {msg_root_id=}")
+        downloader.delete_transaction()
 
-    def _delete_download_tx(self, tx_id, file_names):
+    def _delete_download_tx(self, tx_id, status, file_names):
         # this CB is triggered when download tx times out or is deleted
-        self.logger.debug(f"ViaFile: deleting download tx: {tx_id}")
+        self.logger.debug(f"ViaFile: deleting download tx: {tx_id} {status=} {file_names=}")
 
         # delete all files in the tx
         for f in file_names:
@@ -524,7 +516,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         abort_signal = fobs_ctx.get(fobs.FOBSContextKey.ABORT_SIGNAL)
 
         self.logger.debug(f"trying to download file: {file_ref_id=} {fqcn=}")
-        err, file_path = self.file_downloader_class.download_file(
+        err, file_path = download_file(
             from_fqcn=fqcn,
             ref_id=file_ref_id,
             location=get_datum_dir(),

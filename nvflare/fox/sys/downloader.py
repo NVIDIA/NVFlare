@@ -1,0 +1,112 @@
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import torch
+
+from nvflare.fox.api.ctx import Context
+from nvflare.fox.sys.backend import SysBackend
+from nvflare.fuel.f3.streaming.file_downloader import add_file
+from nvflare.fuel.f3.streaming.file_downloader import download_file as pull_file
+from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
+
+from ...app_opt.pt.tensor_downloader import add_tensors
+from ...app_opt.pt.tensor_downloader import download_tensors as pull_tensors
+
+
+class DownloadRefKey:
+    SOURCE = "source"
+    REF_ID = "ref_id"
+    OBJECT_TYPE = "object_type"
+
+
+class ObjectType:
+    FILE = "file"
+    TENSORS = "tensors"
+
+
+class Downloader(ObjectDownloader):
+
+    def __init__(
+        self,
+        num_receivers: int,
+        timeout: float,
+        ctx: Context,
+    ):
+        backend = ctx.backend
+        if not isinstance(backend, SysBackend):
+            raise ValueError(f"backend must be SysBackend but got {type(backend)}")
+
+        super().__init__(
+            cell=backend.cell,
+            timeout=timeout,
+            num_receivers=num_receivers,
+        )
+
+    def _to_ref(self, obj_type, ref_id):
+        return {
+            DownloadRefKey.OBJECT_TYPE: obj_type,
+            DownloadRefKey.REF_ID: ref_id,
+            DownloadRefKey.SOURCE: self.cell.get_fqcn(),
+        }
+
+    def add_file(
+        self,
+        file_name: str,
+        chunk_size=None,
+        file_downloaded_cb=None,
+        **cb_kwargs,
+    ):
+        rid = add_file(self, file_name, chunk_size=chunk_size, file_downloaded_cb=file_downloaded_cb, **cb_kwargs)
+        return self._to_ref(ObjectType.FILE, rid)
+
+    def add_tensors(self, tensors: dict[str, torch.Tensor], num_tensors_per_chunk: int = 1):
+        rid = add_tensors(self, tensors, num_tensors_per_chunk=num_tensors_per_chunk)
+        return self._to_ref(ObjectType.TENSORS, rid)
+
+
+def download_file(ref: dict, per_request_timeout: float, ctx: Context):
+    backend = ctx.backend
+    if not isinstance(backend, SysBackend):
+        raise ValueError(f"backend must be SysBackend but got {type(backend)}")
+
+    obj_type = ref.get(DownloadRefKey.OBJECT_TYPE)
+    if obj_type != ObjectType.FILE:
+        raise ValueError(f"obj_type must be {ObjectType.FILE} but got {obj_type}")
+
+    return pull_file(
+        from_fqcn=ref.get(DownloadRefKey.SOURCE),
+        ref_id=ref.get(DownloadRefKey.REF_ID),
+        per_request_timeout=per_request_timeout,
+        cell=backend.cell,
+        abort_signal=ctx.abort_signal,
+    )
+
+
+def download_tensors(ref: dict, per_request_timeout: float, ctx: Context, tensors_received_cb=None, **cb_kwargs):
+    backend = ctx.backend
+    if not isinstance(backend, SysBackend):
+        raise ValueError(f"backend must be SysBackend but got {type(backend)}")
+
+    obj_type = ref.get(DownloadRefKey.OBJECT_TYPE)
+    if obj_type != ObjectType.TENSORS:
+        raise ValueError(f"obj_type must be {ObjectType.TENSORS} but got {obj_type}")
+
+    return pull_tensors(
+        from_fqcn=ref.get(DownloadRefKey.SOURCE),
+        ref_id=ref.get(DownloadRefKey.REF_ID),
+        per_request_timeout=per_request_timeout,
+        cell=backend.cell,
+        abort_signal=ctx.abort_signal,
+        tensors_received_cb=tensors_received_cb,
+        **cb_kwargs,
+    )

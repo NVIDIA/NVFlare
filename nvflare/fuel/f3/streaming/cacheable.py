@@ -15,7 +15,7 @@ import threading
 from abc import abstractmethod
 from typing import Any, List, Tuple
 
-from nvflare.fuel.f3.streaming.obj_downloader import Consumer, Downloadable, ObjDownloader, ProduceRC
+from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, DownloadService, ProduceRC
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -44,7 +44,7 @@ class CacheableObject(Downloadable):
         pass
 
     def set_transaction(self, tx_id, ref_id):
-        tx_info = ObjDownloader.get_transaction_info(tx_id)
+        tx_info = DownloadService.get_transaction_info(tx_id)
         self.num_receivers = tx_info.num_receivers
         self.logger.info(f"set transaction info: {tx_id=}, {ref_id=} {self.num_receivers=}")
 
@@ -113,7 +113,6 @@ class ItemConsumer(Consumer):
         self.error = None
         self.result = None
 
-    @abstractmethod
     def consume_items(self, items: List[Any], result: Any) -> Any:
         """Process items and return updated result."""
         pass

@@ -35,7 +35,8 @@ def main():
         num_clients=3,
     )
 
-    simulator.run()
+    result = simulator.run()
+    print(f"Final result: {result}")
 
 
 if __name__ == "__main__":

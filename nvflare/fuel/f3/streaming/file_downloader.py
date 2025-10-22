@@ -17,14 +17,15 @@ import uuid
 from typing import Any, Optional, Tuple
 
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.streaming.obj_downloader import Consumer, Downloadable, ObjDownloader, ProduceRC, download_object
+from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, ProduceRC, download_object
+from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_callable, check_positive_int
 
 DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024
 
 """
-This package implements file downloading capability based on the ObjDownloader framework.
+This package implements file downloading capability based on the ObjectDownloader framework.
 It provides implementation of the Producer and Consumer objects, required by ObjDownloader.
 """
 
@@ -61,6 +62,9 @@ class FileDownloadable(Downloadable):
         self.cb_kwargs = cb_kwargs
         self.logger = get_obj_logger(self)
 
+    def get_base_object(self):
+        return self.name
+
     def produce(self, state: dict, requester: str) -> Tuple[str, Any, dict]:
         received_bytes = 0
         if state:
@@ -91,124 +95,85 @@ class FileDownloadable(Downloadable):
             self.file_downloaded_cb("", "", self.name, **self.cb_kwargs)
 
 
-class FileDownloader(ObjDownloader):
+def add_file(
+    downloader: ObjectDownloader,
+    file_name: str,
+    chunk_size=None,
+    ref_id=None,
+    file_downloaded_cb=None,
+    **cb_kwargs,
+) -> str:
+    """Add a file to be downloaded to the specified downloader.
 
-    @classmethod
-    def new_transaction(
-        cls,
-        cell: Cell,
-        timeout: float,
-        num_receivers: int = 0,
-        transaction_done_cb=None,
-        **cb_kwargs,
-    ):
-        """Create a new file download transaction.
+    Args:
+        downloader: the downloader to add to.
+        file_name: name of the file to be downloaded
+        chunk_size: chunk size in bytes
+        ref_id: ref id to be used, if provided
+        file_downloaded_cb: CB to be called when the file is done downloading
+        **cb_kwargs: args to be passed to the CB
 
-        Args:
-            cell: the cell for communication with recipients
-            timeout: timeout for the transaction
-            num_receivers: number of receivers. 0 means unknown.
-            transaction_done_cb: callback function that will be called when the transaction is done.
+    Returns: reference id for the file.
 
-        Returns: transaction id
-        """
-        return ObjDownloader.new_transaction(
-            cell=cell,
-            timeout=timeout,
-            num_receivers=num_receivers,
-            transaction_done_cb=cls._transaction_done,
-            cb_info=(transaction_done_cb, cb_kwargs),
-        )
+    The file_downloaded_cb must follow this signature:
 
-    @classmethod
-    def _transaction_done(cls, tx_id: str, status: str, objs, cb_info):
-        transaction_done_cb, cb_kwargs = cb_info
-        if transaction_done_cb:
-            transaction_done_cb(tx_id, [obj.name for obj in objs], **cb_kwargs)
+        cb(to_site: str, status: str, file_name: str, **cb_kwargs)
 
-    @classmethod
-    def add_file(
-        cls,
-        transaction_id: str,
-        file_name: str,
-        chunk_size=None,
-        ref_id=None,
-        file_downloaded_cb=None,
-        **cb_kwargs,
-    ) -> str:
-        """Add a file to be downloaded to the specified transaction.
+    """
+    obj = FileDownloadable(file_name, chunk_size=chunk_size, file_downloaded_cb=file_downloaded_cb, **cb_kwargs)
+    return downloader.add_object(
+        obj=obj,
+        ref_id=ref_id,
+    )
 
-        Args:
-            transaction_id: ID of the transaction
-            file_name: name of the file to be downloaded
-            chunk_size: chunk size in bytes
-            ref_id: ref id to be used, if provided
-            file_downloaded_cb: CB to be called when the file is done downloading
-            **cb_kwargs: args to be passed to the CB
 
-        Returns: reference id for the file.
+def download_file(
+    from_fqcn: str,
+    ref_id: str,
+    per_request_timeout: float,
+    cell: Cell,
+    location: str = None,
+    secure=False,
+    optional=False,
+    abort_signal=None,
+) -> Tuple[str, Optional[str]]:
+    """Download the referenced file from the file owner.
 
-        The file_downloaded_cb must follow this signature:
+    Args:
+        from_fqcn: FQCN of the file owner.
+        ref_id: reference ID of the file to be downloaded.
+        per_request_timeout: timeout for requests sent to the file owner.
+        cell: cell to be used for communicating to the file owner.
+        location: dir for keeping the received file. If not specified, will use temp dir.
+        secure: P2P private mode for communication
+        optional: supress log messages of communication
+        abort_signal: signal for aborting download.
 
-            cb(to_site: str, status: str, file_name: str, **cb_kwargs)
+    Returns: tuple of (error message if any, full path of the downloaded file).
 
-        """
-        obj = FileDownloadable(file_name, chunk_size=chunk_size, file_downloaded_cb=file_downloaded_cb, **cb_kwargs)
-        return ObjDownloader.add_object(
-            transaction_id=transaction_id,
-            obj=obj,
-            ref_id=ref_id,
-        )
+    """
+    if location is not None:
+        if not os.path.exists(location):
+            raise ValueError(f"location '{location}' does not exist")
 
-    @classmethod
-    def download_file(
-        cls,
-        from_fqcn: str,
-        ref_id: str,
-        per_request_timeout: float,
-        cell: Cell,
-        location: str = None,
-        secure=False,
-        optional=False,
-        abort_signal=None,
-    ) -> Tuple[str, Optional[str]]:
-        """Download the referenced file from the file owner.
+        if not os.path.isdir(location):
+            raise ValueError(f"location '{location}' is not a valid dir")
+    else:
+        location = tempfile.gettempdir()
 
-        Args:
-            from_fqcn: FQCN of the file owner.
-            ref_id: reference ID of the file to be downloaded.
-            per_request_timeout: timeout for requests sent to the file owner.
-            cell: cell to be used for communicating to the file owner.
-            location: dir for keeping the received file. If not specified, will use temp dir.
-            secure: P2P private mode for communication
-            optional: supress log messages of communication
-            abort_signal: signal for aborting download.
+    consumer = _ChunkConsumer(location)
+    download_object(
+        from_fqcn=from_fqcn,
+        ref_id=ref_id,
+        consumer=consumer,
+        per_request_timeout=per_request_timeout,
+        cell=cell,
+        secure=secure,
+        optional=optional,
+        abort_signal=abort_signal,
+    )
 
-        Returns: tuple of (error message if any, full path of the downloaded file).
-
-        """
-        if location is not None:
-            if not os.path.exists(location):
-                raise ValueError(f"location '{location}' does not exist")
-
-            if not os.path.isdir(location):
-                raise ValueError(f"location '{location}' is not a valid dir")
-        else:
-            location = tempfile.gettempdir()
-
-        consumer = _ChunkConsumer(location)
-        download_object(
-            from_fqcn=from_fqcn,
-            ref_id=ref_id,
-            consumer=consumer,
-            per_request_timeout=per_request_timeout,
-            cell=cell,
-            secure=secure,
-            optional=optional,
-            abort_signal=abort_signal,
-        )
-
-        return consumer.error, consumer.file_path
+    return consumer.error, consumer.file_path
 
 
 class _ChunkConsumer(Consumer):
@@ -237,25 +202,3 @@ class _ChunkConsumer(Consumer):
     def download_completed(self, ref_id: str):
         self.file.close()
         self.logger.debug(f"closed file {self.file_path}")
-
-
-def download_file(
-    from_fqcn: str,
-    ref_id: str,
-    per_request_timeout: float,
-    cell: Cell,
-    location: str = None,
-    secure=False,
-    optional=False,
-    abort_signal=None,
-) -> Tuple[str, Optional[str]]:
-    return FileDownloader.download_file(
-        from_fqcn=from_fqcn,
-        ref_id=ref_id,
-        per_request_timeout=per_request_timeout,
-        cell=cell,
-        location=location,
-        secure=secure,
-        optional=optional,
-        abort_signal=abort_signal,
-    )

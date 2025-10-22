@@ -25,7 +25,7 @@ from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.pt.utils import parse_state_dict
 from nvflare.fox.sim.simulator import Simulator
-from nvflare.fox.sys.model_downloader import ModelDownloader, download_model
+from nvflare.fox.sys.downloader import Downloader, download_tensors
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -68,14 +68,14 @@ class PTFedAvgStream(Strategy):
         )
 
         if ctx.env_type == EnvType.SYSTEM:
-            downloader = ModelDownloader(
+            downloader = Downloader(
                 num_receivers=grp.size,
                 ctx=ctx,
                 timeout=5.0,
             )
             model_type = "ref"
-            model = downloader.add_model(current_model, 2)
-            model2 = downloader.add_model(model2, 2)
+            model = downloader.add_tensors(current_model, 2)
+            model2 = downloader.add_tensors(model2, 2)
             self.logger.info(f"prepared model as ref: {model}")
         else:
             model = current_model
@@ -97,11 +97,11 @@ class PTFedAvgStream(Strategy):
 
         model, model_type = result
         if model_type == "ref":
-            err, model = download_model(
+            err, model = download_tensors(
                 ref=model,
                 per_request_timeout=5.0,
                 ctx=context,
-                model_received_cb=self._aggregate_tensors,
+                tensors_received_cb=self._aggregate_tensors,
                 aggr_result=aggr_result,
                 context=context,
             )
@@ -140,12 +140,12 @@ class PTTrainer(ClientApp):
             return 0
         self.logger.debug(f"[{context.header_str()}] training round {current_round}: {model_type=} {model1=} {model2=}")
         if model_type == "ref":
-            err, model1 = download_model(ref=model1, per_request_timeout=5.0, ctx=context)
+            err, model1 = download_tensors(ref=model1, per_request_timeout=5.0, ctx=context)
             if err:
                 raise RuntimeError(f"failed to download model1 {model1}: {err}")
             self.logger.info(f"downloaded model1 {model1}")
 
-            err, model2 = download_model(ref=model2, per_request_timeout=5.0, ctx=context)
+            err, model2 = download_tensors(ref=model2, per_request_timeout=5.0, ctx=context)
             if err:
                 raise RuntimeError(f"failed to download model2 {model2}: {err}")
             self.logger.info(f"downloaded model2 {model2}")
@@ -160,13 +160,13 @@ class PTTrainer(ClientApp):
 
         if model_type == "ref":
             # stream it
-            downloader = ModelDownloader(
+            downloader = Downloader(
                 num_receivers=1,
                 ctx=context,
                 timeout=5.0,
             )
             model_type = "ref"
-            model = downloader.add_model(result, 2)
+            model = downloader.add_tensors(result, 2)
             self.logger.info(f"prepared result as ref: {model}")
         else:
             model = result
@@ -193,13 +193,14 @@ def main():
 
     simulator = Simulator(
         root_dir="/tmp/fox",
-        experiment_name="pt_fedavg_intime",
+        experiment_name="pt_fedavg_stream",
         server_app=server_app,
         client_app=client_app,
         num_clients=2,
     )
 
-    simulator.run()
+    result = simulator.run()
+    print(f"final result: {result}")
 
 
 if __name__ == "__main__":

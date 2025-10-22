@@ -21,7 +21,7 @@ from nvflare.fox.api.dec import collab
 from nvflare.fox.api.group import all_clients
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import load_np_model, parse_array_def, save_np_model
-from nvflare.fox.sys.file_downloader import download_file, prepare_file_for_download
+from nvflare.fox.sys.downloader import Downloader, download_file
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -63,13 +63,12 @@ class NPFedAvgStream(Strategy):
         if ctx.env_type == EnvType.SYSTEM:
             file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
             save_np_model(current_model, file_name)
-            model = prepare_file_for_download(
+            downloader = Downloader(
                 num_receivers=grp.size,
-                file_name=file_name,
                 ctx=ctx,
                 timeout=5.0,
-                file_downloaded_cb=self._model_downloaded,
             )
+            model = downloader.add_file(file_name=file_name, file_downloaded_cb=self._model_downloaded)
             model_type = "ref"
             self.logger.info(f"prepared model as ref: {model}")
         else:
@@ -135,13 +134,12 @@ class NPTrainer(ClientApp):
             # stream it
             file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
             save_np_model(result, file_name)
-            result = prepare_file_for_download(
+            downloader = Downloader(
                 num_receivers=1,
-                file_name=file_name,
                 ctx=context,
                 timeout=5.0,
-                file_downloaded_cb=self._result_downloaded,
             )
+            result = downloader.add_file(file_name=file_name, file_downloaded_cb=self._result_downloaded)
             self.logger.info(f"prepared result as ref: {result}")
 
         return result, model_type

@@ -173,13 +173,15 @@ class Simulator:
 
     def run(self):
         try:
-            self._try_run()
+            result = self._try_run()
         except KeyboardInterrupt:
             self.logger.info("execution is aborted by user")
             self.abort_signal.trigger(True)
+            result = None
         finally:
             self.thread_executor.shutdown(wait=False, cancel_futures=True)
         self.logger.info(f"Experiment results are in {self.exp_dir}")
+        return result
 
     def _try_run(self):
         # initialize all apps
