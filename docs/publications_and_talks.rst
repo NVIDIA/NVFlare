@@ -7,6 +7,10 @@ Publications
 Non-exhaustive list of papers and publications related to NVIDIA FLARE, 
 including papers using NVIDIA FLARE's predecessor libraries included in the `Clara Train SDK <https://catalog.ngc.nvidia.com/orgs/nvidia/containers/clara-train-sdk>`__.
 
+Publications: 2025
+------------------
+* **2025-09** `Equitable Federated Learning with NCA <https://arxiv.org/abs/2506.21735>`__ (`MICCAI 2025 <https://papers.miccai.org/miccai-2025/0306-Paper2510.html>`__)
+
 Publications: 2024
 ------------------
 * **2024-12** `C-FedRAG: A Confidential Federated Retrieval-Augmented Generation System <https://arxiv.org/abs/2412.13163>`__ (preprint)
