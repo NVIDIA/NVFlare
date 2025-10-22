@@ -18,7 +18,6 @@ import uuid
 
 import torch
 
-from nvflare.app_opt.pt.tensor_downloader import TensorDownloadable
 from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.ctx import Context
@@ -29,10 +28,7 @@ from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.utils import load_np_model, parse_array_def, save_np_model
 from nvflare.fox.examples.pt.utils import parse_state_dict
 from nvflare.fox.sim.simulator import Simulator
-from nvflare.fox.sys.file_downloader import download_file
-from nvflare.fox.sys.general_downloader import GeneralDownloader
-from nvflare.fox.sys.model_downloader import download_model
-from nvflare.fuel.f3.streaming.file_downloader import FileDownloadable
+from nvflare.fox.sys.downloader import Downloader, download_file, download_tensors
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -79,14 +75,14 @@ class PTFedAvgMixed(Strategy):
             file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
             save_np_model(np_model, file_name)
 
-            downloader = GeneralDownloader(
+            downloader = Downloader(
                 num_receivers=grp.size,
                 ctx=ctx,
                 timeout=5.0,
             )
             model_type = "ref"
-            pt_model = downloader.add_object(TensorDownloadable(pt_model, 2))
-            np_model = downloader.add_object(FileDownloadable(file_name))
+            pt_model = downloader.add_tensors(pt_model, 2)
+            np_model = downloader.add_file(file_name)
             self.logger.info(f"prepared model as ref: {pt_model=} {np_model=}")
         else:
             model_type = "model"
@@ -118,11 +114,11 @@ class PTFedAvgMixed(Strategy):
 
         pt_result, np_result, model_type = result
         if model_type == "ref":
-            err, pt_result = download_model(
+            err, pt_result = download_tensors(
                 ref=pt_result,
                 per_request_timeout=5.0,
                 ctx=context,
-                model_received_cb=self._aggregate_tensors,
+                tensors_received_cb=self._aggregate_tensors,
                 aggr_result=aggr_result,
                 context=context,
             )
@@ -171,7 +167,7 @@ class PTTrainer(ClientApp):
             f"[{context.header_str()}] training round {current_round}: {model_type=} {pt_model=} {np_model=}"
         )
         if model_type == "ref":
-            err, pt_model = download_model(ref=pt_model, per_request_timeout=5.0, ctx=context)
+            err, pt_model = download_tensors(ref=pt_model, per_request_timeout=5.0, ctx=context)
             if err:
                 raise RuntimeError(f"failed to download PT model {pt_model}: {err}")
             self.logger.info(f"downloaded PT model {pt_model}")
@@ -192,17 +188,17 @@ class PTTrainer(ClientApp):
 
         if model_type == "ref":
             # stream it
-            downloader = GeneralDownloader(
+            downloader = Downloader(
                 num_receivers=1,
                 ctx=context,
                 timeout=5.0,
             )
-            pt_result = downloader.add_object(TensorDownloadable(pt_result, 2))
+            pt_result = downloader.add_tensors(pt_result, 2)
             self.logger.info(f"prepared PT result as ref: {pt_result}")
 
             file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
             save_np_model(np_result, file_name)
-            np_result = downloader.add_object(FileDownloadable(file_name, file_downloaded_cb=self._result_downloaded))
+            np_result = downloader.add_file(file_name, file_downloaded_cb=self._result_downloaded)
             self.logger.info(f"prepared NP result as ref: {np_result}")
 
         return pt_result, np_result, model_type
@@ -241,7 +237,8 @@ def main():
         num_clients=2,
     )
 
-    simulator.run()
+    result = simulator.run()
+    print(f"Final result: {result}")
 
 
 if __name__ == "__main__":

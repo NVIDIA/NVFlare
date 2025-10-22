@@ -2,7 +2,7 @@ from typing import Any
 
 from nvflare.fox.api.ctx import Context
 from nvflare.fox.api.filter import CallFilter, ResultFilter
-from nvflare.fox.sys.model_downloader import ModelDownloader, download_model
+from nvflare.fox.sys.downloader import Downloader, download_tensors
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -21,12 +21,12 @@ class OutgoingModelCallFilter(CallFilter):
         num_receivers = context.target_group_size
         self.logger.info(f"target group size={num_receivers}")
 
-        downloader = ModelDownloader(
+        downloader = Downloader(
             num_receivers=context.target_group_size,
             ctx=context,
             timeout=5.0,
         )
-        model = downloader.add_model(arg_value, 2)
+        model = downloader.add_tensors(arg_value, 2)
         func_kwargs[self.model_arg_name] = model
         return func_kwargs
 
@@ -43,7 +43,7 @@ class IncomingModelCallFilter(CallFilter):
         if not arg_value:
             return func_kwargs
 
-        err, model = download_model(ref=arg_value, ctx=context, per_request_timeout=5.0)
+        err, model = download_tensors(ref=arg_value, ctx=context, per_request_timeout=5.0)
         if err:
             self.logger.error(f"error filtering call arg {arg_value}: {err}")
         else:
@@ -58,12 +58,12 @@ class OutgoingModelResultFilter(ResultFilter):
         if not isinstance(result, dict):
             return result
 
-        downloader = ModelDownloader(
+        downloader = Downloader(
             num_receivers=1,
             ctx=context,
             timeout=5.0,
         )
-        return downloader.add_model(result, 2)
+        return downloader.add_tensors(result, 2)
 
 
 class IncomingModelResultFilter(ResultFilter):
@@ -73,7 +73,7 @@ class IncomingModelResultFilter(ResultFilter):
         self.logger = get_obj_logger(self)
 
     def filter_result(self, result: Any, context: Context):
-        err, model = download_model(ref=result, ctx=context, per_request_timeout=5.0)
+        err, model = download_tensors(ref=result, ctx=context, per_request_timeout=5.0)
         if err:
             self.logger.error(f"error filtering result {result}: {err}")
             return result

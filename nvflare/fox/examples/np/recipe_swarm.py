@@ -18,7 +18,7 @@ from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.swarm import NPSwarm, NPSwarmClient
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
+JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfer"
 
 
 def main():
@@ -30,7 +30,7 @@ def main():
     client_app = NPSwarmClient(delta=1.0)
 
     recipe = FoxRecipe(
-        job_name="recipe_swarm",
+        job_name="swarm",
         server_app=server_app,
         client_app=client_app,
     )
