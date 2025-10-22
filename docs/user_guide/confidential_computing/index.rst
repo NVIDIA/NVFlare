@@ -143,12 +143,12 @@ This solution is ideal for organizations with high-value proprietary models coll
 Azure Confidential Computing Cloud Deployment
 ----------------------------------------------
 
-For organizations seeking cloud-based confidential federated learning **without IP protection requirements**, FLARE supports running Federated learning workload on Azure Confidential Computing infrastructure.
+For organizations seeking cloud-based confidential federated learning, FLARE supports running Federated learning workload on Azure Confidential Computing infrastructure.
 This deployment option provides:
 
 .. note::
 
-    Other CSP supports as well as IP protection on the cloud will be in future releases.
+    Other CSP supports on the cloud will be in future releases.
 
 **Trust Establishment Among Participants**
 
