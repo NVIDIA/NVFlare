@@ -25,11 +25,11 @@ from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 
 class TensorDownloadable(CacheableObject):
 
-    def __init__(self, tensors: dict[str, torch.Tensor], num_items_per_chunk: int):
+    def __init__(self, tensors: dict[str, torch.Tensor], max_chunk_size: int):
         self.tensors = tensors
         self.size = len(tensors)
         self.keys = list(tensors.keys())
-        super().__init__(num_items_per_chunk)
+        super().__init__(max_chunk_size)
 
     def get_base_object(self):
         return self.tensors
@@ -76,19 +76,19 @@ class TensorConsumer(ItemConsumer):
 def add_tensors(
     downloader: ObjectDownloader,
     tensors: dict[str, torch.Tensor],
-    num_tensors_per_chunk: int = 1,
+    max_chunk_size: int = 1,
 ) -> str:
     """Add a file to be downloaded to the specified downloader.
 
     Args:
         downloader: the downloader to add tensors to.
         tensors: state dict to be downloaded
-        num_tensors_per_chunk: number of tensors per chunk
+        max_chunk_size: max chunk size
 
     Returns: reference id for the state dict.
 
     """
-    obj = TensorDownloadable(tensors, num_tensors_per_chunk)
+    obj = TensorDownloadable(tensors, max_chunk_size)
     return downloader.add_object(obj)
 
 

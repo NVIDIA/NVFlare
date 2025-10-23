@@ -32,3 +32,23 @@ def parse_state_dict(d: dict[str, list]):
     for k, v in d.items():
         result[k] = parse_array_def(v)
     return result
+
+
+def parse_model_def(model_def):
+    if isinstance(model_def, dict):
+        return parse_state_dict(model_def)
+    else:
+        return parse_array_def(model_def)
+
+
+def add(value: dict, to_model: dict):
+    for k, v in value.items():
+        if k not in to_model:
+            to_model[k] = v
+        else:
+            to_model[k] += v
+
+
+def div(model: dict, value):
+    for k, v in model.items():
+        model[k] = torch.div(v, value)

@@ -17,6 +17,7 @@ from typing import Any, List, Tuple
 
 from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, DownloadService, ProduceRC
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.fuel.utils.validation_utils import check_non_negative_int
 
 
 class _StateKey:
@@ -26,9 +27,10 @@ class _StateKey:
 
 class CacheableObject(Downloadable):
 
-    def __init__(self, num_items_per_chunk: int):
+    def __init__(self, max_chunk_size: int):
         super().__init__()
-        self.num_items_per_chunk = num_items_per_chunk
+        check_non_negative_int("max_chunk_size", max_chunk_size)
+        self.max_chunk_size = max_chunk_size
         self.size = self.get_item_count()
         self.cache = [(None, 0)] * self.size
         self.lock = threading.Lock()
@@ -59,14 +61,15 @@ class CacheableObject(Downloadable):
         with self.lock:
             self.cache = None
 
-    def _get_item(self, index: int) -> bytes:
+    def _get_item(self, index: int, requester: str) -> bytes:
         with self.lock:
             data, _ = self.cache[index]
             if data is None:
                 data = self.produce_item(index)
                 self.cache[index] = (data, 0)
+                self.logger.info(f"created and cached item {index} for {requester}")
             else:
-                self.logger.info(f"got item {index} from cache")
+                self.logger.info(f"got item {index} from cache for {requester}")
             return data
 
     def _adjust_cache(self, start: int, count: int):
@@ -92,18 +95,23 @@ class CacheableObject(Downloadable):
 
             start = received_start + received_count
 
-        end = min(start + self.num_items_per_chunk, self.size)
-        count = end - start
-
-        if count <= 0:
+        if start >= self.size:
             # already done
             return ProduceRC.EOF, None, {}
 
         result = []
-        for i in range(start, end):
-            item = self._get_item(i)
-            result.append(item)
-        return ProduceRC.OK, result, {_StateKey.START: start, _StateKey.COUNT: count}
+        total_size = 0
+
+        for i in range(start, self.size):
+            item = self._get_item(i, requester)
+            item_size = len(item)
+            if not result or total_size + item_size < self.max_chunk_size:
+                result.append(item)
+                total_size += item_size
+            else:
+                break
+
+        return ProduceRC.OK, result, {_StateKey.START: start, _StateKey.COUNT: len(result)}
 
 
 class ItemConsumer(Consumer):

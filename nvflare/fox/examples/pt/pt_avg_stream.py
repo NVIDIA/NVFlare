@@ -74,8 +74,8 @@ class PTFedAvgStream(Strategy):
                 timeout=5.0,
             )
             model_type = "ref"
-            model = downloader.add_tensors(current_model, 2)
-            model2 = downloader.add_tensors(model2, 2)
+            model = downloader.add_tensors(current_model, 0)
+            model2 = downloader.add_tensors(model2, 0)
             self.logger.info(f"prepared model as ref: {model}")
         else:
             model = current_model
@@ -166,7 +166,7 @@ class PTTrainer(ClientApp):
                 timeout=5.0,
             )
             model_type = "ref"
-            model = downloader.add_tensors(result, 2)
+            model = downloader.add_tensors(result, 0)
             self.logger.info(f"prepared result as ref: {model}")
         else:
             model = result

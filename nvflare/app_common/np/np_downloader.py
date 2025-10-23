@@ -21,22 +21,24 @@ from nvflare.fuel.f3.streaming.cacheable import CacheableObject, ItemConsumer
 from nvflare.fuel.f3.streaming.download_service import download_object
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 
-_TWO_MB = 2 * 1024 * 1024
-
 
 class ArrayDownloadable(CacheableObject):
 
     def __init__(self, arrays: dict[str, np.ndarray], max_chunk_size: int):
+        self.arrays = arrays
         self.size = len(arrays)
         self.keys = list(arrays.keys())
-        super().__init__(arrays, max_chunk_size)
+        super().__init__(max_chunk_size)
+
+    def get_base_object(self):
+        return self.arrays
 
     def get_item_count(self) -> int:
         return self.size
 
-    def produce_item(self, index: int) -> bytes:
+    def produce_item(self, index: int) -> Any:
         key = self.keys[index]
-        arrays_to_send = {key: self.base_obj[key]}
+        arrays_to_send = {key: self.arrays[key]}
         stream = BytesIO()
         np.savez(allow_pickle=False, file=stream, **arrays_to_send)
         return stream.getvalue()
@@ -84,16 +86,16 @@ class ArrayConsumer(ItemConsumer):
 def add_arrays(
     downloader: ObjectDownloader,
     arrays: dict[str, np.ndarray],
-    max_chunk_size: int = _TWO_MB,
+    max_chunk_size: int = 1,
 ) -> str:
     """Add arrays to be downloaded to the specified downloader.
 
     Args:
-        downloader: the downloader to add arrays to.
+        downloader: the downloader to add tensors to.
         arrays: arrays to be downloaded
         max_chunk_size: max chunk size
 
-    Returns: reference id for the arrays.
+    Returns: reference id for the state dict.
 
     """
     obj = ArrayDownloadable(arrays, max_chunk_size)
@@ -109,7 +111,6 @@ def download_arrays(
     optional=False,
     abort_signal=None,
     arrays_received_cb=None,
-    progress_cb=None,
     **cb_kwargs,
 ) -> Tuple[str, Optional[dict[str, np.ndarray]]]:
     """Download the referenced arrays from the source.
@@ -120,7 +121,7 @@ def download_arrays(
         per_request_timeout: timeout for requests sent to the data source.
         cell: cell to be used for communicating to the data source.
         secure: P2P private mode for communication
-        optional: suppress log messages of communication
+        optional: supress log messages of communication
         abort_signal: signal for aborting download.
         arrays_received_cb: the callback to be called when one set of arrays are received
 
@@ -137,6 +138,5 @@ def download_arrays(
         secure=secure,
         optional=optional,
         abort_signal=abort_signal,
-        progress_cb=progress_cb,
     )
     return consumer.error, consumer.result
