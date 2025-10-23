@@ -28,9 +28,36 @@ def parse_array_def(array_def):
         raise ValueError(f"unsupported array def: {array_def}")
 
 
+def parse_state_dict(d: dict[str, list]):
+    result = {}
+    for k, v in d.items():
+        result[k] = parse_array_def(v)
+    return result
+
+
+def parse_model_def(model_def):
+    if isinstance(model_def, dict):
+        return parse_state_dict(model_def)
+    else:
+        return parse_array_def(model_def)
+
+
 def save_np_model(model: np.ndarray, file_name: str):
     np.save(file_name, model)
 
 
 def load_np_model(file_name: str):
     return np.load(file_name)
+
+
+def add(model: dict, to_model: dict):
+    for k, v in model.items():
+        if k not in to_model:
+            to_model[k] = v
+        else:
+            to_model[k] += v
+
+
+def div(model: dict, value):
+    for k, v in model.items():
+        model[k] = v / value

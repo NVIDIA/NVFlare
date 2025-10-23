@@ -24,15 +24,17 @@ JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfe
 def main():
     simple_logging(logging.DEBUG)
 
+    init_model = {
+        "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+        "y": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+        "z": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+    }
+
     server_app = ServerApp(
         strategy_name="fedavg_mixed",
         strategy=PTFedAvgMixed(
-            pt_model={
-                "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-                "y": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-                "z": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-            },
-            np_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+            pt_model=init_model,
+            np_model=init_model,
             num_rounds=2,
         ),
     )

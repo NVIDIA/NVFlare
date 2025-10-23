@@ -26,7 +26,7 @@ class OutgoingModelCallFilter(CallFilter):
             ctx=context,
             timeout=5.0,
         )
-        model = downloader.add_tensors(arg_value, 2)
+        model = downloader.add_tensors(arg_value, 0)
         func_kwargs[self.model_arg_name] = model
         return func_kwargs
 
@@ -63,7 +63,7 @@ class OutgoingModelResultFilter(ResultFilter):
             ctx=context,
             timeout=5.0,
         )
-        return downloader.add_tensors(result, 2)
+        return downloader.add_tensors(result, 0)
 
 
 class IncomingModelResultFilter(ResultFilter):

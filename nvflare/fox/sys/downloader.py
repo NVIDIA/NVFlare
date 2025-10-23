@@ -11,8 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import numpy as np
 import torch
 
+from nvflare.app_common.np.np_downloader import add_arrays
+from nvflare.app_common.np.np_downloader import download_arrays as pull_arrays
 from nvflare.fox.api.ctx import Context
 from nvflare.fox.sys.backend import SysBackend
 from nvflare.fuel.f3.streaming.file_downloader import add_file
@@ -32,6 +35,7 @@ class DownloadRefKey:
 class ObjectType:
     FILE = "file"
     TENSORS = "tensors"
+    ARRAYS = "arrays"
 
 
 class Downloader(ObjectDownloader):
@@ -69,9 +73,13 @@ class Downloader(ObjectDownloader):
         rid = add_file(self, file_name, chunk_size=chunk_size, file_downloaded_cb=file_downloaded_cb, **cb_kwargs)
         return self._to_ref(ObjectType.FILE, rid)
 
-    def add_tensors(self, tensors: dict[str, torch.Tensor], num_tensors_per_chunk: int = 1):
-        rid = add_tensors(self, tensors, num_tensors_per_chunk=num_tensors_per_chunk)
+    def add_tensors(self, tensors: dict[str, torch.Tensor], max_chunk_size: int = 0):
+        rid = add_tensors(self, tensors, max_chunk_size=max_chunk_size)
         return self._to_ref(ObjectType.TENSORS, rid)
+
+    def add_arrays(self, arrays: dict[str, np.ndarray], max_chunk_size: int = 0):
+        rid = add_arrays(self, arrays, max_chunk_size=max_chunk_size)
+        return self._to_ref(ObjectType.ARRAYS, rid)
 
 
 def download_file(ref: dict, per_request_timeout: float, ctx: Context):
@@ -108,5 +116,25 @@ def download_tensors(ref: dict, per_request_timeout: float, ctx: Context, tensor
         cell=backend.cell,
         abort_signal=ctx.abort_signal,
         tensors_received_cb=tensors_received_cb,
+        **cb_kwargs,
+    )
+
+
+def download_arrays(ref: dict, per_request_timeout: float, ctx: Context, arrays_received_cb=None, **cb_kwargs):
+    backend = ctx.backend
+    if not isinstance(backend, SysBackend):
+        raise ValueError(f"backend must be SysBackend but got {type(backend)}")
+
+    obj_type = ref.get(DownloadRefKey.OBJECT_TYPE)
+    if obj_type != ObjectType.ARRAYS:
+        raise ValueError(f"obj_type must be {ObjectType.ARRAYS} but got {obj_type}")
+
+    return pull_arrays(
+        from_fqcn=ref.get(DownloadRefKey.SOURCE),
+        ref_id=ref.get(DownloadRefKey.REF_ID),
+        per_request_timeout=per_request_timeout,
+        cell=backend.cell,
+        abort_signal=ctx.abort_signal,
+        arrays_received_cb=arrays_received_cb,
         **cb_kwargs,
     )
