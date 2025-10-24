@@ -229,7 +229,7 @@ class Simulator:
                         # mark the device to be busy and remove from device candidates for next cycle.
                         self.busy_devices[did] = selection_id
                 elif resp.status == EdgeApiStatus.RETRY:
-                    self.logger.info("retrying")
+                    self.logger.info(f"Task request for device {did} returned RETRY status, will retry.")
                 elif resp.status == EdgeApiStatus.NO_JOB:
                     # the job is gone
                     self.logger.info("job is gone when getting task - exiting")
