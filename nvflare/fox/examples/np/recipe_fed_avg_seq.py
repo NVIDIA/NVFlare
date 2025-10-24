@@ -15,49 +15,40 @@ import logging
 
 from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
-from nvflare.fox.examples.np.algos.client import NPTrainerMaker
+from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_seq import NPFedAvgSequential
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sys.recipe import FoxRecipe
+
+JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfer"
 
 
 def main():
     simple_logging(logging.DEBUG)
 
     server_app = ServerApp(
-        strategy_name="fed_avg",
-        strategy=NPFedAvgSequential(
-            num_rounds=2,
-            initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-        ),
+        strategy_name="fedavg",
+        strategy=NPFedAvgSequential(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
     )
     server_app.add_collab_object("metric_receiver", MetricReceiver())
-    server_app.set_prop(
-        "client_weight_config",
-        {
-            "site-1": 70,
-            "site-2": 100,
-        },
-    )
+    server_app.set_prop("client_weight_config", {"red": 70, "blue": 100, "silver": 50})
 
-    client_app = NPTrainerMaker(delta=1.0)
+    client_app = NPTrainer(delta=1.0)
     client_app.set_prop(
         "client_delta",
         {
-            "site-1": 1.0,
-            "site-2": 2.0,
+            "red": 1.0,
+            "blue": 2.0,
+            "silver": 3.0,
         },
     )
-    simulator = Simulator(
-        root_dir="/tmp/fox",
-        experiment_name="fedavg_seq",
+
+    recipe = FoxRecipe(
+        job_name="fedavg_seq",
         server_app=server_app,
         client_app=client_app,
-        num_clients=2,
     )
-
-    result = simulator.run()
-    print(f"Final result: {result}")
+    recipe.export(JOB_ROOT_DIR)
 
 
 if __name__ == "__main__":

@@ -94,11 +94,10 @@ each recipient pulls the data from the object owner.
 
 class Downloadable(ABC):
 
-    def set_transaction(self, tx_id, ref_id):
-        pass
+    def __init__(self, obj: Any):
+        self.base_obj = obj
 
-    @abstractmethod
-    def get_base_object(self):
+    def set_transaction(self, tx_id, ref_id):
         pass
 
     @abstractmethod
@@ -267,9 +266,7 @@ class _Transaction:
             obj.transaction_done(self.tid, status)
 
         if self.transaction_done_cb:
-            self.transaction_done_cb(
-                self.tid, status, [ref.obj.get_base_object() for ref in self.refs], **self.cb_kwargs
-            )
+            self.transaction_done_cb(self.tid, status, [ref.obj.base_obj for ref in self.refs], **self.cb_kwargs)
 
 
 class TransactionInfo:

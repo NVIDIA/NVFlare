@@ -260,8 +260,8 @@ class App:
         for obj in self._managed_objects.values():
             self._fox_init(obj, context)
 
-    def new_context(self, caller: str, callee: str, props: dict = None, target_group=None):
-        return Context(self, caller, callee, self._abort_signal, props, target_group=target_group)
+    def new_context(self, caller: str, callee: str, target_group=None):
+        return Context(self, caller, callee, self._abort_signal, target_group=target_group)
 
     def register_event_handler(self, event_type: str, handler, **handler_kwargs):
         handlers = self._event_handlers.get(event_type)
