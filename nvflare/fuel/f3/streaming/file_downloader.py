@@ -26,7 +26,7 @@ DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024
 
 """
 This package implements file downloading capability based on the ObjectDownloader framework.
-It provides implementation of the Producer and Consumer objects, required by ObjDownloader.
+It provides implementation of the Downloadable and Consumer objects, required by ObjDownloader.
 """
 
 
@@ -48,6 +48,7 @@ class FileDownloadable(Downloadable):
         Args:
             file_name: name of the file.
         """
+        super().__init__(file_name)
         self.name = file_name
         self.size = os.path.getsize(file_name)
 
@@ -61,9 +62,6 @@ class FileDownloadable(Downloadable):
         self.file_downloaded_cb = file_downloaded_cb
         self.cb_kwargs = cb_kwargs
         self.logger = get_obj_logger(self)
-
-    def get_base_object(self):
-        return self.name
 
     def produce(self, state: dict, requester: str) -> Tuple[str, Any, dict]:
         received_bytes = 0

@@ -25,20 +25,16 @@ from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 class ArrayDownloadable(CacheableObject):
 
     def __init__(self, arrays: dict[str, np.ndarray], max_chunk_size: int):
-        self.arrays = arrays
         self.size = len(arrays)
         self.keys = list(arrays.keys())
-        super().__init__(max_chunk_size)
-
-    def get_base_object(self):
-        return self.arrays
+        super().__init__(arrays, max_chunk_size)
 
     def get_item_count(self) -> int:
         return self.size
 
     def produce_item(self, index: int) -> Any:
         key = self.keys[index]
-        arrays_to_send = {key: self.arrays[key]}
+        arrays_to_send = {key: self.base_obj[key]}
         stream = BytesIO()
         np.savez(allow_pickle=False, file=stream, **arrays_to_send)
         return stream.getvalue()

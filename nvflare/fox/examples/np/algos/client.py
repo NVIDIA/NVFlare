@@ -25,6 +25,11 @@ class NPTrainer(ClientApp):
         ClientApp.__init__(self)
         self.delta = delta
 
+    def fox_init(self, context: Context):
+        delta_config = context.app.get_prop("client_delta", {})
+        self.delta = delta_config.get(self.name, self.delta)
+        self.logger.info(f"client {self.name}: delta={self.delta}")
+
     @collab
     def train(self, current_round, weights, context: Context):
         if context.is_aborted():
@@ -92,5 +97,6 @@ class NPTrainerMaker(ClientApp):
 
     def make_client_app(self, name: str) -> ClientApp:
         app = NPTrainer(self.delta)
+        app.update_props(self.get_props())
         app.name = name
         return app

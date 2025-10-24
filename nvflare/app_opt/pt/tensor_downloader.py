@@ -26,20 +26,16 @@ from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 class TensorDownloadable(CacheableObject):
 
     def __init__(self, tensors: dict[str, torch.Tensor], max_chunk_size: int):
-        self.tensors = tensors
         self.size = len(tensors)
         self.keys = list(tensors.keys())
-        super().__init__(max_chunk_size)
-
-    def get_base_object(self):
-        return self.tensors
+        super().__init__(tensors, max_chunk_size)
 
     def get_item_count(self) -> int:
         return self.size
 
     def produce_item(self, index: int) -> Any:
         key = self.keys[index]
-        tensor_to_send = {key: self.tensors[key]}
+        tensor_to_send = {key: self.base_obj[key]}
         return save_tensors(tensor_to_send)
 
 

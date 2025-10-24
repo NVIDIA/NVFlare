@@ -27,8 +27,8 @@ class _StateKey:
 
 class CacheableObject(Downloadable):
 
-    def __init__(self, max_chunk_size: int):
-        super().__init__()
+    def __init__(self, obj: Any, max_chunk_size: int):
+        super().__init__(obj)
         check_non_negative_int("max_chunk_size", max_chunk_size)
         self.max_chunk_size = max_chunk_size
         self.size = self.get_item_count()

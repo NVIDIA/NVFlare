@@ -31,6 +31,23 @@ class NPFedAvgSequential(Strategy):
         self.initial_model = initial_model  # need to remember init for job API to work!
         self._initial_model = parse_array_def(initial_model)
         self.logger = get_obj_logger(self)
+        self.client_weights = None
+
+    def fox_init(self, context: Context):
+        weight_config = context.app.get_prop("client_weight_config", {})
+        client_weights = {}
+        total = 0
+        for c in context.clients:
+            w = weight_config.get(c.name, 100)
+            client_weights[c.name] = w
+            total += w
+
+        # normalize weights
+        for c in context.clients:
+            client_weights[c.name] = client_weights[c.name] / total
+
+        self.client_weights = client_weights
+        self.logger.info("client_weights: {}".format(client_weights))
 
     def execute(self, context: Context):
         self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
@@ -47,8 +64,7 @@ class NPFedAvgSequential(Strategy):
         total = 0
         n = 0
         for c in context.clients:
-            result = c.train(r, current_model, _blocking=True, _timeout=2.0, _optional=True, _secure=True)
+            result = c.train(r, current_model, _blocking=True, _timeout=2.0, _optional=True, _secure=False)
             self.logger.info(f"[{context.header_str()}] round {r}: got result from client {c.name}: {result}")
-            total += result
-            n += 1
-        return total / n
+            total += result * self.client_weights[c.name]
+        return total

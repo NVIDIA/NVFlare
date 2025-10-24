@@ -16,7 +16,7 @@ from nvflare.apis.signal import Signal
 
 class Context:
 
-    def __init__(self, app, caller: str, callee: str, abort_signal: Signal, props: dict = None, target_group=None):
+    def __init__(self, app, caller: str, callee: str, abort_signal: Signal, target_group=None):
         if not isinstance(caller, str):
             raise ValueError(f"caller must be str but got {type(caller)}")
 
@@ -29,8 +29,6 @@ class Context:
         self.abort_signal = abort_signal
         self.app = app
         self.props = {}
-        if props:
-            self.props.update(props)
 
     @property
     def backend(self):

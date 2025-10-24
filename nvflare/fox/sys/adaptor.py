@@ -39,6 +39,8 @@ class FoxAdaptor:
         self.outgoing_result_filters = outgoing_result_filters
 
     def process_config(self, app: App, fl_ctx: FLContext):
+        app.update_props(self.props)
+
         engine = fl_ctx.get_engine()
         if self.collab_obj_ids:
             for cid in self.collab_obj_ids:
