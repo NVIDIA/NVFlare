@@ -76,11 +76,11 @@ def main():
                 optimizer.step()
 
                 running_loss += cost.cpu().detach().numpy() / images.size()[0]
-               
+
             print(f"site={client_name}, Epoch: {epoch}/{epochs}, Iteration: {i}, Loss: {running_loss}")
             global_step = input_model.current_round * steps + epoch * len(train_loader) + i
             summary_writer.add_scalar(
-                tag="loss_for_each_batch", scalar=float(running_loss)/len(train_loader), global_step=global_step
+                tag="loss_for_each_batch", scalar=float(running_loss) / len(train_loader), global_step=global_step
             )
 
         print(f"Finished Training for {client_name}")
