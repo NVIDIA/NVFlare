@@ -14,7 +14,6 @@
 
 import argparse
 import os
-from typing import List
 
 import pytest
 
@@ -78,7 +77,7 @@ GET_CONFIG_FILE_PATH_TEST_CASES = [
 ]
 
 
-def _create_test_args(config_file: List, job_name: str = "launch_once"):
+def _create_test_args(config_file: list, job_name: str = "launch_once"):
     args = argparse.Namespace()
     args.config_file = config_file
     args.debug = False

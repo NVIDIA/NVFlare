@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List
 
 from nvflare.app_common.abstract.statistics_spec import StatisticConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
@@ -37,7 +36,7 @@ class TestStatisticsController:
 
     def test_target_statistics(self):
 
-        target_statistics: List[StatisticConfig] = StatisticsController._get_target_statistics(
+        target_statistics: list[StatisticConfig] = StatisticsController._get_target_statistics(
             self.stats_controller.statistic_configs, SC.ordered_statistics[SC.STATS_1st_STATISTICS]
         )
 
@@ -48,7 +47,7 @@ class TestStatisticsController:
             else:
                 assert mc.config == {"*": {"bins": 10}, "Age": {"bins": 5, "range": [0, 120]}}
 
-        target_statistics: List[StatisticConfig] = StatisticsController._get_target_statistics(
+        target_statistics: list[StatisticConfig] = StatisticsController._get_target_statistics(
             self.stats_controller.statistic_configs, SC.ordered_statistics[SC.STATS_2nd_STATISTICS]
         )
 
@@ -85,7 +84,7 @@ class TestStatisticsController:
         )
         rhs = [mc.name for mc in seq]
         rhs.sort()
-        target_statistics: List[StatisticConfig] = fobs.loads(xs[SC.STATS_TARGET_STATISTICS])
+        target_statistics: list[StatisticConfig] = fobs.loads(xs[SC.STATS_TARGET_STATISTICS])
         lhs = [mc.name for mc in target_statistics]
         lhs.sort()
         assert lhs == rhs
@@ -103,7 +102,7 @@ class TestStatisticsController:
         assert xs[SC.STATISTICS_TASK_KEY] == SC.STATS_2nd_STATISTICS
         rhs = SC.ordered_statistics[SC.STATS_2nd_STATISTICS]
         rhs.sort()
-        target_statistics: List[StatisticConfig] = fobs.loads(xs[SC.STATS_TARGET_STATISTICS])
+        target_statistics: list[StatisticConfig] = fobs.loads(xs[SC.STATS_TARGET_STATISTICS])
         lhs = [mc.name for mc in target_statistics]
         lhs.sort()
         assert lhs == rhs

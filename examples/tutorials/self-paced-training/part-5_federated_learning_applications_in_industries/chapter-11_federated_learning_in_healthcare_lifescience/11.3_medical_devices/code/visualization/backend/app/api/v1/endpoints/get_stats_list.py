@@ -13,14 +13,13 @@
 # limitations under the License.
 
 import os
-from typing import List
 
 from app.core.config import settings
 from app.utils.dependencies import validate_user
 from fastapi import APIRouter, Depends
 
 
-def get_stats_directories(app_name: str) -> List[str]:
+def get_stats_directories(app_name: str) -> list[str]:
     # Validate app_name to prevent path traversal
     app_dir = os.path.normpath(os.path.join(settings.data_root, app_name))
     if not app_dir.startswith(settings.data_root):
@@ -42,7 +41,7 @@ def get_stats_directories(app_name: str) -> List[str]:
 router = APIRouter()
 
 
-@router.get("/{app_name}/", response_model=List[str])
+@router.get("/{app_name}/", response_model=list[str])
 async def get_stats_list(app_name: str, dep: None = Depends(validate_user)):
     """An API to get the list of available statistics for a given application.
 

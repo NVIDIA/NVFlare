@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask
@@ -23,7 +22,7 @@ from nvflare.app_common.workflows.statistics_controller import StatisticsControl
 
 
 class MockStatisticsController(StatisticsController):
-    def __init__(self, statistic_configs: Dict[str, dict], writer_id: str):
+    def __init__(self, statistic_configs: dict[str, dict], writer_id: str):
         super(MockStatisticsController, self).__init__(statistic_configs, writer_id)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):

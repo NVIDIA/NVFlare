@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
-from typing import List
 
 import numpy as np
 import pandas as pd
@@ -54,7 +53,7 @@ class MockDFStats(DFStatisticsCore):
 
 
 class MockDFStats2(DFStatisticsCore):
-    def __init__(self, data_array: List[int]):
+    def __init__(self, data_array: list[int]):
         super().__init__()
         self.raw_data = data_array
         self.data = {"train": None}
