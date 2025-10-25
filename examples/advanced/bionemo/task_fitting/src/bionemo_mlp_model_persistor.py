@@ -40,7 +40,7 @@ class BioNeMoMLPModelPersistor(PTFileModelPersistor):
         global_model_file_name=DefaultCheckpointFileName.GLOBAL_MODEL,
         best_global_model_file_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
         source_ckpt_file_full_name=None,
-        filter_id: str = None,
+        filter_id: Optional[str] = None,
         embedding_dimensions: int = 320,  # embedding dimensions of ESM2-8m
     ):
         """Persist sklearn-based model to/from file system.

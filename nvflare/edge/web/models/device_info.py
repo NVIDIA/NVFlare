@@ -20,10 +20,10 @@ class DeviceInfo(BaseModel):
     def __init__(
         self,
         device_id: str,
-        app_name: str = None,
-        app_version: str = None,
-        platform: str = None,
-        platform_version: str = None,
+        app_name: Optional[str] = None,
+        app_version: Optional[str] = None,
+        platform: Optional[str] = None,
+        platform_version: Optional[str] = None,
         **kwargs,
     ):
         super().__init__()

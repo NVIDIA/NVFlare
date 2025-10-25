@@ -42,8 +42,8 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
         device_manager_config: DeviceManagerConfig,
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
-        device_training_params: Dict = None,
-        custom_source_root: str = None,
+        device_training_params: Optional[dict] = None,
+        custom_source_root: Optional[str] = None,
     ):
         self.device_model = device_model
         self.input_shape = input_shape

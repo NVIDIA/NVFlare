@@ -12,18 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import inspect
+from typing import Optional
 
 from nvflare.fuel.utils.class_utils import get_component_init_parameters
 from nvflare.private.fed.server.client_manager import ClientManager
 
 
 class A:
-    def __init__(self, name: str = None):
+    def __init__(self, name: Optional[str] = None):
         self.name = name
 
 
 class B(A):
-    def __init__(self, type: str = None, *args, **kwargs):
+    def __init__(self, type: Optional[str] = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.type = type
 

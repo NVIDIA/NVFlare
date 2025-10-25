@@ -350,8 +350,8 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
         self,
         job_id: str,
         job_meta: dict,
-        allocated_resource: dict = None,
-        token: str = None,
+        allocated_resource: Optional[dict] = None,
+        token: Optional[str] = None,
         resource_manager=None,
     ) -> str:
         status = self.client_executor.get_status(job_id)

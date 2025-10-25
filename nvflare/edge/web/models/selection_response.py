@@ -20,8 +20,8 @@ class SelectionResponse(BaseModel):
     def __init__(
         self,
         status: str,
-        job_id: str = None,
-        task_id: str = None,
+        job_id: Optional[str] = None,
+        task_id: Optional[str] = None,
         selection: Optional[dict] = None,
         **kwargs,
     ):

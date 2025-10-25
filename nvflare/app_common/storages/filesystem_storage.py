@@ -20,7 +20,7 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from nvflare.apis.storage import DATA, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
@@ -356,7 +356,7 @@ class FilesystemStorage(StorageSpec):
 
         return _read(os.path.join(full_uri, component_name))
 
-    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: str = None):
+    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: Optional[str] = None):
         full_uri = self._object_path(uri)
 
         if not StorageSpec.is_valid_component(component_name):

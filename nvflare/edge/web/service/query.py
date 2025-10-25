@@ -46,7 +46,7 @@ from .utils import (
 
 class Query:
 
-    def __init__(self, lcp_mapping_file: str = None, ca_cert_file: str = None):
+    def __init__(self, lcp_mapping_file: Optional[str] = None, ca_cert_file: Optional[str] = None):
         ssl_credentials = None
         if ca_cert_file:
             if not os.path.isfile(ca_cert_file):

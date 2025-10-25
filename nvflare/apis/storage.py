@@ -13,7 +13,7 @@
 # limitations under the License.
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 DATA = "data"
 JOB_ZIP = "job.zip"
@@ -193,7 +193,7 @@ class StorageSpec(ABC):
         pass
 
     @abstractmethod
-    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: str = None):
+    def get_data_for_download(self, uri: str, component_name: str = DATA, download_file: Optional[str] = None):
         """Gets data of the specified object.
 
         Args:

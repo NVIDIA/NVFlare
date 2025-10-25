@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import re
+from typing import Optional
 from platform import python_version
 
 import pytest
@@ -37,7 +38,7 @@ class MyComponentWithDictArgs:
 
 
 class MyComponentWithPathArgs:
-    def __init__(self, path: str = None):
+    def __init__(self, path: Optional[str] = None):
         self.path = path
 
 

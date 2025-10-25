@@ -61,7 +61,7 @@ class ETTaskProcessor(DeviceTaskProcessor, ABC):
     def __init__(
         self,
         data_path: str,
-        training_config: Dict = None,
+        training_config: Optional[dict] = None,
     ):
         """Initialize the task processor.
 

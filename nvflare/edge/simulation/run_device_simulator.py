@@ -28,7 +28,7 @@ from nvflare.edge.web.service.query import Query
 log = logging.getLogger(__name__)
 
 
-def run_simulator(config_file: str, lcp_mapping_file: str = None, ca_cert_file: str = None):
+def run_simulator(config_file: str, lcp_mapping_file: Optional[str] = None, ca_cert_file: Optional[str] = None):
     parser = ConfigParser(config_file)
     num = parser.get_num_devices()
     endpoint_url = parser.get_endpoint()

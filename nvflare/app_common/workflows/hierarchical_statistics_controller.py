@@ -37,7 +37,7 @@ class HierarchicalStatisticsController(StatisticsController):
         precision=4,
         min_clients: Optional[int] = None,
         enable_pre_run_task: bool = True,
-        hierarchy_config: str = None,
+        hierarchy_config: Optional[str] = None,
     ):
         """Controller for hierarchical statistics.
 

@@ -17,11 +17,11 @@ from nvflare.edge.web.models.base_model import BaseModel, EdgeProtoKey
 class UserInfo(BaseModel):
     def __init__(
         self,
-        user_id: str = None,
-        user_name: str = None,
-        access_token: str = None,
-        auth_token: str = None,
-        auth_session: str = None,
+        user_id: Optional[str] = None,
+        user_name: Optional[str] = None,
+        access_token: Optional[str] = None,
+        auth_token: Optional[str] = None,
+        auth_session: Optional[str] = None,
         **kwargs,
     ):
         super().__init__()

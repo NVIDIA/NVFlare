@@ -24,7 +24,7 @@ from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weigh
 
 
 class TFModelPersistor(ModelPersistor):
-    def __init__(self, model: tf.keras.Model, save_name="tf_model.weights.h5", filter_id: str = None):
+    def __init__(self, model: tf.keras.Model, save_name="tf_model.weights.h5", filter_id: Optional[str] = None):
         super().__init__(
             filter_id=filter_id,
         )

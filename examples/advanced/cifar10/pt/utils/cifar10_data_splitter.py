@@ -49,7 +49,7 @@ from nvflare.apis.fl_context import FLContext
 
 
 class Cifar10DataSplitter(FLComponent):
-    def __init__(self, split_dir: str = None, num_sites: int = 8, alpha: float = 0.5, seed: int = 0):
+    def __init__(self, split_dir: Optional[str] = None, num_sites: int = 8, alpha: float = 0.5, seed: int = 0):
         super().__init__()
         self.split_dir = split_dir
         self.num_sites = num_sites
