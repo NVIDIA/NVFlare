@@ -58,6 +58,7 @@ class FoxController(Controller, FoxAdaptor):
         incoming_result_filters=None,
         outgoing_result_filters=None,
         props=None,
+        resource_dirs=None,
         sync_task_timeout=5,
         max_call_threads=100,
     ):
@@ -65,6 +66,7 @@ class FoxController(Controller, FoxAdaptor):
         FoxAdaptor.__init__(
             self,
             props=props,
+            resource_dirs=resource_dirs,
             collab_obj_ids=collab_obj_ids,
             incoming_call_filters=incoming_call_filters,
             outgoing_call_filters=outgoing_call_filters,

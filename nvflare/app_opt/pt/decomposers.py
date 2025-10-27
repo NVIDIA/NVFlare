@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple, Union
+from typing import Any, Optional, Tuple
 
 import torch
 from safetensors.torch import load, save
@@ -23,8 +23,7 @@ from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import ViaDownloaderDecomposer
 
 from ...fuel.f3.cellnet.cell import Cell
-from .lazy_tensor_dict import LazyTensorDict
-from .tensor_downloader import TensorDownloadable, download_tensors, download_tensors_to_disk
+from .tensor_downloader import TensorDownloadable, download_tensors
 
 
 class SerializationModule(torch.nn.Module):
@@ -56,29 +55,15 @@ class TensorDecomposer(ViaDownloaderDecomposer):
         secure=False,
         optional=False,
         abort_signal=None,
-        progress_cb=None,
-    ) -> Tuple[str, Union[dict, LazyTensorDict]]:
-        use_disk = cell.get_fobs_context().get("enable_tensor_disk_offload", False)
-        if use_disk:
-            return download_tensors_to_disk(
-                from_fqcn=from_fqcn,
-                ref_id=ref_id,
-                per_request_timeout=per_request_timeout,
-                cell=cell,
-                secure=secure,
-                optional=optional,
-                abort_signal=abort_signal,
-                progress_cb=progress_cb,
-            )
+    ) -> Tuple[str, dict]:
         return download_tensors(
-            from_fqcn=from_fqcn,
-            ref_id=ref_id,
-            per_request_timeout=per_request_timeout,
-            cell=cell,
-            secure=secure,
-            optional=optional,
-            abort_signal=abort_signal,
-            progress_cb=progress_cb,
+            from_fqcn,
+            ref_id,
+            per_request_timeout,
+            cell,
+            secure,
+            optional,
+            abort_signal,
         )
 
     def native_decompose(self, target: torch.Tensor, manager: DatumManager = None) -> bytes:

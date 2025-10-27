@@ -13,6 +13,7 @@
 # limitations under the License.
 import copy
 import fnmatch
+import os
 from typing import List
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -48,8 +49,20 @@ class App:
         self._outgoing_result_filter_chains = []
         self._collab_interface = {"": get_object_collab_interface(self)}
         self._workspace = None
+        self._resource_dirs = {}
         self._managed_objects = {}  # id => obj
         self.logger = get_obj_logger(self)
+
+    def set_resource_dirs(self, resource_dirs: dict[str, str]):
+        if not isinstance(resource_dirs, dict):
+            raise TypeError(f"resource_dirs must be a dict but got {type(resource_dirs)}")
+        for name, resource_dir in resource_dirs.items():
+            if not os.path.isdir(resource_dir):
+                raise ValueError(f"Resource dir {resource_dir} does not exist for {name}")
+        self._resource_dirs = resource_dirs
+
+    def get_resource_dirs(self):
+        return self._resource_dirs
 
     def _add_managed_object(self, obj):
         self._managed_objects[id(obj)] = obj
@@ -195,6 +208,8 @@ class App:
 
     def setup(self, workspace: Workspace, server: Proxy, clients: List[Proxy], abort_signal):
         self._workspace = workspace
+        workspace.resource_dirs = self._resource_dirs
+
         self.server = server
         self._abort_signal = abort_signal
 
@@ -212,8 +227,6 @@ class App:
             raise ValueError(f"cannot find site for {self.name}")
 
         forest = build_forest(objs=clients, get_fqn_f=lambda c: c.fqn, get_name_f=lambda c: c.name)
-        # d = forest_to_dict(forest, lambda c: c.name)
-        # print(f"client proxy forest: {d}")
         self.client_hierarchy = forest
 
     def get_my_site(self) -> Proxy:
