@@ -24,6 +24,7 @@ class FoxAdaptor:
         self,
         collab_obj_ids: List[str] = None,
         props: Dict[str, Any] = None,
+        resource_dirs: Dict[str, str] = None,
         incoming_call_filters=None,
         outgoing_call_filters=None,
         incoming_result_filters=None,
@@ -32,6 +33,7 @@ class FoxAdaptor:
         if not collab_obj_ids:
             collab_obj_ids = []
         self.props = props
+        self.resource_dirs = resource_dirs
         self.collab_obj_ids = collab_obj_ids
         self.incoming_call_filters = incoming_call_filters
         self.outgoing_call_filters = outgoing_call_filters
@@ -40,6 +42,7 @@ class FoxAdaptor:
 
     def process_config(self, app: App, fl_ctx: FLContext):
         app.update_props(self.props)
+        app.set_resource_dirs(self.resource_dirs)
 
         engine = fl_ctx.get_engine()
         if self.collab_obj_ids:

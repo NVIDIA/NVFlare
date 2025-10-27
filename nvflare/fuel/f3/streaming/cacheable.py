@@ -67,7 +67,7 @@ class CacheableObject(Downloadable):
             if data is None:
                 data = self.produce_item(index)
                 self.cache[index] = (data, 0)
-                self.logger.info(f"created and cached item {index} for {requester}")
+                self.logger.info(f"created and cached item {index} for {requester}: {len(data)} bytes")
             else:
                 self.logger.info(f"got item {index} from cache for {requester}")
             return data
@@ -111,6 +111,7 @@ class CacheableObject(Downloadable):
             else:
                 break
 
+        self.logger.info(f"produced {len(result)} items for {requester}: {total_size} bytes")
         return ProduceRC.OK, result, {_StateKey.START: start, _StateKey.COUNT: len(result)}
 
 

@@ -45,6 +45,7 @@ class FoxExecutor(Executor, FoxAdaptor):
         incoming_result_filters=None,
         outgoing_result_filters=None,
         props: Dict[str, Any] = None,
+        resource_dirs: Dict[str, str] = None,
         max_call_threads=100,
     ):
         Executor.__init__(self)
@@ -52,6 +53,7 @@ class FoxExecutor(Executor, FoxAdaptor):
             self,
             collab_obj_ids=collab_obj_ids,
             props=props,
+            resource_dirs=resource_dirs,
             incoming_call_filters=incoming_call_filters,
             outgoing_call_filters=outgoing_call_filters,
             incoming_result_filters=incoming_result_filters,

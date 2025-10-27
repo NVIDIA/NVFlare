@@ -85,6 +85,7 @@ class FoxRecipe(Recipe):
             sync_task_timeout=self.sync_task_timeout,
             max_call_threads=self.max_call_threads_for_server,
             props=self.server_app.get_props(),
+            resource_dirs=self.server_app.get_resource_dirs(),
         )
 
         job.to_server(controller, id="controller")
@@ -103,6 +104,7 @@ class FoxRecipe(Recipe):
             outgoing_result_filters=c_out_rf_arg,
             max_call_threads=self.max_call_threads_for_client,
             props=self.client_app.get_props(),
+            resource_dirs=self.client_app.get_resource_dirs(),
         )
         job.to_clients(executor, id="executor", tasks=["*"])
         return job
