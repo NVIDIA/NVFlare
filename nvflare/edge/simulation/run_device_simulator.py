@@ -63,6 +63,7 @@ def _send_request_to_proxy(request, device: SimulatedDevice, parser: ConfigParse
         endpoint=parser.get_endpoint(),
         device_info=device.get_device_info(),
         user_info=device.get_user_info(),
+        allow_self_signed=parser.allow_self_signed,
     )
     if isinstance(request, TaskRequest):
         return api.get_task(request)

@@ -41,6 +41,7 @@ def load_class(class_path) -> Type:
 class ConfigParser:
     def __init__(self, config_file: str):
         self.job_name = None
+        self.allow_self_signed = False
         self.get_job_timeout = None
         self.processor = None
         self.endpoint = None
@@ -115,6 +116,9 @@ class ConfigParser:
         n = config.get("get_job_timeout", 60.0)
         check_positive_number("get_job_timeout", n)
         self.get_job_timeout = n
+
+        n = config.get("allow_self_signed", False)
+        self.allow_self_signed = n
 
     def _variable_substitution(self, args: Any, variables: dict) -> Any:
         if isinstance(args, dict):
