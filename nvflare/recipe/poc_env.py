@@ -83,10 +83,10 @@ class PocEnv(ExecEnv):
         clients: Optional[list[str]] = None,
         gpu_ids: Optional[list[int]] = None,
         use_he: bool = False,
-        docker_image: str = None,
+        docker_image: Optional[str] = None,
         project_conf_path: str = "",
         username: str = DEFAULT_ADMIN_USER,
-        extra: dict = None,
+        extra: Optional[dict] = None,
     ):
         """Initialize POC execution environment.
 

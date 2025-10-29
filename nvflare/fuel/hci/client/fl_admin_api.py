@@ -246,7 +246,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         return success_in_data, reply_data_full_response, reply
 
     def _parse_section_of_response_text(
-        self, data, start_string: str, offset: int = None, end_string: str = None, end_index=None
+        self, data, start_string: str, offset: Optional[int] = None, end_string: Optional[str] = None, end_index=None
     ) -> str:
         """Convenience method to get portion of string based on parameters."""
         if not offset:
@@ -258,7 +258,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         return data[data.find(start_string) + offset :]
 
     def _parse_section_of_response_text_as_int(
-        self, data, start_string: str, offset: int = None, end_string: str = None, end_index=None
+        self, data, start_string: str, offset: Optional[int] = None, end_string: Optional[str] = None, end_index=None
     ) -> int:
         try:
             return int(
@@ -369,7 +369,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def list_jobs(self, options: str = None) -> FLAdminAPIResponse:
+    def list_jobs(self, options: Optional[str] = None) -> FLAdminAPIResponse:
         command = AdminCommandNames.LIST_JOBS
         if options:
             options = self._validate_options_string(options)
@@ -579,7 +579,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         return FLAdminAPIResponse(APIStatus.SUCCESS, {"app_list": dir_list})
 
     @wrap_with_return_exception_responses
-    def ls_target(self, target: str, options: str = None, path: str = None) -> FLAdminAPIResponse:
+    def ls_target(self, target: str, options: Optional[str] = None, path: Optional[str] = None) -> FLAdminAPIResponse:
         target = self._validate_required_target_string(target)
         command = "ls " + target
         if options:
@@ -596,7 +596,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def cat_target(self, target: str, options: str = None, file: str = None) -> FLAdminAPIResponse:
+    def cat_target(self, target: str, options: Optional[str] = None, file: Optional[str] = None) -> FLAdminAPIResponse:
         if not file:
             raise APISyntaxError("file is required but not specified.")
         file = self._validate_file_string(file)
@@ -615,7 +615,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         )
 
     @wrap_with_return_exception_responses
-    def tail_target_log(self, target: str, options: str = None) -> FLAdminAPIResponse:
+    def tail_target_log(self, target: str, options: Optional[str] = None) -> FLAdminAPIResponse:
         target = self._validate_required_target_string(target)
         command = "tail " + target
         if options:
@@ -642,7 +642,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
 
     @wrap_with_return_exception_responses
     def grep_target(
-        self, target: str, options: str = None, pattern: str = None, file: str = None
+        self, target: str, options: Optional[str] = None, pattern: Optional[str] = None, file: Optional[str] = None
     ) -> FLAdminAPIResponse:
         if not file:
             raise APISyntaxError("file is required but not specified.")
@@ -758,7 +758,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     def wait_until_server_status(
         self,
         interval: int = 20,
-        timeout: int = None,
+        timeout: Optional[int] = None,
         callback: Callable[[FLAdminAPIResponse, Optional[List]], bool] = default_server_status_handling_cb,
         fail_attempts: int = 3,
         **kwargs,
@@ -795,7 +795,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     def wait_until_client_status(
         self,
         interval: int = 10,
-        timeout: int = None,
+        timeout: Optional[int] = None,
         callback: Callable[[FLAdminAPIResponse, Optional[List]], bool] = default_client_status_handling_cb,
         fail_attempts: int = 6,
         **kwargs,
@@ -852,7 +852,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     def wait_until_server_stats(
         self,
         interval: int = 10,
-        timeout: int = None,
+        timeout: Optional[int] = None,
         callback: Callable[[FLAdminAPIResponse, Optional[List]], bool] = default_stats_handling_cb,
         fail_attempts: int = 6,
         **kwargs,
