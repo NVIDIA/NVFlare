@@ -16,7 +16,6 @@ import json
 import os
 from datetime import datetime
 from math import sqrt
-from typing import List
 
 from app.core.config import settings
 from app.utils.dependencies import validate_user
@@ -99,7 +98,7 @@ def accumulate_dicts(dst_dict: dict, src_dict: dict) -> dict:
             continue
 
 
-def get_eligible_stats_directories(app_name: str, start: str, end: str) -> List[str]:
+def get_eligible_stats_directories(app_name: str, start: str, end: str) -> list[str]:
     """Get the list of timestamp directories in a given dates range.
 
     Args:
