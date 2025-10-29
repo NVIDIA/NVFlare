@@ -26,9 +26,4 @@ DATA_TYPE = [
 # The quantization types are mainly for reducing the model size,
 # Hence, we support 16-, 8-, and 4-bits quantization.
 # Note that 8- and 4-bits quantization needs GPU support.
-QUANTIZATION_TYPE = [
-    "FLOAT16",
-    "BLOCKWISE8",
-    "FLOAT4",
-    "NORMFLOAT4",
-]
+QUANTIZATION_TYPE = ["FLOAT16", "BLOCKWISE8", "FLOAT4", "NORMFLOAT4", "ADAQUANT"]
