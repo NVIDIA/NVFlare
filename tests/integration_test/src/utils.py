@@ -20,7 +20,6 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import List
 
 import yaml
 
@@ -321,7 +320,7 @@ def generate_test_config_yaml_for_example(
     example: Example,
     project_yaml: str = PROJECT_YAML,
     job_postfix: str = POSTFIX,
-) -> List[str]:
+) -> list[str]:
     """Generates test configurations for an NVFlare example folder.
 
     Args:
