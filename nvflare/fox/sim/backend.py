@@ -19,7 +19,7 @@ from nvflare.fox.api.app import App
 from nvflare.fox.api.backend import Backend
 from nvflare.fox.api.constants import OPTION_ARGS, CollabMethodArgName, CollabMethodOptionName
 from nvflare.fox.api.dec import adjust_kwargs
-from nvflare.fox.api.resp import Resp
+from nvflare.fox.api.gcc import GroupCallContext
 from nvflare.fox.api.utils import check_call_args
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -81,6 +81,8 @@ class SimBackend(Backend):
                     break
 
             return waiter.result
+        else:
+            return None
 
     def _preprocess(self, target_name, func_name, func, kwargs):
         caller_ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
@@ -120,7 +122,7 @@ class SimBackend(Backend):
             if waiter:
                 waiter.set()
 
-    def call_target_with_resp(self, resp: Resp, target_name: str, func_name: str, *args, **kwargs):
+    def call_target_in_group(self, gcc: GroupCallContext, target_name: str, func_name: str, *args, **kwargs):
         # do not use the optional args - they are managed by the group
         for k in OPTION_ARGS:
             kwargs.pop(k, None)
@@ -132,15 +134,15 @@ class SimBackend(Backend):
         if not callable(func):
             raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
-        self.executor.submit(self._run_func_with_resp, resp, target_name, func_name, func, args, kwargs)
+        self.executor.submit(self._run_func_with_resp, gcc, target_name, func_name, func, args, kwargs)
 
-    def _run_func_with_resp(self, resp: Resp, target_name, func_name, func, args, kwargs):
+    def _run_func_with_resp(self, gcc: GroupCallContext, target_name, func_name, func, args, kwargs):
         try:
             ctx, kwargs = self._preprocess(target_name, func_name, func, kwargs)
             result = func(*args, **kwargs)
 
             # apply result filter
             result = self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
-            resp.set_result(result)
+            gcc.set_result(result)
         except Exception as ex:
-            resp.set_exception(ex)
+            gcc.set_exception(ex)

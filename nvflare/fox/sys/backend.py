@@ -13,7 +13,7 @@
 # limitations under the License.
 from nvflare.fox.api.backend import Backend
 from nvflare.fox.api.constants import CollabMethodArgName, CollabMethodOptionName
-from nvflare.fox.api.resp import Resp
+from nvflare.fox.api.gcc import GroupCallContext
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
@@ -90,11 +90,12 @@ class SysBackend(Backend):
                 secure=secure,
                 optional=optional,
             )
+            return None
 
-    def call_target_with_resp(self, resp: Resp, target_name: str, func_name: str, *args, **kwargs):
+    def call_target_in_group(self, resp: GroupCallContext, target_name: str, func_name: str, *args, **kwargs):
         self.thread_executor.submit(self._run_func, resp, target_name, func_name, args, kwargs)
 
-    def _run_func(self, resp: Resp, target_name: str, func_name: str, args, kwargs):
+    def _run_func(self, resp: GroupCallContext, target_name: str, func_name: str, args, kwargs):
         try:
             result = self.call_target(target_name, func_name, *args, **kwargs)
             resp.set_result(result)
