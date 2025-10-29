@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-from typing import Tuple
 
 import jwt
 
@@ -57,7 +56,7 @@ class CustomSecurityHandler(FLComponent):
         # print(f"_validate_token: {token_valid}")
         return token_valid
 
-    def authorize(self, fl_ctx: FLContext) -> Tuple[bool, str]:
+    def authorize(self, fl_ctx: FLContext) -> tuple[bool, str]:
         command = fl_ctx.get_prop(FLContextKey.COMMAND_NAME)
         if command in ["check_resources", "submit_job"]:
             security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS)
