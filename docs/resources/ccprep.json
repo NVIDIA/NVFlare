@@ -1,0 +1,150 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "name": {
+      "type": "string",
+      "defaultValue": "NVFLARE-CC",
+      "metadata": {
+        "description": "Name for the container group"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "East US",
+      "metadata": {
+        "description": "Location for all resources."
+      }
+    },
+    "containerRegistry": {
+      "defaultValue": "ccprepreg.azurecr.io",
+      "type": "string",
+      "metadata": {
+        "description": "The container registry login server."
+      }
+    },
+    "MAAEndpoint": {
+      "defaultValue": "sharedneu.neu.attest.azure.net",
+      "type": "string",
+      "metadata": {
+        "description": "Proxy sidecar MAA endpoint"
+      }
+    },
+    "restartPolicy": {
+      "type": "string",
+      "defaultValue": "Never",
+      "allowedValues": [
+        "Always",
+        "Never",
+        "OnFailure"
+      ],
+      "metadata": {
+        "description": "The behavior of Azure runtime if container has stopped."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ContainerInstance/containerGroups",
+      "apiVersion": "2022-10-01-preview",
+      "name": "[parameters('name')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "confidentialComputeProperties": {
+          "ccePolicy": ""
+        },
+        "sku": "Confidential",
+        "containers": [
+          {
+            "name": "nvflare-server",
+            "properties": {                                                                                                            
+              "image": "ccprepreg.azurecr.io/cc_prep:0.0.1",
+              "command": [                                                                                                             
+                "/usr/local/bin/python3",
+                "-u",          
+                "-m",
+                "nvflare.private.fed.app.server.server_train",
+                "-m",                    
+                "/workspace/nvflare",
+                "-s",                                
+                "fed_server.json",
+                "--set",              
+                "secure_train=true",
+                "config_folder=config",
+                "org=nvidia"   
+              ],   
+              "ports": [
+                {
+                  "port": 8002,
+                  "protocol": "TCP"
+                }
+              ],
+              "resources": {
+                "requests": {
+                  "cpu": 3.3,
+                  "memoryInGB": 9.4
+                }
+              },
+              "securityContext": {
+                "privileged": true
+              }
+            }
+          },
+          {
+            "name": "skr-sidecar",
+            "properties": {
+             "securityContext": {
+                "privileged": true
+              },
+              "image": "ccprepreg.azurecr.io/skr:2.7",
+              "command" : [
+                "/bin/sh",
+                "skr.sh",
+                "ewp9",
+                "8284"
+              ],
+              "environmentVariables": [],
+              "ports": [
+                {
+                  "port": 8284,
+                  "protocol": "TCP"
+                }
+              ],
+              "resources": {
+                "requests": {
+                  "cpu": 0.5,
+                  "memoryInGB": 1.6
+                }
+              }
+            }
+          }
+        ],
+        "osType": "Linux",
+        "restartPolicy": "[parameters('restartPolicy')]",
+        "imageRegistryCredentials": [
+          {
+            "server": "ccprepreg.azurecr.io",
+            "username": "00000000-0000-0000-0000-000000000000",
+            "password": ""
+          }
+        ],
+        "ipAddress": {
+          "type": "Public",
+          "ports": [
+            {
+              "port": 8002,
+              "protocol": "TCP"
+            }
+          ],
+          "dnsNameLabel": "nvflserver"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "containerIPv4Address": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ContainerInstance/containerGroups', parameters('name'))).ipAddress.ip]"
+    }
+  }
+}
