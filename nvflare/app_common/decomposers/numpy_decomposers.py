@@ -62,7 +62,7 @@ class NumpyArrayDecomposer(ViaDownloaderDecomposer):
 
     def __init__(self):
         # by default do not use file downloading.
-        ViaDownloaderDecomposer.__init__(self, 1, "np_")
+        ViaDownloaderDecomposer.__init__(self, 1024 * 1024 * 2, "np_")
 
     def supported_type(self):
         return np.ndarray

@@ -19,9 +19,19 @@ from .ctx import Context
 from .utils import check_context_support
 
 
-class Resp:
+class GroupCallContext:
 
     def __init__(self, app, target_name, func_name, process_cb, cb_kwargs, context: Context):
+        """GroupCallContext contains contextual information about a group call to a target..
+
+        Args:
+            app: the calling app.
+            target_name: name of the target to be called in the remote app.
+            func_name: name of the function to be called in the remote app.
+            process_cb: the callback function to be called to process response from the remote app.
+            cb_kwargs: kwargs passed to the callback function.
+            context: call context.
+        """
         self.app = app
         self.target_name = target_name
         self.func_name = func_name
@@ -32,8 +42,18 @@ class Resp:
         self.context = context
 
     def set_result(self, result):
+        """This is called by the backend to set the result received from the remote app.
+        If process_cb is available, it will be called with the result from the remote app.
+
+        Args:
+            result: the result received from the remote app.
+
+        Returns: None
+
+        """
         # filter incoming result
         ctx = copy.copy(self.context)
+
         # swap caller/callee
         original_caller = ctx.caller
         ctx.caller = ctx.callee
@@ -50,5 +70,14 @@ class Resp:
         self.resp_time = time.time()
 
     def set_exception(self, ex):
+        """This is called by the backend to set the exception received from the remote app.
+        The process_cb will NOT be called.
+
+        Args:
+            ex: the exception received from the remote app.
+
+        Returns:
+
+        """
         self.result = ex
         self.resp_time = time.time()

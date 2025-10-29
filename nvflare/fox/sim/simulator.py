@@ -36,7 +36,8 @@ class Simulator:
             bes[name] = SimBackend(name, app, obj, self.abort_signal, self.thread_executor)
         return bes
 
-    def _prepare_proxy(self, for_app: App, target_app: App, backends: dict):
+    @staticmethod
+    def _prepare_proxy(for_app: App, target_app: App, backends: dict):
         app_proxy = Proxy(
             app=for_app,
             target_name=target_app.name,

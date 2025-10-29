@@ -15,18 +15,47 @@ from abc import ABC, abstractmethod
 
 from nvflare.apis.signal import Signal
 
-from .resp import Resp
+from .gcc import GroupCallContext
 
 
 class Backend(ABC):
+    """A FOX Backend implements remote object calls. This interface defines the required methods that a Backend
+    must implement.
+    """
 
     def __init__(self, abort_signal: Signal):
         self.abort_signal = abort_signal
 
     @abstractmethod
     def call_target(self, target_name: str, func_name: str, *args, **kwargs):
+        """
+        Call a target function with arguments and return a result.
+
+        Args:
+            target_name: the fully qualified name of the target object to be called in the remote app.
+            func_name: name of the function to be called in the remote app.
+            *args: args to pass to the target function.
+            **kwargs: kwargs to pass to the target function.
+
+        Notes: the target name is fully qualified: <target_app_name>.<obj_name>
+
+        Returns:
+
+        """
         pass
 
     @abstractmethod
-    def call_target_with_resp(self, resp: Resp, target_name: str, func_name: str, *args, **kwargs):
+    def call_target_in_group(self, gcc: GroupCallContext, target_name: str, func_name: str, *args, **kwargs):
+        """Call a remote object as part of a group.
+
+        Args:
+            gcc: contextual information about group call.
+            target_name: fully qualified name of the target object to be called in the remote app.
+            func_name: mame of the function to be called in the remote app.
+            *args: args to pass to the target function.
+            **kwargs: kwargs to pass to the target function.
+
+        Returns:
+
+        """
         pass
