@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import json
-from typing import Optional
 import uuid
+from typing import Optional
 
 
 class MsgHeader(object):

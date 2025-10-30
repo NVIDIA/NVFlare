@@ -430,7 +430,9 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def grep_target(self, target: str, options: Optional[str] = None, pattern: Optional[str] = None, file: Optional[str] = None) -> str:
+    def grep_target(
+        self, target: str, options: Optional[str] = None, pattern: Optional[str] = None, file: Optional[str] = None
+    ) -> str:
         """Run the "grep" command on the specified target and return result
 
         Args:

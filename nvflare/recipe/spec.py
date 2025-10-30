@@ -236,7 +236,9 @@ class Recipe(ABC):
 
         self.job.export_job(job_dir)
 
-    def execute(self, env: ExecEnv, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None) -> "Run":
+    def execute(
+        self, env: ExecEnv, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
+    ) -> "Run":
         """Execute the recipe in a specified execution environment.
 
         Args:
