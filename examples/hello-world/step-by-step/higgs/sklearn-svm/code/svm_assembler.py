@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
 
 import numpy as np
 from sklearn.svm import SVC
@@ -36,7 +35,7 @@ class SVMAssembler(Assembler):
         data = dxo.data
         return {"support_x": data["support_x"], "support_y": data["support_y"]}
 
-    def assemble(self, data: Dict[str, dict], fl_ctx: FLContext) -> DXO:
+    def assemble(self, data: dict[str, dict], fl_ctx: FLContext) -> DXO:
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         if current_round == 0:
             # First round, collect all support vectors from clients

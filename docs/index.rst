@@ -10,6 +10,7 @@ NVIDIA FLARE
    fl_introduction
    flare_overview
    whats_new
+   release_notes/previous_release
    Installation <installation>
    getting_started
    Quick Start <quickstart>
@@ -20,11 +21,12 @@ NVIDIA FLARE
    :caption: Guides
 
    example_applications_algorithms
-   tutorials <tutorials>
-   real_world_fl
+   tutorials
    user_guide
    programming_guide
    best_practices
+   edge_development/index
+   confidential_computing/index
 
 .. toctree::
    :maxdepth: -1
@@ -51,6 +53,13 @@ and simulation to real-world production deployment.  Some of the key components 
  - **Management tools** for secure provisioning and deployment, orchestration, and management
  - **Specification-based API** for extensibility
 
+FLARE consists three main product categories:
+
+    - **FLARE Core**: All major FLARE's main components and Infrastructures
+    - **FLARE Confidential AI**: Confidential Federated AI with FLARE and confidential computing
+    - **FLARE Edge**: FLARE edge development
+
+
 Learn more about FLARE features in the :ref:`FLARE Overview <flare_overview>` and :ref:`What's New <whats_new>`.
 
 Getting Started
@@ -66,7 +75,7 @@ For first-time users and FL researchers, FLARE provides the :ref:`FL Simulator <
 FLARE for Users
 ===============
 If you want to learn how to interact with the FLARE system, please refer to the :ref:`User Guide <user_guide>`.
-When you are ready for a secure, distributed deployment, the :ref:`Real World Federated Learning <real_world_fl>` section covers the tools and processes required to deploy and operate a secure, real-world FLARE project.
+When you are ready for a secure, distributed deployment, the :ref:`Real World Federated Learning <deployment_overview>` section covers the tools and processes required to deploy and operate a secure, real-world FLARE project.
 
 FLARE for Developers
 ====================

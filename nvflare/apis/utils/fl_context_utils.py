@@ -97,7 +97,7 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
             peer_name = "?"
         all_kvs[_peer_name] = peer_name
 
-    reply = fl_ctx.get_prop(FLContextKey.REPLY, None)
+    reply = fl_ctx.get_prop(FLContextKey.TASK_RESULT, None)
     if isinstance(reply, Shareable):
         rc = reply.get_return_code("OK")
         all_kvs[_rc] = rc

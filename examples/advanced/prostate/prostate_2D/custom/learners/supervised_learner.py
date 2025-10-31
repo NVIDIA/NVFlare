@@ -84,7 +84,7 @@ class SupervisedLearner(Learner):
 
     @abstractmethod
     def train_config(self, fl_ctx: FLContext):
-        """Traning configurations customized to individual tasks
+        """Training configurations customized to individual tasks
         This can be specified / loaded in any ways
         as long as they are made available for further training and validation
         some potential items include but not limited to:

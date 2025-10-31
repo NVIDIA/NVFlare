@@ -22,6 +22,7 @@ from nvflare.widgets.widget import Widget
 class DecomposerRegister(Widget):
 
     def __init__(self, classes: List[str]):
+        self.classes = classes
         logger = get_obj_logger(self)
         Widget.__init__(self)
         for class_name in classes:

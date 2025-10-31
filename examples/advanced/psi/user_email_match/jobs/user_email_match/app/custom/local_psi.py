@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os.path
-from typing import List
 
 import pandas as pd
 
@@ -25,7 +24,7 @@ class LocalPSI(PSI):
         self.data_root_dir = data_root_dir
         self.data = {}
 
-    def load_items(self) -> List[str]:
+    def load_items(self) -> list[str]:
         site = self.fl_ctx.get_identity_name()
         data_path = os.path.join(self.data_root_dir, site, "data.csv")
 

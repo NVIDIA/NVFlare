@@ -83,12 +83,11 @@ class AdminClient(cmd.Cmd, EventHandler):
         super().__init__()
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = admin_config.get(AdminConfigKey.PROMPT, "> ")
-        self.user_name = "admin"
+        self.user_name = username
         self.debug = debug
         self.out_file = None
         self.no_stdout = False
         self.stopped = False  # use this flag to prevent unnecessary signal exception
-        self.username = username
         self.login_timeout = admin_config.get(AdminConfigKey.LOGIN_TIMEOUT)
         self.idle_timeout = admin_config.get(AdminConfigKey.IDLE_TIMEOUT, 900.0)
         self.last_active_time = time.time()

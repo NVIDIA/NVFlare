@@ -52,7 +52,7 @@ def main():
     df_stats_generator = DFStatistics(data_root_dir=data_root_dir)
 
     job = StatsJob(
-        job_name="stats_df",
+        name="stats_df",
         statistic_configs=statistic_configs,
         stats_generator=df_stats_generator,
         output_path=output_path,

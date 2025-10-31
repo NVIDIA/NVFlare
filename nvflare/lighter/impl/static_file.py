@@ -96,8 +96,7 @@ class StaticFileBuilder(Builder):
         return conn_security
 
     def _determine_scheme(self, participant: Participant, scheme=None) -> str:
-        # use AIO for server by default
-        use_aio = participant.get_prop(PropKey.USE_AIO, participant.type == ParticipantType.SERVER)
+        use_aio = participant.get_prop(PropKey.USE_AIO, False)
         if not scheme:
             scheme = self.scheme
 
@@ -560,6 +559,7 @@ class StaticFileBuilder(Builder):
 
         replacement_dict = {
             "project_name": project.name,
+            "username": "" if provision_mode == ProvisionMode.POC else admin.name,
             "server_identity": server.name,
             "scheme": self.scheme,
             "conn_sec": conn_sec,
@@ -865,7 +865,9 @@ class StaticFileBuilder(Builder):
                 )
 
         # create start_all.sh
-        self._create_start_all(project, ctx)
+        gen_scripts = project.props.get("gen_scripts", False)
+        if gen_scripts:
+            self._create_start_all(project, ctx)
 
     @staticmethod
     def _append(content: str, participant: Participant) -> str:
@@ -898,7 +900,7 @@ class StaticFileBuilder(Builder):
         for c in project.get_clients():
             content = self._append(content, c)
 
-        utils.write(os.path.join(ctx.get_wip_dir(), "start_all.sh"), content, "t", exe=True)
+        utils.write(os.path.join(ctx.get_wip_dir(), ProvFileName.START_ALL_SH), content, "t", exe=True)
 
 
 def _remove_undefined_port(section: str) -> str:

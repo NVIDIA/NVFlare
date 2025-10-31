@@ -142,6 +142,7 @@ class AndroidFlareRunner(
         val jobData = job["job_data"] as? Map<String, Any>
 
         Log.d(TAG, "Processing job: $jobName (ID: $jobId)")
+        Log.d(TAG, "Job data keys: ${jobData?.keys}")
 
         // Process training configuration
         val trainConfig = if (jobData != null) {
@@ -175,7 +176,13 @@ class AndroidFlareRunner(
             Log.d(TAG, "Job data: $jobData")
             Log.d(TAG, "Extracted config: $config")
             Log.d(TAG, "Config keys: ${config.keys}")
-            processTrainConfig(getAndroidContext(), config, resolverRegistryMap)
+            
+            // Add job name to config for method determination
+            val configWithJobName = config.toMutableMap()
+            configWithJobName[TaskHeaderKey.JOB_NAME] = jobName
+            Log.d(TAG, "Config with job name: $configWithJobName")
+            
+            processTrainConfig(getAndroidContext(), configWithJobName, resolverRegistryMap)
         } else {
             throw RuntimeException("No job data available")
         }
