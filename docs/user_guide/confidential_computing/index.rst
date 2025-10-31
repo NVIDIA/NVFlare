@@ -9,7 +9,6 @@ FLARE Confidential Federated AI
    This feature is in **Technical Preview**.
    Reach out to the NVIDIA FLARE team for CVM build scripts: federatedlearning@nvidia.com
 
-
 Introduction
 ============
 
@@ -183,7 +182,4 @@ The following documents provide detailed information about FLARE's Confidential 
 FLARE Deployment to Azure Confidential Computing
 ================================================
 
-- Secure Aggregation on FLARE Server with Azure ACI (Azure Container Instance)
-- Client training on CVM node
-
-**documentation to be completed soon**
+- :ref:`confidential_azure_container_instances_deployment` - Secure Aggregation on FLARE Server with Azure ACI (Azure Container Instance)
