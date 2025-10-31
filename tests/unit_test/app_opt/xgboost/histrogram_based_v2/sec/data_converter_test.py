@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, List
 
 import pytest
 
@@ -84,7 +83,7 @@ class TestDataConverter:
         return encoder.finish()
 
     @pytest.fixture()
-    def aggr_results(self) -> Dict[int, List[FeatureAggregationResult]]:
+    def aggr_results(self) -> dict[int, list[FeatureAggregationResult]]:
         feature0 = [(1100000, 1200000), (1200000, 1300000)]
         feature2 = [(1100000, 1200000), (2100000, 2200000), (3100000, 3200000), (4100000, 4200000), (5100000, 5200000)]
 

@@ -100,7 +100,7 @@ To enable multitasking (if there are more computation resources - e.g. 4 x 32 GB
 we can adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (default value: 4).
 Please adjust this properly according to resource available and task demand.
 
-For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/real_world_fl/job.html).
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/core_concepts/job.html).
 
 ### Training with POC FL setting
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
@@ -156,7 +156,7 @@ bash ./workspace_brats/admin/startup/fl_admin.sh
 ``` 
 
 Then using `abort_job [JOB_ID]` to abort a job, where `[JOB_ID]` is the ID assigned by the system when submitting the job. 
-For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html).
+For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/operation.html).
 The `[JOB_ID]` can be found from site folder like `./workspace_brats/site-1`.
 
 To log into the POC workspace admin console no username is required 

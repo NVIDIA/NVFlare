@@ -13,8 +13,6 @@
 # limitations under the License.
 
 
-from typing import List
-
 import numpy as np
 
 from nvflare.apis.fl_constant import FLMetaKey
@@ -98,7 +96,7 @@ class FedAvgNewtonRaphson(BaseFedAvg):
 
         self.info("Finished FedAvg.")
 
-    def newton_raphson_aggregator_fn(self, results: List[FLModel]):
+    def newton_raphson_aggregator_fn(self, results: list[FLModel]):
         """
         Custom aggregator function for second order Newton Raphson
         optimization.

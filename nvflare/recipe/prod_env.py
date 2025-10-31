@@ -13,30 +13,16 @@
 # limitations under the License.
 
 import os.path
-import tempfile
+from typing import Optional
 
 from pydantic import BaseModel, PositiveFloat, model_validator
 
-from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.job_config.api import FedJob
+from nvflare.recipe.spec import ExecEnv
 
-from .spec import ExecEnv, ExecEnvType
+from .session_mgr import SessionManager
 
 DEFAULT_ADMIN_USER = "admin@nvidia.com"
-
-
-def status_monitor_cb(session: Session, job_id: str, job_meta, *cb_args, **cb_kwargs) -> bool:
-    if job_meta["status"] == "RUNNING":
-        if cb_kwargs["cb_run_counter"]["count"] < 3 or cb_kwargs["cb_run_counter"]["count"] % 15 == 0:
-            print(job_meta)
-        else:
-            # avoid printing job_meta repeatedly to save space on the screen and not overwhelm the user
-            print(".", end="")
-    else:
-        print("\n" + str(job_meta))
-
-    cb_kwargs["cb_run_counter"]["count"] += 1
-    return True
 
 
 # Internal — not part of the public API
@@ -58,6 +44,7 @@ class ProdEnv(ExecEnv):
         startup_kit_location: str,
         login_timeout: float = 5.0,
         username: str = DEFAULT_ADMIN_USER,
+        extra: dict = None,
     ):
         """Production execution environment for submitting and monitoring NVFlare jobs.
 
@@ -67,7 +54,10 @@ class ProdEnv(ExecEnv):
             startup_kit_location (str): Path to the admin's startup kit directory.
             login_timeout (float): Timeout (in seconds) for logging into the Flare API session. Must be > 0.
             username (str): Username to log in with.
+            extra: extra env info.
         """
+        super().__init__(extra)
+
         v = _ProdEnvValidator(
             startup_kit_location=startup_kit_location,
             login_timeout=login_timeout,
@@ -77,30 +67,31 @@ class ProdEnv(ExecEnv):
         self.startup_kit_location = v.startup_kit_location
         self.login_timeout = v.login_timeout
         self.username = v.username
+        self._session_manager = None  # Lazy initialization
+
+    def get_job_status(self, job_id: str) -> Optional[str]:
+        return self._get_session_manager().get_job_status(job_id)
+
+    def abort_job(self, job_id: str) -> None:
+        self._get_session_manager().abort_job(job_id)
+
+    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+        return self._get_session_manager().get_job_result(job_id, timeout)
 
     def deploy(self, job: FedJob):
-        sess = None
+        """Deploy a job using SessionManager."""
         try:
-            sess = new_secure_session(
-                username=self.username, startup_kit_location=self.startup_kit_location, timeout=self.login_timeout
-            )
-            with tempfile.TemporaryDirectory() as temp_dir:
-                job.export_job(temp_dir)
-                job_path = os.path.join(temp_dir, job.name)
-                job_id = sess.submit_job(job_path)
-                print(f"Submitted job '{job.name}' with ID: {job_id}")
-
-            return job_id
+            return self._get_session_manager().submit_job(job)
         except Exception as e:
-            raise RuntimeError(f"Failed to submit/monitor job via Flare API: {e}")
-        finally:
-            if sess:
-                sess.close()
+            raise RuntimeError(f"Failed to submit job via Flare API: {e}")
 
-    def get_env_info(self) -> dict:
-        return {
-            "env_type": ExecEnvType.PROD,
-            "startup_kit_location": self.startup_kit_location,
-            "login_timeout": self.login_timeout,
-            "username": self.username,
-        }
+    def _get_session_manager(self):
+        """Get or create SessionManager with lazy initialization."""
+        if self._session_manager is None:
+            session_params = {
+                "username": self.username,
+                "startup_kit_location": self.startup_kit_location,
+                "timeout": self.login_timeout,
+            }
+            self._session_manager = SessionManager(session_params)
+        return self._session_manager

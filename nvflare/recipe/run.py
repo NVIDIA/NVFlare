@@ -12,87 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-from contextlib import contextmanager
-from typing import Generator
+from typing import Optional
 
-from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
-from nvflare.fuel.flare_api.flare_api import basic_cb_with_print, new_secure_session
+from nvflare.recipe.spec import ExecEnv
 
 
 class Run:
-    def __init__(self, env_info: dict, job_id: str):
-        self.env_info = env_info
+    def __init__(self, exec_env: ExecEnv, job_id: str):
+        self.exec_env = exec_env
         self.job_id = job_id
-        self.handlers = {
-            "sim": self._get_sim_result,
-            "poc": self._get_prod_result,
-            "prod": self._get_prod_result,
-        }
 
     def get_job_id(self) -> str:
         return self.job_id
 
-    def _is_sim_env(self) -> bool:
-        """Check if this is a simulation environment."""
-        return self.env_info.get("env_type") == "sim"
-
-    def _get_session_params(self) -> dict:
-        """Get session parameters from env_info."""
-        return {
-            "startup_kit_location": self.env_info.get("startup_kit_location"),
-            "username": self.env_info.get("username"),
-            "timeout": self.env_info.get("login_timeout", 10),
-        }
-
-    @contextmanager
-    def _secure_session(self) -> Generator:
-        """Context manager for secure session handling."""
-        if self._is_sim_env():
-            raise RuntimeError("Secure session not needed for simulation environment")
-
-        sess = None
-        try:
-            sess = new_secure_session(**self._get_session_params())
-            yield sess
-        except Exception as e:
-            raise RuntimeError(f"Failed to create/use session: {e}")
-        finally:
-            if sess:
-                sess.close()
-
-    def get_status(self) -> str:
+    def get_status(self) -> Optional[str]:
         """Get the status of the run.
 
         Returns:
-            str: The status of the run.
+            Optional[str]: The status of the run, or None if called in a simulation environment.
         """
-        if self._is_sim_env():
-            print(
-                "get_status will always return completed in a simulation environment, please check the log inside the workspace returned by get_result()"
-            )
-            return "completed"
+        return self.exec_env.get_job_status(self.job_id)
 
-        with self._secure_session() as sess:
-            return sess.get_job_status(self.job_id)
-
-    def _get_sim_result(self, **kwargs) -> str:
-        workspace_root = self.env_info.get("workspace_root")
-        if workspace_root is None:
-            raise RuntimeError("Simulation workspace_root is None - SimEnv may not be properly initialized")
-        return os.path.join(workspace_root, self.job_id)
-
-    def _get_prod_result(self, timeout: float = 0.0) -> str:
-        with self._secure_session() as sess:
-            cb_run_counter = {"count": 0}
-            rc = sess.monitor_job(self.job_id, timeout=timeout, cb=basic_cb_with_print, cb_run_counter=cb_run_counter)
-            print(f"job monitor done: {rc=}")
-            if rc == MonitorReturnCode.JOB_FINISHED:
-                return sess.download_job_result(self.job_id)
-            else:
-                raise RuntimeError(f"Monitor job failed: {rc}")
-
-    def get_result(self, timeout: float = 0.0) -> str:
+    def get_result(self, timeout: float = 0.0) -> Optional[str]:
         """Get the result workspace of the run.
 
         Args:
@@ -100,16 +41,10 @@ class Run:
                 Defaults to 0.0, means never timeout.
 
         Returns:
-            str: The result workspace of the run.
+            Optional[str]: The result workspace path if job completed, None if still running or stopped early.
         """
-        env_type = self.env_info.get("env_type")
-        return self.handlers[env_type](timeout=timeout)
+        return self.exec_env.get_job_result(self.job_id, timeout=timeout)
 
     def abort(self):
         """Abort the running job."""
-        if self._is_sim_env():
-            print("abort is not supported in a simulation environment, it will always run to completion.")
-            return
-
-        with self._secure_session() as sess:
-            sess.abort_job(self.job_id)
+        self.exec_env.abort_job(self.job_id)

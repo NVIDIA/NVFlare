@@ -4,7 +4,6 @@ This example includes instructions on running [FedAvg](https://arxiv.org/abs/160
 with streaming of TensorBoard metrics to the server during training 
 and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/).
 It uses the provisioning and the admin API to submit jobs, similar to how one would set up experiments in real-world deployment.
-For more information on real-world FL see [here](https://nvflare.readthedocs.io/en/latest/real_world_fl.html).
 
 For instructions of how to run CIFAR-10 with FL simulator to compare different FL algorithms, 
 see the example on ["Simulated Federated Learning with CIFAR-10"](../cifar10-sim/README.md).
@@ -157,7 +156,7 @@ The admin API script ([submit_job.py](./submit_job.py)) also overwrites the alph
 job configuration file depending on the provided commandline argument.
 Jobs will be executed automatically depending on the available resources at each client (see "Multi-tasking" section).
 
-For details about jobs, please refer to the [documentation](https://nvflare.readthedocs.io/en/latest/real_world_fl/job.html).
+For details about jobs, please refer to the [documentation](https://nvflare.readthedocs.io/en/latest/user_guide/core_concepts/job.html).
 
 ### 4.1 Varying data heterogeneity of data splits
 
@@ -180,7 +179,7 @@ all the TensorBoard event values of the different clients.
 
 > **_NOTE:_** You can always use the admin console to manually abort a running job. 
   using `abort_job [JOB_ID]`. 
-> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html).
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/admin_guide/deployment/operation.html).
 
 > To log into the POC workspace admin console no username is required 
 > (use "admin" for commands requiring conformation with username). 

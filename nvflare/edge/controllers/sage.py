@@ -160,8 +160,7 @@ class ScatterAndGatherForEdge(Controller):
                 task_data.set_header(EdgeTaskHeaderKey.UPDATE_INTERVAL, self._update_interval)
                 task_data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
-                fl_ctx.set_prop(FLContextKey.TASK_DATA, task_data, private=True, sticky=False)
-                self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
+                self.fire_event_with_data(AppEventType.ROUND_STARTED, fl_ctx, FLContextKey.TASK_DATA, task_data)
 
                 task = Task(
                     name=self.task_name,
@@ -280,8 +279,9 @@ class ScatterAndGatherForEdge(Controller):
                 )
 
     def _prepare_train_task_data(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
-        fl_ctx.set_prop(AppConstants.TRAIN_SHAREABLE, client_task.task.data, private=True, sticky=False)
-        self.fire_event(AppEventType.BEFORE_TRAIN_TASK, fl_ctx)
+        self.fire_event_with_data(
+            AppEventType.BEFORE_TRAIN_TASK, fl_ctx, AppConstants.TRAIN_SHAREABLE, client_task.task.data
+        )
 
     def _process_train_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         result = client_task.result

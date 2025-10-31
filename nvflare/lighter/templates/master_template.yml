@@ -191,9 +191,8 @@ local_server_resources: |
               "admin_storage": "transfer",
               "max_num_clients": 100,
               "heart_beat_timeout": 600,
-              "num_server_workers": 4,
               "download_job_url": "http://download.server.com/",
-              "compression": "Gzip"
+              "admin_timeout": 10.0
           }
       ],
       "snapshot_persistor": {
@@ -287,6 +286,7 @@ fed_admin: |
     "format_version": 1,
     "admin": {
       "project_name": "{~~project_name~~}",
+      "username": "{~~username~~}",
       "server_identity": "{~~server_identity~~}",
       "scheme": "{~~scheme~~}",
       "host": "{~~host~~}",
@@ -567,6 +567,17 @@ sub_start_sh: |
   export PYTHONPATH=/local/custom:$PYTHONPATH
   echo "PYTHONPATH is $PYTHONPATH"
 
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --verify)
+        doVerify=true
+      ;;
+    esac
+    shift
+  done
+
   SECONDS=0
   lst=-400
   restart_count=0
@@ -612,6 +623,15 @@ sub_start_sh: |
       exit
     fi
     rm -f $DIR/../daemon_pid.fl
+  fi
+
+  if [[ "$doVerify" == "true" ]]; then
+    python3 -m nvflare.tool.verify_startup_kits -f $DIR/../ -c $DIR/rootCA.pem
+    verification_status=$?
+    if [[ $verification_status -ne 0 ]]; then
+      echo "verification failed"
+      exit 1
+    fi
   fi
 
   echo $BASHPID > $DIR/../daemon_pid.fl

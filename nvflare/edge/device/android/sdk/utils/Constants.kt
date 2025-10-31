@@ -41,4 +41,5 @@ object TaskHeaderKey {
     const val CURRENT_ROUND = "current_round"
     const val NUM_ROUNDS = "num_rounds"
     const val CONTRIBUTION_ROUND = "contribution_round"
+    const val JOB_NAME = "job_name"
 } 

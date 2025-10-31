@@ -69,11 +69,6 @@ of the FL environment: overall system settings (peer name, job id / run number, 
 also contains an important object called Engine, through which you can access important services provided by the
 system (e.g. fire events, get all available client names, send aux messages, etc.).
 
-HA
-====
-:ref:`high_availability` is a feature implemented in NVIDIA FLARE 2.1.0 around FL server failover introducing an Overseer
-to coordinate multiple FL servers.
-
 Job
 ===
 :ref:`Jobs <job>` contain all of the apps and the information of which app(s) to deploy to which clients or server, the resource requirements
@@ -108,11 +103,6 @@ NVIDIA FLARE
 ============
 NVIDIA FLARE stands for NVIDIA Federated Learning Application Runtime Environment, a general-purpose framework designed for
 collaborative computing.
-
-Overseer
-========
-The overseer is a subsystem that monitors the FL servers in :ref:`HA mode <high_availability>` and tells clients which FL
-server to connect to. This is only applicable in HA mode.
 
 Peer Context
 ============
@@ -170,8 +160,8 @@ component that converts between Shareable objects and model objects. The Shareab
 Startup kit
 ===========
 Startup kits are products of the provisioning process and contain the configuration and certificates necessary to establish
-secure connections between the Overseer, FL servers, FL clients, and Admin clients. These files are used to establish identity
-and authorization policies between server and clients.  Startup kits are distributed to the Overseer, FL servers, clients,
+secure connections between the FL server, FL clients, and Admin clients. These files are used to establish identity
+and authorization policies between server and clients. Startup kits are distributed to the FL server, clients,
 and Admin clients depending on role.
 
 Task

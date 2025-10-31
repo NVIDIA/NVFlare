@@ -13,6 +13,7 @@
 # limitations under the License.
 import json
 import os.path
+from typing import Optional
 
 from nvflare.edge.assessor import Assessor
 from nvflare.edge.controllers.sage import ScatterAndGatherForEdge
@@ -94,7 +95,7 @@ class EdgeJob(FedJob):
     def configure_client(
         self,
         aggregator_factory: AggregatorFactory,
-        max_model_versions: int,
+        max_model_versions: Optional[int] = None,
         update_timeout=5.0,
         executor_task_name="train",
         simulation_config_file: str = None,
@@ -114,8 +115,11 @@ class EdgeJob(FedJob):
         if self.client_config_added:
             raise RuntimeError("client config is already added")
 
+        # check the validity of max_model_versions if not None
+        if max_model_versions:
+            check_positive_int("max_model_versions", max_model_versions)
+
         check_object_type("aggregator_factory", aggregator_factory, AggregatorFactory)
-        check_positive_int("max_model_versions", max_model_versions)
         check_positive_number("update_timeout", update_timeout)
         check_str("executor_task_name", executor_task_name)
 

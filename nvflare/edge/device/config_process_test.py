@@ -95,7 +95,7 @@ CONFIG_DATA = """
         "optimizer": "@opt",
         "loss": "@loss",
         "transforms": {
-            "pre": ["@t1", "@t2"], 
+            "pre": ["@t1", "@t2"],
             "post": ["@t2", "@t1"]
         }
       }

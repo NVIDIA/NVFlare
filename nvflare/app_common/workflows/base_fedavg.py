@@ -54,7 +54,8 @@ class BaseFedAvg(ModelController):
             - def run(self)
 
         Args:
-            num_clients (int, optional): The number of clients. Defaults to 3.
+            num_clients (int, optional): The number of clients. Defaults to 3. NOTE: this argument should not be here
+            we will remove this argument in next release.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): The starting round number.
         """
@@ -139,8 +140,10 @@ class BaseFedAvg(ModelController):
             return FLModel()
         self._results = []
 
-        self.fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
-        self.event(AppEventType.AFTER_AGGREGATION)
+        self.fire_event_with_data(
+            AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result
+        )
+
         self.debug("End aggregation.")
 
         return aggr_result

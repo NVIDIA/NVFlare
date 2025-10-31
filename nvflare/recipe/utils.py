@@ -56,4 +56,4 @@ def add_experiment_tracking(recipe: Recipe, tracking_type: str, tracking_config:
     module = importlib.import_module(TRACKING_REGISTRY[tracking_type]["receiver_module"])
     receiver_class = getattr(module, TRACKING_REGISTRY[tracking_type]["receiver_class"])
     receiver = receiver_class(**tracking_config)
-    recipe.job.to_server(receiver)
+    recipe.job.to_server(receiver, "receiver")

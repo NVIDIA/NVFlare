@@ -7,8 +7,8 @@ import com.nvidia.nvflare.sdk.training.TrainingConfig
 import com.nvidia.nvflare.sdk.core.Dataset
 import org.pytorch.executorch.Tensor
 import org.pytorch.executorch.EValue
-import org.pytorch.executorch.TrainingModule
-import org.pytorch.executorch.SGD
+import org.pytorch.executorch.training.TrainingModule
+import org.pytorch.executorch.training.SGD
 import com.facebook.soloader.nativeloader.NativeLoader
 import com.facebook.soloader.nativeloader.SystemDelegate
 import java.io.File
@@ -30,13 +30,11 @@ import kotlin.jvm.Throws
  */
 class ETTrainer(
     private val context: android.content.Context,
-    private val modelData: String, 
     private val meta: Map<String, Any>,
-    private var dataset: com.nvidia.nvflare.sdk.core.Dataset? = null
+    private var dataset: Dataset? = null
 ) : AutoCloseable {
     private val TAG = "ETTrainer"
     private var tModule: TrainingModule? = null
-    private var isInitialized = false
     
     companion object {
         private const val EXECUTORCH_HEADER_SIZE = 8
@@ -58,13 +56,20 @@ class ETTrainer(
         setupArtifactDirectories()
     }
     
-    /**
-     * Set the dataset for training.
-     * This method allows the executor to set the dataset from context.
-     */
-    fun setDataset(dataset: com.nvidia.nvflare.sdk.core.Dataset) {
+    fun setDataset(dataset: Dataset) {
+        val previousDataset = this.dataset
         this.dataset = dataset
-        Log.d(TAG, "Dataset set: ${dataset.javaClass.simpleName}, size: ${dataset.size()}")
+        
+        val previousType = previousDataset?.javaClass?.simpleName
+        val currentType = dataset.javaClass.simpleName
+        
+        if (previousType != null && previousType != currentType) {
+            resetModel()
+        }
+    }
+    
+    private fun resetModel() {
+        tModule = null
     }
 
     /**
@@ -117,9 +122,9 @@ class ETTrainer(
      * The NVFlare server should send base64-encoded data, but if it sends raw binary
      * data, this method will attempt to handle it gracefully.
      */
-    private fun initializeTrainingModule(modelData: String) {
+    private fun loadGlobalModel(modelData: String) {
         try {
-            Log.d(TAG, "Initializing ExecuTorch training module")
+            Log.d(TAG, "Loading global model from server")
             
             if (!NativeLoader.isInitialized()) {
                 NativeLoader.init(SystemDelegate())
@@ -173,24 +178,21 @@ class ETTrainer(
                 throw RuntimeException("Failed to initialize training module")
             }
             
-            isInitialized = true
-            Log.d(TAG, "Training module initialized successfully")
+            Log.d(TAG, "Global model loaded successfully from server")
             
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize training module", e)
-            throw RuntimeException("Failed to initialize ExecuTorch training module: ${e.message}", e)
+            Log.e(TAG, "Failed to load global model from server", e)
+            throw RuntimeException("Failed to load global model from server: ${e.message}", e)
         }
     }
     
     suspend fun train(config: TrainingConfig, modelData: String?): Map<String, Any> {
         Log.d(TAG, "Starting ExecuTorch training with method: ${config.method}")
         
-        // Model data should be provided separately (like iOS)
         val actualModelData = modelData ?: throw RuntimeException("No model data provided for training")
         
-        if (!isInitialized || tModule == null) {
-            initializeTrainingModule(actualModelData)
-        }
+        // Always use the received global model from server
+        loadGlobalModel(actualModelData)
         
         try {
             val method = config.method
@@ -204,6 +206,7 @@ class ETTrainer(
             // Use dataset provided by user through constructor
             val trainingDataset = dataset ?: throw IllegalStateException("No dataset provided to ETTrainer")
             Log.d(TAG, "Using user-provided dataset: ${trainingDataset.javaClass.simpleName}")
+            
             
             val trainingResult = performTraining(
                 tModule!!,
@@ -245,7 +248,7 @@ class ETTrainer(
      */
     private fun performTraining(
         model: TrainingModule,
-        dataset: com.nvidia.nvflare.sdk.core.Dataset,
+        dataset: Dataset,
         method: String,
         epochs: Int,
         batchSize: Int,
@@ -484,14 +487,13 @@ class ETTrainer(
      * This method is called automatically when using try-with-resources or when close() is called.
      */
     override fun close() {
-        if (isInitialized) {
+        if (tModule != null) {
             try {
                 tModule = null
                 Log.d(TAG, "Training module cleaned up successfully")
             } catch (e: Exception) {
                 Log.e(TAG, "Error during cleanup", e)
             }
-            isInitialized = false
         }
         Log.d(TAG, "Training module cleaned up")
     }

@@ -12,12 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
-import os
-
 from nvflare.lighter.constants import CtxKey, ProvFileName
 from nvflare.lighter.spec import Builder, Project, ProvisionContext
-from nvflare.lighter.utils import sign_all
+from nvflare.lighter.utils import sign_folders
 
 
 class SignatureBuilder(Builder):
@@ -27,12 +24,6 @@ class SignatureBuilder(Builder):
     can be cryptographically verified to ensure any tampering is detected. This builder writes the signature.json file.
     """
 
-    @staticmethod
-    def _do_sign(root_pri_key, dest_dir):
-        signatures = sign_all(dest_dir, root_pri_key)
-        with open(os.path.join(dest_dir, ProvFileName.SIGNATURE_JSON), "wt") as f:
-            json.dump(signatures, f)
-
     def build(self, project: Project, ctx: ProvisionContext):
         root_pri_key = ctx.get(CtxKey.ROOT_PRI_KEY)
         if not root_pri_key:
@@ -40,4 +31,6 @@ class SignatureBuilder(Builder):
 
         for p in project.get_all_participants():
             dest_dir = ctx.get_kit_dir(p)
-            self._do_sign(root_pri_key, dest_dir)
+            sign_folders(dest_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)
+            dest_dir = ctx.get_local_dir(p)
+            sign_folders(dest_dir, root_pri_key, signature_file=ProvFileName.SIGNATURE_JSON)

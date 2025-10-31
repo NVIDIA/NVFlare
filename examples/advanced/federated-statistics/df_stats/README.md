@@ -1,354 +1,77 @@
-# Data Frame Federated Statistics 
-
-In this example, we will show how to generate federated statistics for data that can be represented as Pandas Data Frame.
-You can also follow the [notebook](../df_stats.ipynb) or the following:
+# Tabular Federated Statistics: Deep dive into the implementations
 
 
-## Setup NVFLARE
-Follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to setup virtual environment and install NVFLARE
+This example is the same as [Hello-tabular-stats](../../../hello-world/hello-tabular-stats/README.md). For a basic example,
+please read that example first. 
 
-Let's first install required packages.
+Here we would like to describe a few other advanced topics not covered in [Hello-tabular-stats](../../../hello-world/hello-tabular-stats/README.md)
 
-```
-pip install --upgrade pip
+## Assumption
+* We assume each site has the same features (schema)
+* Each site can calculate the local statistics 
 
-cd NVFlare/examples/advanced/federated-statistics/df_stats
+## Quantile Calculation
 
-pip install -r requirements.txt
-```
+The design choice of Quantile calculation: 
 
-
-## Install fastdigest
-
-If you intend to calculate quantiles, you need to install fastdigest. 
-
-```
-pip install fastdigest==0.4.0
-```
-
-on Ubuntu, you might get the following error:
-
-  Cargo, the Rust package manager, is not installed or is not on PATH.
-  This package requires Rust and Cargo to compile extensions. Install it through
-  the system's package manager or via https://rustup.rs/
-      
-  Checking for Rust toolchain....
-
-This is because fastdigest (or its dependencies) requires Rust and Cargo to build. 
-
-You need to install Rust and Cargo on your Ubuntu system. Follow these steps:
-Install Rust and Cargo
-Run the following command to install Rust using rustup:
-
-```
-cd NVFlare/examples/advanced/federated-statistics/df_stats
-./install_cargo.sh
-```
-
-Then you can install fastdigest again
-```
-pip install fastdigest==0.4.0
-```
-
-### Quantile Calculation
-
-To calculate federated quantiles, we needed to select a package that satisfies the following constraints:
+To calculate federated quantiles, we need to select a package that satisfies the following constraints:
 
 * Works in distributed systems
 * Does not copy the original data (avoiding privacy leaks)
 * Avoids transmitting large amounts of data
 * Ideally, no system-level dependency 
 
-We chose the fastdigest python package, a rust-based package. tdigest only carries the cluster coordinates, initially each data point is in its own cluster. By default, we will compress with max_bin = sqrt(datasize) to compress the coordinates, so the data won't leak. You can always override max_bins if you prefer more or less compression.
+We chose the fastdigest python package, a rust-based package. tdigest only carries the cluster coordinates, 
+initially each data point is in its own cluster. By default, we will compress with max_bin = sqrt(datasize) 
+to compress the coordinates, so the data won't leak. You can always override max_bins if you prefer more or less compression.
 
-
-
-## 1. Prepare data
-
-In this example, we are using UCI (University of California, Irvine) [adult dataset](https://archive.ics.uci.edu/dataset/2/adult)
-
-The original dataset has already contains "training" and "test" datasets. Here we simply assume that "training" and test data sets are belong to different clients.
-so we assigned the training data and test data into two clients.
  
-Now we use data utility to download UCI datasets to separate client package directory to /tmp/nvflare/data/ directory
+## Configuration and Code
 
-Please note that the UCI's website may experience occasional downtime.
-
-```shell
-prepare_data.sh
-```
-it should show something like
-```
-prepare data for data directory /tmp/nvflare/df_stats/data
-
-wget download to /tmp/nvflare/df_stats/data/site-1/data.csv
-100% [..........................................................................] 3974305 / 3974305
-wget download to /tmp/nvflare/df_stats/data/site-2/data.csv
-100% [..........................................................................] 2003153 / 2003153
-done with prepare data
-
-```
-
-## 2. Run job in FL Simulator
-
-With FL simulator, we can just run the example with CLI command 
-
-
-```
-cd NVFlare/examples/advanced/federated-statistics
-nvflare simulator df_stats/jobs/df_stats -w /tmp/nvflare/workspace/df_stats -n 2 -t 2
-```
-
-The results are stored in workspace "/tmp/nvflare"
-```
-/tmp/nvflare/workspace/df_stats/server/simulate_job/statistics/adults_stats.json
-```
-
-## 3. Visualization
-   with json format, the data can be easily visualized via pandas dataframe and plots. 
-   A visualization utility tools are showed in show_stats.py in visualization directory
-   You can run jupyter notebook visualization.ipynb
-
-   assuming NVFLARE_HOME env variable point to the GitHub project location (NVFlare) which contains current example. 
-
-```bash
-    cp /tmp/nvflare/workspace/df_stats/server/simulate_job/advanced/statistics/adults_stats.json $NVFLARE_HOME/examples/advanced/federated-statistics/df_stats/demo/.
-    
-    cd $NVFLARE_HOME/examples/advanced/federated-statistics/df_stats/demo
-    
-    jupyter notebook  visualization.ipynb
-```
-you should be able to get the visualization similar to the followings
-
-![stats](demo/stats_df.png) and ![histogram plot](demo/hist_plot.png)
-
-
-## 4. Run Example using POC command
-
-Alternative way to run job is using POC mode
-
-### 4.1 Prepare POC Workspace
-
-```
-   nvflare poc prepare 
-```
-This will create a poc at /tmp/nvflare/poc with n = 2 clients.
-
-If your poc_workspace is in a different location, use the following command
-
-```
-export NVFLARE_POC_WORKSPACE=<new poc workspace location>
-```
-then repeat above
-
-### 4.2 Start nvflare in POC mode
-
-```
-nvflare poc start
-```
-once you have done with above command, you are already login to the NVFLARE console (aka Admin Console)
-if you prefer to have NVFLARE Console in separate terminal, you can do
-
-```
-nvflare poc start ex admin
-```
-Then open a separate terminal to start the NVFLARE console
-```
-nvflare poc start -p admin
-```
-
-### 4.3 Submit job
-
-Inside the console, submit the job:
-```
-submit_job advanced/federated-statistics/df_stats/jobs/df_stats
-```
-
-### 4.4 List the submitted job
-
-You should see the server and clients in your first terminal executing the job now.
-You can list the running job by using `list_jobs` in the admin console.
-Your output should be similar to the following.
-
-```
-> list_jobs 
--------------------------------------------------------------------------------------------------==--------------------------------
-| JOB ID                               | NAME     | STATUS                       | SUBMIT TIME                                    |
------------------------------------------------------------------------------------------------------------------------------------
-| 10a92352-5459-47d2-8886-b85abf70ddd1 | df_stats | FINISHED:COMPLETED           | 2022-08-05T22:50:40.968771-07:00 | 0:00:29.4493|
------------------------------------------------------------------------------------------------------------------------------------
-```
-
-### 4.5 Get the result
-
-If successful, the computed statis can be downloaded using this admin command:
-```
-download_job [JOB_ID]
-```
-After download, it will be available in the stated download directory under `[JOB_ID]/workspace/statistics` as  `adult_stats.json`
-then go to section [6. Visualization]
-
-## 5. Configuration and Code
-
-Since Flare has already developed the operators (server side controller and client side executor) for the federated
-statistics computing, we will only need to provide the followings
+Since FLARE has already developed the operators for the federated
+statistics computing, we will only need to provide the following
 * config_fed_server.json (server side controller configuration)
 * config_client_server.json (client side executor configuration)
 * local statistics calculator
 
-### 5.1 server side configuration
+The same configuration can be achieved via FLARE Job recipe API, but let's look at the configuration first
+
+### server side configuration
+
+The server side configuration specifies the overall statistics metrics one would like to calculate: 
+such as stddev, histogram, how many bins are used for histogram for each feature, whether quantiles should be calculated or not. 
+This can be specified via Job Recipe. 
 
 ```
-"workflows": [
-    {
-      "id": "fed_stats_controller",
-      "path": "nvflare.app_common.workflows.statistics_controller.StatisticsController",
-      "args": {
-        "statistics_configs": {
-          "count": {},
-          "mean": {},
-          "sum": {},
-          "stddev": {},
-          "histogram": { "*": {"bins": 10 },
-                         "Age": {"bins": 5, "range":[0,120]}
-                       },
-          "quantile": {
-            "*": [25, 50, 75]
-          }
-        },
-        
-        "writer_id": "stats_writer"
-      }
+    statistic_configs = {
+        "count": {},
+        "mean": {},
+        "sum": {},
+        "stddev": {},
+        "histogram": {"*": {"bins": 20}, "Age": {"bins": 20, "range": [0, 100]}},
+        "quantile": {"*": [0.1, 0.5, 0.9]},
     }
-  ],
-```
-In above configuration, `StatisticsController` is controller. We ask the controller to calculate the following statistic
-statistics: "count", "mean", "sum", "stddev", "histogram" and "Age". Each statistic may have its own configuration.
-For example, Histogram statistic, we specify feature "Age" needs 5 bins and histogram range is within [0, 120), while for
-all other features ("*" indicate default feature), the bin is 10, range is not specified, i.e. the ranges will be dynamically estimated.
-
-The StatisticController also takes writer_id = "stats_writer", the writer_id identify the output writer component, defined as
-
-```
- "components": [
-    {
-      "id": "stats_writer",
-      "path": "nvflare.app_common.statistics.json_stats_file_persistor.JsonStatsFileWriter",
-      "args": {
-        "output_path": "statistics/adults_stats.json",
-        "json_encoder_path": "nvflare.app_common.utils.json_utils.ObjectEncoder"
-      }
-    }
-```
-This configuration shows a JSON file output writer, the result will be saved to the <job workspace>/"statistics/adults_stats.json",
-in FLARE job store.
-
-### 5.2 client side configuration
  
-First, we specify the built-in client side executor: `StatisticsExecutor`, which takes a local stats generator ID
-
-
 ```
- "executor": {
-        "id": "Executor",
-        "path": "nvflare.app_common.executors.statistics_executor.StatisticsExecutor",
-        "args": {
-          "generator_id": "df_stats_generator",
-  },
+ 
+In the above configuration, we ask FLARE to calculate the following statistics: "count", "mean", "sum", "stddev", "histogram", and "quantile". Each statistic may have its own configuration.
+For example, for the Histogram statistic, we specify feature "Age" needs 20 bins and the histogram range is within [0, 100), while for
+all other features ("*" indicates default feature), the bins are 20, and the range is not specified, i.e., the ranges will be dynamically estimated.
 
-```
 
-The local statistics generator is defined as FLComponent: `DFStatistics` which implement the `Statistics` spec.
 
-```
-  "components": [
-    {
-      "id": "df_stats_generator",
-      "path": "df_statistics.DFStatistics",
-      "args": {
-        "data_path": "data.csv"
-      }
-    },
-   ...
-  ]
-```
-
-Next, we specify the `task_result_filters`. The task_result_filters are the post-process filter that takes the results
-of executor and then apply the filter before sending to server.
-
-In this example, task_result_filters is defined as task privacy filter : `StatisticsPrivacyFilter`
-```
-  "task_result_filters": [
-    {
-      "tasks": ["fed_stats"],
-      "filters":[
-        {
-          "name": "StatisticsPrivacyFilter",
-          "args": {
-            "result_cleanser_ids": [
-              "min_count_cleanser",
-              "min_max_noise_cleanser",
-              "hist_bins_cleanser"
-            ]
-          }
-        }
-      ]
-    }
-  ],
-``` 
-`StatisticsPrivacyFilter` is using three separate the `StatisticsPrivacyCleanser`, you can find more details in
-[local privacy policy](../local/privacy.json) and in later discussion on privacy.
-
-The privacy cleansers specify policies can be found in
-```
-  "components": [
-    {
-      "id": "df_stats_generator",
-      "path": "df_statistics.DFStatistics",
-      "args": {
-        "data_path": "data.csv"
-      }
-    },
-    {
-      "id": "min_max_cleanser",
-      "path": "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
-      "args": {
-        "min_noise_level": 0.1,
-        "max_noise_level": 0.3
-      }
-    },
-    {
-      "id": "hist_bins_cleanser",
-      "path": "nvflare.app_common.statistics.histogram_bins_cleanser.HistogramBinsCleanser",
-      "args": {
-        "max_bins_percent": 10
-      }
-    },
-    {
-      "id": "min_count_cleanser",
-      "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
-      "args": {
-        "min_count": 10
-      }
-    }
-  ]
-
-```
-Or in [local private policy](../local/privacy.json)
-
-### 5.3 Local statistics generator
-
-The statistics generator `DFStatistics` implements `Statistics` spec.
-In current example, the input data in the format of Pandas DataFrame. Although we used csv file, but this can be any
-tabular data format that be expressed in pandas dataframe.
+### Client side Implementation: Local statistics generator
+ 
+The statistics generator `DFStatistics` implements the `Statistics` spec. In the current example, the input data is in the format of Pandas DataFrame. Although we used a csv file, this can be any
+tabular data format that can be expressed as a pandas dataframe.
 
 ```
 class DFStatistics(Statistics):
     # rest of code 
 ```
-to calculate the local statistics, we will need to implements few methods
+to calculate the local statistics, we will need to implement a few methods
 ```
-    def features(self) -> Dict[str, List[Feature]] -> Dict[str, List[Feature]]:
+    def features(self) -> Dict[str, List[Feature]]:
 
     def count(self, dataset_name: str, feature_name: str) -> int:
  
@@ -365,21 +88,137 @@ to calculate the local statistics, we will need to implements few methods
     def quantiles(self, dataset_name: str, feature_name: str, percentiles: List) -> Dict:
 
 ```
-since some of features do not provide histogram bin range, we will need to calculate based on local min/max to estimate
-the global min/max, and then use the global bin/max as the range for all clients' histogram bin range.
+Since some features do not provide histogram bin range, we will need to calculate based on local min/max to estimate
+the global min/max, and then use the global min/max as the range for all clients' histogram bin range.
 
-so we need to provide local min/max calculation methods
+So we need to provide local min/max calculation methods
 ```
    def max_value(self, dataset_name: str, feature_name: str) -> float:
    def min_value(self, dataset_name: str, feature_name: str) -> float:
 ```
 
+For tabular data, FLARE has already implemented the specification with ```DFStatisticsCore```. We just need to subclass the ```DFStatisticsCore``` and implement
+a few methods
+```
+    def load_data(self, fl_ctx: FLContext) -> Dict[str, pd.DataFrame]:
+```
 
-
-## to run pytest in examples
-
-under df_stats/jobs directory
+This method specifies how to load the data into different DataFrames, for example, "train" dataset and "test" dataset, one for each key in the dictionary.
 
 ```
-pytest df_stats/custom/
+   def features(self) -> Dict[str, List[Feature]]:
+   
 ```
+The features for each dataset are also important. We assume each site has the same features. 
+
+By default, the ```DFStatisticsCore.features(self) -> Dict[str, List[Feature]]``` implementation assumes the DataFrame has feature names.
+The method simply gets the feature names from the DataFrame. 
+
+```
+    def features(self) -> Dict[str, List[Feature]]:
+        results: Dict[str, List[Feature]] = {}
+        for ds_name in self.data:
+            df = self.data[ds_name]
+            results[ds_name] = []
+            for feature_name in df:
+                data_type = dtype_to_data_type(df[feature_name].dtype)
+                results[ds_name].append(Feature(feature_name, data_type))
+
+        return results
+
+```
+Therefore, the DataFrame must have the column names defined. In this example, the dataset has no headers from the CSV file, 
+so we hard-coded the feature names in the init() function.
+
+If you can't derive features, you can overwrite this method and return a list of features for each dataset. 
+
+
+```
+
+class AdultStatistics(DFStatisticsCore):
+    def __init__(self, filename, data_root_dir="/tmp/nvflare/df_stats/data"):
+        super().__init__()
+        self.data_root_dir = data_root_dir
+        self.filename = filename
+        self.data: Optional[Dict[str, pd.DataFrame]] = None
+        self.data_features = [
+            "Age",
+            "Workclass",
+            "fnlwgt",
+            "Education",
+            "Education-Num",
+            "Marital Status",
+            "Occupation",
+            "Relationship",
+            "Race",
+            "Sex",
+            "Capital Gain",
+            "Capital Loss",
+            "Hours per week",
+            "Country",
+            "Target",
+        ]
+
+        # the original dataset has no header,
+        # we will use the adult.train dataset for site-1, the adult.test dataset for site-2
+        # the adult.test dataset has an incorrectly formatted row at the 1st line, we will skip it.
+        self.skip_rows = {
+            "site-1": [],
+            "site-2": [0],
+        }
+
+    def load_data(self, fl_ctx: FLContext) -> Dict[str, pd.DataFrame]:
+        client_name = fl_ctx.get_identity_name()
+        self.log_info(fl_ctx, f"load data for client {client_name}")
+        try:
+            skip_rows = self.skip_rows[client_name]
+            data_path = f"{self.data_root_dir}/{fl_ctx.get_identity_name()}/{self.filename}"
+            # example of load data from CSV
+            df: pd.DataFrame = pd.read_csv(
+                data_path, names=self.data_features, sep=r"\s*,\s*", skiprows=skip_rows, engine="python", na_values="?"
+            )
+            train = df.sample(frac=0.8, random_state=200)  # random state is a seed value
+            test = df.drop(train.index).sample(frac=1.0)
+
+            self.log_info(fl_ctx, f"load data done for client {client_name}")
+            return {"train": train, "test": test}
+
+        except Exception as e:
+            raise Exception(f"Load data for client {client_name} failed! {e}")
+
+    def initialize(self, fl_ctx: FLContext):
+        self.data = self.load_data(fl_ctx)
+```
+
+
+### Client side data privacy configuration
+
+
+To ensure privacy, each site wants to specify the min_count. For the min value, we want to add 15% noise,
+and for the max value, we want to add 30% noise. 
+
+max_bins_percent: The maximum number of bins allowed in terms of percentage of local data size.
+
+Set this number to avoid the number of bins being equal to or close to the data size, which can lead to data leakage.
+For example: max_bins_percent = 15, the number of bins should not be more than 15% * data count
+
+```
+   min_count = 15
+   min_noise_level = 0.1
+   max_noise_level = 0.3
+   max_bins_percent = 15
+```
+This privacy control can be expressed in the job recipe at the job level. But it can also be applied at the organization privacy 
+policy level, for example, using a configuration file in the [local privacy policy](../local/privacy.json)
+
+
+## Job Recipe
+
+* First, follow the installation guide and data preparation step to get the data:  [Hello-tabular-stats](../../../hello-world/hello-tabular-stats/README.md)
+* Now run the job with 
+
+```bash
+   python job.py
+```
+
+## Visualization
