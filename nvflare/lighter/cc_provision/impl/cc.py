@@ -15,12 +15,7 @@
 import os
 from typing import Any, Dict, Optional, Type
 
-from nvflare.app_opt.confidential_computing.cc_manager import (
-    CC_ISSUER_ID,
-    SHUTDOWN_JOB,
-    SHUTDOWN_SYSTEM,
-    TOKEN_EXPIRATION,
-)
+from nvflare.app_opt.confidential_computing.cc_manager import CC_ISSUER_ID, TOKEN_EXPIRATION
 from nvflare.lighter import utils
 from nvflare.lighter.constants import PropKey, TemplateSectionKey
 from nvflare.lighter.ctx import ProvisionContext
@@ -30,11 +25,6 @@ from nvflare.lighter.spec import Builder
 from ..cc_constants import CC_AUTHORIZERS_KEY, CCConfigKey, CCConfigValue, CCIssuerConfig, CCManagerArgs
 from .azure import AzureSimpleBuilder
 from .onprem_cvm import OnPremCVMBuilder
-
-JOB_RETURN_CODE_MAPPING = {
-    "stop_system": SHUTDOWN_SYSTEM,
-    "stop_job": SHUTDOWN_JOB,
-}
 
 CC_MGR_PATH = "nvflare.app_opt.confidential_computing.cc_manager.CCManager"
 
@@ -160,7 +150,6 @@ class CCBuilder(Builder):
             if attestation_config:
                 cc_mgr_args[CCManagerArgs.VERIFY_FREQUENCY] = attestation_config.get("check_frequency", 600)
                 failure_action = attestation_config.get("failure_action", "stop_system")
-                cc_mgr_args[CCManagerArgs.CRITICAL_LEVEL] = JOB_RETURN_CODE_MAPPING.get(failure_action, SHUTDOWN_SYSTEM)
 
             cc_verifier_ids.add(authorizer.get(CCIssuerConfig.ID))
 
