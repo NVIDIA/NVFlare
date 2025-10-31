@@ -92,12 +92,12 @@ class SysBackend(Backend):
             )
             return None
 
-    def call_target_in_group(self, resp: GroupCallContext, target_name: str, func_name: str, *args, **kwargs):
-        self.thread_executor.submit(self._run_func, resp, target_name, func_name, args, kwargs)
+    def call_target_in_group(self, gcc: GroupCallContext, target_name: str, func_name: str, *args, **kwargs):
+        self.thread_executor.submit(self._run_func, gcc, target_name, func_name, args, kwargs)
 
-    def _run_func(self, resp: GroupCallContext, target_name: str, func_name: str, args, kwargs):
+    def _run_func(self, gcc: GroupCallContext, target_name: str, func_name: str, args, kwargs):
         try:
             result = self.call_target(target_name, func_name, *args, **kwargs)
-            resp.set_result(result)
+            gcc.set_result(result)
         except Exception as ex:
-            resp.set_exception(ex)
+            gcc.set_exception(ex)
