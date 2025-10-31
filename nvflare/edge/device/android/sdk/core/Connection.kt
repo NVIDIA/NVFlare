@@ -20,6 +20,13 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import okhttp3.HttpUrl
 import com.google.gson.JsonPrimitive
+import java.security.SecureRandom
+import javax.net.ssl.SSLContext
+import java.security.cert.X509Certificate
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
+import javax.security.auth.x500.X500Principal
+import java.util.regex.Pattern
 
 class Connection(private val context: Context) {
     companion object {
@@ -52,8 +59,7 @@ class Connection(private val context: Context) {
         // Content types
         private const val CONTENT_TYPE_JSON = "application/json"
         
-        // HTTP scheme
-        private const val HTTP_SCHEME = "http"
+
         
         // JSON field names
         private const val FIELD_JOB_NAME = "job_name"
@@ -70,7 +76,9 @@ class Connection(private val context: Context) {
     private var currentCookie: JSONValue? = null
     private var capabilities: Map<String, Any> = mapOf(FIELD_METHODS to emptyList<String>())
     private val gson = Gson()
-    private val httpClient = OkHttpClient()
+    private var httpClient: OkHttpClient = OkHttpClient()
+    private var allowSelfSignedCerts: Boolean = false
+    private var scheme: String = "http"  // HTTP scheme - now configurable
 
     // Add hostname and port properties to match iOS
     val hostname = MutableLiveData<String>("")
@@ -105,6 +113,189 @@ class Connection(private val context: Context) {
         this.userInfo = userInfo
     }
 
+    fun setScheme(scheme: String) {
+        this.scheme = scheme
+        updateHttpClient()
+    }
+
+    fun setAllowSelfSignedCerts(allow: Boolean) {
+        this.allowSelfSignedCerts = allow
+        updateHttpClient()
+    }
+    
+    /**
+     * WARNING: This method creates a trust manager that accepts ALL certificates without validation.
+     * This is a CRITICAL SECURITY VULNERABILITY and should NEVER be used in production.
+     * 
+     * Use cases where this might be acceptable:
+     * - Development environments with self-signed certificates
+     * - Testing environments with controlled network access
+     * - Internal networks where security risks are understood and accepted
+     * 
+     * For production use, consider:
+     * - Certificate pinning
+     * - Proper certificate validation
+     * - Using a trusted certificate authority
+     * - Implementing custom certificate validation logic
+     */
+    private fun createInsecureTrustManager(): X509TrustManager {
+        return object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {
+                Log.w(TAG, "SECURITY WARNING: Accepting client certificate without validation")
+            }
+            
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {
+                Log.w(TAG, "SECURITY WARNING: Accepting server certificate without validation")
+            }
+            
+            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+        }
+    }
+
+    private fun updateHttpClient() {
+        val builder = OkHttpClient.Builder()
+        
+        if (allowSelfSignedCerts) {
+            try {
+                // ⚠️  CRITICAL SECURITY WARNING ⚠️
+                // This implementation DISABLES ALL CERTIFICATE VALIDATION
+                // This creates MASSIVE security vulnerabilities and should ONLY be used in:
+                // - Development environments with self-signed certificates
+                // - Testing environments with controlled network access
+                // - Internal networks where security risks are understood and accepted
+                // 
+                // 🚨 PRODUCTION WARNING: This disables all certificate validation! 🚨
+                // This makes the application vulnerable to:
+                // - Man-in-the-middle attacks
+                // - Certificate spoofing
+                // - Data interception and decryption
+                // - Expired/revoked certificate acceptance
+                // 
+                // For production use, implement proper certificate validation or pinning!
+                Log.e(TAG, "🚨 SECURITY WARNING: Using insecure trust manager that accepts ALL certificates!")
+                Log.e(TAG, "🚨 This creates critical security vulnerabilities in production environments!")
+                
+                val trustAllCerts = arrayOf<TrustManager>(createInsecureTrustManager())
+                
+                val sslContext = SSLContext.getInstance("TLS")
+                sslContext.init(null, trustAllCerts, SecureRandom())
+                
+                builder.sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
+                
+                // Use custom hostname verification for self-signed certificates
+                builder.hostnameVerifier { hostname, session ->
+                    verifyHostname(hostname, session)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to configure SSL for self-signed certificates: ${e.message}")
+            }
+        } else {
+            // For regular certificates, use default OkHttp SSL configuration
+            // This provides proper certificate validation and security
+            Log.d(TAG, "Using default SSL configuration for regular certificates")
+            
+            // Configure hostname verification for regular certificates
+            builder.hostnameVerifier { hostname, session ->
+                // Use default hostname verification for regular certificates
+                javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(hostname, session)
+            }
+        }
+        
+        httpClient = builder.build()
+    }
+    
+    /**
+     * Verifies hostname against certificate's Subject Alternative Names (SAN) and Common Name (CN)
+     * This provides proper hostname verification for self-signed certificates
+     */
+    private fun verifyHostname(hostname: String, session: javax.net.ssl.SSLSession): Boolean {
+        try {
+            val peerCertificates = session.peerCertificates
+            if (peerCertificates.isEmpty()) {
+                Log.w(TAG, "No peer certificates found for hostname verification")
+                return false
+            }
+            
+            val cert = peerCertificates[0] as X509Certificate
+            
+            // Check Subject Alternative Names (SAN) first
+            val sanExtension = cert.getExtensionValue("2.5.29.17") // SAN extension OID
+            if (sanExtension != null) {
+                val sanNames = extractSANNames(sanExtension)
+                for (sanName in sanNames) {
+                    if (matchesHostname(hostname, sanName)) {
+                        Log.d(TAG, "Hostname verification successful via SAN: $hostname matches $sanName")
+                        return true
+                    }
+                }
+            }
+            
+            // Check Common Name (CN) as fallback
+            val principal = cert.subjectX500Principal
+            val cn = extractCN(principal.name)
+            if (cn != null && matchesHostname(hostname, cn)) {
+                Log.d(TAG, "Hostname verification successful via CN: $hostname matches $cn")
+                return true
+            }
+            
+            Log.w(TAG, "Hostname verification failed: $hostname does not match any certificate names")
+            return false
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during hostname verification: ${e.message}")
+            return false
+        }
+    }
+    
+    /**
+     * Extracts Subject Alternative Names from certificate extension
+     */
+    private fun extractSANNames(sanExtension: ByteArray): List<String> {
+        val names = mutableListOf<String>()
+        try {
+            // This is a simplified implementation - in production, use a proper ASN.1 parser
+            // For now, we'll implement basic CN matching which is more reliable
+            Log.d(TAG, "SAN extension found but using CN fallback for simplicity")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse SAN extension: ${e.message}")
+        }
+        return names
+    }
+    
+    /**
+     * Extracts Common Name from X.500 principal
+     */
+    private fun extractCN(principalName: String): String? {
+        val pattern = Pattern.compile("CN=([^,]+)", Pattern.CASE_INSENSITIVE)
+        val matcher = pattern.matcher(principalName)
+        return if (matcher.find()) matcher.group(1) else null
+    }
+    
+    /**
+     * Checks if hostname matches certificate name (supports wildcards)
+     */
+    private fun matchesHostname(hostname: String, certName: String): Boolean {
+        // Remove any leading/trailing whitespace
+        val cleanHostname = hostname.trim()
+        val cleanCertName = certName.trim()
+        
+        // Exact match
+        if (cleanHostname.equals(cleanCertName, ignoreCase = true)) {
+            return true
+        }
+        
+        // Wildcard match (e.g., *.example.com matches subdomain.example.com)
+        if (cleanCertName.startsWith("*.")) {
+            val domain = cleanCertName.substring(2)
+            if (cleanHostname.endsWith(domain, ignoreCase = true)) {
+                val subdomain = cleanHostname.substring(0, cleanHostname.length - domain.length)
+                return subdomain.isNotEmpty() && !subdomain.contains(".")
+            }
+        }
+        
+        return false
+    }
+
     fun getUserInfo(): Map<String, String> = userInfo
 
     fun getDeviceInfo(): Map<String, String> = deviceInfo
@@ -131,7 +322,7 @@ class Connection(private val context: Context) {
         }
 
         val url = HttpUrl.Builder()
-            .scheme(HTTP_SCHEME)
+            .scheme(scheme)
             .host(hostname.value ?: "")
             .port(port.value ?: 0)
             .addPathSegment(ENDPOINT_JOB)
@@ -206,7 +397,7 @@ class Connection(private val context: Context) {
         }
 
         val url = HttpUrl.Builder()
-            .scheme(HTTP_SCHEME)
+            .scheme(scheme)
             .host(hostname.value ?: "")
             .port(port.value ?: 0)
             .addPathSegment(ENDPOINT_TASK)
@@ -306,7 +497,7 @@ class Connection(private val context: Context) {
         }
 
         val url = HttpUrl.Builder()
-            .scheme(HTTP_SCHEME)
+            .scheme(scheme)
             .host(hostname.value ?: "")
             .port(port.value ?: 0)
             .addPathSegment(ENDPOINT_RESULT)

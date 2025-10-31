@@ -7,18 +7,28 @@ for the complete installation instructions, see [Installation](https://nvflare.r
 pip install nvflare
 ```
 
-## Code Structure
-first get the example code from github: git clone https://github.com/NVIDIA/NVFlare.git then navigate to the hello-pt directory:
+Get the example code from github: 
 ```
-git switch <release branch>
-cd examples/hello-world/hello-lightning
-.
-hello-lightning
-|
-|-- client.py        # client local training script
-|-- model.py         # model definition
-|-- job.py              # job recipe that defines client and server configurations
-|-- requirements.txt    # dependencies
+    git clone https://github.com/NVIDIA/NVFlare.git
+```
+
+then navigate to the hello-pt directory:
+
+```
+    git switch <release branch>
+    cd examples/hello-world/hello-lightning
+```
+
+## Code Structure
+
+```
+    hello-lightning
+    |
+    |-- client.py        # client local training script
+    |-- model.py         # model definition
+    |-- job.py           # job recipe that defines client and server configurations
+    |-- requirements.txt # dependencies
+    |-- prepare_data.sh  # prepare data utils 
 ```
 
 ## Data
@@ -60,7 +70,86 @@ General Summary of a LightningModule
 * **Optimizer Configuration**: The configure_optimizers method specifies the optimizer(s) and learning rate scheduler(s) used during training. This allows for flexible and customizable training strategies.
 By using a LightningModule, developers can leverage PyTorch Lightning's features like distributed training, automatic checkpointing, and logging, making it easier to scale experiments and manage complex training workflows. This abstraction promotes cleaner code, better organization, and easier debugging, ultimately accelerating the model development process.
 
- 
+ ```python
+from typing import Any
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from pytorch_lightning import LightningModule
+from torchmetrics import Accuracy
+
+NUM_CLASSES = 10
+criterion = nn.CrossEntropyLoss()
+
+class Net(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 6, 5)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+
+class LitNet(LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.save_hyperparameters()
+        self.model = Net()
+        self.train_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+        self.valid_acc = Accuracy(task="multiclass", num_classes=NUM_CLASSES)
+        # (optional) pass additional information via self.__fl_meta__
+        self.__fl_meta__ = {}
+
+    def forward(self, x):
+        out = self.model(x)
+        return out
+
+    def training_step(self, batch, batch_idx):
+        x, labels = batch
+        outputs = self(x)
+        loss = criterion(outputs, labels)
+        self.train_acc(outputs, labels)
+        self.log("train_loss", loss)
+        self.log("train_acc", self.train_acc, on_step=True, on_epoch=False)
+        return loss
+
+    def evaluate(self, batch, stage=None):
+        x, labels = batch
+        outputs = self(x)
+        loss = criterion(outputs, labels)
+        self.valid_acc(outputs, labels)
+
+        if stage:
+            self.log(f"{stage}_loss", loss)
+            self.log(f"{stage}_acc", self.valid_acc, on_step=True, on_epoch=True)
+        return outputs
+
+    def validation_step(self, batch, batch_idx):
+        self.evaluate(batch, "val")
+
+    def test_step(self, batch, batch_idx):
+        self.evaluate(batch, "test")
+
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        return self.evaluate(batch)
+
+    def configure_optimizers(self):
+        optimizer = optim.SGD(self.parameters(), lr=0.001, momentum=0.9)
+        return {"optimizer": optimizer}
+```
 
 ## Client Code
 Notice the training code is almost identical to the pytorch lightning standard training code. The only difference is that we added a few lines to receive and send data to the server. We mark all the changed code with number 0 to 4 to make it easier to understand.
@@ -91,8 +180,77 @@ The main flow of the code logic in the client.py file involves running a federat
   
 7 **Execution**: - The main() function is executed if the script is run as the main module, starting the entire process.
 
+
+With this method, the developers can use the Client API
+to change their centralized training code to an FL scenario with
+these simple code changes shown below.
+```
+    # (1) import nvflare lightning client API
+    import nvflare.client.lightning as flare
+    
+    # (2) patch the lightning trainer
+    flare.patch(trainer)
+    
+    while flare.is_running():
+        # Note that we can optionally receive the FLModel from NVFLARE.
+        # We don't need to pass this input_model to trainer because after flare.patch 
+        # the trainer.fit/validate will get the global model internally
+        input_model = flare.receive()
+    
+        trainer.validate(...)
+    
+        trainer.fit(...)
+    
+        trainer.test(...)
+    
+        trainer.predict(...)
+```
+
+
 ## Server Code
-In federated averaging, the server code is responsible for aggregating model updates from clients, the workflow pattern is similar to scatter-gather. In this example, we will directly use the default federated averaging algorithm provided by NVFlare. The FedAvg class is defined in nvflare.app_common.workflows.fedavg.FedAvg There is no need to defined a customized server code for this example.
+In federated averaging, the server code is responsible for aggregating model updates from clients, the workflow pattern is similar to scatter-gather. 
+
+
+First, we provide a simple implementation of the [FedAvg](https://proceedings.mlr.press/v54/mcmahan17a?ref=https://githubhelp.com) algorithm with NVFlare. 
+The `run()` routine implements the main algorithmic logic. 
+Subroutines, like `sample_clients()` and `scatter_and_gather_model()` utilize the communicator object, native to each Controller to get the list of available clients,
+distribute the current global model to the clients, and collect their results.
+
+The FedAvg controller implements these main steps:
+1. FL server initializes an initial model using `self.load_model()`.
+2. For each round (global iteration):
+    - FL server samples available clients using `self.sample_clients()`.
+    - FL server sends the global model to clients and waits for their updates using `self.send_model_and_wait()`.
+    - FL server aggregates all the `results` and produces a new global model using `self.update_model()`.
+
+```python
+class FedAvg(BaseFedAvg):
+    def run(self) -> None:
+        self.info("Start FedAvg.")
+
+        model = self.load_model()
+        model.start_round = self.start_round
+        model.total_rounds = self.num_rounds
+
+        for self.current_round in range(self.start_round, self.start_round + self.num_rounds):
+            self.info(f"Round {self.current_round} started.")
+            model.current_round = self.current_round
+
+            clients = self.sample_clients(self.num_clients)
+
+            results = self.send_model_and_wait(targets=clients, data=model)
+
+            aggregate_results = self.aggregate(results)
+
+            model = self.update_model(model, aggregate_results)
+
+            self.save_model(model)
+
+        self.info("Finished FedAvg.")
+```
+
+In this example, we will directly use the default federated averaging algorithm provided by NVFlare. The FedAvg class is defined in nvflare.app_common.workflows.fedavg.FedAvg There is no need to defined a customized server code for this example.
+
 
 ## Job Recipe Code
 The job recipe code is used to define the client and server configurations.

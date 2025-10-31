@@ -13,6 +13,7 @@ import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.ContextKey
 import com.nvidia.nvflare.sdk.core.DataSource
 import com.nvidia.nvflare.sdk.core.Filter
+import com.nvidia.nvflare.sdk.utils.TaskHeaderKey
 import com.nvidia.nvflare.sdk.core.NoOpFilter
 import com.nvidia.nvflare.sdk.core.NoOpEventHandler
 
@@ -36,7 +37,7 @@ import java.util.HashMap
 class AndroidFlareRunner(
     private val context: AndroidContext,
     private val connection: Connection,
-    private val jobName: String,
+    val jobName: String,
     private val dataSource: DataSource,
     private val deviceInfo: Map<String, String>,
     private val userInfo: Map<String, String>,
@@ -50,7 +51,6 @@ class AndroidFlareRunner(
     private var jobId: String? = null
     private var cookie: Any? = null
     private var currentJobId: String? = null
-
     private val resolverRegistryMap: MutableMap<String, Class<*>> = HashMap()
 
     init {
@@ -86,7 +86,7 @@ class AndroidFlareRunner(
     /**
      * Get Android context for platform-specific operations.
      */
-    private fun getAndroidContext(): android.content.Context {
+    private fun getAndroidContext(): AndroidContext {
         return context
     }
 
@@ -142,6 +142,7 @@ class AndroidFlareRunner(
         val jobData = job["job_data"] as? Map<String, Any>
 
         Log.d(TAG, "Processing job: $jobName (ID: $jobId)")
+        Log.d(TAG, "Job data keys: ${jobData?.keys}")
 
         // Process training configuration
         val trainConfig = if (jobData != null) {
@@ -175,7 +176,13 @@ class AndroidFlareRunner(
             Log.d(TAG, "Job data: $jobData")
             Log.d(TAG, "Extracted config: $config")
             Log.d(TAG, "Config keys: ${config.keys}")
-            processTrainConfig(getAndroidContext(), config, resolverRegistryMap)
+            
+            // Add job name to config for method determination
+            val configWithJobName = config.toMutableMap()
+            configWithJobName[TaskHeaderKey.JOB_NAME] = jobName
+            Log.d(TAG, "Config with job name: $configWithJobName")
+            
+            processTrainConfig(getAndroidContext(), configWithJobName, resolverRegistryMap)
         } else {
             throw RuntimeException("No job data available")
         }
@@ -314,7 +321,7 @@ class AndroidFlareRunner(
                         // Convert JobResponse to the format expected by FlareRunner
                         return mapOf(
                             "job_id" to (jobResponse.jobId ?: ""),
-                            "job_name" to jobName,
+                            TaskHeaderKey.JOB_NAME to jobName,
                             "job_data" to (jobResponse.jobData?.asMap() ?: emptyMap<String, Any>())
                         )
                     }

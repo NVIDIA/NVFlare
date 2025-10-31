@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os.path
-from typing import List
 
 import pandas as pd
 
@@ -27,7 +26,7 @@ class LocalPSI(PSI):
         self.id_col = id_col
         self.data = {}
 
-    def load_items(self) -> List[str]:
+    def load_items(self) -> list[str]:
         client_id = self.fl_ctx.get_identity_name()
         client_data_split_path = self.data_split_path.replace("site-x", client_id)
         if os.path.isfile(client_data_split_path):

@@ -1,8 +1,8 @@
 # Tested with the following versions:
-# torch==2.5.1
-# transformers==4.50.0
-# peft==0.14.0
-# trl==0.13.0
+# torch==2.7.0
+# transformers==4.56.1
+# peft==0.17.1
+# trl==0.22.2
 
 torch
 torchvision

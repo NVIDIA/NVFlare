@@ -30,7 +30,6 @@ import kotlin.jvm.Throws
  */
 class ETTrainer(
     private val context: android.content.Context,
-    private val modelData: String, 
     private val meta: Map<String, Any>,
     private var dataset: Dataset? = null
 ) : AutoCloseable {

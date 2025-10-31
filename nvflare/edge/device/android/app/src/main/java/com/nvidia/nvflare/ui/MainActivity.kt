@@ -48,6 +48,8 @@ fun MainScreen() {
     var status by remember { mutableStateOf(TrainingStatus.IDLE) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var supportedJobsState by remember { mutableStateOf(flareRunnerController.supportedJobs) }
+    var useHttpsState by remember { mutableStateOf(flareRunnerController.useHttps) }
+    var allowSelfSignedCertsState by remember { mutableStateOf(flareRunnerController.allowSelfSignedCerts) }
 
     
     // Get IP address
@@ -132,6 +134,43 @@ fun MainScreen() {
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
+                
+                // SSL Configuration
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Use HTTPS",
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = useHttpsState,
+                        onCheckedChange = { checked ->
+                            useHttpsState = checked
+                            flareRunnerController.useHttps = checked
+                        }
+                    )
+                }
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Allow Self-Signed Certs",
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = allowSelfSignedCertsState,
+                        onCheckedChange = { checked ->
+                            allowSelfSignedCertsState = checked
+                            flareRunnerController.allowSelfSignedCerts = checked
+                        }
+                    )
+                }
             }
         }
 
@@ -168,9 +207,13 @@ fun MainScreen() {
                         Switch(
                             checked = supportedJobsState.contains(job),
                             onCheckedChange = { checked ->
-                                flareRunnerController.toggleJob(job)
-                                supportedJobsState = flareRunnerController.supportedJobs
+                                // Prevent changes during training to avoid race conditions
+                                if (status != TrainingStatus.TRAINING) {
+                                    flareRunnerController.toggleJob(job)
+                                    supportedJobsState = flareRunnerController.supportedJobs
+                                }
                             },
+                            enabled = status != TrainingStatus.TRAINING,
                             modifier = Modifier.padding(start = 8.dp)
                         )
                     }

@@ -661,6 +661,7 @@ class SimulatorClientRunner(FLComponent):
                 stop_run, client_to_run, end_run_client = self.do_one_task(
                     client, num_of_threads, gpu, lock, timeout=timeout
                 )
+
                 if end_run_client:
                     with lock:
                         self.clients_finished_end_run.append(end_run_client)
@@ -756,7 +757,7 @@ class SimulatorClientRunner(FLComponent):
                 python_paths.remove(self.server_custom_folder)
             new_env[SystemVarName.PYTHONPATH] = os.pathsep.join(python_paths)
 
-        _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
+        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
 
@@ -772,23 +773,68 @@ class SimulatorClientRunner(FLComponent):
         conn.send(data)
 
         end_run_client = None
-        while True:
-            stop_run = conn.recv()
-            if stop_run:
-                end_run_client = conn.recv()
+        try:
+            while True:
+                if process.poll() is not None:
+                    self.logger.error(
+                        f"Subprocess died for client {client.client_name}, exit code: {process.returncode}"
+                    )
+                    return True, None, client.client_name
 
-            with lock:
-                if num_of_threads != len(self.federated_clients):
-                    next_client = self.get_next_run_client(gpu)
+                # the child process is in nvflare/private/fed/app/simulator/simulator_worker.py
+                stop_run = conn.recv()
+
+                if stop_run:
+                    # Check again before second recv
+                    if process.poll() is not None:
+                        self.logger.error(
+                            f"Subprocess died for client {client.client_name} before second recv, exit code: {process.returncode}"
+                        )
+                        return True, None, client.client_name
+
+                    # the child process is in nvflare/private/fed/app/simulator/simulator_worker.py
+                    end_run_client = conn.recv()
+
+                with lock:
+                    if num_of_threads != len(self.federated_clients):
+                        next_client = self.get_next_run_client(gpu)
+                    else:
+                        next_client = client
+
+                # Check process health before sending
+                if process.poll() is not None:
+                    self.logger.error(
+                        f"Subprocess died for client {client.client_name} before send, exit code: {process.returncode}"
+                    )
+                    return True, None, client.client_name
+
+                if not stop_run and next_client.client_name == client.client_name:
+                    conn.send(True)
                 else:
-                    next_client = client
-            if not stop_run and next_client.client_name == client.client_name:
-                conn.send(True)
-            else:
-                conn.send(False)
-                break
+                    conn.send(False)
+                    break
 
-        return stop_run, next_client, end_run_client
+            return stop_run, next_client, end_run_client
+
+        except (EOFError, OSError, ConnectionError) as e:
+            self.logger.error(f"Communication error with client {client.client_name}: {e}")
+            return True, None, client.client_name
+        finally:
+            # Clean up subprocess if it's still running
+            self._cleanup_process(process)
+
+    def _cleanup_process(self, process, timeout=5.0):
+        """Clean process shutdown - no exceptions escape"""
+        if not process or process.poll() is not None:
+            return  # Already dead or None
+
+        try:
+            process.terminate()
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        except (OSError, ProcessLookupError):
+            pass  # Process already gone
 
     def _get_new_sys_path(self):
         new_sys_path = []

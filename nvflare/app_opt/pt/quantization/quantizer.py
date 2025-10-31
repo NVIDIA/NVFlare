@@ -43,7 +43,7 @@ class ModelQuantizer(DXOFilter):
         super().__init__(supported_data_kinds=data_kinds, data_kinds_to_filter=data_kinds)
 
         # assign quantization type and check if it is valid
-        self.logger.info("Using model quantizator.")
+        self.logger.info("Using model quantizer.")
         quantization_type = quantization_type.lower()
         if quantization_type.upper() not in QUANTIZATION_TYPE:
             raise ValueError(f"Invalid quantization type: {quantization_type}, valid: {QUANTIZATION_TYPE}")
@@ -198,6 +198,6 @@ class ModelQuantizer(DXOFilter):
             new_dxo.set_meta_prop(key="quant_state", value=quant_state)
             new_dxo.set_meta_prop(key="source_datatype", value=source_datatype)
             new_dxo.set_meta_prop(key="quantized_flag", value=True)
-            self.log_info(fl_ctx, f"Quantized from {source_datatype} to {self.quantization_type}")
+            self.log_info(fl_ctx, f"Quantized to {self.quantization_type}")
 
         return new_dxo

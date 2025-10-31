@@ -52,7 +52,7 @@ class FegApi:
             clazz=JobResponse,
             url=urljoin(self.endpoint, "job"),
             params={},
-            body={EdgeProtoKey.CAPABILITIES: request.capabilities},
+            body={EdgeProtoKey.JOB_NAME: request.job_name, EdgeProtoKey.CAPABILITIES: request.capabilities},
         )
 
     def get_task(self, request: TaskRequest) -> TaskResponse:

@@ -13,24 +13,25 @@ for the complete installation instructions, see `installation <../../installatio
     pip install nvflare
 
 
-Install the dependency
-----------------------
-
-first get the example code from github:
-
+get the example code from github:
 
 .. code-block:: text
 
     git clone https://github.com/NVIDIA/NVFlare.git
 
-
 then navigate to the hello-tabular-stats directory:
 
 .. code-block:: text
 
-    cd NVFlare/examples/hello-world/hello-tabular-stats
+    git switch <release branch>
+    cd examples/hello-world/hello-tabular-stats
+
+
+Install the dependency
+----------------------
 
     pip install -r requirements.txt
+
 
 Install Optional Quantile Dependency -- fastdigest
 ------------------------------------------------------------
@@ -74,12 +75,7 @@ Then you can install fastdigest again
 Code Structure
 --------------
 
-navigate to the hello-tabular-stats directory:
-
 .. code-block:: text
-
-    git switch <release branch>
-    cd examples/hello-world/hello-tabular-stats
 
     hello-tabular-stats
     |
@@ -129,10 +125,12 @@ Client Code
 
 Local statistics generator. The statistics generator `AdultStatistics` implements `Statistics` spec.
 
-.. code-block:: text
+.. literalinclude:: ../../../examples/hello-world/hello-tabular-stats/client.py
+    :language: python
+    :linenos:
+    :caption: Client Code (client.py)
+    :lines: 14-
 
-    class AdultStatistics(DFStatisticsCore):
-        # rest of code
 
 Many of the functions needed for tabular statistics have already been implemented DFStatisticsCore
 
@@ -152,12 +150,12 @@ Job Recipe
 
 Job is defined via recipe, we will run it in Simulation Execution Env.
 
-
-.. literalinclude:: ../../../examples/hello-world/hello-tabular-stats/client.py
+.. literalinclude:: ../../../examples/hello-world/hello-tabular-stats/job.py
     :language: python
     :linenos:
-    :caption: client.py
+    :caption: job Recipe (job.py)
     :lines: 14-
+
 
 
 The statistics configuration determines which statistics we need generate

@@ -17,6 +17,8 @@ import argparse
 from nvflare.app_common.np.recipes.lr.fedavg import FedAvgLrRecipe
 from nvflare.recipe import SimEnv
 
+# from nvflare.recipe import PocEnv
+
 
 def define_parser():
     parser = argparse.ArgumentParser()
@@ -43,8 +45,10 @@ def main():
         train_args=f"--data_root {data_root}",
     )
     env = SimEnv(num_clients=n_clients, num_threads=n_clients)
+    # env = PocEnv(num_clients=n_clients)
     run = recipe.execute(env)
-    # run.get_result()
+    w = run.get_result()
+    print("result location =", w)
 
 
 if __name__ == "__main__":

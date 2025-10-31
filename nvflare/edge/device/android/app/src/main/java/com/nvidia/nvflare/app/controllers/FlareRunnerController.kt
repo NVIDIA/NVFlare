@@ -6,11 +6,11 @@ import com.nvidia.nvflare.app.data.AndroidDataSource
 import com.nvidia.nvflare.app.data.DatasetError
 import com.nvidia.nvflare.sdk.training.TrainingStatus
 import com.nvidia.nvflare.sdk.core.AndroidFlareRunner
+import com.nvidia.nvflare.sdk.core.Connection
 import com.nvidia.nvflare.sdk.core.Context as FlareContext
 import com.nvidia.nvflare.sdk.core.DataSource
 import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.Dataset
-import com.nvidia.nvflare.sdk.core.Connection
 
 
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +51,10 @@ enum class SupportedJob(val value: String) {
 class FlareRunnerController(
     private val context: Context
 ) {
+    companion object {
+        // Timeout constants
+        private const val TWENTY_FOUR_HOURS_IN_SECONDS = 86400.0f
+    }
     private val TAG = "FlareRunnerController"
     
     // State management
@@ -68,23 +72,14 @@ class FlareRunnerController(
     // Server configuration
     var serverHost: String = "192.168.6.101"
     var serverPort: Int = 4321
+    var useHttps: Boolean = false
+    var allowSelfSignedCerts: Boolean = false
     
     val capabilities: Map<String, Any>
         get() = mapOf(
             "supported_jobs" to supportedJobs.map { it.value },
             "methods" to listOf("cnn", "xor")
         )
-    
-    /**
-     * Create a connection to the NVFlare server
-     */
-    private fun createConnection(): Connection {
-        val connection = Connection(context)
-        connection.hostname.postValue(serverHost)
-        connection.port.postValue(serverPort)
-        connection.setCapabilities(capabilities)
-        return connection
-    }
     
     fun toggleJob(job: SupportedJob) {
         if (supportedJobs.contains(job)) {
@@ -117,10 +112,21 @@ class FlareRunnerController(
             try {
                 Log.d(TAG, "FlareRunnerController: Starting federated learning")
                 
-                // First: Determine which job to use
+                // First: Determine which job to use based on user selection
                 val selectedJob = when {
-                    supportedJobs.contains(SupportedJob.CIFAR10) -> SupportedJob.CIFAR10
-                    supportedJobs.contains(SupportedJob.XOR) -> SupportedJob.XOR
+                    supportedJobs.contains(SupportedJob.CIFAR10) && supportedJobs.contains(SupportedJob.XOR) -> {
+                        // If both are enabled, prefer CIFAR-10 (can be changed to user preference)
+                        Log.d(TAG, "FlareRunnerController: Both jobs enabled, selecting CIFAR-10")
+                        SupportedJob.CIFAR10
+                    }
+                    supportedJobs.contains(SupportedJob.CIFAR10) -> {
+                        Log.d(TAG, "FlareRunnerController: CIFAR-10 job selected")
+                        SupportedJob.CIFAR10
+                    }
+                    supportedJobs.contains(SupportedJob.XOR) -> {
+                        Log.d(TAG, "FlareRunnerController: XOR job selected")
+                        SupportedJob.XOR
+                    }
                     else -> {
                         Log.e(TAG, "FlareRunnerController: No supported jobs enabled. Current supported jobs: ${supportedJobs.map { it.value }}")
                         throw TrainingError.NO_SUPPORTED_JOBS
@@ -137,7 +143,7 @@ class FlareRunnerController(
                         jobName = "cifar10_et"
                         try {
                             dataset = dataSource.getDataset(jobName, FlareContext())
-                            Log.d(TAG, "FlareRunnerController: Created CIFAR-10 dataset")
+                            Log.d(TAG, "FlareRunnerController: Created CIFAR-10 dataset for job: $jobName")
                             
                             // Validate dataset using SDK's standardized validation
                             dataset.validate()
@@ -161,10 +167,12 @@ class FlareRunnerController(
                     SupportedJob.XOR -> {
                         jobName = "xor_et"
                         dataset = dataSource.getDataset(jobName, FlareContext())
-                        Log.d(TAG, "FlareRunnerController: Created XOR dataset")
+                        Log.d(TAG, "FlareRunnerController: Created XOR dataset for job: $jobName")
                         Log.d(TAG, "FlareRunnerController: XOR dataset size: ${dataset.size()}")
                     }
                 }
+                
+                Log.d(TAG, "FlareRunnerController: Selected job: ${selectedJob.displayName} -> $jobName")
                 
                 // Store the dataset to keep it alive during training
                 currentDataset = dataset
@@ -173,19 +181,19 @@ class FlareRunnerController(
                                 // Create FlareRunner with dataset
                 val runner = AndroidFlareRunner(
                     context = context,
-                    connection = createConnection(),
+                    connection = connection,
                     jobName = jobName,
                     dataSource = dataSource,
                     deviceInfo = mapOf(
                         "device_id" to (android.provider.Settings.Secure.getString(
-                            context.contentResolver,
+                            context.contentResolver, 
                             android.provider.Settings.Secure.ANDROID_ID
                         ) ?: "unknown"),
                         "platform" to "android",
                         "app_version" to context.packageManager.getPackageInfo(context.packageName, 0).versionName
                     ),
                     userInfo = emptyMap(),
-                    jobTimeout = Float.MAX_VALUE  // No timeout - continue until manual stop
+                    jobTimeout = TWENTY_FOUR_HOURS_IN_SECONDS
                 )
                 
                 flareRunner = runner
@@ -241,5 +249,27 @@ class FlareRunnerController(
         Log.d(TAG, "FlareRunnerController: Training stopped and resources cleaned up")
     }
     
-
-} 
+    private fun createConnection(): com.nvidia.nvflare.sdk.core.Connection {
+        val connection = com.nvidia.nvflare.sdk.core.Connection(context)
+        connection.hostname.value = serverHost
+        connection.port.value = serverPort
+        
+        // Configure SSL settings
+        if (useHttps) {
+            connection.setScheme("https")
+        }
+        connection.setAllowSelfSignedCerts(allowSelfSignedCerts)
+        
+        // Set capabilities
+        connection.setCapabilities(capabilities)
+        
+        // Set user info - use device ID as user ID for now, can be made configurable later
+        val userId = android.provider.Settings.Secure.getString(
+            context.contentResolver, 
+            android.provider.Settings.Secure.ANDROID_ID
+        ) ?: "unknown_user"
+        connection.setUserInfo(mapOf("user_id" to userId))
+        
+        return connection
+    }
+}

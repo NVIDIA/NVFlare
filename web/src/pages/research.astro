@@ -103,7 +103,7 @@ const case_studies = [
           </h2>
 
             <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/fl_simulator.html#fl-simulator">Simulator</a>:
+              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/nvflare_cli/fl_simulator.html#fl-simulator`>Simulator</a>:
               The Simulator is a multi-threaded/process simulation tool that offers both a Command Line Interface (CLI) and a Python API.
               It enables the simulation of different numbers of clients and the execution of various federated learning jobs.
               Once a simulation is complete, users can deploy the same code in production without any changes.
@@ -111,7 +111,7 @@ const case_studies = [
             </p>
 
             <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/poc_command.html">Proof of Concept (POC) Mode</a>:
+              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/nvflare_cli/poc_command.html`>Proof of Concept (POC) Mode</a>:
               POC mode simulates real-world deployment on a local host.
               Clients and servers can be deployed in different directories and launched using separate terminals, each representing a different client or server startup.
               This mode allows for job submissions to the server as would occur in a real production environment.
@@ -121,15 +121,15 @@ const case_studies = [
             Interaction Methods with FL Server
           </h2>
             <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html">Admin Console</a>:
+              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/admin_guide/deployment/operation.html`>Admin Console</a>:
               Issue interactive commands such as submitting jobs, listing jobs, and aborting jobs.
             </p>
             <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/user_guide/nvflare_cli/job_cli.html">Job CLI</a>:
+              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/nvflare_cli/job_cli.html`>Job CLI</a>:
               Command-line interface is used for job submission.
             </p>
             <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/real_world_fl/flare_api.html">FLARE API</a>:
+              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/user_guide/data_scientist_guide/flare_api.html`>FLARE API</a>:
               Allows submission and listing of jobs through Python code.
             </p>
           <h2 class="text-xl lg:text-xl font-bold lg:tracking-tight text-gray-900 mt-8">
@@ -137,7 +137,7 @@ const case_studies = [
           </h2>
 
             <p class="text-lg mt-4 text-slate-600 m-auto">
-              <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/programming_guide/experiment_tracking.html">Experiment tracking</a>:
+              <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/programming_guide/experiment_tracking.html`>Experiment tracking</a>:
               FLARE supports logging metrics using FLARE's metrics tracking log writers. Users can choose from TensorBoard, MLflow, or W&B syntax.
               Metrics can be streamed to either the FL server or FL client, and changing the metric system does not require any code changes.
             </p>
@@ -151,7 +151,7 @@ const case_studies = [
 
           <p class="text-lg mt-4 text-slate-600 m-auto">
             NVIDIA FLARE offers a lot of state of art research work, here is a quick view of the recent work.
-            Learn more in the research directory in our <a class="text-nvidia" href=`https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research`>GitHub</a> and view our list of <a class="text-nvidia" href="https://nvflare.readthedocs.io/en/main/publications_and_talks.html">Publications</a>.
+            Learn more in the research directory in our <a class="text-nvidia" href=`https://github.com/NVIDIA/NVFlare/tree/${gh_branch}/research`>GitHub</a> and view our list of <a class="text-nvidia" href=`https://nvflare.readthedocs.io/en/${gh_branch}/publications_and_talks.html`>Publications</a>.
           </p>
 
           <img class="mt-10 flex items-center w-full" src={NvflareResearch.src} alt="NVFLARE research">

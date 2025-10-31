@@ -18,9 +18,7 @@ from typing import List, Optional
 from nvflare.app_common.tie.defs import Constant
 from nvflare.app_common.widgets.external_configurator import ExternalConfigurator
 from nvflare.app_common.widgets.metric_relay import MetricRelay
-from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 from nvflare.fuel.utils.pipe.cell_pipe import CellPipe
-from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.job_config.api import FedJob
 
 from .controller import FlowerController
@@ -43,8 +41,6 @@ class FlowerJob(FedJob):
         per_msg_timeout=10.0,
         tx_timeout=100.0,
         client_shutdown_timeout=5.0,
-        stream_metrics=False,
-        analytics_receiver=None,
         extra_env: dict = None,
     ):
         """
@@ -64,8 +60,6 @@ class FlowerJob(FedJob):
             per_msg_timeout (float, optional): Timeout for receiving individual messages. Defaults to 10.0 seconds.
             tx_timeout (float, optional): Timeout for transmitting data. Defaults to 100.0 seconds.
             client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
-            stream_metrics (bool, optional): Whether to stream metrics from Flower client to Flare
-            analytics_receiver (AnalyticsReceiver, optional): the AnalyticsReceiver to use to process received metrics.
             extra_env (dict, optional): optional extra env variables to be passed to Flower client
         """
         if not os.path.isdir(flower_content):
@@ -93,21 +87,8 @@ class FlowerJob(FedJob):
         self.to_clients(executor)
         self.to_clients(obj=flower_content)
 
-        if not stream_metrics:
-            conf = ExternalConfigurator(component_ids=[])
-            self.to_clients(conf, "client_api_config_preparer")
-            return
-
-        # add required components for metrics streaming
-        # server side - need analytics_receiver
-        if analytics_receiver:
-            check_object_type("analytics_receiver", analytics_receiver, AnalyticsReceiver)
-            self.to_server(analytics_receiver, "analytics_receiver")
-        else:
-            raise ValueError("Missing analytics receiver on the server side.")
-
         # client side
-        # cell pipe
+        # cell pipe to support streaming metrics
         cell_pipe = CellPipe(
             mode="PASSIVE",
             site_name="{SITE_NAME}",
