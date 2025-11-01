@@ -31,7 +31,7 @@ from nvflare.edge.web.models.user_info import UserInfo
 
 
 class FegApi:
-    def __init__(self, endpoint: str, device_info: DeviceInfo, user_info: UserInfo):
+    def __init__(self, endpoint: str, device_info: DeviceInfo, user_info: UserInfo, allow_self_signed: bool = False):
         self.endpoint = endpoint
         self.device_info = device_info
         self.user_info = user_info
@@ -46,6 +46,7 @@ class FegApi:
             HttpHeaderKey.DEVICE_INFO: device_qs,
             HttpHeaderKey.USER_INFO: user_qs,
         }
+        self.allow_self_signed = allow_self_signed
 
     def get_job(self, request: JobRequest) -> JobResponse:
         return self._do_post(
@@ -91,7 +92,9 @@ class FegApi:
         )
 
     def _do_post(self, clazz, url, params, body):
-        response = requests.post(url, params=params, json=body, headers=self.common_headers)
+        response = requests.post(
+            url, params=params, json=body, headers=self.common_headers, verify=False if self.allow_self_signed else True
+        )
         code = response.status_code
         if code == 200:
             return clazz(**response.json())
