@@ -44,7 +44,7 @@ class ProdEnv(ExecEnv):
         startup_kit_location: str,
         login_timeout: float = 5.0,
         username: str = DEFAULT_ADMIN_USER,
-        extra: dict = None,
+        extra: Optional[dict] = None,
     ):
         """Production execution environment for submitting and monitoring NVFlare jobs.
 
