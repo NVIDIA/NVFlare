@@ -4,7 +4,7 @@ A plug-and-play horizontal federated feature selection framework for tabular dat
 
 ## Overview
 
-This work originates from FLASH: A framework for Federated Learning with Attribute Selection and Hyperparameter optimization framework a work presented in [FLTA IEEE 2025](https://flta-conference.org/flta-2025/) achieving the best student paper award.
+This work originates from FLASH: A framework for Federated Learning with Attribute Selection and Hyperparameter optimization a work presented in [FLTA IEEE 2025](https://flta-conference.org/flta-2025/) achieving the best student paper award.
 Feature election enables multiple clients with tabular datasets to collaboratively identify the most relevant features without sharing raw data. It works by using conventional Feature selection algorithms in the client side and performing a weighted aggregation of their results.
 FLASH is available on [Github](https://github.com/parasecurity/FLASH)
 
