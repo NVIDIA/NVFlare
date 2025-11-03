@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple
+from typing import Optional
 
 from sklearn.cluster import KMeans, MiniBatchKMeans, kmeans_plusplus
 from sklearn.metrics import homogeneity_score
@@ -66,7 +66,7 @@ class KMeansLearner(Learner):
         # note that the model needs to be created every round
         # due to the available API for center initialization
 
-    def train(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
+    def train(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> tuple[dict, dict]:
         # get training data, note that clustering is unsupervised
         # so only x_train will be used
         (x_train, y_train, train_size) = self.train_data
@@ -95,7 +95,7 @@ class KMeansLearner(Learner):
             params = {"center": center_local, "count": count_local}
         return params, kmeans
 
-    def validate(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
+    def validate(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> tuple[dict, dict]:
         # local validation with global center
         # fit a standalone KMeans with just the given center
         center_global = global_param["center"]

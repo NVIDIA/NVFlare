@@ -14,7 +14,6 @@
 
 import argparse
 import csv
-from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -39,7 +38,7 @@ def _to_data_tuple(data):
     return x.to_numpy(), y.to_numpy(), data_num
 
 
-def load_features(feature_data_path: str) -> List:
+def load_features(feature_data_path: str) -> list:
     try:
         features = []
         with open(feature_data_path, "r") as file:
@@ -53,8 +52,8 @@ def load_features(feature_data_path: str) -> List:
 
 
 def load_data(
-    data_path: str, data_features: List, random_state: int, test_size: float, skip_rows=None
-) -> Dict[str, pd.DataFrame]:
+    data_path: str, data_features: list, random_state: int, test_size: float, skip_rows=None
+) -> dict[str, pd.DataFrame]:
     try:
         df: pd.DataFrame = pd.read_csv(
             data_path, names=data_features, sep=r"\s*,\s*", engine="python", na_values="?", skiprows=skip_rows
@@ -68,7 +67,7 @@ def load_data(
         raise Exception(f"Load data for path '{data_path}' failed! {e}")
 
 
-def transform_data(data: Dict[str, Tuple]) -> Dict[str, Tuple]:
+def transform_data(data: dict[str, tuple]) -> dict[str, tuple]:
     # Standardize features by removing the mean and scaling to unit variance
     scaler = StandardScaler()
     scaled_datasets = {}

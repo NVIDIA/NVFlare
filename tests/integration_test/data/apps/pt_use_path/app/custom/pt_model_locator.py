@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import List, Union
+from typing import Union
 
 import torch.cuda
 from pt_constants import PTConstants
@@ -33,7 +33,7 @@ class PTModelLocator(ModelLocator):
         self.model = SimpleNetwork()
         self.exclude_vars = exclude_vars
 
-    def get_model_names(self, fl_ctx: FLContext) -> List[str]:
+    def get_model_names(self, fl_ctx: FLContext) -> list[str]:
         return [PTConstants.PTServerName]
 
     def locate_model(self, model_name, fl_ctx: FLContext) -> Union[DXO, None]:
