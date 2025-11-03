@@ -52,6 +52,9 @@ data class TaskResponse(
         DONE("DONE"),
         ERROR("ERROR"),
         RETRY("RETRY"),
+        NO_TASK("NO_TASK"),
+        NO_JOB("NO_JOB"),
+        INVALID("INVALID"),
         UNKNOWN("UNKNOWN");
 
         companion object {
@@ -65,6 +68,15 @@ data class TaskResponse(
 
         val shouldContinueTraining: Boolean
             get() = this == OK
+        
+        val isTerminal: Boolean
+            get() = this == DONE || this == INVALID || this == ERROR
+        
+        val shouldRetryTask: Boolean
+            get() = this == RETRY || this == NO_TASK
+        
+        val shouldLookForNewJob: Boolean
+            get() = this == NO_JOB
     }
 
     val taskStatus: TaskStatus
