@@ -287,8 +287,12 @@ fun MainScreen() {
                                     },
                                     onProgressUpdate = { progress ->
                                         trainingProgress = progress
-                                        // Add to history
-                                        progressHistory = (progressHistory + progress).takeLast(100)
+                                        // Add to history with efficient size management
+                                        progressHistory = if (progressHistory.size >= 100) {
+                                            progressHistory.drop(1) + progress
+                                        } else {
+                                            progressHistory + progress
+                                        }
                                     },
                                     onError = { error ->
                                         status = TrainingStatus.IDLE
@@ -560,7 +564,9 @@ fun MainScreen() {
                                     .verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                progressHistory.takeLast(20).reversed().forEach { progress ->
+                                // Compute the list once before the loop
+                                val recentHistory = progressHistory.takeLast(20).reversed()
+                                recentHistory.forEachIndexed { index, progress ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -590,7 +596,8 @@ fun MainScreen() {
                                             )
                                         }
                                     }
-                                    if (progress != progressHistory.takeLast(20).reversed().last()) {
+                                    // Show divider for all items except the last one
+                                    if (index < recentHistory.size - 1) {
                                         Divider(modifier = Modifier.padding(vertical = 2.dp))
                                     }
                                 }
