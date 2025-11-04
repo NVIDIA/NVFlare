@@ -34,7 +34,7 @@ ML-to-FL Conversion
 Feature Tutorials
 -----------------
 
-- `POC Command: Local FL Jobs <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/setup_poc.ipynb>`_
+- `POC Tutorials: <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/setup_poc.ipynb>`_
 - `Simulator CLI & Python API <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_simulator.ipynb>`_
 - `FLARE Python API: Job Submission & Monitoring <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/flare_api.ipynb>`_
 - `Logging: Configuration & Customization <https://github.com/NVIDIA/NVFlare/tree/main/examples/tutorials/logging.ipynb>`_
@@ -44,7 +44,7 @@ Self-Paced Learning
 -------------------
 
 - Extensive materials for self-paced training with NVIDIA FLARE, including detailed tutorials and resources.
-- For a comprehensive guide, see the :ref:`self-paced-learning` documentation.
+- For a comprehensive guide, see the :ref:`self_paced_training` documentation.
 - 12-chapter course: in-depth overview of FLARE, covering running federated learning applications, algorithms, system architecture, experimental tracking, system monitoring, and industrial applications.
 - Each notebook can be run independently, but sequential learning is recommended.
 - Over 100 notebooks and 80 videos: a thorough guide to federated learning with FLARE.

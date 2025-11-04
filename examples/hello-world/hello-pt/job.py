@@ -27,7 +27,6 @@ def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=2)
     parser.add_argument("--num_rounds", type=int, default=2)
-    parser.add_argument("--batch_size", type=int, default=16)
 
     return parser.parse_args()
 
@@ -37,7 +36,6 @@ def main():
 
     n_clients = args.n_clients
     num_rounds = args.num_rounds
-    batch_size = args.batch_size
 
     recipe = FedAvgRecipe(
         name="hello-pt",
@@ -45,15 +43,14 @@ def main():
         num_rounds=num_rounds,
         initial_model=SimpleNetwork(),
         train_script="client.py",
-        train_args=f"--batch_size {batch_size}",
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     env = SimEnv(num_clients=n_clients)
     run = recipe.execute(env)
     print()
-    print("Result can be found in :", run.get_result())
     print("Job Status is:", run.get_status())
+    print("Result can be found in :", run.get_result())
     print()
 
 

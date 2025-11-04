@@ -15,16 +15,14 @@ docker_archive: /tmp/base_images/app.tar.gz
 # for debugging purpose
 # hosts_entries:
 #   server1: 1.2.3.4
-
-# will be mount inside docker "/user_config/nvflare"
-user_config:
-  nvflare: /tmp/startup_kits
+allowed_out_ports: [443, 8002, 8999]
 
 cc_issuers:
   - id: snp_authorizer
     path: nvflare.app_opt.confidential_computing.snp_authorizer.SNPAuthorizer
     token_expiration: 100 # seconds, needs to be less than check_frequency
-    snpguest_binary: "/host/bin/snpguest"
+    args:
+      snpguest_binary: "/host/bin/snpguest"
   - id: gpu_authorizer
     path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
     token_expiration: 100 # seconds, needs to be less than check_frequency

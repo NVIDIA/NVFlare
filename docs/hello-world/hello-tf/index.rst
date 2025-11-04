@@ -27,16 +27,7 @@ For complete installation instructions, visit `Installation <https://nvflare.rea
 
    pip install nvflare
 
-Install the dependencies:
-
-.. code-block:: bash
-
-   pip install -r requirements.txt
-
-Code Structure
---------------
-
-First, clone the example code from GitHub:
+clone the example code from GitHub:
 
 .. code-block:: bash
 
@@ -47,7 +38,16 @@ Navigate to the hello-tf directory:
 .. code-block:: bash
 
    git switch <release branch>
-   cd examples/hello-world/hello-TF
+   cd examples/hello-world/hello-tf
+
+Install the dependencies:
+
+.. code-block:: bash
+
+   pip install -r requirements.txt
+
+Code Structure
+--------------
 
 .. code-block:: text
 
@@ -87,6 +87,7 @@ Client Code
 -----------
 
 The client code ``client.py`` is responsible for training. The training code closely resembles standard PyTorch training code, with additional lines to handle data exchange with the server.
+
 .. literalinclude:: ../../../examples/hello-world/hello-tf/client.py
     :language: python
     :linenos:

@@ -20,7 +20,7 @@ please check :ref:`data_scientist_guide`
 please check :ref:`researcher_guide`
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
 
    user_guide/core_concepts/application
    user_guide/core_concepts/job
@@ -29,3 +29,6 @@ please check :ref:`researcher_guide`
    user_guide/data_scientist_guide/index
    user_guide/researcher_guide/index
    user_guide/nvflare_cli/nvflare_cli
+   user_guide/confidential_computing/index
+   user_guide/edge_development/index
+

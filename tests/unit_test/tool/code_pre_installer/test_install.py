@@ -20,7 +20,6 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict
 from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
 
@@ -94,7 +93,7 @@ def create_test_code(tmp_path):
     return zip_path
 
 
-def create_test_app_structure(base_path: Path, meta_content: Dict):
+def create_test_app_structure(base_path: Path, meta_content: dict):
     """Helper to create test application structure."""
     app_dir = base_path / "application"
     app_dir.mkdir(parents=True, exist_ok=True)
@@ -220,6 +219,9 @@ def test_parse_args():
         "--install-prefix",
         default=DEFAULT_APPLICATION_INSTALL_DIR,
         help="Installation prefix (default: /opt/nvflare/apps)",
+    )
+    mock_parser.add_argument.assert_any_call(
+        "-s", "--site-name", required=True, help="Target site name (e.g., site-1, server)"
     )
     mock_parser.add_argument.assert_any_call(
         "-ts",

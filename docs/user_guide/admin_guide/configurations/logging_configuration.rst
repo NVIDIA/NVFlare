@@ -17,6 +17,7 @@ Logging Configuration and Features
 **********************************
 
 .. _default_logging_configuration:
+
 Default Logging Configuration
 =============================
 
@@ -259,6 +260,7 @@ The following log file handlers are pre-configured:
 - FLFileHandler with baseFormatter and FLFilter to write fl training and custom logs to ``log_fl.txt``
 
 .. _loggers:
+
 Loggers
 =======
 
@@ -289,11 +291,13 @@ When creating loggers for FLARE code, we provide several developer functions to 
 
 
 .. _modifying_logging_configurations:
+
 ********************************
 Modifying Logging Configurations
 ********************************
 
 .. _log_config_argument:
+
 Log Config Argument
 ===================
 We provide a log config argument (``-l`` or ``log_config`` in simulator mode, and ``config`` in the dynamic logging admin commands for POC and production mode).
@@ -362,6 +366,7 @@ you can change ``log_config.json.default`` to ``log_config.json`` and modify the
 We also recommend using the :ref:`Dynamic Logging Configuration Commands <dynamic_logging_configuration_commands>`.
 
 .. _dynamic_logging_configuration_commands:
+
 **************************************
 Dynamic Logging Configuration Commands
 **************************************
