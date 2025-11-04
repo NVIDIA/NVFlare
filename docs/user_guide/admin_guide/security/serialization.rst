@@ -30,7 +30,9 @@ Side-effects include changing global variables, creating network connection, fil
 
 FOBS throws :code:`TypeError` exception when it encounters an object with no decomposer
 registered. For example,
-::
+
+.. code-block::
+
     TypeError: can not serialize 'xxx' object
 
 Usage
@@ -45,7 +47,8 @@ FOBS defines following 4 functions, similar to Pickle,
 
 
 Examples,
-::
+
+.. code-block::
 
     from nvflare.fuel.utils import fobs
 
@@ -116,7 +119,7 @@ Decomposers for following classes are included with `fobs` module and auto-regis
 All classes defined in :code:`fobs/decomposers` folder are automatically registered.
 Other decomposers must be registered manually like this,
 
-::
+.. code-block::
 
     fobs.register(FooDecomposer)
     fobs.register(BarDecomposer())
@@ -137,7 +140,7 @@ is not needed.
 Here is an example of a simple decomposer. Even though :code:`datetime` is not supported
 by MessagePack, a decomposer is included in `fobs` module so no need to further decompose it.
 
-::
+.. code-block::
 
     from nvflare.fuel.utils import fobs
 

@@ -31,7 +31,7 @@ from nvflare.lighter.impl.signature import SignatureBuilder
 from nvflare.lighter.impl.static_file import StaticFileBuilder
 from nvflare.lighter.impl.workspace import WorkspaceBuilder
 from nvflare.lighter.provisioner import Provisioner
-from nvflare.lighter.spec import Packager
+from nvflare.lighter.spec import Builder, Packager
 
 PROV_KEY_ANALYZE = "analyze"
 PROV_KEY_LCP_ONLY = "lcp_only"
@@ -238,7 +238,21 @@ def _build_tree(
         _build_tree(lcp_only, depth + 1, width, max_depth, child, num_clients, project, lcp_map)
 
 
-def edge_provision(params: dict, project, builders, admins):
+def hierachical_provision(params: dict, project: Project, builders: list[Builder], admins):
+    if not isinstance(project, Project):
+        raise ValueError("Expected 'project' to be a Project instance")
+    if not isinstance(builders, list) or not all(isinstance(b, Builder) for b in builders):
+        raise ValueError("Expected 'builders' to be a list of Builder instances")
+    if not isinstance(admins, list):
+        raise ValueError("Expected 'admins' to be a list")
+    if params is None:
+        raise ValueError("'params' must not be None")
+
+    required_params = [PROV_KEY_DEPTH, PROV_KEY_WIDTH, PROV_KEY_CLIENTS]
+    for key in required_params:
+        if key not in params:
+            raise ValueError(f"Missing required parameter '{key}' in 'params'")
+
     depth = params.get(PROV_KEY_DEPTH)
     if depth < 1 or depth > 5:
         print(f"bad depth {depth}: must be [1..5]")
@@ -369,7 +383,7 @@ def main():
         )
     ]
 
-    edge_provision(params, project, builders, admins)
+    hierachical_provision(params, project, builders, admins)
 
 
 if __name__ == "__main__":

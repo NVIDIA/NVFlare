@@ -6,6 +6,7 @@ import com.nvidia.nvflare.sdk.core.Context
 import com.nvidia.nvflare.sdk.core.ContextKey
 import com.nvidia.nvflare.sdk.core.Signal
 import com.nvidia.nvflare.sdk.core.Executor
+import com.nvidia.nvflare.sdk.core.AndroidFlareRunner
 import com.nvidia.nvflare.sdk.training.ETTrainer
 import com.nvidia.nvflare.sdk.training.TrainingConfig
 import com.nvidia.nvflare.sdk.utils.TaskHeaderKey
@@ -28,7 +29,6 @@ class ETTrainerExecutor(
         try {
             Log.d(TAG, "Starting training execution")
             Log.d(TAG, "Task data keys: ${taskData.data.keys}")
-            Log.d(TAG, "Task data: $taskData")
             
             // Extract training configuration from task data
             val trainingConfig = extractTrainingConfig(taskData, ctx)
@@ -78,6 +78,7 @@ class ETTrainerExecutor(
         // Get job name from runner context
         val runner = ctx[ContextKey.RUNNER] as? AndroidFlareRunner
         val jobName = runner?.jobName ?: ""
+        Log.d(TAG, "Job name: '$jobName'")
         
         // Add job name to config data for method determination
         val configData = metaMap.toMutableMap()

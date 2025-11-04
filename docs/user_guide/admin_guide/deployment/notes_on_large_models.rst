@@ -48,18 +48,18 @@ Memory Usage
 *******************
 During the experiment, the server could use more than 512GB, ie 128GB * 2 clients * 2 (model and runtime space).  The following figure shows the CPU and memory usage of the server.
 
-.. image:: ../resources/128GB_server.png
+.. image:: ../../../resources/128GB_server.png
     :height: 350px
 
 Although most of the time, the server was using less than 512GB, there were a few peaks that reached 700GB or more.
 
 The followings are clients, west-us-2 and ap-south-1.
 
-.. image:: ../resources/128GB_site1.png
+.. image:: ../../../resources/128GB_site1.png
     :height: 350px
 
 
-.. image:: ../resources/128GB_site2.png
+.. image:: ../../../resources/128GB_site2.png
     :height: 350px
 
 

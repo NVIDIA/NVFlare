@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import torch
 
@@ -85,7 +85,7 @@ class FedAvgV2(BaseFedAvg):
 
             clients = self.sample_clients(self.num_clients)
 
-            results: List[FLModel] = self.send_model_and_wait(targets=clients, data=model)
+            results: list[FLModel] = self.send_model_and_wait(targets=clients, data=model)
 
             # using default aggregate_fn with `WeightedAggregationHelper`.
             # Can overwrite self.aggregate_fn with signature Callable[List[FLModel], FLModel]
@@ -110,7 +110,7 @@ class FedAvgV2(BaseFedAvg):
 
         self.info("Finished FedAvg.")
 
-    def should_stop(self, metrics: Optional[Dict] = None) -> bool:
+    def should_stop(self, metrics: Optional[dict] = None) -> bool:
         """Checks whether the current FL experiment should stop.
 
         Args:

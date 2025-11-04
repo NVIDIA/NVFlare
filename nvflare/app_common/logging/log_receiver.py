@@ -32,15 +32,15 @@ class LogReceiver(Widget):
 
     def process_log(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         """Process the streamed log file."""
-        peer_ctx = fl_ctx.get_peer_context()
-        assert isinstance(peer_ctx, FLContext)
-        peer_name = peer_ctx.get_identity_name()
-        topic = FileStreamer.get_topic(stream_ctx)
         rc = FileStreamer.get_rc(stream_ctx)
         if rc != ReturnCode.OK:
+            peer_ctx = fl_ctx.get_peer_context()
+            peer_name = peer_ctx.get_identity_name()
+            channel = FileStreamer.get_channel(stream_ctx)
+            topic = FileStreamer.get_topic(stream_ctx)
             self.log_error(
                 fl_ctx,
-                f"Error in streaming log file from {peer_name} and topic {topic} with rc {rc}",
+                f"Error in streaming log file from {peer_name=} and {topic=}/{channel=} with {rc=}",
             )
             return
         file_location = FileStreamer.get_file_location(stream_ctx)

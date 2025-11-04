@@ -1,36 +1,23 @@
-This is a simple example to show how to build NVFlare docker image.
+## Overview
 
+This is a simple example to show how to build an application Docker image for NVFlare.
 
-# NVFlare application code package
-We can pre-install custom codes inside each docker image.
-We utilize our nvflare pre-install command to do that.
+### Prerequisites
 
-First, we need to prepare the `application_code.zip` folder structure:
+Before proceeding, ensure you have Docker installed and running on your machine. Additionally, make sure you have access to the required NVFlare code and resources.
 
-```bash
-application_code_folder
-├── application/                    # optional
-│   └── <job_name>/
-│               ├── meta.json       # job metadata
-│               ├── app_<site>/     # Site custom code
-│                  └── custom/      # Site custom code
-├── application-share/              # Shared resources
-|   └── simple_network.py           # Shared model definition 
-└── requirements.txt       # Python dependencies (optional)
-```
+### Build the Docker Image
 
-We have already prepared application-share folder and requirements.txt in this example.
-We run the following command to create a zip folder so we can use that to build the CVM:
+We have provided a `Dockerfile` to build the NVFlare Docker image.
+
+To build the NVFlare Docker image, run the following command in your terminal:
 
 ```bash
-python -m zipfile -c application_code.zip application_code/*
+./docker_build.sh Dockerfile nvflare-site
 ```
 
-# NVFlare docker file
+Important notes:
+- Code directory: The local ``code`` folder is copied into the Docker image under ``/local/custom``
+- Job configuration: In the [job configuration](../jobs/hello-pt_cifar10_fedavg/app_site-1/config/config_fed_client.json) we configure the task script to be ``/local/custom/hello-pt_cifar10_fl.py``
 
-We have prepared a `Dockerfile`.
-Please run the following command to build the NVFlare docker image:
-
-```bash
-./docker_build.sh Dockerfile nvflare-site 
-```
+Make sure to adjust the paths and filenames in your configurations accordingly.

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import json
 import threading
 import time
@@ -162,6 +163,8 @@ class JobExecutor(ClientExecutor):
             resource_manager: resource manager
             fl_ctx: FLContext
         """
+        # use a deep copy of the args for operation since its content will be changed!
+        args = copy.deepcopy(args)
 
         # update the job meta
         workspace = Workspace(args.workspace, site_name=client.client_name)

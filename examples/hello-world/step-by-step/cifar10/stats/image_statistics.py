@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, List
 
 import numpy as np
 import torch
@@ -75,7 +74,7 @@ class ImageStatistics(Statistics):
         testloader = torch.utils.data.DataLoader(testset, batch_size=self.batch_size, shuffle=False, num_workers=2)
         self.loaders = {"train": trainloader, "test": testloader}
 
-    def features(self) -> Dict[str, List[Feature]]:
+    def features(self) -> dict[str, list[Feature]]:
         return {"train": self.image_features, "test": self.image_features}
 
     def count(self, dataset_name: str, feature_name: str) -> int:
@@ -89,7 +88,7 @@ class ImageStatistics(Statistics):
         channel = self.features_ids[feature_name]
 
         # get the inputs; data is a list of [inputs, labels]
-        histogram_bins: List[Bin] = []
+        histogram_bins: list[Bin] = []
         bin_edges = []
         histogram = np.zeros(num_of_bins, dtype=float)
 

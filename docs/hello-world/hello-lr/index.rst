@@ -13,6 +13,21 @@ for the complete installation instructions, see `Installation <https://nvflare.r
 
     pip install nvflare
 
+
+get the example code from github:
+
+.. code-block:: text
+
+    git clone https://github.com/NVIDIA/NVFlare.git
+
+then navigate to the hello-lr directory:
+
+.. code-block:: text
+
+    git switch <release branch>
+    cd examples/hello-world/hello-lr
+
+
 Install the dependency
 
 .. code-block:: text
@@ -22,17 +37,6 @@ Install the dependency
 
 Code Structure
 --------------
-
-first get the example code from github:
-
-.. code-block:: text
-    git clone https://github.com/NVIDIA/NVFlare.git
-
-then navigate to the hello-lr directory:
-
-.. code-block:: text
-    git switch <release branch>
-    cd examples/hello-world/hello-lr
 
 .. code-block:: text
 
@@ -56,7 +60,9 @@ raw attributes, only 14 of them are actually used.
 
 The authors of the databases have requested:
 
-      ...that any publications resulting from the use of the data include the
+.. code-block:: text
+
+      "...that any publications resulting from the use of the data include the
       names of the principal investigator responsible for the data collection
       at each institution.  They would be:
 
@@ -64,7 +70,8 @@ The authors of the databases have requested:
        2. University Hospital, Zurich, Switzerland: William Steinbrunn, M.D.
        3. University Hospital, Basel, Switzerland: Matthias Pfisterer, M.D.
        4. V.A. Medical Center, Long Beach and Cleveland Clinic Foundation:
-	  Robert Detrano, M.D., Ph.D.
+	  Robert Detrano, M.D., Ph.D. "
+
 
 dataset contains samples from 4 sites, split into training and
 testing sets as described below:
@@ -261,6 +268,7 @@ Running Job
 Execute the following command to launch federated logistic regression. This will run in nvflare's simulation mode.
 
 .. code-block:: text
+
     python job.py
 
 

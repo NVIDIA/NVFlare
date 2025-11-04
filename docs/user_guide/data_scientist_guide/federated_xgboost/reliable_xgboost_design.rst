@@ -11,7 +11,7 @@ NVFLARE serves as a launchpad to start the XGBoost system.
 Once started, the XGBoost system runs independently of FLARE,
 as illustrated in the following figure.
 
-.. figure:: ../../resources/loose_xgb.png
+.. figure:: ../../../resources/loose_xgb.png
     :height: 500px
 
 There are a few potential problems with this approach:
@@ -34,7 +34,7 @@ FLARE provides a highly flexible, scalable, and reliable communication mechanism
 We enhance the reliability of federated XGBoost by using FLARE as the communicator of XGBoost,
 as shown here:
 
-.. figure:: ../../resources/tight_xgb.png
+.. figure:: ../../../resources/tight_xgb.png
     :height: 500px
 
 Detailed Design
@@ -45,7 +45,7 @@ To use FLARE  as the communicator, we simply route XGBoost's gRPC messages throu
 To do so, we change the server endpoint of each XGBoost client to a local gRPC server
 (LGS) within the FLARE client.
 
-.. figure:: ../../resources/fed_xgb_detail.png
+.. figure:: ../../../resources/fed_xgb_detail.png
     :height: 500px
 
 As shown in this diagram, there is a local GRPC server (LGS) for each site

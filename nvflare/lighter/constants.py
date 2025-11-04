@@ -208,6 +208,7 @@ class ProvFileName:
     AZURE_START_SH = "azure_start.sh"
     AWS_START_SH = "aws_start.sh"
     EDGE_RESOURCES_JSON = "edge__p_resources.json"
+    START_ALL_SH = "start_all.sh"
 
 
 class CertFileBasename:
