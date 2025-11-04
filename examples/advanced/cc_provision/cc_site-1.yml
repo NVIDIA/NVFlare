@@ -15,6 +15,7 @@ docker_archive: /tmp/base_images/app.tar.gz
 # for debugging purpose
 # hosts_entries:
 #   server1: 1.2.3.4
+allowed_out_ports: [443, 8002, 8999]
 
 cc_issuers:
   - id: snp_authorizer

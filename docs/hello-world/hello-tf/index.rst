@@ -87,6 +87,7 @@ Client Code
 -----------
 
 The client code ``client.py`` is responsible for training. The training code closely resembles standard PyTorch training code, with additional lines to handle data exchange with the server.
+
 .. literalinclude:: ../../../examples/hello-world/hello-tf/client.py
     :language: python
     :linenos:

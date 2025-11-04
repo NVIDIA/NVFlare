@@ -3,11 +3,11 @@
 Self-Paced-Training Tutorials
 ==============================
 
-Federated Learning with NVIDIA FLARE: Notebooks and videos
+Federated Learning with NVIDIA FLARE: Notebooks and Videos
 ----------------------------------------------------------
 Welcome to the five-part course on Federated Learning with NVIDIA FLARE!
 This course covers everything from the fundamentals to advanced applications, system deployment, privacy, security, and real-world industry use cases.
-it has **100+** notebooks, **80** videos
+It has **100+** notebooks and **80** videos.
 
 
 What You'll Learn
@@ -57,8 +57,8 @@ This section provides a hands-on introduction to federated learning using NVIDIA
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/01.0_introduction/introduction.ipynb>`_,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/video.md>`_
+    `Chapter 1 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/01.0_introduction/introduction.ipynb>`_,
+    `Chapter 1 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-1_running_federated_learning_applications/video.md>`_
 
 **Chapter 2: Developing Federated Learning Applications**
 
@@ -69,8 +69,8 @@ This section provides a hands-on introduction to federated learning using NVIDIA
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.0_introduction/introduction.ipynb>`_ ,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/video.md>`_
+    `Chapter 2 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/02.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 2 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-1_federated_learning_introduction/chapter-2_develop_federated_learning_applications/video.md>`_
 
 Part 2: Federated Learning System
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -91,8 +91,8 @@ This section explores the architecture and deployment of federated computing sys
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-3_federated_computing_platform/03.0_introduction/introduction.ipynb>`_ ,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-3_federated_computing_platform/video.md>`_
+    `Chapter 3 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-3_federated_computing_platform/03.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 3 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-3_federated_computing_platform/video.md>`_
 
 **Chapter 4: Setup Federated Computing System**
 
@@ -101,13 +101,13 @@ This section explores the architecture and deployment of federated computing sys
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-4_setup_federated_system/04.0_introduction/introduction.ipynb>`_ ,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-4_setup_federated_system/video.md>`_
+    `Chapter 4 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-4_setup_federated_system/04.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 4 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-2_federated_learning_system/chapter-4_setup_federated_system/video.md>`_
 
 Part 3: Security and Privacy
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Federated Learning (FL) enables decentralized model training while preserving data privacy, making it ideal for sensitive domains like healthcare and finance. However, FL introduces security and privacy risks, such as data leakage, adversarial attacks, and model integrity threats.
+Federated learning enables decentralized model training while preserving data privacy, making it ideal for sensitive domains like healthcare and finance. However, federated learning introduces security and privacy risks, such as data leakage, adversarial attacks, and model integrity threats.
 
 **What You'll Learn**
 
@@ -124,8 +124,8 @@ Federated Learning (FL) enables decentralized model training while preserving da
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-5_Privacy_In_Federated_Learning/05.0_introduction/introduction.ipynb>`_ ,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-5_Privacy_In_Federated_Learning/video.md>`_
+    `Chapter 5 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-5_Privacy_In_Federated_Learning/05.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 5 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-5_Privacy_In_Federated_Learning/video.md>`_
 
 
 **Chapter 6: Security in Federated Computing System**
@@ -135,8 +135,8 @@ Federated Learning (FL) enables decentralized model training while preserving da
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-6_Security_in_federated_compute_system/06.0_introduction/introduction.ipynb>`_ ,
-    `Video <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-6_Security_in_federated_compute_system/video.md>`_
+    `Chapter 6 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-6_Security_in_federated_compute_system/06.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 6 Video <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-3_security_and_privacy/chapter-6_Security_in_federated_compute_system/video.md>`_
 
 Part 4: Advanced Topics in Federated Learning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -157,8 +157,8 @@ This section explores advanced topics and techniques in federated learning using
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-7_algorithms_and_workflows/07.0_introduction/introduction.ipynb>`_ ,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-7_algorithms_and_workflows/video.md>`_
+    `Chapter 7 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-7_algorithms_and_workflows/07.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 7 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-7_algorithms_and_workflows/video.md>`_
 
 **Chapter 8: Federated LLM Training**
 
@@ -166,8 +166,8 @@ This section explores advanced topics and techniques in federated learning using
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.0_introduction/introduction.ipynb>`_ ,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/video.md>`_
+    `Chapter 8 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/08.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 8 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-8_federated_LLM_training/video.md>`_
 
 **Chapter 9: NVIDIA FLARE Low-level APIs**
 
@@ -175,8 +175,8 @@ This section explores advanced topics and techniques in federated learning using
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-9_flare_low_level_apis/09.0_introduction/introduction.ipynb>`_ ,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-9_flare_low_level_apis/video.md>`_
+    `Chapter 9 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-9_flare_low_level_apis/09.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 9 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-9_flare_low_level_apis/video.md>`_
 
 **Chapter 10: Federated XGBoost**
 
@@ -184,8 +184,8 @@ This section explores advanced topics and techniques in federated learning using
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-10_federated_XGBoost/10.0_introduction/introduction.ipynb>`_ ,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-10_federated_XGBoost/video.md>`_
+    `Chapter 10 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-10_federated_XGBoost/10.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 10 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-4_advanced_federated_learning/chapter-10_federated_XGBoost/video.md>`_
 
 Part 5: Federated Learning Applications in Industries
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -195,11 +195,14 @@ This section demonstrates how NVIDIA FLARE is applied in real-world industry set
 **What You'll Learn**
 
 - How NVIDIA FLARE powers collaborative machine learning in healthcare and life sciences, including:
+
   - Medical image analysis (e.g., cancer detection, radiology)
   - Survival analysis (e.g., Kaplan-Meier)
   - Genomics and multi-institutional research
-  - Drug discovery (if specifically covered)
+  - Drug discovery
+
 - Financial services applications, such as:
+
   - Fraud detection
   - Anomaly detection in transactions
 
@@ -210,8 +213,8 @@ This section demonstrates how NVIDIA FLARE is applied in real-world industry set
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-11_federated_learning_in_healthcare_lifescience/11.0_introduction/introduction.ipynb>`_ ,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-11_federated_learning_in_healthcare_lifescience/video.md>`_
+    `Chapter 11 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-11_federated_learning_in_healthcare_lifescience/11.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 11 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-11_federated_learning_in_healthcare_lifescience/video.md>`_
 
 
 **Chapter 12: Federated Learning in Financial Services**
@@ -220,8 +223,8 @@ This section demonstrates how NVIDIA FLARE is applied in real-world industry set
 
 .. tip::
 
-    `View on GitHub <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/12.0_introduction/introduction.ipynb>`_ ,
-    `Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/video.md>`_
+    `Chapter 12 Notebooks <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/12.0_introduction/introduction.ipynb>`_ ,
+    `Chapter 12 Videos <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/self-paced-training/part-5_federated_learning_applications_in_industries/chapter-12_federated_learning_in_financial_services/video.md>`_
 
 
 Getting Started

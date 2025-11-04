@@ -17,6 +17,7 @@ Deployment Guide
    ../tools/dashboard_command
    dashboard_ui
    ../tools/preflight_check
+   notes_on_large_models
 
 
 

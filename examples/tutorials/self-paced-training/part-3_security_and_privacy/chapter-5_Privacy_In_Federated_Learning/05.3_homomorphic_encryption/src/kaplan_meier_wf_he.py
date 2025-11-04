@@ -14,7 +14,6 @@
 
 import base64
 import logging
-from typing import Dict
 
 import tenseal as ts
 
@@ -51,7 +50,7 @@ class KM_HE(ModelController):
         results = self.send_model_and_wait(data=model)
         return results
 
-    def aggr_max_idx(self, sag_result: Dict[str, Dict[str, FLModel]]):
+    def aggr_max_idx(self, sag_result: dict[str, dict[str, FLModel]]):
         self.logger.info("aggregate max histogram index \n")
 
         if not sag_result:
@@ -78,7 +77,7 @@ class KM_HE(ModelController):
         results = self.send_model_and_wait(data=model)
         return results
 
-    def aggr_he_hist(self, sag_result: Dict[str, Dict[str, FLModel]]):
+    def aggr_he_hist(self, sag_result: dict[str, dict[str, FLModel]]):
         self.logger.info("aggregate histogram within HE \n")
 
         # Load HE context

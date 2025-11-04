@@ -5,7 +5,7 @@ FLARE Multi-Job Architecture
 To maximize the utilization of compute resources, FLARE supports multiple jobs running at the
 same time, where each job is an independent FL experiment.
 
-.. image:: ../../resources/system_architecture.png
+.. image:: ../../../resources/system_architecture.png
 
 As shown in the diagram above, there is the Server Control Process (SCP) on the Server host, and there is a
 Client Control Process (CCP) on each client host. The SCP communicates with CCPs to manage jobs (schedule,

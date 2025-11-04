@@ -1,8 +1,8 @@
 .. _pre_installer:
 
-########################
+##########################
 NVFLARE Code Pre-Installer
-########################
+##########################
 
 This tool helps install NVFLARE application code and libraries before running federated learning jobs.
 
@@ -163,14 +163,13 @@ Install Application Code
 
    nvflare pre-install install [-h] -a APPLICATION [-p INSTALL_PREFIX] -s SITE_NAME
                              [-ts TARGET_SHARED_DIR] [-debug] [-d]
-
-Arguments:
-  -a, --application    Path to application code zip file
-  -p, --install-prefix Installation prefix (default: /opt/nvflare/apps)
-  -s, --site-name      Target site name (e.g., site-1, server)
-  -ts, --target_shared_dir Target share path (default: /local/custom)
-  -debug               Enable debug output
-  -d, --delete        Delete the zip file after installation
+   Arguments:
+      -a, --application    Path to application code zip file
+      -p, --install-prefix Installation prefix (default: /opt/nvflare/apps)
+      -s, --site-name      Target site name (e.g., site-1, server)
+      -ts, --target_shared_dir Target share path (default: /local/custom)
+      -debug               Enable debug output
+      -d, --delete        Delete the zip file after installation
 
 Example
 -------

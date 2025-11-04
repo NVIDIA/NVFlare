@@ -36,7 +36,7 @@ The following steps compose one cycle of weight updates, called a **round**:
  #. Finally, the server sends this updated version of the model back to each client.
 
 Running the Example
-------------------
+-------------------
 To run this example:
 
 1. Clone the repository and navigate to the example directory:
@@ -87,9 +87,9 @@ The training procedure and network architecture are modified from
 
 Let's see what an extremely simplified CIFAR10 training looks like:
 
-.. literalinclude:: ../../examples/hello-world/hello-pt/src/simple_network.py
+.. literalinclude:: ../examples/hello-world/hello-pt/model.py
    :language: python
-   :caption: simple_network.py
+   :caption: model.py
 
 This ``SimpleNetwork`` class is your convolutional neural network to train with the CIFAR10 dataset.
 This is not related to NVIDIA FLARE, so we implement it in a file called ``simple_network.py``.
@@ -222,7 +222,7 @@ and :class:`PTFileModelLocator<nvflare.app_opt.pt.file_model_locator.PTFileModel
 
 
 Client Configuration
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^
 
 The client configuration is ``config_fed_client.json`` in the config folder of each client app folder:
 
