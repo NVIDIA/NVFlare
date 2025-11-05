@@ -574,6 +574,9 @@ sub_start_sh: |
       --verify)
         doVerify=true
       ;;
+      --once)
+        doOnce=true
+      ;;
     esac
     shift
   done
@@ -581,6 +584,11 @@ sub_start_sh: |
   SECONDS=0
   lst=-400
   restart_count=0
+  
+  start_python() {
+    python3 -u -m nvflare.private.fed.app.{~~type~~}.{~~app_name~~} -m $DIR/.. -s fed_{~~type~~}.json --set secure_train=true {~~cln_uid~~} org={~~org_name~~} config_folder={~~config_folder~~}
+  }
+    
   start_fl() {
     if [[ $(( $SECONDS - $lst )) -lt 300 ]]; then
       ((restart_count++))
@@ -593,7 +601,7 @@ sub_start_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.{~~type~~}.{~~app_name~~} -m $DIR/.. -s fed_{~~type~~}.json --set secure_train=true {~~cln_uid~~} org={~~org_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
+    (start_python 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -614,6 +622,22 @@ sub_start_sh: |
     rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl 2> /dev/null 1>&2
   }
     
+  if [[ "$doVerify" == "true" ]]; then
+    python3 -m nvflare.tool.verify_startup_kits -f $DIR/../ -c $DIR/rootCA.pem
+    verification_status=$?
+    if [[ $verification_status -ne 0 ]]; then
+      echo "verification failed"
+      exit 1
+    fi
+  fi
+
+  if [[ "$doOnce" == "true" ]]; then
+    echo "Start NVFlare directly"
+    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl 2> /dev/null 1>&2
+    start_python
+    exit $?
+  fi
+
   if [[ -f "$DIR/../daemon_pid.fl" ]]; then
     dpid=`cat $DIR/../daemon_pid.fl`
     kill -0 ${dpid} 2> /dev/null 1>&2
@@ -623,15 +647,6 @@ sub_start_sh: |
       exit
     fi
     rm -f $DIR/../daemon_pid.fl
-  fi
-
-  if [[ "$doVerify" == "true" ]]; then
-    python3 -m nvflare.tool.verify_startup_kits -f $DIR/../ -c $DIR/rootCA.pem
-    verification_status=$?
-    if [[ $verification_status -ne 0 ]]; then
-      echo "verification failed"
-      exit 1
-    fi
   fi
 
   echo $BASHPID > $DIR/../daemon_pid.fl

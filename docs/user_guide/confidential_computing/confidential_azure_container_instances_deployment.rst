@@ -92,10 +92,10 @@ folder and docker folder under current working folder, respectively, as shown be
    registry=${reg_name}.azurecr.io
    nvfl_root=nvflserver.eastus.azurecontainer.io
 
-   docker build --build-arg nvfl_root=$nvfl_root -t $registry/$name:$tag -f docker/Dockerfile .
+   docker build --build-arg NVFL_ROOT=$nvfl_root -t $registry/$name:$tag -f docker/Dockerfile .
 
-.. code-block:: 
-   :caption: Dockerfile
+.. code-block:: dockerfile
+
    FROM python:3.10
    ARG NVFL_ROOT=nvflserver.eastus.azurecontainer.io
    WORKDIR /workspace
