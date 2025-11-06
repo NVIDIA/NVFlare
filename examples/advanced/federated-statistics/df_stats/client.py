@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Optional
+from typing import Optional
 
 import pandas as pd
 
@@ -25,7 +25,7 @@ class AdultStatistics(DFStatisticsCore):
         super().__init__()
         self.data_root_dir = data_root_dir
         self.filename = filename
-        self.data: Optional[Dict[str, pd.DataFrame]] = None
+        self.data: Optional[dict[str, pd.DataFrame]] = None
         self.data_features = [
             "Age",
             "Workclass",
@@ -52,7 +52,7 @@ class AdultStatistics(DFStatisticsCore):
             "site-2": [0],
         }
 
-    def load_data(self, fl_ctx: FLContext) -> Dict[str, pd.DataFrame]:
+    def load_data(self, fl_ctx: FLContext) -> dict[str, pd.DataFrame]:
         client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"load data for client {client_name}")
         try:

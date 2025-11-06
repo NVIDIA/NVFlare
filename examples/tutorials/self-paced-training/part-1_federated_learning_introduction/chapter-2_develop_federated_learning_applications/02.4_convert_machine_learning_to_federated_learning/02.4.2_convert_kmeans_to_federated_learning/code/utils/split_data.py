@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import List
 
 import numpy as np
 
@@ -40,7 +39,7 @@ def get_split_ratios(site_num: int, split_method: SplitMethod):
     return ratio_vec
 
 
-def split_num_proportion(n, site_num, split_method: SplitMethod) -> List[int]:
+def split_num_proportion(n, site_num, split_method: SplitMethod) -> list[int]:
     split = []
     ratio_vec = get_split_ratios(site_num, split_method)
     total = sum(ratio_vec)

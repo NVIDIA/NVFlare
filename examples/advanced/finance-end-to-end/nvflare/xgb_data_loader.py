@@ -14,7 +14,6 @@
 
 
 import os
-from typing import Tuple
 
 import pandas as pd
 import xgboost as xgb
@@ -49,7 +48,7 @@ class CreditCardDataLoader(XGBDataLoader):
     ):
         super().initialize(client_id, rank, data_split_mode)
 
-    def load_data(self) -> Tuple[xgb.DMatrix, xgb.DMatrix]:
+    def load_data(self) -> tuple[xgb.DMatrix, xgb.DMatrix]:
         data = {}
         for ds_name in self.dataset_names:
             print("\nloading for site = ", self.client_id, f"{ds_name} dataset \n")
