@@ -432,6 +432,6 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Support
 
--**FLASH Repository**: [Github](https://github.com/parasecurity/FLASH)
+- **FLASH Repository**: [Github](https://github.com/parasecurity/FLASH)
 - **Flare Documentation**: [Full documentation](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_opt.feature_election.html)
 
