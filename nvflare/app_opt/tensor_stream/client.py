@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -149,8 +149,9 @@ class TensorClientStreamer(FLComponent):
         try:
             self.sender.send(fl_ctx, self.entry_timeout)
         except ValueError as e:
-            pass
+            self.log_warning(fl_ctx, f"No tensors to send to server: {str(e)}")
         else:
             clean_task_result(fl_ctx)
+        finally:
             # Clear sender to release any references to tensors
             self.sender = None

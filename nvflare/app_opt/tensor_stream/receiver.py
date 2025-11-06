@@ -114,7 +114,10 @@ class TensorReceiver:
             raise ValueError("No task_id found in FLContext.")
 
         # get and remove the tensors from the local store
-        tensors = self.tensors.pop(task_id)
+        tensors = self.tensors.pop(task_id, None)
+        if tensors is None:
+            raise ValueError(f"No tensors found for task_id '{task_id}'")
+
         s: Shareable = fl_ctx.get_prop(self.ctx_prop_key)
         if not s:
             msg = f"No shareable found in FLContext for key {self.ctx_prop_key}."
@@ -133,10 +136,11 @@ class TensorReceiver:
             raise RuntimeError(msg)
 
         if len(dxo["data"]) == 0 and not tensors:
-            self.logger.error(
+            msg = (
                 f"Peer '{fl_ctx.get_identity_name()}':received task with empty data, no tensors "
-                f"are present for '{peer_name}'. Task ID: '{task_id}'.",
+                f"are present for '{peer_name}'. Task ID: '{task_id}'."
             )
+            self.logger.error(msg)
             raise RuntimeError(msg)
 
         if self.format == ExchangeFormat.PYTORCH:

@@ -368,7 +368,7 @@ class TestTensorClientStreamer:
                     mock_fl_context.get_engine.return_value = mock_engine_with_clients
                     mock_sender_instance = Mock(spec=TensorSender)
                     mock_receiver_instance = Mock(spec=TensorReceiver)
-                    # Mock send to raise ValueError so sender is not cleared (stays set)
+                    # Mock send to raise ValueError so cleanup is not called
                     mock_sender_instance.send.side_effect = ValueError("Send failed")
                     mock_sender_class.return_value = mock_sender_instance
                     mock_receiver_class.return_value = mock_receiver_instance
@@ -389,10 +389,10 @@ class TestTensorClientStreamer:
                     assert streamer.receiver == mock_receiver_instance
 
                     # Sender should be created when handling AFTER_TASK_RESULT_FILTER
-                    # ValueError is caught and passed, sender remains set
+                    # ValueError is caught and passed, sender is cleared in finally block
                     streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
-                    # Since send raises ValueError, sender is NOT cleared (exception is caught)
-                    assert streamer.sender == mock_sender_instance
+                    # Sender is always cleared in finally block, even when send raises ValueError
+                    assert streamer.sender is None
 
     def test_error_propagation_in_event_handling(self, mock_fl_context):
         """Test that exceptions in event handling are properly handled."""
@@ -531,8 +531,8 @@ class TestTensorClientStreamer:
         # Verify clean_task_result was NOT called when send raises ValueError
         mock_clean_task_result.assert_not_called()
 
-        # Verify sender is NOT set to None when send fails (exception caught)
-        assert streamer.sender == mock_sender
+        # Verify sender is set to None in finally block even when send fails
+        assert streamer.sender is None
 
     def test_tasks_parameter_defaults(self):
         """Test that tasks parameter defaults are handled correctly."""

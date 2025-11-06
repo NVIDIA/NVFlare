@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -353,8 +353,8 @@ class TestTensorReceiver:
         # Mock get_prop to return task_id
         mock_fl_context.get_prop.return_value = task_id
 
-        # Should raise KeyError when tensors are not found
-        with pytest.raises(KeyError):
+        # Should raise ValueError when tensors are not found
+        with pytest.raises(ValueError, match=f"No tensors found for task_id '{task_id}'"):
             receiver.set_ctx_with_tensors(mock_fl_context)
 
         # Verify that get_prop was called for TASK_ID
