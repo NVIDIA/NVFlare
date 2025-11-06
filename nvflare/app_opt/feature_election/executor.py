@@ -24,8 +24,11 @@ warnings.filterwarnings('ignore')
 
 # Try to import PyImpetus
 
-from PyImpetus import PPIMBC
-PYIMPETUS_AVAILABLE = True
+try:
+    from PyImpetus import PPIMBC
+    PYIMPETUS_AVAILABLE = True
+except ImportError:
+    PYIMPETUS_AVAILABLE = False
 
 
 logger = logging.getLogger(__name__)
