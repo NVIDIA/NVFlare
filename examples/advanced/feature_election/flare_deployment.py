@@ -16,9 +16,7 @@ def example_server_setup():
     Server-side: Generate FLARE job configuration
     Run this on the server/admin machine
     """
-    print("\n" + "="*70)
     print("SERVER SETUP: Creating FLARE Job Configuration")
-    print("="*70)
     
     # Initialize Feature Election with your parameters
     fe = FeatureElection(
@@ -31,7 +29,7 @@ def example_server_setup():
     job_paths = fe.create_flare_job(
         job_name="healthcare_feature_selection",
         output_dir="./flare_jobs",
-        min_clients=3,  # Minimum 3 hospitals must participate
+        min_clients=3,
         num_rounds=1,   # Single round for feature selection
         client_sites=['hospital_a', 'hospital_b', 'hospital_c', 'hospital_d']
     )
