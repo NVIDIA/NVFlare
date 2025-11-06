@@ -6,14 +6,11 @@ Implements the Feature Election algorithm from the FLASH framework
 import numpy as np
 from typing import Dict, List, Optional, Any
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_constant import ReturnCode
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
-from nvflare.app_common.abstract.model_persistor import ModelPersistor
 import logging
 
 logger = logging.getLogger(__name__)
