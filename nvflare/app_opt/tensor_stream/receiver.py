@@ -89,6 +89,8 @@ class TensorReceiver:
                 self.tensor_events[task_id] = threading.Event()
 
         if not success:
+            with self.lock:
+                self.tensor_events[task_id].set()  # Wake waiting threads
             raise ValueError(f"Failed to receive tensors from peer '{peer_name}' and task '{task_id}'.")
 
         tensors = fl_ctx.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
