@@ -184,8 +184,8 @@ client_streamer = TensorClientStreamer()
 # With custom format, tasks, and timeout
 client_streamer = TensorClientStreamer(
     format=ExchangeFormat.PYTORCH,
-    tasks=["train", "validate"]
-    entry_timeout=60.0  # Increase timeout for large models
+    tasks=["train", "validate"],
+    entry_timeout=60.0,  # Increase timeout for large models
 )
 ```
 

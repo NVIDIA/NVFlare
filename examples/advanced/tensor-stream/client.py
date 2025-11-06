@@ -16,7 +16,6 @@ from trainer import get_dataset, get_training_arguments, preprocess
 from trl import SFTTrainer
 
 import nvflare.client as flare
-from nvflare.client.tracking import SummaryWriter
 
 
 def main():
@@ -37,8 +36,6 @@ def main():
         args=training_args,
         train_dataset=train_dataset,
     )
-
-    summary_writer = SummaryWriter()
 
     while flare.is_running():
         input_model = flare.receive()
