@@ -310,9 +310,11 @@ class FeatureElectionController(ScatterAndGather):
             diff_scores = aggregated_scores[difference_mask]
 
             if len(diff_scores) > 0:
+                # Partition index is k, number of features to select is -k
+                k = -min(n_additional, len(diff_scores))
                 # Get indices of top scoring features
-                top_indices = np.argpartition(diff_scores, -min(n_additional, len(diff_scores)))
-                top_indices = top_indices[-min(n_additional, len(diff_scores)):]
+                top_indices = np.argpartition(diff_scores, k)
+                top_indices = top_indices[k:]
 
                 # Create selected difference mask
                 selected_difference = np.zeros_like(difference_mask)
