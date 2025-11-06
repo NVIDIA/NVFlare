@@ -117,7 +117,7 @@ You can now use the NVFlare admin console to communicate with the NVFlare system
 
 ## 7. Notes on using NVIDIA GPU CC
 
-1. Follow the [NVIDIA Confidential Computing documetation](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/cc_deployment_guide.html#cc-deployment-guide) to set up a machine with NVIDIA GPU CC enabled.
+1. Follow the [NVIDIA Confidential Computing documentation](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/cc_deployment_guide.html#cc-deployment-guide) to set up a machine with NVIDIA GPU CC enabled.
 
 2. For any site that supports GPU CC, you can add NVFLARE's `GPUAuthorizer` to the `cc_site.yml` configuration file:
 
