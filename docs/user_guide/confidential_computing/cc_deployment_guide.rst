@@ -437,8 +437,8 @@ Complete Configuration Examples
        args:
          config_folder: config
      - path: nvflare.lighter.impl.cert.CertBuilder
-     - path: nvflare.lighter.impl.signature.SignatureBuilder
      - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
+     - path: nvflare.lighter.impl.signature.SignatureBuilder
 
    packager:
      path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
