@@ -146,6 +146,154 @@ recipe.job.to_clients(TensorClientStreamer(), "tensor_client_streamer")
 
 These streamers handle the efficient transmission of large model tensors between server and clients.
 
+## Tensor Streaming Components
+
+### TensorClientStreamer
+
+The `TensorClientStreamer` is responsible for managing tensor streaming on the client side. It handles receiving task data tensors from the server and sending task result tensors back to the server.
+
+#### Initialization Parameters
+
+**Parameters:**
+
+- **`format`** (`ExchangeFormat`, default: `ExchangeFormat.PYTORCH`)
+  - The format of the tensors to send and receive.
+  - Supported formats include `ExchangeFormat.PYTORCH`, `ExchangeFormat.NUMPY`, and others.
+  - This must match the format used by your model and training framework.
+
+- **`tasks`** (`list[str]`, default: `["train"]`)
+  - The list of task names for which tensors should be streamed.
+  - When set to `None`, defaults to `["train"]`.
+  - Useful for specifying different tasks like `["train", "validate"]` if you want streaming for multiple task types.
+
+- **`entry_timeout`** (`float`, default: `30.0`)
+  - Timeout in seconds for individual tensor entry transfer operations when sending results to the server.
+  - Controls how long to wait for each chunk of tensor data to be transferred.
+  - May need to be increased for very large tensors or slow network connections.
+
+#### Example Usage
+
+Basic usage with default parameters:
+```python
+from nvflare.app_opt.tensor_stream import TensorClientStreamer
+from nvflare.client.config import ExchangeFormat
+
+# Simple configuration
+client_streamer = TensorClientStreamer()
+
+# With custom format, tasks, and timeout
+client_streamer = TensorClientStreamer(
+    format=ExchangeFormat.PYTORCH,
+    tasks=["train", "validate"]
+    entry_timeout=60.0  # Increase timeout for large models
+)
+```
+
+### TensorServerStreamer
+
+The `TensorServerStreamer` manages tensor streaming on the server side. It sends task data tensors to clients and receives task result tensors from clients.
+
+#### Initialization Parameters
+
+**Parameters:**
+
+- **`format`** (`ExchangeFormat`, default: `ExchangeFormat.PYTORCH`)
+  - The format of the tensors to send and receive.
+  - Must match the format used by `TensorClientStreamer` on the client side.
+  - Determines how tensors are serialized and deserialized during transmission.
+
+- **`tasks`** (`list[str]`, default: `["train"]`)
+  - The list of task names for which tensors should be streamed.
+  - When set to `None`, defaults to `["train"]`.
+  - Should match the tasks configured in `TensorClientStreamer`.
+
+- **`entry_timeout`** (`float`, default: `30.0`)
+  - Timeout in seconds for individual tensor entry transfer operations when sending to clients.
+  - Controls how long to wait for each chunk of tensor data to be transferred.
+  - Should be tuned based on model size and network bandwidth.
+
+- **`wait_send_task_data_all_clients_timeout`** (`float`, default: `300.0`)
+  - Total timeout in seconds for waiting for all clients to receive task data tensors.
+  - The server waits until all clients have successfully received the model before proceeding.
+  - Critical for ensuring synchronization in federated learning rounds.
+  - Should account for: model size, number of clients, and network conditions.
+  - If timeout occurs, the system will panic and stop the round to prevent inconsistent state.
+
+#### Example Usage
+
+Basic usage with default parameters:
+```python
+from nvflare.app_opt.tensor_stream import TensorServerStreamer
+from nvflare.client.config import ExchangeFormat
+
+# Simple configuration
+server_streamer = TensorServerStreamer()
+
+# With custom timeouts for large-scale deployments
+server_streamer = TensorServerStreamer(
+    format=ExchangeFormat.PYTORCH,
+    entry_timeout=60.0,
+    wait_send_task_data_all_clients_timeout=600.0  # 10 minutes for many clients
+)
+
+# For multiple task types
+server_streamer = TensorServerStreamer(
+    tasks=["train", "validate"],
+    entry_timeout=45.0
+)
+```
+
+### Configuration Best Practices
+
+#### Timeout Configuration
+
+Choose timeout values based on your deployment scenario:
+
+**Small models (< 100MB), fast network:**
+```python
+client_streamer = TensorClientStreamer(entry_timeout=30.0)
+server_streamer = TensorServerStreamer(
+    entry_timeout=30.0,
+    wait_send_task_data_all_clients_timeout=300.0
+)
+```
+
+**Large models (> 1GB), moderate network:**
+```python
+client_streamer = TensorClientStreamer(
+    entry_timeout=90.0,
+    wait_for_task_data_tensors_timeout=180.0
+)
+server_streamer = TensorServerStreamer(
+    entry_timeout=90.0,
+    wait_send_task_data_all_clients_timeout=900.0  # 15 minutes
+)
+```
+
+**Very large models (> 10GB), many clients:**
+```python
+client_streamer = TensorClientStreamer(
+    entry_timeout=120.0,
+    wait_for_task_data_tensors_timeout=300.0
+)
+server_streamer = TensorServerStreamer(
+    entry_timeout=120.0,
+    wait_send_task_data_all_clients_timeout=1800.0  # 30 minutes
+)
+```
+
+#### Format Selection
+
+- Use `ExchangeFormat.PYTORCH` for PyTorch models (default)
+- Use `ExchangeFormat.NUMPY` for framework-agnostic tensor exchange
+- Ensure both client and server use the same format
+
+#### Task Configuration
+
+- For training only: `tasks=["train"]` (default)
+- For training and validation: `tasks=["train", "validate"]`
+- Custom tasks: `tasks=["custom_task_1", "custom_task_2"]`
+
 ## Output
 
 After running the job, you'll find:
@@ -216,16 +364,17 @@ To change training parameters, edit the `get_training_arguments()` function in `
 - Try downloading the dataset manually first using `datasets-cli`
 - Check disk space, as IMDB dataset requires ~150MB
 
-### Import Errors
-If you encounter import errors related to `torch` in `trainer.py`, add the import:
-```python
-import torch
-```
-at the top of the file with other imports.
-
 ## Notes
 
 - The example uses GPT-2 (small) by default, which has ~124M parameters
+- Alternative models available on Hugging Face include:
+    - `gpt2-medium` (~355M parameters) - Better performance, higher resource requirements
+    - `gpt2-large` (~774M parameters) - Significantly larger, requires more memory
+    - `gpt2-xl` (~1.5B parameters) - Largest GPT-2 variant, GPU recommended
+    - `distilgpt2` (~82M parameters) - Smaller, faster variant for resource-constrained environments
+    - `facebook/opt-125m` (~125M parameters) - Open Pretrained Transformer, similar size to GPT-2
+    - `EleutherAI/gpt-neo-125M` (~125M parameters) - Alternative architecture with similar capacity
+    - To use a different model, modify the model name in `model.py`'s `get_model()` function
 - Training on CPU will be significantly slower than GPU
 - The IMDB dataset is automatically downloaded on first run
 - Each client maintains its own output directory in `./results/`
