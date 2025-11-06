@@ -593,7 +593,7 @@ Recommend using absolute path to start, ensuring the correct version is running
 
 .. code-block:: bash
 
-   sudo /home/user/.cargo/bin/ls
+   sudo /home/user/.cargo/bin/kbs --config-file ./kbs-config.toml
 
 If the terminal shows no errors and displays that the service is listening on port 8999, then KBS has started successfully.
 
