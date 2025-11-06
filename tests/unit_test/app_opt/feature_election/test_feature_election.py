@@ -8,8 +8,7 @@ import pandas as pd
 from sklearn.datasets import make_classification
 from nvflare.app_opt.feature_election import (
     FeatureElection,
-    quick_election,
-    load_election_results
+    quick_election
 )
 
 

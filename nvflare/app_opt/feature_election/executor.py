@@ -14,11 +14,14 @@ from nvflare.app_common.app_constant import AppConstants
 import logging
 from sklearn.feature_selection import (
     SelectKBest, chi2, f_classif, mutual_info_classif,
-    RFE, RFECV
+    RFE
 )
 from sklearn.linear_model import Lasso, ElasticNet, LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score, accuracy_score, roc_auc_score
+
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -408,17 +411,7 @@ class FeatureElectionExecutor(Executor):
                     random_state=random_state,
                     verbose=verbose
                 )
-            else:  # ppimbc
-                selector = PPIMBC_Model(
-                    base_model,
-                    p_val_thresh=p_val_thresh,
-                    num_sim=num_sim,
-                    random_state=random_state,
-                    verbose=verbose
-                )
-
             # Fit the selector
-            logger.info("Fitting PyImpetus selector...")
             selector.fit(self.X_train, self.y_train)
 
             # Get selected features - PyImpetus returns INDICES of selected features
@@ -482,8 +475,6 @@ class FeatureElectionExecutor(Executor):
         Returns:
             Performance score
         """
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.metrics import f1_score, accuracy_score, roc_auc_score
 
         # Skip evaluation if validation set is too small
         if len(y_val) < 5:
