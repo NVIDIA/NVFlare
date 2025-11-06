@@ -92,8 +92,11 @@ class FegApi:
         )
 
     def _do_post(self, clazz, url, params, body):
+        import urllib3
+        if self.allow_self_signed:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         response = requests.post(
-            url, params=params, json=body, headers=self.common_headers, verify=False if self.allow_self_signed else True
+            url, params=params, json=body, headers=self.common_headers, verify=not self.allow_self_signed
         )
         code = response.status_code
         if code == 200:
