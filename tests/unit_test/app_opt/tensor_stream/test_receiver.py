@@ -129,6 +129,10 @@ class TestTensorReceiver:
         assert task_id not in receiver.tensors
         assert len(receiver.tensors) == 0
 
+        # Verify event was created and set (to wake waiting threads)
+        assert task_id in receiver.tensor_events
+        assert receiver.tensor_events[task_id].is_set()
+
     def test_save_tensors_cb_no_tensors(self, mock_streamable_engine, mock_fl_context):
         """Test _save_tensors_cb when no tensors are found in context."""
         receiver = TensorReceiver(
@@ -529,3 +533,99 @@ class TestTensorReceiver:
 
         # Verify cleanup
         assert task_id not in receiver.tensors
+
+    def test_wait_for_tensors_success(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
+        """Test wait_for_tensors completes successfully when tensors arrive."""
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
+
+        peer_name = "test_client"
+        task_id = "test_task_wait_success"
+
+        # Simulate tensors being received
+        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop(TensorCustomKeys.TASK_ID, task_id)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, random_torch_tensors)
+
+        # Call the callback to store tensors
+        receiver._save_tensors_cb(True, mock_fl_context)
+
+        # Wait should complete immediately since tensors are already received
+        receiver.wait_for_tensors(task_id, peer_name, timeout=1.0)
+
+        # Verify tensors were stored
+        assert task_id in receiver.tensors
+        assert receiver.tensors[task_id] == random_torch_tensors
+
+    def test_wait_for_tensors_timeout(self, mock_streamable_engine):
+        """Test wait_for_tensors raises TimeoutError when tensors don't arrive."""
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
+
+        peer_name = "test_client"
+        task_id = "test_task_wait_timeout"
+
+        # Don't simulate receiving tensors - just wait
+        with pytest.raises(TimeoutError, match=f"No tensors received from peer '{peer_name}'. Task ID: '{task_id}'"):
+            receiver.wait_for_tensors(task_id, peer_name, timeout=0.1)
+
+    def test_wait_for_tensors_with_failed_send(self, mock_streamable_engine, mock_fl_context):
+        """Test wait_for_tensors completes when send fails (event is set)."""
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
+
+        peer_name = "test_client"
+        task_id = "test_task_wait_fail"
+
+        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop("task_id", task_id)
+
+        # Simulate a failed send - this sets the event to wake waiting threads
+        try:
+            receiver._save_tensors_cb(False, mock_fl_context)
+        except ValueError:
+            pass  # Expected to raise
+
+        # Wait should complete immediately since event was set during failure
+        # But no tensors were stored
+        receiver.wait_for_tensors(task_id, peer_name, timeout=1.0)
+
+        # Verify no tensors were stored
+        assert task_id not in receiver.tensors
+
+    def test_wait_for_tensors_multiple_tasks(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
+        """Test wait_for_tensors works correctly with multiple concurrent tasks."""
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
+
+        # Setup two different tasks
+        peer_name = "test_client"
+        task_id_1 = "test_task_wait_multi_1"
+        task_id_2 = "test_task_wait_multi_2"
+
+        # Receive tensors for task 1
+        tensors_1 = {k: v for k, v in list(random_torch_tensors.items())[:5]}
+        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop(TensorCustomKeys.TASK_ID, task_id_1)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, tensors_1)
+        receiver._save_tensors_cb(True, mock_fl_context)
+
+        # Receive tensors for task 2
+        tensors_2 = {k: v for k, v in list(random_torch_tensors.items())[5:]}
+        mock_fl_context.set_custom_prop(TensorCustomKeys.TASK_ID, task_id_2)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, tensors_2)
+        receiver._save_tensors_cb(True, mock_fl_context)
+
+        # Wait should complete for both tasks
+        receiver.wait_for_tensors(task_id_1, peer_name, timeout=1.0)
+        receiver.wait_for_tensors(task_id_2, peer_name, timeout=1.0)
+
+        # Verify both tasks have tensors
+        assert task_id_1 in receiver.tensors
+        assert task_id_2 in receiver.tensors
+        assert receiver.tensors[task_id_1] == tensors_1
+        assert receiver.tensors[task_id_2] == tensors_2
