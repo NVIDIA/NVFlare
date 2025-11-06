@@ -13,6 +13,7 @@
 # limitations under the License.
 from model import get_model
 from trainer import get_dataset, get_training_arguments, preprocess
+from trl import SFTTrainer
 
 import nvflare.client as flare
 from nvflare.client.tracking import SummaryWriter
