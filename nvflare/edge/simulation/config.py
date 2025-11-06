@@ -118,6 +118,8 @@ class ConfigParser:
         self.get_job_timeout = n
 
         n = config.get("allow_self_signed", False)
+        if not isinstance(n, bool):
+            raise TypeError(f"allow_self_signed must be a bool, but got {type(n)}")
         self.allow_self_signed = n
 
     def _variable_substitution(self, args: Any, variables: dict) -> Any:
