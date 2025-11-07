@@ -155,8 +155,7 @@ class TestTensorClientStreamer:
         # Verify receiver.set_ctx_with_tensors was called
         mock_receiver.set_ctx_with_tensors.assert_called_once_with(mock_fl_context)
 
-    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
-    def test_handle_event_after_task_result_filter(self, mock_sender_class, mock_fl_context, mock_engine_with_clients):
+    def test_handle_event_after_task_result_filter(self, mock_fl_context, mock_engine_with_clients):
         """Test handling AFTER_TASK_RESULT_FILTER event."""
         streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"])
         streamer.engine = mock_engine_with_clients
@@ -165,18 +164,10 @@ class TestTensorClientStreamer:
         # Handle AFTER_TASK_RESULT_FILTER event
         streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
 
-        # Verify sender was created with correct parameters
-        mock_sender_class.assert_called_once_with(
-            mock_engine_with_clients, FLContextKey.TASK_RESULT, ExchangeFormat.PYTORCH, ["train"]
-        )
-
         # Verify send_tensors_to_server was called
         streamer.send_tensors_to_server.assert_called_once_with(mock_fl_context)
 
-    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
-    def test_handle_event_after_task_result_filter_exception(
-        self, mock_sender_class, mock_fl_context, mock_engine_with_clients
-    ):
+    def test_handle_event_after_task_result_filter_exception(self, mock_fl_context, mock_engine_with_clients):
         """Test handling AFTER_TASK_RESULT_FILTER event when send_tensors_to_server raises exception."""
         streamer = TensorClientStreamer()
         streamer.engine = mock_engine_with_clients
@@ -189,30 +180,43 @@ class TestTensorClientStreamer:
         # Verify system_panic was called
         streamer.system_panic.assert_called_once_with("Send failed", mock_fl_context)
 
-    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
     def test_handle_event_after_task_result_filter_sender_creation_exception(
-        self, mock_sender_class, mock_fl_context, mock_engine_with_clients
+        self, mock_fl_context, mock_engine_with_clients
     ):
         """Test handling AFTER_TASK_RESULT_FILTER event when TensorSender creation fails."""
         streamer = TensorClientStreamer()
         streamer.engine = mock_engine_with_clients
-        mock_sender_class.side_effect = Exception("Sender creation failed")
 
-        # Handle AFTER_TASK_RESULT_FILTER event - should raise exception since sender creation is not wrapped in try-catch
-        with pytest.raises(Exception, match="Sender creation failed"):
-            streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
+        # Mock send_tensors_to_server to raise exception during sender creation
+        streamer.send_tensors_to_server = Mock(side_effect=Exception("Sender creation failed"))
+        streamer.system_panic = Mock()
 
+        # Handle AFTER_TASK_RESULT_FILTER event
+        streamer.handle_event(EventType.AFTER_TASK_RESULT_FILTER, mock_fl_context)
+
+        # Verify system_panic was called
+        streamer.system_panic.assert_called_once_with("Sender creation failed", mock_fl_context)
+
+    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
     @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
-    def test_send_tensors_to_server_success(self, mock_clean_task_result, mock_fl_context):
+    def test_send_tensors_to_server_success(
+        self, mock_clean_task_result, mock_sender_class, mock_fl_context, mock_engine_with_clients
+    ):
         """Test successful tensor sending to server."""
-        streamer = TensorClientStreamer(tensor_send_timeout=7.0)
+        streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"], tensor_send_timeout=7.0)
+        streamer.engine = mock_engine_with_clients
 
         # Mock sender - send() should not raise ValueError for success
         mock_sender = Mock(spec=TensorSender)
-        streamer.sender = mock_sender
+        mock_sender_class.return_value = mock_sender
 
         # Send tensors
         streamer.send_tensors_to_server(mock_fl_context)
+
+        # Verify TensorSender was created with correct parameters
+        mock_sender_class.assert_called_once_with(
+            mock_engine_with_clients, FLContextKey.TASK_RESULT, ExchangeFormat.PYTORCH, ["train"]
+        )
 
         # Verify sender.store_tensors was called first
         mock_sender.store_tensors.assert_called_once_with(mock_fl_context)
@@ -328,37 +332,55 @@ class TestTensorClientStreamer:
         streamer.send_tensors_to_server.assert_not_called()
         mock_receiver.set_ctx_with_tensors.assert_not_called()
 
+    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
     @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
-    def test_send_tensors_with_cleanup(self, mock_clean_task_result, mock_fl_context):
+    def test_send_tensors_with_cleanup(
+        self, mock_clean_task_result, mock_sender_class, mock_fl_context, mock_engine_with_clients
+    ):
         """Test that send_tensors_to_server calls cleanup after successful send."""
         custom_timeout = 42.0
-        streamer = TensorClientStreamer(tensor_send_timeout=custom_timeout)
+        streamer = TensorClientStreamer(
+            format=ExchangeFormat.PYTORCH, tasks=["train"], tensor_send_timeout=custom_timeout
+        )
+        streamer.engine = mock_engine_with_clients
 
         # Mock sender for successful case (returns True)
         mock_sender = Mock(spec=TensorSender)
         mock_sender.send.return_value = True
         mock_sender.root_keys = []  # Add root_keys attribute that will be cleared
-        streamer.sender = mock_sender
+        mock_sender_class.return_value = mock_sender
 
         # Call send_tensors_to_server
         streamer.send_tensors_to_server(mock_fl_context)
+
+        # Verify TensorSender was created with correct parameters
+        mock_sender_class.assert_called_once_with(
+            mock_engine_with_clients, FLContextKey.TASK_RESULT, ExchangeFormat.PYTORCH, ["train"]
+        )
 
         # Verify sender was called with correct timeout and cleanup was called
         mock_sender.send.assert_called_once_with(mock_fl_context, custom_timeout)
         mock_clean_task_result.assert_called_once_with(mock_fl_context)
 
-    def test_send_tensors_exception_no_cleanup(self, mock_fl_context):
+    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
+    def test_send_tensors_exception_no_cleanup(self, mock_sender_class, mock_fl_context, mock_engine_with_clients):
         """Test that exceptions in sender.send prevent cleanup from being called."""
-        streamer = TensorClientStreamer()
+        streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"])
+        streamer.engine = mock_engine_with_clients
 
         # Mock sender to raise exception
         mock_sender = Mock(spec=TensorSender)
         mock_sender.send.side_effect = Exception("Send failed")
-        streamer.sender = mock_sender
+        mock_sender_class.return_value = mock_sender
 
         # Should raise exception and not call cleanup
         with pytest.raises(Exception, match="Send failed"):
             streamer.send_tensors_to_server(mock_fl_context)
+
+        # Verify TensorSender was created
+        mock_sender_class.assert_called_once_with(
+            mock_engine_with_clients, FLContextKey.TASK_RESULT, ExchangeFormat.PYTORCH, ["train"]
+        )
 
     def test_component_state_after_initialization(self, mock_fl_context, mock_engine_with_clients):
         """Test that components are properly set up after initialization."""
@@ -448,19 +470,28 @@ class TestTensorClientStreamer:
                 # Verify sender is created after receiver
                 assert call_order == ["receiver", "sender"]
 
+    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
     @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
-    def test_send_tensors_cleanup_not_called_when_sender_fails(self, mock_clean_task_result, mock_fl_context):
+    def test_send_tensors_cleanup_not_called_when_sender_fails(
+        self, mock_clean_task_result, mock_sender_class, mock_fl_context, mock_engine_with_clients
+    ):
         """Test that clean_task_result is not called when sender fails."""
-        streamer = TensorClientStreamer()
+        streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"])
+        streamer.engine = mock_engine_with_clients
 
         # Mock sender to raise exception
         mock_sender = Mock(spec=TensorSender)
         mock_sender.send.side_effect = Exception("Send failed")
-        streamer.sender = mock_sender
+        mock_sender_class.return_value = mock_sender
 
         # Should raise exception and not call cleanup
         with pytest.raises(Exception, match="Send failed"):
             streamer.send_tensors_to_server(mock_fl_context)
+
+        # Verify TensorSender was created
+        mock_sender_class.assert_called_once_with(
+            mock_engine_with_clients, FLContextKey.TASK_RESULT, ExchangeFormat.PYTORCH, ["train"]
+        )
 
         # Verify cleanup was not called due to exception
         mock_clean_task_result.assert_not_called()
@@ -509,18 +540,27 @@ class TestTensorClientStreamer:
                 assert mock_receiver_instance.set_ctx_with_tensors.called
                 assert mock_sender_instance.send.called
 
+    @patch("nvflare.app_opt.tensor_stream.client.TensorSender")
     @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
-    def test_send_tensors_to_server_no_cleanup_when_send_fails(self, mock_clean_task_result, mock_fl_context):
+    def test_send_tensors_to_server_no_cleanup_when_send_fails(
+        self, mock_clean_task_result, mock_sender_class, mock_fl_context, mock_engine_with_clients
+    ):
         """Test that cleanup is not called when sender.send raises ValueError."""
-        streamer = TensorClientStreamer(tensor_send_timeout=5.0)
+        streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"], tensor_send_timeout=5.0)
+        streamer.engine = mock_engine_with_clients
 
         # Mock sender to raise ValueError (unsuccessful send)
         mock_sender = Mock(spec=TensorSender)
         mock_sender.send.side_effect = ValueError("Send failed")
-        streamer.sender = mock_sender
+        mock_sender_class.return_value = mock_sender
 
         # Send tensors - ValueError is caught and passed
         streamer.send_tensors_to_server(mock_fl_context)
+
+        # Verify TensorSender was created
+        mock_sender_class.assert_called_once_with(
+            mock_engine_with_clients, FLContextKey.TASK_RESULT, ExchangeFormat.PYTORCH, ["train"]
+        )
 
         # Verify sender.store_tensors was called
         mock_sender.store_tensors.assert_called_once_with(mock_fl_context)

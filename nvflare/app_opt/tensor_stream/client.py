@@ -120,7 +120,6 @@ class TensorClientStreamer(FLComponent):
             except Exception as e:
                 self.system_panic(str(e), fl_ctx)
         elif event_type == EventType.AFTER_TASK_RESULT_FILTER:
-            self.sender = TensorSender(self.engine, FLContextKey.TASK_RESULT, self.format, self.tasks)
             try:
                 self.send_tensors_to_server(fl_ctx)
             except Exception as e:
@@ -145,6 +144,7 @@ class TensorClientStreamer(FLComponent):
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
         """
+        self.sender = TensorSender(self.engine, FLContextKey.TASK_RESULT, self.format, self.tasks)
         self.sender.store_tensors(fl_ctx)
         try:
             self.sender.send(fl_ctx, self.tensor_send_timeout)

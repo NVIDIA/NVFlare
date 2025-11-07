@@ -53,7 +53,7 @@ class TensorSender:
         self.logger = get_obj_logger(self)
 
     def store_tensors(self, fl_ctx: FLContext):
-        """ "Parse tensors from the FLContext and store them for sending.
+        """Parse tensors from the FLContext and store them for sending.
 
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
