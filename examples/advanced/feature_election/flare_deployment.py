@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from nvflare.app_opt.feature_election import FeatureElection, FeatureElectionExecutor
+from sklearn.datasets import make_classification
 
 
 def example_server_setup():
@@ -190,7 +191,6 @@ def example_apply_mask_to_new_data():
         
         # Simulate loading new data
         print("\nLoading new data for inference...")
-        from sklearn.datasets import make_classification
         X_new, y_new = make_classification(
             n_samples=200,
             n_features=len(global_mask),
