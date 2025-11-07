@@ -39,7 +39,6 @@ class TensorClientStreamer(FLComponent):
     Methods:
         initialize(fl_ctx): Initializes the TensorClientStreamer component.
         handle_event(event_type, fl_ctx): Handles events for the TensorSender component.
-        request_task_data_tensors(fl_ctx): Sends fed event to request tensors from the server.
         send_tensors_to_server(fl_ctx): Sends tensors to the server before sending the task result.
     """
 
@@ -47,8 +46,6 @@ class TensorClientStreamer(FLComponent):
         self,
         format: ExchangeFormat = ExchangeFormat.PYTORCH,
         tasks: list[str] = None,
-        enable_request_task_data_tensors: bool = False,
-        wait_for_task_data_tensors_timeout: float = 90.0,
         tensor_send_timeout=30.0,
     ):
         """Initialize the TensorClientStreamer component.
@@ -56,15 +53,11 @@ class TensorClientStreamer(FLComponent):
         Args:
             format (ExchangeFormat): The format of the tensors to send. Default is ExchangeFormat.TORCH.
             tasks (list[str]): The list of tasks to send tensors for. Default is None, which means the "train" task.
-            enable_request_task_data_tensors (bool): Whether to request task data tensors from the server. Default is False.
-            wait_for_task_data_tensors_timeout (float): Timeout for waiting for task data tensors from the server. Default is 90.0 seconds.
             tensor_send_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
         """
         super().__init__()
         self.format = format
         self.tasks = tasks if tasks is not None else ["train"]
-        self.enable_request_task_data_tensors = enable_request_task_data_tensors
-        self.wait_for_task_data_tensors_timeout = wait_for_task_data_tensors_timeout
         self.tensor_send_timeout = tensor_send_timeout
         self.engine: StreamableEngine = None
         self.sender: TensorSender = None
@@ -107,15 +100,7 @@ class TensorClientStreamer(FLComponent):
             task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
             peer_name = fl_ctx.get_peer_context().get_identity_name()
             try:
-                if self.enable_request_task_data_tensors:
-                    self.request_task_data_tensors(fl_ctx)
-                    # use longer timeout to wait for tensors from server
-                    # it may take time for server to send all tensors depending on the size and network condition
-                    self.receiver.wait_for_tensors(task_id, peer_name, self.wait_for_task_data_tensors_timeout)
-                else:
-                    # use default short timeout to wait for tensors, data should already received
-                    self.receiver.wait_for_tensors(task_id, peer_name)
-
+                self.receiver.wait_for_tensors(task_id, peer_name)
                 self.receiver.set_ctx_with_tensors(fl_ctx)
             except Exception as e:
                 self.system_panic(str(e), fl_ctx)
@@ -124,19 +109,6 @@ class TensorClientStreamer(FLComponent):
                 self.send_tensors_to_server(fl_ctx)
             except Exception as e:
                 self.system_panic(str(e), fl_ctx)
-
-    def request_task_data_tensors(self, fl_ctx: FLContext):
-        """Send fed event to request tensors from the server.
-
-        Args:
-            fl_ctx (FLContext): The FLContext for the current operation.
-        """
-        peer_name = fl_ctx.get_peer_context().get_identity_name()
-        task_id = fl_ctx.get_prop(FLContextKey.TASK_ID)
-        event_data = Shareable()
-        event_data["task_id"] = task_id
-        self.log_debug(fl_ctx, f"Requesting tensors from server '{peer_name}'. Task ID: '{task_id}'")
-        self.fire_fed_event(TensorEventTypes.SEND_TENSORS_FOR_TASK_DATA, event_data, fl_ctx)
 
     def send_tensors_to_server(self, fl_ctx: FLContext):
         """Sends tensors to the server before sending the task result.
