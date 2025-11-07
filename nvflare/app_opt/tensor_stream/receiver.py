@@ -190,7 +190,7 @@ class TensorReceiver:
             event = self.tensor_events[task_id]
 
         # Wait for the event with timeout
-        remaining_timeout = timeout - (time.time() - start_wait)
+        remaining_timeout = max(0, timeout - (time.time() - start_wait))
         if not event.wait(timeout=remaining_timeout):
             raise TimeoutError(f"No tensors received from peer '{peer_name}'. Task ID: '{task_id}'.")
 
