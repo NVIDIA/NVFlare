@@ -49,7 +49,10 @@ def main():
 
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
-            meta={"ROUND": input_model.current_round},
+            meta={
+                "ROUND": input_model.current_round,
+                "NUM_STEPS_CURRENT_ROUND": training_args.num_train_epochs,
+            },
         )
         print(f"site={client_name}, sending model to server.")
         flare.send(output_model)
