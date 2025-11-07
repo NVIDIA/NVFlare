@@ -35,7 +35,7 @@ class TensorReceiver:
         self,
         engine: StreamableEngine,
         ctx_prop_key: str,
-        format: ExchangeFormat = ExchangeFormat.PYTORCH,
+        format: str = ExchangeFormat.PYTORCH,
         channel: str = TENSORS_CHANNEL,
     ):
         """Initialize the TensorReceiver.
@@ -43,7 +43,7 @@ class TensorReceiver:
         Args:
             engine (StreamableEngine): The streamable engine to use for streaming.
             ctx_prop_key (str): The context property key to receive tensors for.
-            format (ExchangeFormat): The format of the tensors to receive. Default is ExchangeFormat.PYTORCH.
+            format (str): The format of the tensors to receive. Default is ExchangeFormat.PYTORCH.
             channel (str): The channel to use for streaming. Default is TENSORS_CHANNEL.
         """
         super().__init__()

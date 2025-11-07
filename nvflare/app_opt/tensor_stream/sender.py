@@ -32,7 +32,7 @@ class TensorSender:
         self,
         engine: StreamableEngine,
         ctx_prop_key: str,
-        format: ExchangeFormat,
+        format: str,
         tasks: list[str],
         channel: str = TENSORS_CHANNEL,
     ):
@@ -40,6 +40,8 @@ class TensorSender:
 
         Args:
             engine (StreamableEngine): The streamable engine to use for streaming.
+            format (str): The format of the tensors to send.
+            tasks (list[str]): The list of tasks to send tensors for.
             ctx_prop_key (str): The context property key to send tensors for.
             channel (str): The channel to use for streaming. Default is TENSORS_CHANNEL.
         """

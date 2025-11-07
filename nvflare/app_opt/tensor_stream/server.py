@@ -57,7 +57,7 @@ class TensorServerStreamer(FLComponent):
 
     def __init__(
         self,
-        format: ExchangeFormat = ExchangeFormat.PYTORCH,
+        format: str = ExchangeFormat.PYTORCH,
         tasks: list[str] = None,
         tensor_send_timeout: float = 30.0,
         wait_send_task_data_all_clients_timeout: float = 300.0,
@@ -65,7 +65,7 @@ class TensorServerStreamer(FLComponent):
         """Initialize the TensorServerStreamer component.
 
         Args:
-            format (ExchangeFormat): The format of the tensors to send/receive. Default is ExchangeFormat.TORCH.
+            format (str): The format of the tensors to send/receive. Default is ExchangeFormat.TORCH.
             tasks (list[str]): The list of tasks to send tensors for. Default is None, which means the "train" task.
             tensor_send_timeout (float): Timeout for tensor entry transfer operations. Default is 10.0 seconds.
             wait_all_clients_timeout (float): Timeout for sending tensors to all clients. Default is 120.0 seconds.
