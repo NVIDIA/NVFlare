@@ -111,7 +111,7 @@ class TestTensorReceiver:
         assert receiver.tensors[task_id] == random_torch_tensors
 
     def test_save_tensors_cb_failure(self, mock_streamable_engine, mock_fl_context):
-        """Test _save_tensors_cb with failed tensor reception."""
+        """Test _save_tensors_cb with failed tensor reception stores error and sets event."""
         receiver = TensorReceiver(
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
         )
@@ -121,9 +121,8 @@ class TestTensorReceiver:
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
         mock_fl_context.set_custom_prop("task_id", task_id)
 
-        # Call the callback with success=False - should raise ValueError
-        with pytest.raises(ValueError, match=f"Failed to receive tensors from peer '{peer_name}' and task '{task_id}'"):
-            receiver._save_tensors_cb(False, mock_fl_context)
+        # Call the callback with success=False - should NOT raise but store error
+        receiver._save_tensors_cb(False, mock_fl_context)
 
         # Verify no tensors were stored
         assert task_id not in receiver.tensors
@@ -132,6 +131,44 @@ class TestTensorReceiver:
         # Verify event was created and set (to wake waiting threads)
         assert task_id in receiver.tensor_events
         assert receiver.tensor_events[task_id].is_set()
+
+        # Verify error was stored for later retrieval
+        assert task_id in receiver.error_events
+        stored_error = receiver.error_events[task_id]
+        assert isinstance(stored_error, ValueError)
+        assert f"Failed to receive tensors from peer '{peer_name}' and task '{task_id}'" in str(stored_error)
+
+    def test_save_tensors_cb_failure_does_not_access_tensors(self, mock_streamable_engine, mock_fl_context):
+        """Test that _save_tensors_cb returns early on failure without accessing tensor data."""
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
+
+        peer_name = "test_client"
+        task_id = "test_task_early_return"
+        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop("task_id", task_id)
+
+        # Create a sentinel value to track if SAFE_TENSORS_PROP_KEY is accessed
+        tensor_key_accessed = False
+        original_get_custom_prop = mock_fl_context.get_custom_prop
+
+        def track_get_custom_prop(key):
+            nonlocal tensor_key_accessed
+            if key == TensorCustomKeys.SAFE_TENSORS_PROP_KEY:
+                tensor_key_accessed = True
+            return original_get_custom_prop(key)
+
+        mock_fl_context.get_custom_prop = track_get_custom_prop
+
+        # Call with success=False - should return early without checking for tensors
+        receiver._save_tensors_cb(False, mock_fl_context)
+
+        # Verify SAFE_TENSORS_PROP_KEY was not accessed
+        assert not tensor_key_accessed, "SAFE_TENSORS_PROP_KEY should not be accessed on failure"
+
+        # Verify error was stored
+        assert task_id in receiver.error_events
 
     def test_save_tensors_cb_no_tensors(self, mock_streamable_engine, mock_fl_context):
         """Test _save_tensors_cb when no tensors are found in context."""
@@ -572,7 +609,7 @@ class TestTensorReceiver:
             receiver.wait_for_tensors(task_id, peer_name, timeout=0.1)
 
     def test_wait_for_tensors_with_failed_send(self, mock_streamable_engine, mock_fl_context):
-        """Test wait_for_tensors completes when send fails (event is set)."""
+        """Test wait_for_tensors raises error when stream reception fails."""
         receiver = TensorReceiver(
             engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
         )
@@ -583,18 +620,17 @@ class TestTensorReceiver:
         mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
         mock_fl_context.set_custom_prop("task_id", task_id)
 
-        # Simulate a failed send - this sets the event to wake waiting threads
-        try:
-            receiver._save_tensors_cb(False, mock_fl_context)
-        except ValueError:
-            pass  # Expected to raise
+        # Simulate a failed send - this stores error and sets the event
+        receiver._save_tensors_cb(False, mock_fl_context)
 
-        # Wait should complete immediately since event was set during failure
-        # But no tensors were stored
-        receiver.wait_for_tensors(task_id, peer_name, timeout=1.0)
+        # Wait should complete immediately but raise the stored error
+        with pytest.raises(ValueError, match=f"Failed to receive tensors from peer '{peer_name}' and task '{task_id}'"):
+            receiver.wait_for_tensors(task_id, peer_name, timeout=1.0)
 
         # Verify no tensors were stored
         assert task_id not in receiver.tensors
+        # Verify error was removed after being raised
+        assert task_id not in receiver.error_events
 
     def test_wait_for_tensors_multiple_tasks(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
         """Test wait_for_tensors works correctly with multiple concurrent tasks."""
@@ -629,3 +665,119 @@ class TestTensorReceiver:
         assert task_id_2 in receiver.tensors
         assert receiver.tensors[task_id_1] == tensors_1
         assert receiver.tensors[task_id_2] == tensors_2
+
+    def test_error_propagation_workflow(self, mock_streamable_engine, mock_fl_context):
+        """Test complete workflow of error storage and propagation from callback to wait_for_tensors."""
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
+
+        peer_name = "test_client"
+        task_id = "test_task_error_workflow"
+
+        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop("task_id", task_id)
+
+        # Step 1: Simulate streaming failure via callback
+        receiver._save_tensors_cb(False, mock_fl_context)
+
+        # Step 2: Verify error was stored and event was set
+        assert task_id in receiver.error_events
+        assert task_id in receiver.tensor_events
+        assert receiver.tensor_events[task_id].is_set()
+
+        # Step 3: wait_for_tensors should raise the stored error
+        with pytest.raises(ValueError, match=f"Failed to receive tensors from peer '{peer_name}' and task '{task_id}'"):
+            receiver.wait_for_tensors(task_id, peer_name, timeout=1.0)
+
+        # Step 4: Verify error was cleaned up after being raised
+        assert task_id not in receiver.error_events
+
+    def test_multiple_tasks_one_fails(self, mock_streamable_engine, mock_fl_context, random_torch_tensors):
+        """Test that failure of one task doesn't affect other tasks."""
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
+
+        peer_name = "test_client"
+        task_id_success = "test_task_success"
+        task_id_failure = "test_task_failure"
+
+        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+
+        # Task 1: Success
+        mock_fl_context.set_custom_prop("task_id", task_id_success)
+        mock_fl_context.set_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY, random_torch_tensors)
+        receiver._save_tensors_cb(True, mock_fl_context)
+
+        # Task 2: Failure
+        mock_fl_context.set_custom_prop("task_id", task_id_failure)
+        receiver._save_tensors_cb(False, mock_fl_context)
+
+        # Verify success task has tensors
+        assert task_id_success in receiver.tensors
+        receiver.wait_for_tensors(task_id_success, peer_name, timeout=1.0)
+
+        # Verify failure task raises error
+        assert task_id_failure not in receiver.tensors
+        with pytest.raises(
+            ValueError, match=f"Failed to receive tensors from peer '{peer_name}' and task '{task_id_failure}'"
+        ):
+            receiver.wait_for_tensors(task_id_failure, peer_name, timeout=1.0)
+
+    def test_save_tensors_cb_failure_no_custom_prop_cleanup(self, mock_streamable_engine, mock_fl_context):
+        """Test that custom properties are NOT cleared when success=False (early return)."""
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
+
+        peer_name = "test_client"
+        task_id = "test_task_no_cleanup"
+        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop("task_id", task_id)
+
+        # Track if set_custom_prop is called to clear properties (should not happen on failure)
+        cleanup_called = False
+        original_set_custom_prop = mock_fl_context.set_custom_prop
+        initial_call_count = 0
+
+        def track_set_custom_prop(key, value):
+            nonlocal cleanup_called, initial_call_count
+            original_set_custom_prop(key, value)
+            if key in (TensorCustomKeys.SAFE_TENSORS_PROP_KEY, TensorCustomKeys.TASK_ID) and value is None:
+                cleanup_called = True
+            initial_call_count += 1
+
+        # Reset mock to track new calls
+        mock_fl_context.set_custom_prop = track_set_custom_prop
+        initial_call_count = 0  # Reset after setup
+
+        # Call with success=False
+        receiver._save_tensors_cb(False, mock_fl_context)
+
+        # Verify set_custom_prop was NOT called to clear properties
+        assert not cleanup_called, "Custom properties should not be cleared on failure"
+
+    def test_event_creation_on_first_failure(self, mock_streamable_engine, mock_fl_context):
+        """Test that tensor event is created on first callback even when it fails."""
+        receiver = TensorReceiver(
+            engine=mock_streamable_engine, ctx_prop_key=FLContextKey.TASK_DATA, format=ExchangeFormat.PYTORCH
+        )
+
+        peer_name = "test_client"
+        task_id = "test_task_event_creation"
+        mock_fl_context.get_peer_context().get_identity_name.return_value = peer_name
+        mock_fl_context.set_custom_prop("task_id", task_id)
+
+        # Verify event doesn't exist yet
+        assert task_id not in receiver.tensor_events
+
+        # Call with success=False
+        receiver._save_tensors_cb(False, mock_fl_context)
+
+        # Verify event was created and set
+        assert task_id in receiver.tensor_events
+        assert receiver.tensor_events[task_id].is_set()
+
+        # Verify error was stored
+        assert task_id in receiver.error_events

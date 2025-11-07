@@ -54,6 +54,7 @@ class TensorReceiver:
         # key: task_id, value: tensors received from the peer
         self.tensors: dict[str, TensorsMap] = {}
         self.tensor_events = {}  # Maps task_id to Event objects
+        self.error_events = {}  # Maps task_id to error messages
         self.lock = threading.Lock()
         self.logger = get_obj_logger(self)
         self._register()
@@ -90,8 +91,10 @@ class TensorReceiver:
 
         if not success:
             with self.lock:
+                exc = ValueError(f"Failed to receive tensors from peer '{peer_name}' and task '{task_id}'.")
+                self.error_events[task_id] = exc
                 self.tensor_events[task_id].set()  # Wake waiting threads
-            raise ValueError(f"Failed to receive tensors from peer '{peer_name}' and task '{task_id}'.")
+            return  # Early return to prevent further processing
 
         tensors = fl_ctx.get_custom_prop(TensorCustomKeys.SAFE_TENSORS_PROP_KEY)
         if not tensors:
@@ -193,6 +196,11 @@ class TensorReceiver:
         remaining_timeout = max(0, timeout - (time.time() - start_wait))
         if not event.wait(timeout=remaining_timeout):
             raise TimeoutError(f"No tensors received from peer '{peer_name}'. Task ID: '{task_id}'.")
+        else:
+            with self.lock:
+                if task_id in self.error_events:
+                    exc = self.error_events.pop(task_id)
+                    raise exc
 
     def on_tensor_received(self, task_id: str, tensor: TensorsMap):
         """Callback when tensors are received.

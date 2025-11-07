@@ -166,7 +166,7 @@ The `TensorClientStreamer` is responsible for managing tensor streaming on the c
   - When set to `None`, defaults to `["train"]`.
   - Useful for specifying different tasks like `["train", "validate"]` if you want streaming for multiple task types.
 
-- **`entry_timeout`** (`float`, default: `30.0`)
+- **`tensor_send_timeout`** (`float`, default: `30.0`)
   - Timeout in seconds for individual tensor entry transfer operations when sending results to the server.
   - Controls how long to wait for each chunk of tensor data to be transferred.
   - May need to be increased for very large tensors or slow network connections.
@@ -185,7 +185,7 @@ client_streamer = TensorClientStreamer()
 client_streamer = TensorClientStreamer(
     format=ExchangeFormat.PYTORCH,
     tasks=["train", "validate"],
-    entry_timeout=60.0,  # Increase timeout for large models
+    tensor_send_timeout=60.0,  # Increase timeout for large models
 )
 ```
 
@@ -207,7 +207,7 @@ The `TensorServerStreamer` manages tensor streaming on the server side. It sends
   - When set to `None`, defaults to `["train"]`.
   - Should match the tasks configured in `TensorClientStreamer`.
 
-- **`entry_timeout`** (`float`, default: `30.0`)
+- **`tensor_send_timeout`** (`float`, default: `30.0`)
   - Timeout in seconds for individual tensor entry transfer operations when sending to clients.
   - Controls how long to wait for each chunk of tensor data to be transferred.
   - Should be tuned based on model size and network bandwidth.
@@ -232,14 +232,14 @@ server_streamer = TensorServerStreamer()
 # With custom timeouts for large-scale deployments
 server_streamer = TensorServerStreamer(
     format=ExchangeFormat.PYTORCH,
-    entry_timeout=60.0,
+    tensor_send_timeout=60.0,
     wait_send_task_data_all_clients_timeout=600.0  # 10 minutes for many clients
 )
 
 # For multiple task types
 server_streamer = TensorServerStreamer(
     tasks=["train", "validate"],
-    entry_timeout=45.0
+    tensor_send_timeout=45.0
 )
 ```
 
@@ -251,9 +251,9 @@ Choose timeout values based on your deployment scenario:
 
 **Small models (< 100MB), fast network:**
 ```python
-client_streamer = TensorClientStreamer(entry_timeout=30.0)
+client_streamer = TensorClientStreamer(tensor_send_timeout=30.0)
 server_streamer = TensorServerStreamer(
-    entry_timeout=30.0,
+    tensor_send_timeout=30.0,
     wait_send_task_data_all_clients_timeout=300.0
 )
 ```
@@ -261,11 +261,10 @@ server_streamer = TensorServerStreamer(
 **Large models (> 1GB), moderate network:**
 ```python
 client_streamer = TensorClientStreamer(
-    entry_timeout=90.0,
-    wait_for_task_data_tensors_timeout=180.0
+    tensor_send_timeout=90.0
 )
 server_streamer = TensorServerStreamer(
-    entry_timeout=90.0,
+    tensor_send_timeout=90.0,
     wait_send_task_data_all_clients_timeout=900.0  # 15 minutes
 )
 ```
@@ -273,11 +272,10 @@ server_streamer = TensorServerStreamer(
 **Very large models (> 10GB), many clients:**
 ```python
 client_streamer = TensorClientStreamer(
-    entry_timeout=120.0,
-    wait_for_task_data_tensors_timeout=300.0
+    tensor_send_timeout=120.0
 )
 server_streamer = TensorServerStreamer(
-    entry_timeout=120.0,
+    tensor_send_timeout=120.0,
     wait_send_task_data_all_clients_timeout=1800.0  # 30 minutes
 )
 ```
