@@ -169,6 +169,12 @@ class TensorReceiver:
     def wait_for_tensors(self, task_id: str, peer_name: str, timeout: float = 5.0):
         """Wait for tensors to be received for a specific task ID.
 
+        Tensors are always sent before the task data and results to ensure they arrive before any related events are handled.
+        However, the consumer may still be processing the final tensor chunk when the task data or result is received.
+        This processing usually finishes within a few milliseconds, but in some cases,
+        the client or server might receive the task before the tensors are fully available.
+        To handle this safely, a default timeout of 5 seconds is applied.
+
         Args:
             task_id (str): The task ID to wait for.
             peer_name (str): The peer name associated with the task.
