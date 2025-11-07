@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Iterator, List, Optional, Tuple, Union
+from typing import Iterator, Optional, Union
 
 import numpy as np
 import torch
@@ -141,10 +141,10 @@ def get_dxo_from_ctx(fl_ctx: FLContext, ctx_prop_key: str, tasks: list[str]) -> 
 
 
 def chunk_tensors_from_params(
-    params: Dict[str, Union[torch.Tensor, dict]],
-    parent_keys: Optional[List[str]] = None,
+    params: dict[str, Union[torch.Tensor, dict]],
+    parent_keys: Optional[list[str]] = None,
     chunk_size: Optional[int] = 10,
-) -> Iterator[Tuple[Tuple[str], Dict[str, torch.Tensor]]]:
+) -> Iterator[tuple[tuple[str], dict[str, torch.Tensor]]]:
     """
     Generator that yields tensors grouped by their immediate parent dictionary keys.
 
@@ -161,7 +161,9 @@ def chunk_tensors_from_params(
     if chunk_size is not None and chunk_size <= 0:
         raise ValueError("chunk_size must be a positive integer or None")
 
-    if parent_keys is None:
+    if parent_keys:
+        parent_keys = list(parent_keys)
+    else:
         parent_keys = []
 
     tensors = {}
@@ -175,7 +177,7 @@ def chunk_tensors_from_params(
 
     if tensors:
         if chunk_size is None or chunk_size >= len(tensors):
-            yield parent_keys, tensors
+            yield tuple(parent_keys), tensors
         else:
             keys = list(tensors.keys())
             for i in range(0, len(keys), chunk_size):
@@ -185,7 +187,7 @@ def chunk_tensors_from_params(
 
 
 def update_params_with_tensors(
-    params: Dict, parents: List[str], tensors: Dict[str, torch.Tensor], to_ndarray: bool = False
+    params: dict, parents: list[str], tensors: dict[str, torch.Tensor], to_ndarray: bool = False
 ) -> None:
     """
     Updates the nested dictionary `params` at the location specified by
@@ -215,10 +217,10 @@ def update_params_with_tensors(
 
 
 def merge_params_dicts(
-    base_params: Dict[str, dict],
-    new_params: Dict[str, dict],
+    base_params: dict[str, dict],
+    new_params: dict[str, dict],
     to_ndarray: bool = False,
-) -> Dict[str, dict]:
+) -> dict[str, dict]:
     """
     Merges two nested dictionaries of parameters.
 
@@ -240,7 +242,7 @@ def merge_params_dicts(
     return base_params
 
 
-def copy_non_tensor_params(params: Dict[str, dict]) -> Dict[str, dict]:
+def copy_non_tensor_params(params: dict[str, dict]) -> dict[str, dict]:
     """Recursively copy non-tensor parameters in the given dictionary.
 
     Args:

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import torch
 from safetensors.torch import save as save_tensors
@@ -71,7 +71,7 @@ class TensorProducer(ObjectProducer):
         self,
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
-    ) -> Tuple[Shareable, float]:
+    ) -> tuple[Shareable, float]:
         """Produce the next chunk of tensors to be sent.
 
         It serializes and return the next tensor using safetensors and prepares them for sending.
@@ -79,7 +79,7 @@ class TensorProducer(ObjectProducer):
             stream_ctx (StreamContext): The stream context for the current operation.
             fl_ctx (FLContext): The FL context for the current operation.
         Returns:
-            Tuple[Shareable, float]: A tuple containing the shareable object with the tensor data
+            tuple[Shareable, float]: A tuple containing the shareable object with the tensor data
             and the timeout for the entry.
         Raises:
             Warning: If no tensors are found in the FLContext.
@@ -117,14 +117,14 @@ class TensorProducer(ObjectProducer):
 
     def process_replies(
         self,
-        replies: Dict[str, Shareable],
+        replies: dict[str, Shareable],
         stream_ctx: StreamContext,
         fl_ctx: FLContext,
     ) -> Any:
         """Process replies from peers after sending tensors.
 
         Args:
-            replies (Dict[str, Shareable]): A dictionary of replies from peers.
+            replies (dict[str, Shareable]): A dictionary of replies from peers.
             stream_ctx (StreamContext): The stream context for the current operation. (not used)
             fl_ctx (FLContext): The FL context for the current operation. (not used)
 
