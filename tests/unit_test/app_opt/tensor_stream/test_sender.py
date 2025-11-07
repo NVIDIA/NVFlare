@@ -118,8 +118,8 @@ class TestTensorSender:
         assert sender.task_params[task_id] == sample_dxo.data
 
         # Step 2: Send tensors
-        entry_timeout = 5.0
-        sender.send(mock_fl_context, entry_timeout)
+        tensor_send_timeout = 5.0
+        sender.send(mock_fl_context, tensor_send_timeout)
 
         # Verify utility functions were called
         mock_get_dxo.assert_called_once_with(mock_fl_context, ctx_prop_key, tasks)
@@ -141,7 +141,7 @@ class TestTensorSender:
         # Verify producer
         producer = call_args.kwargs["producer"]
         assert producer.__class__.__name__ == "TensorProducer"
-        assert producer.entry_timeout == entry_timeout
+        assert producer.tensor_send_timeout == tensor_send_timeout
 
         # Verify tensors were removed after sending
         assert task_id not in sender.task_params
@@ -189,7 +189,7 @@ class TestTensorSender:
 
         # Try to send without storing first - should raise ValueError
         with pytest.raises(ValueError, match="No tensors stored for peer"):
-            sender.send(mock_fl_context, entry_timeout=1.0)
+            sender.send(mock_fl_context, tensor_send_timeout=1.0)
 
     @pytest.mark.parametrize(
         "channel,expected_channel,targets",
@@ -238,7 +238,7 @@ class TestTensorSender:
         sender.store_tensors(mock_fl_context)
 
         # Step 2: Send tensors
-        sender.send(mock_fl_context, entry_timeout=1.0)
+        sender.send(mock_fl_context, tensor_send_timeout=1.0)
 
         # Verify correct channel and targets were used
         call_args = mock_streamable_engine.stream_objects.call_args
@@ -294,7 +294,7 @@ class TestTensorSender:
         assert len(sender.task_params[task_id]) == expected_tensor_count
 
         # Step 2: Send tensors
-        sender.send(mock_fl_context, entry_timeout=3.0)
+        sender.send(mock_fl_context, tensor_send_timeout=3.0)
 
         # Verify stream_objects was called once (sends all params as one producer)
         assert mock_streamable_engine.stream_objects.call_count == 1

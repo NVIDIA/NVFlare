@@ -77,13 +77,13 @@ class TensorSender:
     def send(
         self,
         fl_ctx: FLContext,
-        entry_timeout: float,
+        tensor_send_timeout: float,
     ) -> None:
         """Send tensors to the peer.
 
         Args:
             fl_ctx (FLContext): The FLContext for the current operation.
-            entry_timeout (float): Timeout for each tensor entry transfer.
+            tensor_send_timeout (float): Timeout for each tensor entry transfer.
         """
         peer_name = fl_ctx.get_peer_context().get_identity_name()
         task_id = fl_ctx.get_prop(FLContextKey.TASK_ID, None)
@@ -97,7 +97,7 @@ class TensorSender:
         if not params:
             raise ValueError(f"No tensors stored for peer '{peer_name}'. Task ID: '{task_id}'.")
 
-        producer = TensorProducer(params, task_id, entry_timeout)
+        producer = TensorProducer(params, task_id, tensor_send_timeout)
         msg = f"Starting to send tensors to peer '{peer_name}'."
         msg += f" Task ID: '{task_id}'."
         self.logger.info(msg)

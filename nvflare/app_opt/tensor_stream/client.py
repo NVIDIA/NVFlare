@@ -49,7 +49,7 @@ class TensorClientStreamer(FLComponent):
         tasks: list[str] = None,
         enable_request_task_data_tensors: bool = False,
         wait_for_task_data_tensors_timeout: float = 90.0,
-        entry_timeout=30.0,
+        tensor_send_timeout=30.0,
     ):
         """Initialize the TensorClientStreamer component.
 
@@ -58,14 +58,14 @@ class TensorClientStreamer(FLComponent):
             tasks (list[str]): The list of tasks to send tensors for. Default is None, which means the "train" task.
             enable_request_task_data_tensors (bool): Whether to request task data tensors from the server. Default is False.
             wait_for_task_data_tensors_timeout (float): Timeout for waiting for task data tensors from the server. Default is 90.0 seconds.
-            entry_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
+            tensor_send_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
         """
         super().__init__()
         self.format = format
         self.tasks = tasks if tasks is not None else ["train"]
         self.enable_request_task_data_tensors = enable_request_task_data_tensors
         self.wait_for_task_data_tensors_timeout = wait_for_task_data_tensors_timeout
-        self.entry_timeout = entry_timeout
+        self.tensor_send_timeout = tensor_send_timeout
         self.engine: StreamableEngine = None
         self.sender: TensorSender = None
         self.receiver: TensorReceiver = None
@@ -147,7 +147,7 @@ class TensorClientStreamer(FLComponent):
         """
         self.sender.store_tensors(fl_ctx)
         try:
-            self.sender.send(fl_ctx, self.entry_timeout)
+            self.sender.send(fl_ctx, self.tensor_send_timeout)
         except ValueError as e:
             self.log_warning(fl_ctx, f"No tensors to send to server: {str(e)}")
         else:

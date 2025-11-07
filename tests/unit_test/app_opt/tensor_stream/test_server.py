@@ -29,25 +29,25 @@ class TestTensorServerStreamer:
     """Test cases for TensorServerStreamer class."""
 
     @pytest.mark.parametrize(
-        "format_type,tasks,entry_timeout,wait_all_clients_timeout,expected_tasks",
+        "format_type,tasks,tensor_send_timeout,wait_all_clients_timeout,expected_tasks",
         [
             (ExchangeFormat.PYTORCH, None, 30.0, 300.0, ["train"]),  # Default values
             (ExchangeFormat.NUMPY, ["custom_train"], 10.0, 120.0, ["custom_train"]),  # Custom values
             (ExchangeFormat.PYTORCH, ["train", "validate"], 45.0, 600.0, ["train", "validate"]),  # Multiple tasks
         ],
     )
-    def test_init_parameters(self, format_type, tasks, entry_timeout, wait_all_clients_timeout, expected_tasks):
+    def test_init_parameters(self, format_type, tasks, tensor_send_timeout, wait_all_clients_timeout, expected_tasks):
         """Test TensorServerStreamer initialization with various parameters."""
         streamer = TensorServerStreamer(
             format=format_type,
             tasks=tasks,
-            entry_timeout=entry_timeout,
+            tensor_send_timeout=tensor_send_timeout,
             wait_send_task_data_all_clients_timeout=wait_all_clients_timeout,
         )
 
         assert streamer.format == format_type
         assert streamer.tasks == expected_tasks
-        assert streamer.entry_timeout == entry_timeout
+        assert streamer.tensor_send_timeout == tensor_send_timeout
         assert streamer.wait_task_data_sent_to_all_clients_timeout == wait_all_clients_timeout
         # All components should be None before initialization
         assert streamer.engine is None
@@ -266,7 +266,7 @@ class TestTensorServerStreamer:
         current_round = 1
         mock_fl_context.get_prop.return_value = current_round
 
-        streamer = TensorServerStreamer(entry_timeout=5.0)
+        streamer = TensorServerStreamer(tensor_send_timeout=5.0)
         streamer.engine = mock_engine_with_clients
 
         # Mock sender
@@ -451,7 +451,7 @@ class TestTensorServerStreamer:
         mock_receiver_class.return_value = mock_receiver_instance
 
         # Create streamer
-        streamer = TensorServerStreamer(format=ExchangeFormat.PYTORCH, entry_timeout=10.0)
+        streamer = TensorServerStreamer(format=ExchangeFormat.PYTORCH, tensor_send_timeout=10.0)
 
         # Step 1: Handle START_RUN event (initialization)
         streamer.handle_event(EventType.START_RUN, mock_fl_context)

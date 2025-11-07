@@ -43,20 +43,20 @@ class TensorProducer(ObjectProducer):
         process_replies(replies, stream_ctx, fl_ctx): Processes replies from peers after sending tensors.
     """
 
-    def __init__(self, tensors: dict[str, torch.Tensor], task_id: str, entry_timeout: float):
+    def __init__(self, tensors: dict[str, torch.Tensor], task_id: str, tensor_send_timeout: float):
         """Initialize the TensorProducer.
 
         Args:
             tensors (dict): A dictionary of tensors to be sent.
             task_id (str): The task ID associated with the tensors.
-            entry_timeout (float): The timeout for each entry in the stream.
+            tensor_send_timeout (float): The timeout for each chunk of tensors to be sent over the stream.
         Raises:
             ValueError: If no tensors are provided.
         """
         if tensors is None:
             raise ValueError("No tensors received for serialization.")
         self.task_id = task_id
-        self.entry_timeout = entry_timeout
+        self.tensor_send_timeout = tensor_send_timeout
         self.last = False
         self.total_bytes = 0
         self.num_tensors = 0
@@ -88,12 +88,12 @@ class TensorProducer(ObjectProducer):
         try:
             parent_keys, tensors = next(self.chunks_generator, (None, None))
         except StopIteration:
-            return None, self.entry_timeout
+            return None, self.tensor_send_timeout
         else:
             if tensors is None:
                 self.last = True
                 self.log_completion(fl_ctx)
-                return None, self.entry_timeout
+                return None, self.tensor_send_timeout
 
             tensors_blob = save_tensors(tensors)
             data[TensorBlobKeys.SAFETENSORS_BLOB] = tensors_blob
@@ -103,7 +103,7 @@ class TensorProducer(ObjectProducer):
             self.total_bytes += len(tensors_blob)
             self.num_tensors += len(tensors)
 
-        return data, self.entry_timeout
+        return data, self.tensor_send_timeout
 
     def log_completion(self, fl_ctx: FLContext):
         peer_name = fl_ctx.get_peer_context().get_identity_name()

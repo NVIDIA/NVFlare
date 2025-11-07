@@ -277,7 +277,7 @@ class TestTorchTensorsConsumer:
         # Producer expects nested tensors with parent keys, so we nest them
         original_tensors = {"model_weights": random_torch_tensors.copy()}
         task_id = "test_task_123"
-        producer = TensorProducer(tensors=original_tensors, task_id=task_id, entry_timeout=5.0)
+        producer = TensorProducer(tensors=original_tensors, task_id=task_id, tensor_send_timeout=5.0)
 
         # Create consumer
         consumer = TensorConsumer(mock_stream_context, mock_fl_context)

@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,20 +28,20 @@ class TestTensorClientStreamer:
     """Test cases for TensorClientStreamer class."""
 
     @pytest.mark.parametrize(
-        "format_type,tasks,entry_timeout,expected_tasks",
+        "format_type,tasks,tensor_send_timeout,expected_tasks",
         [
             (ExchangeFormat.PYTORCH, None, 30.0, ["train"]),  # Default values
             (ExchangeFormat.NUMPY, ["custom_task"], 15.0, ["custom_task"]),  # Custom values
             (ExchangeFormat.PYTORCH, ["train", "eval"], 45.0, ["train", "eval"]),  # Multiple tasks
         ],
     )
-    def test_init_parameters(self, format_type, tasks, entry_timeout, expected_tasks):
+    def test_init_parameters(self, format_type, tasks, tensor_send_timeout, expected_tasks):
         """Test TensorClientStreamer initialization with various parameters."""
-        streamer = TensorClientStreamer(format=format_type, tasks=tasks, entry_timeout=entry_timeout)
+        streamer = TensorClientStreamer(format=format_type, tasks=tasks, tensor_send_timeout=tensor_send_timeout)
 
         assert streamer.format == format_type
         assert streamer.tasks == expected_tasks
-        assert streamer.entry_timeout == entry_timeout
+        assert streamer.tensor_send_timeout == tensor_send_timeout
         # All components should be None before initialization
         assert streamer.engine is None
         assert streamer.sender is None
@@ -205,7 +205,7 @@ class TestTensorClientStreamer:
     @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
     def test_send_tensors_to_server_success(self, mock_clean_task_result, mock_fl_context):
         """Test successful tensor sending to server."""
-        streamer = TensorClientStreamer(entry_timeout=7.0)
+        streamer = TensorClientStreamer(tensor_send_timeout=7.0)
 
         # Mock sender - send() should not raise ValueError for success
         mock_sender = Mock(spec=TensorSender)
@@ -243,7 +243,7 @@ class TestTensorClientStreamer:
         mock_receiver_class.return_value = mock_receiver_instance
 
         # Create streamer
-        streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"], entry_timeout=5.0)
+        streamer = TensorClientStreamer(format=ExchangeFormat.PYTORCH, tasks=["train"], tensor_send_timeout=5.0)
 
         # Step 1: Handle START_RUN event (initialization)
         streamer.handle_event(EventType.START_RUN, mock_fl_context)
@@ -332,7 +332,7 @@ class TestTensorClientStreamer:
     def test_send_tensors_with_cleanup(self, mock_clean_task_result, mock_fl_context):
         """Test that send_tensors_to_server calls cleanup after successful send."""
         custom_timeout = 42.0
-        streamer = TensorClientStreamer(entry_timeout=custom_timeout)
+        streamer = TensorClientStreamer(tensor_send_timeout=custom_timeout)
 
         # Mock sender for successful case (returns True)
         mock_sender = Mock(spec=TensorSender)
@@ -512,7 +512,7 @@ class TestTensorClientStreamer:
     @patch("nvflare.app_opt.tensor_stream.client.clean_task_result")
     def test_send_tensors_to_server_no_cleanup_when_send_fails(self, mock_clean_task_result, mock_fl_context):
         """Test that cleanup is not called when sender.send raises ValueError."""
-        streamer = TensorClientStreamer(entry_timeout=5.0)
+        streamer = TensorClientStreamer(tensor_send_timeout=5.0)
 
         # Mock sender to raise ValueError (unsuccessful send)
         mock_sender = Mock(spec=TensorSender)

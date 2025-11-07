@@ -59,7 +59,7 @@ class TensorServerStreamer(FLComponent):
         self,
         format: ExchangeFormat = ExchangeFormat.PYTORCH,
         tasks: list[str] = None,
-        entry_timeout: float = 30.0,
+        tensor_send_timeout: float = 30.0,
         wait_send_task_data_all_clients_timeout: float = 300.0,
     ):
         """Initialize the TensorServerStreamer component.
@@ -67,13 +67,13 @@ class TensorServerStreamer(FLComponent):
         Args:
             format (ExchangeFormat): The format of the tensors to send/receive. Default is ExchangeFormat.TORCH.
             tasks (list[str]): The list of tasks to send tensors for. Default is None, which means the "train" task.
-            entry_timeout (float): Timeout for tensor entry transfer operations. Default is 10.0 seconds.
+            tensor_send_timeout (float): Timeout for tensor entry transfer operations. Default is 10.0 seconds.
             wait_all_clients_timeout (float): Timeout for sending tensors to all clients. Default is 120.0 seconds.
         """
         super().__init__()
         self.format = format
         self.tasks = tasks if tasks is not None else ["train"]
-        self.entry_timeout = entry_timeout
+        self.tensor_send_timeout = tensor_send_timeout
         self.wait_task_data_sent_to_all_clients_timeout = wait_send_task_data_all_clients_timeout
         self.engine: StreamableEngine = None
         self.sender: TensorSender = None
@@ -174,7 +174,7 @@ class TensorServerStreamer(FLComponent):
                 self.start_sending_time[current_round] = time.time()
 
         try:
-            self.sender.send(fl_ctx, self.entry_timeout)
+            self.sender.send(fl_ctx, self.tensor_send_timeout)
         except ValueError as e:
             self.log_warning(fl_ctx, f"No tensors to send to client: {str(e)}")
             success = False
