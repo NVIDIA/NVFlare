@@ -111,11 +111,13 @@ def to_numpy_recursive(obj: Union[torch.Tensor, dict[str, torch.Tensor]]) -> Uni
         raise ValueError(f"Unsupported object type: {type(obj)}")
 
 
-def get_dxo_from_ctx(fl_ctx: FLContext, ctx_prop_key: FLContextKey, tasks: list[str]) -> DXO:
+def get_dxo_from_ctx(fl_ctx: FLContext, ctx_prop_key: str, tasks: list[str]) -> DXO:
     """Extract model parameters from the FLContext based on the provided property key.
 
     Args:
         fl_ctx (FLContext): The FLContext containing the data.
+        ctx_prop_key (str): The context property key to extract data from.
+        tasks (list[str]): The list of tasks to consider.
 
     Returns:
         dict[str, torch.Tensor]: A dictionary of data extracted from the FLContext.

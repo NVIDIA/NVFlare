@@ -31,7 +31,7 @@ class TensorSender:
     def __init__(
         self,
         engine: StreamableEngine,
-        ctx_prop_key: FLContextKey,
+        ctx_prop_key: str,
         format: ExchangeFormat,
         tasks: list[str],
         channel: str = TENSORS_CHANNEL,
@@ -40,7 +40,7 @@ class TensorSender:
 
         Args:
             engine (StreamableEngine): The streamable engine to use for streaming.
-            ctx_prop_key (FLContextKey): The context property key to send tensors for.
+            ctx_prop_key (str): The context property key to send tensors for.
             channel (str): The channel to use for streaming. Default is TENSORS_CHANNEL.
         """
         self.engine = engine
