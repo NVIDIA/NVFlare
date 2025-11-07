@@ -17,7 +17,6 @@ from collections import defaultdict
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.streaming import StreamableEngine, StreamContext
-from nvflare.client.config import ExchangeFormat
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .producer import TensorProducer

@@ -16,13 +16,11 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
 from nvflare.apis.streaming import StreamableEngine
 from nvflare.client.config import ExchangeFormat
 
 from .receiver import TensorReceiver
 from .sender import TensorSender
-from .types import TensorEventTypes
 from .utils import clean_task_result
 
 
@@ -32,7 +30,7 @@ class TensorClientStreamer(FLComponent):
     It uses a StreamableEngine, TensorReceiver, and TensorSender to manage tensor streaming on the client side.
     Attributes:
         format (str): The format of the tensors to send. Default is "pytorch".
-        entry_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
+        tensor_send_timeout (float): Timeout for tensor entry transfer operations. Default is 30.0 seconds.
         engine (StreamableEngine): The StreamableEngine used for tensor streaming.
         sender (TensorSender): The TensorSender used to send tensors to the server.
         receiver (TensorReceiver): The TensorReceiver used to receive tensors from the server.

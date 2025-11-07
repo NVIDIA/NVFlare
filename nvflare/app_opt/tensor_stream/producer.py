@@ -31,7 +31,7 @@ class TensorProducer(ObjectProducer):
 
     Attributes:
         logger: Logger for logging messages.
-        entry_timeout: Timeout for each entry in the stream.
+        tensor_send_timeout: Timeout for each entry in the stream.
         last: Flag indicating if the last tensor has been sent.
         tensors: Dictionary of tensors to be sent.
         tensors_keys: List of keys for the tensors to be sent.
