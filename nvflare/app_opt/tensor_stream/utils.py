@@ -69,7 +69,7 @@ def get_topic_for_ctx_prop_key(ctx_prop_key: str) -> str:
         raise ValueError(f"Unsupported context property key: {ctx_prop_key}")
 
 
-def get_targets_for_ctx_and_prop_key(fl_ctx: FLContext, ctx_prop_key: str) -> list[str]:
+def get_targets_from_ctx_and_prop_key(fl_ctx: FLContext, ctx_prop_key: str) -> list[str]:
     """Get the peer identity name from the FLContext.
 
     Args:

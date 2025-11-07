@@ -22,7 +22,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .producer import TensorProducer
 from .types import TENSORS_CHANNEL, TensorsMap
-from .utils import get_dxo_from_ctx, get_targets_for_ctx_and_prop_key, get_topic_for_ctx_prop_key
+from .utils import get_dxo_from_ctx, get_targets_from_ctx_and_prop_key, get_topic_for_ctx_prop_key
 
 
 class TensorSender:
@@ -91,7 +91,7 @@ class TensorSender:
         task_id = fl_ctx.get_prop(FLContextKey.TASK_ID, None)
         if not task_id:
             raise ValueError("No task_id found in FLContext.")
-        targets = get_targets_for_ctx_and_prop_key(fl_ctx, self.ctx_prop_key)
+        targets = get_targets_from_ctx_and_prop_key(fl_ctx, self.ctx_prop_key)
 
         # Important: pop the tensors to release memory after sending
         # Each task_id is unique per client, so we only send once per task_id

@@ -28,7 +28,7 @@ from nvflare.app_opt.tensor_stream.utils import (
     clean_task_result,
     copy_non_tensor_params,
     get_dxo_from_ctx,
-    get_targets_for_ctx_and_prop_key,
+    get_targets_from_ctx_and_prop_key,
     get_topic_for_ctx_prop_key,
     merge_params_dicts,
     to_numpy_recursive,
@@ -384,8 +384,8 @@ class TestGetTopicForCtxPropKey:
             get_topic_for_ctx_prop_key(invalid_key)
 
 
-class TestGetTargetsForCtxAndPropKey:
-    """Test cases for get_targets_for_ctx_and_prop_key function."""
+class TestGetTargetsFromCtxAndPropKey:
+    """Test cases for get_targets_from_ctx_and_prop_key function."""
 
     def test_task_data_targets_peer_identity(self, mock_fl_context):
         """Test getting targets for TASK_DATA returns peer identity."""
@@ -396,7 +396,7 @@ class TestGetTargetsForCtxAndPropKey:
         mock_fl_context.get_peer_context.return_value = mock_peer_context
 
         # Get targets
-        targets = get_targets_for_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_DATA)
+        targets = get_targets_from_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_DATA)
 
         # Verify result
         assert targets == [peer_identity]
@@ -405,7 +405,7 @@ class TestGetTargetsForCtxAndPropKey:
 
     def test_task_result_targets_server(self, mock_fl_context):
         """Test getting targets for TASK_RESULT returns server name."""
-        targets = get_targets_for_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_RESULT)
+        targets = get_targets_from_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_RESULT)
 
         # Verify result
         assert targets == [SERVER_SITE_NAME]
@@ -416,14 +416,14 @@ class TestGetTargetsForCtxAndPropKey:
     def test_invalid_keys_raise_error(self, mock_fl_context, invalid_key):
         """Test that invalid keys raise ValueError."""
         with pytest.raises(ValueError, match="Unsupported context property key"):
-            get_targets_for_ctx_and_prop_key(mock_fl_context, invalid_key)
+            get_targets_from_ctx_and_prop_key(mock_fl_context, invalid_key)
 
     def test_peer_context_exceptions_propagate(self, mock_fl_context):
         """Test that peer context exceptions are properly propagated."""
         # Test peer context access failure
         mock_fl_context.get_peer_context.side_effect = Exception("Peer context error")
         with pytest.raises(Exception, match="Peer context error"):
-            get_targets_for_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_DATA)
+            get_targets_from_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_DATA)
 
         # Reset side_effect and test identity name failure
         mock_fl_context.get_peer_context.side_effect = None
@@ -432,7 +432,7 @@ class TestGetTargetsForCtxAndPropKey:
         mock_fl_context.get_peer_context.return_value = mock_peer_context
 
         with pytest.raises(Exception, match="Identity error"):
-            get_targets_for_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_DATA)
+            get_targets_from_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_DATA)
 
     def test_return_type_consistency(self, mock_fl_context):
         """Test that both functions return lists for consistency."""
@@ -442,12 +442,12 @@ class TestGetTargetsForCtxAndPropKey:
         mock_fl_context.get_peer_context.return_value = mock_peer_context
 
         # Test TASK_DATA returns list
-        task_data_targets = get_targets_for_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_DATA)
+        task_data_targets = get_targets_from_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_DATA)
         assert isinstance(task_data_targets, list)
         assert len(task_data_targets) == 1
 
         # Test TASK_RESULT returns list
-        task_result_targets = get_targets_for_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_RESULT)
+        task_result_targets = get_targets_from_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_RESULT)
         assert isinstance(task_result_targets, list)
         assert len(task_result_targets) == 1
 
@@ -912,14 +912,14 @@ class TestUtilsIntegration:
 
         # Test TASK_DATA consistency
         task_data_topic = get_topic_for_ctx_prop_key(FLContextKey.TASK_DATA)
-        task_data_targets = get_targets_for_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_DATA)
+        task_data_targets = get_targets_from_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_DATA)
 
         assert task_data_topic == TensorTopics.TASK_DATA
         assert task_data_targets == [peer_identity]
 
         # Test TASK_RESULT consistency
         task_result_topic = get_topic_for_ctx_prop_key(FLContextKey.TASK_RESULT)
-        task_result_targets = get_targets_for_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_RESULT)
+        task_result_targets = get_targets_from_ctx_and_prop_key(mock_fl_context, FLContextKey.TASK_RESULT)
 
         assert task_result_topic == TensorTopics.TASK_RESULT
         assert task_result_targets == [SERVER_SITE_NAME]

@@ -72,7 +72,7 @@ class TestTensorSender:
             ("sample_dxo_nested_weights", FLContextKey.TASK_DATA, ["train"], TensorTopics.TASK_DATA, ["client1"]),
         ],
     )
-    @patch("nvflare.app_opt.tensor_stream.sender.get_targets_for_ctx_and_prop_key")
+    @patch("nvflare.app_opt.tensor_stream.sender.get_targets_from_ctx_and_prop_key")
     @patch("nvflare.app_opt.tensor_stream.sender.get_topic_for_ctx_prop_key")
     @patch("nvflare.app_opt.tensor_stream.sender.get_dxo_from_ctx")
     def test_send_with_different_data_kinds(
@@ -198,7 +198,7 @@ class TestTensorSender:
             (None, TENSORS_CHANNEL, ["client1"]),
         ],
     )
-    @patch("nvflare.app_opt.tensor_stream.sender.get_targets_for_ctx_and_prop_key")
+    @patch("nvflare.app_opt.tensor_stream.sender.get_targets_from_ctx_and_prop_key")
     @patch("nvflare.app_opt.tensor_stream.sender.get_topic_for_ctx_prop_key")
     @patch("nvflare.app_opt.tensor_stream.sender.get_dxo_from_ctx")
     def test_send_with_custom_channel(
@@ -252,7 +252,7 @@ class TestTensorSender:
             ("sample_dxo_weights", 10),  # Flat structure has 10 tensors
         ],
     )
-    @patch("nvflare.app_opt.tensor_stream.sender.get_targets_for_ctx_and_prop_key")
+    @patch("nvflare.app_opt.tensor_stream.sender.get_targets_from_ctx_and_prop_key")
     @patch("nvflare.app_opt.tensor_stream.sender.get_topic_for_ctx_prop_key")
     @patch("nvflare.app_opt.tensor_stream.sender.get_dxo_from_ctx")
     def test_send_with_different_data_structures(
