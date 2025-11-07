@@ -689,7 +689,7 @@ class TestUpdateParamsWithTensors:
         update_params_with_tensors(params, [], tensors, to_ndarray=True)
 
         assert isinstance(params["weight"], np.ndarray)
-        np.testing.assert_array_equal(params["weight"], np.array([1.0, 2.0]))
+        np.testing.assert_allclose(params["weight"], np.array([1.0, 2.0], dtype=np.float32))
 
     def test_update_existing_dict(self):
         """Test updating existing dictionary structure."""
@@ -747,7 +747,97 @@ class TestMergeParamsDicts:
         result = merge_params_dicts(base, new, to_ndarray=True)
 
         assert isinstance(result["weight"], np.ndarray)
-        np.testing.assert_array_equal(result["weight"], np.array([1.0, 2.0]))
+        np.testing.assert_allclose(result["weight"], np.array([1.0, 2.0], dtype=np.float32))
+
+    def test_merge_nested_dicts_with_to_ndarray(self):
+        """Test merging nested dictionaries with conversion to numpy arrays.
+
+        Validates that the to_ndarray parameter is properly passed through recursive calls,
+        ensuring tensors at all nesting levels are converted to numpy arrays, including
+        when adding completely new nested dictionary structures.
+        """
+        base = {"encoder": {"weight": torch.tensor([1.0, 2.0])}}
+        new = {
+            "encoder": {"bias": torch.tensor([0.1, 0.2])},  # Merging into existing "encoder" key
+            "decoder": {"weight": torch.tensor([3.0, 4.0])},  # Adding new nested structure
+        }
+        result = merge_params_dicts(base, new, to_ndarray=True)
+
+        # Verify that tensors are converted via recursive call in both cases:
+        # 1. When adding to existing nested dict (encoder.bias)
+        # 2. When adding new nested dict structure (decoder.weight)
+        # Note: Existing tensors in base_params are not converted, only new ones
+        assert isinstance(result["encoder"]["weight"], torch.Tensor)  # Existing tensor not converted
+        assert isinstance(result["encoder"]["bias"], np.ndarray)  # New tensor in existing dict converted
+        assert isinstance(result["decoder"]["weight"], np.ndarray)  # New tensor in new nested dict converted
+
+        # Use allclose for float32 vs float64 precision tolerance
+        np.testing.assert_allclose(result["encoder"]["bias"], np.array([0.1, 0.2], dtype=np.float32))
+        np.testing.assert_allclose(result["decoder"]["weight"], np.array([3.0, 4.0], dtype=np.float32))
+
+    def test_merge_deeply_nested_dicts_with_to_ndarray(self):
+        """Test merging deeply nested dictionaries with to_ndarray parameter propagation.
+
+        This test validates that the to_ndarray parameter is correctly passed through
+        multiple levels of recursive calls, ensuring conversion works at any nesting depth,
+        both for existing and new nested structures.
+        """
+        base = {
+            "model": {
+                "encoder": {"layer1": {"weight": torch.tensor([1.0, 2.0])}},
+            }
+        }
+        new = {
+            "model": {
+                "encoder": {"layer1": {"bias": torch.tensor([0.1])}},  # Add to existing nested dict
+                "decoder": {"layer1": {"weight": torch.tensor([3.0, 4.0])}},  # Add new nested structure
+            }
+        }
+        result = merge_params_dicts(base, new, to_ndarray=True)
+
+        # Verify deeply nested recursive calls properly pass to_ndarray parameter
+        # The bias is added to an existing nested dict (encoder.layer1) - 3-level recursion
+        # The decoder is a completely new nested structure - 2-level recursion with new dict creation
+        assert isinstance(result["model"]["encoder"]["layer1"]["weight"], torch.Tensor)  # Existing not converted
+        assert isinstance(result["model"]["encoder"]["layer1"]["bias"], np.ndarray)  # New via 3-level recursion
+        assert isinstance(result["model"]["decoder"]["layer1"]["weight"], np.ndarray)  # New via 2-level recursion
+
+        # Use allclose for float32 vs float64 precision tolerance
+        np.testing.assert_allclose(result["model"]["encoder"]["layer1"]["bias"], np.array([0.1], dtype=np.float32))
+        np.testing.assert_allclose(
+            result["model"]["decoder"]["layer1"]["weight"], np.array([3.0, 4.0], dtype=np.float32)
+        )
+
+    def test_merge_new_nested_dict_without_to_ndarray(self):
+        """Test that new nested dicts preserve tensors when to_ndarray=False."""
+        base = {"encoder": {"weight": torch.tensor([1.0, 2.0])}}
+        new = {"decoder": {"weight": torch.tensor([3.0, 4.0])}}
+        result = merge_params_dicts(base, new, to_ndarray=False)
+
+        # Verify tensors are preserved when to_ndarray=False
+        assert isinstance(result["encoder"]["weight"], torch.Tensor)
+        assert isinstance(result["decoder"]["weight"], torch.Tensor)
+        torch.testing.assert_close(result["decoder"]["weight"], new["decoder"]["weight"])
+
+    def test_merge_mixed_depth_nested_dicts_with_to_ndarray(self):
+        """Test merging nested dicts with varying depths and to_ndarray=True."""
+        base = {}
+        new = {
+            "shallow": torch.tensor([1.0]),  # Depth 1
+            "medium": {"weight": torch.tensor([2.0, 3.0])},  # Depth 2
+            "deep": {"level1": {"level2": {"weight": torch.tensor([4.0, 5.0])}}},  # Depth 4
+        }
+        result = merge_params_dicts(base, new, to_ndarray=True)
+
+        # Verify conversion works at all depths
+        assert isinstance(result["shallow"], np.ndarray)
+        assert isinstance(result["medium"]["weight"], np.ndarray)
+        assert isinstance(result["deep"]["level1"]["level2"]["weight"], np.ndarray)
+
+        # Use allclose for float32 vs float64 precision tolerance
+        np.testing.assert_allclose(result["shallow"], np.array([1.0], dtype=np.float32))
+        np.testing.assert_allclose(result["medium"]["weight"], np.array([2.0, 3.0], dtype=np.float32))
+        np.testing.assert_allclose(result["deep"]["level1"]["level2"]["weight"], np.array([4.0, 5.0], dtype=np.float32))
 
     def test_merge_preserves_base_dict(self):
         """Test that merging modifies base dict in place."""

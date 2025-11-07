@@ -227,14 +227,24 @@ def merge_params_dicts(
     Args:
         base_params: The base dictionary to merge into.
         new_params: The new dictionary whose values will overwrite those in base_params.
+        to_ndarray: If True, converts torch tensors to numpy arrays during merge.
 
     Returns:
         The merged dictionary with values from new_params overwriting those in base_params.
     """
     for key, value in new_params.items():
         if key in base_params and isinstance(base_params[key], dict) and isinstance(value, dict):
-            merge_params_dicts(base_params[key], value)
+            # Both base and new have this key as dicts - recurse with to_ndarray parameter
+            merge_params_dicts(base_params[key], value, to_ndarray)
+        elif isinstance(value, dict):
+            # New key with dict value - recursively process to convert tensors if needed
+            if to_ndarray:
+                base_params[key] = {}
+                merge_params_dicts(base_params[key], value, to_ndarray)
+            else:
+                base_params[key] = value
         else:
+            # Leaf value (tensor or other type)
             if to_ndarray and isinstance(value, torch.Tensor):
                 base_params[key] = value.cpu().numpy() if value.is_cuda else value.numpy()
             else:
