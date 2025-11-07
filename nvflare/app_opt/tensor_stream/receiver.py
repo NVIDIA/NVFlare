@@ -159,7 +159,8 @@ class TensorReceiver:
 
         # Explicitly delete local reference to aid garbage collection
         del tensors
-        del self.tensor_events[task_id]
+        if task_id in self.tensor_events:
+            del self.tensor_events[task_id]
 
         self.logger.info(
             f"Peer '{fl_ctx.get_identity_name()}': updated task data with tensors received from peer "
