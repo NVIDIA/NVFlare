@@ -426,6 +426,14 @@ class FeatureElectionExecutor(Executor):
                     random_state=random_state,
                     verbose=verbose
                 )
+            elif self.fs_method == "ppimbc":
+                selector = PPIMBC(
+                    base_model,
+                    p_val_thresh=p_val_thresh,
+                    num_sim=num_sim,
+                    random_state=random_state,
+                    verbose=verbose
+                )
             # Fit the selector
             selector.fit(self.X_train, self.y_train)
 
