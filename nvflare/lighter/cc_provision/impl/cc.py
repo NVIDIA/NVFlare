@@ -28,6 +28,7 @@ from nvflare.lighter.entity import Participant, Project
 from nvflare.lighter.spec import Builder
 
 from ..cc_constants import CC_AUTHORIZERS_KEY, CCConfigKey, CCConfigValue, CCIssuerConfig, CCManagerArgs
+from .azure import AzureSimpleBuilder
 from .onprem_cvm import OnPremCVMBuilder
 
 JOB_RETURN_CODE_MAPPING = {
@@ -41,12 +42,16 @@ CC_MGR_PATH = "nvflare.app_opt.confidential_computing.cc_manager.CCManager"
 # (deploy_env, CPU_CC_MECHANISM, GPU_CC_MECHANISM)
 VALID_COMPUTE_ENVS = [
     CCConfigValue.ONPREM_CVM,
+    CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER,
+    CCConfigValue.AZURE_CVM,
     CCConfigValue.MOCK,
 ]
 
 
 BUILDER_CLASSES = {
     CCConfigValue.ONPREM_CVM: OnPremCVMBuilder,
+    CCConfigValue.AZURE_CVM: AzureSimpleBuilder,
+    CCConfigValue.AZURE_CONFIDENTIAL_CONTAINER: AzureSimpleBuilder,
     CCConfigValue.MOCK: OnPremCVMBuilder,
 }
 
