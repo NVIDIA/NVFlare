@@ -50,6 +50,7 @@ Create One Azure Container Registry (ACR)
 
 With the resource group created, we first create one Azure Container Registry (ACR) which our built images are pushed to and pulled from.
 
+
 .. code-block:: bash
 
    #!/usr/bin/env bash
@@ -65,6 +66,10 @@ With the resource group created, we first create one Azure Container Registry (A
    --name $reg_name --sku Standard \
    --dnl-scope $dnl_scope
 
+.. note::
+
+   As at the later steps, it is required to operate the Azure Container Registry (ACR) with higher permissions, 
+   please check if you have at least "Contributor" role on the ACR.  Roles with lesser permissions may cause the following steps to fail.
 
 Build Docker Container Images
 --------------------------------------
@@ -101,6 +106,21 @@ folder and docker folder under current working folder, respectively, as shown be
    WORKDIR /workspace
    RUN python3 -m pip install --no-cache nvflare
    COPY $NVFL_ROOT nvflare
+
+
+The following is a sample cc_server.yml file, which is used with project.yml for cc provision (as described in the README.md file in
+examples/advanced/cc_provision/ folder of source code repo).
+
+.. code-block:: yaml
+
+   compute_env: azure_confidential_container 
+   cc_cpu_mechanism: amd_sev_snp
+   role: server
+
+   cc_issuers:
+     - id: aci_authorizer
+       path: nvflare.app_opt.confidential_computing.aci_authorizer.ACIAuthorizer
+       token_expiration: 100 # seconds, needs to be less than check_frequency
 
 
 Publish Container Images to Azure Container Registry
@@ -159,6 +179,13 @@ Then you can push your newly built container image to the ACR.
 Create And Run The Confidential ACI Launch Script
 ------------------------------------------------------------
 
+This step requires the confcom extension for az cli.  You can install it with this command.
+
+.. code-block:: bash
+
+   az extension add --name confcom
+
+
 The following is the script to properly inject the credential and verification
 information of container images into the Azure Resource Manager (ARM) template file, cce_done_p.json in this case.
 
@@ -188,6 +215,8 @@ information of container images into the Azure Resource Manager (ARM) template f
 The script requires a base ARM template file, as shown below.  All token or verification information are removed in this sample file.  However, you need
 to edit it to match the information used in your confidential ACI and NVFlare server configuration.  Please note the port number, location, container image names and
 confidential ACI resources must be updated according to your own account and previous settings.
+
+If you encounter permission issues or the script gets stuck, please check your role in the ACR.
 
 .. literalinclude:: ../../resources/ccprep.json
    :language: json

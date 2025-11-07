@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,41 +11,26 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
-import time
+import subprocess
 
 import jwt
-import requests
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
-ACI_NAMESPACE = "x-az-aci"
+AZ_CVM_NAMESPACE = "x-az-cvm"
 
 
-class ACIAuthorizer(CCAuthorizer):
-    def __init__(self, maa_endpoint="sharedeus2.eus2.attest.azure.net", retry_count=5, retry_sleep=2):
+class AZCVMAuthorizer(CCAuthorizer):
+    def __init__(self, attester_binary="AttestationClient", maa_endpoint="sharedeus2.eus2.attest.azure.net"):
+        self.attester_binary = attester_binary
         self.maa_endpoint = maa_endpoint
-        self.retry_count = retry_count
-        self.retry_sleep = retry_sleep
 
     def generate(self):
-        count = 0
-        token = ""
-        while True:
-            count = count + 1
-            try:
-                r = requests.post(
-                    "http://localhost:8284/attest/maa",
-                    data=json.dumps({"maa_endpoint": self.maa_endpoint, "runtime_data": "ewp9"}),
-                    headers={"Content-Type": "application/json"},
-                )
-                if r.status_code == requests.codes.ok:
-                    token = r.json().get("token")
-                break
-            except:
-                if count > self.retry_count:
-                    break
-                time.sleep(self.retry_sleep)
+        cmd = ["sudo", self.attester_binary, "-a", f"https://{self.maa_endpoint}/", "-o", "token"]
+        result = subprocess.run(cmd, capture_output=True, check=False)
+        if result.returncode != 0:
+            return ""
+        token = result.stdout.decode().strip()
         return token
 
     def verify(self, token):
@@ -57,9 +42,9 @@ class ACIAuthorizer(CCAuthorizer):
             claims = jwt.decode(token, signing_key.key, algorithms=[alg])
             if claims:
                 return True
-        except:
+        except (jwt.PyJWTError, Exception):
             return False
         return False
 
     def get_namespace(self) -> str:
-        return ACI_NAMESPACE
+        return AZ_CVM_NAMESPACE

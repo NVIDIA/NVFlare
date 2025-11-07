@@ -98,18 +98,18 @@ necessary tools and download source codes to perform attestation.
    pushd confidential-computing-cvm-guest-attestation-main/cvm-attestation-sample-app
    cmake . && make
 
+   sudo install -D -m0755 AttestationClient /usr/local/bin
+
    popd
 
-Now the attestation tool is built.  We can retrieve the attestation token and examine it.
+Now the attestation tool is built and installed.  We can retrieve the attestation token and examine it.
 
 
 .. code-block:: bash
 
    #!/usr/bin/env bash
 
-   pushd confidential-computing-cvm-guest-attestation-main/cvm-attestation-sample-app
-
-   sudo ./AttestationClient -o token > token.b64
+   sudo AttestationClient -o token > token.b64
    jwt=$(cat token.b64)
    echo "Showing attestation token in base64-encoded format"
    echo $jwt
@@ -120,10 +120,24 @@ Now the attestation tool is built.  We can retrieve the attestation token and ex
    echo "Showing the payload of attestation token"
    echo -n $jwt | cut -d "." -f 2 | base64 -d 2>/dev/null | jq .
 
-   popd
-
 
 Next Steps
 ===========
 
 Now you can install NVFlare and transfer your startup kit into this CVM instance and start the NVFlare.
+
+The following is a sample cc_site-1.yml file, which is used with project.yml for cc provision (as described in the README.md file in
+examples/advanced/cc_provision/ folder of source code repo).
+
+The AZCVMAuthorizer uses sharedeus2.eus2.attest.azure.net as the default Microsoft Azure Attestation endpoint.
+
+.. code-block:: yaml
+
+   compute_env: azure_cvm 
+   cc_cpu_mechanism: amd_sev_snp
+   role: client
+
+   cc_issuers:
+     - id: az_cvm_authorizer
+       path: nvflare.app_opt.confidential_computing.az_cvm_authorizer.AZCVMAuthorizer
+       token_expiration: 100 # seconds, needs to be less than check_frequency
