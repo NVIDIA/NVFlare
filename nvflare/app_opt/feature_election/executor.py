@@ -72,7 +72,7 @@ class FeatureElectionExecutor(Executor):
         Args:
             fs_method: Feature selection method
                       ('lasso', 'elastic_net', 'mutual_info', 'chi2', 'f_classif',
-                       'rfe', 'random_forest', 'selectkbest', 'pyimpetus', 'ppimbc')
+                       'rfe', 'random_forest', 'selectkbest', 'pyimpetus')
             fs_params: Parameters for the feature selection method
             eval_metric: Metric for evaluation ('f1', 'accuracy', 'auc')
             quick_eval: Whether to perform quick evaluation (5 epochs vs full training)
@@ -113,13 +113,6 @@ class FeatureElectionExecutor(Executor):
             "random_forest": {"n_estimators": 100, "max_depth": 5, "random_state": 42},
             "selectkbest": {"k": 10, "score_func": "f_classif"},
             "pyimpetus": {
-                "model": "random_forest",
-                "p_val_thresh": 0.05,
-                "num_sim": 50,
-                "random_state": 42,
-                "verbose": 0
-            },
-            "ppimbc": {
                 "model": "random_forest",
                 "p_val_thresh": 0.05,
                 "num_sim": 50,
@@ -253,7 +246,7 @@ class FeatureElectionExecutor(Executor):
         n_features = self.X_train.shape[1]
 
         # Handle PyImpetus methods
-        if self.fs_method in ["pyimpetus", "ppimbc"]:
+        if self.fs_method == "pyimpetus":
             return self._perform_pyimpetus_selection()
 
         # Scale data for methods that need it
@@ -426,14 +419,6 @@ class FeatureElectionExecutor(Executor):
                     random_state=random_state,
                     verbose=verbose
                 )
-            elif self.fs_method == "ppimbc":
-                selector = PPIMBC(
-                    base_model,
-                    p_val_thresh=p_val_thresh,
-                    num_sim=num_sim,
-                    random_state=random_state,
-                    verbose=verbose
-                )
             # Fit the selector
             selector.fit(self.X_train, self.y_train)
 
@@ -575,8 +560,8 @@ class FeatureElectionExecutor(Executor):
         """Get information about PyImpetus availability and methods"""
         info = {
             "pyimpetus_available": PYIMPETUS_AVAILABLE,
-            "supported_methods": ["pyimpetus", "ppimbc"] if PYIMPETUS_AVAILABLE else [],
+            "supported_methods": "pyimpetus" if PYIMPETUS_AVAILABLE else [],
             "current_method": self.fs_method,
-            "is_using_pyimpetus": self.fs_method in ["pyimpetus", "ppimbc"] and PYIMPETUS_AVAILABLE
+            "is_using_pyimpetus": self.fs_method == "pyimpetus" and PYIMPETUS_AVAILABLE
         }
         return info
