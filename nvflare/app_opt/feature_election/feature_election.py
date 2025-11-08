@@ -485,8 +485,8 @@ executor.set_data(X_train, y_train, feature_names=feature_names)
         
         # Calculate intersection and union for stats
         masks = np.array([sel["selected_features"] for sel in client_selections.values()])
-        intersection_mask = np.all(masks == 1, axis=0)
-        union_mask = np.any(masks == 1, axis=0)
+        intersection_mask = np.all(masks, axis=0)
+        union_mask = np.any(masks, axis=0)
         
         # Store results
         self.election_stats = {
