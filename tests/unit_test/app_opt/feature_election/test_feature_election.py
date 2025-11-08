@@ -25,6 +25,12 @@ from nvflare.app_opt.feature_election import (
     FeatureElection,
     quick_election
 )
+# Attempt to import the optional dependency pyimpetus
+try:
+    import pyimpetus
+    PYIMPETUS_AVAILABLE = True
+except ImportError:
+    PYIMPETUS_AVAILABLE = False
 
 
 class TestFeatureElection:
@@ -158,7 +164,11 @@ class TestFeatureElection:
         # Freedom degree may have changed
         assert 0 <= fe.freedom_degree <= 1
         assert 'freedom_degree' in stats
-    
+
+    @pytest.mark.skipif(
+        not PYIMPETUS_AVAILABLE,
+        reason="PyImpetus dependency not installed."
+    )
     def test_freedom_degree_intersection(self, sample_data):
         """Test freedom_degree=0 gives intersection"""
         fe = FeatureElection(freedom_degree=0.0, fs_method='pyimpetus')
