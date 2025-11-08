@@ -20,9 +20,15 @@ This example shows how to deploy Feature Election in a real NVIDIA FLARE environ
 with multiple clients, proper job configuration, and result collection.
 """
 
-import pandas as pd
 import numpy as np
 from pathlib import Path
+from nvflare.app_opt.feature_election import FeatureElection, FeatureElectionExecutor
+from sklearn.datasets import make_classification
+import numpy as np
+import pandas as pd
+import numpy as np
+from nvflare.app_opt.feature_election import FeatureElection, FeatureElectionExecutor
+from sklearn.datasets import make_classification
 from nvflare.app_opt.feature_election import FeatureElection, FeatureElectionExecutor
 from sklearn.datasets import make_classification
 
