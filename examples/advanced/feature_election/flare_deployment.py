@@ -21,14 +21,6 @@ with multiple clients, proper job configuration, and result collection.
 """
 
 import numpy as np
-from pathlib import Path
-from nvflare.app_opt.feature_election import FeatureElection, FeatureElectionExecutor
-from sklearn.datasets import make_classification
-import numpy as np
-import pandas as pd
-import numpy as np
-from nvflare.app_opt.feature_election import FeatureElection, FeatureElectionExecutor
-from sklearn.datasets import make_classification
 from nvflare.app_opt.feature_election import FeatureElection, FeatureElectionExecutor
 from sklearn.datasets import make_classification
 
@@ -165,11 +157,11 @@ def example_retrieve_results():
         
         print("\n✓ Results retrieved successfully")
         print(f"\nFeature Selection Summary:")
+        print(f"  Freedom degree used: {results['freedom_degree']:.2f}")
         print(f"  Original features: {results['election_stats']['num_features_original']}")
         print(f"  Selected features: {results['election_stats']['num_features_selected']}")
         print(f"  Reduction ratio: {results['election_stats']['reduction_ratio']:.1%}")
-        print(f"  Freedom degree used: {results['freedom_degree']:.2f}")
-        
+
         # Get selected feature names
         selected_features = results['selected_feature_names']
         print(f"\n  Selected feature names: {selected_features[:10]}...")
