@@ -44,9 +44,6 @@ class FeatureElectionController(ScatterAndGather):
         min_clients: int = 2,
         num_rounds: int = 1,
         task_name: str = "feature_election",
-        aggregator_id: str = "aggregator",
-        persistor_id: str = "persistor",
-        shareable_generator_id: str = "shareable_generator",
         train_timeout: int = 0
     ):
         """
