@@ -529,6 +529,7 @@ class FeatureElectionExecutor(Executor):
         logger.info(f"Received global mask: {np.sum(self.global_feature_mask)} features selected")
 
         # Apply mask to training data if needed
+        # Only the features that Feature Election decides are important are kept in scope
         if self.X_train is not None:
             self.X_train = self.X_train[:, self.global_feature_mask]
             if self.X_val is not None:
