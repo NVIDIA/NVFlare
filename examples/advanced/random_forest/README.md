@@ -2,6 +2,47 @@
 
 Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
 
+## Quick Start with Recipe API (Recommended)
+
+The simplest way to run this example is using NVFlare's **Recipe API**, which provides a high-level, simplified interface:
+
+### 1. Data Preparation
+First, prepare the HIGGS dataset splits:
+
+```bash
+bash data_split_gen.sh DATASET_ROOT
+```
+
+Replace `DATASET_ROOT` with the path to your HIGGS dataset directory. This will generate data splits in `/tmp/nvflare/random_forest/HIGGS/data_splits`.
+
+### 2. Run with Recipe
+
+```bash
+python job.py --n_clients 5 --local_subsample 0.5 --data_split_path /tmp/nvflare/random_forest/HIGGS/data_splits/5_uniform
+```
+
+**Key arguments:**
+- `--n_clients`: Number of federated clients (default: 5)
+- `--num_local_parallel_tree`: Number of parallel trees per client (default: 5)
+- `--local_subsample`: Subsample ratio for local training (default: 0.5)
+- `--data_split_path`: Path to data split directory
+
+**What the Recipe does:**
+- Uses `XGBBaggingRecipe` for tree-based federated Random Forest
+- Each client trains a local sub-forest on their data
+- Server aggregates all sub-forests to form the global model
+- Runs in simulation environment by default
+
+### 3. Enable GPU Support (Optional)
+
+To use GPUs for training:
+
+```bash
+python job.py --use_gpus --tree_method hist
+```
+
+---
+
 ## Introduction to Libraries and HIGGS Data
 
 ### Libraries
@@ -35,8 +76,13 @@ Random forest training with multiple clients can be achieved in two steps:
 
 No further training will be performed, `num_boost_round` should be 1 to align with the basic setting of random forest.
 
+---
 
-## Data Preparation
+## Advanced Usage: JSON Configuration (Legacy)
+
+For advanced customization and production deployments, you can use the traditional JSON configuration approach. This section describes the manual setup process.
+
+### Data Preparation
 ### Download and Store Data
 To run the examples, we first download the dataset from the HIGGS link above, which is a single `HIGGS.csv` file.
 By default, we assume the dataset is downloaded, uncompressed, and stored in `DATASET_ROOT/HIGGS.csv`.
@@ -91,7 +137,7 @@ and copies the correct data split file generated in the data preparation step.
 
 The script will generate a total of 18 different configs in `./jobs` for random forest algorithm with different data split, client number, local tree number, and local subsample rate.
 
-## GPU support
+### GPU support
 By default, CPU based training is used.
 
 If the CUDA is installed on the site, tree construction and prediction can be
@@ -102,13 +148,13 @@ In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"`.
 Then, in `FedXGBTreeExecutor` we use the `device` parameter to map each rank to a GPU device ordinal.
 If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
 
-## Run experiments 
+### Run experiments with JSON configs 
 After you run the two scripts `data_split_gen.sh` and `jobs_gen.sh`, the experiments can be run with the NVFlare simulator.
 ```
 bash run_experiment_simulator.sh
 ```
 
-## Validate the trained model
+### Validate the trained model
 The trained global random forest model can further be validated using
 ```
 bash model_validation.sh 

@@ -37,7 +37,88 @@ in `DATASET_ROOT/HIGGS.csv`.
 
 Please note that the UCI's website may experience occasional downtime.
 
-## Prepare clients' configs with proper data information 
+To prepare the data:
+```bash
+bash prepare_data.sh
+```
+
+## Run with Job Recipe (Recommended)
+
+The simplest way to run this example is using the Job Recipe API:
+
+### Basic Usage
+
+```bash
+python job.py --n_clients 5 --num_rounds 50 --data_path /tmp/nvflare/dataset/HIGGS.csv
+```
+
+This will:
+- Create a FedAvg recipe with 5 clients and 50 rounds
+- Run in simulation environment (all clients on one machine as threads)
+- Store results in `/tmp/nvflare/simulation/sklearn_linear/`
+
+### Options
+
+```bash
+python job.py --help
+```
+
+Available arguments:
+- `--n_clients`: Number of clients (default: 5)
+- `--num_rounds`: Number of training rounds (default: 50)
+- `--data_path`: Path to HIGGS.csv file (default: /tmp/nvflare/dataset/HIGGS.csv)
+
+### View Results
+
+You can use TensorBoard to view the training metrics:
+```bash
+tensorboard --logdir /tmp/nvflare/simulation/sklearn_linear
+```
+
+### Different Execution Environments
+
+The same recipe can run in different environments by changing just one line:
+
+**Simulation (default)**: All clients run as threads in a single process
+```python
+from nvflare.recipe import SimEnv
+env = SimEnv(num_clients=5)
+run = recipe.execute(env)
+```
+
+**Proof-of-Concept**: Clients run as separate processes on one machine
+```python
+from nvflare.recipe import PocEnv
+env = PocEnv(num_clients=5)
+run = recipe.execute(env)
+```
+
+**Production**: Clients run on separate machines in a real deployment
+```python
+from nvflare.recipe import ProdEnv
+env = ProdEnv(startup_kit_location="/path/to/admin/startup/kit")
+run = recipe.execute(env)
+```
+
+### How it Works
+
+The recipe approach uses:
+- `job.py`: Defines the federated learning job using the `SklearnFedAvgRecipe`
+- `client.py`: Client training script using the NVFlare Client API
+
+The recipe automatically handles:
+- Server-side component configuration (controller, aggregator, persistor)
+- Client-side executor setup
+- Job packaging and deployment
+
+---
+
+## Alternative: Run with JSON Configs (Legacy)
+
+For reference, this example also supports the traditional approach using JSON configuration files.
+This method requires more setup but provides finer control over individual client configurations.
+
+### Prepare clients' configs with proper data information 
 For real-world FL applications, the config JSON files are expected to be 
 specified by each client individually, according to their own local data path and splits for training and validation.
 
@@ -100,7 +181,7 @@ Below is a sample config for site-1, saved to `./jobs/sklearn_linear_5_uniform/a
 }
 ```
 
-## Run experiment with FL simulator
+### Run experiment with FL simulator (Legacy)
 [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
 We can run the FL simulator with five clients under the uniform data split with
 ```commandline
@@ -108,6 +189,11 @@ bash run_experiment_simulator.sh
 ```
 Note that there will be a warning during training: `ConvergenceWarning: Maximum number of iteration reached before convergence. Consider increasing max_iter to improve the fit.`, which is the expected behavior since every round we perform 1-step training on each client. 
 
+## Results
+
 Running with deterministic setting `random_state=0`, the resulting curve 
-showing the classification performance using area-under the curve (AUC) is
+showing the classification performance using area-under the curve (AUC) is:
+
 ![linear curve](./figs/linear.png)
+
+Both the recipe-based approach and the legacy JSON config approach produce the same results.

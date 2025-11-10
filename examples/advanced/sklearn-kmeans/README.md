@@ -52,7 +52,87 @@ used for training since k-Means clustering is an unsupervised method.
 The entire dataset with labels will be used for performance evaluation 
 based on [homogeneity_score](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.homogeneity_score.html).
 
-## Run FL with proper data split 
+## Run with Job Recipe (Recommended)
+
+The simplest way to run this example is using the Job Recipe API:
+
+### Basic Usage
+
+```bash
+python job.py --n_clients 3 --num_rounds 5 --n_clusters 3 --data_path /tmp/nvflare/dataset/sklearn_iris.csv
+```
+
+This will:
+- Create a K-Means recipe with 3 clients, 5 rounds, and 3 clusters
+- Run in simulation environment (all clients on one machine as threads)
+- Store results in `/tmp/nvflare/simulation/sklearn_kmeans/`
+
+### Options
+
+```bash
+python job.py --help
+```
+
+Available arguments:
+- `--n_clients`: Number of clients (default: 3)
+- `--num_rounds`: Number of training rounds (default: 5)
+- `--n_clusters`: Number of clusters (default: 3)
+- `--data_path`: Path to iris CSV file (default: /tmp/nvflare/dataset/sklearn_iris.csv)
+
+### View Results
+
+You can use TensorBoard to view the training metrics:
+```bash
+tensorboard --logdir /tmp/nvflare/simulation/sklearn_kmeans
+```
+
+### Different Execution Environments
+
+The same recipe can run in different environments by changing just one line:
+
+**Simulation (default)**: All clients run as threads in a single process
+```python
+from nvflare.recipe import SimEnv
+env = SimEnv(num_clients=3)
+run = recipe.execute(env)
+```
+
+**Proof-of-Concept**: Clients run as separate processes on one machine
+```python
+from nvflare.recipe import PocEnv
+env = PocEnv(num_clients=3)
+run = recipe.execute(env)
+```
+
+**Production**: Clients run on separate machines in a real deployment
+```python
+from nvflare.recipe import ProdEnv
+env = ProdEnv(startup_kit_location="/path/to/admin/startup/kit")
+run = recipe.execute(env)
+```
+
+### How it Works
+
+The recipe approach uses:
+- `job.py`: Defines the federated learning job using the `KMeansFedAvgRecipe`
+- `src/kmeans_fl.py`: Client training script using the NVFlare Client API
+
+The recipe automatically handles:
+- Server-side component configuration (controller, aggregator, persistor, KMeansAssembler)
+- Client-side executor setup
+- Job packaging and deployment
+
+### Advanced: Custom Data Splits
+
+For heterogeneous data splits across clients, you can use the `utils/split_data.py` utility
+to generate per-client data ranges and pass them as arguments to the client script.
+
+---
+
+## Alternative: Run FL with Job API (Legacy)
+
+For reference, this example also supports the traditional approach using the Job API
+with manual data splitting. 
 For real-world FL applications, the config JSON files are expected to be 
 specified by each client individually, according to their own local data path and splits for training and validation.
 
@@ -72,11 +152,15 @@ data imbalance (linear), and high data imbalance (square for larger client
 number, e.g. `K=20`, exponential for smaller client number, e.g. `K=5` as 
 it will be too aggressive for a larger number of clients)
 
+### Legacy Job API Example
+
 In this example, we experiment with 3 clients under a uniform data split. 
 We run the federated training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html):
 ```commandline
 python kmeans_job.py --num_clients 3 --split_mode uniform
 ```
+
+Note: The above approach is preserved for reference. The recommended approach is to use the recipe method described earlier.
 
 Below is a sample config for site-1, saved to `/tmp/nvflare/workspace/jobs/kmeans/sklearn_kmeans_uniform_3_clients/app_site-1/config/config_fed_client.json`:
 ```json
@@ -121,10 +205,19 @@ to run the federated training:
 python kmeans_job_clientapi.py --num_clients 3 --split_mode uniform --workspace_dir "/tmp/nvflare/workspace/works/kmeans_clientapi" --job_dir "/tmp/nvflare/workspace/jobs/kmeans_clientapi"
 ```
 
+## Results
 
-The resulting curve for `homogeneity_score` is
+The resulting curve for `homogeneity_score` is:
+
 ![minibatch curve](./figs/minibatch.png)
-It can be visualized using
+
+Both the recipe-based approach and the legacy Job API approach produce the same results.
+
+You can visualize the metrics using TensorBoard:
 ```commandline
+# For recipe approach
+tensorboard --logdir /tmp/nvflare/simulation/sklearn_kmeans
+
+# For legacy approach
 tensorboard --logdir /tmp/nvflare/workspace/works/kmeans/sklearn_kmeans_uniform_3_clients
 ```

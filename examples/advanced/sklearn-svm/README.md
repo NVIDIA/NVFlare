@@ -47,11 +47,105 @@ This example uses the breast cancer dataset available from Scikit-learn's datase
 
 First, we will load the data, format it properly by removing the header, order 
 the label and feature columns, and save it to a CSV file with comma separation. 
-The default path is `/tmp/nvflare/dataset/sklearn_breast_cancer.
-csv`.
+The default path is `/tmp/nvflare/dataset/cancer.csv`.
 ```commandline
 bash prepare_data.sh
-``` 
+```
+
+## Run with Job Recipe (Recommended)
+
+The simplest way to run this example is using the Job Recipe API:
+
+### Basic Usage
+
+```bash
+python job.py --n_clients 3 --kernel rbf --backend sklearn --data_path /tmp/nvflare/dataset/cancer.csv
+```
+
+This will:
+- Create an SVM recipe with 3 clients using rbf kernel
+- Run in simulation environment (all clients on one machine as threads)
+- Train for 2 rounds: round 0 (training), round 1 (validation)
+- Store results in `/tmp/nvflare/simulation/sklearn_svm/`
+
+### Options
+
+```bash
+python job.py --help
+```
+
+Available arguments:
+- `--n_clients`: Number of clients (default: 3)
+- `--kernel`: Kernel type - linear, poly, rbf, or sigmoid (default: rbf)
+- `--backend`: Backend library - sklearn or cuml (default: sklearn)
+- `--data_path`: Path to cancer CSV file (default: /tmp/nvflare/dataset/cancer.csv)
+
+### Using cuML Backend
+
+For GPU-accelerated SVM training:
+```bash
+python job.py --n_clients 3 --kernel rbf --backend cuml
+```
+
+### View Results
+
+You can use TensorBoard to view the training metrics:
+```bash
+tensorboard --logdir /tmp/nvflare/simulation/sklearn_svm
+```
+
+### Different Execution Environments
+
+The same recipe can run in different environments by changing just one line:
+
+**Simulation (default)**: All clients run as threads in a single process
+```python
+from nvflare.recipe import SimEnv
+env = SimEnv(num_clients=3)
+run = recipe.execute(env)
+```
+
+**Proof-of-Concept**: Clients run as separate processes on one machine
+```python
+from nvflare.recipe import PocEnv
+env = PocEnv(num_clients=3)
+run = recipe.execute(env)
+```
+
+**Production**: Clients run on separate machines in a real deployment
+```python
+from nvflare.recipe import ProdEnv
+env = ProdEnv(startup_kit_location="/path/to/admin/startup/kit")
+run = recipe.execute(env)
+```
+
+### How it Works
+
+The recipe approach uses:
+- `job.py`: Defines the federated learning job using the `SVMFedAvgRecipe`
+- `client.py`: Client training script using the NVFlare Client API
+
+The recipe automatically handles:
+- Server-side component configuration (controller, aggregator, persistor, SVMAssembler)
+- Client-side executor setup
+- Job packaging and deployment
+- Two-round training cycle (train + validate)
+
+### Understanding SVM Training
+
+Unlike iterative algorithms, federated SVM only requires one training round:
+- **Round 0 (Training)**: Each client trains a local SVM and sends support vectors to the server.
+  The server aggregates all support vectors and trains a global SVM.
+- **Round 1 (Validation)**: Clients validate the global model using the global support vectors.
+
+This is automatically configured by the recipe!
+
+---
+
+## Alternative: Run with JSON Configs (Legacy)
+
+For reference, this example also supports the traditional approach using JSON configuration files.
+This method requires more setup but provides finer control over individual client configurations. 
 
 ## Prepare clients' configs with proper data information 
 For real-world FL applications, the config JSON files are expected to be 
@@ -115,11 +209,18 @@ Below is a sample config for site-1, saved to `./jobs/sklearn_svm_3_uniform/app_
 }
 ```
 
-## Run experiment with FL simulator
+### Run experiment with FL simulator (Legacy)
 [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
 We can run the FL simulator with three clients under the uniform data split with
 ```commandline
 bash run_experiment_simulator.sh
 ```
-Running with default [SVC](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html) classifier, the 
-resulting global model's AUC is 0.8088 which can be seen in the clients' logs.
+
+Note: The above approach is preserved for reference. The recommended approach is to use the recipe method described earlier.
+
+## Results
+
+Running with default [SVC](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html) classifier with RBF kernel, the 
+resulting global model's AUC is approximately 0.8088, which can be seen in the clients' logs or TensorBoard.
+
+Both the recipe-based approach and the legacy JSON config approach produce the same results.
