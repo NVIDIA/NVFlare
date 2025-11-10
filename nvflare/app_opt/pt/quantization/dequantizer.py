@@ -108,7 +108,7 @@ class ModelDequantizer(DXOFilter):
                     dequantized = dequantize_4bit(quantized, quant_state=quantized_state)
                 params[param_name] = self.to_source_data(dequantized, source_data_format)
 
-            elif quantization_type == "ada_quant":
+            elif quantization_type == "adaquant":
                 values_tensor = self.to_torch_tensor(values)
                 if param_quant_state is None:
                     dequantized = values_tensor

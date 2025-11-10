@@ -146,7 +146,7 @@ class ModelQuantizer(DXOFilter):
                 # add values
                 values = self.to_source_data(quantized, source_data_format)
                 params[param_name] = values
-            elif self.quantization_type == "ada_quant":
+            elif self.quantization_type == "adaquant":
                 # if numpy, first convert numpy array to tensor
                 values_tensor = self.to_torch_tensor(values).cpu()
                 quantized, quantized_state_dict = AdaQuantizer().quantize(values_tensor)
