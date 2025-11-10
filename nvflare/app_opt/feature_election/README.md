@@ -403,7 +403,6 @@ pip install -e ".[dev]"
 
 ```bash
 pytest tests/unit_test/app_opt/test_feature_election.py
-pytest tests/integration_test/app_opt/test_feature_election_integration.py
 ```
 
 ## Citation
