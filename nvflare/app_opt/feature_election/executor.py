@@ -25,7 +25,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.apis.signal import Signal
 import logging
 from sklearn.feature_selection import (
     SelectKBest, chi2, f_classif, mutual_info_classif,
@@ -34,16 +33,13 @@ from sklearn.feature_selection import (
 from sklearn.linear_model import Lasso, ElasticNet, LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, accuracy_score, roc_auc_score
 
-import warnings
-warnings.filterwarnings('ignore')
 
 # Try to import PyImpetus
 
 try:
-    from PyImpetus import PPIMBC
+    from pyimpetus import PPIMBC
     PYIMPETUS_AVAILABLE = True
 except ImportError:
     PYIMPETUS_AVAILABLE = False
@@ -561,8 +557,6 @@ class FeatureElectionExecutor(Executor):
         """Get information about PyImpetus availability and methods"""
         info = {
             "pyimpetus_available": PYIMPETUS_AVAILABLE,
-            "supported_methods": "pyimpetus" if PYIMPETUS_AVAILABLE else [],
-            "current_method": self.fs_method,
             "is_using_pyimpetus": self.fs_method == "pyimpetus" and PYIMPETUS_AVAILABLE
         }
         return info
