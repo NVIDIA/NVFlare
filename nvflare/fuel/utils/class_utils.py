@@ -121,13 +121,33 @@ class ModuleScanner:
             return modules[0]
 
 
-def _retrieve_parameters(class__, parameters):
+def _retrieve_parameters(class__, parameters, visited=None):
+    if visited is None:
+        visited = set()
+
+    # Prevent infinite recursion in case of circular inheritance
+    if class__ in visited:
+        return parameters
+    visited.add(class__)
+
     constructor = class__.__init__
     constructor__parameters = inspect.signature(constructor).parameters
-    parameters.update(constructor__parameters)
-    if "args" in constructor__parameters.keys() and "kwargs" in constructor__parameters.keys():
-        for item in class__.__bases__:
-            parameters.update(_retrieve_parameters(item, parameters))
+
+    # Only add parameters that don't already exist (child class takes precedence)
+    for param_name, param_obj in constructor__parameters.items():
+        if param_name not in parameters:
+            parameters[param_name] = param_obj
+
+    # Check if this constructor has *args and **kwargs (indicating it passes arguments to parent)
+    has_var_positional = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in constructor__parameters.values())
+    has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in constructor__parameters.values())
+
+    if has_var_positional and has_var_keyword:
+        for base_class in class__.__bases__:
+            # Only traverse classes that have __init__ methods (not object)
+            if hasattr(base_class, "__init__") and base_class is not object:
+                _retrieve_parameters(base_class, parameters, visited)
+
     return parameters
 
 
@@ -138,9 +158,51 @@ def get_component_init_parameters(component):
         component: a class instance
 
     Returns:
+        Dict: A dictionary containing parameter names as keys and Parameter objects as values
 
     """
     class__ = component.__class__
     parameters = {}
     _retrieve_parameters(class__, parameters)
     return parameters
+
+
+def resolve_component_attribute_key(component, param_name):
+    """Resolve the correct attribute key for a parameter, handling underscore prefixes and ambiguity.
+
+    Args:
+        component: The component instance to check
+        param_name: The parameter name to resolve
+
+    Returns:
+        str: The correct attribute key to use, or None if neither exists
+
+    Raises:
+        ValueError: If there's ambiguous attribute naming (both param and _param exist)
+                   or if there's ambiguity between property and instance variable
+    """
+    has_param = hasattr(component, param_name)
+    has_underscore_param = hasattr(component, "_" + param_name)
+
+    if has_param and has_underscore_param:
+        raise ValueError(
+            f"Ambiguous attribute naming in {component.__class__.__name__}: "
+            f"both '{param_name}' and '_{param_name}' exist. Use only one."
+        )
+
+    # Check for property vs instance variable ambiguity
+    if has_param:
+        is_property = isinstance(getattr(component.__class__, param_name, None), property)
+        is_in_instance_dict = param_name in getattr(component, "__dict__", {})
+
+        if is_property and is_in_instance_dict:
+            raise ValueError(
+                f"Ambiguous attribute access in {component.__class__.__name__}: "
+                f"'{param_name}' exists as both property and instance variable."
+            )
+
+        return param_name
+    elif has_underscore_param:
+        return "_" + param_name
+    else:
+        return None  # Neither attribute exists
