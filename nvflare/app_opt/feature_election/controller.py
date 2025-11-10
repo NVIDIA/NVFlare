@@ -21,7 +21,6 @@ Implements the Feature Election algorithm from the FLASH framework
 import numpy as np
 from typing import Dict, List, Optional, Any
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
