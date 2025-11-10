@@ -203,12 +203,12 @@ Operational
 
 #. Why am I getting an error about my custom files not being found?
 
-    Custom code execution (also known as BYOC - Bring Your Own Code) is now governed by each site's authorization policy, 
+    Custom code execution (also known as BYOC - Bring Your Own Code) is now governed by each site's authorization policy,
     which is defined in the ``authorization.json`` file located in the ``local`` folder of the site's workspace. 
     This is part of the :ref:`Site Policy Management <site_policy_management>` system.
     
     **Default BYOC Permissions:**
-    When provisioning, NVFLARE creates an ``authorization.json.default`` file with the following default BYOC permissions:
+    During provisioning, NVFLARE creates an ``authorization.json.default`` file with the following default BYOC permissions:
     
     - **project_admin** and **lead** roles: Can use BYOC (``"byoc": "any"``)
     - **org_admin** and **member** roles: Cannot use BYOC by default (``"byoc": "none"`` or no BYOC permission)
@@ -231,8 +231,8 @@ Operational
         }
     
     In this example, users with the "lead" role can submit jobs with custom code, while "org_admin" users cannot. 
-    The ``byoc`` permission can be set to "any", "none", or scoped to specific organizations or users (e.g., "o:org_name" 
-    or "n:username"). See :ref:`Federated Authorization <federated_authorization>` for more details on authorization policies.
+    The ``byoc`` permission can be set to ``"any"``, ``"none"``, or scoped to specific organizations or users (e.g., ``"o:org_name"``
+    or ``"n:username"``). See :ref:`Federated Authorization <federated_authorization>` for more details on authorization policies.
 
 #. I am getting the following errors, does this mean the server is down? ::
 
