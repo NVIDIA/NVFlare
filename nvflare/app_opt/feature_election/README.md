@@ -402,7 +402,7 @@ pip install -e ".[dev]"
 ### Running Tests
 
 ```bash
-pytest tests/unit_test/app_opt/test_feature_election.py
+pytest tests/unit_test/app_opt/feature_election/test_feature_election.py
 ```
 
 ## Citation
