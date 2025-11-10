@@ -177,6 +177,14 @@ The following documents provide detailed information about FLARE's Confidential 
 - :ref:`confidential_computing_attestation` - Attestation mechanisms and trust establishment
 - :ref:`hashicorp_vault_trustee_deployment` - Operational HashiCorp key vault deployment with Trustee
 
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+
+   cc_architecture
+   cc_deployment_guide
+   confidential_computing_attestation
+   hashicorp_vault_trustee_deployment
 
 
 FLARE Deployment to Azure Confidential Computing
@@ -184,3 +192,11 @@ FLARE Deployment to Azure Confidential Computing
 
 - :ref:`confidential_azure_container_instances_deployment` - Secure Aggregation on FLARE Server with Azure ACI (Azure Container Instance)
 - :ref:`azure_confidential_virtual_machine_deployment` - Creating Azure confidential virtual machines
+
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+
+   confidential_azure_container_instances_deployment
+   azure_confidential_virtual_machine_deployment

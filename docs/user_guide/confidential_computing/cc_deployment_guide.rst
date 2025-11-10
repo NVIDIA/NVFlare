@@ -225,7 +225,6 @@ Edit ``cc_site-1.yml``:
       host_entries:
         server1: 10.176.4.244
 
-3. If no GPU is available, remove the GPU authorizer and ``cc_gpu_mechanism`` configuration.
 
 **2.4 Run Provision**
 
@@ -369,7 +368,7 @@ CC Configuration Parameters
      - ``server`` / ``client``
      - Role in the NVFlare system
    * - ``root_drive_size``
-     - ``30`` (GB)
+     - ``45`` (GB)
      - Size of the root filesystem drive
    * - ``applog_drive_size``
      - ``1`` (GB)
@@ -401,9 +400,6 @@ CC Configuration Parameters
    * - ``check_frequency``
      - ``120`` (seconds)
      - Attestation check interval
-   * - ``failure_action``
-     - ``stop_job``
-     - Action on attestation failure
 
 Complete Configuration Examples
 --------------------------------
@@ -454,7 +450,7 @@ Complete Configuration Examples
    role: server
 
    # All drive sizes are in GB
-   root_drive_size: 30
+   root_drive_size: 45
    applog_drive_size: 1
    user_config_drive_size: 1
    user_data_drive_size: 1
@@ -484,7 +480,6 @@ Complete Configuration Examples
 
    cc_attestation:
      check_frequency: 120  # seconds
-     failure_action: stop_job
 
 **Client Configuration (cc_site-1.yml)**
 
@@ -495,7 +490,7 @@ Complete Configuration Examples
    role: client
 
    # All drive sizes are in GB
-   root_drive_size: 30
+   root_drive_size: 45
    applog_drive_size: 1
    user_config_drive_size: 1
    user_data_drive_size: 1
@@ -518,7 +513,6 @@ Complete Configuration Examples
 
    cc_attestation:
      check_frequency: 120  # seconds
-     failure_action: stop_job
 
 Troubleshooting
 ===============
@@ -590,6 +584,31 @@ Common Issues
 - Verify ``/etc/hosts`` entries if not using public domain
 - Check firewall rules
 - Ensure correct ports are configured in both server and client
+
+Notes on using NVIDIA GPU CC
+============================
+
+1. For any site that supports GPU CC, you can add NVFLARE's `GPUAuthorizer` to the `cc_site.yml` configuration file:
+
+.. code-block:: yaml
+
+    cc_issuers:
+      ...
+      - id: gpu_authorizer
+        path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
+        token_expiration: 100 # seconds, needs to be less than check_frequency
+
+2. The NVFlare `GPUAuthorizer` uses NVIDIA's `nv_attestation_sdk`.
+   When building the NVFlare app docker image, make sure to include it in the requirements, for example:
+
+.. code-block:: bash
+
+    torch
+    torchvision
+    tensorboard
+    tensorflow
+    safetensors
+    nv_attestation_sdk
 
 Next Steps
 ==========
