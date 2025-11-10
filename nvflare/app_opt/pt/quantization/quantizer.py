@@ -158,6 +158,8 @@ class ModelQuantizer(DXOFilter):
                 for state_name, state in quantized_state_dict.items():
                     if isinstance(state, (torch.Tensor, np.ndarray)):
                         n_bytes_meta += state.nbytes
+            else:
+                raise ValueError(f"Invalid quantization type: {self.quantization_type}")
             n_bytes_after += params[param_name].nbytes
 
         self.log_info(
