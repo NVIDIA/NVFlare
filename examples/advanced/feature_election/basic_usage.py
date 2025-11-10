@@ -25,7 +25,7 @@ from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, f1_score
-from nvflare.app_opt.feature_election import quick_election
+from nvflare.app_opt.feature_election import FeatureElection, quick_election
 
 
 def create_sample_dataset():
@@ -140,9 +140,7 @@ def example_3_custom_configuration():
     print("\n" + "="*60)
     print("Example 3: Custom Configuration")
     print("="*60)
-    
-    from nvflare.app_opt.feature_election import FeatureElection
-    
+
     # Create dataset
     df = create_sample_dataset()
     
