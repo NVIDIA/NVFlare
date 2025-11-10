@@ -113,7 +113,6 @@ class ModelDequantizer(DXOFilter):
                 if param_quant_state is None:
                     dequantized = values_tensor
                 else:
-                    param_quant_state = quant_state[param_name]
                     dequantized = AdaQuantizer().dequantized(values_tensor, param_quant_state)
                 params[param_name] = self.to_source_data(dequantized, source_data_format)
             else:
