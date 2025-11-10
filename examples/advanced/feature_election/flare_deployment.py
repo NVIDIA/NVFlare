@@ -124,14 +124,9 @@ def load_client_data():
         random_state=np.random.randint(0, 1000)  # Each client has different data
     )
     
-    # Simulate client-specific data
-    X, y = make_classification(
-        n_samples=500,
-        n_features=100,
-        n_informative=20,
-        n_redundant=30,
-        random_state=np.random.randint(0, 1000)  # Each client has different data
-    )
+    feature_names = [f"biomarker_{i:03d}" for i in range(50)] + \
+                   [f"clinical_{i:03d}" for i in range(30)] + \
+                   [f"imaging_{i:03d}" for i in range(20)]
     
     feature_names = [f"biomarker_{i:03d}" for i in range(50)] + \
                    [f"clinical_{i:03d}" for i in range(30)] + \
