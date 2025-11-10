@@ -25,7 +25,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.apis.signal import Signal
 import logging
 from sklearn.feature_selection import (
     SelectKBest, chi2, f_classif, mutual_info_classif,
