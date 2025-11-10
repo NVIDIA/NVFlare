@@ -76,8 +76,6 @@ class ModelDequantizer(DXOFilter):
             if param_name not in quant_state:
                 n_bytes_after += values.nbytes
                 continue
-            values = params[param_name]
-            n_bytes_before += values.nbytes
             for item in quant_state[param_name].values():
                 if isinstance(item, (np.ndarray, torch.Tensor)):
                     n_bytes_meta += item.nbytes
@@ -117,6 +115,8 @@ class ModelDequantizer(DXOFilter):
                 else:
                     dequantized = AdaQuantizer().dequantized(values_tensor, quant_state[param_name])
                 params[param_name] = self.to_source_data(dequantized, source_data_format)
+            else:
+                raise ValueError(f"Invalid quantization type: {quantization_type}")
 
             # assign back
             if source_data_format == "numpy":
