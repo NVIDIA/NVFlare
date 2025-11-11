@@ -149,7 +149,6 @@ class CCBuilder(Builder):
             attestation_config = cc_config.get(CCConfigKey.CC_ATTESTATION_CONFIG)
             if attestation_config:
                 cc_mgr_args[CCManagerArgs.VERIFY_FREQUENCY] = attestation_config.get("check_frequency", 600)
-                failure_action = attestation_config.get("failure_action", "stop_system")
 
             cc_verifier_ids.add(authorizer.get(CCIssuerConfig.ID))
 

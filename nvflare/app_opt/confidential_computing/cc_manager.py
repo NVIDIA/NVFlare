@@ -39,7 +39,7 @@ CC_ISSUER = "_cc_issuer"
 CC_NAMESPACE = "_cc_namespace"
 CC_INFO = "_cc_info"
 CC_TOKEN_VALIDATED = "_cc_token_validated"
-CC_VERIFY_ERROR = "_cc_verify_error."
+CC_VERIFY_ERROR = "_cc_verify_error"
 
 CC_ISSUER_ID = "issuer_id"
 TOKEN_GENERATION_TIME = "token_generation_time"
@@ -51,7 +51,6 @@ CC_VERIFICATION_FAILED = "not meeting CC requirements"
 CC_CHANNEL = "cc_validation"
 CC_TOPIC_REQUEST_TOKEN = "request_fresh_token"
 CC_TOPIC_GET_SITES = "get_sites"
-CC_TOPIC_VALIDATE_ALL = "validate_all_tokens"
 
 
 class CCManager(FLComponent):
@@ -65,11 +64,11 @@ class CCManager(FLComponent):
         """Manage all confidential computing related tasks.
 
         This manager does the following tasks:
-            1. obtaining its own CC token
-            2. preparing the CC tokens to be sent to other sites
-            3. validating the CC tokens received from other sites
-            4. not allowing the system to start if failed to get CC token
-            5. shutdown the system if CC tokens expired
+            1. Obtains and attaches its own CC tokens.
+            2. Validates CC tokens received from other sites.
+            3. Prevents system startup if CC validation fails.
+            4. Periodically re-validates all CC tokens and shuts down
+               the system if validation fails (e.g., due to expired or invalid tokens).
 
         Note:
             arguments example:
@@ -191,7 +190,6 @@ class CCManager(FLComponent):
         engine = fl_ctx.get_engine()
         for conf in self.cc_issuers_conf:
             issuer_id = conf.get(CC_ISSUER_ID)
-            # TODO: should we make expiration an instance variable of the issuer?
             expiration = conf.get(TOKEN_EXPIRATION)
             issuer = engine.get_component(issuer_id)
             if not isinstance(issuer, CCAuthorizer):
@@ -216,55 +214,42 @@ class CCManager(FLComponent):
         fl_ctx.set_prop(key=CC_INFO, value=cc_infos_to_send, sticky=False, private=False)
         self.logger.info("Prepared CC tokens for peer")
 
+    def _validate_server_tokens(self, fl_ctx: FLContext):
+        """Validate the server's CC info during registration."""
+        self._validate_cc_tokens(fl_ctx, from_fl_ctx=True, role="server")
+
     def _validate_peer_tokens(self, fl_ctx: FLContext):
-        """Validate peer's CC info during registration."""
+        """Validate the client's (peer's) CC info during registration."""
+        self._validate_cc_tokens(fl_ctx, from_fl_ctx=False, role="client")
+
+    def _validate_cc_tokens(self, fl_ctx: FLContext, from_fl_ctx: bool, role: str):
+        """Shared validator for CC info (server or client)."""
         peer_ctx = fl_ctx.get_peer_context()
         if not peer_ctx:
-            self.logger.error("No peer context received in registration response!")
-            self._initiate_shutdown("No peer context received in registration response!", fl_ctx)
+            msg = f"No peer context received in registration response ({role})!"
+            self.logger.error(msg)
+            self._initiate_shutdown(msg, fl_ctx)
             return
-        peer_cc_info = peer_ctx.get_prop(CC_INFO)
 
+        # Get CC info: servers store in fl_ctx, clients in peer_ctx
+        peer_cc_info = fl_ctx.get_prop(CC_INFO) if from_fl_ctx else peer_ctx.get_prop(CC_INFO)
         if not peer_cc_info:
-            self.logger.error("No CC infos received in registration response!")
-            self._initiate_shutdown("Peer did not provide CC info", fl_ctx)
+            msg = f"No {role} CC info received in registration response!"
+            self.logger.error(msg)
+            self._initiate_shutdown(f"{role.capitalize()} did not provide CC info", fl_ctx)
             return
 
-        peer_name = peer_ctx.get_identity_name()
+        peer_name = peer_ctx.get_identity_name() or f"unknown_{role}"
         participants_cc_info = {peer_name: peer_cc_info}
 
         err = self._validate_participants_tokens(participants_cc_info)
         if err:
-            self.logger.error(f"Peer CC info validation failed: {err}")
-            self._initiate_shutdown(f"Peer CC info validation failed: {err}", fl_ctx)
+            msg = f"{role.capitalize()} CC info validation failed: {err}"
+            self.logger.error(msg)
+            self._initiate_shutdown(msg, fl_ctx)
             return
 
-        self.logger.info(f"Validated peer CC info: {peer_name}")
-
-    def _validate_server_tokens(self, fl_ctx: FLContext):
-        """Client side: Validate server's CC info from registration response.
-
-        The server's CC info was extracted by the communicator and stored in fl_ctx
-        (not peer_ctx, which is used server-side).
-        """
-        # Get server CC info from main context (stored by communicator)
-        server_cc_info = fl_ctx.get_prop(CC_INFO)
-
-        if not server_cc_info:
-            self.logger.error("No server CC info received in registration response!")
-            self._initiate_shutdown("Server did not provide CC info", fl_ctx)
-            return
-
-        # Use server name for validation
-        participants_cc_info = {self.site_name: server_cc_info}
-
-        err = self._validate_participants_tokens(participants_cc_info)
-        if err:
-            self.logger.error(f"Server CC info validation failed: {err}")
-            self._initiate_shutdown(f"Server CC info validation failed: {err}", fl_ctx)
-            return
-
-        self.logger.info("Validated server CC info")
+        self.logger.info(f"Validated {role} CC info for: {peer_name}")
 
     def _format_tokens_for_transmission(self, site_cc_info: list[dict[str, str]]) -> list[dict[str, str]]:
         cc_info = []
@@ -598,7 +583,6 @@ class CCManager(FLComponent):
         """Generate completely fresh tokens for validation request.
 
         This creates NEW tokens on-the-fly for each validation request.
-        Note: Caller must hold lock to ensure thread-safety.
 
         Returns:
             List of fresh CC tokens ready for validation
