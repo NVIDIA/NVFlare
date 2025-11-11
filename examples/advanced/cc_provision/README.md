@@ -140,3 +140,9 @@ tensorflow
 safetensors
 nv_attestation_sdk
 ```
+
+## 8. Notes on re-building initramfs with CVM image builder
+
+1. Before re-building the initramfs for the CVM, remove the ``initrd.img`` file from the ``image_builder/base_images/`` directory.
+   This ensures the Image Builder regenerates a fresh initramfs during the build process.
+
