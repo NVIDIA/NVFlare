@@ -29,7 +29,7 @@ from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.apis.utils.reliable_message import ReliableMessage
 from nvflare.apis.utils.task_utils import apply_filters
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.streaming.file_downloader import FileDownloader
+from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
@@ -655,7 +655,7 @@ class ClientRunner(TBI):
             self.end_run_events_sequence()
             ReliableMessage.shutdown()
             self.engine.shutdown_streamer()
-            FileDownloader.shutdown()
+            DownloadService.shutdown()
 
             with self.task_lock:
                 self.running_tasks = {}
