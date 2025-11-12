@@ -41,11 +41,12 @@ data class TrainingProgress(
             datasetSize = datasetSize
         )
         
-        fun jobReceived(jobId: String, jobName: String) = TrainingProgress(
+        fun jobReceived(jobId: String, jobName: String, duration: Long? = null) = TrainingProgress(
             phase = TrainingPhase.JOB_RECEIVED,
-            message = "Job received: $jobName",
+            message = "Job received: $jobName${duration?.let { " (${it}ms)" } ?: ""}",
             jobId = jobId,
-            jobName = jobName
+            jobName = jobName,
+            duration = duration
         )
         
         fun fetchingTask(currentRound: Int, totalRounds: Int) = TrainingProgress(
@@ -82,11 +83,12 @@ data class TrainingProgress(
             totalRounds = totalRounds
         )
         
-        fun resultsSent(currentRound: Int, totalRounds: Int) = TrainingProgress(
+        fun resultsSent(currentRound: Int, totalRounds: Int, duration: Long? = null) = TrainingProgress(
             phase = TrainingPhase.RESULTS_SENT,
-            message = "Results sent successfully (Round $currentRound/$totalRounds)",
+            message = "Results sent successfully (Round $currentRound/$totalRounds)${duration?.let { " (${it}ms)" } ?: ""}",
             currentRound = currentRound,
-            totalRounds = totalRounds
+            totalRounds = totalRounds,
+            duration = duration
         )
         
         fun completed() = TrainingProgress(

@@ -27,6 +27,7 @@ import com.nvidia.nvflare.ui.theme.NVFlareTheme
 import kotlinx.coroutines.launch
 import java.net.NetworkInterface
 import java.text.SimpleDateFormat
+import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
 
@@ -56,7 +57,7 @@ fun MainScreen() {
     var portText by remember { mutableStateOf(flareRunnerController.serverPort.toString()) }
     var status by remember { mutableStateOf(TrainingStatus.IDLE) }
     var trainingProgress by remember { mutableStateOf(TrainingProgress.idle()) }
-    var progressHistory by remember { mutableStateOf<List<TrainingProgress>>(emptyList()) }
+    var progressHistory by remember { mutableStateOf(ArrayDeque<TrainingProgress>(100)) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var supportedJobsState by remember { mutableStateOf(flareRunnerController.supportedJobs) }
     var useHttpsState by remember { mutableStateOf(flareRunnerController.useHttps) }
@@ -287,12 +288,13 @@ fun MainScreen() {
                                     },
                                     onProgressUpdate = { progress ->
                                         trainingProgress = progress
-                                        // Add to history with efficient size management
-                                        progressHistory = if (progressHistory.size >= 100) {
-                                            progressHistory.drop(1) + progress
-                                        } else {
-                                            progressHistory + progress
+                                        // Add to history with efficient ArrayDeque operations
+                                        val updatedHistory = progressHistory
+                                        if (updatedHistory.size >= 100) {
+                                            updatedHistory.removeFirst()
                                         }
+                                        updatedHistory.addLast(progress)
+                                        progressHistory = updatedHistory
                                     },
                                     onError = { error ->
                                         status = TrainingStatus.IDLE

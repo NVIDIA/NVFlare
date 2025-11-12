@@ -175,7 +175,8 @@ class AndroidFlareRunner(
         currentPhaseStartTime = System.currentTimeMillis()
         emitProgress(TrainingProgress.jobReceived(
             jobId = jobId ?: "",
-            jobName = jobName
+            jobName = jobName,
+            duration = jobFetchDuration
         ))
 
         // Process training configuration
@@ -271,7 +272,7 @@ class AndroidFlareRunner(
             val numRounds = (taskMeta?.get("num_rounds") as? Number)?.toInt()
             
             // Use server's round number
-            if (contributionRound != null && contributionRound > 0) {
+            if (contributionRound != null) {
                 currentRound = contributionRound
             } else {
                 // Fallback: increment locally if server doesn't provide round number
@@ -340,6 +341,8 @@ class AndroidFlareRunner(
             taskCtx.fireEvent(EventType.BEFORE_TRAIN, System.currentTimeMillis(), abortSignal)
             val output = executor.execute(filteredTaskDxo, taskCtx, abortSignal)
             val trainingDuration = System.currentTimeMillis() - trainingStartTime
+            
+            Log.d(TAG, "Training completed in ${trainingDuration}ms")
 
             if (output !is DXO) {
                 throw RuntimeException("Output from ${executor::class.java} is not a valid DXO: ${output::class.java}")
@@ -381,7 +384,8 @@ class AndroidFlareRunner(
             // Emit results sent progress
             emitProgress(TrainingProgress.resultsSent(
                 currentRound = currentRound,
-                totalRounds = totalRounds
+                totalRounds = totalRounds,
+                duration = sendDuration
             ))
         }
 
