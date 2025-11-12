@@ -63,7 +63,6 @@ class Int32ScalarDecomposer(NumpyScalarDecomposer):
 class NumpyArrayDecomposer(ViaDownloaderDecomposer):
 
     def __init__(self):
-        # by default do not use file downloading.
         ViaDownloaderDecomposer.__init__(self, 1024 * 1024 * 2, "np_")
 
     def supported_type(self):

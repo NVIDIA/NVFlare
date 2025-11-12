@@ -180,7 +180,9 @@ class ViaDownloaderDecomposer(fobs.Decomposer, ABC):
             self._config_var_name(ConfigVarName.DOWNLOAD_CHUNK_SIZE),
             self.max_chunk_size,
         )
-        if max_chunk_size <= 0:
+        fobs_ctx = manager.fobs_ctx
+        use_native = fobs_ctx.get("native", False)
+        if max_chunk_size <= 0 or use_native:
             # use native decompose
             self.logger.info("using native_decompose")
             data = self.native_decompose(target, manager)
