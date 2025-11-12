@@ -55,7 +55,7 @@ class AdaQuantizer:
                 "tensor_shape": old_tensor_shape,
             }
 
-        normalized_abs_tensor = values_tensor.abs() / norm
+        normalized_abs_tensor = values_tensor / norm
         quantized_tensor = (normalized_abs_tensor * quantization_level).round().clamp(0, quantization_level)
         quantized_tensor = quantized_tensor.numpy().astype(dtype=new_dtype)
         if self.compression:
