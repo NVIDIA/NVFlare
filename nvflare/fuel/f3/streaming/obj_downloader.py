@@ -16,6 +16,9 @@ from nvflare.fuel.f3.streaming.download_service import Downloadable, DownloadSer
 
 
 class ObjectDownloader:
+    """Defines a universal object downloader that can be used to download any Downloadable objects.
+
+    """
 
     def __init__(
         self,
@@ -26,6 +29,28 @@ class ObjectDownloader:
         transaction_done_cb=None,
         **cb_kwargs,
     ):
+        """Constructor of ObjectDownloader.
+
+        Args:
+            cell: the communication cell.
+            timeout: timeout of the transaction
+            num_receivers: number of sites to download the objects to. 0 means unknown.
+            tx_id: if specified, this will be used as the ID of the new transaction. If not specified, dynamically
+                generates the transaction id.
+            transaction_done_cb: the callback to be called when the transaction is done.
+            **cb_kwargs: kwargs to be passed to transaction_done_cb.
+
+        Notes: the CB signature is:
+
+            transaction_done_cb(tx_id, status, objects: list, **cb_kwargs)
+
+        where tx_id is the ID of the transaction; status is a value as defined in TransactionDoneStatus;
+        objects is a list of base objects to be downloaded. Note that the base object is not the Downloadable object!
+        For example, in case of file downloading, the Downloadable object is FileDownloadable, whereas the base object
+        is the name of the file.
+
+        Downloadable object is only needed to work with the Downloader, and not useful for apps.
+        """
         self.cell = cell
         self.tx_id = DownloadService.new_transaction(
             cell=self.cell,
@@ -37,6 +62,15 @@ class ObjectDownloader:
         )
 
     def add_object(self, obj: Downloadable, ref_id=None) -> str:
+        """Add a Downloadable object to the downloader.
+
+        Args:
+            obj: the Downloadable object to be added.
+            ref_id: if specified, use it as the generated ref. If not specified, dynamically generates a ref ID.
+
+        Returns: the ref ID for the object.
+
+        """
         rid = DownloadService.add_object(
             transaction_id=self.tx_id,
             obj=obj,
@@ -45,4 +79,10 @@ class ObjectDownloader:
         return rid
 
     def delete_transaction(self):
+        """Delete the download transaction forcefully.
+        You call this method only if you want to stop the downloading process prematurely.
+
+        Returns: None.
+
+        """
         DownloadService.delete_transaction(self.tx_id)

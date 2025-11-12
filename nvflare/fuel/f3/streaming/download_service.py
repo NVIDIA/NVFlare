@@ -29,7 +29,7 @@ OBJ_DOWNLOADER_CHANNEL = "obj_downloader__"
 OBJ_DOWNLOADER_TOPIC = "obj_downloader__download"
 
 """
-This package provides a framework for building object downloading capability (e.g. file download).
+This package provides a framework for building object downloading capability (file download, tensor download, etc.).
 
 A large object takes a lot of memory space. Sending a large object in one message needs even more memory space since
 the object needs to be serialized into large number of bytes. Additional memory space may still be needed for the
@@ -38,17 +38,20 @@ transport layer to send the message. If the message is to be sent to multiple en
 Object Downloading can drastically reduce memory consumption:
 - Instead of sending the large object in one message, it is divided into many smaller objects;
 - Instead of pushing the message to the endpoints, each endpoint will come to request. This makes it more reliable when
-different endpoints have different speed.
+different endpoints have different speed. 
 
 Object Downloading works as follows:
 - The sender prepares the object(s) for downloading. It first creates a transaction to get a tx_id. It then adds each
-object to be downloaded to the transaction, and get a reference id (ref_id).
+object (called Downloadable) to be downloaded to the transaction, and get a reference id (ref_id).
 - The sender sends the ref_id(s) to all recipients through a separate message.
 - Each recipient then calls the download_object function to download each referenced large object.
 
-To develop the downloading capability for a type of object (e.g. a file, a large dict, etc.), you need to provide
-the implementation of a Producer and a Consumer.
-- On the sending side, the Producer is responsible for producing the next small object to be sent (a chunk of bytes;
+Note that the endpoint that received object refs may forward the refs to another endpoint, which then downloads the
+referenced object(s).
+
+To develop the downloading capability for a type of object (e.g. a file, a tensor state dict, etc.), you need to provide
+the implementation of a Downloadable and a Consumer.
+- On the sending side, the Downloadable is responsible for producing the next small object to be sent (a chunk of bytes;
 a small subset of the large dict; etc.).
 - On the receiving side, the Consumer is responsible for processing the received small objects (writing the received
 bytes to a temp file; putting the received small dict to the end result; etc.).
@@ -60,32 +63,23 @@ downloaded, it's even harder to know it.
 
 There are two ways to handle this issue: object downloaded callback, and transaction timeout.
 
-You can register an object_downloaded CB when adding an object to transaction. When the object is fully downloaded
-to a site, this CB will be called. The obj_downloaded CB must follow this signature:
+You can implement the downloaded_to_one method for the Downloadable object. This method is called when the object is
+downloaded to one site.
 
-    downloaded_cb(ref_id: str, to_site: str, status: str, obj: Any, **cb_kwargs)
+You can also implement the downloaded_to_all method for the Downloadable object. This method is called when the object 
+is downloaded to all sites.
 
-where ref_id is the reference id of the object;
-to_site is the FQCN of the site that has just finished downloading;
-status is the status of downloading, as defined in DownloadStatus class;
-obj is the large object that was just downloaded;
-cb_kwargs are the kw args registered with the CB.
+Note that the downloaded_to_all method only works if you know how many sites the object will be downloaded to!
+
+You can always implement the transaction_done method for the Downloadable object. This method is called when the
+transaction is done for some reason (normal completion or timeout).
 
 Transaction timeout is the amount of time after the last downloading activity on any object in the
 transaction from any site. For example, suppose you want to send 2 large files to 3 sites, each time a download
 request is received on any file from any of the 3 sites, the last activity time of the transaction is updated to now.
 If no downloading activity is received from any site on any objects in the transaction for the specified timeout,
-the transaction is considered "timed out", and the timeout callback registered with the transaction is called.
-The transaction timeout CB must follow this signature:
-
-    timeout_cb(tx_id: str, objs: List[Any], **cb_kwargs)
-
-where tx_id is the ID of the transaction;
-objs is the list of large objects registered with the transaction;
-cb_kwargs are the kw args registered with the CB.
-
-You may need to use both mechanisms to fully take care of object life cycles. The object downloaded CB may never be
-called since the site somehow didn't finish the downloading. In reality the timeout mechanism may be sufficient.
+the transaction is considered "timed out", and the transaction_done method is called for each Downloadable object 
+added to the transaction.
 
 Unlike with Object Streamer that the object owner pushes small objects to the recipients; with Object Downloader,
 each recipient pulls the data from the object owner.
@@ -97,7 +91,17 @@ class Downloadable(ABC):
     def __init__(self, obj: Any):
         self.base_obj = obj
 
-    def set_transaction(self, tx_id, ref_id):
+    def set_transaction(self, tx_id: str, ref_id: str):
+        """This method is called when the object is added to a transaction.
+        You can use this method to keep transaction ID and/or ref ID for your own purpose.
+
+        Args:
+            tx_id: the ID of the transaction that the object has been added to.
+            ref_id: ref ID generated for the object.
+
+        Returns: None
+
+        """
         pass
 
     @abstractmethod
@@ -114,7 +118,15 @@ class Downloadable(ABC):
         pass
 
     def downloaded_to_one(self, to_site: str, status: str):
-        """Called when an object is downloaded to a site."""
+        """Called when an object is downloaded to a site.
+
+        Args:
+            to_site: name of the site that the object has been completely downloaded to.
+            status: the download status: DownloadStatus.SUCCESS or DownloadStatus.FAILED.
+
+        Returns: None
+
+        """
         pass
 
     def downloaded_to_all(self):
@@ -122,7 +134,15 @@ class Downloadable(ABC):
         pass
 
     def transaction_done(self, transaction_id: str, status: str):
-        """Called when the transaction is finished."""
+        """Called when the transaction is finished.
+
+        Args:
+            transaction_id: ID of the transaction.
+            status: completion status, a value defined in TransactionDoneStatus.
+
+        Returns: None
+
+        """
         pass
 
 
@@ -166,7 +186,7 @@ class _Ref:
 
 
 class ProduceRC:
-    """Defines return code for the Producer's produce method."""
+    """Defines return code for the Downloadable object's 'produce' method."""
 
     OK = "ok"
     ERROR = "error"
@@ -174,11 +194,15 @@ class ProduceRC:
 
 
 class DownloadStatus:
+    """Constants for object download status.
+    """
     SUCCESS = "success"
     FAILED = "failed"
 
 
 class TransactionDoneStatus:
+    """Constants for transaction completion status.
+    """
     FINISHED = "finished"
     TIMEOUT = "timeout"
     DELETED = "deleted"
@@ -270,6 +294,11 @@ class _Transaction:
 
 
 class TransactionInfo:
+    """This structure contains public info of a transaction:
+    timeout value of the transaction;
+    number of sites that objects in the transaction will be downloaded to. 0 means unknown.
+    objects that are added to the transaction.
+    """
 
     def __init__(self, tx: _Transaction):
         self.timeout = tx.timeout
