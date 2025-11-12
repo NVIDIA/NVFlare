@@ -82,7 +82,7 @@ The Confidential Computing (CC) attestation workflow establishes continuous, sys
 1. System Bootstrap
 -------------------
 
-When the system starts, each site (server or client) initializes its confidential computing components and generates a CC token that identifies its trusted environment.
+When the system starts, each CC-enabled site (server or client) initializes its confidential computing components and generates a CC token that identifies its trusted environment.
 
 
 2. Client Registration

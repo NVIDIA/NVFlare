@@ -324,7 +324,7 @@ class CCManager(FLComponent):
             self._initiate_shutdown(f"Exception in cross-site validation: {e}", fl_ctx)
             return False
 
-    def _get_all_sites(self, fl_ctx: FLContext) -> list[str]:
+    def _get_all_cc_enabled_sites(self, fl_ctx: FLContext) -> list[tuple(str, str)]:
         """Get list of all sites (server + participating clients), excluding admin clients.
 
         This method works differently depending on the context:
@@ -337,18 +337,21 @@ class CCManager(FLComponent):
             fl_ctx: FLContext
 
         Returns:
-            List of site names (excluding admin clients).
+            List of tuples of (site fqcn, site name) (excluding admin clients).
         """
         engine = fl_ctx.get_engine()
 
         # Check if this is server engine
         if isinstance(engine, ServerEngineSpec):
             # Server side: get from engine
-            all_sites = [self.site_name]
+            all_sites = [(FQCN.ROOT_SERVER, self.site_name)]
             clients = engine.get_clients()
             if clients:
                 # Filter out admin clients
-                all_sites.extend([client.name for client in clients if not is_valid_admin_client_name(client.name)])
+                for client in clients:
+                    if not is_valid_admin_client(client.name) and client.name in self.cc_enabled_sites:
+                        all_sites.append((client.get_fqcn(), client.name))
+
             self.logger.info(f"Server: Found {len(all_sites)} sites (excluding admin clients): {all_sites}")
             return all_sites
         else:
@@ -358,9 +361,9 @@ class CCManager(FLComponent):
                 self.logger.info(f"Client: Received {len(all_sites)} sites from server: {all_sites}")
                 return all_sites
             else:
-                # Fallback: only self known
-                self.logger.warning("Client: Failed to get sites from server, using self only")
-                return [self.site_name]
+                msg = "Client: Failed to get sites from server, using self only"
+                self.logger.warning(msg)
+                raise RuntimeError(msg)
 
     def _request_sites_from_server(self, fl_ctx: FLContext) -> list[str]:
         """Client side: Request current list of participating sites from server."""
@@ -473,8 +476,9 @@ class CCManager(FLComponent):
         self.logger.info(f"Generated fresh token for this site: {self.site_name}")
 
         # Step 2: Get list of all sites (exclude self)
-        all_site_names = self._get_all_sites(fl_ctx)
-        other_sites = [site for site in all_site_names if site != self.site_name and site in self.cc_enabled_sites]
+        all_sites = self._get_all_cc_enabled_sites(fl_ctx)
+        # use FQCN
+        other_sites = [site[0] for site in all_sites if site[1] != self.site_name]
 
         if not other_sites:
             self.logger.info("No other sites for validation, only this site")
@@ -489,17 +493,8 @@ class CCManager(FLComponent):
 
         for target_site in other_sites:
             try:
-                # Determine target FQCN (this depends on your topology)
-                # For simplicity, assume we can reach sites directly
-                target_fqcn = self._get_site_fqcn(target_site)
-
-                if not target_fqcn:
-                    self.logger.warning(f"Cannot determine FQCN for site {target_site}, skipping")
-                    failed_sites.append(target_site)
-                    continue
-
                 response = cell.send_request(
-                    target=target_fqcn,
+                    target=target_site,
                     channel=CC_CHANNEL,
                     topic=CC_TOPIC_REQUEST_TOKEN,
                     request=request_message,
@@ -540,21 +535,6 @@ class CCManager(FLComponent):
 
         self.logger.info(f"Collected fresh tokens from {len(all_tokens)} sites: {list(all_tokens.keys())}")
         return all_tokens
-
-    def _get_site_fqcn(self, site_name: str) -> str:
-        """Get the FQCN (Fully Qualified Cell Name) for a site.
-
-        For clients, this would typically be the client's FQCN.
-        For server, it's typically FQCN.ROOT_SERVER.
-        """
-        # Check if this is the server
-        if site_name.lower().startswith("server"):
-            return FQCN.ROOT_SERVER
-
-        # For clients, we need to construct their FQCN
-        # This depends on your network topology
-        # Common pattern: client name is the FQCN
-        return site_name
 
     def _initiate_shutdown(self, reason: str, fl_ctx: FLContext):
         """Shutdown this site due to CC validation failure."""
