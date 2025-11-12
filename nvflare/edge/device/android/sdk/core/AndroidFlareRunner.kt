@@ -495,7 +495,7 @@ class AndroidFlareRunner(
                     }
                     taskResponse.taskStatus.shouldRetryTask -> {
                         // RETRY/NO_TASK -> wait and retry
-                        val retryWait = taskResponse.retryWait ?: 5000L
+                        val retryWait = taskResponse.retryWait?.toLong() ?: 5000L
                         Log.d(TAG, "Retry task fetch requested (${taskResponse.taskStatus}), waiting ${retryWait}ms")
                         runBlocking { delay(retryWait) }
                         continue

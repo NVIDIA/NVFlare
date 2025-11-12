@@ -278,7 +278,7 @@ fun MainScreen() {
                         onClick = {
                             scope.launch {
                                 // Reset progress history and start tracking
-                                progressHistory = emptyList()
+                                progressHistory = ArrayDeque(100)
                                 sessionStartTime = System.currentTimeMillis()
                                 
                                 flareRunnerController.startTraining(
@@ -567,7 +567,7 @@ fun MainScreen() {
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 // Compute the list once before the loop
-                                val recentHistory = progressHistory.takeLast(20).reversed()
+                                val recentHistory = progressHistory.toList().takeLast(20).reversed()
                                 recentHistory.forEachIndexed { index, progress ->
                                     Row(
                                         modifier = Modifier
