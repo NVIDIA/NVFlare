@@ -15,7 +15,6 @@
 import random
 import sys
 import threading
-import time
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
@@ -60,6 +59,8 @@ class CCManager(FLComponent):
         cc_verifier_ids: list[str],
         verify_frequency: int = 600,
         cc_enabled_sites: list[str] = [],
+        get_site_request_timeout: float = 10.0,
+        get_token_request_timeout: float = 10.0,
     ):
         """Manage all confidential computing related tasks.
 
@@ -95,6 +96,8 @@ class CCManager(FLComponent):
             cc_verifier_ids: CC token verifiers component IDs
             verify_frequency: CC tokens verification frequency
             cc_enabled_sites: list of sites that are enabled for CC
+            get_site_request_timeout: timeout value for get site request
+            get_token_request_timeout: timeout value for get token request
         """
         FLComponent.__init__(self)
         self.site_name = None
@@ -104,24 +107,24 @@ class CCManager(FLComponent):
 
         if not isinstance(verify_frequency, int):
             raise ValueError(f"verify_frequency must be int, but got {type(verify_frequency).__name__}")
-        self.verify_frequency = int(verify_frequency)
 
         self.verify_time = None
         self.cc_issuers = {}
         self.cc_verifiers = {}
 
-        # Track validation state
-        self.system_validated = False
+        self.get_site_request_timeout = get_site_request_timeout
+        self.get_token_request_timeout = get_token_request_timeout
 
         # Store engine reference for cell handlers
         self.engine = None
 
-        # Use RLock (reentrant lock) to allow same thread to acquire multiple times
         self.lock = threading.RLock()
 
         # Cross-site validation support
+        self.cross_validation_run_once = False
         self.cross_validation_thread = None
-        self.cross_validation_interval = verify_frequency
+        self.cross_validation_interval = int(verify_frequency)
+        self.cross_validation_stop_event = threading.Event()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_BOOTSTRAP:
@@ -142,7 +145,7 @@ class CCManager(FLComponent):
             self._validate_server_tokens(fl_ctx)
         elif event_type == EventType.CLIENT_REGISTER_RECEIVED:
             # Server side: validate client's token and prepare server's token
-            # Skip CC processing for admin clients (they don't participate in FL jobs)
+            # Skip CC processing for admin clients
             client_type = fl_ctx.get_prop(FLContextKey.CLIENT_TYPE)
             if client_type == ClientType.ADMIN:
                 self.logger.info(f"Skipping CC validation for admin client (type={client_type})")
@@ -150,18 +153,15 @@ class CCManager(FLComponent):
 
             self.logger.info(f"Processing CC validation for client (type={client_type})")
 
-            self._validate_peer_tokens(fl_ctx)
+            self._validate_client_tokens(fl_ctx)
             self._generate_and_attach_tokens(fl_ctx)
         elif event_type == EventType.BEFORE_CHECK_CLIENT_RESOURCES:
             # Server side: job scheduler check client resources
             # Perform cross-site validation before scheduling jobs
-            # Use lock to prevent race condition on system_validated check/set
             with self.lock:
-                if not self.system_validated:
-                    validation_passed = self._perform_cross_site_validation(fl_ctx)
-                    if validation_passed:
-                        self.system_validated = True
-                        self.logger.info("System cross-site validation completed successfully")
+                if not self.cross_validation_run_once:
+                    self._perform_cross_site_validation(fl_ctx)
+                    self.cross_validation_run_once = True
         elif event_type == EventType.AFTER_CHECK_CLIENT_RESOURCES:
             client_resource_result = fl_ctx.get_prop(FLContextKey.RESOURCE_CHECK_RESULT)
             if client_resource_result:
@@ -208,25 +208,22 @@ class CCManager(FLComponent):
     def _generate_and_attach_tokens(self, fl_ctx: FLContext):
         """Generate and attach CC tokens for sending to peer."""
         cc_infos = self._generate_fresh_tokens_for_validation()
-        cc_infos_to_send = self._format_tokens_for_transmission(cc_infos)
-
-        # Set CC_INFO directly for both client and server
-        fl_ctx.set_prop(key=CC_INFO, value=cc_infos_to_send, sticky=False, private=False)
+        fl_ctx.set_prop(key=CC_INFO, value=cc_infos, sticky=False, private=False)
         self.logger.info("Prepared CC tokens for peer")
 
     def _validate_server_tokens(self, fl_ctx: FLContext):
         """Validate the server's CC info during registration."""
-        self._validate_cc_tokens(fl_ctx, from_fl_ctx=True, role="server")
+        self._validate_cc_tokens(fl_ctx, from_fl_ctx=True)
 
-    def _validate_peer_tokens(self, fl_ctx: FLContext):
+    def _validate_client_tokens(self, fl_ctx: FLContext):
         """Validate the client's (peer's) CC info during registration."""
-        self._validate_cc_tokens(fl_ctx, from_fl_ctx=False, role="client")
+        self._validate_cc_tokens(fl_ctx, from_fl_ctx=False)
 
-    def _validate_cc_tokens(self, fl_ctx: FLContext, from_fl_ctx: bool, role: str):
+    def _validate_cc_tokens(self, fl_ctx: FLContext, from_fl_ctx: bool):
         """Shared validator for CC info (server or client)."""
         peer_ctx = fl_ctx.get_peer_context()
         if not peer_ctx:
-            msg = f"No peer context received in registration response ({role})!"
+            msg = "No peer context!"
             self.logger.error(msg)
             self._initiate_shutdown(msg, fl_ctx)
             return
@@ -234,30 +231,22 @@ class CCManager(FLComponent):
         # Get CC info: servers store in fl_ctx, clients in peer_ctx
         peer_cc_info = fl_ctx.get_prop(CC_INFO) if from_fl_ctx else peer_ctx.get_prop(CC_INFO)
         if not peer_cc_info:
-            msg = f"No {role} CC info received in registration response!"
-            self.logger.error(msg)
-            self._initiate_shutdown(f"{role.capitalize()} did not provide CC info", fl_ctx)
-            return
-
-        peer_name = peer_ctx.get_identity_name() or f"unknown_{role}"
-        participants_cc_info = {peer_name: peer_cc_info}
-
-        err = self._validate_participants_tokens(participants_cc_info)
-        if err:
-            msg = f"{role.capitalize()} CC info validation failed: {err}"
+            msg = "No peer CC info!"
             self.logger.error(msg)
             self._initiate_shutdown(msg, fl_ctx)
             return
 
-        self.logger.info(f"Validated {role} CC info for: {peer_name}")
+        peer_name = peer_ctx.get_identity_name() or "unknown_site"
+        participants_cc_info = {peer_name: peer_cc_info}
 
-    def _format_tokens_for_transmission(self, site_cc_info: list[dict[str, str]]) -> list[dict[str, str]]:
-        cc_info = []
-        for i in site_cc_info:
-            namespace = i.get(CC_NAMESPACE)
-            token = i.get(CC_TOKEN)
-            cc_info.append({CC_TOKEN: token, CC_NAMESPACE: namespace, CC_TOKEN_VALIDATED: False})
-        return cc_info
+        err = self._validate_participants_tokens(participants_cc_info)
+        if err:
+            msg = f"CC info validation failed: {err}"
+            self.logger.error(msg)
+            self._initiate_shutdown(msg, fl_ctx)
+            return
+
+        self.logger.info(f"Validated CC info for: {peer_name}")
 
     def _validate_participants_tokens(self, participants_tokens: dict[str, list[dict[str, str]]]) -> str:
         self.logger.info(f"Validating participant tokens {participants_tokens=}")
@@ -390,7 +379,7 @@ class CCManager(FLComponent):
                 channel=CC_CHANNEL,
                 topic=CC_TOPIC_GET_SITES,
                 request=request_message,
-                timeout=10.0,
+                timeout=self.get_site_request_timeout,
                 optional=True,
             )
 
@@ -411,9 +400,11 @@ class CCManager(FLComponent):
 
     def _start_cross_site_validation(self, fl_ctx: FLContext):
         """Start periodic cross-site validation thread on ALL sites."""
-        if self.cross_validation_thread is not None:
+        if self.cross_validation_thread is not None and self.cross_validation_thread.is_alive():
             self.logger.info("Cross-site validation already running")
             return
+
+        self.cross_validation_stop_event.clear()
 
         self.cross_validation_thread = threading.Thread(
             target=self._cross_site_validation_loop, args=[fl_ctx], daemon=True, name="CCManager-CrossSiteValidation"
@@ -425,35 +416,40 @@ class CCManager(FLComponent):
         """Stop cross-site validation thread."""
         if self.cross_validation_thread is not None:
             self.logger.info("Stopping cross-site validation")
+            self.cross_validation_stop_event.set()
+            self.cross_validation_thread.join(timeout=5.0)
             self.cross_validation_thread = None
+            self.logger.info("Cross-site validation stopped")
 
     def _cross_site_validation_loop(self, fl_ctx: FLContext):
         """Periodic cross-site validation - runs on ALL sites."""
         # Keep a reference to the current thread
         my_thread = threading.current_thread()
+        stop_event = self.cross_validation_stop_event
 
         # Add random jitter (0-20% of interval) to avoid thundering herd
         # This prevents all sites from validating at exactly the same time
         jitter = random.uniform(0, self.cross_validation_interval * 0.2)
-        time.sleep(jitter)
-        self.logger.info(f"Cross-site validation thread started with {jitter:.1f}s jitter")
+        self.logger.info(f"Cross-site validation thread starting with {jitter:.1f}s jitter")
+        if stop_event.wait(timeout=jitter):
+            self.logger.info("Cross-site validation stopped before first run")
+            return
 
-        while self.cross_validation_thread is my_thread:
-            time.sleep(self.cross_validation_interval)
-
-            if self.cross_validation_thread is not my_thread:
-                break
-
+        while not stop_event.is_set() and self.cross_validation_thread is my_thread:
             # Use lock to prevent concurrent validation on the same site
             if not self.lock.acquire(blocking=False):
                 self.logger.warning("Cross-site validation already in progress, skipping this cycle")
-                continue
-
-            try:
-                self.logger.info(f"Site {self.site_name} triggering periodic cross-site validation")
-                self._perform_cross_site_validation(fl_ctx)
-            finally:
-                self.lock.release()
+            else:
+                try:
+                    self.logger.info(f"Site {self.site_name} triggering periodic cross-site validation")
+                    validation_passed = self._perform_cross_site_validation(fl_ctx)
+                    self.cross_validation_run_once = True
+                finally:
+                    self.lock.release()
+            # Wait for the interval or until stop_event is set
+            if stop_event.wait(timeout=self.cross_validation_interval):
+                self.logger.info("Cross-site validation stopped")
+                break
 
     def _collect_all_site_tokens(self, fl_ctx: FLContext) -> dict[str, list[dict[str, str]]]:
         """Collect FRESH CC tokens from all participants using dedicated CC channel.
@@ -478,13 +474,14 @@ class CCManager(FLComponent):
 
         # Step 2: Get list of all sites (exclude self)
         all_site_names = self._get_all_sites(fl_ctx)
-        other_sites = [site for site in all_site_names if site != self.site_name]
+        other_sites = [site for site in all_site_names if site != self.site_name and site in self.cc_enabled_sites]
 
         if not other_sites:
             self.logger.info("No other sites for validation, only this site")
             return all_tokens
 
         # Step 3: Request fresh tokens from all other known sites
+        failed_sites = []
         self.logger.info(f"Requesting fresh tokens from {len(other_sites)} other sites: {other_sites}")
 
         # Send requests to all other sites
@@ -498,6 +495,7 @@ class CCManager(FLComponent):
 
                 if not target_fqcn:
                     self.logger.warning(f"Cannot determine FQCN for site {target_site}, skipping")
+                    failed_sites.append(target_site)
                     continue
 
                 response = cell.send_request(
@@ -505,7 +503,7 @@ class CCManager(FLComponent):
                     channel=CC_CHANNEL,
                     topic=CC_TOPIC_REQUEST_TOKEN,
                     request=request_message,
-                    timeout=10.0,
+                    timeout=self.get_token_request_timeout,
                     optional=True,
                 )
 
@@ -521,16 +519,24 @@ class CCManager(FLComponent):
                                 self.logger.info(f"Received fresh token from site {site_name}")
                             else:
                                 self.logger.warning(f"Invalid payload from {target_site}: {payload}")
+                                failed_sites.append(target_site)
                         else:
                             self.logger.warning(f"Invalid response type from {target_site}: {type(payload)}")
+                            failed_sites.append(target_site)
                     else:
                         error_msg = response.get_header(MessageHeaderKey.ERROR, "unknown error")
                         self.logger.error(f"Failed to get token from {target_site}: {error_msg}")
+                        failed_sites.append(target_site)
                 else:
                     self.logger.warning(f"No response from site {target_site}")
+                    failed_sites.append(target_site)
 
             except Exception as e:
                 self.logger.exception(f"Error requesting token from {target_site}: {e}")
+                failed_sites.append(target_site)
+
+        if failed_sites:
+            raise RuntimeError(f"Failed to collect tokens from sites: {failed_sites}")
 
         self.logger.info(f"Collected fresh tokens from {len(all_tokens)} sites: {list(all_tokens.keys())}")
         return all_tokens
@@ -619,12 +625,11 @@ class CCManager(FLComponent):
         a FRESH token for EACH request (nonce-based tokens are single-use).
         """
         try:
-            # Extract requester from payload (we sent it there)
+            # Extract requester from payload
             payload = request.payload if hasattr(request, "payload") else {}
             requester = payload.get("requester", "unknown") if isinstance(payload, dict) else "unknown"
             self.logger.info(f"Received token refresh request from {requester}")
 
-            # Generate fresh tokens for THIS request
             cc_info = self._generate_fresh_tokens_for_validation()
 
             if not cc_info:
@@ -634,7 +639,7 @@ class CCManager(FLComponent):
             # Return fresh tokens
             payload = {"site_name": self.site_name, "cc_info": cc_info}
 
-            self.logger.info(f"Sending {len(cc_info)} fresh CC token(s) for site {self.site_name} to {requester}")
+            self.logger.info(f"Sending {len(cc_info)} fresh CC token(s) from site {self.site_name} to {requester}")
             return make_reply(F3ReturnCode.OK, "", payload)
 
         except Exception as e:
@@ -644,7 +649,6 @@ class CCManager(FLComponent):
     def _handle_get_sites_request(self, request):
         """Server side: Handle request for current list of participating sites."""
         try:
-            # Extract requester from payload
             payload = request.payload if hasattr(request, "payload") else {}
             requester = payload.get("requester", "unknown") if isinstance(payload, dict) else "unknown"
             self.logger.info(f"Received sites list request from {requester}")
