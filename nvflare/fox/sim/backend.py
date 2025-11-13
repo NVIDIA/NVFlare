@@ -18,6 +18,7 @@ from nvflare.apis.fl_exception import RunAborted
 from nvflare.fox.api.app import App
 from nvflare.fox.api.backend import Backend
 from nvflare.fox.api.constants import OPTION_ARGS, CollabMethodArgName, CollabMethodOptionName
+from nvflare.fox.api.ctx import fox_context
 from nvflare.fox.api.dec import adjust_kwargs
 from nvflare.fox.api.gcc import GroupCallContext
 from nvflare.fox.api.utils import check_call_args
