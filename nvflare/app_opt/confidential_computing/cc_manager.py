@@ -351,7 +351,7 @@ class CCManager(FLComponent):
             if clients:
                 # Filter out admin clients
                 for client in clients:
-                    if not is_valid_admin_client(client.name) and client.name in self.cc_enabled_sites:
+                    if not is_valid_admin_client_name(client.name) and client.name in self.cc_enabled_sites:
                         all_sites.append((client.get_fqcn(), client.name))
 
             self.logger.info(f"Server: Found {len(all_sites)} sites (excluding admin clients): {all_sites}")
