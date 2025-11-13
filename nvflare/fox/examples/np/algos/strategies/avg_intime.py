@@ -11,11 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import numpy as np
-
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.ez import EZ
+from nvflare.fox.api.fox import fox
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -49,16 +47,16 @@ class NPFedAvgInTime(Strategy):
         return current_model
 
     def _do_eval(self, model):
-        results = EZ.clients.evaluate(model)
+        results = fox.clients.evaluate(model)
         total = 0.0
         for n, v in results.items():
-            self.logger.info(f"[{EZ.context.header_str()}]: got eval result from client {n}: {v}")
+            self.logger.info(f"[{fox.context.header_str()}]: got eval result from client {n}: {v}")
             total += v
         return total / len(results)
 
     def _do_one_round(self, r, current_model):
         aggr_result = _AggrResult()
-        EZ.clients(
+        fox.clients(
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
         ).train(r, current_model)
@@ -68,12 +66,12 @@ class NPFedAvgInTime(Strategy):
         else:
             result = aggr_result.total / aggr_result.count
             self.logger.info(
-                f"[{EZ.context.header_str()}] round {r}: aggr result from {aggr_result.count} clients: {result}"
+                f"[{fox.context.header_str()}] round {r}: aggr result from {aggr_result.count} clients: {result}"
             )
             return result
 
-    def _accept_train_result(self, result, aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context.header_str()}] got train result from {context.caller} {result}")
+    def _accept_train_result(self, result, aggr_result: _AggrResult):
+        self.logger.info(f"[{fox.call_info}] got train result from {fox.caller} {result}")
         aggr_result.total += result
         aggr_result.count += 1
         return None

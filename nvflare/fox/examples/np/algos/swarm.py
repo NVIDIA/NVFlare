@@ -17,8 +17,7 @@ import traceback
 
 from nvflare.fox.api.app import ClientApp
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.dec import collab
-from nvflare.fox.api.ez import EZ
+from nvflare.fox.api.fox import fox
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -45,12 +44,12 @@ class NPSwarm(Strategy):
                 break
 
     def _all_done(self, event_type: str, data):
-        self.logger.info(f"[{EZ.call_info}]: received {event_type} from client: {EZ.caller}: {data}")
+        self.logger.info(f"[{fox.call_info}]: received {event_type} from client: {fox.caller}: {data}")
         self.all_done(data)
 
-    @collab
+    @fox.collab
     def all_done(self, reason: str):
-        self.logger.info(f"[{EZ.call_info}]: all done from client: {EZ.caller}: {reason}")
+        self.logger.info(f"[{fox.call_info}]: all done from client: {fox.caller}: {reason}")
         self.waiter.set()
 
 
@@ -61,29 +60,29 @@ class NPSwarmClient(ClientApp):
         self.delta = delta
         self.register_event_handler("final_model", self._accept_final_model)
 
-    @collab
+    @fox.collab
     def train(self, weights, current_round):
-        self.logger.info(f"[{EZ.call_info}]: train asked by {EZ.caller}: {current_round=}")
+        self.logger.info(f"[{fox.call_info}]: train asked by {fox.caller}: {current_round=}")
         return weights + self.delta
 
     def sag(self, model, current_round):
         # results = EZ.clients.train(model, current_round)
-        results = EZ.other_clients.train(model, current_round)
+        results = fox.other_clients.train(model, current_round)
         results = list(results.values())
         total = 0
         for i in range(len(results)):
             total += results[i]
         return total / len(results)
 
-    @collab
+    @fox.collab
     def swarm_learn(self, num_rounds, model, current_round):
-        self.logger.info(f"[{EZ.call_info}]: swarm learn asked: {num_rounds=} {current_round=} {model=}")
+        self.logger.info(f"[{fox.call_info}]: swarm learn asked: {num_rounds=} {current_round=} {model=}")
         new_model = self.sag(model, current_round)
 
-        self.logger.info(f"[{EZ.call_info}]: trained model {new_model=}")
+        self.logger.info(f"[{fox.call_info}]: trained model {new_model=}")
         if current_round == num_rounds - 1:
             # all done
-            EZ.clients(blocking=False).fire_event("final_model", new_model)
+            fox.clients(blocking=False).fire_event("final_model", new_model)
             # self.server.fire_event("all_done", "OK", blocking=False)
             self.logger.info("notify server all done!")
             try:
@@ -100,11 +99,11 @@ class NPSwarmClient(ClientApp):
         next_client = self.clients[next_client_idx]
         next_client.swarm_learn(num_rounds, new_model, next_round, _blocking=False)
 
-    @collab
+    @fox.collab
     def start(self, num_rounds, initial_model):
         self.swarm_learn(num_rounds, initial_model, 0)
 
     def _accept_final_model(self, event_type: str, model):
         # accept the final model
         # write model to disk
-        self.logger.info(f"[{EZ.call_info}]: received event '{event_type}' from {EZ.caller}: {model}")
+        self.logger.info(f"[{fox.call_info}]: received event '{event_type}' from {fox.caller}: {model}")

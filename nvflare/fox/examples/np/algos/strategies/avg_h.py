@@ -13,7 +13,7 @@
 # limitations under the License.
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.ez import EZ
+from nvflare.fox.api.fox import fox
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -29,7 +29,7 @@ class NPHierarchicalFedAvg(Strategy):
         self.logger = get_obj_logger(self)
 
     def execute(self, context: Context):
-        self.logger.info(f"[{EZ.call_info}] Start training for {self.num_rounds} rounds")
+        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
         current_model = context.get_prop(ContextKey.INPUT, self._initial_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
@@ -39,17 +39,17 @@ class NPHierarchicalFedAvg(Strategy):
         return current_model
 
     def _do_eval(self, model):
-        results = EZ.leaf_clients.evaluate(model)
+        results = fox.leaf_clients.evaluate(model)
         total = 0.0
         for n, v in results.items():
-            self.logger.info(f"[{EZ.call_info}]: got eval result from client {n}: {v}")
+            self.logger.info(f"[{fox.call_info}]: got eval result from client {n}: {v}")
             total += v
         return total / len(results)
 
     def _do_one_round(self, r, current_model):
         total = 0
-        results = EZ.child_clients.train(r, current_model)
+        results = fox.child_clients.train(r, current_model)
         for n, v in results.items():
-            self.logger.info(f"[{EZ.call_info}] round {r}: got group result from client {n}: {v}")
+            self.logger.info(f"[{fox.call_info}] round {r}: got group result from client {n}: {v}")
             total += v
         return total / len(results)

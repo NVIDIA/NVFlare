@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from .ctx import get_call_context
+from .dec import collab as dec_collab
 from .proxy_list import ProxyList
 
 
@@ -23,11 +24,15 @@ class classproperty:
         return self.fget(owner_class)
 
 
-class EZ:
+class fox:
 
     @classproperty
     def context(cls):
         return get_call_context()
+
+    @classproperty
+    def collab(cls):
+        return dec_collab
 
     @classproperty
     def caller(cls):

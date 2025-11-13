@@ -20,8 +20,7 @@ import torch
 from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.dec import collab
-from nvflare.fox.api.group import all_clients
+from nvflare.fox.api.fox import fox
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.utils import add as add_np
@@ -60,23 +59,22 @@ class PTFedAvgMixed(Strategy):
         self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
         pt_model, np_model = self._pt_model, self._np_model
         for i in range(self.num_rounds):
-            pt_model, np_model = self._do_one_round(i, pt_model, np_model, context)
+            pt_model, np_model = self._do_one_round(i, pt_model, np_model)
         self.logger.info(f"FINAL MODEL: {pt_model=} {np_model=}")
         return pt_model, np_model
 
-    def _do_one_round(self, r, pt_model, np_model, ctx: Context):
+    def _do_one_round(self, r, pt_model, np_model):
         aggr_result = _AggrResult()
 
-        grp = all_clients(
-            ctx,
+        grp = fox.clients(
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
         )
 
-        if ctx.env_type == EnvType.SYSTEM:
+        if fox.env_type == EnvType.SYSTEM:
             downloader = Downloader(
                 num_receivers=grp.size,
-                ctx=ctx,
+                ctx=fox.context,
                 timeout=5.0,
             )
             model_type = "ref"
@@ -94,28 +92,28 @@ class PTFedAvgMixed(Strategy):
             pt_result = aggr_result.pt_total
             div_pt(pt_result, aggr_result.count)
             self.logger.info(
-                f"[{ctx.header_str()}] round {r}: aggr PT result from {aggr_result.count} clients: {pt_result}"
+                f"[{fox.call_info}] round {r}: aggr PT result from {aggr_result.count} clients: {pt_result}"
             )
 
             np_result = aggr_result.np_total
             div_np(np_result, aggr_result.count)
             self.logger.info(
-                f"[{ctx.header_str()}] round {r}: aggr NP result from {aggr_result.count} clients: {np_result}"
+                f"[{fox.call_info}] round {r}: aggr NP result from {aggr_result.count} clients: {np_result}"
             )
             return pt_result, np_result
 
-    def _accept_train_result(self, result, aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context.header_str()}] got train result from {context.caller}: {result}")
+    def _accept_train_result(self, result, aggr_result: _AggrResult):
+        self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
 
         pt_result, np_result, model_type = result
         if model_type == "ref":
             err, pt_result = download_tensors(
                 ref=pt_result,
                 per_request_timeout=5.0,
-                ctx=context,
+                ctx=fox.context,
                 tensors_received_cb=self._aggregate_tensors,
                 aggr_result=aggr_result,
-                context=context,
+                context=fox.context,
             )
             if err:
                 raise RuntimeError(f"failed to download model {pt_result}: {err}")
@@ -123,10 +121,10 @@ class PTFedAvgMixed(Strategy):
             err, np_result = download_arrays(
                 ref=np_result,
                 per_request_timeout=5.0,
-                ctx=context,
+                ctx=fox.context,
                 arrays_received_cb=self._aggregate_arrays,
                 aggr_result=aggr_result,
-                context=context,
+                context=fox.context,
             )
             if err:
                 raise RuntimeError(f"failed to download NP model file {np_result}: {err}")
@@ -154,23 +152,21 @@ class PTTrainer(ClientApp):
         ClientApp.__init__(self)
         self.delta = delta
 
-    @collab
-    def train(self, current_round, pt_model, np_model, model_type: str, context: Context):
-        if context.is_aborted():
+    @fox.collab
+    def train(self, current_round, pt_model, np_model, model_type: str):
+        if fox.is_aborted:
             self.logger.debug("training aborted")
             return 0
 
-        self.logger.debug(
-            f"[{context.header_str()}] training round {current_round}: {model_type=} {pt_model=} {np_model=}"
-        )
+        self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {pt_model=} {np_model=}")
 
         if model_type == "ref":
-            err, pt_model = download_tensors(ref=pt_model, per_request_timeout=5.0, ctx=context)
+            err, pt_model = download_tensors(ref=pt_model, per_request_timeout=5.0, ctx=fox.context)
             if err:
                 raise RuntimeError(f"failed to download PT model {pt_model}: {err}")
             self.logger.info(f"downloaded PT model {pt_model}")
 
-            err, np_model = download_arrays(ref=np_model, per_request_timeout=5.0, ctx=context)
+            err, np_model = download_arrays(ref=np_model, per_request_timeout=5.0, ctx=fox.context)
             if err:
                 raise RuntimeError(f"failed to download NP model {np_model}: {err}")
             self.logger.info(f"downloaded NP model {np_model}")
@@ -187,7 +183,7 @@ class PTTrainer(ClientApp):
             # stream it
             downloader = Downloader(
                 num_receivers=1,
-                ctx=context,
+                ctx=fox.context,
                 timeout=5.0,
             )
             pt_result = downloader.add_tensors(pt_result, 0)

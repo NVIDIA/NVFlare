@@ -15,7 +15,7 @@ import os
 
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.ez import EZ
+from nvflare.fox.api.fox import fox
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -61,9 +61,8 @@ class NPFedAvgSequential(Strategy):
 
     def _do_one_round(self, r, current_model):
         total = 0
-        n = 0
-        for c in EZ.clients:
+        for c in fox.clients:
             result = c(blocking=True, timeout=2.0, optional=True, secure=False).train(r, current_model)
-            self.logger.info(f"[{EZ.context.header_str()}] round {r}: got result from client {c.name}: {result}")
+            self.logger.info(f"[{fox.context.header_str()}] round {r}: got result from client {c.name}: {result}")
             total += result * self.client_weights[c.name]
         return total
