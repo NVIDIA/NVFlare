@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
-
 import random
 import sys
 import threading
+from typing import Tuple
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
