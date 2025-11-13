@@ -129,95 +129,19 @@ to generate per-client data ranges and pass them as arguments to the client scri
 
 ---
 
-## Alternative: Run FL with Job API (Legacy)
-
-For reference, this example also supports the traditional approach using the Job API
-with manual data splitting. 
-For real-world FL applications, the config JSON files are expected to be 
-specified by each client individually, according to their own local data path and splits for training and validation.
-
-In this simulated study, we generate automatic data split and run experiments with different data heterogeneity levels.
-
-For an experiment with `K` clients, we split one dataset into `K+1` parts in a non-overlapping fashion: 
-`K` clients' training data and `1` common validation data. 
-
-To simulate data imbalance among clients, we provided several options for client data splits by specifying how a client's data amount correlates with its ID number (from `1` to `K`):
-- Uniform
-- Linear
-- Square
-- Exponential
-
-These options can be used to simulate no data imbalance (uniform), moderate 
-data imbalance (linear), and high data imbalance (square for larger client 
-number, e.g. `K=20`, exponential for smaller client number, e.g. `K=5` as 
-it will be too aggressive for a larger number of clients)
-
-### Legacy Job API Example
-
-In this example, we experiment with 3 clients under a uniform data split. 
-We run the federated training using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html):
-```commandline
-python kmeans_job.py --num_clients 3 --split_mode uniform
-```
-
-Note: The above approach is preserved for reference. The recommended approach is to use the recipe method described earlier.
-
-Below is a sample config for site-1, saved to `/tmp/nvflare/workspace/jobs/kmeans/sklearn_kmeans_uniform_3_clients/app_site-1/config/config_fed_client.json`:
-```json
-{
-  "format_version": 2,
-  "executors": [
-    {
-      "tasks": [
-        "train"
-      ],
-      "executor": {
-        "id": "Executor",
-        "path": "nvflare.app_opt.sklearn.sklearn_executor.SKLearnExecutor",
-        "args": {
-          "learner_id": "kmeans_learner"
-        }
-      }
-    }
-  ],
-  "task_result_filters": [],
-  "task_data_filters": [],
-  "components": [
-    {
-      "id": "kmeans_learner",
-      "path": "kmeans_learner.KMeansLearner",
-      "args": {
-        "data_path": "/tmp/nvflare/dataset/sklearn_iris.csv",
-        "train_start": 0,
-        "train_end": 50,
-        "valid_start": 0,
-        "valid_end": 150,
-        "random_state": 0
-      }
-    }
-  ]
-}
-```
-
-Alternative to using Learner+Executor as above, we can also use [ClientAPI](https://nvflare.readthedocs.io/en/2.6/programming_guide/execution_api_type/client_api.html) 
-to run the federated training:
-```commandline
-python kmeans_job_clientapi.py --num_clients 3 --split_mode uniform --workspace_dir "/tmp/nvflare/workspace/works/kmeans_clientapi" --job_dir "/tmp/nvflare/workspace/jobs/kmeans_clientapi"
-```
-
 ## Results
 
-The resulting curve for `homogeneity_score` is:
+The resulting curve for `homogeneity_score` shows the clustering quality improving over rounds:
 
 ![minibatch curve](./figs/minibatch.png)
 
-Both the recipe-based approach and the legacy Job API approach produce the same results.
-
 You can visualize the metrics using TensorBoard:
 ```commandline
-# For recipe approach
 tensorboard --logdir /tmp/nvflare/simulation/sklearn_kmeans
-
-# For legacy approach
-tensorboard --logdir /tmp/nvflare/workspace/works/kmeans/sklearn_kmeans_uniform_3_clients
 ```
+
+---
+
+## Legacy Approach
+
+> **Note**: This example has been updated to use the simplified Job Recipe API. If you need the previous Job API or JSON-based configuration approach, please refer to the [NVFlare 2.6 documentation](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/advanced/sklearn-kmeans) or earlier versions.

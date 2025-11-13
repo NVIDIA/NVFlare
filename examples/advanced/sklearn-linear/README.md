@@ -113,87 +113,15 @@ The recipe automatically handles:
 
 ---
 
-## Alternative: Run with JSON Configs (Legacy)
-
-For reference, this example also supports the traditional approach using JSON configuration files.
-This method requires more setup but provides finer control over individual client configurations.
-
-### Prepare clients' configs with proper data information 
-For real-world FL applications, the config JSON files are expected to be 
-specified by each client individually, according to their own local data path and splits for training and validation.
-
-In this simulated study, to efficiently generate the config files for a 
-study under a particular setting, we provide a script to automate the process. 
-Note that manual copying and content modification can achieve the same.
-
-For an experiment with `K` clients, we split one dataset into `K+1` parts in a non-overlapping fashion: `K` clients' training data and `1` common validation data. 
-To simulate data imbalance among clients, we provided several options for client data splits by specifying how a client's data amount correlates with its ID number (from `1` to `K`):
-- Uniform
-- Linear
-- Square
-- Exponential
-
-These options can be used to simulate no data imbalance (`uniform`), 
-moderate data imbalance (`linear`), and high data imbalance (`square` for 
-larger client number e.g., `K=20`, exponential for smaller client number e.g., 
-`K=5` as it will be too aggressive for larger client numbers)
-
-This step is performed by 
-```commandline
-bash prepare_job_config.sh
-```
-In this example, we perform an experiment with five clients under a uniform data split. 
-
-Below is a sample config for site-1, saved to `./jobs/sklearn_linear_5_uniform/app_site-1/config/config_fed_client.json`:
-```json
-{
-    "format_version": 2,
-    "executors": [
-        {
-            "tasks": [
-                "train"
-            ],
-            "executor": {
-                "id": "Executor",
-                "path": "nvflare.app_opt.sklearn.sklearn_executor.SKLearnExecutor",
-                "args": {
-                    "learner_id": "linear_learner"
-                }
-            }
-        }
-    ],
-    "task_result_filters": [],
-    "task_data_filters": [],
-    "components": [
-        {
-            "id": "linear_learner",
-            "path": "linear_learner.LinearLearner",
-            "args": {
-                "data_path": "~/dataset/HIGGS.csv",
-                "train_start": 1100000,
-                "train_end": 3080000,
-                "valid_start": 0,
-                "valid_end": 1100000,
-                "random_state": 0
-            }
-        }
-    ]
-}
-```
-
-### Run experiment with FL simulator (Legacy)
-[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
-We can run the FL simulator with five clients under the uniform data split with
-```commandline
-bash run_experiment_simulator.sh
-```
-Note that there will be a warning during training: `ConvergenceWarning: Maximum number of iteration reached before convergence. Consider increasing max_iter to improve the fit.`, which is the expected behavior since every round we perform 1-step training on each client. 
-
 ## Results
 
-Running with deterministic setting `random_state=0`, the resulting curve 
-showing the classification performance using area-under the curve (AUC) is:
+Running with deterministic setting, the resulting curve showing the classification 
+performance using area-under the curve (AUC) is:
 
 ![linear curve](./figs/linear.png)
 
-Both the recipe-based approach and the legacy JSON config approach produce the same results.
+---
+
+## Legacy Approach
+
+> **Note**: This example has been updated to use the simplified Job Recipe API. If you need the previous JSON-based configuration approach, please refer to the [NVFlare 2.6 documentation](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/advanced/sklearn-linear) or earlier versions.
