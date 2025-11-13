@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .ctx import fox_context
+from .ctx import get_call_context
 from .proxy_list import ProxyList
 
 
@@ -27,16 +27,31 @@ class EZ:
 
     @classproperty
     def context(cls):
-        return fox_context.call_ctx
+        return get_call_context()
+
+    @classproperty
+    def caller(cls):
+        ctx = get_call_context()
+        return ctx.caller
+
+    @classproperty
+    def callee(cls):
+        ctx = get_call_context()
+        return ctx.callee
+
+    @classproperty
+    def call_info(cls):
+        ctx = get_call_context()
+        return ctx.header_str()
 
     @classproperty
     def clients(cls):
-        ctx = fox_context.call_ctx
+        ctx = get_call_context()
         return ProxyList(ctx.clients)
 
     @classproperty
     def other_clients(cls):
-        ctx = fox_context.call_ctx
+        ctx = get_call_context()
         candidates = ctx.clients
         me = ctx.app.get_my_site()
         if me in candidates:
@@ -45,7 +60,7 @@ class EZ:
 
     @classproperty
     def child_clients(cls):
-        ctx = fox_context.call_ctx
+        ctx = get_call_context()
         candidates = ctx.app.get_children()
         if not candidates:
             raise RuntimeError(f"app {ctx.app.name} has no child clients")
@@ -53,7 +68,7 @@ class EZ:
 
     @classproperty
     def leaf_clients(cls):
-        ctx = fox_context.call_ctx
+        ctx = get_call_context()
         candidates = ctx.app.get_leaf_clients()
         if not candidates:
             raise RuntimeError(f"app {ctx.app.name} has no leaf clients")
@@ -61,10 +76,10 @@ class EZ:
 
     @classproperty
     def env_type(cls):
-        ctx = fox_context.call_ctx
+        ctx = get_call_context()
         return ctx.env_type
 
     @classproperty
     def is_aborted(cls):
-        ctx = fox_context.call_ctx
+        ctx = get_call_context()
         return ctx.is_aborted()
