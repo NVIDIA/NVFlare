@@ -88,20 +88,19 @@ def main():
         data_loader_id="dataloader",
     )
 
-    # Configure the recipe
-    job = recipe.configure()
-
-    # Add data loaders to each client
+    # Add executor and data loader to each client
     for site_id in range(1, args.n_clients + 1):
         data_split_file = f"{args.data_split_path}/data_site-{site_id}.json"
         dataloader = HIGGSDataLoader(data_split_filename=data_split_file)
-        job.to(dataloader, f"site-{site_id}", id="dataloader")
+        recipe.add_to_client(f"site-{site_id}", dataloader, lr_scale=1.0)
 
     # Add experiment tracking (TensorBoard)
     add_experiment_tracking(recipe, tracking_type="tensorboard")
 
     # Execute the recipe in simulation environment
-    env = SimEnv(num_clients=args.n_clients)
+    # Create client list for SimEnv
+    client_names = [f"site-{i}" for i in range(1, args.n_clients + 1)]
+    env = SimEnv(clients=client_names, num_threads=args.n_clients)
     run = recipe.execute(env)
 
     # Print results

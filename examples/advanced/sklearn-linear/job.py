@@ -33,6 +33,10 @@ def define_parser():
         default="/tmp/nvflare/dataset/HIGGS.csv",
         help="Path to HIGGS dataset CSV file",
     )
+    parser.add_argument("--train_start", type=int, default=700, help="Training data start index")
+    parser.add_argument("--train_end", type=int, default=1000, help="Training data end index")
+    parser.add_argument("--valid_start", type=int, default=0, help="Validation data start index")
+    parser.add_argument("--valid_end", type=int, default=200, help="Validation data end index")
 
     return parser.parse_args()
 
@@ -60,7 +64,7 @@ def main():
             "fit_intercept": 1,
         },
         train_script="client.py",
-        train_args=f"--data_path {data_path}",
+        train_args=f"--data_path {data_path} --train_start {args.train_start} --train_end {args.train_end} --valid_start {args.valid_start} --valid_end {args.valid_end}",
     )
 
     print("Executing recipe in simulation environment...")

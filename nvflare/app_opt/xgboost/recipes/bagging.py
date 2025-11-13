@@ -90,7 +90,6 @@ class XGBBaggingRecipe(Recipe):
         save_name: str = "xgboost_model.json",
         data_loader_id: str = "dataloader",
     ):
-        super().__init__()
         self.name = name
         self.min_clients = min_clients
         self.num_rounds = num_rounds
@@ -107,7 +106,10 @@ class XGBBaggingRecipe(Recipe):
         self.lr_mode = lr_mode
         self.save_name = save_name
         self.data_loader_id = data_loader_id
-        self.job = None
+        
+        # Configure the job
+        self.job = self.configure()
+        Recipe.__init__(self, self.job)
 
     @validator("local_subsample")
     def check_subsample(cls, v):
@@ -126,7 +128,7 @@ class XGBBaggingRecipe(Recipe):
         from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
         # Create FedJob
-        self.job = FedJob(name=self.name, min_clients=self.min_clients)
+        job = FedJob(name=self.name, min_clients=self.min_clients)
 
         # Configure server components
         controller = ScatterAndGather(
@@ -143,19 +145,34 @@ class XGBBaggingRecipe(Recipe):
             persist_every_n_rounds=0,
             snapshot_every_n_rounds=0,
         )
-        self.job.to_server(controller, id="xgb_controller")
+        job.to_server(controller, id="xgb_controller")
 
         persistor = XGBModelPersistor(save_name=self.save_name)
-        self.job.to_server(persistor, id="persistor")
+        job.to_server(persistor, id="persistor")
 
         shareable_generator = XGBModelShareableGenerator()
-        self.job.to_server(shareable_generator, id="shareable_generator")
+        job.to_server(shareable_generator, id="shareable_generator")
 
         aggregator = XGBBaggingAggregator()
-        self.job.to_server(aggregator, id="aggregator")
+        job.to_server(aggregator, id="aggregator")
 
-        # Configure client components
-        # Note: lr_scale will be set per client if lr_mode is "scaled"
+        # Note: Client components (executor and dataloader) must be added per-site
+        # by the user after recipe creation. This is because XGBoost requires
+        # site-specific dataloaders to be registered before executors.
+        
+        return job
+    
+    def add_to_client(self, site_name: str, dataloader, lr_scale: float = 1.0):
+        """Add executor and dataloader to a specific client site.
+        
+        Args:
+            site_name: Name of the client site (e.g., "site-1")
+            dataloader: XGBDataLoader instance for this client
+            lr_scale: Learning rate scale factor for this client (default: 1.0)
+        """
+        from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
+        
+        # Create executor for this specific client
         executor = FedXGBTreeExecutor(
             data_loader_id=self.data_loader_id,
             training_mode="bagging",
@@ -171,10 +188,13 @@ class XGBBaggingRecipe(Recipe):
             tree_method=self.tree_method,
             use_gpus=self.use_gpus,
             nthread=self.nthread,
-            lr_scale=1.0,  # Default, can be overridden per client
+            lr_scale=lr_scale,
             lr_mode=self.lr_mode,
         )
-        self.job.to_clients(executor)
-
-        return self.job
+        
+        # Add executor first, then dataloader to the same site
+        self.job.to(executor, site_name)
+        self.job.to(dataloader, site_name, id=self.data_loader_id)
+        
+        return self
 
