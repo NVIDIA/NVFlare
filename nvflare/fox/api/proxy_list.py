@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .ctx import fox_context
+from .ctx import get_call_context
 from .group import group
 
 
@@ -20,6 +20,16 @@ class ProxyList(list):
     def __init__(self, proxies: list):
         super().__init__()
         self.extend(proxies)
+
+    def __getattr__(self, func_name):
+        def method(*args, **kwargs):
+            grp = group(
+                ctx=get_call_context(),
+                proxies=self,
+            )
+            return getattr(grp, func_name)(*args, **kwargs)
+
+        return method
 
     def __call__(
         self,
@@ -34,7 +44,7 @@ class ProxyList(list):
     ):
         print(f"creating group: {blocking=} {timeout=} {optional=} {secure=} {min_resps=} {wait_after_min_resps=}")
         return group(
-            ctx=fox_context.call_ctx,
+            ctx=get_call_context(),
             proxies=self,
             blocking=blocking,
             timeout=timeout,

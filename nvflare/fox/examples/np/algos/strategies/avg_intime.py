@@ -15,7 +15,7 @@ import numpy as np
 
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.group import all_clients
+from nvflare.fox.api.ez import EZ
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -42,24 +42,23 @@ class NPFedAvgInTime(Strategy):
         self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
         current_model = context.get_prop(ContextKey.INPUT, self._init_model)
         for i in range(self.num_rounds):
-            current_model = self._do_one_round(i, current_model, context)
-            score = self._do_eval(current_model, context)
+            current_model = self._do_one_round(i, current_model)
+            score = self._do_eval(current_model)
             self.logger.info(f"[{context.header_str()}]: eval score in round {i}: {score}")
         self.logger.info(f"FINAL MODEL: {current_model}")
         return current_model
 
-    def _do_eval(self, model, ctx: Context):
-        results = all_clients(ctx).evaluate(model)
+    def _do_eval(self, model):
+        results = EZ.clients.evaluate(model)
         total = 0.0
         for n, v in results.items():
-            self.logger.info(f"[{ctx.header_str()}]: got eval result from client {n}: {v}")
+            self.logger.info(f"[{EZ.context.header_str()}]: got eval result from client {n}: {v}")
             total += v
         return total / len(results)
 
-    def _do_one_round(self, r, current_model, ctx: Context):
+    def _do_one_round(self, r, current_model):
         aggr_result = _AggrResult()
-        all_clients(
-            ctx,
+        EZ.clients(
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
         ).train(r, current_model)
@@ -68,7 +67,9 @@ class NPFedAvgInTime(Strategy):
             return None
         else:
             result = aggr_result.total / aggr_result.count
-            self.logger.info(f"[{ctx.header_str()}] round {r}: aggr result from {aggr_result.count} clients: {result}")
+            self.logger.info(
+                f"[{EZ.context.header_str()}] round {r}: aggr result from {aggr_result.count} clients: {result}"
+            )
             return result
 
     def _accept_train_result(self, result, aggr_result: _AggrResult, context: Context):

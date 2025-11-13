@@ -15,6 +15,8 @@ import threading
 
 from nvflare.apis.signal import Signal
 
+fox_context = threading.local()
+
 
 class Context:
 
@@ -76,4 +78,9 @@ class Context:
         return f"{self.app.name}:{self.caller}=>{self.callee}"
 
 
-fox_context = threading.local()
+def get_call_context():
+    return fox_context.call_ctx
+
+
+def set_call_context(ctx):
+    fox_context.call_ctx = ctx

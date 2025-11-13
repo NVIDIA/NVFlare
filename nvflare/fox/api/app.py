@@ -20,7 +20,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.tree_utils import Forest, Node, build_forest
 
 from .constants import CollabMethodArgName, ContextKey, FilterDirection
-from .ctx import Context, fox_context
+from .ctx import Context, set_call_context
 from .dec import collab, get_object_collab_interface, is_collab
 from .filter import CallFilter, FilterChain, ResultFilter
 from .proxy import Proxy
@@ -275,7 +275,7 @@ class App:
 
     def new_context(self, caller: str, callee: str, target_group=None):
         ctx = Context(self, caller, callee, self._abort_signal, target_group=target_group)
-        fox_context.call_ctx = ctx
+        set_call_context(ctx)
         return ctx
 
     def register_event_handler(self, event_type: str, handler, **handler_kwargs):
