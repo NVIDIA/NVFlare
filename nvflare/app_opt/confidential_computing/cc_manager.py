@@ -325,6 +325,22 @@ class CCManager(FLComponent):
             self._initiate_shutdown(f"Exception in cross-site validation: {e}", fl_ctx)
             return False
 
+    def _get_all_sites(self) -> list[Tuple[str, str]]:
+        """Get list of all sites (server + participating clients), excluding admin clients."""
+        if not isinstance(self.engine, ServerEngineSpec):
+            raise RuntimeError("_get_all_sites should only be called by server")
+        all_sites = []
+        if self.site_name in self.cc_enabled_sites:
+            all_sites.append((FQCN.ROOT_SERVER, self.site_name))
+        clients = self.engine.get_clients()
+        if clients:
+            for client in clients:
+                # Filter out admin clients
+                if not is_valid_admin_client_name(client.name) and client.name in self.cc_enabled_sites:
+                    all_sites.append((client.get_fqcn(), client.name))
+        self.logger.info(f"Server: Found {len(all_sites)} sites (excluding admin clients): {all_sites}")
+        return all_sites
+
     def _get_all_cc_enabled_sites(self, fl_ctx: FLContext) -> list[Tuple[str, str]]:
         """Get list of all sites (server + participating clients), excluding admin clients.
 
@@ -344,17 +360,7 @@ class CCManager(FLComponent):
 
         # Check if this is server engine
         if isinstance(engine, ServerEngineSpec):
-            # Server side: get from engine
-            all_sites = [(FQCN.ROOT_SERVER, self.site_name)]
-            clients = engine.get_clients()
-            if clients:
-                # Filter out admin clients
-                for client in clients:
-                    if not is_valid_admin_client_name(client.name) and client.name in self.cc_enabled_sites:
-                        all_sites.append((client.get_fqcn(), client.name))
-
-            self.logger.info(f"Server: Found {len(all_sites)} sites (excluding admin clients): {all_sites}")
-            return all_sites
+            return self._get_all_sites()
         else:
             # Client side: dynamically request current site list from server
             all_sites = self._request_sites_from_server(fl_ctx)
@@ -366,7 +372,7 @@ class CCManager(FLComponent):
                 self.logger.warning(msg)
                 raise RuntimeError(msg)
 
-    def _request_sites_from_server(self, fl_ctx: FLContext) -> list[str]:
+    def _request_sites_from_server(self, fl_ctx: FLContext) -> list[Tuple[str, str]]:
         """Client side: Request current list of participating sites from server."""
         engine = fl_ctx.get_engine()
         cell = engine.get_cell()
@@ -634,14 +640,7 @@ class CCManager(FLComponent):
             requester = payload.get("requester", "unknown") if isinstance(payload, dict) else "unknown"
             self.logger.info(f"Received sites list request from {requester}")
 
-            # Get current list of participating sites (excluding admin clients)
-            all_sites = [self.site_name]  # Start with server
-
-            if self.engine and isinstance(self.engine, ServerEngineSpec):
-                clients = self.engine.get_clients()
-                if clients:
-                    # Filter out admin clients
-                    all_sites.extend([client.name for client in clients if not is_valid_admin_client_name(client.name)])
+            all_sites = self._get_all_sites()
 
             # Return sites list
             response_payload = {"sites": all_sites}
