@@ -15,8 +15,7 @@ import random
 
 from nvflare.fox.api.app import ClientApp
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.dec import collab
-from nvflare.fox.api.ez import EZ
+from nvflare.fox.api.fox import fox
 from nvflare.fox.api.group import all_children
 
 
@@ -31,13 +30,12 @@ class NPTrainer(ClientApp):
         self.delta = delta_config.get(self.name, self.delta)
         self.logger.info(f"client {self.name}: delta={self.delta}")
 
-    @collab
+    @fox.collab
     def train(self, current_round, weights):
-        context = EZ.context
-        if EZ.is_aborted:
+        if fox.is_aborted:
             self.logger.debug("training aborted")
             return 0
-        self.logger.debug(f"[{context.header_str()}] EZ trained round {current_round}")
+        self.logger.debug(f"[{fox.call_info}] EZ trained round {current_round}")
 
         # metric_receiver = self.server.get_target("metric_receiver")
         # if metric_receiver:
@@ -47,9 +45,9 @@ class NPTrainer(ClientApp):
         self.server.fire_event("metrics", {"round": current_round, "y": 10}, _blocking=False)
         return weights + self.delta
 
-    @collab
-    def evaluate(self, model, context: Context):
-        self.logger.debug(f"[{context.header_str()}] evaluate")
+    @fox.collab
+    def evaluate(self, model):
+        self.logger.debug(f"[{fox.call_info}] evaluate")
         return random.random()
 
 
@@ -59,7 +57,7 @@ class NPHierarchicalTrainer(ClientApp):
         ClientApp.__init__(self)
         self.delta = delta
 
-    @collab
+    @fox.collab
     def train(self, current_round, weights, context: Context):
         if context.is_aborted():
             self.logger.debug("training aborted")
@@ -85,7 +83,7 @@ class NPHierarchicalTrainer(ClientApp):
         self.logger.info(f"[{context.header_str()}] local trained round {current_round} {weights} {type(weights)}")
         return weights + self.delta
 
-    @collab
+    @fox.collab
     def evaluate(self, model, context: Context):
         self.logger.debug(f"[{context.header_str()}] evaluate")
         return random.random()
