@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Tuple
+
 import random
 import sys
 import threading
@@ -259,7 +261,7 @@ class CCManager(FLComponent):
 
     def _verify_participants_tokens(
         self, participants_tokens: dict[str, list[dict[str, str]]]
-    ) -> tuple[dict[str, bool], list[str]]:
+    ) -> Tuple[dict[str, bool], list[str]]:
         """Verifies tokens for all participants.
 
         Args:
@@ -324,7 +326,7 @@ class CCManager(FLComponent):
             self._initiate_shutdown(f"Exception in cross-site validation: {e}", fl_ctx)
             return False
 
-    def _get_all_cc_enabled_sites(self, fl_ctx: FLContext) -> list[tuple(str, str)]:
+    def _get_all_cc_enabled_sites(self, fl_ctx: FLContext) -> list[Tuple[str, str]]:
         """Get list of all sites (server + participating clients), excluding admin clients.
 
         This method works differently depending on the context:
