@@ -83,3 +83,8 @@ class EZ:
     def is_aborted(cls):
         ctx = get_call_context()
         return ctx.is_aborted()
+
+    @classmethod
+    def fire_event(cls, event_type: str, data):
+        ctx = get_call_context()
+        return ctx.app.fire_event(event_type, data, ctx)
