@@ -37,77 +37,91 @@ in `DATASET_ROOT/HIGGS.csv`.
 
 Please note that the UCI's website may experience occasional downtime.
 
-## Prepare clients' configs with proper data information 
-For real-world FL applications, the config JSON files are expected to be 
-specified by each client individually, according to their own local data path and splits for training and validation.
-
-In this simulated study, to efficiently generate the config files for a 
-study under a particular setting, we provide a script to automate the process. 
-Note that manual copying and content modification can achieve the same.
-
-For an experiment with `K` clients, we split one dataset into `K+1` parts in a non-overlapping fashion: `K` clients' training data and `1` common validation data. 
-To simulate data imbalance among clients, we provided several options for client data splits by specifying how a client's data amount correlates with its ID number (from `1` to `K`):
-- Uniform
-- Linear
-- Square
-- Exponential
-
-These options can be used to simulate no data imbalance (`uniform`), 
-moderate data imbalance (`linear`), and high data imbalance (`square` for 
-larger client number e.g., `K=20`, exponential for smaller client number e.g., 
-`K=5` as it will be too aggressive for larger client numbers)
-
-This step is performed by 
-```commandline
-bash prepare_job_config.sh
-```
-In this example, we perform an experiment with five clients under a uniform data split. 
-
-Below is a sample config for site-1, saved to `./jobs/sklearn_linear_5_uniform/app_site-1/config/config_fed_client.json`:
-```json
-{
-    "format_version": 2,
-    "executors": [
-        {
-            "tasks": [
-                "train"
-            ],
-            "executor": {
-                "id": "Executor",
-                "path": "nvflare.app_opt.sklearn.sklearn_executor.SKLearnExecutor",
-                "args": {
-                    "learner_id": "linear_learner"
-                }
-            }
-        }
-    ],
-    "task_result_filters": [],
-    "task_data_filters": [],
-    "components": [
-        {
-            "id": "linear_learner",
-            "path": "linear_learner.LinearLearner",
-            "args": {
-                "data_path": "~/dataset/HIGGS.csv",
-                "train_start": 1100000,
-                "train_end": 3080000,
-                "valid_start": 0,
-                "valid_end": 1100000,
-                "random_state": 0
-            }
-        }
-    ]
-}
+To prepare the data:
+```bash
+bash prepare_data.sh
 ```
 
-## Run experiment with FL simulator
-[FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/nvflare_cli/fl_simulator.html) is used to simulate FL experiments or debug codes, not for real FL deployment.
-We can run the FL simulator with five clients under the uniform data split with
-```commandline
-bash run_experiment_simulator.sh
-```
-Note that there will be a warning during training: `ConvergenceWarning: Maximum number of iteration reached before convergence. Consider increasing max_iter to improve the fit.`, which is the expected behavior since every round we perform 1-step training on each client. 
+## Run with Job Recipe (Recommended)
 
-Running with deterministic setting `random_state=0`, the resulting curve 
-showing the classification performance using area-under the curve (AUC) is
+The simplest way to run this example is using the Job Recipe API:
+
+### Basic Usage
+
+```bash
+python job.py --n_clients 5 --num_rounds 50 --data_path /tmp/nvflare/dataset/HIGGS.csv
+```
+
+This will:
+- Create a FedAvg recipe with 5 clients and 50 rounds
+- Run in simulation environment (all clients on one machine as threads)
+- Store results in `/tmp/nvflare/simulation/sklearn_linear/`
+
+### Options
+
+```bash
+python job.py --help
+```
+
+Available arguments:
+- `--n_clients`: Number of clients (default: 5)
+- `--num_rounds`: Number of training rounds (default: 50)
+- `--data_path`: Path to HIGGS.csv file (default: /tmp/nvflare/dataset/HIGGS.csv)
+
+### View Results
+
+You can use TensorBoard to view the training metrics:
+```bash
+tensorboard --logdir /tmp/nvflare/simulation/sklearn_linear
+```
+
+### Different Execution Environments
+
+The same recipe can run in different environments by changing just one line:
+
+**Simulation (default)**: All clients run as threads in a single process
+```python
+from nvflare.recipe import SimEnv
+env = SimEnv(num_clients=5)
+run = recipe.execute(env)
+```
+
+**Proof-of-Concept**: Clients run as separate processes on one machine
+```python
+from nvflare.recipe import PocEnv
+env = PocEnv(num_clients=5)
+run = recipe.execute(env)
+```
+
+**Production**: Clients run on separate machines in a real deployment
+```python
+from nvflare.recipe import ProdEnv
+env = ProdEnv(startup_kit_location="/path/to/admin/startup/kit")
+run = recipe.execute(env)
+```
+
+### How it Works
+
+The recipe approach uses:
+- `job.py`: Defines the federated learning job using the `SklearnFedAvgRecipe`
+- `client.py`: Client training script using the NVFlare Client API
+
+The recipe automatically handles:
+- Server-side component configuration (controller, aggregator, persistor)
+- Client-side executor setup
+- Job packaging and deployment
+
+---
+
+## Results
+
+Running with deterministic setting, the resulting curve showing the classification 
+performance using area-under the curve (AUC) is:
+
 ![linear curve](./figs/linear.png)
+
+---
+
+## Legacy Approach
+
+> **Note**: This example has been updated to use the simplified Job Recipe API. If you need the previous JSON-based configuration approach, please refer to the [NVFlare 2.6 documentation](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/advanced/sklearn-linear) or earlier versions.
