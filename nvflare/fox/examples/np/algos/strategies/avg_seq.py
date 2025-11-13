@@ -13,10 +13,9 @@
 # limitations under the License.
 import os
 
-import numpy as np
-
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
+from nvflare.fox.api.ez import EZ
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -53,18 +52,18 @@ class NPFedAvgSequential(Strategy):
         self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
         current_model = context.get_prop(ContextKey.INPUT, self._initial_model)
         for i in range(self.num_rounds):
-            current_model = self._do_one_round(i, current_model, context)
+            current_model = self._do_one_round(i, current_model)
 
         # save model to work dir
         file_name = os.path.join(context.workspace.get_work_dir(), "model.npy")
         save_np_model(current_model, file_name)
         return current_model
 
-    def _do_one_round(self, r, current_model, context: Context):
+    def _do_one_round(self, r, current_model):
         total = 0
         n = 0
-        for c in context.clients:
-            result = c.train(r, current_model, _blocking=True, _timeout=2.0, _optional=True, _secure=False)
-            self.logger.info(f"[{context.header_str()}] round {r}: got result from client {c.name}: {result}")
+        for c in EZ.clients:
+            result = c(blocking=True, timeout=2.0, optional=True, secure=False).train(r, current_model)
+            self.logger.info(f"[{EZ.context.header_str()}] round {r}: got result from client {c.name}: {result}")
             total += result * self.client_weights[c.name]
         return total

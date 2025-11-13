@@ -11,10 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import numpy as np
-
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
+from nvflare.fox.api.ez import EZ
 from nvflare.fox.api.group import all_clients
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def
@@ -34,7 +33,7 @@ class NPFedAvgParallel(Strategy):
         self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
         current_model = context.get_prop(ContextKey.INPUT, self._initial_model)
         for i in range(self.num_rounds):
-            current_model = self._do_one_round(i, current_model, context)
+            current_model = self._do_one_round(i, current_model)
             score = self._do_eval(current_model, context)
             self.logger.info(f"[{context.header_str()}]: eval score in round {i}: {score}")
         return current_model
@@ -47,10 +46,10 @@ class NPFedAvgParallel(Strategy):
             total += v
         return total / len(results)
 
-    def _do_one_round(self, r, current_model, ctx: Context):
+    def _do_one_round(self, r, current_model):
         total = 0
-        results = all_clients(ctx, timeout=4, min_resps=2, wait_after_min_resps=1).train(r, current_model)
+        results = EZ.clients(timeout=4, min_resps=2, wait_after_min_resps=1).train(r, current_model)
         for n, v in results.items():
-            self.logger.info(f"[{ctx.header_str()}] round {r}: got group result from client {n}: {v}")
+            self.logger.info(f"[{EZ.context.header_str()}] round {r}: got group result from client {n}: {v}")
             total += v
         return total / len(results)

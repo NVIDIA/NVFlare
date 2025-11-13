@@ -16,6 +16,7 @@ import random
 from nvflare.fox.api.app import ClientApp
 from nvflare.fox.api.ctx import Context
 from nvflare.fox.api.dec import collab
+from nvflare.fox.api.ez import EZ
 from nvflare.fox.api.group import all_children
 
 
@@ -31,11 +32,12 @@ class NPTrainer(ClientApp):
         self.logger.info(f"client {self.name}: delta={self.delta}")
 
     @collab
-    def train(self, current_round, weights, context: Context):
-        if context.is_aborted():
+    def train(self, current_round, weights):
+        context = EZ.context
+        if EZ.is_aborted:
             self.logger.debug("training aborted")
             return 0
-        self.logger.debug(f"[{context.header_str()}] trained round {current_round}")
+        self.logger.debug(f"[{context.header_str()}] EZ trained round {current_round}")
 
         # metric_receiver = self.server.get_target("metric_receiver")
         # if metric_receiver:

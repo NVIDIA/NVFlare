@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import threading
+
 from nvflare.apis.signal import Signal
 
 
@@ -72,3 +74,6 @@ class Context:
 
     def header_str(self):
         return f"{self.app.name}:{self.caller}=>{self.callee}"
+
+
+fox_context = threading.local()

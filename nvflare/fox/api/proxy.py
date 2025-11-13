@@ -16,8 +16,39 @@ import copy
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .backend import Backend
-from .constants import OPTION_ARGS, CollabMethodArgName
+from .constants import OPTION_ARGS, CollabMethodArgName, CollabMethodOptionName
 from .utils import check_call_args
+
+
+class _ProxyCall:
+
+    def __init__(
+        self,
+        proxy,
+        blocking: bool = True,
+        timeout: float = 5.0,
+        optional: bool = False,
+        secure: bool = False,
+    ):
+        self.proxy = proxy
+        self.blocking = blocking
+        self.timeout = timeout
+        self.optional = optional
+        self.secure = secure
+
+    def __getattr__(self, func_name):
+        def method(*args, **kwargs):
+            kwargs.update(
+                {
+                    CollabMethodOptionName.OPTIONAL: self.optional,
+                    CollabMethodOptionName.SECURE: self.secure,
+                    CollabMethodOptionName.BLOCKING: self.blocking,
+                    CollabMethodOptionName.TIMEOUT: self.timeout,
+                }
+            )
+            return getattr(self.proxy, func_name)(*args, **kwargs)
+
+        return method
 
 
 class Proxy:
@@ -32,6 +63,22 @@ class Proxy:
         self.target_interface = target_interface
         self.children = {}  # child proxies
         self.logger = get_obj_logger(self)
+
+    def __call__(
+        self,
+        blocking: bool = True,
+        timeout: float = 5.0,
+        optional: bool = False,
+        secure: bool = False,
+    ):
+        print(f"creating _ProxyCall: {blocking=} {timeout=} {optional=} {secure=}")
+        return _ProxyCall(
+            proxy=self,
+            blocking=blocking,
+            timeout=timeout,
+            optional=optional,
+            secure=secure,
+        )
 
     @property
     def name(self):
