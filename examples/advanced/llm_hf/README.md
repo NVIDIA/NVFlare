@@ -279,7 +279,7 @@ export WANDB_API_KEY=<your_wandb_api_key>
 By default, you can submit a job, requesting 2 nodes with 8 GPUs via
 
 ```bash
-sbatch multinode_client.slurm
+sbatch client.slurm
 ```
 
 For more options, see [MULTINODE.md](MULTINODE.md#testing).

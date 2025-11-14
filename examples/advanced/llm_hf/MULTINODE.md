@@ -7,8 +7,8 @@ This quick reference describes how to run NVIDIA FLARE in an SLURM-managed clust
 ### Key Files
 - **`src/client.py`** - Training script (fixed rank vs local_rank)
 - **`job.py`** - Job configuration (uses wrapper script)
-- **`run_multinode_training.sh`** - Wrapper script for multi-node coordination
-- **`multinode_client.slurm`** - SLURM batch script
+- **`client.sh`** - Wrapper script for multi-node coordination
+- **`client.slurm`** - SLURM batch script
 
 ### Critical Fixes
 1. **Use global rank 0 for NVFlare operations** (not local_rank)
@@ -42,7 +42,7 @@ SLURM Job (2 nodes allocated)
   │   ├─> NVFlare Server
   │   └─> NVFlare Client (dolly)
   │       └─> Receives training task
-  │           └─> Executes: bash run_multinode_training.sh src/client.py --args...
+  │           └─> Executes: bash client.sh src/client.py --args...
   │               └─> Wrapper script uses srun to launch across nodes
   │                   ├─> Node 0: torchrun --node_rank=0 (spawns 8 processes)
   │                   └─> Node 1: torchrun --node_rank=1 (spawns 8 processes)
@@ -52,7 +52,7 @@ SLURM Job (2 nodes allocated)
 
 ### Key Components
 
-#### 1. **Wrapper Script** (`run_multinode_training.sh`)
+#### 1. **Wrapper Script** (`client.sh`)
 - Receives training script path and arguments
 - Reads SLURM environment variables
 - Automatically detects single-node vs multi-node
@@ -65,11 +65,11 @@ SLURM Job (2 nodes allocated)
 - It handles all the complexity of multi-node coordination
 
 #### 2. **Job Configuration** (`job.py`)
-- Sends wrapper script to client: `job.to("run_multinode_training.sh", site_name)`
-- ScriptRunner uses simple command: `bash run_multinode_training.sh`
+- Sends wrapper script to client: `job.to("client.sh", site_name)`
+- ScriptRunner uses simple command: `bash client.sh`
 - No need to handle environment variables in Python
 
-#### 3. **SLURM Script** (`multinode_client.slurm`)
+#### 3. **SLURM Script** (`client.slurm`)
 - Allocates 2 nodes
 - Sets up environment variables (`MASTER_ADDR`, `MASTER_PORT`, etc.)
 - Starts NVFlare server and client on master node
@@ -98,13 +98,13 @@ SLURM Job (2 nodes allocated)
    ```
 
 3. **`job.py` creates and exports FL job**:
-   - Includes `run_multinode_training.sh` in job package
+   - Includes `client.sh` in job package
    - Includes `src/client.py` training script
-   - ScriptRunner configured to run: `bash run_multinode_training.sh`
+   - ScriptRunner configured to run: `bash client.sh`
 
 4. **NVFlare client receives training task**:
    - Extracts job files to workspace
-   - Executes: `bash run_multinode_training.sh src/client.py --args...`
+   - Executes: `bash client.sh src/client.py --args...`
 
 5. **Wrapper script detects multi-node setup**:
    ```bash
@@ -135,13 +135,13 @@ SLURM Job (2 nodes allocated)
 
 ### Single Node (8 GPUs)
 ```bash
-sbatch --nodes=1 --gpus-per-node=8 multinode_client.slurm
+sbatch --nodes=1 --gpus-per-node=8 client.slurm
 ```
 Wrapper script detects `NNODES=1` and uses torchrun directly.
 
 ### Multi-Node (2 nodes, 16 GPUs)
 ```bash
-sbatch --nodes=2 --gpus-per-node=8 multinode_client.slurm
+sbatch --nodes=2 --gpus-per-node=8 client.slurm
 ```
 Wrapper script detects `NNODES=2` and uses srun + torchrun.
 
@@ -236,7 +236,7 @@ else:
     print(f"Creating multi-GPU training job with {len(gpus[i])} GPUs per node")
     
     # Send the wrapper script to the client
-    job.to("run_multinode_training.sh", site_name)
+    job.to("client.sh", site_name)
     
     # Use the wrapper script which will call srun if needed
     runner = ScriptRunner(
@@ -244,11 +244,11 @@ else:
         script_args=script_args,
         server_expected_format=server_expected_format,
         launch_external_process=True,
-        command="bash custom/run_multinode_training.sh",
+        command="bash custom/client.sh",
     )
 ```
 
-### 3. Wrapper Script (`run_multinode_training.sh`)
+### 3. Wrapper Script (`client.sh`)
 
 ```bash
 #!/bin/bash
@@ -279,7 +279,7 @@ else
 fi
 ```
 
-### 4. SLURM Script (`multinode_client.slurm`)
+### 4. SLURM Script (`client.slurm`)
 
 ```bash
 # Set up environment

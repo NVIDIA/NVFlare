@@ -145,7 +145,7 @@ def main():
             print(f"Client {client_id}: Creating multi-node training job with {len(gpus[i])} GPUs per node")
 
             # Send the wrapper script to the client
-            job.to("run_multinode_training.sh", site_name)
+            job.to("client.sh", site_name)
 
             # Use the wrapper script which will call srun if needed
             runner = ScriptRunner(
@@ -153,7 +153,7 @@ def main():
                 script_args=script_args,
                 server_expected_format=server_expected_format,
                 launch_external_process=True,
-                command="bash custom/run_multinode_training.sh",
+                command="bash custom/client.sh",
             )
         job.to(runner, site_name, tasks=["train"])
 
