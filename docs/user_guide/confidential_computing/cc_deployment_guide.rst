@@ -623,12 +623,6 @@ Notes on using NVIDIA GPU CC
 
 4. For more details, please refer to [NVIDIA's Deployment Guide for SecureAI](https://docs.nvidia.com/cc-deployment-guide-snp.pdf) 
 
-## 8. Notes on re-building initramfs with CVM image builder
-
-1. Before re-building the initramfs for the CVM, remove the ``initrd.img`` file from the ``image_builder/base_images/`` directory.
-   This ensures the Image Builder regenerates a fresh initramfs during the build process.
-
-
 Next Steps
 ==========
 
