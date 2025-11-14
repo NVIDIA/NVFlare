@@ -11,10 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.fox import fox
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.fox import fox
-from nvflare.fox.api.group import all_clients
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger

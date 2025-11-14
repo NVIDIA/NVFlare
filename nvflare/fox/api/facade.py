@@ -12,27 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from .ctx import get_call_context
+from .dec import classproperty
 from .dec import collab as dec_collab
 from .proxy_list import ProxyList
 
 
-class classproperty:
-    def __init__(self, fget):
-        self.fget = fget
+class facade:
 
-    def __get__(self, owner_instance, owner_class):
-        return self.fget(owner_class)
-
-
-class fox:
+    collab = dec_collab
 
     @classproperty
     def context(cls):
         return get_call_context()
-
-    @classproperty
-    def collab(cls):
-        return dec_collab
 
     @classproperty
     def caller(cls):
@@ -51,6 +42,10 @@ class fox:
 
     @classproperty
     def clients(cls):
+        return cls.get_clients()
+
+    @staticmethod
+    def get_clients():
         ctx = get_call_context()
         return ProxyList(ctx.clients)
 
@@ -93,3 +88,8 @@ class fox:
     def fire_event(cls, event_type: str, data):
         ctx = get_call_context()
         return ctx.app.fire_event(event_type, data, ctx)
+
+    @classmethod
+    def register_event_handler(cls, event_type: str, handler, **handler_kwargs):
+        ctx = get_call_context()
+        ctx.app.register_event_handler(event_type, handler, **handler_kwargs)

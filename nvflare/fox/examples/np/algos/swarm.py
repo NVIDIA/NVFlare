@@ -15,9 +15,9 @@ import random
 import threading
 import traceback
 
+from nvflare.fox import fox
 from nvflare.fox.api.app import ClientApp
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.fox import fox
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger

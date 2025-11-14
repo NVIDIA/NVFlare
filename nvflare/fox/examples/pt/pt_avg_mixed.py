@@ -17,10 +17,10 @@ import threading
 import numpy as np
 import torch
 
+from nvflare.fox import fox
 from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.fox import fox
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.utils import add as add_np
