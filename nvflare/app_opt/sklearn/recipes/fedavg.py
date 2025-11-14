@@ -181,7 +181,7 @@ class SklearnFedAvgRecipe(Recipe):
             server_expected_format=ExchangeFormat.RAW,
             params_transfer_type=TransferType.FULL,
         )
-        job.to_clients(executor, tasks=["train"])
+        job.to_clients(executor)
 
         Recipe.__init__(self, job)
 
