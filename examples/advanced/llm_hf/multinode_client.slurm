@@ -4,11 +4,10 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --partition=polar,polar3,polar4
 #SBATCH --gpus-per-node=8
-#SBATCH --time=4:00:00
+#SBATCH --time=0:30:00
 #SBATCH --job-name=fl_job
 #SBATCH --output=slurm_logs/%x_%j.out
 #SBATCH --error=slurm_logs/%x_%j.err
-#SBATCH --dependency=singleton
 
 # Print job information
 echo "Job started at: $(date)"

@@ -2,6 +2,8 @@
 
 ## Quick Reference
 
+This quick reference describes how to run NVIDIA FLARE in an SLURM-managed cluster environment.
+
 ### Key Files
 - **`src/client.py`** - Training script (fixed rank vs local_rank)
 - **`job.py`** - Job configuration (uses wrapper script)
@@ -339,7 +341,7 @@ In total X params to be sent to server.
 
 ## Key Principles for Multi-Node NVFlare + PyTorch DDP
 
-1. **One FL Client Per Site**: Only run FL job launcher on master node
+1. **One FL Client Per Multi-node Cluster**: Only one NVFlare client process is needed per cluster, and it should run on the SLURM master node.
 2. **Rank 0 Only for FL Operations**: Only global rank 0 talks to FL server
 3. **Local Rank for GPU Selection**: Use local_rank (0-7) for `cuda:X` device mapping
 4. **Global Rank for FL Communication**: Use rank (0-15) for NVFlare API calls

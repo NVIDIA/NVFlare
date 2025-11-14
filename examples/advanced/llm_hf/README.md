@@ -257,7 +257,7 @@ Create a fresh virtual environment on your cluster and install the requrements.
 export VENV_DIR=<path/to/your/venv>
 ```
 
-### 2. Create a NVFLare project
+### 2. Create a NVFlare project
 As an example, we create a project with only one client for the Dolly dataset.
 ```bash
 nvflare poc prepare -c dolly
