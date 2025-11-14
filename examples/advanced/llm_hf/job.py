@@ -22,24 +22,33 @@ from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
 from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 from nvflare.job_config.script_runner import ScriptRunner
+from nvflare.private.fed.utils.fed_utils import split_gpus
+from nvflare.recipe import ProdEnv
+from nvflare.recipe.spec import Recipe
 
 
 def main():
     args = define_parser()
-    train_script = "src/hf_sft_peft_fl.py"
+    train_script = "src/client.py"
     client_ids = args.client_ids
     num_clients = len(client_ids)
+    # get the GPU assignments and ports
+    gpus = split_gpus(args.gpu)
+    gpus = [g.split(",") for g in gpus]
+    ports = args.ports
+
+    print(f"Clients: {client_ids}, GPUs: {gpus}, ports: {ports}")
+    # make sure the number of GPUs matches the number of clients
+    if len(gpus) != num_clients:
+        raise ValueError(f"Number of GPUs ({len(gpus)}) does not match number of clients ({num_clients}).")
+    # make sure the number of ports equal or greater than the number of clients
+    if len(ports) < num_clients:
+        raise ValueError(f"Number of ports ({len(ports)}) is less than number of clients ({num_clients}).")
 
     if args.threads:
         num_threads = args.threads
     else:
         num_threads = num_clients
-
-    if num_threads < num_clients:
-        print("The number of threads smaller than the number of clients, runner clean-up will be performed.")
-        clean_up = 1
-    else:
-        clean_up = 0
 
     num_rounds = args.num_rounds
     workspace_dir = args.workspace_dir
@@ -73,11 +82,17 @@ def main():
         job.to(dequantizer, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
     # Define the model persistor and send to server
-    # First send the model to the server
-    job.to("src/hf_peft_model.py", "server")
-    # Then send the model persistor to the server
-    model_args = {"path": "src.hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": model_name_or_path}}
-    job.to(PTFileModelPersistor(model=model_args), "server", id="persistor")
+    if train_mode.lower() == "sft":
+        # First send the model to the server
+        job.to("src/hf_sft_model.py", "server")
+        # Then send the model persistor to the server
+        model_args = {"path": "src.hf_sft_model.CausalLMModel", "args": {"model_name_or_path": model_name_or_path}}
+    elif train_mode.lower() == "peft":
+        # First send the model to the server
+        job.to("src/hf_peft_model.py", "server")
+        # Then send the model persistor to the server
+        model_args = {"path": "src.hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": model_name_or_path}}
+    job.to(PTFileModelPersistor(model=model_args, allow_numpy_conversion=False), "server", id="persistor")
 
     # Add model selection widget and send to server
     job.to(IntimeModelSelector(key_metric="eval_loss", negate_key_metric=True), "server", id="model_selector")
@@ -89,7 +104,12 @@ def main():
         data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
 
-        script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --clean_up {clean_up}"
+        script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --num_rounds {num_rounds}"
+
+        # Add WandB arguments if provided
+        if args.wandb_project:
+            wandb_run_name = args.wandb_run_name if args.wandb_run_name else f"nvflare_{train_mode.lower()}_{client_id}"
+            script_args += f" --wandb_project {args.wandb_project} --wandb_run_name {wandb_run_name}"
         if message_mode == "tensor":
             server_expected_format = "pytorch"
         elif message_mode == "numpy":
@@ -97,26 +117,70 @@ def main():
         else:
             raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
 
-        runner = ScriptRunner(
-            script=train_script,
-            script_args=script_args,
-            server_expected_format=server_expected_format,
-            launch_external_process=False,
-        )
+        if len(gpus[i]) == 1:
+            # Single-GPU training
+            print(f"Client {client_id}: Creating single-GPU training job with {len(gpus[i])} GPUs")
+
+            runner = ScriptRunner(
+                script=train_script,
+                script_args=script_args,
+                server_expected_format=server_expected_format,
+                launch_external_process=True,
+            )
+        elif len(gpus[i]) > 1:
+            # Multi-GPU training
+            print(f"Client {client_id}: Creating multi-GPU training job with {len(gpus[i])} GPUs")
+
+            runner = ScriptRunner(
+                script=train_script,
+                script_args=script_args,
+                server_expected_format=server_expected_format,
+                launch_external_process=True,
+                command=f"python3 -m torch.distributed.run --nnodes=1 --nproc_per_node={len(gpus[i])} --master_port={ports[i]}",
+            )
+        elif args.multi_node:
+            # Multi-GPU/Multi-node distributed training
+            # Use a wrapper script that handles srun coordination
+            # The wrapper script will detect if running on single or multiple nodes
+            print(f"Client {client_id}: Creating multi-node training job with {len(gpus[i])} GPUs per node")
+
+            # Send the wrapper script to the client
+            job.to("client.sh", site_name)
+
+            # Use the wrapper script which will call srun if needed
+            runner = ScriptRunner(
+                script=train_script,
+                script_args=script_args,
+                server_expected_format=server_expected_format,
+                launch_external_process=True,
+                command="bash custom/client.sh",
+            )
         job.to(runner, site_name, tasks=["train"])
 
         if args.quantize_mode:
             job.to(quantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
             job.to(dequantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
 
+        # Add additional parameters to clients
+        client_params = {"get_task_timeout": 300, "submit_task_result_timeout": 300}
+        job.to(client_params, site_name)
+
     # Export the job
     print("job_dir=", job_dir)
     job.export_job(job_dir)
 
-    # Run the job
-    print("workspace_dir=", workspace_dir)
-    print("num_threads=", num_threads)
-    job.simulator_run(workspace_dir, threads=num_threads, gpu=args.gpu)
+    if args.startup_kit_location:
+        # Run the job in production mode
+        env = ProdEnv(startup_kit_location=args.startup_kit_location, username=args.username)
+        recipe = Recipe(job)
+        run = recipe.execute(env)
+        print("Job Status is:", run.get_status())
+        print("Job Result is:", run.get_result())
+    else:
+        # Run the job in simulation mode
+        print("workspace_dir=", workspace_dir)
+        print("num_threads=", num_threads)
+        job.simulator_run(workspace_dir, threads=num_threads, gpu=args.gpu)
 
 
 def define_parser():
@@ -186,6 +250,41 @@ def define_parser():
         type=str,
         default="0",
         help="gpu assignments for simulating clients, comma separated, default to single gpu",
+    )
+    parser.add_argument(
+        "--ports",
+        nargs="+",
+        default="7777",
+        help="ports for the clients, default to one client 7777",
+    )
+    parser.add_argument(
+        "--multi_node",
+        action="store_true",
+        help="enable multi-node training, default to False",
+    )
+    parser.add_argument(
+        "--startup_kit_location",
+        type=str,
+        default=None,
+        help="startup kit location, default to None",
+    )
+    parser.add_argument(
+        "--username",
+        type=str,
+        default="admin@nvidia.com",
+        help="username, default to None",
+    )
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default=None,
+        help="WandB project name (enables WandB tracking if provided)",
+    )
+    parser.add_argument(
+        "--wandb_run_name",
+        type=str,
+        default=None,
+        help="WandB run name (defaults to nvflare_<mode>_<client_id>)",
     )
     return parser.parse_args()
 

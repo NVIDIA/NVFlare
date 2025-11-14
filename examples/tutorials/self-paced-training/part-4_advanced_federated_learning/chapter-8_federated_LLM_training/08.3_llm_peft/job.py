@@ -22,31 +22,24 @@ from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 from nvflare.app_opt.pt.quantization.dequantizer import ModelDequantizer
 from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 from nvflare.job_config.script_runner import ScriptRunner
-from nvflare.private.fed.utils.fed_utils import split_gpus
 
 
 def main():
     args = define_parser()
-    train_script = "src/hf_sft_peft_fl.py"
+    train_script = "src/client.py"
     client_ids = args.client_ids
     num_clients = len(client_ids)
-    # get the GPU assignments and ports
-    gpus = split_gpus(args.gpu)
-    gpus = [g.split(",") for g in gpus]
-    ports = args.ports
-
-    print(f"Clients: {client_ids}, GPUs: {gpus}, ports: {ports}")
-    # make sure the number of GPUs matches the number of clients
-    if len(gpus) != num_clients:
-        raise ValueError(f"Number of GPUs ({len(gpus)}) does not match number of clients ({num_clients}).")
-    # make sure the number of ports equal or greater than the number of clients
-    if len(ports) < num_clients:
-        raise ValueError(f"Number of ports ({len(ports)}) is less than number of clients ({num_clients}).")
 
     if args.threads:
         num_threads = args.threads
     else:
         num_threads = num_clients
+
+    if num_threads < num_clients:
+        print("The number of threads smaller than the number of clients, runner clean-up will be performed.")
+        clean_up = 1
+    else:
+        clean_up = 0
 
     num_rounds = args.num_rounds
     workspace_dir = args.workspace_dir
@@ -80,17 +73,11 @@ def main():
         job.to(dequantizer, "server", tasks=["train"], filter_type=FilterType.TASK_RESULT)
 
     # Define the model persistor and send to server
-    if train_mode.lower() == "sft":
-        # First send the model to the server
-        job.to("src/hf_sft_model.py", "server")
-        # Then send the model persistor to the server
-        model_args = {"path": "src.hf_sft_model.CausalLMModel", "args": {"model_name_or_path": model_name_or_path}}
-    elif train_mode.lower() == "peft":
-        # First send the model to the server
-        job.to("src/hf_peft_model.py", "server")
-        # Then send the model persistor to the server
-        model_args = {"path": "src.hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": model_name_or_path}}
-    job.to(PTFileModelPersistor(model=model_args, allow_numpy_conversion=False), "server", id="persistor")
+    # First send the model to the server
+    job.to("src/hf_peft_model.py", "server")
+    # Then send the model persistor to the server
+    model_args = {"path": "src.hf_peft_model.CausalLMPEFTModel", "args": {"model_name_or_path": model_name_or_path}}
+    job.to(PTFileModelPersistor(model=model_args), "server", id="persistor")
 
     # Add model selection widget and send to server
     job.to(IntimeModelSelector(key_metric="eval_loss", negate_key_metric=True), "server", id="model_selector")
@@ -102,7 +89,7 @@ def main():
         data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
 
-        script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --num_rounds {num_rounds}"
+        script_args = f"--model_name_or_path {model_name_or_path} --data_path_train {data_path_train} --data_path_valid {data_path_valid} --output_path {output_path} --train_mode {train_mode} --message_mode {message_mode} --clean_up {clean_up}"
         if message_mode == "tensor":
             server_expected_format = "pytorch"
         elif message_mode == "numpy":
@@ -110,30 +97,17 @@ def main():
         else:
             raise ValueError(f"Invalid message_mode: {message_mode}, only numpy and tensor are supported.")
 
-        if len(gpus[i]) == 1:
-            runner = ScriptRunner(
-                script=train_script,
-                script_args=script_args,
-                server_expected_format=server_expected_format,
-                launch_external_process=True,
-            )
-        else:
-            runner = ScriptRunner(
-                script=train_script,
-                script_args=script_args,
-                server_expected_format=server_expected_format,
-                launch_external_process=True,
-                command=f"python3 -m torch.distributed.run --nnodes=1 --nproc_per_node={len(gpus[i])} --master_port={ports[i]}",
-            )
+        runner = ScriptRunner(
+            script=train_script,
+            script_args=script_args,
+            server_expected_format=server_expected_format,
+            launch_external_process=False,
+        )
         job.to(runner, site_name, tasks=["train"])
 
         if args.quantize_mode:
             job.to(quantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_RESULT)
             job.to(dequantizer, site_name, tasks=["train"], filter_type=FilterType.TASK_DATA)
-
-        # Add additional parameters to clients
-        client_params = {"get_task_timeout": 300, "submit_task_result_timeout": 300}
-        job.to(client_params, site_name)
 
     # Export the job
     print("job_dir=", job_dir)
@@ -212,12 +186,6 @@ def define_parser():
         type=str,
         default="0",
         help="gpu assignments for simulating clients, comma separated, default to single gpu",
-    )
-    parser.add_argument(
-        "--ports",
-        nargs="+",
-        default="7777",
-        help="ports for the clients, default to one client 7777",
     )
     return parser.parse_args()
 
