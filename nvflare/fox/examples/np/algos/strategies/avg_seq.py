@@ -32,17 +32,19 @@ class NPFedAvgSequential(Strategy):
         self.logger = get_obj_logger(self)
         self.client_weights = None
 
-    def fox_init(self, context: Context):
-        weight_config = context.app.get_prop("client_weight_config", {})
+    @fox.init
+    def init(self):
+        self.logger.info("fox init NPFedAvgSequential")
+        weight_config = fox.get_prop("client_weight_config", {})
         client_weights = {}
         total = 0
-        for c in context.clients:
+        for c in fox.clients:
             w = weight_config.get(c.name, 100)
             client_weights[c.name] = w
             total += w
 
         # normalize weights
-        for c in context.clients:
+        for c in fox.clients:
             client_weights[c.name] = client_weights[c.name] / total
 
         self.client_weights = client_weights

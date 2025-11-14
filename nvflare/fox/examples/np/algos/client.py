@@ -25,10 +25,15 @@ class NPTrainer(ClientApp):
         ClientApp.__init__(self)
         self.delta = delta
 
-    def fox_init(self, context: Context):
-        delta_config = context.app.get_prop("client_delta", {})
+    @fox.init
+    def init_trainer(self):
+        delta_config = fox.get_prop("client_delta", {})
         self.delta = delta_config.get(self.name, self.delta)
-        self.logger.info(f"client {self.name}: delta={self.delta}")
+        self.logger.info(f"init_trainer: client {self.name}: delta={self.delta}")
+
+    @fox.init
+    def init_trainer2(self):
+        self.logger.info(f"init_trainer2: client {self.name}: init again")
 
     @fox.collab
     def train(self, current_round, weights):

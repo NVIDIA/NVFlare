@@ -14,12 +14,14 @@
 from .ctx import get_call_context
 from .dec import classproperty
 from .dec import collab as dec_collab
+from .dec import init as dec_init
 from .proxy_list import ProxyList
 
 
 class facade:
 
     collab = dec_collab
+    init = dec_init
 
     @classproperty
     def context(cls):
@@ -84,12 +86,22 @@ class facade:
         ctx = get_call_context()
         return ctx.is_aborted()
 
-    @classmethod
-    def fire_event(cls, event_type: str, data):
+    @staticmethod
+    def fire_event(event_type: str, data):
         ctx = get_call_context()
         return ctx.app.fire_event(event_type, data, ctx)
 
-    @classmethod
-    def register_event_handler(cls, event_type: str, handler, **handler_kwargs):
+    @staticmethod
+    def register_event_handler(event_type: str, handler, **handler_kwargs):
         ctx = get_call_context()
         ctx.app.register_event_handler(event_type, handler, **handler_kwargs)
+
+    @staticmethod
+    def get_prop(name: str, default=None):
+        ctx = get_call_context()
+        return ctx.app.get_prop(name, default)
+
+    @staticmethod
+    def set_prop(name: str, value):
+        ctx = get_call_context()
+        ctx.app.set_prop(name, value)

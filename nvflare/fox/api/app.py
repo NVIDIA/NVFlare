@@ -21,7 +21,7 @@ from nvflare.fuel.utils.tree_utils import Forest, Node, build_forest
 
 from .constants import CollabMethodArgName, ContextKey, FilterDirection
 from .ctx import Context, set_call_context
-from .dec import collab, get_object_collab_interface, is_collab
+from .dec import collab, get_object_collab_interface, get_object_init_funcs, is_collab
 from .filter import CallFilter, FilterChain, ResultFilter
 from .proxy import Proxy
 from .strategy import Strategy
@@ -259,12 +259,11 @@ class App:
         return None
 
     def _fox_init(self, obj, ctx: Context):
-        init_func = getattr(obj, "fox_init", None)
-        if init_func and callable(init_func):
-            self.logger.info(f"fox_init object {obj.__class__.__name__}")
+        init_funcs = get_object_init_funcs(obj)
+        for f in init_funcs:
             kwargs = {CollabMethodArgName.CONTEXT: ctx}
-            check_context_support(init_func, kwargs)
-            init_func(**kwargs)
+            check_context_support(f, kwargs)
+            f(**kwargs)
 
     def initialize(self, context: Context):
         self._fox_init(self, context)
