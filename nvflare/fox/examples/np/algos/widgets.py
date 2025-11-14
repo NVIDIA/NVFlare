@@ -24,7 +24,8 @@ class MetricReceiver:
     def accept_metric(self, metrics: dict):
         self.logger.info(f"[{fox.callee}] received metric report from {fox.caller}: {metrics}")
 
-    def fox_init(self):
+    @fox.init
+    def init(self):
         fox.register_event_handler("metrics", self._accept_metric)
         self.logger.info("MetricReceiver initialized!")
 
