@@ -20,6 +20,14 @@ _ATTR_SUPPORT_CTX = "_fox_supports_ctx"
 _ATTR_PARAM_NAMES = "_fox_param_names"
 
 
+class classproperty:
+    def __init__(self, fget):
+        self.fget = fget
+
+    def __get__(self, owner_instance, owner_class):
+        return self.fget(owner_class)
+
+
 def collab(func):
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)

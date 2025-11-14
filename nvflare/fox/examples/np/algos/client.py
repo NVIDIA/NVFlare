@@ -13,9 +13,9 @@
 # limitations under the License.
 import random
 
+from nvflare.fox import fox
 from nvflare.fox.api.app import ClientApp
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.fox import fox
 from nvflare.fox.api.group import all_children
 
 

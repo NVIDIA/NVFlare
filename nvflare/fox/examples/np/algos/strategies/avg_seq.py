@@ -13,9 +13,9 @@
 # limitations under the License.
 import os
 
+from nvflare.fox import fox
 from nvflare.fox.api.constants import ContextKey
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.fox import fox
 from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
