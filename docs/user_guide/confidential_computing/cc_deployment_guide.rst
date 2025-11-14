@@ -621,7 +621,7 @@ Notes on using NVIDIA GPU CC
     NVIDIA_PASSTHROUGH=$(lspci -n -s $NVIDIA_GPU | awk -F: '{print $4}' | awk '{print $1}')
     echo 10de $NVIDIA_PASSTHROUGH > /sys/bus/pci/drivers/vfio-pci/new_id
 
-4. For more details, please refer to [NVIDIA's Deployment Guide for SecureAI](https://docs.nvidia.com/cc-deployment-guide-snp.pdf) 
+4. For more details, please refer to `NVIDIA's Deployment Guide for SecureAI <https://docs.nvidia.com/cc-deployment-guide-snp.pdf>`_
 
 Next Steps
 ==========
