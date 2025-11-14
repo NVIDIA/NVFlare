@@ -611,6 +611,24 @@ Notes on using NVIDIA GPU CC
     safetensors
     nv_attestation_sdk
 
+3. To get GPU working in CVM, you need to ensure:
+       - No GPU driver installed on host, otherwise the path-thru will fail.
+       - You need to create VFIO by running the following command:
+
+.. code-block:: bash
+
+    NVIDIA_GPU=$(lspci -d 10de: | awk '/NVIDIA/{print $1}')
+    NVIDIA_PASSTHROUGH=$(lspci -n -s $NVIDIA_GPU | awk -F: '{print $4}' | awk '{print $1}')
+    echo 10de $NVIDIA_PASSTHROUGH > /sys/bus/pci/drivers/vfio-pci/new_id
+
+4. For more details, please refer to [NVIDIA's Deployment Guide for SecureAI](https://docs.nvidia.com/cc-deployment-guide-snp.pdf) 
+
+## 8. Notes on re-building initramfs with CVM image builder
+
+1. Before re-building the initramfs for the CVM, remove the ``initrd.img`` file from the ``image_builder/base_images/`` directory.
+   This ensures the Image Builder regenerates a fresh initramfs during the build process.
+
+
 Next Steps
 ==========
 
