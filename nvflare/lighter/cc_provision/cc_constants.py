@@ -45,7 +45,6 @@ class CCManagerArgs:
     CC_ISSUERS_CONF = "cc_issuers_conf"
     CC_VERIFIER_IDS = "cc_verifier_ids"
     VERIFY_FREQUENCY = "verify_frequency"
-    CRITICAL_LEVEL = "critical_level"
     CC_ENABLED_SITES = "cc_enabled_sites"
 
 

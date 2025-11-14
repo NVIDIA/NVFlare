@@ -11,5 +11,5 @@ COPY code/ /local/custom
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-ENTRYPOINT ["/user_config/nvflare/startup/sub_start.sh", "--verify"]
+ENTRYPOINT ["/user_config/nvflare/startup/sub_start.sh", "--once", "--verify"]
 
