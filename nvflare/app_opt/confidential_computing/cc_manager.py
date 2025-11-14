@@ -137,7 +137,7 @@ class CCManager(FLComponent):
             except Exception as e:
                 err = f"Exception in attestation preparation: {e}"
                 self.logger.error(err)
-                self._initiate_shutdown(err, fl_ctx)
+                self._shutdown_system(err, fl_ctx)
         elif event_type == EventType.BEFORE_CLIENT_REGISTER:
             # Client side: prepare CC tokens for registration
             self._generate_and_attach_tokens(fl_ctx)
@@ -170,7 +170,7 @@ class CCManager(FLComponent):
                     is_resource_enough, reason = check_result
                     if not is_resource_enough and reason.startswith(CC_VERIFY_ERROR):
                         self.logger.error(f"Client resource check failed: {reason}")
-                        self._initiate_shutdown(reason, fl_ctx)
+                        self._shutdown_system(reason, fl_ctx)
                         break
         elif event_type == EventType.SUBMIT_JOB:
             job_meta = fl_ctx.get_prop(FLContextKey.JOB_META, {})
@@ -209,48 +209,56 @@ class CCManager(FLComponent):
     def _generate_and_attach_tokens(self, fl_ctx: FLContext):
         """Generate and attach CC tokens for sending to peer."""
         cc_infos = self._generate_fresh_tokens_for_validation()
-        fl_ctx.set_prop(key=CC_INFO, value=cc_infos, sticky=False, private=False)
+        fl_ctx.set_prop(key=CC_INFO, value={fl_ctx.get_identity_name(): cc_infos}, sticky=False, private=False)
         self.logger.info("Prepared CC tokens for peer")
 
     def _validate_server_tokens(self, fl_ctx: FLContext):
         """Validate the server's CC info during registration."""
-        self._validate_cc_tokens(fl_ctx, from_fl_ctx=True)
+        server_cc_info = fl_ctx.get_prop(CC_INFO)
+        if not server_cc_info:
+            msg = "No server CC info!"
+            self.logger.error(msg)
+            self._shutdown_system(msg, fl_ctx)
+            return
+
+        self._validate_cc_infos(server_cc_info, fl_ctx)
 
     def _validate_client_tokens(self, fl_ctx: FLContext):
-        """Validate the client's (peer's) CC info during registration."""
-        self._validate_cc_tokens(fl_ctx, from_fl_ctx=False)
-
-    def _validate_cc_tokens(self, fl_ctx: FLContext, from_fl_ctx: bool):
-        """Shared validator for CC info (server or client)."""
+        """Validate the client's CC info during registration."""
         peer_ctx = fl_ctx.get_peer_context()
         if not peer_ctx:
             msg = "No peer context!"
             self.logger.error(msg)
-            self._initiate_shutdown(msg, fl_ctx)
+            self._shutdown_system(msg, fl_ctx)
             return
-
-        # Get CC info: servers store in fl_ctx, clients in peer_ctx
-        peer_cc_info = fl_ctx.get_prop(CC_INFO) if from_fl_ctx else peer_ctx.get_prop(CC_INFO)
+        peer_cc_info = peer_ctx.get_prop(CC_INFO)
         if not peer_cc_info:
             msg = "No peer CC info!"
             self.logger.error(msg)
-            self._initiate_shutdown(msg, fl_ctx)
+            self._shutdown_system(msg, fl_ctx)
             return
 
-        peer_name = peer_ctx.get_identity_name() or "unknown_site"
-        participants_cc_info = {peer_name: peer_cc_info}
+        self._validate_cc_infos(peer_cc_info, fl_ctx)
 
+    def _validate_cc_infos(self, participants_cc_info: dict[str, list[dict[str, str]]], fl_ctx: FLContext):
+        """Shared validator for CC info (server or client).
+
+        Args:
+            participants_cc_info:
+                A dict of (participant_name, participant_cc_infos)
+                participant_cc_infos is a list of CC tokens.
+        """
         err = self._validate_participants_tokens(participants_cc_info)
         if err:
             msg = f"CC info validation failed: {err}"
             self.logger.error(msg)
-            self._initiate_shutdown(msg, fl_ctx)
+            self._shutdown_system(msg, fl_ctx)
             return
 
-        self.logger.info(f"Validated CC info for: {peer_name}")
+        self.logger.info(f"Validated CC info for: {participants_cc_info.keys()=}")
 
     def _validate_participants_tokens(self, participants_tokens: dict[str, list[dict[str, str]]]) -> str:
-        self.logger.info(f"Validating participant tokens {participants_tokens=}")
+        self.logger.info(f"Validating participant tokens {participants_tokens.keys()=}")
         _, invalid_participant_list = self._verify_participants_tokens(participants_tokens)
         if invalid_participant_list:
             invalid_participant_string = ",".join(invalid_participant_list)
@@ -307,14 +315,14 @@ class CCManager(FLComponent):
 
             if not all_tokens:
                 self.logger.error("No tokens collected for validation")
-                self._initiate_shutdown("No tokens collected for validation", fl_ctx)
+                self._shutdown_system("No tokens collected for validation", fl_ctx)
                 return False
 
             # Validate all tokens
             err = self._validate_participants_tokens(all_tokens)
             if err:
                 self.logger.error(f"Cross-site validation failed: {err}")
-                self._initiate_shutdown(f"Cross-site validation failed: {err}", fl_ctx)
+                self._shutdown_system(f"Cross-site validation failed: {err}", fl_ctx)
                 return False
             else:
                 self.logger.info("Cross-site validation passed")
@@ -322,7 +330,7 @@ class CCManager(FLComponent):
 
         except Exception as e:
             self.logger.exception(f"Exception in cross-site validation: {e}")
-            self._initiate_shutdown(f"Exception in cross-site validation: {e}", fl_ctx)
+            self._shutdown_system(f"Exception in cross-site validation: {e}", fl_ctx)
             return False
 
     def _get_all_sites(self) -> list[Tuple[str, str]]:
@@ -543,14 +551,6 @@ class CCManager(FLComponent):
         self.logger.info(f"Collected fresh tokens from {len(all_tokens)} sites: {list(all_tokens.keys())}")
         return all_tokens
 
-    def _initiate_shutdown(self, reason: str, fl_ctx: FLContext):
-        """Shutdown this site due to CC validation failure."""
-        self.logger.critical(f"Shutting down site {self.site_name} due to: {reason}")
-        # Always use a thread for shutdown to prevent deadlocks and allow graceful cleanup
-        threading.Thread(
-            target=self._shutdown_system, args=[reason, fl_ctx], daemon=False, name="CCManager-Shutdown"
-        ).start()
-
     def _register_cc_handlers(self, fl_ctx: FLContext):
         """Register handlers for dedicated CC validation channel."""
         engine = fl_ctx.get_engine()
@@ -578,7 +578,8 @@ class CCManager(FLComponent):
         This creates NEW tokens on-the-fly for each validation request.
 
         Returns:
-            List of fresh CC tokens ready for validation
+            List of fresh CC tokens ready for validation.
+            Each token is a dict consists of CC_TOKEN, CC_NAMESPACE and CC_TOKEN_VALIDATED.
         """
         fresh_tokens = []
 
@@ -654,6 +655,7 @@ class CCManager(FLComponent):
 
     def _shutdown_system(self, reason: str, fl_ctx: FLContext):
         """Shuts down the entire NVFlare system due to CC validation failure."""
+        self.logger.critical(f"Shutting down site {self.site_name} due to: {reason}")
         engine = fl_ctx.get_engine()
 
         # Check if this is server or client

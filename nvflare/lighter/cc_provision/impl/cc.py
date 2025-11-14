@@ -152,7 +152,12 @@ class CCBuilder(Builder):
 
             cc_verifier_ids.add(authorizer.get(CCIssuerConfig.ID))
 
-        cc_mgr_args[CCManagerArgs.CC_ENABLED_SITES] = [e.name for e in self._cc_enabled_sites]
+        # TODO our fl_ctx.get_identity_name always return "server"
+        # check nvflare/private/fed/app/deployer/server_deployer.py
+        # and nvflare/app_opt/confidential_computing/cc_manager.py
+        cc_mgr_args[CCManagerArgs.CC_ENABLED_SITES] = [
+            e.name if e.type != "server" else "server" for e in self._cc_enabled_sites
+        ]
         cc_mgr_args[CCManagerArgs.CC_VERIFIER_IDS] = list(cc_verifier_ids)
 
         component = {

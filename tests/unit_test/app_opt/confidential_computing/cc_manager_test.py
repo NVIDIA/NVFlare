@@ -62,7 +62,7 @@ def _create_peer_cc_context(site_name: str, token: str) -> tuple[list[dict[str, 
     """
     peer_ctx = FLContext()
     cc_info = [{CC_TOKEN: token, CC_NAMESPACE: TDX_NAMESPACE, CC_TOKEN_VALIDATED: False}]
-    peer_ctx.set_prop(CC_INFO, cc_info)
+    peer_ctx.set_prop(CC_INFO, {site_name: cc_info})
     peer_ctx.set_prop(ReservedKey.IDENTITY_NAME, site_name)
     fl_ctx = Mock(spec=FLContext)
     fl_ctx.get_peer_context.return_value = peer_ctx
@@ -303,8 +303,8 @@ class TestCCManager:
         # Create peer context with valid token
         cc_info, mock_fl_ctx = _create_peer_cc_context("client1", VALID_TOKEN)
 
-        # Mock _initiate_shutdown to prevent actual shutdown
-        with patch.object(cc_manager, "_initiate_shutdown") as mock_shutdown:
+        # Mock _shutdown_system
+        with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
             cc_manager._validate_client_tokens(mock_fl_ctx)
             # Should not call shutdown for valid token
             mock_shutdown.assert_not_called()
@@ -317,8 +317,8 @@ class TestCCManager:
         # Create peer context with invalid token
         cc_info, mock_fl_ctx = _create_peer_cc_context("client1", INVALID_TOKEN)
 
-        # Mock _initiate_shutdown
-        with patch.object(cc_manager, "_initiate_shutdown") as mock_shutdown:
+        # Mock _shutdown_system
+        with patch.object(cc_manager, "_shutdown_system") as mock_shutdown:
             cc_manager._validate_client_tokens(mock_fl_ctx)
             # Should call shutdown for invalid token
             mock_shutdown.assert_called_once()
@@ -330,20 +330,18 @@ class TestCCManager:
         logger.info("Testing token generation and attachment")
         cc_manager, fl_ctx, tdx_authorizer = cc_test_env
 
-        # Mock FL context
-        mock_fl_ctx = Mock(spec=FLContext)
-
-        cc_manager._generate_and_attach_tokens(mock_fl_ctx)
+        cc_manager._generate_and_attach_tokens(fl_ctx)
 
         # Verify set_prop was called with CC_INFO
-        mock_fl_ctx.set_prop.assert_called_once()
-        call_args = mock_fl_ctx.set_prop.call_args
+        fl_ctx.set_prop.assert_called_once()
+        call_args = fl_ctx.set_prop.call_args
         assert call_args[1]["key"] == CC_INFO
         assert call_args[1]["sticky"] is False
         assert call_args[1]["private"] is False
 
         # Verify the value contains token info
         cc_info = call_args[1]["value"]
+        print(f"CFUCK {cc_info=}")
         assert len(cc_info) == 1
-        assert cc_info[0][CC_TOKEN] == VALID_TOKEN
-        assert cc_info[0][CC_NAMESPACE] == TDX_NAMESPACE
+        assert cc_info["server"][0][CC_TOKEN] == VALID_TOKEN
+        assert cc_info["server"][0][CC_NAMESPACE] == TDX_NAMESPACE
