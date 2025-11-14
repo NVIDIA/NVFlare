@@ -13,7 +13,7 @@ To run this example with the FLARE API, refer to the [hello_world notebook](../h
 Ensure the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) is installed. Then execute the following command:
 
 ```bash
-docker run --gpus=all -it --rm -v [path_to_NVFlare]:/NVFlare nvcr.io/nvidia/tensorflow:xx.xx-tf2-py3
+  docker run --gpus=all -it --rm -v [path_to_NVFlare]:/NVFlare nvcr.io/nvidia/tensorflow:xx.xx-tf2-py3
 ```
 
 ## NVIDIA FLARE Installation
@@ -21,29 +21,27 @@ docker run --gpus=all -it --rm -v [path_to_NVFlare]:/NVFlare nvcr.io/nvidia/tens
 For complete installation instructions, visit [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
 ```bash
-pip install nvflare
+  pip install nvflare
+```
+Clone the example code from GitHub:
+
+```bash
+  git clone https://github.com/NVIDIA/NVFlare.git
+```
+Navigate to the hello-tf directory:
+
+```bash
+  git switch <release branch>
+  cd examples/hello-world/hello-tf
 ```
 
 Install the dependencies:
 
 ```bash
-pip install -r requirements.txt
+  pip install -r requirements.txt
 ```
-
 ## Code Structure
 
-First, clone the example code from GitHub:
-
-```bash
-git clone https://github.com/NVIDIA/NVFlare.git
-```
-
-Navigate to the hello-tf directory:
-
-```bash
-git switch <release branch>
-cd examples/hello-world/hello-TF
-```
 
 ```text
 hello-pt
@@ -60,7 +58,7 @@ This example uses the [MNIST](https://www.tensorflow.org/datasets/catalog/mnist)
 
 ## Model
 
-```python
+```
 class SimpleNetwork(nn.Module):
     def __init__(self):
         super(SimpleNetwork, self).__init__()

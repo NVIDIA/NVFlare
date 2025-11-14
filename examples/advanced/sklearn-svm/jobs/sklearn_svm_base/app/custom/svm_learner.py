@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple
+from typing import Optional
 
 from sklearn.metrics import roc_auc_score
 
@@ -74,7 +74,7 @@ class SVMLearner(Learner):
         self.n_samples = data["train"][-1]
         # model will be created after receiving global parameter of kernel
 
-    def train(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
+    def train(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> tuple[dict, dict]:
         if curr_round == 0:
             # only perform training on the first round
             (x_train, y_train, train_size) = self.train_data
@@ -91,7 +91,7 @@ class SVMLearner(Learner):
             self.system_panic("Federated SVM only performs training for one round, system exiting.", fl_ctx)
         return self.params, self.svm
 
-    def validate(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
+    def validate(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> tuple[dict, dict]:
         # local validation with global support vectors
         # fit a standalone SVM with the global support vectors
         svm_global = self.svm_lib.SVC(kernel=self.kernel)

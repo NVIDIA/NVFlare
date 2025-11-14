@@ -116,7 +116,8 @@ This section provides the command to execute the federated learning job using th
 
 
 Command to execute the FL job
-------------------
+-----------------------------
+
 Use the following command in your terminal to start the job with the specified number of rounds and number of clients.
 
 .. code-block:: text

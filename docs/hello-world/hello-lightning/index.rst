@@ -17,18 +17,27 @@ for the complete installation instructions, see `installation <../../installatio
     pip install nvflare
 
 
+get the example code from github:
 
-Code Structure
---------------
+.. code-block:: text
 
-first get the example code from github:
-git clone https://github.com/NVIDIA/NVFlare.git
+   git clone https://github.com/NVIDIA/NVFlare.git
+
 then navigate to the hello-lightning directory:
 
 .. code-block:: text
 
     git switch <release branch>
     cd examples/hello-world/hello-lightning
+
+Install the dependency
+
+.. code-block:: bash
+
+   pip install -r requirements.txt
+
+Code Structure
+--------------
 
 .. code-block:: text
 
@@ -166,27 +175,40 @@ The main flow of the code logic in the `client.py` file involves running a feder
 Here's a breakdown of the key steps:
 
 1. **Argument Parsing:**
+
    - The `define_parser()` function is used to parse command-line arguments, specifically the `--batch_size` argument, which sets the batch size for data loading.
+
 2. **Initialization:**
+
    - The `main()` function begins by parsing the command-line arguments to get the batch size.
    - The `flare.init()` function is called to initialize the NVFlare client, which is necessary for using certain NVFlare functions like `flare.get_site_name()`.
+
 3. **Model and Data Module Setup:**
+
    - An instance of `LitNet`, a PyTorch Lightning model, is created.
    - An instance of `CIFAR10DataModule` is created with the specified batch size to handle data loading and processing.
+
 4. **Trainer Configuration:**
+
    - A PyTorch Lightning `Trainer` is configured. If a GPU is available, it is set to use it; otherwise, it defaults to CPU.
+
 5. **NVFlare Integration:**
+
    - The `flare.patch(trainer)` function is called to integrate NVFlare with the PyTorch Lightning trainer. This allows the trainer to handle federated learning tasks.
+
 6. **Federated Learning Loop:**
+
    - A loop runs while `flare.is_running()` returns `True`, indicating that the federated learning job is active.
    - Within the loop:
-     - The global model is received from the NVFlare server using `flare.receive()`.
-     - The current round and site name are printed for logging purposes.
-     - The global model is validated using `trainer.validate()`.
-     - Local training is performed using `trainer.fit()`, starting with the received global model.
-     - The local model is tested using `trainer.test()`.
-     - Predictions are made using `trainer.predict()`.
+      - The global model is received from the NVFlare server using `flare.receive()`.
+      - The current round and site name are printed for logging purposes.
+      - The global model is validated using `trainer.validate()`.
+      - Local training is performed using `trainer.fit()`, starting with the received global model.
+      - The local model is tested using `trainer.test()`.
+      - Predictions are made using `trainer.predict()`.
+
 7. **Execution:**
+
    - The `main()` function is executed if the script is run as the main module, starting the entire process.
 
 

@@ -21,7 +21,7 @@ import nvflare.fuel.utils.fobs.dots as dots
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposers.via_file import ViaFileDecomposer
 
-MIN_SIZE_FOR_FILE = 10 * 1024 * 1024
+MIN_SIZE_FOR_FILE = 0  # The default value
 
 
 class SerializationModule(torch.nn.Module):

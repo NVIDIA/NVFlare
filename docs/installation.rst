@@ -23,10 +23,10 @@ Supported Operating Systems
 - OSX (Note: some optional dependencies are not compatible, such as tenseal and openmined.psi)
 
 Installation Methods
-===================
+====================
 
 Virtual Environment Setup
-------------------------
+-------------------------
 
 It is highly recommended to install NVIDIA FLARE in a virtual environment if you are not using :ref:`containerized_deployment`.
 This guide briefly describes how to create a virtual environment with venv.
@@ -70,7 +70,7 @@ You may find that the pip and setuptools versions in the venv need updating:
   (nvflare-env) $ python3 -m pip install -U setuptools
 
 Install Stable Release
----------------------
+----------------------
 
 Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nvflare>`_:
 
@@ -79,7 +79,7 @@ Stable releases are available on `NVIDIA FLARE PyPI <https://pypi.org/project/nv
   $ python3 -m pip install nvflare
 
 Optional Dependencies
-^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
 
 NVFlare provides several optional dependency groups that you can install based on your needs:
 
@@ -142,7 +142,7 @@ For development, you can install all dependencies (except HE and PSI on macOS):
   $ pip install nvflare[dev_mac]
 
 Install from Source
-------------------
+-------------------
 
 Clone NVFlare repo and install from source (useful for accessing latest nightly features or testing custom builds):
 
@@ -162,13 +162,13 @@ You can also install with optional dependencies from source:
 Note on branches:
 
 * The `main <https://github.com/NVIDIA/NVFlare/tree/main>`_ branch is the default (unstable) development branch
-* The 2.1, 2.2, 2.3, 2.4, 2.5, etc. branches are the branches for each major release and there are tags based on these with a third digit for minor patches
+* The 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7 etc. branches are the branches for each major release and there are tags based on these with a third digit for minor patches
 
 To switch to a specific branch:
 
 .. code-block:: shell
 
-  $ git switch 2.6  # Replace with desired version
+  $ git switch 2.7  # Replace with desired version
 
 Building Wheels
 ---------------

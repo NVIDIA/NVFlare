@@ -24,6 +24,6 @@ See the sections below for more in-depth information about the different capabil
 
    variable_resolution
    job_configuration
+   server_port_consolidation
    communication_configuration
    logging_configuration
-   

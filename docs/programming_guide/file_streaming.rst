@@ -279,6 +279,7 @@ The arguments are self-explanatory. If the downloading is successful, you will g
 
 
 Large Object Serialization with File Streaming or Download
-----------------------------------------------------
+----------------------------------------------------------
+
 please refer to :ref:`decomposer_for_large_object`
 

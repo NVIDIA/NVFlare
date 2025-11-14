@@ -28,3 +28,6 @@ http://localhost:9090/metrics
 
 # Ignore http://localhost:3000 in examples/advanced/monitoring/jobs/README.md
 http://localhost:3000
+
+# Ignore https://download.01.org/intel-s in docs/user_guide/confidential_computing/hashicorp_vault_trustee_kbs_deployment.rst
+https://download.01.org/intel-s

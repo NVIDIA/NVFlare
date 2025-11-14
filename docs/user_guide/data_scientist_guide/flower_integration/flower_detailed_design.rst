@@ -6,7 +6,7 @@ Flower uses gRPC as the communication protocol. To use FLARE  as the communicato
 messages through FLARE. To do so, we change the server-endpoint of each Flower client to a local gRPC
 server (LGS) within the FLARE client.
 
-.. image:: ../../resources/FLARE_as_flower_communicator.png
+.. image:: ../../../resources/FLARE_as_flower_communicator.png
 
 As shown in this diagram, there is a Local GRPC server (LGS) for each site that serves as the
 server-endpoint for the Flower client on the site. Similarly, there is a Local GRPC Client (LGC) on the

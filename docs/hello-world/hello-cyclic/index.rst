@@ -44,6 +44,15 @@ For the complete installation instructions, see `Installation <https://nvflare.r
 
    pip install nvflare
 
+Get the example code from GitHub:
+
+.. code-block:: bash
+
+   git clone https://github.com/NVIDIA/NVFlare.git
+   git switch <release branch>
+   cd examples/hello-world/hello-cyclic
+
+
 Install the dependency
 
 .. code-block:: text
@@ -52,14 +61,6 @@ Install the dependency
 
 Code Structure
 --------------
-
-First, get the example code from GitHub:
-
-.. code-block:: bash
-
-   git clone https://github.com/NVIDIA/NVFlare.git
-   git switch <release branch>
-   cd examples/hello-world/hello-cyclic
 
 Code structure:
 

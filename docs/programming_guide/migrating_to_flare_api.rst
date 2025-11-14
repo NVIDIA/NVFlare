@@ -14,7 +14,7 @@ frequently used commands have been implemented in the FLARE API so far, but you 
 
 Migrating API Initialization
 ----------------------------
-Initialization of the FLAdminAPI was cumbersome due to all the necessary arguments including paths to certs and an overseer_agent, so an
+Initialization of the FLAdminAPI was cumbersome due to all the necessary arguments including paths to certs, so an
 :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>` was used for initializing the FLAdminAPI
 with the username of the admin user and the path to the admin startup kit directory.
 
@@ -28,7 +28,6 @@ Initializing the FLAdminAPI:
         client_key="/workspace/example_project/prod_00/super@nvidia.com/startup/client.key",
         upload_dir="/workspace/example_project/prod_00/super@nvidia.com/transfer",
         download_dir="/workspace/example_project/prod_00/super@nvidia.com/transfer",
-        overseer_agent=overseer_agent,
         user_name="super@nvidia.com"
     )
 

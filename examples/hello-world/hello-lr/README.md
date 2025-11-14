@@ -10,24 +10,27 @@ for the complete installation instructions, see [Installation](https://nvflare.r
 pip install nvflare
 
 ```
-Install the dependency
+Get the example code from github:
 
 ```
-pip install -r requirements.txt
+  git clone https://github.com/NVIDIA/NVFlare.git
 ```
 
-## Code Structure
-first get the example code from github:
-
-```
-git clone https://github.com/NVIDIA/NVFlare.git
-```
 then navigate to the hello-lr directory:
 
 ```
-git switch <release branch>
-cd examples/hello-world/hello-lr
+  git switch <release branch>
+  cd examples/hello-world/hello-lr
 ```
+
+Install the dependency
+
+```
+  pip install -r requirements.txt
+```
+
+## Code Structure
+
 ``` bash
 hello-lr
     |

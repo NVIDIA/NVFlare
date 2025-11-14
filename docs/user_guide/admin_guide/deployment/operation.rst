@@ -57,8 +57,7 @@ commands shown as examples of how they may be run with a description.
     restart,``restart client``,Restarts all of the clients. Individual clients can be restarted by specifying *clientname*.
     ,``restart server``,Restarts the server. Clients will also be restarted. Note that the admin client will need to log in again after the server restarts.
     shutdown,``shutdown client``,Shuts down all of the clients. Individual clients can be shutdown by specifying *clientname*. Please note that this may not be instant but may take time for the command to take effect.
-    ,``shutdown server``,Shuts down the active server. Clients must be shut down first before the server is shut down. Note this will not shut down the Overseer or other SPs.
-    shutdown_system,``shutdown_system``,Shut down entire system by setting the system state to shutdown through the overseer
+    ,``shutdown server``,Shuts down the server. Clients must be shut down first before the server is shut down.
 
 .. tip::
 

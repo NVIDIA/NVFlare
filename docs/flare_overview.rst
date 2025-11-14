@@ -112,6 +112,11 @@ Adjacent to this central stack are tools facilitating experimentation and simula
 .. image:: resources/flare_overview.png
     :height: 500px
 
+For detailed information on the architecture, please refer to the :ref:`flare_system_architecture` section.
+For detailed information on the security overview, please refer to the :ref:`flare_security_overview` section.
+
+
+
 Design Principles
 =================
 

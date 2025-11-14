@@ -13,19 +13,16 @@
 # limitations under the License.
 
 import argparse
-import os
-import sys
 
 from bionemo.core.data.load import load
+from bionemo_filters import BioNeMoParamsFilter, BioNeMoStateDictFilter
 
 from nvflare import FilterType
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
+from nvflare.app_common.widgets.decomposer_reg import DecomposerRegister
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.job_config.base_fed_job import BaseFedJob
 from nvflare.job_config.script_runner import BaseScriptRunner
-
-sys.path.append(os.path.join(os.getcwd(), ".."))  # include parent folder in path
-from bionemo_filters import BioNeMoParamsFilter, BioNeMoStateDictFilter
 
 
 def main(args):
@@ -38,6 +35,7 @@ def main(args):
         num_rounds=args.num_rounds,
     )
     job.to_server(controller)
+    job.to_server(DecomposerRegister(["nvflare.app_opt.pt.decomposers.TensorDecomposer"]))
 
     checkpoint_path = load(f"esm2/{args.model}:2.0")
     print(f"Downloaded {args.model} to {checkpoint_path}")
@@ -81,6 +79,7 @@ def main(args):
             BioNeMoParamsFilter(precision), client_name, tasks=["train", "validate"], filter_type=FilterType.TASK_DATA
         )
         job.to(BioNeMoStateDictFilter(), client_name, tasks=["train", "validate"], filter_type=FilterType.TASK_RESULT)
+        job.to(DecomposerRegister(["nvflare.app_opt.pt.decomposers.TensorDecomposer"]), client_name)
 
     job.export_job("./exported_jobs")
     job.simulator_run(f"/tmp/nvflare/bionemo/scl/{job.name}", gpu=args.sim_gpus)
@@ -91,9 +90,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_clients", type=int, help="Number of clients", required=False, default=1)
     parser.add_argument("--num_rounds", type=int, help="Number of rounds", required=False, default=30)
     parser.add_argument("--local_steps", type=int, help="Number of rounds", required=False, default=10)
-    parser.add_argument(
-        "--train_script", type=str, help="Training script", required=False, default="../finetune_esm2.py"
-    )
+    parser.add_argument("--train_script", type=str, help="Training script", required=False, default="finetune_esm2.py")
     parser.add_argument("--exp_name", type=str, help="Job name prefix", required=False, default="fedavg")
     parser.add_argument("--model", choices=["8m", "650m", "3b"], help="ESM2 model", required=False, default="8m")
     parser.add_argument(

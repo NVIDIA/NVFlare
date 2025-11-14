@@ -10,7 +10,7 @@ be open on the server host.
 Since both frameworks follow the same communication architecture, it is fairly easy to make a
 Flower application a FLARE job by using FLARE as the communicator for the Flower app, as shown below.
 
-.. image:: ../../resources/FLARE_as_flower_communicator.png
+.. image:: ../../../resources/FLARE_as_flower_communicator.png
 
 In this approach, Flower Clients no longer directly interact with the Flower Server, instead all
 communications are through FLARE.

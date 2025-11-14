@@ -47,13 +47,18 @@ Please refer to :ref:`application` for more details.
    programming_guide/event_system
    programming_guide/component_configuration
    programming_guide/provisioning_system
-   programming_guide/high_availability
    programming_guide/system_architecture
    programming_guide/resource_manager_and_consumer
    programming_guide/global_model_initialization
    programming_guide/experiment_tracking
    programming_guide/message_quantization
-
+   programming_guide/tensor_downloader
+   programming_guide/hierarchical_architecture
+   programming_guide/hierarchical_communication
+   programming_guide/migrating_to_flare_api
+   programming_guide/file_streaming.rst
+   programming_guide/decomposer_for_large_object
+   programming_guide/dashboard_api
 
 .. rubric:: Code Structure
 
@@ -67,7 +72,6 @@ this can be used in your own workflow.
     - :mod:`nvflare.app_common` - higher level controllers, workflows, and algorithms
     - :mod:`nvflare.app_opt` - optional dependencies
     - :mod:`nvflare.fuel` - supporting components of the provisioning and admin systems
-    - :mod:`nvflare.ha` - overseer and overseer agent to support :ref:`high_availability`
     - :mod:`nvflare.integration` - integrations with other frameworks
     - :mod:`nvflare.lighter` - configuration, scripts, and Builders to support the provisioning tool
     - :mod:`nvflare.poc` - configurations for the poc tool

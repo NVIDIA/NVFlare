@@ -144,10 +144,6 @@ information about all of the Client API functionalities.
 If you are using PyTorch Lightning in your training code, you can check the
 Lightning API Module :mod:`nvflare.app_opt.lightning.api`.
 
-.. note::
-  The decorator API has been deprecated since release 2.5.0.
-  Please use the Client API instead.
-
 
 Client API communication patterns
 =================================
@@ -204,7 +200,7 @@ Different configurations are available for each type of executor.
     For data scientists, the FLARE Job Recipe provides an even simpler approach, leveraging the Job API to generate the configuration without needing to know the details of the job setup.
     As such, this section is considered advanced and is intended for those who are curious about the underlying mechanisms.
 
-in-process executor configuration
+In-process executor configuration
 ---------------------------------
 This configuration specifically caters to PyTorch applications, providing serialization and deserialization
 (aka Decomposers) for commonly used PyTorch objects. For non-PyTorch applications, the generic
@@ -213,7 +209,7 @@ This configuration specifically caters to PyTorch applications, providing serial
 .. literalinclude:: ../../../job_templates/sag_pt_in_proc/config_fed_client.conf
 
 
-subprocess launcher Executor configuration
+Subprocess launcher executor configuration
 ------------------------------------------
 In the config_fed_client in the FLARE app, in order to launch the training script we use the
 :class:`SubprocessLauncher<nvflare.app_common.launchers.subprocess_launcher.SubprocessLauncher>` component.
@@ -276,9 +272,9 @@ For example:
 .. code-block:: python
 
     class CustomClass:
-    def __init__(self, x, y):
-        self.x = 1
-        self.y = 2
+        def __init__(self, x, y):
+            self.x = 1
+            self.y = 2
 
 If your code uses classes derived from ``Enum`` or dataclasses, they will be handled by the default decomposers.
 For other custom classes, you will need to write a dedicated custom decomposer and ensure it is registered

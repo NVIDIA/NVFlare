@@ -33,11 +33,7 @@ np.random.seed(0)
 
 
 def format_instruction(example):
-    output_texts = []
-    for i in range(len(example["input"])):
-        text = f"### Instruction: Generate Output according to the information and question given by Input. ### Input:{example['input'][i]} ### Response: {example['output'][i]}"
-        output_texts.append(text)
-    return output_texts
+    return f"### Instruction: Generate Output according to the information and question given by Input. ### Input:{example['input']} ### Response: {example['output']}"
 
 
 def main():
@@ -103,7 +99,7 @@ def main():
         model_name_or_path,
         device_map="auto",
         use_cache=False,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
     )
     torch.set_default_dtype(default_dtype)
 
@@ -148,7 +144,7 @@ def main():
         lr_scheduler_type=args.lr_scheduler,
         lr_scheduler_kwargs={"num_cycles": 2},
         disable_tqdm=True,
-        max_seq_length=1024,
+        max_length=1024,
         save_total_limit=2,
         # safetensors will remove shared layers, e.g. lm_head.weight
         # disable for local checkpointing

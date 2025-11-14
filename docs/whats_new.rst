@@ -2,18 +2,4 @@
 
 .. include:: release_notes/flare_270.rst
 
-**************************
-Previous Releases of FLARE
-**************************
-
-.. toctree::
-   :maxdepth: 1
-
-   release_notes/flare_260
-   release_notes/flare_250
-   release_notes/flare_240
-   release_notes/flare_230
-   release_notes/flare_220
-   release_notes/flare_210
-
-Also refer to the NVFlare GitHub `releases <https://github.com/NVIDIA/NVFlare/releases>`_ to see minor release notes for RC versions.
+Please refer to :ref:`previous_release` for previous releases.

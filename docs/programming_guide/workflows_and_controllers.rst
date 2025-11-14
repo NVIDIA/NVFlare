@@ -19,7 +19,7 @@ To address this concern, NVFlare introduces Client Controlled Workflows (CCWF) t
 
 Controllers can be configured in ``config_fed_server.json`` in the workflows section:
 
-.. code-block:: json
+.. code-block::
 
   workflows = [
       {

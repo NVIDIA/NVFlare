@@ -1383,7 +1383,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: set up waiter {waiter.id} to wait for {timeout} secs")
                 if not waiter.wait(timeout=timeout):
                     # timeout
-                    self.log_error(f"timeout on Request {waiter.id} for {topics} after {timeout} secs", for_msg)
+                    self.log_warning(f"timeout on Request {waiter.id} for {topics} after {timeout} secs", for_msg)
                     with self.stats_lock:
                         self.num_timeout_reqs += 1
         except Exception as ex:

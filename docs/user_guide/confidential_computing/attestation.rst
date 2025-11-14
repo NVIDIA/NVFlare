@@ -4,99 +4,115 @@
 Confidential Computing: Attestation Service Integration
 #######################################################
 
-Data used in NVFlare is encrypted during transmission between participants, which covers the communication between the NVFlare server, clients, and admin.  This security measure ensures
-data in transit is well protected.  Users can also utilize existing infrastructure, such as storage encryption, to protect data at rest.  With confidential computing, NVFlare can protect data in use
-and thus completes securing the entire lifecycle of data.
+Overview
+========
 
-Confidential computing in NVFlare is designed to explicitly establish the trust between participants.  Each participant must first capture the evidence related to the hardware (such as a GPU), the software (GPU driver and VBIOS), and other components in its own platform.  The evidence will
-be validated and signed to ensure its validity and authenticity.  The owner of signed evidence, called confidential computing token (CC token), can demonstrate the information about its computing environment to other
-participants by providing the CC token. Upon receiving the CC token, the participant (the relying party) can verify the claims inside the CC token against its own security policy to determine whether the CC token owner is
-using the required hardware, software, and components for security.  If the relying party finds the CC token does not meet its security policy, the relying party can inform the system that it chooses not to join the job deployment
-and will not exchange models with others.  Only participants who trust and are trusted by one another will work together to run the NVFlare job.
+This document introduces the Confidential Computing (CC) attestation integration in NVFlare.
 
+Please refer to the :ref:`NVFlare CC Architecture <cc_architecture>` for the introduction and detailed architecture of Confidential Computing.
 
-**********************
-Configuring CC Manager
-**********************
+Attestation enables participants to prove the integrity and trustworthiness of their computing environment. This mechanism ensures that only mutually trusted participants take part in a federated learning job, reinforcing both security and integrity across the NVFlare system.
 
-In order to enable confidential computing in NVFlare, users need to include the CC manager, as a component, inside the resources.json file of startup kit local folder.  The entire NVFlare system must
-be configured with the CC manager for either all participants or no participants.
+How It Works
+============
 
-The CC manager component depends on `NVIDIA Attestation SDK <https://github.com/NVIDIA/nvtrust/tree/main/guest_tools/attestation_sdk>`_.  Users have to install it as a prerequisite.  This SDK also
-depends on other software stacks, such as GPU verifier, driver and others.
+CC Token Generation
+-------------------
 
-The following is the sample configuration of CC manager.
+Each participant uses a ``CCAuthorizer`` to generate a CC token that attests to its environment's security posture.
 
-.. code-block:: json
+For example, the ``SNPAuthorizer`` utilizes AMD's ``snpguest`` utility to generate an attestation report and package it into a CC token.
 
-    {
-        "id": "cc_manager",
-        "path": "nvflare.app_opt.confidential_computing.cc_manager.CCManager",
-        "args": {
-            "verifiers": [{"devices": "gpu", "env": "local", "url":"", "appraisal_policy_file":"evidence.plc","result_policy_file":"result.plc"}]
-        }
-    },
+CC Token Verification
+----------------------
 
+When a participant receives a CC token from another participant, it verifies the token's claims against its own security policy. This check ensures that the token owner is using the required hardware, software, and configurations to meet the security standards.
 
-The ``id`` is used internally by NVFlare so that other components can get its instance.  The ``path`` is the complete Python module hierarchy.
-The ``args`` contains only the verifiers, a list of possible verifiers.  Each verifier is a dictionary and its keys are "devices", "env", 
-"url", "appraisal_policy_file" and "result_policy_file."
+If verification fails—i.e., the CC token does not meet the policy—the site may choose not to participate in the job. It will not exchange models or collaborate further.
 
+Components
+==========
 
-The value of devices is either "gpu" or "cpu" for current Attestation SDK.  The value of env is either "local" or "test" for the current Attestation SDK.
-Currently, valid combination is gpu and local or cpu and test.  The value of url must be an empty string.
-The appraisal_policy_file and result_policy_file must point to an existing file.  The former is currently ignored by Attestation SDK.
-The latter currently supports the following content only
+CCManager
+---------
 
-.. code-block:: json
+The ``CCManager`` component orchestrates the attestation process across the NVFlare system. It is responsible for:
 
-    {
-        "version":"1.0",
-        "authorization-rules":{
-            "x-nv-gpu-available":true,
-            "x-nv-gpu-attestation-report-available":true,
-            "x-nv-gpu-info-fetched":true,
-            "x-nv-gpu-arch-check":true,
-            "x-nv-gpu-root-cert-available":true,
-            "x-nv-gpu-cert-chain-verified":true,
-            "x-nv-gpu-ocsp-cert-chain-verified":true,
-            "x-nv-gpu-ocsp-signature-verified":true,
-            "x-nv-gpu-cert-ocsp-nonce-match":true,
-            "x-nv-gpu-cert-check-complete":true,
-            "x-nv-gpu-measurement-available":true,
-            "x-nv-gpu-attestation-report-parsed":true,
-            "x-nv-gpu-nonce-match":true,
-            "x-nv-gpu-attestation-report-driver-version-match":true,
-            "x-nv-gpu-attestation-report-vbios-version-match":true,
-            "x-nv-gpu-attestation-report-verified":true,
-            "x-nv-gpu-driver-rim-schema-fetched":true,
-            "x-nv-gpu-driver-rim-schema-validated":true,
-            "x-nv-gpu-driver-rim-cert-extracted":true,
-            "x-nv-gpu-driver-rim-signature-verified":true,
-            "x-nv-gpu-driver-rim-driver-measurements-available":true,
-            "x-nv-gpu-driver-vbios-rim-fetched":true,
-            "x-nv-gpu-vbios-rim-schema-validated":true,
-            "x-nv-gpu-vbios-rim-cert-extracted":true,
-            "x-nv-gpu-vbios-rim-signature-verified":true,
-            "x-nv-gpu-vbios-rim-driver-measurements-available":true,
-            "x-nv-gpu-vbios-index-conflict":true,
-            "x-nv-gpu-measurements-match":true
-        }
-    }
+- Generating CC tokens for the local participant
+- Collecting and storing CC tokens from other participants
+- Verifying tokens against security policies
+- Coordinating peer verification among participants
 
+CCAuthorizer
+------------
 
-****************
-Runtime behavior
-****************
+Each ``CCAuthorizer`` is responsible for generating attestation reports for a specific hardware platform. NVFlare provides multiple authorizers to support different confidential computing technologies.
 
-When one participant, either server or client, starts, the CC manager reacts to EventType.SYSTEM_BOOTSTRAP and retrieves its own CC token via Attestation SDK after the Attestation SDK successfully communicates
-with the software stacks and hardware.  This CC token will be stored locally in CC manager.
+Supported Platforms
+===================
 
-When the client registers itself with the server, it also includes its CC token in the registration data.  Server will collect the client's CC token if it successfully registers.  The server CC manager keeps
-all client's CC tokens as well as its own token.
+NVFlare currently supports the following ``CCAuthorizer`` components:
 
-After a submitted job is scheduled to be deployed, the server verifies the CC tokens of clients that are included in the deployment map based on its result policy.  If server finds
- all tokens from clients in the deployment map are verified successfully, those tokens will be sent to clients in deployment map for client side verification.  The client can determine whether it
- wants to join this job or not based on the result of verifying others' CC tokens against its own result policy.  If one client decides not to join the job, server will not deploy that job to that client.
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
 
-The server job scheduler will determine if the job has enough resources to be deployed and will determine the job's final status based on resource availability and retry policy.
+   * - Authorizer
+     - Platform
+   * - ``SNPAuthorizer``
+     - AMD SEV-SNP (Secure Encrypted Virtualization - Secure Nested Paging)
+   * - ``GPUAuthorizer``
+     - NVIDIA GPU Confidential Computing (H100, Blackwell)
+   * - ``TDXAuthorizer``
+     - Intel TDX (Trust Domain Extensions)
+   * - ``ACIAuthorizer``
+     - Azure Confidential Containers Instance
+
+Configuration
+-------------
+
+You can configure the CC attestation components during the provision step. See the :ref:`NVFlare CC Deployment Guide <cc_deployment_guide>` for detailed instructions.
+
+Runtime Behavior
+================
+
+The attestation workflow consists of several phases during job lifecycle:
+
+1. System Bootstrap
+-------------------
+
+When a participant (server or client) starts up, the ``CCManager`` responds to the ``EventType.SYSTEM_BOOTSTRAP`` event by generating its own CC token using the configured ``CCAuthorizers``.
+
+2. Client Registration
+----------------------
+
+When a client registers with the server, it includes its CC token as part of the registration data. If the registration is successful, the server collects and stores the client's CC token.
+
+The server's ``CCManager`` maintains both its own CC token and the tokens of all registered clients.
+
+3. Job Deployment Verification
+-------------------------------
+
+Once a job is submitted and scheduled for deployment, the server verifies the CC tokens of the clients listed in the job's deployment map, using its own security policy.
+
+If all client tokens in the deployment map pass verification, the server sends the verified tokens to those clients for peer verification.
+
+4. Peer Verification
+--------------------
+
+Each client evaluates the received CC tokens (including the server's token and other clients' tokens) against its own security policy to decide whether it trusts the other participants.
+
+Based on this evaluation, the client may choose to accept or reject participation in the job.
+
+If a client declines to join the job, the server excludes it from deployment.
+
+5. Job Scheduling
+-----------------
+
+Finally, the server's job scheduler determines whether the job has sufficient resources to proceed. It finalizes the job's status based on:
+
+- Resource availability
+- Number of participants that passed verification
+- Any defined retry policies
+
+This multi-stage verification process ensures that all participants in a federated learning job operate in trusted, attested environments.

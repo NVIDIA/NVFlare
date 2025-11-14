@@ -35,7 +35,7 @@ def define_parser():
     parser.add_argument(
         "--psi_path",
         type=str,
-        default="/tmp/nvflare/workspace/works/vertical_xgb_psi/{SITE_NAME}/simulate_job/{SITE_NAME}/psi/intersection.txt",
+        default="/tmp/nvflare/workspace/works/xgboost_vertical_psi/{SITE_NAME}/simulate_job/{SITE_NAME}/psi/intersection.txt",
         help="Path to psi files for each site",
     )
     parser.add_argument("--site_num", type=int, default=2, help="Total number of sites")

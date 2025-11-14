@@ -30,11 +30,6 @@ FL Client
 An application running on a client site that responds to Server's task assignments and performs learning actions based
 on its local data.
 
-Overseer
-----------
-An application responsible for overseeing overall system health and enabling seamless failover of FL servers. This
-component is only needed for high availability.
-
 User
 -----
 A human that participates in the FL project.

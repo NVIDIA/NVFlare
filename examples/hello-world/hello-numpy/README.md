@@ -7,37 +7,37 @@ This example demonstrates federated learning with NumPy using NVIDIA FLARE's Rec
 For complete installation instructions, visit [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
 ```bash
-pip install nvflare
+  pip install nvflare
 ```
 
-Install the dependencies:
+Clone the example code from GitHub:
 
 ```bash
-pip install -r requirements.txt
-```
-
-## Code Structure
-
-First, clone the example code from GitHub:
-
-```bash
-git clone https://github.com/NVIDIA/NVFlare.git
+  git clone https://github.com/NVIDIA/NVFlare.git
 ```
 
 Navigate to the hello-fedavg-numpy directory:
 
 ```bash
-git switch <release branch>
-cd examples/hello-world/hello-fedavg-numpy
+    git switch <release branch>
+    cd examples/hello-world/hello-fedavg-numpy
 ```
 
-```text
-hello-fedavg-numpy
-|
-|-- client.py         # client local training script
-|-- model.py          # model definition
-|-- server.py         # server recipe that defines client and server configurations
-|-- requirements.txt  # dependencies
+Install the dependencies:
+
+```bash
+  pip install -r requirements.txt
+```
+
+## Code Structure
+
+```
+    hello-fedavg-numpy
+    |
+    |-- client.py         # client local training script
+    |-- model.py          # model definition
+    |-- server.py         # server recipe that defines client and server configurations
+    |-- requirements.txt  # dependencies
 ```
 
 ## What This Example Does

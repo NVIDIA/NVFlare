@@ -6,6 +6,7 @@ import com.nvidia.nvflare.sdk.core.Connection
 import com.nvidia.nvflare.sdk.models.JobResponse
 import com.nvidia.nvflare.sdk.models.TaskResponse
 import com.nvidia.nvflare.sdk.models.ResultResponse
+import com.nvidia.nvflare.sdk.models.TrainingProgress
 import com.nvidia.nvflare.sdk.core.NVFlareError
 import com.nvidia.nvflare.sdk.utils.asMap
 import com.nvidia.nvflare.sdk.core.Context
@@ -33,6 +34,9 @@ import java.util.HashMap
  * Main orchestrator for federated learning on Android edge devices.
  * Handles job fetching, task execution, result reporting, component resolution,
  * filtering, and event handling. Consolidates all FL functionality into a single class.
+ * 
+ * @param onProgressUpdate Optional callback to receive training progress updates.
+ *                         Receives TrainingProgress objects with detailed status information.
  */
 class AndroidFlareRunner(
     private val context: AndroidContext,
@@ -44,7 +48,8 @@ class AndroidFlareRunner(
     private val jobTimeout: Float,
     private val inFilters: List<Filter>? = null,
     private val outFilters: List<Filter>? = null,
-    private val resolverRegistry: Map<String, Class<*>>? = null
+    private val resolverRegistry: Map<String, Class<*>>? = null,
+    private val onProgressUpdate: ((TrainingProgress) -> Unit)? = null
 ) {
     private val TAG = "AndroidFlareRunner"
     private val abortSignal = Signal()
@@ -52,6 +57,11 @@ class AndroidFlareRunner(
     private var cookie: Any? = null
     private var currentJobId: String? = null
     private val resolverRegistryMap: MutableMap<String, Class<*>> = HashMap()
+    
+    // Track training progress
+    // Note: These are reset for each job to ensure correct tracking on restart
+    private var sessionStartTime: Long = 0
+    private var currentPhaseStartTime: Long = 0
 
     init {
         // Add built-in resolvers
@@ -117,24 +127,40 @@ class AndroidFlareRunner(
      * Process one complete job.
      */
     private fun doOneJob(): Boolean {
+        sessionStartTime = System.currentTimeMillis()
         val ctx = Context()
         ctx[ContextKey.RUNNER] = this
         ctx[ContextKey.DATA_SOURCE] = dataSource
+
+        // Emit connecting progress with server info
+        currentPhaseStartTime = System.currentTimeMillis()
+        val serverUrl = "${connection.hostname.value}:${connection.port.value}"
+        emitProgress(TrainingProgress.connecting(serverUrl = serverUrl))
 
         // Get dataset from data source and store in context (iOS pattern)
         val dataset = try {
             dataSource.getDataset(jobName, ctx)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get dataset for job: $jobName", e)
+            emitProgress(TrainingProgress.error(
+                errorMessage = "Failed to load dataset: ${e.message}",
+                errorDetails = e.stackTraceToString()
+            ))
             return true  // Cannot continue without dataset
         }
         ctx[ContextKey.DATASET] = dataset
-        Log.d(TAG, "Got dataset from data source for job: $jobName, size: ${dataset.size()}")
+        val datasetSize = dataset.size()
+        Log.d(TAG, "Got dataset from data source for job: $jobName, size: $datasetSize")
+
+        // Emit fetching job progress with dataset info
+        currentPhaseStartTime = System.currentTimeMillis()
+        emitProgress(TrainingProgress.fetchingJob(datasetSize = datasetSize))
 
         // Try to get a job
         val job = getJob(ctx, abortSignal)
         if (job == null) {
             Log.d(TAG, "No job available")
+            emitProgress(TrainingProgress.completed())
             return true
         }
 
@@ -143,6 +169,15 @@ class AndroidFlareRunner(
 
         Log.d(TAG, "Processing job: $jobName (ID: $jobId)")
         Log.d(TAG, "Job data keys: ${jobData?.keys}")
+        
+        // Emit job received progress
+        val jobFetchDuration = System.currentTimeMillis() - currentPhaseStartTime
+        currentPhaseStartTime = System.currentTimeMillis()
+        emitProgress(TrainingProgress.jobReceived(
+            jobId = jobId ?: "",
+            jobName = jobName,
+            duration = jobFetchDuration
+        ))
 
         // Process training configuration
         val trainConfig = if (jobData != null) {
@@ -199,16 +234,24 @@ class AndroidFlareRunner(
         outFilters?.let { outputFilters.addAll(it) }
         trainConfig.outFilters?.let { outputFilters.addAll(it) }
 
+        // Track rounds for this job (reset for each new job)
+        var currentRound = 0
+        var totalRounds = 0
+
         // Process tasks
         while (!abortSignal.isTriggered) {
             val (task, sessionDone) = getTask(ctx, abortSignal)
             
             if (abortSignal.isTriggered) {
+                emitProgress(TrainingProgress.stopping())
                 return true
             }
 
             if (task == null) {
                 Log.d(TAG, "No more tasks for this job")
+                if (sessionDone) {
+                    emitProgress(TrainingProgress.completed())
+                }
                 return sessionDone
             }
 
@@ -222,6 +265,34 @@ class AndroidFlareRunner(
             val taskData = task?.get("task_data") as? Map<String, Any>
 
             Log.d(TAG, "Processing task: $taskName")
+            
+            // Extract round info from task metadata
+            val taskMeta = (taskData?.get("meta") as? Map<String, Any>)
+            val contributionRound = (taskMeta?.get("contribution_round") as? Number)?.toInt()
+            val numRounds = (taskMeta?.get("num_rounds") as? Number)?.toInt()
+            
+            // Use server's round number
+            if (contributionRound != null) {
+                currentRound = contributionRound
+            } else {
+                // Fallback: increment locally if server doesn't provide round number
+                currentRound++
+            }
+            
+            if (numRounds != null && numRounds > 0) {
+                totalRounds = numRounds
+            }
+            
+            emitProgress(TrainingProgress.fetchingTask(
+                currentRound = currentRound,
+                totalRounds = totalRounds
+            ))
+            
+            emitProgress(TrainingProgress.taskReceived(
+                taskName = taskName ?: "",
+                currentRound = currentRound,
+                totalRounds = totalRounds
+            ))
 
             // Convert task data to DXO
             val taskDxo = if (taskData != null) {
@@ -252,12 +323,26 @@ class AndroidFlareRunner(
             }
 
             if (abortSignal.isTriggered) {
+                emitProgress(TrainingProgress.stopping())
                 return true
             }
+
+            // Emit training progress
+            val trainingStartTime = System.currentTimeMillis()
+            emitProgress(TrainingProgress.training(
+                taskName = taskName ?: "",
+                currentRound = currentRound,
+                totalRounds = totalRounds,
+                currentEpoch = 0,
+                totalEpochs = 1
+            ))
 
             // Execute task
             taskCtx.fireEvent(EventType.BEFORE_TRAIN, System.currentTimeMillis(), abortSignal)
             val output = executor.execute(filteredTaskDxo, taskCtx, abortSignal)
+            val trainingDuration = System.currentTimeMillis() - trainingStartTime
+            
+            Log.d(TAG, "Training completed in ${trainingDuration}ms")
 
             if (output !is DXO) {
                 throw RuntimeException("Output from ${executor::class.java} is not a valid DXO: ${output::class.java}")
@@ -266,6 +351,7 @@ class AndroidFlareRunner(
             taskCtx.fireEvent(EventType.AFTER_TRAIN, Pair(System.currentTimeMillis(), output), abortSignal)
 
             if (abortSignal.isTriggered) {
+                emitProgress(TrainingProgress.stopping())
                 return true
             }
 
@@ -275,12 +361,32 @@ class AndroidFlareRunner(
                 throw RuntimeException("Output after filtering is not valid DXO: ${filteredOutput::class.java}")
             }
 
+            // Emit sending results progress
+            val sendStartTime = System.currentTimeMillis()
+            emitProgress(TrainingProgress.sendingResults(
+                taskName = taskName ?: "",
+                currentRound = currentRound,
+                totalRounds = totalRounds
+            ))
+
             // Report result
             val result = reportResult(taskCtx, filteredOutput)
+            val sendDuration = System.currentTimeMillis() - sendStartTime
             if (!result) {
                 Log.e(TAG, "Failed to report result")
+                emitProgress(TrainingProgress.error(
+                    errorMessage = "Failed to send results to server",
+                    errorDetails = "Network error or server rejected the result"
+                ))
                 return true
             }
+            
+            // Emit results sent progress
+            emitProgress(TrainingProgress.resultsSent(
+                currentRound = currentRound,
+                totalRounds = totalRounds,
+                duration = sendDuration
+            ))
         }
 
         return false
@@ -375,26 +481,40 @@ class AndroidFlareRunner(
                     connection.fetchTask(jobId)
                 }
 
-                when (taskResponse.taskStatus) {
-                    TaskResponse.TaskStatus.OK -> {
-                        // Convert TaskResponse to the format expected by FlareRunner
+                // Handle FSM transitions based on task status (matching iOS behavior)
+                when {
+                    taskResponse.taskStatus.isTerminal -> {
+                        // DONE/INVALID/ERROR -> END session
+                        Log.d(TAG, "Task session terminated with status: ${taskResponse.taskStatus}")
+                        return Pair(null, true)
+                    }
+                    taskResponse.taskStatus.shouldLookForNewJob -> {
+                        // NO_JOB -> go back to getJob (job completed, look for new jobs)
+                        Log.d(TAG, "No job available, exiting task loop")
+                        return Pair(null, false)
+                    }
+                    taskResponse.taskStatus.shouldRetryTask -> {
+                        // RETRY/NO_TASK -> wait and retry
+                        val retryWait = taskResponse.retryWait?.toLong() ?: 5000L
+                        Log.d(TAG, "Retry task fetch requested (${taskResponse.taskStatus}), waiting ${retryWait}ms")
+                        runBlocking { delay(retryWait) }
+                        continue
+                    }
+                    taskResponse.taskStatus.shouldContinueTraining -> {
+                        // OK -> process task
                         // Extract model data properly to avoid corruption
                         val modelData = when (taskResponse.taskData?.data) {
                             is com.google.gson.JsonPrimitive -> {
-                                // Try to get as string first, fallback to toString if it fails
                                 try {
                                     taskResponse.taskData.data.asString
                                 } catch (e: Exception) {
-                                    // If asString fails, use toString (this might corrupt binary data)
                                     taskResponse.taskData.data.toString()
                                 }
                             }
                             is com.google.gson.JsonObject -> {
-                                // For JSON objects, convert to string
                                 taskResponse.taskData.data.toString()
                             }
                             else -> {
-                                // For other types, try to get as string or fallback
                                 taskResponse.taskData?.data?.toString() ?: ""
                             }
                         }
@@ -411,23 +531,9 @@ class AndroidFlareRunner(
                         )
                         return Pair(taskMap, false)
                     }
-                    TaskResponse.TaskStatus.DONE -> {
-                        Log.d(TAG, "Task session completed")
-                        return Pair(null, true)
-                    }
-                    TaskResponse.TaskStatus.ERROR -> {
-                        Log.d(TAG, "Task fetch error: ${taskResponse.message}")
-                        runBlocking { delay(5000L) }
-                        continue
-                    }
-                    TaskResponse.TaskStatus.RETRY -> {
-                        val retryWait = taskResponse.retryWait ?: 5000L
-                        Log.d(TAG, "Task fetch retry requested, waiting ${retryWait}ms")
-                        runBlocking { delay(retryWait.toLong()) }
-                        continue
-                    }
                     else -> {
-                        Log.d(TAG, "Task fetch failed with status: ${taskResponse.taskStatus}")
+                        // UNKNOWN or unexpected status -> wait and retry
+                        Log.d(TAG, "Unknown task status: ${taskResponse.taskStatus}, retrying in 5s")
                         runBlocking { delay(5000L) }
                         continue
                     }
@@ -511,5 +617,14 @@ class AndroidFlareRunner(
             }
         }
         return result
+    }
+    
+    /**
+     * Emit progress update to the app.
+     * Sends TrainingProgress objects with detailed status information.
+     */
+    private fun emitProgress(progress: TrainingProgress) {
+        Log.d(TAG, "Progress: ${progress.phase} - ${progress.message}")
+        onProgressUpdate?.invoke(progress)
     }
 } 

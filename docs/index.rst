@@ -10,6 +10,7 @@ NVIDIA FLARE
    fl_introduction
    flare_overview
    whats_new
+   release_notes/previous_release
    Installation <installation>
    getting_started
    Quick Start <quickstart>
@@ -51,6 +52,13 @@ and simulation to real-world production deployment.  Some of the key components 
  - **Privacy preservation** with differential privacy, homomorphic encryption, and more
  - **Management tools** for secure provisioning and deployment, orchestration, and management
  - **Specification-based API** for extensibility
+
+FLARE consists three main product categories:
+
+    - **FLARE Core**: All major FLARE's main components and Infrastructures
+    - **FLARE Confidential AI**: Confidential Federated AI with FLARE and confidential computing
+    - **FLARE Edge**: FLARE edge development
+
 
 Learn more about FLARE features in the :ref:`FLARE Overview <flare_overview>` and :ref:`What's New <whats_new>`.
 

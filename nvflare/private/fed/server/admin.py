@@ -101,6 +101,7 @@ class FedAdminServer(AdminServer):
         file_upload_dir,
         file_download_dir,
         download_job_url="",
+        timeout: float = 10.0,
     ):
         """The FedAdminServer is the framework for developing admin commands.
 
@@ -110,6 +111,7 @@ class FedAdminServer(AdminServer):
             file_upload_dir: the directory for uploaded files
             file_download_dir: the directory for files to be downloaded
             download_job_url: download job url
+            timeout: admin command timeouts
         """
         cmd_reg = new_command_register_with_builtin_module(app_ctx=fed_admin_interface)
         self.sai = fed_admin_interface
@@ -172,7 +174,7 @@ class FedAdminServer(AdminServer):
         )
 
         self.clients = {}  # token => _Client
-        self.timeout = 10.0
+        self.timeout = timeout
 
     def client_heartbeat(self, token, name: str, fqcn: str):
         """Receive client heartbeat.

@@ -7,6 +7,9 @@ As discussed in :ref:`hierarchical_communication`, FLARE can scale to support a 
 
 The following diagram shows a hierarchical FLARE system that uses two levels of relays (the R nodes) for communication. A client hierarchy (CP nodes) is also defined and connected to the relays.
 
+.. image:: ../resources/flare_hierarchical_architecture.png
+    :height: 350px
+
 Note that the client hierarchy follows the relay hierarchy closely for optimal performance. For example, CP1_1 and CP1_2 are children of CP1; the LCPs connected to R1_1 are children of CP1_1; the LCPs connected to R1_2 are children of CP1_2; and so on.
 
 This client hierarchy is used to implement hierarchical aggregation algorithms for device training.
@@ -38,6 +41,9 @@ Web nodes typically aim to:
 
 The following diagram shows this architecture.
 
+.. image:: ../resources/web_to_flare_hierarchical_architecture_lcp.png
+    :height: 350px
+
 Routing to Client Job Processes (CJs)
 -------------------------------------
 
@@ -47,12 +53,20 @@ Note that unlike CJs, which come and go, LCPs are permanent. Multiple jobs can r
 
 The following diagram shows the system with a job deployed.
 
+.. image:: ../resources/lcp_to_cj_flare_hierarchical_architecture.png
+    :height: 350px
+
+
 CJ Hierarchy
 ============
 
 Once a job is deployed, there is one SJ (Server Job) process and one dedicated CJ process for the job on each CP. The CJ hierarchy mirrors the hierarchy of their CPs. Device messages are received and processed by the CJs associated with LCPs.
 
 The following diagram shows the CJ hierarchy corresponding to the example above.
+
+.. image:: ../resources/cj_hierarchy_flare_hierarchical_architecture.png
+    :height: 350px
+
 
 Leaf CJs are associated with LCPs. They interact with edge devices indirectly following the Edge Device Interaction Protocol (EDIP). They also serve as the first-line aggregator, aggregating training results from their devices and reporting the aggregation result to their parent CJs. All intermediate CJs aggregate results from their children and report aggregation results to their parents, continuing up to the SJ, which generates the final aggregation result.
 
@@ -112,6 +126,10 @@ The result is:
 - Total Sites: 25
 
 There are 6 relay nodes in total: 2 non-leaf nodes and 4 leaf nodes (since each non-leaf node has 2 leaf nodes for a width value of 2).
+
+.. image:: ../resources/tree_prov_flare_hierarchical_architecture.png
+    :height: 45px
+
 
 There are 18 client nodes in total. In the client hierarchy, there are 6 non-leaf clients (one for each relay node) and 12 leaf clients (3 for each leaf relay node).
 

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os.path
-from typing import List
 
 import numpy as np
 
@@ -28,7 +27,7 @@ class Cifar10LocalPSI(PSI):
         if not os.path.isfile(self.data_path):
             raise RuntimeError(f"invalid data path {data_path}")
 
-    def load_items(self) -> List[str]:
+    def load_items(self) -> list[str]:
         _ext = os.path.splitext(self.data_path)[1]
 
         items = np.load(self.data_path)

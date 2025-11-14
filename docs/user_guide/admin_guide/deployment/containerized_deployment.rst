@@ -16,11 +16,11 @@ Before starting with containerized deployment, ensure you have:
 3. System requirements met as per the `NVIDIA Container Toolkit Install Guide <https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html>`_
 
 Running NVIDIA FLARE in a Docker container provides several benefits:
-- Consistent environment across different systems
-- Easy dependency management
-- Simplified deployment process
-- Isolated execution environment
-- GPU support through NVIDIA Container Toolkit
+    - Consistent environment across different systems
+    - Easy dependency management
+    - Simplified deployment process
+    - Isolated execution environment
+    - GPU support through NVIDIA Container Toolkit
 
 This can be used as an alternative to the bare-metal Python virtual environment and will
 use a similar installation to simplify transitioning between a bare metal and containerized
@@ -46,7 +46,7 @@ Let's first create a folder called ``build`` and then create a file inside named
 
 Using any text editor to edit the Dockerfile and paste the following:
 
-.. literalinclude:: ../resources/Dockerfile
+.. literalinclude:: ../../../resources/Dockerfile
     :language: dockerfile
 
 .. note::

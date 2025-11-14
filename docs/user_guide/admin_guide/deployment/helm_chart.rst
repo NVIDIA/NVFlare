@@ -17,8 +17,8 @@ Helm Chart for users to deploy NVIDIA FLARE to a local microk8s Kubernetes insta
 .. note::
 
     The following document assumes users have microk8s (common bundle in ubuntu server 20.04 and above) running on his local machine.
-    With the helm chart, users are able to start the overseer, servers in the k8s cluster after provisioning.
-    The clients and admin console can connect to the overseer and servers in the k8s cluster.
+    With the helm chart, users are able to start the servers in the k8s cluster after provisioning.
+    The clients and admin console can connect to the servers in the k8s cluster.
 
 
 ***************************
@@ -60,13 +60,12 @@ After the command, there should a folder with structure similar to the following
     ├── compose.yaml
     ├── nvflare_compose
     ├── nvflare_hc
-    ├── overseer
     ├── server1
     ├── server2
     ├── site-1
     └── site-2
 
-    8 directories, 1 file
+    7 directories, 1 file
 
 Note there is a nvflare_hc folder.  This folder is the Helm Chart package.
 
@@ -84,13 +83,11 @@ check if they are enabled.
 
     $ microk8s status
     microk8s is running
-    high-availability: no
     datastore master nodes: 127.0.0.1:19001
     datastore standby nodes: none
     addons:
     enabled:
         dns                  # (core) CoreDNS
-        ha-cluster           # (core) Configure high availability on the current node
         helm3                # (core) Helm 3 - Kubernetes package manager
         hostpath-storage     # (core) Storage class; allocates storage from host directory
         ingress              # (core) Ingress controller for external access
@@ -135,7 +132,7 @@ to the deployed services.
 Users have to enable ingress controller and modify some configuration of microk8s cluster.
 
 Complete the following steps to enable microk8s to open and route
-network traffic to overseer and servers.
+network traffic to servers.
 
 
 Edit configmap of ingress to route traffic
@@ -154,7 +151,6 @@ Add this section to the configmap
         "8003": default/server1:8003
         "8102": default/server2:8102
         "8103": default/server2:8103
-        "8443": default/overseer:8443
 
 Edit DaemonSet of ingress to open ports
 ---------------------------------------
@@ -167,10 +163,6 @@ Add this section at (spec.template.spec.containers[0].ports)
 
 .. code-block:: yaml
 
-        - containerPort: 8443
-          hostPort: 8443
-          name: overseer
-          protocol: TCP
         - containerPort: 8002
           hostPort: 8002
           name: server1fl
@@ -222,8 +214,8 @@ that folder and feel free to change them for your own environment.
 Verifying NVIDIA FLARE is up and running
 ****************************************
 
-You can use ``kubectl`` to check the status of NVIDIA FLARE application, installed by the chart.  For example, in
-microk8s environment, run the following command to see if overseer and servers are started.
+You can use ``kubectl`` to check the status of NVIDIA FLARE application, installed by the chart. For example, in
+microk8s environment, run the following command to see if servers are started.
 
 .. code-block:: shell
 
@@ -231,10 +223,9 @@ microk8s environment, run the following command to see if overseer and servers a
     NAME                        READY   STATUS    RESTARTS       AGE
     dnsutils                    1/1     Running   74 (13m ago)   62d
     server1-7675668544-xvfvp    1/1     Running   0              4m50s
-    overseer-6f9dd66c97-n7bkd   1/1     Running   0              4m50s
     server2-86bc4fc87f-s9n2s    1/1     Running   0              4m50s
 
-The ``dnsutils`` is a built-in addon for dns service inside microk8s.  You can ignore it.
+The ``dnsutils`` is a built-in addon for dns service inside microk8s. You can ignore it.
 
 For more details on the pods inside Kubernetes cluster, you can run the following command.
 
@@ -368,62 +359,6 @@ For more details on the pods inside Kubernetes cluster, you can run the followin
     Events:                      <none>
 
 
-    Name:         overseer-6f9dd66c97-n7bkd
-    Namespace:    default
-    Priority:     0
-    Node:         demolaptop/192.168.1.96
-    Start Time:   Fri, 23 Sep 2022 12:28:25 -0700
-    Labels:       pod-template-hash=6f9dd66c97
-                system=overseer
-    Annotations:  cni.projectcalico.org/containerID: e9f6f2efb548c16217377eaaa8b79534a67e016277c3a0933d202d04904f46dc
-                cni.projectcalico.org/podIP: 10.1.179.80/32
-                cni.projectcalico.org/podIPs: 10.1.179.80/32
-    Status:       Running
-    IP:           10.1.179.80
-    IPs:
-    IP:           10.1.179.80
-    Controlled By:  ReplicaSet/overseer-6f9dd66c97
-    Containers:
-    overseer:
-        Container ID:  containerd://82426e5e414b863fff1cc4c8963a3e18acd49ff1ccb51befaf5c984f3ad0f1a4
-        Image:         localhost:32000/nvfl-min:0.0.1
-        Image ID:      localhost:32000/nvfl-min@sha256:71658dc82b15e6cd5a2580c78e56011d166a70e1ff098306c93584c82cb63821
-        Port:          8443/TCP
-        Host Port:     0/TCP
-        Command:
-        /workspace/overseer/startup/start.sh
-        State:          Running
-        Started:      Fri, 23 Sep 2022 12:28:27 -0700
-        Ready:          True
-        Restart Count:  0
-        Environment:    <none>
-        Mounts:
-        /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-dz7qz (ro)
-        /workspace from workspace (rw)
-    Conditions:
-    Type              Status
-    Initialized       True 
-    Ready             True 
-    ContainersReady   True 
-    PodScheduled      True 
-    Volumes:
-    workspace:
-        Type:          HostPath (bare host directory volume)
-        Path:          /home/nvflare/workspace/nvf_hc_test/demo
-        HostPathType:  Directory
-    kube-api-access-dz7qz:
-        Type:                    Projected (a volume that contains injected data from multiple sources)
-        TokenExpirationSeconds:  3607
-        ConfigMapName:           kube-root-ca.crt
-        ConfigMapOptional:       <nil>
-        DownwardAPI:             true
-    QoS Class:                   BestEffort
-    Node-Selectors:              <none>
-    Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                                node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
-    Events:                      <none>
-
-
     Name:         server2-86bc4fc87f-s9n2s
     Namespace:    default
     Priority:     0
@@ -502,7 +437,7 @@ Login with admin console
 ************************
 
 Now on another terminal, with nvflare installed and /etc/hosts modified to 
-include the IP of overseer, server1 and server2, which is the IP of the 
+include the IP of server1 and server2, which is the IP of the 
 machine running the microk8s cluster, run fl_admin.sh of admin@nvidia.com/startup.  
 Login as admin@nvidia.com.
 
@@ -513,7 +448,7 @@ For example: /etc/hosts is modified as (if microk8s is running at 192.168.1.123 
     $ cat /etc/hosts
     127.0.0.1       localhost
     127.0.1.1       slowdesktop
-    192.168.1.123 overseer server1 server2
+    192.168.1.123 server1 server2
     # The following lines are desirable for IPv6 capable hosts
     ::1     ip6-localhost ip6-loopback
     fe00::0 ip6-localnet

@@ -13,7 +13,6 @@
 # limitations under the License.
 import json
 import random
-from typing import List
 
 from nvflare.app_common.abstract.statistics_spec import (
     Bin,
@@ -74,7 +73,7 @@ class TestStatisticConfigDecomposer:
 
         data = fobs.dumps(statistic_configs)
         obj = fobs.loads(data)
-        assert isinstance(obj, List)
+        assert isinstance(obj, list)
         for o in obj:
             assert isinstance(o, list)
             print(o)
@@ -98,7 +97,7 @@ class TestStatisticConfigDecomposer:
         from nvflare.app_common.workflows.statistics_controller import StatisticsController
 
         ordered_statistics = StatisticsConstants.ordered_statistics[StatisticsConstants.STATS_1st_STATISTICS]
-        target_configs: List[StatisticConfig] = StatisticsController._get_target_statistics(
+        target_configs: list[StatisticConfig] = StatisticsController._get_target_statistics(
             config_dict, ordered_statistics
         )
         o = fobs.dumps(target_configs)

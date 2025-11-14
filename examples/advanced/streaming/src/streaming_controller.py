@@ -113,7 +113,7 @@ class StreamingController(Controller):
         # load model to dict
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            torch_dtype=torch.float32,
+            dtype=torch.float32,
             device_map="auto",
             use_cache=False,
         )

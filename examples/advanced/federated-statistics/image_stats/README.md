@@ -1,7 +1,7 @@
 # Calculate Image Histogram with NVIDIA FLARE
 
 Compute the local and global image statistics.
-You can also follow the [notebook](../image_stats.ipynb) or the following:
+You can also follow the [notebook](image_stats.ipynb) or the following:
 
 ## Code Structure
 First, get the example code from github:

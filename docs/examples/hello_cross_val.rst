@@ -144,6 +144,7 @@ You can find the running logs and results inside the simulator's workspace:
 The cross site validation results:
 
 .. code-block:: bash
+
   cat /tmp/nvflare/jobs/workdir/server/simulate_job/cross_site_val/cross_val_results.json
 
 Congratulations!

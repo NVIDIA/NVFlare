@@ -105,10 +105,10 @@ nvflare simulator ./jobs/cifar10_swarm -w /tmp/nvflare/cifar10_swarm -n 2 -t 2
 ## Results
 To view the cross validation results:
 ```
-python -m json.tool /tmp/nvflare/cifar10_swarm/simulate_job/cross_site_val/cross_val_results.json
+python -m json.tool /tmp/nvflare/cifar10_swarm/server/simulate_job/cross_site_val/cross_val_results.json
 ```
 
-Models and results can found in `/tmp/nvflare/cifar10_swarm/simulate_job/`, and we can confirm that the server in `/tmp/nvflare/cifar10_swarm/simulate_job/app_server` does not contain any sensitive training data.
+Models and results can found in `/tmp/nvflare/cifar10_swarm/server/simulate_job/`, and we can confirm that the server in `/tmp/nvflare/cifar10_swarm/server/simulate_job/app_server` does not contain any sensitive training data.
 
 ## Comparison to Centralized Training and Federated Averaging
 

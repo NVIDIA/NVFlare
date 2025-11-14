@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import logging
-from typing import Dict, Generator, List, Tuple
+from typing import Generator
 from unittest.mock import Mock, patch
 
 import pytest
@@ -49,7 +49,7 @@ def _verify_token(token: str) -> bool:
     return token == VALID_TOKEN
 
 
-def _create_peer_cc_context(site_name: str, token: str) -> Tuple[List[Dict[str, str]], FLContext]:
+def _create_peer_cc_context(site_name: str, token: str) -> tuple[list[dict[str, str]], FLContext]:
     """Create a peer context with CC token information for testing.
 
     Args:
@@ -106,7 +106,7 @@ def basic_config():
 
 
 @pytest.fixture
-def cc_test_env(basic_config) -> Generator[Tuple[CCManager, FLContext, TDXAuthorizer], None, None]:
+def cc_test_env(basic_config) -> Generator[tuple[CCManager, FLContext, TDXAuthorizer], None, None]:
     """Fixture for setting up the complete CC test environment.
 
     Args:
@@ -147,7 +147,7 @@ def cc_test_env(basic_config) -> Generator[Tuple[CCManager, FLContext, TDXAuthor
 
 
 @pytest.fixture
-def cc_test_env_with_mock_refresh(cc_test_env) -> Generator[Tuple[CCManager, FLContext, TDXAuthorizer], None, None]:
+def cc_test_env_with_mock_refresh(cc_test_env) -> Generator[tuple[CCManager, FLContext, TDXAuthorizer], None, None]:
     """Fixture that provides CC test environment with mocked refresh method.
 
     Args:
@@ -159,8 +159,8 @@ def cc_test_env_with_mock_refresh(cc_test_env) -> Generator[Tuple[CCManager, FLC
     """
     cc_manager, fl_ctx, tdx_authorizer = cc_test_env
     with patch(
-        "nvflare.app_opt.confidential_computing.cc_manager.CCManager._refresh_expired_tokens"
-    ) as mock_refresh_expired_tokens:
+        "nvflare.app_opt.confidential_computing.cc_manager.CCManager._ensure_fresh_tokens"
+    ) as mock_ensure_fresh_tokens:
         yield cc_manager, fl_ctx, tdx_authorizer
 
 
@@ -300,7 +300,7 @@ class TestCCManager:
         cc_info[0][TOKEN_GENERATION_TIME] = 0
 
         # Refresh expired tokens
-        cc_manager._refresh_expired_tokens()
+        cc_manager._ensure_fresh_tokens()
 
         # Verify token was refreshed
         assert cc_info[0][TOKEN_GENERATION_TIME] > initial_time

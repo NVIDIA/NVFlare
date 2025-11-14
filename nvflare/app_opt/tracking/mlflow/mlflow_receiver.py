@@ -99,8 +99,14 @@ class MLflowReceiver(AnalyticsReceiver):
         self.time_since_flush = 0
         self.buff_flush_time = buffer_flush_time
 
+    def _get_tracking_uri(self, fl_ctx: FLContext):
         if self.tracking_uri:
-            mlflow.set_tracking_uri(uri=self.tracking_uri)
+            return self.tracking_uri
+
+        workspace = fl_ctx.get_workspace()
+        job_id = fl_ctx.get_job_id()
+        mlflow_root = os.path.abspath(os.path.join(workspace.get_result_root(job_id), "mlflow"))
+        return f"file://{mlflow_root}"
 
     def initialize(self, fl_ctx: FLContext):
         """Initializes MlflowClient for each site.
@@ -121,6 +127,8 @@ class MLflowReceiver(AnalyticsReceiver):
         """
         # Initialize context and timing
         self.time_start = 0
+
+        mlflow.set_tracking_uri(uri=self._get_tracking_uri(fl_ctx))
 
         # Validate and prepare experiment configuration
         art_full_path = self._get_artifact_location(self.artifact_location, fl_ctx)

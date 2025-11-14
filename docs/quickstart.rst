@@ -37,4 +37,4 @@ The following hello-world examples demonstrate different federated learning algo
 
 8. **Hello XGBoost** - `Federated XGBoost example demonstrating gradient boosting for tabular data in a federated setting. <hello-world/hello-xgboost/index.html>`_
 
-Let's start with the Hello Federated Average with PyTorch: `Federated averaging with PyTorch models and training loops. <hello-world/hello-pt/index.html>`_
+Let's start with Hello PyTorch: `Federated averaging with PyTorch models and training loops. <hello-world/hello-pt/index.html>`_

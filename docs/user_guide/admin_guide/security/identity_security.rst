@@ -11,7 +11,7 @@ Authentication
 NVFLARE's authentication model is based on Public Key Infrastructure (PKI) technology:
 
     - For the FL project, the Project Admin uses the Provisioning Tool to create a Root CA with a self-signed root certificate. This Root CA will be used to issue all other certs needed by communicating parties.
-    - Identities involved in the study (Server(s), Clients, the Overseer, Users) are provisioned with the Provisioning Tool. Each identity is defined with a unique common name. For each identity, the Provisioning Tool generates a separate password-protected Startup Kit, which includes security credentials for mutual TLS authentication:
+    - Identities involved in the study (Server(s), Clients, Users) are provisioned with the Provisioning Tool. Each identity is defined with a unique common name. For each identity, the Provisioning Tool generates a separate password-protected Startup Kit, which includes security credentials for mutual TLS authentication:
         - The certificate of the Root CA
         - The cert of the identity
         - The private key of the identity

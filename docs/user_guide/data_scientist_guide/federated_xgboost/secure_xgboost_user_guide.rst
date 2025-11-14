@@ -213,12 +213,6 @@ This is a snippet of the ``secure_project.yml`` file with the HEBuilder:
     - path: nvflare.lighter.impl.static_file.StaticFileBuilder
         args:
         config_folder: config
-        overseer_agent:
-            path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
-            overseer_exists: false
-            args:
-            sp_end_point: localhost:8102:8103
-            heartbeat_interval: 6
     - path: nvflare.lighter.impl.he.HEBuilder
         args:
         poly_modulus_degree: 8192

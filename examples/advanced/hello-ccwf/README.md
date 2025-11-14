@@ -5,7 +5,7 @@ by logic from clients. This example shows the components used in a job for a cli
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](../../getting_started/README.md) instructions.
+for the complete installation instructions, see `Installation <https://nvflare.readthedocs.io/en/main/installation.html>`_
 
 ### 2. Run the experiment
 

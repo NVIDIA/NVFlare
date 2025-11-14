@@ -1,7 +1,7 @@
 additional_python_paths:
 - ../../examples/advanced/federated-statistics/image_stats
 cleanup: true
-jobs_root_dir: ../../examples/advanced/federated-statistics/image_stats/jobs
+jobs_root_dir: ./data/jobs
 project_yaml: data/projects/4_clients.yml
 tests:
 - event_sequence:
@@ -26,6 +26,6 @@ tests:
   - cp ../../examples/advanced/federated-statistics/image_stats/requirements.txt ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
   - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
   - pip install -r ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
-  - bash ../../examples/advanced/federated-statistics/image_stats/prepare_data.sh
+  - python ../../examples/advanced/federated-statistics/image_stats/prepare_data.py --input_dir /tmp/nvflare/image_stats/data --output_dir /tmp/nvflare/image_stats/data
   - rm -f ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
   test_name: Test example image_stats.

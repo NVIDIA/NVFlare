@@ -48,6 +48,7 @@ For an example application using SVTPrivacy, see :github_nvflare_link:`Different
 
 DXO - Data Exchange Object
 ===========================
+
 The message object passed between the server and clients is of the Shareable class. Shareable is a general structure for all kinds of communication (task interaction, aux messages, fed events, etc.) that in addition to the message payload, also carries contextual information (such as peer FL context). NVFLARE's DXO object is a general-purpose structure that is meant to be used to carry message payload in a self-descriptive manner. As an analogy, think of Shareable as an HTTP message, whereas a DXO as a JPEG image that is carried by the HTTP message.
 
 A DXO object has the following properties:
@@ -60,6 +61,7 @@ Note that a DXO object could be of COLLECTION kind. In this case, the Data of th
 
 DXO Filter
 ==========
+
 Even though a filter can be written to process anything in a Shareable, for data privacy processing, filtering is usually against the payload itself. DXO-based filters could be very useful when the payload is a DXO object.
 
 DXOFilter is a subclass of Filter and a mini-framework that makes it easy to write DXO-based filters. To write a DXO-based filter, you create the filter as a subclass of DXOFilter. Instead of writing the "process" method of the Filter class, you will write the "process_dxo" method. The "process" method is provided by the DXOFilter class.
@@ -72,7 +74,8 @@ Your subclass of DXOFilter benefits from the features of DXOFilter:
     - Auditing. If your filter is applied, a job audit event will be created to record the fact that the filter is applied to data.
 
 Filter Behavior in 1-N Communication
-==========
+====================================
+
 Based on the design, when a filter is applied to a object, for memory efficiency without making local deep copies, it can modify the object in place.
 This is fine when the object is expected to be sent to only one recipient, as in the case of 1-1 communication, e.g. client to server.
 However, in the case of 1-N communication, e.g. server to clients, the object will be expected by multiple recipients.
@@ -86,6 +89,7 @@ Therefore, when designing and implementing filters, such behavior needs to be co
 
 Creating a DXO Filter
 ---------------------
+
 You create a new DXO-based filter by extending the DXOFilter class, and provide the "process_dxo" method.
 
 In your constructor, you need to determine supported DXO kinds and make them known to the super class (supported_data_kinds). You also need to specify what data kinds your filter is to be applied to (data_kinds_to_filter). Of course, data_kinds_to_filter must be a subset of the supported_data_kinds. Typically data_kinds_to_filter should be user configurable.

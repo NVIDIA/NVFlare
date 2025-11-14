@@ -98,6 +98,7 @@ class CCManager(FLComponent):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_BOOTSTRAP:
+            err = None
             try:
                 self._setup_cc_authorizers(fl_ctx)
 
@@ -182,8 +183,8 @@ class CCManager(FLComponent):
             self.cc_verifiers[namespace] = verifier
 
     def _prepare_cc_info(self, fl_ctx: FLContext):
-        # client side: if token expired then generate a new one
-        self._refresh_expired_tokens()
+        # client side
+        self._ensure_fresh_tokens(force=True)
 
         if not self.token_submitted:
             site_cc_info = self.participant_cc_info[self.site_name]
@@ -200,7 +201,7 @@ class CCManager(FLComponent):
 
         if peer_cc_info:
             self.participant_cc_info[token_owner] = peer_cc_info
-            self.logger.info(f"Added CC client: {token_owner} tokens: {peer_cc_info}")
+            self.logger.info(f"Added CC client: {token_owner}")
 
         if not self.verify_time or time.time() - self.verify_time > self.verify_frequency:
             self._verify_running_jobs(fl_ctx)
@@ -216,6 +217,7 @@ class CCManager(FLComponent):
                 for _, client in job_participants.items():
                     participants.append(client.name)
 
+                self._ensure_fresh_tokens()
                 participants_tokens = self._collect_participants_tokens(participants)
                 err = self._validate_participants_tokens(participants_tokens)
                 if err:
@@ -297,6 +299,10 @@ class CCManager(FLComponent):
             if not isinstance(p, str):
                 return f"bad value for {FLContextKey.JOB_PARTICIPANTS} in fl_ctx: expect list of str but got list of {type(p)}"
 
+        # server side to collect tokens from all participants including itself
+        # must ask each participant to generate new tokens since this method
+        # is called when a job is to be scheduled
+        self._ensure_fresh_tokens(force=True)
         participants_tokens = self._collect_participants_tokens(participants)
         err = self._validate_participants_tokens(participants_tokens)
         if err:
@@ -316,8 +322,6 @@ class CCManager(FLComponent):
             dict of participant name to list of tokens
         """
         # server side to collect tokens from all participants including itself
-        # if server token expired, then generates a new one
-        self._refresh_expired_tokens()
 
         participant_tokens = {}
         site_cc_info = self.participant_cc_info[self.site_name]
@@ -342,13 +346,31 @@ class CCManager(FLComponent):
             cc_info.append({CC_TOKEN: token, CC_NAMESPACE: namespace, CC_TOKEN_VALIDATED: False})
         return cc_info
 
-    def _refresh_expired_tokens(self):
+    def _ensure_fresh_tokens(self, force=False):
+        """Refresh CC tokens for the current site by requesting each issuer to generate a new token.
+
+        If `force` is True, generates and replaces all tokens regardless of expiration.
+        Otherwise, only tokens that have expired are refreshed. The token information and
+        generation time are updated in place, and all refresh events are logged for
+        auditing purposes.
+
+        Args:
+            force (bool): If True, generates a new token for every issuer. If False, only
+                refreshes tokens that have expired.
+
+        Returns:
+            None
+
+        Side Effects:
+            Updates self.participant_cc_info[self.site_name] in place and resets
+            self.token_submitted when any token is refreshed.
+        """
         site_cc_info = self.participant_cc_info[self.site_name]
         for i in site_cc_info:
             issuer = i.get(CC_ISSUER)
             token_generate_time = i.get(TOKEN_GENERATION_TIME)
             expiration = i.get(TOKEN_EXPIRATION)
-            if time.time() - token_generate_time > expiration:
+            if force or time.time() - token_generate_time > expiration:
                 token = issuer.generate()
                 i[CC_TOKEN] = token
                 i[TOKEN_GENERATION_TIME] = time.time()
@@ -363,7 +385,6 @@ class CCManager(FLComponent):
         _, invalid_participant_list = self._verify_participants_tokens(participants_tokens)
         if invalid_participant_list:
             invalid_participant_string = ",".join(invalid_participant_list)
-            self.logger.debug(f"{invalid_participant_list=}")
             return f"Participant {invalid_participant_string}" + CC_VERIFICATION_FAILED
         else:
             return ""
@@ -400,7 +421,7 @@ class CCManager(FLComponent):
                         invalid_participant_list.append(k + " namespace: {" + namespace + "}")
                 except CCTokenVerifyError:
                     invalid_participant_list.append(k + " namespace: {" + namespace + "}")
-        self.logger.info(f"CC - results from _verify_participants_tokens: {result}")
+        self.logger.info(f"CC - results from _verify_participants_tokens: {result}, {invalid_participant_list=}")
         return result, invalid_participant_list
 
     def _block_job(self, reason: str, fl_ctx: FLContext):

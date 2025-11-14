@@ -13,15 +13,15 @@ For detailed information about provisioning, refer to :ref:`provisioning`. This 
 
 .. include:: nvflare_cli/dashboard_command.rst
 
-**********************************
+***********************************
 NVIDIA FLARE Dashboard Backend APIs
-**********************************
+***********************************
 
 Architecture
 ============
 
 The Dashboard backend APIs follow RESTful principles and define four main resources: Project, Organizations, Client, and User. There is exactly one Project per deployment,
-which includes information about the server (the overseer and additional server for HA mode were removed in NVIDIA FLARE 2.6). Clients represent NVIDIA FLARE client instances, while Users represent NVIDIA FLARE admin console users.
+which includes information about the server. Clients represent NVIDIA FLARE client instances, while Users represent NVIDIA FLARE admin console users.
 The Organizations endpoint is a read-only operation that returns a list of currently registered organizations.
 
 Details

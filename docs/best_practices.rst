@@ -1,5 +1,14 @@
 .. _best_practices:
 
+.. admonition:: FLARE Lower Level API
+
+    Note: This best practice is intended for those who have a good understanding of FLARE’s low-level APIs—Controller
+    and Executors, Components—and want to fully leverage the flexibility that FLARE offers.
+
+    For data scientists and researchers who simply want to perform training or research, the higher-level APIs:
+    FLARE Client API :ref:`client_api` and FLARE Recipe API :ref:`job_recipe` are recommended.
+
+
 Programming Best Practices
 ==============================
 With familiarity in all the concepts in the :ref:`Programming Guide <programming_guide>`, here is a list of important
@@ -189,7 +198,7 @@ dict. Never use Python objects.
 
 Nested Components?
 ------------------
-Sometimes your component is composed of other parts (Python objects). How do you get your component created with all the parts instantiated? 
+Sometimes your component is composed of other parts (Python objects). How do you get your component created with all the parts instantiated?
 
 Use component ID!
 

@@ -44,7 +44,7 @@ FL server configuration
 
 Example:
 
-.. literalinclude:: ../resources/config_fed_server.json
+.. literalinclude:: ../../resources/config_fed_server.json
     :language: json
 
 .. csv-table::
@@ -65,7 +65,7 @@ FL client configuration
 
 Example:
 
-.. literalinclude:: ../resources/config_fed_client.json
+.. literalinclude:: ../../resources/config_fed_client.json
     :language: json
 
 .. csv-table::
@@ -126,4 +126,4 @@ This file is for the Python logger to use.
 If you don't want to customize the log behavior, you can use the same ``log_config.json`` from one of
 the example application folder.
 
-.. literalinclude:: ../resources/log_config.json
+.. literalinclude:: ../../resources/log_config.json
