@@ -14,11 +14,7 @@
 import logging
 import threading
 
-from nvflare.fox.api.app import ClientApp, ServerApp
-from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.dec import collab
-from nvflare.fox.api.group import all_clients
-from nvflare.fox.api.strategy import Strategy
+from nvflare.fox import fox
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.utils import add as add_np
 from nvflare.fox.examples.np.algos.utils import div as div_np
@@ -26,7 +22,7 @@ from nvflare.fox.examples.np.algos.utils import parse_state_dict as parse_np
 from nvflare.fox.examples.pt.utils import add as add_pt
 from nvflare.fox.examples.pt.utils import div as div_pt
 from nvflare.fox.examples.pt.utils import parse_state_dict as parse_pt
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.sim2 import Simulator
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -39,7 +35,7 @@ class _AggrResult:
         self.lock = threading.Lock()  # ensure update integrity
 
 
-class PTFedAvgMixed(Strategy):
+class PTFedAvgMixed:
 
     def __init__(self, pt_model, np_model, num_rounds=10, timeout=2.0):
         self.num_rounds = num_rounds
@@ -51,24 +47,22 @@ class PTFedAvgMixed(Strategy):
         self._pt_model = parse_pt(pt_model)
         self._np_model = parse_np(np_model)
 
-    def execute(self, context: Context):
-        self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
+    @fox.algo
+    def execute(self):
+        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
         pt_model, np_model = self._pt_model, self._np_model
         for i in range(self.num_rounds):
-            pt_model, np_model = self._do_one_round(i, pt_model, np_model, context)
+            pt_model, np_model = self._do_one_round(i, pt_model, np_model)
         self.logger.info(f"FINAL MODEL: {pt_model=} {np_model=}")
         return pt_model, np_model
 
-    def _do_one_round(self, r, pt_model, np_model, ctx: Context):
+    def _do_one_round(self, r, pt_model, np_model):
         aggr_result = _AggrResult()
 
-        grp = all_clients(
-            ctx,
+        fox.clients(
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
-        )
-
-        grp.train(r, pt_model, np_model)
+        ).train(r, pt_model, np_model)
 
         if aggr_result.count == 0:
             return None
@@ -76,18 +70,18 @@ class PTFedAvgMixed(Strategy):
             pt_result = aggr_result.pt_total
             div_pt(pt_result, aggr_result.count)
             self.logger.info(
-                f"[{ctx.header_str()}] round {r}: aggr PT result from {aggr_result.count} clients: {pt_result}"
+                f"[{fox.call_info}] round {r}: aggr PT result from {aggr_result.count} clients: {pt_result}"
             )
 
             np_result = aggr_result.np_total
             div_np(np_result, aggr_result.count)
             self.logger.info(
-                f"[{ctx.header_str()}] round {r}: aggr NP result from {aggr_result.count} clients: {np_result}"
+                f"[{fox.call_info}] round {r}: aggr NP result from {aggr_result.count} clients: {np_result}"
             )
             return pt_result, np_result
 
-    def _accept_train_result(self, result, aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context.header_str()}] got train result from {context.caller}: {result}")
+    def _accept_train_result(self, result, aggr_result: _AggrResult):
+        self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
 
         pt_result, np_result = result
         add_pt(pt_result, aggr_result.pt_total)
@@ -96,19 +90,19 @@ class PTFedAvgMixed(Strategy):
         return None
 
 
-class PTTrainer(ClientApp):
+class PTTrainer:
 
     def __init__(self, delta: float):
-        ClientApp.__init__(self)
         self.delta = delta
+        self.logger = get_obj_logger(self)
 
-    @collab
-    def train(self, current_round, pt_model, np_model, context: Context):
-        if context.is_aborted():
+    @fox.collab
+    def train(self, current_round, pt_model, np_model):
+        if fox.is_aborted:
             self.logger.debug("training aborted")
             return 0
 
-        self.logger.debug(f"[{context.header_str()}] training round {current_round}: {pt_model=} {np_model=}")
+        self.logger.debug(f"[{fox.call_info}] training round {current_round}: {pt_model=} {np_model=}")
 
         pt_result = {}
         for k, v in pt_model.items():
@@ -130,22 +124,17 @@ def main():
         "z": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
     }
 
-    server_app = ServerApp(
-        strategy_name="fed_avg",
-        strategy=PTFedAvgMixed(
-            pt_model=init_model,
-            np_model=init_model,
-            num_rounds=4,
-        ),
+    server = PTFedAvgMixed(
+        pt_model=init_model,
+        np_model=init_model,
+        num_rounds=4,
     )
-
-    client_app = PTTrainer(delta=1.0)
 
     simulator = Simulator(
         root_dir="/tmp/fox",
         experiment_name="pt_np",
-        server_app=server_app,
-        client_app=client_app,
+        server=server,
+        client=PTTrainer(delta=1.0),
         num_clients=2,
     )
 

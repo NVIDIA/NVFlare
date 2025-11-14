@@ -13,26 +13,27 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
-from nvflare.fox.examples.np.algos.swarm import NPSwarm, NPSwarmClient
-from nvflare.fox.sys.recipe import FoxRecipe
-
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfer"
+from nvflare.fox.examples.np.algos.client import NPHierarchicalTrainer
+from nvflare.fox.examples.np.algos.strategies.avg_h import NPHierarchicalFedAvg
+from nvflare.fox.examples.np.algos.widgets import MetricReceiver
+from nvflare.fox.sim.sim2 import Simulator
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    server_app = ServerApp(NPSwarm(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=5))
-    client_app = ClientApp(NPSwarmClient(delta=1.0))
-
-    recipe = FoxRecipe(
-        job_name="swarm",
-        server_app=server_app,
-        client_app=client_app,
+    simulator = Simulator(
+        root_dir="/tmp/fox",
+        experiment_name="fedavg_h",
+        server=NPHierarchicalFedAvg(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=3),
+        client=NPHierarchicalTrainer(delta=1.0),
+        server_objects={"metric_receiver": MetricReceiver()},
+        num_clients=(3, 2),
     )
-    recipe.export(JOB_ROOT_DIR)
+
+    result = simulator.run()
+    print(f"Final Result: {result}")
 
 
 if __name__ == "__main__":

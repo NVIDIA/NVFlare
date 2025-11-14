@@ -12,14 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.fox import fox
-from nvflare.fox.api.constants import ContextKey
-from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
-class NPFedAvgParallel(Strategy):
+class NPFedAvgParallel:
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
@@ -28,13 +25,14 @@ class NPFedAvgParallel(Strategy):
         self.name = "NPFedAvgParallel"
         self.logger = get_obj_logger(self)
 
-    def execute(self, context: Context):
-        self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
-        current_model = context.get_prop(ContextKey.INPUT, self._initial_model)
+    @fox.algo
+    def execute(self):
+        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
+        current_model = fox.get_input(self._initial_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
             score = self._do_eval(current_model)
-            self.logger.info(f"[{context.header_str()}]: eval score in round {i}: {score}")
+            self.logger.info(f"[{fox.call_info}]: eval score in round {i}: {score}")
         return current_model
 
     def _do_eval(self, model):
@@ -49,6 +47,6 @@ class NPFedAvgParallel(Strategy):
         total = 0
         results = fox.clients(timeout=4, min_resps=2, wait_after_min_resps=1).train(r, current_model)
         for n, v in results.items():
-            self.logger.info(f"[{fox.context.header_str()}] round {r}: got group result from client {n}: {v}")
+            self.logger.info(f"[{fox.call_info}] round {r}: got group result from client {n}: {v}")
             total += v
         return total / len(results)

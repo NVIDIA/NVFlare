@@ -121,5 +121,5 @@ def get_object_algo_funcs(obj):
     for name in dir(obj):
         func = getattr(obj, name)
         if callable(func) and is_algo(func):
-            result.append(func)
+            result.append((name, func))
     return result

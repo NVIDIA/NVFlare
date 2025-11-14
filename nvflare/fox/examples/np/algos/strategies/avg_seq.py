@@ -14,17 +14,13 @@
 import os
 
 from nvflare.fox import fox
-from nvflare.fox.api.constants import ContextKey
-from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
-class NPFedAvgSequential(Strategy):
+class NPFedAvgSequential:
 
     def __init__(self, initial_model, num_rounds=10):
-        Strategy.__init__(self)
         self.name = "NPFedAvgSequential"
         self.num_rounds = num_rounds
         self.initial_model = initial_model  # need to remember init for job API to work!
@@ -50,14 +46,15 @@ class NPFedAvgSequential(Strategy):
         self.client_weights = client_weights
         self.logger.info("client_weights: {}".format(client_weights))
 
-    def execute(self, context: Context):
-        self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
-        current_model = context.get_prop(ContextKey.INPUT, self._initial_model)
+    @fox.algo
+    def execute(self):
+        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
+        current_model = fox.get_input(self._initial_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
 
         # save model to work dir
-        file_name = os.path.join(context.workspace.get_work_dir(), "model.npy")
+        file_name = os.path.join(fox.workspace.get_work_dir(), "model.npy")
         save_np_model(current_model, file_name)
         return current_model
 

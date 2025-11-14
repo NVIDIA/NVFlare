@@ -14,26 +14,24 @@
 import random
 
 from nvflare.fox import fox
-from nvflare.fox.api.app import ClientApp
-from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.group import all_children
+from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
-class NPTrainer(ClientApp):
+class NPTrainer:
 
     def __init__(self, delta: float):
-        ClientApp.__init__(self)
         self.delta = delta
+        self.logger = get_obj_logger(self)
 
     @fox.init
     def init_trainer(self):
         delta_config = fox.get_prop("client_delta", {})
-        self.delta = delta_config.get(self.name, self.delta)
-        self.logger.info(f"init_trainer: client {self.name}: delta={self.delta}")
+        self.delta = delta_config.get(fox.site_name, self.delta)
+        self.logger.info(f"init_trainer: client {fox.site_name}: delta={self.delta}")
 
     @fox.init
     def init_trainer2(self):
-        self.logger.info(f"init_trainer2: client {self.name}: init again")
+        self.logger.info(f"init_trainer2: client {fox.site_name}: init again")
 
     @fox.collab
     def train(self, current_round, weights):
@@ -47,7 +45,7 @@ class NPTrainer(ClientApp):
         #     self.server.accept_metric({"round": r, "y": 2})
         #     self.server.metric_receiver.accept_metric({"round": r, "y": 2})
         #
-        self.server.fire_event("metrics", {"round": current_round, "y": 10}, _blocking=False)
+        fox.server.fire_event("metrics", {"round": current_round, "y": 10}, _blocking=False)
         return weights + self.delta
 
     @fox.collab
@@ -56,52 +54,40 @@ class NPTrainer(ClientApp):
         return random.random()
 
 
-class NPHierarchicalTrainer(ClientApp):
+class NPHierarchicalTrainer:
 
     def __init__(self, delta: float):
-        ClientApp.__init__(self)
         self.delta = delta
+        self.logger = get_obj_logger(self)
 
     @fox.collab
-    def train(self, current_round, weights, context: Context):
-        if context.is_aborted():
+    def train(self, current_round, weights):
+        if fox.is_aborted:
             self.logger.debug("training aborted")
             return 0
 
-        self.logger.debug(f"[{context.header_str()}] training round {current_round}")
-        if context.app.has_children():
+        self.logger.debug(f"[{fox.call_info}] training round {current_round}")
+        if fox.has_children:
             total = 0
-            results = all_children(context).train(current_round, weights)
+            results = fox.child_clients.train(current_round, weights)
             for n, v in results.items():
                 total += v
             result = total / len(results)
-            self.logger.debug(f"[{context.header_str()}]: aggr result from children of round {current_round}: {result}")
+            self.logger.debug(f"[{fox.call_info}]: aggr result from children of round {current_round}: {result}")
         else:
-            result = self._local_train(current_round, weights, context)
-            self.logger.debug(f"[{context.header_str()}]: local train result of round {current_round}: {result}")
+            result = self._local_train(current_round, weights)
+            self.logger.debug(f"[{fox.call_info}]: local train result of round {current_round}: {result}")
+            fox.server.fire_event("metrics", {"round": current_round, "y": 10}, _blocking=False)
         return result
 
-    def _local_train(self, current_round, weights, context: Context):
-        if context.is_aborted():
+    def _local_train(self, current_round, weights):
+        if fox.is_aborted:
             self.logger.debug("training aborted")
             return 0
-        self.logger.info(f"[{context.header_str()}] local trained round {current_round} {weights} {type(weights)}")
+        self.logger.info(f"[{fox.call_info}] local trained round {current_round} {weights} {type(weights)}")
         return weights + self.delta
 
     @fox.collab
-    def evaluate(self, model, context: Context):
-        self.logger.debug(f"[{context.header_str()}] evaluate")
+    def evaluate(self, model):
+        self.logger.debug(f"[{fox.call_info}] evaluate")
         return random.random()
-
-
-class NPTrainerMaker(ClientApp):
-
-    def __init__(self, delta):
-        ClientApp.__init__(self)
-        self.delta = delta
-
-    def make_client_app(self, name: str) -> ClientApp:
-        app = NPTrainer(self.delta)
-        app.update_props(self.get_props())
-        app.name = name
-        return app

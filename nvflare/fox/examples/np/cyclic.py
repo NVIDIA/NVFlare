@@ -13,7 +13,7 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ServerApp
+from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
@@ -26,14 +26,13 @@ def main():
     simulator = Simulator(
         root_dir="/tmp/fox",
         experiment_name="cyclic",
-        server_app=ServerApp(
-            strategy_name="cyclic", strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)
-        ),
-        client_app=NPTrainer(delta=1.0),
+        server_app=ServerApp(NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)),
+        client_app=ClientApp(NPTrainer(delta=1.0)),
         num_clients=2,
     )
 
-    simulator.run()
+    final_result = simulator.run()
+    print(f"final model: {final_result}")
 
 
 if __name__ == "__main__":

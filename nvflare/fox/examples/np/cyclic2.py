@@ -13,26 +13,25 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
-from nvflare.fox.examples.np.algos.swarm import NPSwarm, NPSwarmClient
-from nvflare.fox.sys.recipe import FoxRecipe
-
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfer"
+from nvflare.fox.examples.np.algos.client import NPTrainer
+from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
+from nvflare.fox.sim.sim2 import Simulator
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    server_app = ServerApp(NPSwarm(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=5))
-    client_app = ClientApp(NPSwarmClient(delta=1.0))
-
-    recipe = FoxRecipe(
-        job_name="swarm",
-        server_app=server_app,
-        client_app=client_app,
+    simulator = Simulator(
+        root_dir="/tmp/fox",
+        experiment_name="cyclic",
+        server=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
+        client=NPTrainer(delta=1.0),
+        num_clients=2,
     )
-    recipe.export(JOB_ROOT_DIR)
+
+    final_result = simulator.run()
+    print(f"final model: {final_result}")
 
 
 if __name__ == "__main__":

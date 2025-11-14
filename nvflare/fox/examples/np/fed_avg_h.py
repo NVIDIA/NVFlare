@@ -13,7 +13,7 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ServerApp
+from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPHierarchicalTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_h import NPHierarchicalFedAvg
@@ -25,8 +25,7 @@ def main():
     simple_logging(logging.DEBUG)
 
     server_app = ServerApp(
-        strategy_name="fed_avg",
-        strategy=NPHierarchicalFedAvg(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=3),
+        obj=NPHierarchicalFedAvg(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=3),
     )
     server_app.add_collab_object("metric_receiver", MetricReceiver())
 
@@ -34,7 +33,7 @@ def main():
         root_dir="/tmp/fox",
         experiment_name="fedavg_h",
         server_app=server_app,
-        client_app=NPHierarchicalTrainer(delta=1.0),
+        client_app=ClientApp(NPHierarchicalTrainer(delta=1.0)),
         num_clients=(3, 2),
     )
 

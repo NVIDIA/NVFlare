@@ -16,14 +16,11 @@ import threading
 import traceback
 
 from nvflare.fox import fox
-from nvflare.fox.api.app import ClientApp
-from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
-class NPSwarm(Strategy):
+class NPSwarm:
 
     def __init__(self, initial_model, num_rounds=10):
         self.num_rounds = num_rounds
@@ -32,14 +29,15 @@ class NPSwarm(Strategy):
         self.waiter = threading.Event()
         self.logger = get_obj_logger(self)
 
-    def execute(self, context: Context):
-        context.app.register_event_handler("all_done", self._all_done)
+    @fox.algo
+    def execute(self):
+        fox.register_event_handler("all_done", self._all_done)
 
         # randomly pick a client to start
-        start_client_idx = random.randint(0, len(context.clients) - 1)
-        start_client = context.clients[start_client_idx]
+        start_client_idx = random.randint(0, len(fox.clients) - 1)
+        start_client = fox.clients[start_client_idx]
         start_client.start(self.num_rounds, self._initial_model)
-        while not context.is_aborted():
+        while not fox.is_aborted:
             if self.waiter.wait(timeout=0.5):
                 break
 
@@ -53,12 +51,15 @@ class NPSwarm(Strategy):
         self.waiter.set()
 
 
-class NPSwarmClient(ClientApp):
+class NPSwarmClient:
 
     def __init__(self, delta: float):
-        super().__init__()
         self.delta = delta
-        self.register_event_handler("final_model", self._accept_final_model)
+        self.logger = get_obj_logger(self)
+
+    @fox.init
+    def init(self):
+        fox.register_event_handler("final_model", self._accept_final_model)
 
     @fox.collab
     def train(self, weights, current_round):
@@ -66,8 +67,7 @@ class NPSwarmClient(ClientApp):
         return weights + self.delta
 
     def sag(self, model, current_round):
-        # results = EZ.clients.train(model, current_round)
-        results = fox.other_clients.train(model, current_round)
+        results = fox.clients.train(model, current_round)
         results = list(results.values())
         total = 0
         for i in range(len(results)):
@@ -86,7 +86,7 @@ class NPSwarmClient(ClientApp):
             # self.server.fire_event("all_done", "OK", blocking=False)
             self.logger.info("notify server all done!")
             try:
-                self.server.all_done("OK", _blocking=False)
+                fox.server.all_done("OK", _blocking=False)
             except:
                 traceback.print_exc()
             self.logger.info("Swarm Training is DONE!")
@@ -94,9 +94,9 @@ class NPSwarmClient(ClientApp):
 
         # determine next client
         next_round = current_round + 1
-        next_client_idx = random.randint(0, len(self.clients) - 1)
+        next_client_idx = random.randint(0, len(fox.clients) - 1)
         self.logger.debug(f"chose aggr client for round {next_round}: {next_client_idx}")
-        next_client = self.clients[next_client_idx]
+        next_client = fox.clients[next_client_idx]
         next_client.swarm_learn(num_rounds, new_model, next_round, _blocking=False)
 
     @fox.collab

@@ -14,12 +14,9 @@
 import os.path
 import uuid
 
-from nvflare.fox.api.app import ClientApp
-from nvflare.fox.api.constants import ContextKey, EnvType
-from nvflare.fox.api.ctx import Context
+from nvflare.fox import fox
+from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.dec import collab
-from nvflare.fox.api.group import all_clients
-from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.examples.np.algos.utils import load_np_model, parse_array_def, save_np_model
 from nvflare.fox.sys.downloader import Downloader, download_file
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -32,7 +29,7 @@ class _AggrResult:
         self.count = 0
 
 
-class NPFedAvgStream(Strategy):
+class NPFedAvgStream:
 
     def __init__(self, initial_model, num_rounds=10, timeout=2.0):
         self.num_rounds = num_rounds
@@ -42,30 +39,30 @@ class NPFedAvgStream(Strategy):
         self.logger = get_obj_logger(self)
         self._init_model = parse_array_def(initial_model)
 
-    def execute(self, context: Context):
-        self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
-        current_model = context.get_prop(ContextKey.INPUT, self._init_model)
+    @fox.algo
+    def execute(self):
+        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
+        current_model = fox.get_input(self._init_model)
         for i in range(self.num_rounds):
-            current_model = self._do_one_round(i, current_model, context)
+            current_model = self._do_one_round(i, current_model)
         self.logger.info(f"FINAL MODEL: {current_model}")
         return current_model
 
-    def _do_one_round(self, r, current_model, ctx: Context):
+    def _do_one_round(self, r, current_model):
         aggr_result = _AggrResult()
-        grp = all_clients(
-            ctx,
+        grp = fox.clients(
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
         )
 
         # pretend the model is big
         file_name = None
-        if ctx.env_type == EnvType.SYSTEM:
+        if fox.env_type == EnvType.SYSTEM:
             file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
             save_np_model(current_model, file_name)
             downloader = Downloader(
                 num_receivers=grp.size,
-                ctx=ctx,
+                ctx=fox.context,
                 timeout=5.0,
             )
             model = downloader.add_file(file_name=file_name, file_downloaded_cb=self._model_downloaded)
@@ -84,15 +81,15 @@ class NPFedAvgStream(Strategy):
             return None
         else:
             result = aggr_result.total / aggr_result.count
-            self.logger.info(f"[{ctx.header_str()}] round {r}: aggr result from {aggr_result.count} clients: {result}")
+            self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {aggr_result.count} clients: {result}")
             return result
 
-    def _accept_train_result(self, result, aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context.header_str()}] got train result from {context.caller}: {result}")
+    def _accept_train_result(self, result, aggr_result: _AggrResult):
+        self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
 
         model, model_type = result
         if model_type == "ref":
-            err, file_path = download_file(ref=model, per_request_timeout=5.0, ctx=context)
+            err, file_path = download_file(ref=model, per_request_timeout=5.0, ctx=fox.context)
             if err:
                 raise RuntimeError(f"failed to download model file {model}: {err}")
             self.logger.info(f"downloaded model file to {file_path}")
@@ -107,20 +104,20 @@ class NPFedAvgStream(Strategy):
         self.logger.info(f"model file {file_name} downloaded by {to_site}: {status=}")
 
 
-class NPTrainer(ClientApp):
+class NPTrainer:
 
     def __init__(self, delta: float):
-        ClientApp.__init__(self)
         self.delta = delta
+        self.logger = get_obj_logger(self)
 
     @collab
-    def train(self, current_round, weights, model_type: str, context: Context):
-        if context.is_aborted():
+    def train(self, current_round, weights, model_type: str):
+        if fox.is_aborted:
             self.logger.debug("training aborted")
             return 0
-        self.logger.debug(f"[{context.header_str()}] training round {current_round}: {model_type=} {weights=}")
+        self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {weights=}")
         if model_type == "ref":
-            err, file_path = download_file(ref=weights, per_request_timeout=5.0, ctx=context)
+            err, file_path = download_file(ref=weights, per_request_timeout=5.0, ctx=fox.context)
             if err:
                 raise RuntimeError(f"failed to download model file {weights}: {err}")
             self.logger.info(f"downloaded model file to {file_path}")
@@ -136,7 +133,7 @@ class NPTrainer(ClientApp):
             save_np_model(result, file_name)
             downloader = Downloader(
                 num_receivers=1,
-                ctx=context,
+                ctx=fox.context,
                 timeout=5.0,
             )
             result = downloader.add_file(file_name=file_name, file_downloaded_cb=self._result_downloaded)

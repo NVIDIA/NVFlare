@@ -13,14 +13,12 @@
 # limitations under the License.
 import random
 
-from nvflare.fox.api.constants import ContextKey
-from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.strategy import Strategy
+from nvflare.fox import fox
 from nvflare.fox.examples.np.algos.utils import parse_array_def
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
-class NPCyclic(Strategy):
+class NPCyclic:
 
     def __init__(self, initial_model, num_rounds=2):
         self.num_rounds = num_rounds
@@ -28,16 +26,17 @@ class NPCyclic(Strategy):
         self._initial_model = parse_array_def(initial_model)
         self.logger = get_obj_logger(self)
 
-    def execute(self, context: Context):
-        current_model = context.get_prop(ContextKey.INPUT, self._initial_model)
+    @fox.algo
+    def execute(self):
+        current_model = fox.get_input(self._initial_model)
         for current_round in range(self.num_rounds):
-            current_model = self._do_one_round(current_round, current_model, context)
-        self.logger.info(f"[{context.header_str()}] final result: {current_model}")
+            current_model = self._do_one_round(current_round, current_model)
+        self.logger.info(f"[{fox.call_info}] final result: {current_model}")
         return current_model
 
-    def _do_one_round(self, current_round, current_model, ctx: Context):
-        random.shuffle(ctx.clients)
-        for c in ctx.clients:
+    def _do_one_round(self, current_round, current_model):
+        random.shuffle(fox.clients)
+        for c in fox.clients:
             current_model = c.train(current_round, current_model)
-            self.logger.info(f"[{ctx.header_str()}] result from {c.name}: {current_model}")
+            self.logger.info(f"[{fox.call_info}] result from {c.name}: {current_model}")
         return current_model

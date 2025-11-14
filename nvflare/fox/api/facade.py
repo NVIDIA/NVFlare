@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from .constants import ContextKey
 from .ctx import get_call_context
+from .dec import algo as dec_algo
 from .dec import classproperty
 from .dec import collab as dec_collab
 from .dec import init as dec_init
@@ -22,6 +24,7 @@ class facade:
 
     collab = dec_collab
     init = dec_init
+    algo = dec_algo
 
     @classproperty
     def context(cls):
@@ -41,6 +44,16 @@ class facade:
     def call_info(cls):
         ctx = get_call_context()
         return ctx.header_str()
+
+    @classproperty
+    def site_name(cls):
+        ctx = get_call_context()
+        return ctx.app.name
+
+    @classproperty
+    def server(cls):
+        ctx = get_call_context()
+        return ctx.app.server
 
     @classproperty
     def clients(cls):
@@ -69,6 +82,11 @@ class facade:
         return ProxyList(candidates)
 
     @classproperty
+    def has_children(cls):
+        ctx = get_call_context()
+        return ctx.app.has_children()
+
+    @classproperty
     def leaf_clients(cls):
         ctx = get_call_context()
         candidates = ctx.app.get_leaf_clients()
@@ -86,6 +104,11 @@ class facade:
         ctx = get_call_context()
         return ctx.is_aborted()
 
+    @classproperty
+    def workspace(cls):
+        ctx = get_call_context()
+        return ctx.workspace
+
     @staticmethod
     def fire_event(event_type: str, data):
         ctx = get_call_context()
@@ -100,6 +123,10 @@ class facade:
     def get_prop(name: str, default=None):
         ctx = get_call_context()
         return ctx.app.get_prop(name, default)
+
+    @staticmethod
+    def get_input(default=None):
+        return facade.get_prop(ContextKey.INPUT, default)
 
     @staticmethod
     def set_prop(name: str, value):
