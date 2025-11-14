@@ -142,7 +142,7 @@ nv_attestation_sdk
 ```
 
 4. To get GPU working in CVM, you need to ensure:
-       - No GPU driver installed on host, otherwise the path-thru will fail.
+       - No GPU driver installed on host, otherwise the passthrough will fail.
        - You need to create VFIO by running the following command:
 
 ```
