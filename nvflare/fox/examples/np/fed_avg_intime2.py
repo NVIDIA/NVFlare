@@ -13,32 +13,36 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainer
-from nvflare.fox.examples.np.algos.strategies.avg_para import NPFedAvgParallel
+from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, PrintCall, PrintResult
+from nvflare.fox.examples.np.algos.strategies.avg_intime import NPFedAvgInTime
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.sim2 import Simulator
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    server_app = ServerApp(
-        NPFedAvgParallel(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]], num_rounds=2),
-    )
-    server_app.add_collab_object("metric_receiver", MetricReceiver())
-
     simulator = Simulator(
         root_dir="/tmp/fox",
-        experiment_name="fedavg_para",
-        server_app=server_app,
-        client_app=ClientApp(NPTrainer(delta=1.0)),
-        num_clients=10,
+        experiment_name="fedavg_intime",
+        server=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
+        client=NPTrainer(delta=1.0),
+        server_objects={"metric_receiver": MetricReceiver()},
+        num_clients=2,
     )
 
+    simulator.add_server_outgoing_call_filters("*.train", [AddNoiseToModel()])
+    simulator.add_server_incoming_result_filters("*.train", [PrintResult()])
+    simulator.set_server_prop("default_timeout", 5.0)
+
+    simulator.add_client_incoming_call_filters("*.train", [PrintCall()])
+    simulator.add_client_outgoing_result_filters("*.train", [PrintResult()])
+    simulator.set_client_prop("default_timeout", 8.0)
+
     result = simulator.run()
-    print(f"Final result: {result}")
+    print(f"final model: {result}")
 
 
 if __name__ == "__main__":

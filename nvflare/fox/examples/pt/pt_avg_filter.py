@@ -16,15 +16,10 @@ import threading
 
 import torch
 
-from nvflare.fox.api.app import ClientApp, ServerApp
-from nvflare.fox.api.constants import ContextKey
-from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.dec import collab
-from nvflare.fox.api.group import all_clients
-from nvflare.fox.api.strategy import Strategy
+from nvflare.fox import fox
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.pt.utils import parse_state_dict
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.sim2 import Simulator
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -36,7 +31,7 @@ class _AggrResult:
         self.lock = threading.Lock()  # ensure update integrity
 
 
-class PTFedAvg(Strategy):
+class PTFedAvg:
 
     def __init__(self, initial_model, num_rounds=10, timeout=2.0):
         self.num_rounds = num_rounds
@@ -46,19 +41,19 @@ class PTFedAvg(Strategy):
         self.logger = get_obj_logger(self)
         self._init_model = parse_state_dict(initial_model)
 
-    def execute(self, context: Context):
-        self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
-        current_model = context.get_prop(ContextKey.INPUT, self._init_model)
+    @fox.algo
+    def execute(self):
+        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
+        current_model = fox.get_input(self._init_model)
         for i in range(self.num_rounds):
-            current_model = self._do_one_round(i, current_model, context)
+            current_model = self._do_one_round(i, current_model)
         self.logger.info(f"FINAL MODEL: {current_model}")
         return current_model
 
-    def _do_one_round(self, r, current_model, ctx: Context):
+    def _do_one_round(self, r, current_model):
         aggr_result = _AggrResult()
 
-        all_clients(
-            ctx,
+        fox.clients(
             process_resp_cb=self._accept_train_result,
             aggr_result=aggr_result,
         ).train(r, current_model)
@@ -69,11 +64,11 @@ class PTFedAvg(Strategy):
             result = {}
             for k, v in aggr_result.total.items():
                 result[k] = torch.div(v, aggr_result.count)
-            self.logger.info(f"[{ctx.header_str()}] round {r}: aggr result from {aggr_result.count} clients: {result}")
+            self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {aggr_result.count} clients: {result}")
             return result
 
-    def _accept_train_result(self, result, aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context.header_str()}] got train result from {context.caller}: {result}")
+    def _accept_train_result(self, result, aggr_result: _AggrResult):
+        self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
 
         for k, v in result.items():
             if k not in aggr_result.total:
@@ -85,18 +80,18 @@ class PTFedAvg(Strategy):
         return None
 
 
-class PTTrainer(ClientApp):
+class PTTrainer:
 
     def __init__(self, delta: float):
-        ClientApp.__init__(self)
         self.delta = delta
+        self.logger = get_obj_logger(self)
 
-    @collab
-    def train(self, current_round, weights, context: Context):
-        if context.is_aborted():
+    @fox.collab
+    def train(self, current_round, weights):
+        if fox.is_aborted:
             self.logger.debug("training aborted")
             return 0
-        self.logger.debug(f"[{context.header_str()}] training round {current_round}: {weights=}")
+        self.logger.debug(f"[{fox.call_info}] training round {current_round}: {weights=}")
 
         result = {}
         for k, v in weights.items():
@@ -107,25 +102,22 @@ class PTTrainer(ClientApp):
 def main():
     simple_logging(logging.DEBUG)
 
-    server_app = ServerApp(
-        strategy_name="fed_avg_in_time",
-        strategy=PTFedAvg(
-            initial_model={
-                "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-                "y": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-                "z": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-            },
-            num_rounds=4,
-        ),
+    server = PTFedAvg(
+        initial_model={
+            "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+            "y": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+            "z": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+        },
+        num_rounds=4,
     )
 
-    client_app = PTTrainer(delta=1.0)
+    client = PTTrainer(delta=1.0)
 
     simulator = Simulator(
         root_dir="/tmp/fox",
         experiment_name="pt_fedavg_intime",
-        server_app=server_app,
-        client_app=client_app,
+        server=server,
+        client=client,
         num_clients=2,
     )
 

@@ -13,28 +13,51 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ServerApp
+from nvflare.fox import fox
+from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_para import NPFedAvgParallel
 from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
 from nvflare.fox.sim.simulator import Simulator
+from nvflare.fuel.utils.log_utils import get_obj_logger
+
+
+class Controller:
+
+    def __init__(
+        self,
+        initial_model,
+        cyclic_rounds,
+        avg_rounds,
+    ):
+        self.initial_model = initial_model
+        self.cyclic_rounds = cyclic_rounds
+        self.avg_rounds = avg_rounds
+        self.logger = get_obj_logger(self)
+
+    @fox.algo
+    def run(self):
+        self.logger.info("running cyclic ...")
+        ctl = NPCyclic(self.initial_model, num_rounds=self.cyclic_rounds)
+        result = ctl.execute()
+
+        self.logger.info("running fed-avg ...")
+        ctl = NPFedAvgParallel(initial_model=result, num_rounds=self.avg_rounds)
+        return ctl.execute()
 
 
 def main():
     simple_logging(logging.DEBUG)
     exp_name = "cyclic_avg"
 
-    server_app = ServerApp(
-        strategy_name=exp_name, strategy=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2)
-    )
-    server_app.add_strategy("fed_avg_parallel", NPFedAvgParallel(initial_model=None, num_rounds=2))
+    server_app = ServerApp(Controller(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], cyclic_rounds=2, avg_rounds=3))
 
     simulator = Simulator(
         root_dir="/tmp/fox",
         experiment_name=exp_name,
         server_app=server_app,
-        client_app=NPTrainer(delta=1.0),
+        client_app=ClientApp(NPTrainer(delta=1.0)),
         num_clients=2,
     )
 

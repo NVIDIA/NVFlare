@@ -15,7 +15,7 @@ import copy
 import time
 
 from .constants import CollabMethodArgName
-from .ctx import Context
+from .ctx import Context, set_call_context
 from .utils import check_context_support
 
 
@@ -63,9 +63,14 @@ class GroupCallContext:
             result = self.app.apply_incoming_result_filters(self.target_name, self.func_name, result, ctx)
 
         if self.process_cb:
+            # set the context for the process_cb only
+            set_call_context(ctx)
             self.cb_kwargs[CollabMethodArgName.CONTEXT] = ctx
             check_context_support(self.process_cb, self.cb_kwargs)
             result = self.process_cb(result, **self.cb_kwargs)
+
+            # set back to original context
+            set_call_context(self.context)
         self.result = result
         self.resp_time = time.time()
 

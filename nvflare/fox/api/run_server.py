@@ -14,7 +14,8 @@
 import traceback
 
 from .app import ServerApp
-from .constants import ContextKey
+from .constants import CollabMethodArgName, ContextKey
+from .dec import supports_context
 
 
 def run_server(server_app: ServerApp, logger):
@@ -22,18 +23,20 @@ def run_server(server_app: ServerApp, logger):
     logger.info("initializing server app")
     server_app.initialize(server_ctx)
 
-    if not server_app.strategies:
-        raise RuntimeError("server app does not have any strategies!")
+    if not server_app.algos:
+        raise RuntimeError("server app does not have any algos!")
 
     result = None
-    for name, strategy in server_app.strategies:
+    for name, f in server_app.algos:
         if server_ctx.is_aborted():
             break
 
         try:
-            logger.info(f"Running Strategy {name} - {type(strategy).__name__}")
-            server_app.current_strategy = strategy
-            result = strategy.execute(context=server_ctx)
+            logger.info(f"Running algo {name}")
+            kwargs = {CollabMethodArgName.CONTEXT: server_ctx}
+            if not supports_context(f):
+                kwargs = {}
+            result = f(**kwargs)
             server_ctx.set_prop(ContextKey.INPUT, result)
         except:
             traceback.print_exc()

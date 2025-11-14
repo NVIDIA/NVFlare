@@ -18,10 +18,8 @@ import numpy as np
 import torch
 
 from nvflare.fox import fox
-from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.strategy import Strategy
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.utils import add as add_np
 from nvflare.fox.examples.np.algos.utils import div as div_np
@@ -29,7 +27,7 @@ from nvflare.fox.examples.np.algos.utils import parse_state_dict as parse_np
 from nvflare.fox.examples.pt.utils import add as add_pt
 from nvflare.fox.examples.pt.utils import div as div_pt
 from nvflare.fox.examples.pt.utils import parse_state_dict as parse_pt
-from nvflare.fox.sim.simulator import Simulator
+from nvflare.fox.sim.sim2 import Simulator
 from nvflare.fox.sys.downloader import Downloader, download_arrays, download_tensors
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -43,7 +41,7 @@ class _AggrResult:
         self.lock = threading.Lock()  # ensure update integrity
 
 
-class PTFedAvgMixed(Strategy):
+class PTFedAvgMixed:
 
     def __init__(self, pt_model, np_model, num_rounds=10, timeout=2.0):
         self.num_rounds = num_rounds
@@ -55,8 +53,9 @@ class PTFedAvgMixed(Strategy):
         self._pt_model = parse_pt(pt_model)
         self._np_model = parse_np(np_model)
 
-    def execute(self, context: Context):
-        self.logger.info(f"[{context.header_str()}] Start training for {self.num_rounds} rounds")
+    @fox.algo
+    def execute(self):
+        self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
         pt_model, np_model = self._pt_model, self._np_model
         for i in range(self.num_rounds):
             pt_model, np_model = self._do_one_round(i, pt_model, np_model)
@@ -146,11 +145,11 @@ class PTFedAvgMixed(Strategy):
             add_np(td, aggr_result.np_total)
 
 
-class PTTrainer(ClientApp):
+class PTTrainer:
 
     def __init__(self, delta: float):
-        ClientApp.__init__(self)
         self.delta = delta
+        self.logger = get_obj_logger(self)
 
     @fox.collab
     def train(self, current_round, pt_model, np_model, model_type: str):
@@ -203,22 +202,19 @@ def main():
         "z": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
     }
 
-    server_app = ServerApp(
-        strategy_name="fed_avg_mixed",
-        strategy=PTFedAvgMixed(
-            pt_model=init_model,
-            np_model=init_model,
-            num_rounds=4,
-        ),
+    server = PTFedAvgMixed(
+        pt_model=init_model,
+        np_model=init_model,
+        num_rounds=4,
     )
 
-    client_app = PTTrainer(delta=1.0)
+    client = PTTrainer(delta=1.0)
 
     simulator = Simulator(
         root_dir="/tmp/fox",
         experiment_name="fedavg_mixed",
-        server_app=server_app,
-        client_app=client_app,
+        server=server,
+        client=client,
         num_clients=2,
     )
 

@@ -13,7 +13,7 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ServerApp
+from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, PrintCall, PrintResult
@@ -26,8 +26,7 @@ def main():
     simple_logging(logging.DEBUG)
 
     server_app = ServerApp(
-        strategy_name="fed_avg_in_time",
-        strategy=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
+        NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
     )
 
     server_app.add_collab_object("metric_receiver", MetricReceiver())
@@ -35,10 +34,10 @@ def main():
     server_app.add_incoming_result_filters("*.train", [PrintResult()])
     server_app.set_prop("default_timeout", 5.0)
 
-    client_app = NPTrainer(delta=1.0)
+    client_app = ClientApp(NPTrainer(delta=1.0))
     client_app.add_incoming_call_filters("*.train", [PrintCall()])
     client_app.add_outgoing_result_filters("*.train", [PrintResult()])
-    server_app.set_prop("default_timeout", 8.0)
+    client_app.set_prop("default_timeout", 8.0)
 
     simulator = Simulator(
         root_dir="/tmp/fox",
@@ -48,7 +47,8 @@ def main():
         num_clients=2,
     )
 
-    simulator.run()
+    result = simulator.run()
+    print(f"final model: {result}")
 
 
 if __name__ == "__main__":

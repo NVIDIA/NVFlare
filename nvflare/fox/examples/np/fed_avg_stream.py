@@ -13,7 +13,7 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ServerApp
+from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.avg_stream import NPFedAvgStream, NPTrainer
 from nvflare.fox.sim.simulator import Simulator
@@ -23,11 +23,10 @@ def main():
     simple_logging(logging.DEBUG)
 
     server_app = ServerApp(
-        strategy_name="fed_avg_in_time",
-        strategy=NPFedAvgStream(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=4),
+        NPFedAvgStream(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=4),
     )
 
-    client_app = NPTrainer(delta=1.0)
+    client_app = ClientApp(NPTrainer(delta=1.0))
 
     simulator = Simulator(
         root_dir="/tmp/fox",

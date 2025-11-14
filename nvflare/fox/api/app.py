@@ -21,17 +21,17 @@ from nvflare.fuel.utils.tree_utils import Forest, Node, build_forest
 
 from .constants import CollabMethodArgName, ContextKey, FilterDirection
 from .ctx import Context, set_call_context
-from .dec import collab, get_object_collab_interface, get_object_init_funcs, is_collab
+from .dec import collab, get_object_algo_funcs, get_object_collab_interface, get_object_init_funcs, is_collab
 from .filter import CallFilter, FilterChain, ResultFilter
 from .proxy import Proxy
-from .strategy import Strategy
 from .utils import check_context_support, get_collab_object_name
 from .workspace import Workspace
 
 
 class App:
 
-    def __init__(self):
+    def __init__(self, obj, name: str):
+        self.obj = obj
         self.name = None
         self.fqn = None
         self.server = None
@@ -52,6 +52,7 @@ class App:
         self._resource_dirs = {}
         self._managed_objects = {}  # id => obj
         self.logger = get_obj_logger(self)
+        self.add_collab_object(name, obj)
 
     def set_resource_dirs(self, resource_dirs: dict[str, str]):
         if not isinstance(resource_dirs, dict):
@@ -188,9 +189,6 @@ class App:
         if isinstance(props, dict):
             self._props.update(props)
 
-    def get_default_collab_object(self):
-        return None
-
     def add_collab_object(self, name: str, obj):
         if name in self._collab_objs:
             raise ValueError(f"conflict with existing collab object '{name}' of {type(self._collab_objs[name])}")
@@ -239,11 +237,10 @@ class App:
 
         if isinstance(target_obj, App):
             # see whether any targets have this method
-            default_target = self.get_default_collab_object()
-            if default_target:
-                m = getattr(default_target, method_name, None)
-                if m:
-                    return m
+            default_target = self.obj
+            m = getattr(default_target, method_name, None)
+            if m:
+                return m
 
             targets = self.get_collab_objects()
             for _, obj in targets.items():
@@ -317,27 +314,13 @@ class App:
 
 class ServerApp(App):
 
-    def __init__(self, strategy_name: str = "strategy", strategy: Strategy = None):
-        super().__init__()
-
-        if strategy and not isinstance(strategy, Strategy):
-            raise ValueError(f"strategy must be Strategy but got {type(strategy)}")
-
-        self.strategies = []
-        if strategy:
-            if not strategy_name:
-                raise ValueError("missing strategy name")
-            self.add_strategy(strategy_name, strategy)
-        self.current_strategy = None
-
-    def add_strategy(self, strategy_name: str, strategy):
-        if not isinstance(strategy, Strategy):
-            raise ValueError(f"strategy must be Controller but got {type(strategy)}")
-        self.strategies.append((strategy_name, strategy))
-        self.add_collab_object(strategy_name, strategy)
-
-    def get_default_collab_object(self):
-        return self.current_strategy
+    def __init__(self, obj, name: str = "server"):
+        if not obj:
+            raise ValueError("server object must be specified")
+        super().__init__(obj, name)
+        self.algos = get_object_algo_funcs(obj)
+        if not self.algos:
+            raise ValueError("server object must have at least one algo")
 
     def get_children(self):
         assert isinstance(self.client_hierarchy, Forest)
@@ -349,6 +332,11 @@ class ServerApp(App):
 
 
 class ClientApp(App):
+
+    def __init__(self, obj, name: str = "client"):
+        if not obj:
+            raise ValueError("client object must be specified")
+        super().__init__(obj, name)
 
     def get_children(self):
         assert isinstance(self.client_hierarchy, Forest)

@@ -13,9 +13,9 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ServerApp
+from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
-from nvflare.fox.examples.np.algos.client import NPTrainerMaker
+from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_seq import NPFedAvgSequential
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
 from nvflare.fox.sim.simulator import Simulator
@@ -25,8 +25,7 @@ def main():
     simple_logging(logging.DEBUG)
 
     server_app = ServerApp(
-        strategy_name="fed_avg",
-        strategy=NPFedAvgSequential(
+        NPFedAvgSequential(
             num_rounds=2,
             initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
         ),
@@ -40,7 +39,7 @@ def main():
         },
     )
 
-    client_app = NPTrainerMaker(delta=1.0)
+    client_app = ClientApp(NPTrainer(delta=1.0))
     client_app.set_prop(
         "client_delta",
         {
