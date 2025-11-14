@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import random
 import sys
 import threading
@@ -681,4 +682,4 @@ class CCManager(FLComponent):
         else:
             # Client side - just exit
             self.logger.critical(f"CC validation failed on client! Shutting down. Reason: {reason}")
-            sys.exit(1)
+            os._exit(1)
