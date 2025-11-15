@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,25 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class SVMAssembler(Assembler):
-    def __init__(self, kernel):
+    """Assembler for federated SVM using support vector aggregation.
+    
+    This assembler implements the aggregation logic for federated SVM training.
+    The approach is to:
+    1. Each client trains a local SVM on their data
+    2. Each client sends their support vectors (and labels) to the server
+    3. Server concatenates all support vectors from all clients
+    4. Server trains a global SVM on the aggregated support vectors
+    5. Server extracts final global support vectors and sends back to clients
+    
+    This approach only requires one round of training since SVM is not an
+    iterative algorithm in the federated setting.
+    
+    Args:
+        kernel: Kernel type to use in SVM. Options include 'linear', 'poly', 'rbf', 'sigmoid'.
+            Default is 'rbf'.
+    """
+    
+    def __init__(self, kernel: str = "rbf"):
         super().__init__(data_kind=DataKind.WEIGHTS)
         # Record the global support vectors
         # so that only 1 round of training is performed
@@ -57,3 +75,4 @@ class SVMAssembler(Assembler):
         params = {"support_x": self.support_x, "support_y": self.support_y}
         dxo = DXO(data_kind=self.expected_data_kind, data=params)
         return dxo
+
