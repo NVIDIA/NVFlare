@@ -76,43 +76,61 @@ You can configure the CC attestation components during the provision step. See t
 Runtime Behavior
 ================
 
-The attestation workflow consists of several phases during job lifecycle:
+
+The Confidential Computing (CC) attestation workflow establishes continuous, system-wide trust between all federated learning participants.
 
 1. System Bootstrap
 -------------------
 
-When a participant (server or client) starts up, the ``CCManager`` responds to the ``EventType.SYSTEM_BOOTSTRAP`` event by generating its own CC token using the configured ``CCAuthorizers``.
+When the system starts, each CC-enabled site (server or client) initializes its confidential computing components and generates a CC token that identifies its trusted environment.
+
 
 2. Client Registration
 ----------------------
 
-When a client registers with the server, it includes its CC token as part of the registration data. If the registration is successful, the server collects and stores the client's CC token.
+During client registration:
 
-The server's ``CCManager`` maintains both its own CC token and the tokens of all registered clients.
+    - The client sends its token to the server.
 
-3. Job Deployment Verification
--------------------------------
+    - The server verifies the client’s token and responds with its own.
 
-Once a job is submitted and scheduled for deployment, the server verifies the CC tokens of the clients listed in the job's deployment map, using its own security policy.
+    - The client then validates the server’s token.
 
-If all client tokens in the deployment map pass verification, the server sends the verified tokens to those clients for peer verification.
+This mutual verification ensures both sides trust each other before participating in any job.
 
-4. Peer Verification
---------------------
 
-Each client evaluates the received CC tokens (including the server's token and other clients' tokens) against its own security policy to decide whether it trusts the other participants.
+3. Continuous Cross-Site Validation
+-----------------------------------
 
-Based on this evaluation, the client may choose to accept or reject participation in the job.
+After startup, all sites periodically perform cross-site token validation:
 
-If a client declines to join the job, the server excludes it from deployment.
+Each site generates new CC tokens at regular intervals.
 
-5. Job Scheduling
+Sites exchange tokens through a secure communication channel.
+
+Every participant validates the tokens of all others.
+
+If any CC-enabled site fails token validation, the system will shut down to maintain a trusted environment.
+Sites that are not CC-enabled are skipped during attestation checks.
+
+
+4. Job Scheduling
 -----------------
 
-Finally, the server's job scheduler determines whether the job has sufficient resources to proceed. It finalizes the job's status based on:
+Before jobs run, the server confirms that all CC-enabled participants have valid, verified tokens.
+If validation fails, the system shuts down to prevent untrusted operation.
+Jobs involving untrusted code (for example, BYOC) are blocked in CC mode.
 
-- Resource availability
-- Number of participants that passed verification
-- Any defined retry policies
+5. Summary
+----------
 
-This multi-stage verification process ensures that all participants in a federated learning job operate in trusted, attested environments.
+The attestation workflow provides:
+
+    - Continuous, system-wide token verification
+
+    - Mutual trust between server and clients
+
+    - Automatic shutdown on attestation failure
+
+This ensures that all confidential computing participants operate only within secure and attested environments.
+

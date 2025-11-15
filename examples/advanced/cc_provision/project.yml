@@ -40,15 +40,6 @@ builders:
       # if not set, no app_validator is included in fed_server.json
       # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
 
-      # download_job_url is set to http://download.server.com/ as default in fed_server.json.  You can override this
-      # to different url.
-      # download_job_url: http://download.server.com/
-
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.cc_provision.impl.cc.CCBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
-packager:
-  path: nvflare.lighter.cc_provision.impl.onprem_packager.OnPremPackager
-  args:
-    # this needs to be replace with the real path of the image build scripts
-    build_image_cmd: build_cvm_image.sh
