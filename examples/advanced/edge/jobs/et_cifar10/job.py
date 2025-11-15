@@ -15,6 +15,9 @@
 import argparse
 import os
 
+from client import Cifar10ETTaskProcessor
+from model import TrainingNet
+
 from nvflare.edge.tools.et_fed_buff_recipe import (
     DeviceManagerConfig,
     ETFedBuffRecipe,
@@ -26,7 +29,6 @@ from nvflare.recipe.prod_env import ProdEnv
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--export_job", action="store_true")
-parser.add_argument("--dataset", type=str, default="cifar10")
 parser.add_argument("--workspace_dir", type=str, default="/tmp/nvflare/workspaces")
 parser.add_argument("--project_name", type=str, default="edge_example")
 parser.add_argument("--total_num_of_devices", type=int, default=4)
@@ -38,47 +40,25 @@ admin_startup_kit_dir = os.path.join(prod_dir, "admin@nvidia.com")
 total_num_of_devices = args.total_num_of_devices
 num_of_simulated_devices_on_each_leaf = args.num_of_simulated_devices_on_each_leaf
 
-if args.dataset == "cifar10":
-    from processors.cifar10_et_task_processor import Cifar10ETTaskProcessor
-    from processors.models.cifar10_model import TrainingNet
-
-    dataset_root = "/tmp/nvflare/cifar10"
-    job_name = "cifar10_et"
-    device_model = TrainingNet()
-    batch_size = 4
-    input_shape = (batch_size, 3, 32, 32)
-    output_shape = (batch_size,)
-    task_processor = Cifar10ETTaskProcessor(
-        data_path=dataset_root,
-        training_config={
-            "batch_size": batch_size,
-            "shuffle": True,
-            "num_workers": 0,
-        },
-        subset_size=100,
-    )
-    evaluator_config = EvaluatorConfig(
-        torchvision_dataset={"name": "CIFAR10", "path": dataset_root},
-        eval_frequency=1,
-    )
-elif args.dataset == "xor":
-    from processors.models.xor_model import TrainingNet
-    from processors.xor_et_task_processor import XorETTaskProcessor
-
-    job_name = "xor_et"
-    device_model = TrainingNet()
-    batch_size = 1
-    input_shape = (batch_size, 2)
-    output_shape = (batch_size,)
-    task_processor = XorETTaskProcessor(
-        training_config={
-            "batch_size": batch_size,
-            "shuffle": True,
-            "num_workers": 0,
-        },
-    )
-    evaluator_config = None
-
+dataset_root = "/tmp/nvflare/cifar10"
+job_name = "cifar10_et"
+device_model = TrainingNet()
+batch_size = 4
+input_shape = (batch_size, 3, 32, 32)
+output_shape = (batch_size,)
+task_processor = Cifar10ETTaskProcessor(
+    data_path=dataset_root,
+    training_config={
+        "batch_size": batch_size,
+        "shuffle": True,
+        "num_workers": 0,
+    },
+    subset_size=100,
+)
+evaluator_config = EvaluatorConfig(
+    torchvision_dataset={"name": "CIFAR10", "path": dataset_root},
+    eval_frequency=1,
+)
 
 recipe = ETFedBuffRecipe(
     job_name=job_name,
