@@ -1,13 +1,14 @@
 {
     "name": "hello-pt_cifar10_fedavg",
     "resource_spec": {},
-    "min_clients": 1,
+    "min_clients": 2,
     "deploy_map": {
         "app_server": [
             "server"
         ],
         "app_site-1": [
-            "site-1"
+            "site-1",
+            "site-2"
         ]
     }
 }
