@@ -23,6 +23,7 @@ This guide covers the following deployment configuration:
 
 Prerequisites
 =============
+For a complete and thorough setup guide covering Hardware IT, Host OS Administration, and VM Administration, please refer to [NVIDIA's Deployment Guide for SecureAI](https://docs.nvidia.com/cc-deployment-guide-snp.pdf) 
 
 Hardware Requirements
 ---------------------
