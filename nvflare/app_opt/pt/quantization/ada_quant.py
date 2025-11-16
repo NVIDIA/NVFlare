@@ -36,28 +36,30 @@ class AdaQuantizer:
 
     def quantize(self, values_tensor: torch.Tensor) -> tuple[Union[torch.Tensor, np.ndarray], dict]:
         old_values_tensor = values_tensor
-
-        old_tensor_shape = list(old_values_tensor.shape)
         values_tensor = values_tensor.to(dtype=torch.float64).view(-1)
         offset = self.get_offset(values_tensor)
         values_tensor = values_tensor + offset
-        norm = values_tensor.abs().max()
-
-        quant_state = {"offset": offset}
         res = self.get_number_of_quantization_levels(
             element_size=old_values_tensor.element_size(), values_tensor=values_tensor
         )
         if res is None:
             return old_values_tensor, {}
+        quant_state = {"offset": offset}
+        old_tensor_shape = list(old_values_tensor.shape)
         norm, quantization_level, new_dtype = res
         if norm == 0.0:
             return torch.tensor([0], dtype=torch.bool), quant_state | {
                 "tensor_shape": old_tensor_shape,
             }
 
-        normalized_abs_tensor = values_tensor / norm
-        quantized_tensor = (normalized_abs_tensor * quantization_level).round().clamp(0, quantization_level)
-        quantized_tensor = quantized_tensor.numpy().astype(dtype=new_dtype)
+        normalized_tensor = values_tensor / norm
+        quantized_tensor = (
+            (normalized_tensor * quantization_level)
+            .round()
+            .clamp(0, quantization_level)
+            .numpy()
+            .astype(dtype=new_dtype)
+        )
         if self.compression:
             raw_bytes = quantized_tensor.tobytes()
             compressed_bytes = bz2.compress(raw_bytes, compresslevel=1)
