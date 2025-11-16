@@ -98,7 +98,7 @@ class AdaQuantizer:
     def get_number_of_quantization_levels(
         self, element_size: int, values_tensor: torch.Tensor
     ) -> Optional[tuple[float, int, Any]]:
-        norm = values_tensor.abs().max().item()
+        norm = values_tensor.max().item()
         element_bits = element_size * 8
         quantization_level = math.ceil(max(1, math.sqrt(norm * element_bits * math.log(4) / self.weight)))
         new_element_bits = math.ceil(math.log2(quantization_level))
