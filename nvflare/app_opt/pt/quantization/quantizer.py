@@ -25,6 +25,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.pt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
 
+from .ada_quant import AdaQuantizer
+
 
 class ModelQuantizer(DXOFilter):
     def __init__(
@@ -82,22 +84,30 @@ class ModelQuantizer(DXOFilter):
                 raise ValueError(f"Invalid source data type: {type(values)}, valid: numpy or torch")
 
             # check if the data type is valid
+            if source_data_type == "bool":
+                source_datatype[param_name] = source_data_type
+                continue
+
             if source_data_type.upper() not in DATA_TYPE:
-                raise ValueError(f"Invalid source data type: {source_data_type}, valid: {DATA_TYPE}")
+                raise ValueError(
+                    f"Invalid source data type: {source_data_type}, valid: {DATA_TYPE}, param_name: {param_name}"
+                )
 
             source_datatype[param_name] = source_data_type
 
             # get the bits information
-            source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
-            quantization_bits = int(re.findall(r"\d+", self.quantization_type)[0])
+            if self.quantization_type != "adaquant":
+                # get the bits information
+                source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
+                quantization_bits = int(re.findall(r"\d+", self.quantization_type)[0])
 
-            # only quantize if the quantization type is lower than the source data type
-            if quantization_bits >= source_data_bits:
-                self.log_info(
-                    fl_ctx,
-                    f"Skipping quantization for {param_name}, quantization bit {self.quantization_type} >= source data bit {source_data_type}",
-                )
-                continue
+                # only quantize if the quantization type is lower than the source data type
+                if quantization_bits >= source_data_bits:
+                    self.log_info(
+                        fl_ctx,
+                        f"Skipping quantization for {param_name}, quantization bit {self.quantization_type} >= source data bit {source_data_type}",
+                    )
+                    continue
             # add the number of bytes of the values
             n_bytes_before += values.nbytes
             n_quant_params += 1
@@ -138,6 +148,20 @@ class ModelQuantizer(DXOFilter):
                 # add values
                 values = self.to_source_data(quantized, source_data_format)
                 params[param_name] = values
+            elif self.quantization_type == "adaquant":
+                # if numpy, first convert numpy array to tensor
+                values_tensor = self.to_torch_tensor(values).cpu()
+                quantized, quantized_state_dict = AdaQuantizer().quantize(values_tensor)
+                params[param_name] = self.to_source_data(quantized, source_data_format)
+
+                if quantized_state_dict:
+                    quant_state[param_name] = quantized_state_dict
+
+                for state_name, state in quantized_state_dict.items():
+                    if isinstance(state, (torch.Tensor, np.ndarray)):
+                        n_bytes_meta += state.nbytes
+            else:
+                raise ValueError(f"Invalid quantization type: {self.quantization_type}")
             n_bytes_after += params[param_name].nbytes
 
         self.log_info(
