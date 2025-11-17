@@ -326,6 +326,7 @@ The user_data.qcow2 image included with the package is a placeholder and has a v
 You can resize the drive and expand the filesystem using the following commands:
 
 .. code-block:: bash
+  
     # Add 20GB to the drive
     qemu-img resize user_data.qcow2 +20G
 
