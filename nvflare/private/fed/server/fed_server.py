@@ -666,6 +666,11 @@ class FederatedServer(BaseServer):
                 shared_fl_ctx = data.get_peer_context()
                 fl_ctx.set_peer_context(shared_fl_ctx)
 
+                # Set client type in context for event handlers (e.g., CC validation)
+                client_type = request.get_header(CellMessageHeaderKeys.CLIENT_TYPE)
+                if client_type:
+                    fl_ctx.set_prop(key=FLContextKey.CLIENT_TYPE, value=client_type, private=False, sticky=False)
+
                 self.engine.fire_event(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=fl_ctx)
 
                 exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
@@ -683,11 +688,17 @@ class FederatedServer(BaseServer):
                             self.admin_server.client_heartbeat(client.token, client.name, client.get_fqcn())
 
                     token_signature = self.sign_auth_token(client.name, client.token)
+
                     result = {
                         CellMessageHeaderKeys.TOKEN: client.token,
                         CellMessageHeaderKeys.TOKEN_SIGNATURE: token_signature,
                         CellMessageHeaderKeys.SSID: self.server_state.ssid,
                     }
+
+                    # Add CC info if present
+                    cc_info = fl_ctx.get_prop("_cc_info")
+                    if cc_info:
+                        result["_cc_info"] = cc_info
                 else:
                     result = {}
                 self.engine.fire_event(EventType.CLIENT_REGISTER_PROCESSED, fl_ctx=fl_ctx)

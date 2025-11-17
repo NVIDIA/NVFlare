@@ -117,6 +117,8 @@ These steps can be best illustrated as a finite state machine as follows:
 .. image:: ../../resources/edge_device_finite_state_machine.png
     :height: 500px
 
+.. _device_simulation:
+
 Device Simulation
 =================
 

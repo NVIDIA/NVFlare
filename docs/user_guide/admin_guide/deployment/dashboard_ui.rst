@@ -31,7 +31,7 @@ The website should already be set up when ``Member`` or ``Lead`` users are invit
 Home Page with Login and Sign Up
 --------------------------------
 
-.. figure:: ../resources/dashboard_login.png
+.. figure:: ../../../resources/dashboard_login.png
     :height: 500px
 
     Home Page with Login and Sign Up on the right.

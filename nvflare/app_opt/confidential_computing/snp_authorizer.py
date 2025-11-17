@@ -93,8 +93,8 @@ class SNPAuthorizer(CCAuthorizer):
         amd_certs_dir="/opt/certs",
         snpguest_binary="snpguest",
         cpu_model="milan",
-        max_retries=3,
-        retry_interval=5,
+        max_retries=5,
+        retry_interval=10,
         cmd_timeout=60,
     ):
         """

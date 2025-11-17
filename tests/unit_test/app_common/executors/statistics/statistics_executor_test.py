@@ -13,8 +13,6 @@
 # limitations under the License.
 
 
-from typing import Dict, List
-
 import pytest
 
 from nvflare.apis.fl_context import FLContext
@@ -42,7 +40,7 @@ class TestStatisticsExecutor:
         cls.stats_executor.initialize(None)
 
     def test_get_numeric_features(self):
-        features: Dict[str, List[Feature]] = self.stats_executor.get_numeric_features()
+        features: dict[str, list[Feature]] = self.stats_executor.get_numeric_features()
         assert len(features["train"]) == 1
         assert features["train"][0].feature_name == "Age"
         assert len(features["test"]) == 1

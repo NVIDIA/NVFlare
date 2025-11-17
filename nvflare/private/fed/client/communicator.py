@@ -326,6 +326,13 @@ class Communicator:
         token, signature, ssid, token_verifier = authenticator.authenticate(shared_fl_ctx, self.abort_signal)
         self.token_verifier = token_verifier
         self.set_auth(client_name, token, signature, ssid)
+
+        # Extract server CC info from shared_fl_ctx and store in main fl_ctx
+        server_cc_info = shared_fl_ctx.get_prop("_cc_info")
+        if server_cc_info:
+            fl_ctx.set_prop(key="_cc_info", value=server_cc_info, sticky=False, private=False)
+            self.logger.debug("Stored server CC info in FL context")
+
         return token, signature, ssid
 
     def pull_task(self, project_name, token, ssid, fl_ctx: FLContext, timeout=None):

@@ -156,7 +156,7 @@ leave, or fail to return local training results due to network or power interrup
 **Cross-Platform & No Device Programming Required**: Data scientists can deploy models to iOS and Android :ref:`flare_mobile`
 without writing Swift, Objective-C, Java, or Kotlin. FLARE handles PyTorch → Executorch conversion and device training code automatically.
 
-**Simulation Tools**: device simulator for large scale testing
+**Simulation Tools**: Device simulator for large scale testing (:ref:`device_simulation`)
 
 
 .. admonition:: FLARE Edge

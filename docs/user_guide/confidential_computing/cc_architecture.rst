@@ -370,7 +370,7 @@ And the command to set this policy into the Trustee service.
 .. code-block:: bash
 
    #!/usr/bin/env bash
-   TRUSTEE_ADDRESS=<your organization trustee service addresss>
+   TRUSTEE_ADDRESS=<your organization trustee service address>
    PORT=8999
 
    ROOTCA=keys/rootCA.crt
