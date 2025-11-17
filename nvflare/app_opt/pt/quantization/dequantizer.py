@@ -25,6 +25,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.pt.quantization.constant import QUANTIZATION_TYPE
 
+from .ada_quant import AdaQuantizer
+
 
 class ModelDequantizer(DXOFilter):
     def __init__(self):
@@ -56,23 +58,28 @@ class ModelDequantizer(DXOFilter):
         n_quant_params = 0
         for param_name in params:
             source_data_type = source_datatype[param_name]
-
-            # get the bits information
-            source_date_bits = int(re.findall(r"\d+", source_data_type)[0])
-            quantization_bits = int(re.findall(r"\d+", quantization_type)[0])
-
-            # only dequantize if the quantization type is lower than the source data type
-            if quantization_bits >= source_date_bits:
-                self.log_info(
-                    fl_ctx,
-                    f"Skipping dequantization for {param_name}, quantization bit {quantization_type} >= source data bit {source_data_type}",
-                )
+            if source_data_type == "bool":
                 continue
+
+            if quantization_type != "adaquant":
+                # get the bits information
+                source_date_bits = int(re.findall(r"\d+", source_data_type)[0])
+                quantization_bits = int(re.findall(r"\d+", quantization_type)[0])
+
+                # only dequantize if the quantization type is lower than the source data type
+                if quantization_bits >= source_date_bits:
+                    self.log_info(
+                        fl_ctx,
+                        f"Skipping dequantization for {param_name}, quantization bit {quantization_type} >= source data bit {source_data_type}",
+                    )
+                    continue
             values = params[param_name]
             n_bytes_before += values.nbytes
-            for item in quant_state[param_name].values():
-                if isinstance(item, (np.ndarray, torch.Tensor)):
-                    n_bytes_meta += item.nbytes
+            param_quant_state = quant_state.get(param_name)
+            if param_quant_state is not None:
+                for item in param_quant_state.values():
+                    if isinstance(item, (np.ndarray, torch.Tensor)):
+                        n_bytes_meta += item.nbytes
 
             if isinstance(values, np.ndarray):
                 # if numpy, convert to torch
@@ -101,8 +108,17 @@ class ModelDequantizer(DXOFilter):
                     dequantized = dequantize_blockwise(quantized, quant_state=quantized_state)
                 else:
                     dequantized = dequantize_4bit(quantized, quant_state=quantized_state)
-
                 params[param_name] = self.to_source_data(dequantized, source_data_format)
+
+            elif quantization_type == "adaquant":
+                values_tensor = self.to_torch_tensor(values)
+                if param_quant_state is None:
+                    dequantized = values_tensor
+                else:
+                    dequantized = AdaQuantizer().dequantized(values_tensor, param_quant_state)
+                params[param_name] = self.to_source_data(dequantized, source_data_format)
+            else:
+                raise ValueError(f"Invalid quantization type: {quantization_type}")
 
             # assign back
             if source_data_format == "numpy":
