@@ -14,5 +14,5 @@ The following documents provide detailed information about FLARE's Confidential 
 
    cc_architecture
    cc_deployment_guide
-   confidential_computing_attestation
-   hashicorp_vault_trustee_deployment
+   attestation
+   hashicorp_vault_trustee_kbs_deployment
