@@ -142,7 +142,8 @@ The deployment consists of four main steps:
 1. **Build Docker Image** - Create the application container
 2. **Provision** - Generate CVM images and startup kits
 3. **Distribute** - Send startup kits to each site
-4. **Launch** - Start CVMs at each site
+4. **User Data** - Prepare user data, optional
+5. **Launch** - Start CVMs at each site
 
 Step 1: Build Docker Image
 ---------------------------
@@ -292,10 +293,15 @@ Each startup kit (e.g., ``server1.tgz``) contains:
    * - ``vmlinuz``
      - Linux kernel
 
-Step 4: Launch CVMs
---------------------
+Step 4: User Data
+-----------------
 
-**4.1 Launch Server**
+This is an optional step to prepare user data and to make it accessible in the CVM and workload container.
+Please skip this step if no user data is needed by the workload.
+
+**4.1 User Data Drive**
+
+The CVM distribution package includes an user data drive image ``user_data.qcow2``. This is 
 
 On the server machine:
 
@@ -317,7 +323,32 @@ On each client machine:
 
 The server and clients will automatically start the NVFlare system inside their respective CVMs.
 
-**4.3 Start Admin Console**
+Step 5: Launch CVMs
+--------------------
+
+**5.1 Launch Server**
+
+On the server machine:
+
+.. code-block:: bash
+
+   tar -zxvf server1.tgz
+   cd server1/cvm_*
+   ./launch_vm.sh
+
+**5.2 Launch Client**
+
+On each client machine:
+
+.. code-block:: bash
+
+   tar -zxvf site-1.tgz
+   cd site-1/cvm_*
+   ./launch_vm.sh
+
+The server and clients will automatically start the NVFlare system inside their respective CVMs.
+
+**5.3 Start Admin Console**
 
 On the admin machine:
 
@@ -338,7 +369,7 @@ Start the admin console:
 
    ./workspace/example_project/prod_00/admin@nvidia.com/startup/fl_admin.sh
 
-**4.4 Submit Job**
+**5.4 Submit Job**
 
 In the admin console:
 
