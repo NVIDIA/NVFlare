@@ -357,6 +357,8 @@ The server export must therefore be configured as insecure:
 .. code-block:: bash
     /training_data *(rw,sync,no_subtree_check,insecure)
 
+For details, please refer to `exports man page <https://manpages.ubuntu.com/manpages/jammy/man5/exports.5.html>`_
+
 Step 5: Launch CVMs
 --------------------
 
