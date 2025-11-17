@@ -15,7 +15,7 @@ import logging
 
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainer
-from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, PrintCall, PrintResult
+from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, Print
 from nvflare.fox.examples.np.algos.strategies.avg_intime import NPFedAvgInTime
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
 from nvflare.fox.sim.sim2 import Simulator
@@ -34,11 +34,11 @@ def main():
     )
 
     simulator.add_server_outgoing_call_filters("*.train", [AddNoiseToModel()])
-    simulator.add_server_incoming_result_filters("*.train", [PrintResult()])
+    simulator.add_server_incoming_result_filters("*.train", [Print()])
     simulator.set_server_prop("default_timeout", 5.0)
 
-    simulator.add_client_incoming_call_filters("*.train", [PrintCall()])
-    simulator.add_client_outgoing_result_filters("*.train", [PrintResult()])
+    simulator.add_client_incoming_call_filters("*.train", [Print()])
+    simulator.add_client_outgoing_result_filters("*.train", [Print()])
     simulator.set_client_prop("default_timeout", 8.0)
 
     result = simulator.run()

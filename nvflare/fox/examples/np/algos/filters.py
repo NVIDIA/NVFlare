@@ -13,21 +13,20 @@
 # limitations under the License.
 import random
 
-from nvflare.fox.api.constants import ContextKey
-from nvflare.fox.api.ctx import Context
-from nvflare.fox.api.filter import CallFilter, ResultFilter
+from nvflare.fox import fox
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
-class AddNoiseToModel(CallFilter):
+class AddNoiseToModel:
 
     def __init__(self):
         self.logger = get_obj_logger(self)
 
-    def filter_call(self, func_kwargs: dict, context: Context):
-        direction = context.get_prop(ContextKey.DIRECTION)
-        qual_func_name = context.get_prop(ContextKey.QUALIFIED_FUNC_NAME)
-        self.logger.debug(f"[{context.header_str()}] filtering call: {func_kwargs=} {direction=} {qual_func_name=}")
+    @fox.call_filter
+    def add_noise(self, func_kwargs: dict):
+        direction = fox.filter_direction
+        qual_func_name = fox.qual_func_name
+        self.logger.debug(f"[{fox.call_info}] filtering call: {func_kwargs=} {direction=} {qual_func_name=}")
         weights_key = "weights"
         weights = func_kwargs.get(weights_key)
         if weights is None:
@@ -37,32 +36,29 @@ class AddNoiseToModel(CallFilter):
 
         # add some noise to weights
         noise = random.random()
-        self.logger.debug(f"[{context.header_str()}] adding noise {noise}")
+        self.logger.debug(f"[{fox.call_info}] adding noise {noise}")
         weights += noise
         func_kwargs[weights_key] = weights
-        self.logger.info(f"[{context.header_str()}] weights after adding noise {noise}: {weights}")
+        self.logger.info(f"[{fox.call_info}] weights after adding noise {noise}: {weights}")
         return func_kwargs
 
 
-class PrintCall(CallFilter):
+class Print:
 
     def __init__(self):
+        super().__init__()
         self.logger = get_obj_logger(self)
 
-    def filter_call(self, func_kwargs: dict, context: Context):
-        direction = context.get_prop(ContextKey.DIRECTION)
-        qual_func_name = context.get_prop(ContextKey.QUALIFIED_FUNC_NAME)
-        self.logger.info(f"[{context.header_str()}] printing call: {func_kwargs=} {direction=} {qual_func_name=}")
+    @fox.call_filter
+    def print_call(self, func_kwargs: dict):
+        direction = fox.filter_direction
+        qual_func_name = fox.qual_func_name
+        self.logger.info(f"[{fox.call_info}] printing call: {func_kwargs=} {direction=} {qual_func_name=}")
         return func_kwargs
 
-
-class PrintResult(ResultFilter):
-
-    def __init__(self):
-        self.logger = get_obj_logger(self)
-
-    def filter_result(self, result, context: Context):
-        direction = context.get_prop(ContextKey.DIRECTION)
-        qual_func_name = context.get_prop(ContextKey.QUALIFIED_FUNC_NAME)
-        self.logger.info(f"[{context.header_str()}] printing result: {result=} {direction=} {qual_func_name=}")
+    @fox.result_filter
+    def print_result(self, result):
+        direction = fox.filter_direction
+        qual_func_name = fox.qual_func_name
+        self.logger.info(f"[{fox.call_info}] printing result: {result=} {direction=} {qual_func_name=}")
         return result

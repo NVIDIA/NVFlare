@@ -31,7 +31,7 @@ class NPFedAvgSequential:
     @fox.init
     def init(self):
         self.logger.info("fox init NPFedAvgSequential")
-        weight_config = fox.get_prop("client_weight_config", {})
+        weight_config = fox.get_app_prop("client_weight_config", {})
         client_weights = {}
         total = 0
         for c in fox.clients:

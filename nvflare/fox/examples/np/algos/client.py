@@ -25,7 +25,7 @@ class NPTrainer:
 
     @fox.init
     def init_trainer(self):
-        delta_config = fox.get_prop("client_delta", {})
+        delta_config = fox.get_app_prop("client_delta", {})
         self.delta = delta_config.get(fox.site_name, self.delta)
         self.logger.info(f"init_trainer: client {fox.site_name}: delta={self.delta}")
 
