@@ -13,10 +13,29 @@
 # limitations under the License.
 from typing import Any
 
+from nvflare.fuel.utils.log_utils import get_obj_logger
+
+from .constants import CollabMethodArgName
 from .ctx import Context
+from .dec import get_object_call_filter_funcs, get_object_result_filter_funcs, supports_context
 
 
 class CallFilter:
+
+    def __init__(self, impl: object = None):
+        self.logger = get_obj_logger(self)
+        if impl:
+            funcs = get_object_call_filter_funcs(impl)
+            if not funcs:
+                raise ValueError(f"filter impl object {impl.__class__.__name__} has no call_filter func")
+
+            if len(funcs) > 1:
+                raise ValueError(
+                    f"filter object {impl.__class__.__name__} must have one call_filter func but got {len(funcs)}"
+                )
+            self.impl_func = funcs[0]
+        else:
+            self.impl_func = None
 
     def filter_call(self, func_kwargs: dict, context: Context):
         """Filter kwargs of function call.
@@ -28,10 +47,34 @@ class CallFilter:
         Returns: filtered kwargs that will be passed to a collab func.
 
         """
-        return func_kwargs
+        if self.impl_func is not None:
+            name, f = self.impl_func
+            self.logger.info(f"calling call filter: {name} ...")
+            if supports_context(f):
+                kwargs = {CollabMethodArgName.CONTEXT: context}
+            else:
+                kwargs = {}
+            return f(func_kwargs, **kwargs)
+        else:
+            return func_kwargs
 
 
 class ResultFilter:
+
+    def __init__(self, impl: object = None):
+        self.logger = get_obj_logger(self)
+        if impl:
+            funcs = get_object_result_filter_funcs(impl)
+            if not funcs:
+                raise ValueError(f"filter object {impl.__class__.__name__} has no result_filter func")
+
+            if len(funcs) > 1:
+                raise ValueError(
+                    f"filter object {impl.__class__.__name__} must have one result_filter func but got {len(funcs)}"
+                )
+            self.impl_func = funcs[0]
+        else:
+            self.impl_func = None
 
     def filter_result(self, result: Any, context: Context):
         """Filter result produced by a collab func.
@@ -43,7 +86,16 @@ class ResultFilter:
         Returns: filtered result
 
         """
-        return result
+        if self.impl_func is not None:
+            name, f = self.impl_func
+            self.logger.info(f"calling result filter: {name} ...")
+            if supports_context(f):
+                kwargs = {CollabMethodArgName.CONTEXT: context}
+            else:
+                kwargs = {}
+            return f(result, **kwargs)
+        else:
+            return result
 
 
 class FilterChain:

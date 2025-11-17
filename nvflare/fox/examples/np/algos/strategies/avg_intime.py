@@ -55,7 +55,7 @@ class NPFedAvgInTime:
 
     def _do_one_round(self, r, current_model):
         aggr_result = _AggrResult()
-        timeout = fox.get_prop("default_timeout", 10)
+        timeout = fox.get_app_prop("default_timeout", 10)
         self.logger.info(f"got timeout: {timeout}")
         fox.clients(
             timeout=timeout,

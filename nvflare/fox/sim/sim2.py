@@ -14,7 +14,6 @@
 from typing import List, Tuple, Union
 
 from nvflare.fox.api.app import ClientApp, ServerApp
-from nvflare.fox.api.filter import CallFilter, ResultFilter
 
 from .simulator import Simulator as Sim1
 
@@ -55,28 +54,28 @@ class Simulator:
         self.server_app = server_app
         self.client_app = client_app
 
-    def add_server_outgoing_call_filters(self, pattern: str, filters: List[CallFilter]):
+    def add_server_outgoing_call_filters(self, pattern: str, filters: List[object]):
         self.server_app.add_outgoing_call_filters(pattern, filters)
 
-    def add_server_incoming_call_filters(self, pattern: str, filters: List[CallFilter]):
+    def add_server_incoming_call_filters(self, pattern: str, filters: List[object]):
         self.server_app.add_incoming_call_filters(pattern, filters)
 
-    def add_server_outgoing_result_filters(self, pattern: str, filters: List[ResultFilter]):
+    def add_server_outgoing_result_filters(self, pattern: str, filters: List[object]):
         self.server_app.add_outgoing_result_filters(pattern, filters)
 
-    def add_server_incoming_result_filters(self, pattern: str, filters: List[ResultFilter]):
+    def add_server_incoming_result_filters(self, pattern: str, filters: List[object]):
         self.server_app.add_incoming_result_filters(pattern, filters)
 
-    def add_client_outgoing_call_filters(self, pattern: str, filters: List[CallFilter]):
+    def add_client_outgoing_call_filters(self, pattern: str, filters: List[object]):
         self.client_app.add_outgoing_call_filters(pattern, filters)
 
-    def add_client_incoming_call_filters(self, pattern: str, filters: List[CallFilter]):
+    def add_client_incoming_call_filters(self, pattern: str, filters: List[object]):
         self.client_app.add_incoming_call_filters(pattern, filters)
 
-    def add_client_outgoing_result_filters(self, pattern: str, filters: List[ResultFilter]):
+    def add_client_outgoing_result_filters(self, pattern: str, filters: List[object]):
         self.client_app.add_outgoing_result_filters(pattern, filters)
 
-    def add_client_incoming_result_filters(self, pattern: str, filters: List[ResultFilter]):
+    def add_client_incoming_result_filters(self, pattern: str, filters: List[object]):
         self.client_app.add_incoming_result_filters(pattern, filters)
 
     def set_server_prop(self, name: str, value):

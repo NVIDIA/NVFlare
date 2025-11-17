@@ -14,9 +14,11 @@
 from .constants import ContextKey
 from .ctx import get_call_context
 from .dec import algo as dec_algo
+from .dec import call_filter as dec_call_filter
 from .dec import classproperty
 from .dec import collab as dec_collab
 from .dec import init as dec_init
+from .dec import result_filter as dec_result_filter
 from .proxy_list import ProxyList
 
 
@@ -25,6 +27,8 @@ class facade:
     collab = dec_collab
     init = dec_init
     algo = dec_algo
+    call_filter = dec_call_filter
+    result_filter = dec_result_filter
 
     @classproperty
     def context(cls):
@@ -109,6 +113,16 @@ class facade:
         ctx = get_call_context()
         return ctx.workspace
 
+    @classproperty
+    def filter_direction(cls):
+        ctx = get_call_context()
+        return ctx.get_prop(ContextKey.DIRECTION)
+
+    @classproperty
+    def qual_func_name(cls):
+        ctx = get_call_context()
+        return ctx.get_prop(ContextKey.QUALIFIED_FUNC_NAME)
+
     @staticmethod
     def fire_event(event_type: str, data):
         ctx = get_call_context()
@@ -120,15 +134,15 @@ class facade:
         ctx.app.register_event_handler(event_type, handler, **handler_kwargs)
 
     @staticmethod
-    def get_prop(name: str, default=None):
+    def get_app_prop(name: str, default=None):
         ctx = get_call_context()
         return ctx.app.get_prop(name, default)
 
     @staticmethod
-    def get_input(default=None):
-        return facade.get_prop(ContextKey.INPUT, default)
+    def get_prop(name: str, default=None):
+        ctx = get_call_context()
+        return ctx.get_prop(name, default)
 
     @staticmethod
-    def set_prop(name: str, value):
-        ctx = get_call_context()
-        ctx.app.set_prop(name, value)
+    def get_input(default=None):
+        return facade.get_prop(ContextKey.INPUT, default)

@@ -21,7 +21,14 @@ from nvflare.fuel.utils.tree_utils import Forest, Node, build_forest
 
 from .constants import CollabMethodArgName, ContextKey, FilterDirection
 from .ctx import Context, set_call_context
-from .dec import collab, get_object_algo_funcs, get_object_collab_interface, get_object_init_funcs, is_collab
+from .dec import (
+    collab,
+    get_object_algo_funcs,
+    get_object_collab_interface,
+    get_object_init_funcs,
+    is_collab,
+    supports_context,
+)
 from .filter import CallFilter, FilterChain, ResultFilter
 from .proxy import Proxy
 from .utils import check_context_support, get_collab_object_name
@@ -87,34 +94,39 @@ class App:
         if not isinstance(filters, list):
             raise ValueError(f"filters must be a list but got {type(filters)}")
 
-        for i, f in enumerate(filters):
+        filter_objs = []
+        for f in filters:
             if not isinstance(f, filter_type):
-                raise ValueError(f"filter {i} must be {filter_type} but got {type(f)}")
+                # convert to proper filter type
+                filter_obj = filter_type(f)
+            else:
+                filter_obj = f
             self._add_managed_object(f)
+            filter_objs.append(filter_obj)
 
         chain = FilterChain(pattern, filter_type)
-        chain.add_filters(filters)
+        chain.add_filters(filter_objs)
         to_list.append(chain)
 
-    def add_incoming_call_filters(self, pattern: str, filters: List[CallFilter]):
+    def add_incoming_call_filters(self, pattern: str, filters: List[object]):
         self._add_filters(pattern, filters, self._incoming_call_filter_chains, CallFilter)
 
     def get_incoming_call_filters(self):
         return self._incoming_call_filter_chains
 
-    def add_outgoing_call_filters(self, pattern: str, filters: List[CallFilter]):
+    def add_outgoing_call_filters(self, pattern: str, filters: List[object]):
         self._add_filters(pattern, filters, self._outgoing_call_filter_chains, CallFilter)
 
     def get_outgoing_call_filters(self):
         return self._outgoing_call_filter_chains
 
-    def add_incoming_result_filters(self, pattern: str, filters: List[ResultFilter]):
+    def add_incoming_result_filters(self, pattern: str, filters: List[object]):
         self._add_filters(pattern, filters, self._incoming_result_filter_chains, ResultFilter)
 
     def get_incoming_result_filters(self):
         return self._incoming_result_filter_chains
 
-    def add_outgoing_result_filters(self, pattern: str, filters: List[ResultFilter]):
+    def add_outgoing_result_filters(self, pattern: str, filters: List[object]):
         self._add_filters(pattern, filters, self._outgoing_result_filter_chains, ResultFilter)
 
     def get_outgoing_result_filters(self):
@@ -257,9 +269,12 @@ class App:
 
     def _fox_init(self, obj, ctx: Context):
         init_funcs = get_object_init_funcs(obj)
-        for f in init_funcs:
-            kwargs = {CollabMethodArgName.CONTEXT: ctx}
-            check_context_support(f, kwargs)
+        for name, f in init_funcs:
+            self.logger.info(f"calling init func {name} ...")
+            if supports_context(f):
+                kwargs = {CollabMethodArgName.CONTEXT: ctx}
+            else:
+                kwargs = {}
             f(**kwargs)
 
     def initialize(self, context: Context):
