@@ -307,6 +307,7 @@ This image contains a single ext4 filesystem that occupies the entire drive (no 
 The drive is not encrypted. You can access it by attaching it to a VM or by using the qemu-nbd command. For example:
 
 .. code-block:: bash
+
     sudo qemu-nbd --connect=/dev/nbd0 user_data.qcow2
     sudo mount /dev/nbd0 /mnt
 
@@ -318,14 +319,16 @@ available in CVM and container as ``/user_data``.
 For example:
 
 .. code-block:: bash
+
     cp -r /training_data /mnt
 
 The user_data.qcow2 image included with the package is a placeholder and has a very small capacity (1 GB).
 You can resize the drive and expand the filesystem using the following commands:
 
 .. code-block:: bash
+
     # Add 20GB to the drive
-    qemu-img resize disk.qcow2 +20G
+    qemu-img resize user_data.qcow2 +20G
 
     # Extend filesystem
     sudo qemu-nbd --connect=/dev/nbd0 user_data.qcow2
@@ -343,18 +346,21 @@ The mounted data is available in CVM and container as ``/user_data/mnt``.
 The file must contain a single line specifying the exported server path, for example:
 
 .. code-block:: bash
+
     nfs-server.example.com:/training_data
 
 By default, the CVM blocks all outbound network traffic. To allow NFS and port-mapper communication, the following
 outgoing ports must be enabled in the CVM site configuration:
 
 .. code-block:: yaml
+
     allowed_out_ports: [111, 2049]
 
 Because the CVM cannot control the source port used for NFS connections, secure NFS exports are not supported.
 The server export must therefore be configured as insecure:
 
 .. code-block:: bash
+  
     /training_data *(rw,sync,no_subtree_check,insecure)
 
 For details, please refer to `exports man page <https://manpages.ubuntu.com/manpages/jammy/man5/exports.5.html>`_
