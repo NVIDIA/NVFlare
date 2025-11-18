@@ -137,7 +137,7 @@ As the project admin, you need to:
 Deployment Workflow
 ===================
 
-The deployment consists of four main steps:
+The deployment consists of five main steps:
 
 1. **Build Docker Image** - Create the application container
 2. **Provision** - Generate CVM images and startup kits
@@ -360,7 +360,7 @@ Because the CVM cannot control the source port used for NFS connections, secure 
 The server export must therefore be configured as insecure:
 
 .. code-block:: bash
-  
+
     /training_data *(rw,sync,no_subtree_check,insecure)
 
 For details, please refer to `exports man page <https://manpages.ubuntu.com/manpages/jammy/man5/exports.5.html>`_
