@@ -109,6 +109,14 @@ class Recipe(ABC):
     def process_env(self, env: ExecEnv):
         pass
 
+    def finalize(self):
+        """Called to finalize the setup of the recipe.
+
+        Returns:
+
+        """
+        pass
+
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
     ):
@@ -225,6 +233,8 @@ class Recipe(ABC):
         Returns: None
 
         """
+        self.finalize()
+
         if server_exec_params:
             self.job.to_server(server_exec_params)
 
@@ -247,6 +257,8 @@ class Recipe(ABC):
         Returns: Run to get job ID and execution results
 
         """
+        self.finalize()
+
         if server_exec_params:
             self.job.to_server(server_exec_params)
 
