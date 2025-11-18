@@ -137,12 +137,13 @@ As the project admin, you need to:
 Deployment Workflow
 ===================
 
-The deployment consists of four main steps:
+The deployment consists of five main steps:
 
 1. **Build Docker Image** - Create the application container
 2. **Provision** - Generate CVM images and startup kits
 3. **Distribute** - Send startup kits to each site
-4. **Launch** - Start CVMs at each site
+4. **User Data** - Prepare user data, optional
+5. **Launch** - Start CVMs at each site
 
 Step 1: Build Docker Image
 ---------------------------
@@ -292,10 +293,93 @@ Each startup kit (e.g., ``server1.tgz``) contains:
    * - ``vmlinuz``
      - Linux kernel
 
-Step 4: Launch CVMs
+Step 4: User Data
+-----------------
+
+This step is optional. It describes how to prepare user data and make it available inside both the CVM and the workload container.
+If your workload does not require user data, you may skip this step.
+
+**4.1 User Data Drive**
+
+The CVM distribution package includes a user-data drive image named user_data.qcow2.
+This image contains a single ext4 filesystem that occupies the entire drive (no partitions).
+
+The drive is not encrypted. You can access it by attaching it to a VM or by using the qemu-nbd command. For example:
+
+.. code-block:: bash
+
+    sudo qemu-nbd --connect=/dev/nbd0 user_data.qcow2
+    sudo mount /dev/nbd0 /mnt
+
+  .. note::
+    
+    Please unmount the drive after usage by running:
+    
+    .. code-block:: bash
+    
+        sudo umount /mnt
+        sudo qemu-nbd --disconnect /dev/nbd0
+
+**4.2 Local Data**
+
+If your data resides on the local host, it can be copied directly into the user_data drive. The data is
+available in CVM and container as ``/user_data``.
+
+For example:
+
+.. code-block:: bash
+
+    cp -r /training_data /mnt
+
+The user_data.qcow2 image included with the package is a placeholder and has a very small capacity (1 GB).
+You can resize the drive and expand the filesystem using the following commands:
+
+.. code-block:: bash
+
+    # Add 20GB to the drive
+    qemu-img resize user_data.qcow2 +20G
+
+    # Extend filesystem
+    sudo qemu-nbd --connect=/dev/nbd0 user_data.qcow2
+    sudo e2fsck -f /dev/nbd0
+    sudo resize2fs /dev/nbd0
+    sudo qemu-nbd --disconnect /dev/nbd0
+
+**4.3 Remote Data using NFS**
+
+If your data is hosted on an NFS server, the CVM can automatically mount it when a file named ``ext_mount.conf``
+is present at the root of the user_data.qcow2 drive.
+
+The mounted data is available in CVM and container as ``/user_data/mnt``.
+
+The file must contain a single line specifying the exported server path, for example:
+
+.. code-block:: bash
+
+    nfs-server.example.com:/training_data
+
+By default, the CVM blocks all outbound network traffic. To allow NFS and port-mapper communication, the following
+outgoing ports must be enabled in the CVM site configuration:
+
+.. code-block:: yaml
+
+    allowed_out_ports: [111, 2049]
+
+This must be done in Step 2.3 of the provisioning process.
+
+Because the CVM cannot control the source port used for NFS connections, secure NFS exports are not supported.
+The server export must therefore be configured as insecure:
+
+.. code-block:: bash
+
+    /training_data *(rw,sync,no_subtree_check,insecure)
+
+For details, please refer to `exports man page <https://manpages.ubuntu.com/manpages/jammy/man5/exports.5.html>`_
+
+Step 5: Launch CVMs
 --------------------
 
-**4.1 Launch Server**
+**5.1 Launch Server**
 
 On the server machine:
 
@@ -305,7 +389,7 @@ On the server machine:
    cd server1/cvm_*
    ./launch_vm.sh
 
-**4.2 Launch Client**
+**5.2 Launch Client**
 
 On each client machine:
 
@@ -317,7 +401,7 @@ On each client machine:
 
 The server and clients will automatically start the NVFlare system inside their respective CVMs.
 
-**4.3 Start Admin Console**
+**5.3 Start Admin Console**
 
 On the admin machine:
 
@@ -338,7 +422,7 @@ Start the admin console:
 
    ./workspace/example_project/prod_00/admin@nvidia.com/startup/fl_admin.sh
 
-**4.4 Submit Job**
+**5.4 Submit Job**
 
 In the admin console:
 
@@ -610,6 +694,18 @@ Notes on using NVIDIA GPU CC
     tensorflow
     safetensors
     nv_attestation_sdk
+
+3. To get GPU working in CVM, you need to ensure:
+       - No GPU driver installed on host, otherwise the passthrough will fail.
+       - You need to create VFIO by running the following command:
+
+.. code-block:: bash
+
+    NVIDIA_GPU=$(lspci -d 10de: | awk '/NVIDIA/{print $1}')
+    NVIDIA_PASSTHROUGH=$(lspci -n -s $NVIDIA_GPU | awk -F: '{print $4}' | awk '{print $1}')
+    echo 10de $NVIDIA_PASSTHROUGH > /sys/bus/pci/drivers/vfio-pci/new_id
+
+4. For more details, please refer to `NVIDIA's Deployment Guide for SecureAI <https://docs.nvidia.com/cc-deployment-guide-snp.pdf>`_
 
 Next Steps
 ==========
