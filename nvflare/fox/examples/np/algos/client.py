@@ -38,7 +38,7 @@ class NPTrainer:
         if fox.is_aborted:
             self.logger.debug("training aborted")
             return 0
-        self.logger.debug(f"[{fox.call_info}] EZ trained round {current_round}")
+        self.logger.info(f"[{fox.call_info}] EZ trained round {current_round=} {weights=}")
 
         # metric_receiver = self.server.get_target("metric_receiver")
         # if metric_receiver:

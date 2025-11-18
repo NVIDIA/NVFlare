@@ -38,7 +38,7 @@ class FoxExecutor(Executor, FoxAdaptor):
 
     def __init__(
         self,
-        client_app_id: str,
+        client_obj_id: str,
         collab_obj_ids: List[str] = None,
         incoming_call_filters=None,
         outgoing_call_filters=None,
@@ -59,7 +59,7 @@ class FoxExecutor(Executor, FoxAdaptor):
             incoming_result_filters=incoming_result_filters,
             outgoing_result_filters=outgoing_result_filters,
         )
-        self.client_app_id = client_app_id
+        self.client_obj_id = client_obj_id
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
         self.client_app = None
@@ -68,24 +68,13 @@ class FoxExecutor(Executor, FoxAdaptor):
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
         fl_ctx.set_prop(FLContextKey.FOX_MODE, True, private=True, sticky=True)
         engine = fl_ctx.get_engine()
-        client_app = engine.get_component(self.client_app_id)
-        if not isinstance(client_app, ClientApp):
-            self.system_panic(
-                f"component {self.client_app_id} must be ClientApp but got {type(client_app)}",
-                fl_ctx,
-            )
-            return
-
+        client_obj = engine.get_component(self.client_obj_id)
         client_name = fl_ctx.get_identity_name()
 
-        make_client_app_f = getattr(self.client_app, "make_client_app", None)
-        if make_client_app_f and callable(make_client_app_f):
-            self.client_app = make_client_app_f(client_name)
-        else:
-            self.client_app = client_app
-
-        self.client_app.name = client_name
-        self.client_app.env_type = EnvType.SYSTEM
+        app = ClientApp(client_obj)
+        app.name = client_name
+        app.env_type = EnvType.SYSTEM
+        self.client_app = app
 
         err = self.process_config(self.client_app, fl_ctx)
         if err:
@@ -94,9 +83,11 @@ class FoxExecutor(Executor, FoxAdaptor):
     def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
         self.thread_executor.shutdown(wait=False, cancel_futures=True)
 
-    def _prepare_server_proxy(self, job_id, cell, collab_interface: dict, abort_signal):
+    def _prepare_server_proxy(self, job_id, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
         server_name = "server"
         backend = SysBackend(
+            manager=self,
+            engine=fl_ctx.get_engine(),
             caller=self.client_app.name,
             cell=cell,
             target_fqcn=FQCN.join([FQCN.ROOT_SERVER, job_id]),
@@ -125,8 +116,10 @@ class FoxExecutor(Executor, FoxAdaptor):
             proxy.add_child(name, p)
         return proxy
 
-    def _prepare_client_proxy(self, job_id, cell, client: Client, abort_signal, collab_interface):
+    def _prepare_client_proxy(self, job_id, cell, client: Client, abort_signal, collab_interface, fl_ctx: FLContext):
         backend = SysBackend(
+            manager=self,
+            engine=fl_ctx.get_engine(),
             caller=self.client_app.name,
             cell=cell,
             target_fqcn=FQCN.join([client.get_fqcn(), job_id]),
@@ -141,8 +134,9 @@ class FoxExecutor(Executor, FoxAdaptor):
             target_interface=collab_interface.get(""),
         )
 
-        if self.collab_obj_ids:
-            for name in self.collab_obj_ids:
+        collab_objs = self.client_app.get_collab_objects()
+        if collab_objs:
+            for name in collab_objs.keys():
                 p = Proxy(
                     app=self.client_app,
                     target_name=f"{client.name}.{name}",
@@ -173,14 +167,14 @@ class FoxExecutor(Executor, FoxAdaptor):
 
         # build proxies
         job_id = fl_ctx.get_job_id()
-        server_proxy = self._prepare_server_proxy(job_id, cell, server_collab_interface, abort_signal)
+        server_proxy = self._prepare_server_proxy(job_id, cell, server_collab_interface, abort_signal, fl_ctx)
 
         job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
         job_clients = job_meta.get(JobMetaKey.JOB_CLIENTS)
         all_clients = [from_dict(d) for d in job_clients]
         client_proxies = []
         for c in all_clients:
-            p = self._prepare_client_proxy(job_id, cell, c, abort_signal, client_collab_interface)
+            p = self._prepare_client_proxy(job_id, cell, c, abort_signal, client_collab_interface, fl_ctx)
             client_proxies.append(p)
 
         ws = SysWorkspace(fl_ctx)

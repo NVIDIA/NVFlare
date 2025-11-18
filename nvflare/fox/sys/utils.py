@@ -84,6 +84,7 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
         return _error_reply(f"bad method args: should be list/tuple but got {type(method_args)}", logger)
 
     method_kwargs = payload.get(ObjectCallKey.KWARGS)
+    logger.info(f"received kwargs for method {method_name}: {method_kwargs}")
     if not method_kwargs:
         method_kwargs = {}
     elif not isinstance(method_kwargs, dict):

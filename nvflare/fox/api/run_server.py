@@ -38,7 +38,9 @@ def run_server(server_app: ServerApp, logger):
                 kwargs = {}
             result = f(**kwargs)
             server_ctx.set_prop(ContextKey.INPUT, result)
-        except:
+        except Exception as ex:
             traceback.print_exc()
+            backend = server_app.get_backend()
+            backend.handle_exception(ex)
             break
     return result

@@ -20,10 +20,23 @@ from .ctx import Context
 from .dec import get_object_call_filter_funcs, get_object_result_filter_funcs, supports_context
 
 
-class CallFilter:
+class _Filter:
 
     def __init__(self, impl: object = None):
+        self.impl = impl
         self.logger = get_obj_logger(self)
+
+    def get_impl_object(self):
+        if self.impl:
+            return self.impl
+        else:
+            return self
+
+
+class CallFilter(_Filter):
+
+    def __init__(self, impl: object = None):
+        super().__init__(impl)
         if impl:
             funcs = get_object_call_filter_funcs(impl)
             if not funcs:
@@ -59,10 +72,10 @@ class CallFilter:
             return func_kwargs
 
 
-class ResultFilter:
+class ResultFilter(_Filter):
 
     def __init__(self, impl: object = None):
-        self.logger = get_obj_logger(self)
+        super().__init__(impl)
         if impl:
             funcs = get_object_result_filter_funcs(impl)
             if not funcs:
@@ -88,7 +101,6 @@ class ResultFilter:
         """
         if self.impl_func is not None:
             name, f = self.impl_func
-            self.logger.info(f"calling result filter: {name} ...")
             if supports_context(f):
                 kwargs = {CollabMethodArgName.CONTEXT: context}
             else:
