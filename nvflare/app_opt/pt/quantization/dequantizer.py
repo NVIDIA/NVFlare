@@ -153,7 +153,7 @@ class ModelDequantizer(DXOFilter):
 
     def to_source_data(self, tensor: torch.Tensor, source_data_format: str) -> Union[np.ndarray, torch.Tensor]:
         if source_data_format == "numpy":
-            return tensor.numpy()
+            return tensor.cpu().numpy()
         return tensor.cpu()
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
