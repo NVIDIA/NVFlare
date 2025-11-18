@@ -65,8 +65,8 @@ __all__ = ["NoConnection", "NoReply", "SystemInfo", "TargetType"]
 class Session(SessionSpec):
     def __init__(
         self,
-        username: Optional[str] = None,
-        startup_path: Optional[str] = None,
+        username: str,
+        startup_path: str,
         secure_mode: bool = True,
         debug: bool = False,
     ):
