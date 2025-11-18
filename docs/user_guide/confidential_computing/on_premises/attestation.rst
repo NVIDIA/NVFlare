@@ -9,7 +9,7 @@ Overview
 
 This document introduces the Confidential Computing (CC) attestation integration in NVFlare.
 
-Please refer to the :ref:`NVFlare CC Architecture <cc_architecture>` for the introduction and detailed architecture of Confidential Computing.
+Please refer to the :ref:`NVFlare CC <confidential_computing>` for the introduction and detailed architecture of Confidential Computing.
 
 Attestation enables participants to prove the integrity and trustworthiness of their computing environment. This mechanism ensures that only mutually trusted participants take part in a federated learning job, reinforcing both security and integrity across the NVFlare system.
 
