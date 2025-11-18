@@ -288,199 +288,13 @@ class Recipe(ABC):
         """
         pass
 
-    def set_per_site_config(self, config: Dict[str, Dict]) -> None:
-        """Set helper-provided per-site configuration for this recipe.
+    def finalize(self):
+        """Called to finalize the setup of the recipe.
 
-        The generic helper validates only the site-keyed shape. Recipes that
-        need to map fields into generated app config, command arguments, data
-        loaders, or validators should override ``_apply_per_site_config``.
+        Returns:
 
-        Per-site config values end up in the generated job configuration in clear
-        text and must never contain actual secret values; see the Recipe class
-        docstring for the recommended alternatives.
         """
-        warn_on_potential_secrets(config, context="per_site_config")
-        if self._SUPPORTED_PER_SITE_SECRET_REF_KEYS is not None:
-            warn_on_unsupported_secret_refs_outside_keys(
-                config,
-                supported_value_keys=self._SUPPORTED_PER_SITE_SECRET_REF_KEYS,
-                supported_value_depth=2,
-                context="per_site_config",
-            )
-        else:
-            warn_on_unsupported_secret_refs(config, context="per_site_config")
-        self._helper_per_site_config = dict(config)
-        self._apply_per_site_config(dict(self._helper_per_site_config))
-
-    def _apply_per_site_config(self, config: Dict[str, Dict]) -> None:
-        """Recipe-specific hook for helper-provided per-site configuration."""
         pass
-
-    def configured_sites(self) -> List[str]:
-        """Return site keys configured through the helper or legacy constructor config.
-
-        This reports configured site names only. It does not infer sites from job
-        metadata, validate production enrollment, or indicate which clients are
-        connected in the execution environment.
-        """
-        helper_per_site_config = getattr(self, "_helper_per_site_config", None)
-        if helper_per_site_config is not None:
-            return list(helper_per_site_config.keys())
-
-        legacy_per_site_config = getattr(self, "per_site_config", None)
-        if isinstance(legacy_per_site_config, dict):
-            return list(legacy_per_site_config.keys())
-
-        return []
-
-    def _snapshot_additional_params(self) -> Dict[str, Dict]:
-        snapshot = {}
-        deploy_map = getattr(self.job, "_deploy_map", {})
-        for target, app in deploy_map.items():
-            app_config = getattr(app, "app_config", None)
-            if app_config is None:
-                continue
-            params = getattr(app_config, "additional_params", None)
-            if isinstance(params, dict):
-                snapshot[target] = dict(params)
-        return snapshot
-
-    def _restore_additional_params(self, snapshot: Dict[str, Dict]) -> None:
-        deploy_map = getattr(self.job, "_deploy_map", {})
-        for target, app in deploy_map.items():
-            app_config = getattr(app, "app_config", None)
-            if app_config is None:
-                continue
-            params = getattr(app_config, "additional_params", None)
-            if isinstance(params, dict):
-                original = snapshot.get(target, {})
-                params.clear()
-                params.update(original)
-
-    def _replace_additional_params_for_targets(self, targets: List[str], new_params: dict) -> None:
-        deploy_map = getattr(self.job, "_deploy_map", {})
-        for target in targets:
-            app = deploy_map.get(target)
-            if app is None:
-                continue
-            app_config = getattr(app, "app_config", None)
-            if app_config is None:
-                continue
-            params = getattr(app_config, "additional_params", None)
-            if isinstance(params, dict):
-                params.clear()
-                params.update(new_params)
-
-    @contextmanager
-    def _temporary_exec_params(
-        self, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
-    ):
-        """Temporarily override per-target additional_params during execute/export.
-
-        Semantics:
-        - None: leave the target's existing additional_params unchanged.
-        - non-empty dict: temporarily apply/merge those params for the target.
-        - empty dict ({}): temporarily clear the target's additional_params for this call.
-
-        Any original additional_params are restored when the context exits.
-        """
-        if server_exec_params:
-            warn_on_potential_secrets(server_exec_params, context="server_exec_params")
-            warn_on_unsupported_secret_ref_keys(server_exec_params, context="server_exec_params")
-        if client_exec_params:
-            warn_on_potential_secrets(client_exec_params, context="client_exec_params")
-            warn_on_unsupported_secret_ref_keys(client_exec_params, context="client_exec_params")
-
-        params_snapshot = None
-        if server_exec_params is not None or client_exec_params is not None:
-            params_snapshot = self._snapshot_additional_params()
-
-        try:
-            if server_exec_params is not None:
-                if server_exec_params:
-                    self.job.to_server(server_exec_params)
-                else:
-                    # Preserve the long-standing "empty dict means temporarily clear params"
-                    # behavior rather than treating {} as a no-op.
-                    self._replace_additional_params_for_targets(["server"], {})
-
-            if client_exec_params is not None:
-                if client_exec_params:
-                    self._add_to_client_apps(client_exec_params)
-                else:
-                    client_targets = [target for target in getattr(self.job, "_deploy_map", {}) if target != "server"]
-                    self._replace_additional_params_for_targets(client_targets, {})
-            yield
-        finally:
-            if params_snapshot is not None:
-                self._restore_additional_params(params_snapshot)
-
-    def _add_to_client_apps(self, obj, clients: Optional[List[str]] = None, **kwargs):
-        """Add an object to client apps, preserving existing per-site structure.
-
-        Args:
-            obj: Object to add to clients.
-            clients: Optional list of specific client names. If None, applies to all clients.
-            **kwargs: Extra options forwarded to `job.to()`/`job.to_clients()`.
-
-        Raises:
-            TypeError: If clients is not a list.
-            ValueError: If clients is empty or contains a non-client name; if specific
-                clients are targeted while the recipe's client app applies to all clients
-                (per-site placement cannot be expressed in the generated job in that
-                topology); or if clients names a site with no existing client app while
-                per-site client apps exist (that would deploy a bare, executor-less app
-                to that site).
-        """
-        from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME
-        from nvflare.job_config.defs import JobTargetType
-
-        # FedJob has no public API to list per-site deploy targets, so we inspect
-        # private deploy map to preserve existing per-site client topology.
-        deploy_map = getattr(self.job, "_deploy_map", {})
-        existing_client_sites = [
-            target
-            for target in deploy_map.keys()
-            if target not in [ALL_SITES, SERVER_SITE_NAME]
-            and JobTargetType.get_target_type(target) == JobTargetType.CLIENT
-        ]
-        if clients is None:
-            if existing_client_sites:
-                for site in existing_client_sites:
-                    self.job.to(obj, site, **kwargs)
-            else:
-                self.job.to_clients(obj, **kwargs)
-        else:
-            # A bare string would iterate per character; an empty list would be a silent no-op.
-            if not isinstance(clients, list):
-                raise TypeError(f"clients must be a list of client names, got {type(clients).__name__}")
-            if not clients:
-                raise ValueError("clients must not be empty; omit it to apply to all clients")
-            for client in clients:
-                if not isinstance(client, str) or client in (ALL_SITES, SERVER_SITE_NAME):
-                    raise ValueError(f"invalid client name {client!r}: client names must name specific client sites")
-            if ALL_SITES in deploy_map:
-                # The generated job has one client app deployed to all clients. Exporting
-                # both an all-clients app and per-site apps is not expressible (the
-                # all-clients app wins and per-site apps are dropped), so fail loudly
-                # instead of silently losing the placement.
-                raise ValueError(
-                    "cannot target specific clients: this recipe's client app applies to all clients. "
-                    "Construct the recipe with per-site client apps (e.g. the per_site_config constructor "
-                    "argument on recipes that support it) or omit clients to apply to all clients."
-                )
-            if existing_client_sites:
-                # Targeting a site with no app would create a bare, executor-less app for
-                # that site in the exported job — the same class of quiet misconfiguration
-                # as the ALL_SITES case above, so fail loudly instead.
-                unknown = [c for c in clients if c not in existing_client_sites]
-                if unknown:
-                    raise ValueError(
-                        f"unknown client site(s) {unknown}: this recipe has per-site client apps "
-                        f"only for {sorted(existing_client_sites)}"
-                    )
-            for client in clients:
-                self.job.to(obj, client, **kwargs)
 
     def add_client_input_filter(
         self, filter: Filter, tasks: Optional[List[str]] = None, clients: Optional[List[str]] = None
@@ -793,12 +607,10 @@ class Recipe(ABC):
         Returns: None
 
         """
-        self._warn_potential_secrets_in_params()
-        with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
-            if env is not None:
-                self.process_env(env)
-            self.job.export_job(job_dir)
-        self._warn_potential_secrets_in_exported_job(job_dir)
+        self.finalize()
+
+        if server_exec_params:
+            self.job.to_server(server_exec_params)
 
     def run(
         self, env: ExecEnv, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
@@ -813,11 +625,10 @@ class Recipe(ABC):
         Returns: Run to get job ID and execution results
 
         """
-        self._warn_potential_secrets_in_params()
-        with self._temporary_exec_params(server_exec_params=server_exec_params, client_exec_params=client_exec_params):
-            self.process_env(env)
-            job_id = env.deploy(self.job)
-            from nvflare.recipe.run import Run
+        self.finalize()
+
+        if server_exec_params:
+            self.job.to_server(server_exec_params)
 
             return Run(env, job_id)
 
