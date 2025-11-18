@@ -356,6 +356,8 @@ outgoing ports must be enabled in the CVM site configuration:
 
     allowed_out_ports: [111, 2049]
 
+This must be done in Step 2.3 of the provisioning process.
+
 Because the CVM cannot control the source port used for NFS connections, secure NFS exports are not supported.
 The server export must therefore be configured as insecure:
 
