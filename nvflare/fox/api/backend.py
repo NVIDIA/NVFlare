@@ -59,3 +59,6 @@ class Backend(ABC):
 
         """
         pass
+
+    def handle_exception(self, exception: Exception):
+        pass

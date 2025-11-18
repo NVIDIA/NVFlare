@@ -15,7 +15,6 @@ from typing import Any, Dict, List
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.fox.api.app import App
-from nvflare.fox.api.filter import CallFilter, ResultFilter
 
 
 class FoxAdaptor:
@@ -53,25 +52,25 @@ class FoxAdaptor:
 
                 app.add_collab_object(cid, obj)
 
-        err = self._parse_filters("incoming_call_filters", CallFilter, app.add_incoming_call_filters, fl_ctx)
+        err = self._parse_filters("incoming_call_filters", app.add_incoming_call_filters, fl_ctx)
         if err:
             return err
 
-        err = self._parse_filters("outgoing_call_filters", CallFilter, app.add_outgoing_call_filters, fl_ctx)
+        err = self._parse_filters("outgoing_call_filters", app.add_outgoing_call_filters, fl_ctx)
         if err:
             return err
 
-        err = self._parse_filters("incoming_result_filters", ResultFilter, app.add_incoming_result_filters, fl_ctx)
+        err = self._parse_filters("incoming_result_filters", app.add_incoming_result_filters, fl_ctx)
         if err:
             return err
 
-        err = self._parse_filters("outgoing_result_filters", ResultFilter, app.add_outgoing_result_filters, fl_ctx)
+        err = self._parse_filters("outgoing_result_filters", app.add_outgoing_result_filters, fl_ctx)
         if err:
             return err
 
         return None
 
-    def _parse_filters(self, name, filter_type, add_f, fl_ctx):
+    def _parse_filters(self, name, add_f, fl_ctx):
         filters = getattr(self, name)
         if not filters:
             return None
@@ -80,14 +79,14 @@ class FoxAdaptor:
             return f"{name} must be a list but got {type(filters)}"
 
         for chain_dict in filters:
-            pattern, filters, err = self._parse_filter_chain(name, chain_dict, filter_type, fl_ctx)
+            pattern, filters, err = self._parse_filter_chain(name, chain_dict, fl_ctx)
             if err:
                 return err
             add_f(pattern, filters)
         return None
 
     @staticmethod
-    def _parse_filter_chain(chain_name, chain_dict: dict, filter_type, fl_ctx):
+    def _parse_filter_chain(chain_name, chain_dict: dict, fl_ctx):
         if not isinstance(chain_dict, dict):
             return None, None, f"element in {chain_name} must be dict but got {type(chain_dict)}"
 
@@ -105,7 +104,5 @@ class FoxAdaptor:
             f = engine.get_component(fid)
             if not f:
                 return None, None, f"component {fid} does not exist"
-            if not isinstance(f, filter_type):
-                return None, None, f"component {fid} should be a {filter_type} but got {type(f)}"
             filters.append(f)
         return pattern, filters, None

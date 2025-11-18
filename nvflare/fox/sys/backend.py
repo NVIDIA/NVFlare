@@ -13,6 +13,7 @@
 # limitations under the License.
 from nvflare.fox.api.backend import Backend
 from nvflare.fox.api.constants import CollabMethodArgName, CollabMethodOptionName
+from nvflare.fox.api.ctx import set_call_context
 from nvflare.fox.api.gcc import GroupCallContext
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
@@ -24,8 +25,10 @@ from .constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
 class SysBackend(Backend):
 
-    def __init__(self, caller, cell, target_fqcn, abort_signal, thread_executor):
+    def __init__(self, manager, engine, caller, cell, target_fqcn, abort_signal, thread_executor):
         Backend.__init__(self, abort_signal)
+        self.manager = manager
+        self.engine = engine
         self.logger = get_obj_logger(self)
         self.caller = caller
         self.cell = cell
@@ -38,7 +41,8 @@ class SysBackend(Backend):
         optional = kwargs.pop(CollabMethodOptionName.OPTIONAL, False)
         secure = kwargs.pop(CollabMethodOptionName.SECURE, False)
 
-        kwargs.pop(CollabMethodArgName.CONTEXT, None)
+        ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
+        set_call_context(ctx)
 
         payload = {
             ObjectCallKey.CALLER: self.caller,
@@ -101,3 +105,7 @@ class SysBackend(Backend):
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)
+
+    def handle_exception(self, exception: Exception):
+        fl_ctx = self.engine.new_context()
+        self.manager.system_panic(f"exception occurred: {exception}", fl_ctx)

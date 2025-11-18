@@ -67,7 +67,7 @@ class NPSwarmClient:
         return weights + self.delta
 
     def sag(self, model, current_round):
-        results = fox.clients.train(model, current_round)
+        results = fox.clients.train2(model, current_round)
         results = list(results.values())
         total = 0
         for i in range(len(results)):
@@ -86,7 +86,7 @@ class NPSwarmClient:
             # self.server.fire_event("all_done", "OK", blocking=False)
             self.logger.info("notify server all done!")
             try:
-                fox.server.all_done("OK", _blocking=False)
+                fox.server(blocking=False).all_done("OK")
             except:
                 traceback.print_exc()
             self.logger.info("Swarm Training is DONE!")

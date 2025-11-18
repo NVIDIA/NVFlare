@@ -13,40 +13,37 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainer
-from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, PrintCall, PrintResult
+from nvflare.fox.examples.np.algos.filters import AddNoiseToModel, Print
 from nvflare.fox.examples.np.algos.strategies.avg_intime import NPFedAvgInTime
 from nvflare.fox.examples.np.algos.widgets import MetricReceiver
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfer"
+JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    server_app = ServerApp(
-        strategy_name="fed_avg_in_time",
-        strategy=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
-    )
-
-    server_app.add_collab_object("metric_receiver", MetricReceiver())
-    server_app.add_outgoing_call_filters("*.train", [AddNoiseToModel()])
-    server_app.add_incoming_result_filters("*.train", [PrintResult()])
-    server_app.set_prop("default_timeout", 5.0)
-
-    client_app = NPTrainer(delta=1.0)
-    client_app.add_incoming_call_filters("*.train", [PrintCall()])
-    client_app.add_outgoing_result_filters("*.train", [PrintResult()])
-    client_app.set_prop("default_timeout", 8.0)
-
     recipe = FoxRecipe(
         job_name="fedavg_intime",
-        server_app=server_app,
-        client_app=client_app,
+        server=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
+        server_objects={
+            "metric_receiver": MetricReceiver(),
+        },
+        client=NPTrainer(delta=1.0),
     )
+
+    print_filter = Print()
+    recipe.add_server_outgoing_call_filters("*.train", [AddNoiseToModel(0.3)])
+    recipe.add_server_incoming_result_filters("*.train", [print_filter])
+    recipe.set_server_prop("default_timeout", 5.0)
+
+    recipe.add_client_incoming_call_filters("*.train", [print_filter])
+    recipe.add_client_outgoing_result_filters("*.train", [print_filter])
+    recipe.set_client_prop("default_timeout", 8.0)
+
     recipe.export(JOB_ROOT_DIR)
 
 

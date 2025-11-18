@@ -25,7 +25,6 @@ from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.constants import EnvType
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fox.api.run_server import run_server
-from nvflare.fox.api.strategy import Strategy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .adaptor import FoxAdaptor
@@ -50,8 +49,7 @@ class FoxController(Controller, FoxAdaptor):
 
     def __init__(
         self,
-        strategy_ids: List[str],
-        server_app_id: str = None,
+        server_obj_id: str = None,
         collab_obj_ids: List[str] = None,
         incoming_call_filters=None,
         outgoing_call_filters=None,
@@ -73,38 +71,21 @@ class FoxController(Controller, FoxAdaptor):
             incoming_result_filters=incoming_result_filters,
             outgoing_result_filters=outgoing_result_filters,
         )
-        self.server_app_id = server_app_id  # component name
-        self.strategy_ids = strategy_ids  # component names
+        self.server_obj_id = server_obj_id  # component name
         self.sync_task_timeout = sync_task_timeout
         self.server_app = None
         self.client_info = {}  # client name => _ClientInfo
         self.cell = None
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads)
 
-        if not strategy_ids:
-            raise ValueError(f"no strategies defined - there must be at least one strategy")
-
     def start_controller(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
 
-        if self.server_app_id:
-            app = engine.get_component(self.server_app_id)
-            if not isinstance(app, ServerApp):
-                self.system_panic(f"component {self.server_app_id} must be ServerApp but got {type(app)}", fl_ctx)
-                return
-        else:
-            app = ServerApp()
+        server_obj = engine.get_component(self.server_obj_id)
+        app = ServerApp(server_obj)
 
         app.name = "server"
         app.env_type = EnvType.SYSTEM
-
-        for cid in self.strategy_ids:
-            strategy = engine.get_component(cid)
-            if not isinstance(strategy, Strategy):
-                self.system_panic(f"component {cid} must be Strategy but got {type(strategy)}", fl_ctx)
-                return
-
-            app.add_strategy(cid, strategy)
 
         err = self.process_config(app, fl_ctx)
         if err:
@@ -112,8 +93,10 @@ class FoxController(Controller, FoxAdaptor):
             return
         self.server_app = app
 
-    def _prepare_client_backend(self, job_id, client: ClientSite, abort_signal: Signal):
+    def _prepare_client_backend(self, job_id, client: ClientSite, abort_signal: Signal, fl_ctx: FLContext):
         return SysBackend(
+            manager=self,
+            engine=fl_ctx.get_engine(),
             caller=self.server_app.name,
             cell=self.cell,
             target_fqcn=FQCN.join([client.get_fqcn(), job_id]),
@@ -121,8 +104,10 @@ class FoxController(Controller, FoxAdaptor):
             thread_executor=self.thread_executor,
         )
 
-    def _prepare_server_backend(self, job_id: str, abort_signal: Signal):
+    def _prepare_server_backend(self, job_id: str, abort_signal: Signal, fl_ctx: FLContext):
         return SysBackend(
+            manager=self,
+            engine=fl_ctx.get_engine(),
             caller=self.server_app.name,
             cell=self.cell,
             target_fqcn=FQCN.join([FQCN.ROOT_SERVER, job_id]),
@@ -136,8 +121,9 @@ class FoxController(Controller, FoxAdaptor):
         client: ClientSite,
         collab_interface: dict,
         abort_signal,
+        fl_ctx: FLContext,
     ):
-        backend = self._prepare_client_backend(job_id, client, abort_signal)
+        backend = self._prepare_client_backend(job_id, client, abort_signal, fl_ctx)
         proxy = Proxy(
             app=self.server_app,
             target_name=client.name,
@@ -165,9 +151,10 @@ class FoxController(Controller, FoxAdaptor):
         job_id,
         abort_signal,
         collab_interface: dict,
+        fl_ctx: FLContext,
     ):
         server_name = self.server_app.name
-        backend = self._prepare_server_backend(job_id, abort_signal)
+        backend = self._prepare_server_backend(job_id, abort_signal, fl_ctx)
         proxy = Proxy(
             app=self.server_app,
             target_name=server_name,
@@ -176,15 +163,17 @@ class FoxController(Controller, FoxAdaptor):
             target_interface=collab_interface.get(""),
         )
 
-        for name in self.collab_obj_ids:
-            p = Proxy(
-                app=self.server_app,
-                target_name=f"{server_name}.{name}",
-                target_fqn="",
-                backend=backend,
-                target_interface=collab_interface.get(name),
-            )
-            setattr(proxy, name, p)
+        collab_objs = self.server_app.get_collab_objects()
+        if collab_objs:
+            for name in collab_objs.keys():
+                p = Proxy(
+                    app=self.server_app,
+                    target_name=f"{server_name}.{name}",
+                    target_fqn="",
+                    backend=backend,
+                    target_interface=collab_interface.get(name),
+                )
+                proxy.add_child(name, p)
         return proxy
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
@@ -236,12 +225,12 @@ class FoxController(Controller, FoxAdaptor):
 
         # prepare proxies and backends
         job_id = fl_ctx.get_job_id()
-        server_proxy = self._prepare_server_proxy(job_id, abort_signal, server_collab_interface)
+        server_proxy = self._prepare_server_proxy(job_id, abort_signal, server_collab_interface, fl_ctx)
         client_proxies = []
         for c in all_clients:
             info = self.client_info[c.name]
             assert isinstance(info, _ClientInfo)
-            client_proxies.append(self._prepare_client_proxy(job_id, c, info.collab_interface, abort_signal))
+            client_proxies.append(self._prepare_client_proxy(job_id, c, info.collab_interface, abort_signal, fl_ctx))
 
         ws = SysWorkspace(fl_ctx)
         self.server_app.setup(ws, server_proxy, client_proxies, abort_signal)

@@ -79,6 +79,8 @@ class Context:
 
 
 def get_call_context():
+    if not fox_context.call_ctx:
+        print("NO CALL_CTX in FOX Context!!!")
     return fox_context.call_ctx
 
 

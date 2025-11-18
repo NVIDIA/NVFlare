@@ -14,6 +14,8 @@
 import copy
 import time
 
+from nvflare.fuel.utils.log_utils import get_obj_logger
+
 from .constants import CollabMethodArgName
 from .ctx import Context, set_call_context
 from .utils import check_context_support
@@ -40,6 +42,7 @@ class GroupCallContext:
         self.process_cb = process_cb
         self.cb_kwargs = cb_kwargs
         self.context = context
+        self.logger = get_obj_logger(self)
 
     def set_result(self, result):
         """This is called by the backend to set the result received from the remote app.
@@ -59,10 +62,16 @@ class GroupCallContext:
         ctx.caller = ctx.callee
         ctx.callee = original_caller
 
+        self.logger.info(f"set result {result}")
+
         if not isinstance(result, Exception):
+            self.logger.info(f"{self.func_name}: result before filtering: {result}")
             result = self.app.apply_incoming_result_filters(self.target_name, self.func_name, result, ctx)
+            self.logger.info(f"{self.func_name}: result after filtering: {result}")
 
         if self.process_cb:
+            self.logger.info(f"calling process_cb for {self.func_name} with result: {result}")
+
             # set the context for the process_cb only
             set_call_context(ctx)
             self.cb_kwargs[CollabMethodArgName.CONTEXT] = ctx
@@ -71,6 +80,9 @@ class GroupCallContext:
 
             # set back to original context
             set_call_context(self.context)
+        else:
+            self.logger.info(f"{self.func_name} does not have process_cb!")
+
         self.result = result
         self.resp_time = time.time()
 
