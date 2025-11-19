@@ -20,7 +20,11 @@ _FLAG_INIT = "_fox_is_init"
 _FLAG_FINAL = "_fox_is_final"
 _FLAG_ALGO = "_fox_is_algo"
 _FLAG_CALL_FILTER = "_fox_is_call_filter"
+_FLAG_IN_CALL_FILTER = "_fox_is_in_call_filter"
+_FLAG_OUT_CALL_FILTER = "_fox_is_out_call_filter"
 _FLAG_RESULT_FILTER = "_fox_is_result_filter"
+_FLAG_IN_RESULT_FILTER = "_fox_is_in_result_filter"
+_FLAG_OUT_RESULT_FILTER = "_fox_is_out_result_filter"
 _FLAG_SUPPORT_CTX = "_fox_supports_ctx"
 _ATTR_PARAM_NAMES = "_fox_param_names"
 
@@ -117,6 +121,32 @@ def get_object_call_filter_funcs(obj):
     return _get_object_funcs(obj, _FLAG_CALL_FILTER, "call_filter")
 
 
+def in_call_filter(func):
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    _set_attrs(func, wrapper)
+    setattr(wrapper, _FLAG_IN_CALL_FILTER, True)
+    return wrapper
+
+
+def get_object_in_call_filter_funcs(obj):
+    return _get_object_funcs(obj, _FLAG_IN_CALL_FILTER, "in_call_filter")
+
+
+def out_call_filter(func):
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    _set_attrs(func, wrapper)
+    setattr(wrapper, _FLAG_OUT_CALL_FILTER, True)
+    return wrapper
+
+
+def get_object_out_call_filter_funcs(obj):
+    return _get_object_funcs(obj, _FLAG_OUT_CALL_FILTER, "out_call_filter")
+
+
 def result_filter(func):
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -128,6 +158,32 @@ def result_filter(func):
 
 def get_object_result_filter_funcs(obj):
     return _get_object_funcs(obj, _FLAG_RESULT_FILTER, "result_filter")
+
+
+def in_result_filter(func):
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    _set_attrs(func, wrapper)
+    setattr(wrapper, _FLAG_IN_RESULT_FILTER, True)
+    return wrapper
+
+
+def get_object_in_result_filter_funcs(obj):
+    return _get_object_funcs(obj, _FLAG_IN_RESULT_FILTER, "in_result_filter")
+
+
+def out_result_filter(func):
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    _set_attrs(func, wrapper)
+    setattr(wrapper, _FLAG_OUT_RESULT_FILTER, True)
+    return wrapper
+
+
+def get_object_out_result_filter_funcs(obj):
+    return _get_object_funcs(obj, _FLAG_OUT_RESULT_FILTER, "out_result_filter")
 
 
 def get_param_names(func):

@@ -18,7 +18,11 @@ from .dec import call_filter as dec_call_filter
 from .dec import classproperty
 from .dec import collab as dec_collab
 from .dec import final as dec_final
+from .dec import in_call_filter as dec_in_call_filter
+from .dec import in_result_filter as dec_in_result_filter
 from .dec import init as dec_init
+from .dec import out_call_filter as dec_out_call_filter
+from .dec import out_result_filter as dec_out_result_filter
 from .dec import result_filter as dec_result_filter
 from .proxy_list import ProxyList
 
@@ -30,7 +34,11 @@ class facade:
     final = dec_final
     algo = dec_algo
     call_filter = dec_call_filter
+    in_call_filter = dec_in_call_filter
+    out_call_filter = dec_out_call_filter
     result_filter = dec_result_filter
+    in_result_filter = dec_in_result_filter
+    out_result_filter = dec_out_result_filter
 
     @classproperty
     def context(cls):
