@@ -14,6 +14,8 @@
 from abc import ABC, abstractmethod
 
 from nvflare.apis.signal import Signal
+from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.security.logging import secure_format_traceback
 
 from .gcc import GroupCallContext
 
@@ -25,6 +27,7 @@ class Backend(ABC):
 
     def __init__(self, abort_signal: Signal):
         self.abort_signal = abort_signal
+        self.logger = get_obj_logger(self)
 
     @abstractmethod
     def call_target(self, target_name: str, func_name: str, *args, **kwargs):
@@ -61,4 +64,5 @@ class Backend(ABC):
         pass
 
     def handle_exception(self, exception: Exception):
-        pass
+        self.logger.error(f"exception occurred: {secure_format_traceback()}")
+        raise exception

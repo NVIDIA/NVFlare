@@ -18,7 +18,7 @@ from nvflare.fox.api.gcc import GroupCallContext
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.security.logging import secure_log_traceback
 
 from .constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
@@ -29,7 +29,6 @@ class SysBackend(Backend):
         Backend.__init__(self, abort_signal)
         self.manager = manager
         self.engine = engine
-        self.logger = get_obj_logger(self)
         self.caller = caller
         self.cell = cell
         self.target_fqcn = target_fqcn
@@ -108,4 +107,5 @@ class SysBackend(Backend):
 
     def handle_exception(self, exception: Exception):
         fl_ctx = self.engine.new_context()
+        secure_log_traceback(self.logger)
         self.manager.system_panic(f"exception occurred: {exception}", fl_ctx)

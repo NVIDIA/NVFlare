@@ -13,12 +13,11 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.pt.pt_avg_mixed import PTFedAvgMixed, PTTrainer
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfer"
+JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
 
 
 def main():
@@ -30,21 +29,14 @@ def main():
         "z": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
     }
 
-    server_app = ServerApp(
-        strategy_name="fedavg_mixed",
-        strategy=PTFedAvgMixed(
+    recipe = FoxRecipe(
+        job_name="pt_fedavg_mixed",
+        server=PTFedAvgMixed(
             pt_model=init_model,
             np_model=init_model,
             num_rounds=2,
         ),
-    )
-
-    client_app = PTTrainer(delta=1.0)
-
-    recipe = FoxRecipe(
-        job_name="pt_fedavg_mixed",
-        server_app=server_app,
-        client_app=client_app,
+        client=PTTrainer(delta=1.0),
     )
     recipe.export(JOB_ROOT_DIR)
 

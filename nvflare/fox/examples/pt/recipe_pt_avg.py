@@ -14,20 +14,19 @@
 import logging
 
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
-from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.pt.pt_avg_filter import PTFedAvg, PTTrainer
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfer"
+JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    server_app = ServerApp(
-        strategy_name="fedavg",
-        strategy=PTFedAvg(
+    recipe = FoxRecipe(
+        job_name="pt_fedavg",
+        server=PTFedAvg(
             initial_model={
                 "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
                 "y": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
@@ -35,14 +34,7 @@ def main():
             },
             num_rounds=2,
         ),
-    )
-
-    client_app = PTTrainer(delta=1.0)
-
-    recipe = FoxRecipe(
-        job_name="pt_fedavg",
-        server_app=server_app,
-        client_app=client_app,
+        client=PTTrainer(delta=1.0),
     )
     recipe.add_decomposers([TensorDecomposer()])
     recipe.export(JOB_ROOT_DIR)
