@@ -25,7 +25,7 @@ def main():
     simple_logging(logging.DEBUG)
 
     recipe = FoxRecipe(
-        job_name="pt_fedavg",
+        job_name="fox_pt_fedavg",
         server=PTFedAvg(
             initial_model={
                 "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],

@@ -14,7 +14,8 @@
 import logging
 
 from nvflare.fox.api.utils import simple_logging
-from nvflare.fox.examples.np.algos.swarm import NPSwarm, NPSwarmClient
+from nvflare.fox.examples.np.algos.client import NPTrainer
+from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
 from nvflare.fox.sys.recipe import FoxRecipe
 
 JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
@@ -24,9 +25,9 @@ def main():
     simple_logging(logging.DEBUG)
 
     recipe = FoxRecipe(
-        job_name="fox_swarm",
-        server=NPSwarm(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=5),
-        client=NPSwarmClient(delta=1.0),
+        job_name="fox_cyclic",
+        server=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
+        client=NPTrainer(delta=1.0),
     )
     recipe.export(JOB_ROOT_DIR)
 

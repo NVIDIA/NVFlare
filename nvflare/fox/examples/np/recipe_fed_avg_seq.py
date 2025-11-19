@@ -26,7 +26,7 @@ def main():
     simple_logging(logging.DEBUG)
 
     recipe = FoxRecipe(
-        job_name="fedavg_seq",
+        job_name="fox_fedavg_seq",
         server=NPFedAvgSequential(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
         client=NPTrainer(delta=1.0),
         server_objects={"metric_receiver": MetricReceiver()},

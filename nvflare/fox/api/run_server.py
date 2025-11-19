@@ -43,4 +43,7 @@ def run_server(server_app: ServerApp, logger):
             backend = server_app.get_backend()
             backend.handle_exception(ex)
             break
+
+    logger.info("finalizing server app")
+    server_app.finalize(server_ctx)
     return result

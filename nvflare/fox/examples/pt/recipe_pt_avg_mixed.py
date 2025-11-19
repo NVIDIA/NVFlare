@@ -30,7 +30,7 @@ def main():
     }
 
     recipe = FoxRecipe(
-        job_name="pt_fedavg_mixed",
+        job_name="fox_pt_fedavg_mixed",
         server=PTFedAvgMixed(
             pt_model=init_model,
             np_model=init_model,

@@ -17,6 +17,7 @@ from .constants import CollabMethodArgName
 
 _FLAG_COLLAB = "_fox_is_collab"
 _FLAG_INIT = "_fox_is_init"
+_FLAG_FINAL = "_fox_is_final"
 _FLAG_ALGO = "_fox_is_algo"
 _FLAG_CALL_FILTER = "_fox_is_call_filter"
 _FLAG_RESULT_FILTER = "_fox_is_result_filter"
@@ -77,6 +78,19 @@ def get_object_init_funcs(obj):
     return _get_object_funcs(obj, _FLAG_INIT, "init")
 
 
+def final(func):
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+
+    _set_attrs(func, wrapper)
+    setattr(wrapper, _FLAG_FINAL, True)
+    return wrapper
+
+
+def get_object_final_funcs(obj):
+    return _get_object_funcs(obj, _FLAG_FINAL, "final")
+
+
 def algo(func):
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -130,7 +144,7 @@ def _get_object_funcs(obj, flag, func_type):
     for name in dir(obj):
         func = getattr(obj, name)
         if callable(func) and _has_flag(func, flag):
-            print(f"found {func_type} func of object {obj.__class__.__name__}.{name}")
+            # print(f"found {func_type} func of object {obj.__class__.__name__}.{name}")
             result.append((name, func))
     return result
 

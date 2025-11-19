@@ -71,7 +71,6 @@ class Proxy:
         optional: bool = False,
         secure: bool = False,
     ):
-        print(f"creating _ProxyCall: {blocking=} {timeout=} {optional=} {secure=}")
         return _ProxyCall(
             proxy=self,
             blocking=blocking,
@@ -98,24 +97,21 @@ class Proxy:
             return None
 
     def _find_interface(self, func_name):
-        self.logger.info(f"trying to find interface for {func_name}")
+        self.logger.debug(f"trying to find interface for {func_name}")
         args = self.target_interface.get(func_name) if self.target_interface else None
         if args:
             return self, args
 
         # try children
-        self.logger.info(f"not defined for {func_name}: trying children")
         the_args = None
         the_proxy = None
         the_name = None
         for n, c in self.children.items():
-            self.logger.info(f"trying child {n} ...")
             args = c.target_interface.get(func_name) if c.target_interface else None
             if not args:
-                self.logger.info(f"child {n} has no {func_name}")
                 continue
 
-            self.logger.info(f"found interface for func {func_name}: defined in child {n}")
+            self.logger.debug(f"found interface for func {func_name}: defined in child {n}")
 
             if not the_proxy:
                 the_name = n

@@ -63,6 +63,7 @@ class FoxExecutor(Executor, FoxAdaptor):
         self.register_event_handler(EventType.START_RUN, self._handle_start_run)
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
         self.client_app = None
+        self.client_ctx = None
         self.thread_executor = ThreadPoolExecutor(max_workers=max_call_threads)
 
     def _handle_start_run(self, event_type: str, fl_ctx: FLContext):
@@ -81,6 +82,9 @@ class FoxExecutor(Executor, FoxAdaptor):
             self.system_panic(err, fl_ctx)
 
     def _handle_end_run(self, event_type: str, fl_ctx: FLContext):
+        if self.client_ctx:
+            self.logger.info(f"finalizing client app {self.client_app.name}")
+            self.client_app.finalize(self.client_ctx)
         self.thread_executor.shutdown(wait=False, cancel_futures=True)
 
     def _prepare_server_proxy(self, job_id, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
@@ -180,8 +184,9 @@ class FoxExecutor(Executor, FoxAdaptor):
         ws = SysWorkspace(fl_ctx)
         self.client_app.setup(ws, server_proxy, client_proxies, abort_signal)
 
-        ctx = self.client_app.new_context(self.client_app.name, self.client_app.name)
-        self.client_app.initialize(ctx)
+        self.client_ctx = self.client_app.new_context(self.client_app.name, self.client_app.name)
+        self.logger.info(f"initializing client app {self.client_app.name}")
+        self.client_app.initialize(self.client_ctx)
 
         reply = make_reply(ReturnCode.OK)
         reply[SyncKey.COLLAB_INTERFACE] = client_collab_interface

@@ -25,6 +25,7 @@ from .dec import (
     collab,
     get_object_algo_funcs,
     get_object_collab_interface,
+    get_object_final_funcs,
     get_object_init_funcs,
     is_collab,
     supports_context,
@@ -270,7 +271,7 @@ class App:
     def _fox_init(self, obj, ctx: Context):
         init_funcs = get_object_init_funcs(obj)
         for name, f in init_funcs:
-            self.logger.info(f"calling init func {name} ...")
+            self.logger.debug(f"calling init func {name} ...")
             if supports_context(f):
                 kwargs = {CollabMethodArgName.CONTEXT: ctx}
             else:
@@ -283,6 +284,23 @@ class App:
         # initialize target objects
         for obj in self._managed_objects.values():
             self._fox_init(obj, context)
+
+    def _fox_finalize(self, obj, ctx: Context):
+        funcs = get_object_final_funcs(obj)
+        for name, f in funcs:
+            self.logger.debug(f"calling final func {name} ...")
+            if supports_context(f):
+                kwargs = {CollabMethodArgName.CONTEXT: ctx}
+            else:
+                kwargs = {}
+            f(**kwargs)
+
+    def finalize(self, context: Context):
+        self._fox_finalize(self, context)
+
+        # initialize target objects
+        for obj in self._managed_objects.values():
+            self._fox_finalize(obj, context)
 
     def new_context(self, caller: str, callee: str, target_group=None):
         ctx = Context(self, caller, callee, self._abort_signal, target_group=target_group)
