@@ -67,7 +67,7 @@ class NPSwarmClient:
         return weights + self.delta
 
     def sag(self, model, current_round):
-        results = fox.clients.train2(model, current_round)
+        results = fox.clients.train(model, current_round)
         results = list(results.values())
         total = 0
         for i in range(len(results)):

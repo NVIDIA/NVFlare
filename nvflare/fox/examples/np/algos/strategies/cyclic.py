@@ -24,6 +24,7 @@ class NPCyclic:
         self.num_rounds = num_rounds
         self.initial_model = initial_model
         self._initial_model = parse_array_def(initial_model)
+        self.final_model = None
         self.logger = get_obj_logger(self)
 
     @fox.algo
@@ -32,7 +33,12 @@ class NPCyclic:
         for current_round in range(self.num_rounds):
             current_model = self._do_one_round(current_round, current_model)
         self.logger.info(f"[{fox.call_info}] final result: {current_model}")
+        self.final_model = current_model
         return current_model
+
+    @fox.final
+    def done(self):
+        self.logger.info(f"Cyclic is done: final model: {self.final_model}")
 
     def _do_one_round(self, current_round, current_model):
         random.shuffle(fox.clients)

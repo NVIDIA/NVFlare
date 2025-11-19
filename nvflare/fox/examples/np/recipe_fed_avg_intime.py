@@ -27,7 +27,7 @@ def main():
     simple_logging(logging.DEBUG)
 
     recipe = FoxRecipe(
-        job_name="fedavg_intime",
+        job_name="fox_fedavg_intime",
         server=NPFedAvgInTime(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
         server_objects={
             "metric_receiver": MetricReceiver(),

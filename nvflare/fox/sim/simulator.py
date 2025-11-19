@@ -186,9 +186,18 @@ class Simulator:
 
     def _try_run(self):
         # initialize all apps
+        client_ctx = {}
         for n, app in self.client_apps.items():
-            self.logger.info(f"initializing client app for {n}")
-            app.initialize(app.new_context(n, n))
+            ctx = app.new_context(n, n)
+            client_ctx[n] = ctx
+            self.logger.info(f"initializing client app {n}")
+            app.initialize(ctx)
 
         # run the server
-        return run_server(self.server_app, self.logger)
+        result = run_server(self.server_app, self.logger)
+        for n, app in self.client_apps.items():
+            ctx = client_ctx[n]
+            self.logger.info(f"finalizing client app {n}")
+            app.finalize(ctx)
+
+        return result
