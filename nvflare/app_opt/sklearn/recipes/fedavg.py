@@ -30,6 +30,7 @@ from nvflare.recipe.spec import Recipe
 
 # Internal — not part of the public API
 class _SklearnFedAvgValidator(BaseModel):
+    # Allow custom types (e.g., Aggregator) in validation. Required by Pydantic v2.
     model_config = {"arbitrary_types_allowed": True}
 
     name: str
