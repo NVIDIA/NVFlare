@@ -203,11 +203,36 @@ Operational
 
 #. Why am I getting an error about my custom files not being found?
 
-    Make sure that BYOC is enabled. BYOC is always enabled in POC mode, but disabled by default in secure mode when
-    provisioning.  Either through the UI tool or though yml, make sure the ``enable_byoc`` flag is set for each participant.
-    If the ``enable_byoc`` flag is disabled, even if you have custom code in your application folder, it will not be loaded.
-    There is also a setting for ``allow_byoc`` through the authorization rule groups. This controls whether or not apps
-    containing BYOC code will be allowed to be uploaded and deployed.
+    Custom code execution (also known as BYOC - Bring Your Own Code) is now governed by each site's authorization policy,
+    which is defined in the ``authorization.json`` file located in the ``local`` folder of the site's workspace. 
+    This is part of the :ref:`Site Policy Management <site_policy_management>` system.
+    
+    **Default BYOC Permissions:**
+    During provisioning, NVFLARE creates an ``authorization.json.default`` file with the following default BYOC permissions:
+    
+    - **project_admin** and **lead** roles: Can use BYOC (``"byoc": "any"``)
+    - **org_admin** and **member** roles: Cannot use BYOC by default (``"byoc": "none"`` or no BYOC permission)
+    
+    To enable or restrict custom code execution for specific user roles, the ``byoc`` permission must be set in the 
+    authorization policy. For example, in ``authorization.json``:
+    
+    .. code-block:: json
+    
+        {
+          "format_version": "1.0",
+          "permissions": {
+            "lead": {
+              "byoc": "any"
+            },
+            "org_admin": {
+              "byoc": "none"
+            }
+          }
+        }
+    
+    In this example, users with the "lead" role can submit jobs with custom code, while "org_admin" users cannot. 
+    The ``byoc`` permission can be set to ``"any"``, ``"none"``, or scoped to specific organizations or users (e.g., ``"o:org_name"``
+    or ``"n:username"``). See :ref:`Federated Authorization <federated_authorization>` for more details on authorization policies.
 
 #. I am getting the following errors, does this mean the server is down? ::
 
@@ -292,7 +317,7 @@ Client related questions
 
     Federated learning clients will send a heartbeat call to the FL server once every minute. If an FL client crashes and
     the FL server does not get a heartbeat from that client for 10 minutes (can be set with "heart_beat_timeout" in the
-    server's config json), the FL server will remove that client from the training client list.
+    server's configuration or in the ``local/resources.json`` file), the FL server will remove that client from the training client list.
 
 #. Can FL clients join or quit in the middle of federated learning training?
 
