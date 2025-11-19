@@ -79,6 +79,44 @@ Available arguments:
 - `--kernel`: Kernel type - linear, poly, rbf, or sigmoid (default: rbf)
 - `--backend`: Backend library - sklearn or cuml (default: sklearn)
 - `--data_path`: Path to cancer CSV file (default: /tmp/nvflare/dataset/cancer.csv)
+- `--split_method`: Data split method - 'uniform' or 'custom' (default: uniform)
+
+### Per-Client Data Splits
+
+By default (`--split_method uniform`), all clients use the same data ranges, which is suitable for testing on small datasets like Breast Cancer.
+
+For realistic federated learning with non-overlapping data, use `--split_method custom`:
+
+```bash
+python job.py --n_clients 3 --kernel rbf --split_method custom
+```
+
+This will:
+- Calculate non-overlapping training data ranges for each client
+- Use 80% of data (455 samples) for training, split among clients
+- Last 20% (114 samples) used as shared validation set
+- Pass different `--train_start`, `--train_end`, `--valid_start`, `--valid_end` arguments to each client
+
+**Example splits for 3 clients:**
+- site-1: train [0:151], valid [455:569]
+- site-2: train [151:303], valid [455:569]
+- site-3: train [303:455], valid [455:569]
+
+**Advanced: Custom Split Logic**
+
+Modify `calculate_data_splits()` in `job.py` to implement different strategies:
+- **Non-IID splits**: Assign different class distributions to clients
+- **Unbalanced splits**: Give clients different amounts of data
+- **Separate validation**: Use different validation sets per client
+
+Pass a dict to `train_args` for per-client configuration:
+```python
+train_args = {
+    "site-1": "--data_path /data/cancer.csv --backend sklearn --train_start 0 --train_end 151 ...",
+    "site-2": "--data_path /data/cancer.csv --backend sklearn --train_start 151 --train_end 303 ...",
+    # ... more sites
+}
+```
 
 ### Using cuML Backend
 
