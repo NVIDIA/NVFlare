@@ -180,7 +180,7 @@ def main():
             "y": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
             "z": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
         },
-        num_rounds=4,
+        num_rounds=2,
     )
 
     client = PTTrainer(delta=1.0)

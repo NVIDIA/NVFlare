@@ -13,7 +13,6 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.pt.filters import (
     IncomingModelCallFilter,
@@ -24,15 +23,15 @@ from nvflare.fox.examples.pt.filters import (
 from nvflare.fox.examples.pt.pt_avg_filter import PTFedAvg, PTTrainer
 from nvflare.fox.sys.recipe import FoxRecipe
 
-JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/fox/prod_00/admin@nvidia.com/transfer"
+JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfer"
 
 
 def main():
     simple_logging(logging.DEBUG)
 
-    server_app = ServerApp(
-        strategy_name="fedavg_stream",
-        strategy=PTFedAvg(
+    recipe = FoxRecipe(
+        job_name="pt_fedavg_filter",
+        server=PTFedAvg(
             initial_model={
                 "x": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
                 "y": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
@@ -40,26 +39,20 @@ def main():
             },
             num_rounds=2,
         ),
+        client=PTTrainer(delta=1.0),
     )
-
-    server_app.add_outgoing_call_filters(
+    recipe.add_server_outgoing_call_filters(
         pattern="*.train",
         filters=[OutgoingModelCallFilter("weights")],
     )
-    server_app.add_incoming_result_filters(pattern="*.train", filters=[IncomingModelResultFilter()])
+    recipe.add_server_incoming_result_filters(pattern="*.train", filters=[IncomingModelResultFilter()])
 
-    client_app = PTTrainer(delta=1.0)
-    client_app.add_incoming_call_filters(
+    recipe.add_client_incoming_call_filters(
         pattern="*.train",
         filters=[IncomingModelCallFilter("weights")],
     )
-    client_app.add_outgoing_result_filters(pattern="*.train", filters=[OutgoingModelResultFilter()])
+    recipe.add_client_outgoing_result_filters(pattern="*.train", filters=[OutgoingModelResultFilter()])
 
-    recipe = FoxRecipe(
-        job_name="pt_fedavg_filter",
-        server_app=server_app,
-        client_app=client_app,
-    )
     recipe.export(JOB_ROOT_DIR)
 
 

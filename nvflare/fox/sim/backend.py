@@ -40,7 +40,6 @@ class SimBackend(Backend):
         self.target_app = target_app
         self.target_obj = target_obj
         self.executor = thread_executor
-        self.logger = get_obj_logger(self)
 
     def _get_func(self, func_name):
         return self.target_app.find_collab_method(self.target_obj, func_name)

@@ -158,35 +158,38 @@ class Proxy:
         """
 
         def method(*args, **kwargs):
-            # remove option args
-            option_args = {}
-            for k in OPTION_ARGS:
-                if k in kwargs:
-                    option_args[k] = kwargs.pop(k)
+            try:
+                # remove option args
+                option_args = {}
+                for k in OPTION_ARGS:
+                    if k in kwargs:
+                        option_args[k] = kwargs.pop(k)
 
-            p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
-            ctx = p.app.new_context(self.caller_name, self.name)
+                p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
+                ctx = p.app.new_context(self.caller_name, self.name)
 
-            self.logger.debug(
-                f"[{ctx.header_str()}] calling target {p.target_name} func {func_name}: {call_args=} {call_kwargs=}"
-            )
+                self.logger.debug(
+                    f"[{ctx.header_str()}] calling target {p.target_name} func {func_name}: {call_args=} {call_kwargs=}"
+                )
 
-            # apply outgoing call filters
-            call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
-            check_call_args(func_name, func_itf, call_args, call_kwargs)
+                # apply outgoing call filters
+                call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
+                check_call_args(func_name, func_itf, call_args, call_kwargs)
 
-            call_kwargs[CollabMethodArgName.CONTEXT] = ctx
+                call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
-            # restore option args
-            for k, v in option_args.items():
-                call_kwargs[k] = v
+                # restore option args
+                for k, v in option_args.items():
+                    call_kwargs[k] = v
 
-            result = p.backend.call_target(p.target_name, func_name, *call_args, **call_kwargs)
-            if isinstance(result, Exception):
-                raise result
+                result = p.backend.call_target(p.target_name, func_name, *call_args, **call_kwargs)
+                if isinstance(result, Exception):
+                    raise result
 
-            # filter incoming result filters
-            result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
-            return result
+                # filter incoming result filters
+                result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
+                return result
+            except Exception as ex:
+                self.backend.handle_exception(ex)
 
         return method

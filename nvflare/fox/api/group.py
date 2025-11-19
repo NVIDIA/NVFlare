@@ -105,91 +105,99 @@ class Group:
         """
 
         def method(*args, **kwargs):
-            gccs = {}
+            the_backend = None
+            try:
+                gccs = {}
 
-            # filter once for all targets
-            p = self._proxies[0]
-            the_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
-            ctx = the_proxy.app.new_context(the_proxy.app.name, the_proxy.name, target_group=self)
-
-            self._logger.debug(f"[{ctx.header_str()}] calling {func_name} of group {[p.name for p in self._proxies]}")
-
-            # apply outgoing call filters
-            assert isinstance(self._app, App)
-            adj_kwargs = self._app.apply_outgoing_call_filters(p.target_name, func_name, adj_kwargs, ctx)
-            check_call_args(func_name, func_itf, adj_args, adj_kwargs)
-
-            for p in self._proxies:
-                the_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, adj_args, adj_kwargs)
-                call_kwargs = copy.copy(call_kwargs)
-                ctx = self._app.new_context(the_proxy.caller_name, the_proxy.name, target_group=self)
-                call_kwargs[CollabMethodArgName.CONTEXT] = ctx
-
-                # set the optional args to help backend decide how to call
-                if self._timeout:
-                    call_kwargs[CollabMethodOptionName.TIMEOUT] = self._timeout
-
-                call_kwargs[CollabMethodOptionName.BLOCKING] = self._blocking
-                call_kwargs[CollabMethodOptionName.SECURE] = self._secure
-                call_kwargs[CollabMethodOptionName.OPTIONAL] = self._optional
-
-                gcc = GroupCallContext(
-                    self._app,
-                    p.target_name,
-                    func_name,
-                    self._process_resp_cb,
-                    self._cb_kwargs,
-                    ctx,
-                )
-                gccs[p.name] = gcc
+                # filter once for all targets
+                p = self._proxies[0]
+                the_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
+                the_backend = the_proxy.backend
+                ctx = the_proxy.app.new_context(the_proxy.app.name, the_proxy.name, target_group=self)
 
                 self._logger.debug(
-                    f"[{ctx.header_str()}] group call: {func_name=} args={call_args} kwargs={call_kwargs}"
+                    f"[{ctx.header_str()}] calling {func_name} of group {[p.name for p in self._proxies]}"
                 )
-                the_proxy.backend.call_target_in_group(gcc, the_proxy.name, func_name, *call_args, **call_kwargs)
 
-            # wait for responses
-            if not self._blocking:
-                return None
+                # apply outgoing call filters
+                assert isinstance(self._app, App)
+                adj_kwargs = self._app.apply_outgoing_call_filters(p.target_name, func_name, adj_kwargs, ctx)
+                check_call_args(func_name, func_itf, adj_args, adj_kwargs)
 
-            start_time = time.time()
-            min_received_time = None
-            while True:
-                if self._abort_signal.triggered:
-                    raise RunAborted("run is aborted")
+                for p in self._proxies:
+                    the_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, adj_args, adj_kwargs)
+                    call_kwargs = copy.copy(call_kwargs)
+                    ctx = self._app.new_context(the_proxy.caller_name, the_proxy.name, target_group=self)
+                    call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
-                # how many resps have been received?
-                resps_received = 0
+                    # set the optional args to help backend decide how to call
+                    if self._timeout:
+                        call_kwargs[CollabMethodOptionName.TIMEOUT] = self._timeout
+
+                    call_kwargs[CollabMethodOptionName.BLOCKING] = self._blocking
+                    call_kwargs[CollabMethodOptionName.SECURE] = self._secure
+                    call_kwargs[CollabMethodOptionName.OPTIONAL] = self._optional
+
+                    gcc = GroupCallContext(
+                        self._app,
+                        p.target_name,
+                        func_name,
+                        self._process_resp_cb,
+                        self._cb_kwargs,
+                        ctx,
+                    )
+                    gccs[p.name] = gcc
+
+                    self._logger.debug(
+                        f"[{ctx.header_str()}] group call: {func_name=} args={call_args} kwargs={call_kwargs}"
+                    )
+                    the_proxy.backend.call_target_in_group(gcc, the_proxy.name, func_name, *call_args, **call_kwargs)
+
+                # wait for responses
+                if not self._blocking:
+                    return None
+
+                start_time = time.time()
+                min_received_time = None
+                while True:
+                    if self._abort_signal.triggered:
+                        raise RunAborted("run is aborted")
+
+                    # how many resps have been received?
+                    resps_received = 0
+                    for name, gcc in gccs.items():
+                        if gcc.resp_time:
+                            resps_received += 1
+
+                    if resps_received == len(self._proxies):
+                        break
+
+                    now = time.time()
+                    if resps_received >= self._min_resps:
+                        if not min_received_time:
+                            min_received_time = now
+                        if now - min_received_time > self._wait_after_min_resps:
+                            # waited long enough
+                            break
+                    elif self._timeout and now - start_time > self._timeout:
+                        # timed out
+                        break
+                    else:
+                        # still have not received min resps
+                        time.sleep(0.1)
+
+                # process results
+                results = {}
                 for name, gcc in gccs.items():
                     if gcc.resp_time:
-                        resps_received += 1
-
-                if resps_received == len(self._proxies):
-                    break
-
-                now = time.time()
-                if resps_received >= self._min_resps:
-                    if not min_received_time:
-                        min_received_time = now
-                    if now - min_received_time > self._wait_after_min_resps:
-                        # waited long enough
-                        break
-                elif self._timeout and now - start_time > self._timeout:
-                    # timed out
-                    break
-                else:
-                    # still have not received min resps
-                    time.sleep(0.1)
-
-            # process results
-            results = {}
-            for name, gcc in gccs.items():
-                if gcc.resp_time:
-                    result = gcc.result
-                else:
-                    result = TimeoutError()
-                results[name] = result
-            return results
+                        result = gcc.result
+                    else:
+                        result = TimeoutError()
+                    results[name] = result
+                return results
+            except Exception as ex:
+                if the_backend:
+                    the_backend.handle_exception(ex)
 
         return method
 
