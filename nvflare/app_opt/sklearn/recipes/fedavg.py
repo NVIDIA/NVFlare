@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Dict, Optional, Union
 
 from pydantic import BaseModel
 
@@ -37,7 +37,7 @@ class _SklearnFedAvgValidator(BaseModel):
     num_rounds: int
     initial_params: Optional[dict] = None
     train_script: str
-    train_args: str
+    train_args: Union[str, Dict[str, str]]
     aggregator: Optional[Aggregator] = None
     aggregator_data_kind: DataKind = DataKind.WEIGHTS
     launch_external_process: bool = False
@@ -63,7 +63,9 @@ class SklearnFedAvgRecipe(Recipe):
         initial_params: Initial model parameters as a dictionary. Can include model
             hyperparameters and initial weights.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script. Can be:
+            - str: Same arguments for all clients (uses job.to_clients)
+            - dict[str, str]: Per-client arguments mapping site names to args (uses job.to per site)
         aggregator: Custom aggregator for combining client updates. If None,
             uses InTimeAccumulateWeightedAggregator with aggregator_data_kind.
         aggregator_data_kind: Data kind to use for the aggregator. Defaults to DataKind.WEIGHTS.
@@ -112,7 +114,7 @@ class SklearnFedAvgRecipe(Recipe):
         num_rounds: int = 2,
         initial_params: Optional[dict] = None,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, Dict[str, str]] = "",
         aggregator: Optional[Aggregator] = None,
         aggregator_data_kind: DataKind = DataKind.WEIGHTS,
         launch_external_process: bool = False,
@@ -172,16 +174,31 @@ class SklearnFedAvgRecipe(Recipe):
         job.to_server(controller)
 
         # Client components
-        executor = ScriptRunner(
-            script=self.train_script,
-            script_args=self.train_args,
-            launch_external_process=self.launch_external_process,
-            command=self.command,
-            framework=FrameworkType.RAW,
-            server_expected_format=ExchangeFormat.RAW,
-            params_transfer_type=TransferType.FULL,
-        )
-        job.to_clients(executor)
+        if isinstance(self.train_args, dict):
+            # Per-client configuration: add executor for each client with their specific args
+            for site_name, site_args in self.train_args.items():
+                executor = ScriptRunner(
+                    script=self.train_script,
+                    script_args=site_args,
+                    launch_external_process=self.launch_external_process,
+                    command=self.command,
+                    framework=FrameworkType.RAW,
+                    server_expected_format=ExchangeFormat.RAW,
+                    params_transfer_type=TransferType.FULL,
+                )
+                job.to(executor, site_name)
+        else:
+            # Unified configuration: same args for all clients
+            executor = ScriptRunner(
+                script=self.train_script,
+                script_args=self.train_args,
+                launch_external_process=self.launch_external_process,
+                command=self.command,
+                framework=FrameworkType.RAW,
+                server_expected_format=ExchangeFormat.RAW,
+                params_transfer_type=TransferType.FULL,
+            )
+            job.to_clients(executor)
 
         Recipe.__init__(self, job)
 

@@ -67,6 +67,48 @@ Available arguments:
 - `--n_clients`: Number of clients (default: 5)
 - `--num_rounds`: Number of training rounds (default: 50)
 - `--data_path`: Path to HIGGS.csv file (default: /tmp/nvflare/dataset/HIGGS.csv)
+- `--split_method`: Data split method - 'uniform' or 'custom' (default: uniform)
+
+### Per-Client Data Splits
+
+By default (`--split_method uniform`), all clients use the same training script arguments and rely on `client.py` defaults for data ranges. This is suitable for quick testing or when clients naturally have separate data files.
+
+For more realistic federated learning scenarios with controlled data distribution, use `--split_method custom`:
+
+```bash
+python job.py --n_clients 5 --num_rounds 50 --split_method custom
+```
+
+This will:
+- Calculate non-overlapping data ranges for each client
+- First 1.1M rows used for validation (shared across all clients)
+- Remaining 9.9M rows split evenly among clients for training
+- Pass different `--train_start`, `--train_end`, `--valid_start`, `--valid_end` arguments to each client
+
+**Example splits for 5 clients:**
+- site-1: train [1100000:3080000], valid [0:1100000]
+- site-2: train [3080000:5060000], valid [0:1100000]
+- site-3: train [5060000:7040000], valid [0:1100000]
+- site-4: train [7040000:9020000], valid [0:1100000]
+- site-5: train [9020000:11000000], valid [0:1100000]
+
+**Advanced: Custom Split Logic**
+
+You can modify `calculate_data_splits()` in `job.py` to implement different split strategies:
+- **Non-IID splits**: Assign different label distributions to clients
+- **Unbalanced splits**: Give clients different amounts of data (e.g., linear, exponential ratios)
+- **Overlapping validation**: Use different validation sets per client
+
+The key is passing a dict to `train_args`:
+```python
+train_args = {
+    "site-1": "--data_path /data/HIGGS.csv --train_start 1100000 --train_end 3080000 ...",
+    "site-2": "--data_path /data/HIGGS.csv --train_start 3080000 --train_end 5060000 ...",
+    # ... more sites
+}
+```
+
+This replaces the old `prepare_job_config.sh` approach with a more flexible Python-based solution.
 
 ### View Results
 
