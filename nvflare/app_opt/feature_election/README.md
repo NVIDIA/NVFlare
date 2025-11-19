@@ -17,14 +17,18 @@ FLASH is available on [Github](https://github.com/parasecurity/FLASH)
 - **Privacy-Preserving**: Only feature selections and scores are shared, not raw data
 - **Production-Ready**: Fully compatible with NVIDIA FLARE workflows
 
-## Installation
 
+### Optional Dependencies
+
+- `scikit-learn` ≥ 1.0 is required for most feature selection methods  
+  → automatically installed with `pip install nvflare`
+
+- `PyImpetus` ≥ 0.0.6 is optional (enables advanced permutation importance methods)  
+  → install manually if needed:
 ```bash
-pip install nvflare
-# Optional: for advanced feature selection
 pip install PyImpetus
 ```
-
+  
 ## Quick Start
 
 ### Basic Usage
@@ -410,7 +414,7 @@ pytest tests/unit_test/app_opt/feature_election/test_feature_election.py
 If you use this library in your research, please cite (PENDING)
 
 <!--```bibtex
-@inproceedings{flash2024,
+@inproceedings{flash2025,
   title={FLASH: A framework for Federated Learning with Attribute Selection and Hyperparameter optimization},
   author={[Ioannis Christofilogiannis, Georgios Valavanis, Alexander Shevtsov, Ioannis Lamprou and Sotiris Ioannidis
 ]},

@@ -286,7 +286,7 @@ class FeatureElectionController(ScatterAndGather):
 
         for i, (client_mask, client_scores) in enumerate(zip(masks, scores)):
             # Scale selected features to [0, 1]
-            selected = client_mask == 1
+            selected = client_mask.astype(bool)
 
             if np.any(selected):
                 selected_scores = client_scores[selected]
@@ -344,12 +344,12 @@ class FeatureElectionController(ScatterAndGather):
     @staticmethod
     def _get_intersection(masks: np.ndarray) -> np.ndarray:
         """Get intersection of all feature masks"""
-        return np.all(masks == 1, axis=0)
+        return np.all(masks, axis=0)
 
     @staticmethod
     def _get_union(masks: np.ndarray) -> np.ndarray:
         """Get union of all feature masks"""
-        return np.any(masks == 1, axis=0)
+        return np.any(masks, axis=0)
 
     def get_results(self) -> Dict:
         """Get feature election results"""
