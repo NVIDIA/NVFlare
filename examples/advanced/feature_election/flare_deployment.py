@@ -130,7 +130,6 @@ def load_client_data():
     
     return X, y, feature_names
     
-    return X, y, feature_names
 
 
 def example_retrieve_results():
