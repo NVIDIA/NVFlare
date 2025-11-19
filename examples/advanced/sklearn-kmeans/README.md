@@ -78,6 +78,44 @@ Available arguments:
 - `--num_rounds`: Number of training rounds (default: 5)
 - `--n_clusters`: Number of clusters (default: 3)
 - `--data_path`: Path to iris CSV file (default: /tmp/nvflare/dataset/sklearn_iris.csv)
+- `--split_method`: Data split method - 'uniform' or 'custom' (default: uniform)
+
+### Per-Client Data Splits
+
+By default (`--split_method uniform`), all clients use the same data ranges, which is suitable for testing on small datasets like Iris.
+
+For realistic federated learning with non-overlapping data, use `--split_method custom`:
+
+```bash
+python job.py --n_clients 3 --num_rounds 5 --split_method custom
+```
+
+This will:
+- Calculate non-overlapping training data ranges for each client
+- Use 80% of data (120 samples) for training, split among clients
+- Last 20% (30 samples) used as shared validation set
+- Pass different `--train_start`, `--train_end`, `--valid_start`, `--valid_end` arguments to each client
+
+**Example splits for 3 clients:**
+- site-1: train [0:40], valid [120:150]
+- site-2: train [40:80], valid [120:150]
+- site-3: train [80:120], valid [120:150]
+
+**Advanced: Custom Split Logic**
+
+Modify `calculate_data_splits()` in `job.py` to implement different strategies:
+- **Non-IID splits**: Assign different class distributions to clients
+- **Unbalanced splits**: Give clients different amounts of data
+- **Separate validation**: Use different validation sets per client
+
+Pass a dict to `train_args` for per-client configuration:
+```python
+train_args = {
+    "site-1": "--data_path /data/iris.csv --train_start 0 --train_end 40 ...",
+    "site-2": "--data_path /data/iris.csv --train_start 40 --train_end 80 ...",
+    # ... more sites
+}
+```
 
 ### View Results
 

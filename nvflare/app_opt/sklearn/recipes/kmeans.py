@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Dict, Optional, Union
+
 from pydantic import BaseModel
 
 from nvflare import FedJob
@@ -27,12 +29,14 @@ from nvflare.recipe.spec import Recipe
 
 # Internal — not part of the public API
 class _KMeansValidator(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+
     name: str
     min_clients: int
     num_rounds: int
     n_clusters: int
     train_script: str
-    train_args: str
+    train_args: Union[str, Dict[str, str]]
     launch_external_process: bool = False
     command: str = "python3 -u"
 
@@ -65,7 +69,9 @@ class KMeansFedAvgRecipe(Recipe):
         num_rounds: Number of federated training rounds to execute. Defaults to 5.
         n_clusters: Number of clusters for K-Means. Defaults to 3.
         train_script: Path to the training script that will be executed on each client.
-        train_args: Command line arguments to pass to the training script.
+        train_args: Command line arguments to pass to the training script. Can be:
+            - str: Same arguments for all clients (uses job.to_clients)
+            - dict[str, str]: Per-client arguments mapping site names to args (uses job.to per site)
         launch_external_process: Whether to launch the script in external process. Defaults to False.
         command: If launch_external_process=True, command to run script (prepended to script).
             Defaults to "python3 -u".
@@ -101,7 +107,7 @@ class KMeansFedAvgRecipe(Recipe):
         num_rounds: int = 5,
         n_clusters: int = 3,
         train_script: str,
-        train_args: str = "",
+        train_args: Union[str, Dict[str, str]] = "",
         launch_external_process: bool = False,
         command: str = "python3 -u",
     ):
@@ -155,16 +161,31 @@ class KMeansFedAvgRecipe(Recipe):
         job.to_server(controller)
 
         # Client components
-        executor = ScriptRunner(
-            script=self.train_script,
-            script_args=self.train_args,
-            launch_external_process=self.launch_external_process,
-            command=self.command,
-            framework=FrameworkType.RAW,
-            server_expected_format=ExchangeFormat.RAW,
-            params_transfer_type=TransferType.FULL,
-        )
-        job.to_clients(executor)
+        if isinstance(self.train_args, dict):
+            # Per-client configuration: add executor for each client with their specific args
+            for site_name, site_args in self.train_args.items():
+                executor = ScriptRunner(
+                    script=self.train_script,
+                    script_args=site_args,
+                    launch_external_process=self.launch_external_process,
+                    command=self.command,
+                    framework=FrameworkType.RAW,
+                    server_expected_format=ExchangeFormat.RAW,
+                    params_transfer_type=TransferType.FULL,
+                )
+                job.to(executor, site_name)
+        else:
+            # Unified configuration: same args for all clients
+            executor = ScriptRunner(
+                script=self.train_script,
+                script_args=self.train_args,
+                launch_external_process=self.launch_external_process,
+                command=self.command,
+                framework=FrameworkType.RAW,
+                server_expected_format=ExchangeFormat.RAW,
+                params_transfer_type=TransferType.FULL,
+            )
+            job.to_clients(executor)
 
         Recipe.__init__(self, job)
 

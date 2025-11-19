@@ -15,6 +15,10 @@
 """
 This code shows how to use NVIDIA FLARE Job Recipe to run federated K-Means clustering
 with scikit-learn using mini-batch aggregation.
+
+Per-Client Data Splits:
+    Supports passing a dict for train_args to configure different data ranges per client,
+    enabling realistic federated learning scenarios with non-overlapping data.
 """
 
 import argparse
@@ -34,8 +38,45 @@ def define_parser():
         default="/tmp/nvflare/dataset/sklearn_iris.csv",
         help="Path to iris dataset CSV file",
     )
+    parser.add_argument(
+        "--split_method",
+        type=str,
+        default="uniform",
+        choices=["uniform", "custom"],
+        help="Data split method: 'uniform' (same args for all) or 'custom' (per-client ranges)",
+    )
 
     return parser.parse_args()
+
+
+def calculate_data_splits(n_clients: int, total_size: int = 150, train_fraction: float = 0.8):
+    """Calculate uniform data splits for clients.
+    
+    Args:
+        n_clients: Number of clients
+        total_size: Total dataset size (Iris has 150 samples)
+        train_fraction: Fraction of data for training (rest for validation)
+    
+    Returns:
+        dict mapping site names to (train_start, train_end, valid_start, valid_end)
+    """
+    train_size = int(total_size * train_fraction)
+    valid_start = train_size
+    train_per_client = train_size // n_clients
+    
+    splits = {}
+    for i in range(n_clients):
+        site_name = f"site-{i + 1}"
+        train_start = i * train_per_client
+        train_end = (i + 1) * train_per_client if i < n_clients - 1 else train_size
+        splits[site_name] = {
+            "train_start": train_start,
+            "train_end": train_end,
+            "valid_start": valid_start,
+            "valid_end": total_size,
+        }
+    
+    return splits
 
 
 def main():
@@ -45,16 +86,31 @@ def main():
     num_rounds = args.num_rounds
     n_clusters = args.n_clusters
     data_path = args.data_path
+    split_method = args.split_method
 
     print(f"Creating K-Means clustering recipe with {n_clients} clients for {num_rounds} rounds")
     print(f"Number of clusters: {n_clusters}")
     print(f"Data path: {data_path}")
+    print(f"Split method: {split_method}")
 
-    # Note: For simplicity, this recipe uses the same data range for all clients.
-    # In a real scenario, you would want to split the data. The client script
-    # accepts train_start, train_end, valid_start, valid_end arguments for this purpose.
-    # Example: For client-specific data splits, you could use the utils/split_data.py
-    # logic to generate per-client arguments.
+    # Configure train_args based on split method
+    if split_method == "uniform":
+        # Simple mode: all clients use same args (for testing/small datasets)
+        train_args = f"--data_path {data_path} --train_start 0 --train_end 120 --valid_start 120 --valid_end 150"
+        print("Using uniform split (all clients use same data range for testing)")
+    else:
+        # Custom mode: per-client non-overlapping data ranges
+        splits = calculate_data_splits(n_clients)
+        train_args = {
+            site_name: f"--data_path {data_path} --train_start {split['train_start']} "
+            f"--train_end {split['train_end']} --valid_start {split['valid_start']} "
+            f"--valid_end {split['valid_end']}"
+            for site_name, split in splits.items()
+        }
+        print("Using custom per-client data splits:")
+        for site_name, split in splits.items():
+            print(f"  {site_name}: train [{split['train_start']}:{split['train_end']}], "
+                  f"valid [{split['valid_start']}:{split['valid_end']}]")
 
     recipe = KMeansFedAvgRecipe(
         name="sklearn_kmeans",
@@ -62,8 +118,7 @@ def main():
         num_rounds=num_rounds,
         n_clusters=n_clusters,
         train_script="src/kmeans_fl.py",
-        train_args=f"--data_path {data_path} --train_start 0 --train_end 50 "
-        f"--valid_start 0 --valid_end 150",
+        train_args=train_args,
     )
 
     print("Executing recipe in simulation environment...")
@@ -76,9 +131,6 @@ def main():
     print(f"Result Location: {run.get_result()}")
     print("=" * 60)
     print()
-    print("Note: For heterogeneous data splits across clients, you can use")
-    print("the utils/split_data.py to generate per-client data ranges and")
-    print("pass them as arguments to the train_script.")
 
 
 if __name__ == "__main__":
