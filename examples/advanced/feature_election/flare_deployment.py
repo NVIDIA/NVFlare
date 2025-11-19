@@ -128,9 +128,7 @@ def load_client_data():
                    [f"clinical_{i:03d}" for i in range(30)] + \
                    [f"imaging_{i:03d}" for i in range(20)]
     
-    feature_names = [f"biomarker_{i:03d}" for i in range(50)] + \
-                   [f"clinical_{i:03d}" for i in range(30)] + \
-                   [f"imaging_{i:03d}" for i in range(20)]
+    return X, y, feature_names
     
     return X, y, feature_names
 
