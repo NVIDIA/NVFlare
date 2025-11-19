@@ -537,7 +537,6 @@ executor.set_data(X_train, y_train, feature_names=feature_names)
         Returns:
             Tuple of (best_freedom_degree, best_score)
         """
-
         from .controller import FeatureElectionController
 
         
