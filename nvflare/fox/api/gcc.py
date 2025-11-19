@@ -62,16 +62,10 @@ class GroupCallContext:
         ctx.caller = ctx.callee
         ctx.callee = original_caller
 
-        self.logger.info(f"set result {result}")
-
         if not isinstance(result, Exception):
-            self.logger.info(f"{self.func_name}: result before filtering: {result}")
             result = self.app.apply_incoming_result_filters(self.target_name, self.func_name, result, ctx)
-            self.logger.info(f"{self.func_name}: result after filtering: {result}")
 
         if self.process_cb:
-            self.logger.info(f"calling process_cb for {self.func_name} with result: {result}")
-
             # set the context for the process_cb only
             set_call_context(ctx)
             self.cb_kwargs[CollabMethodArgName.CONTEXT] = ctx

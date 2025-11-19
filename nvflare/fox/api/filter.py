@@ -17,13 +17,24 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .constants import CollabMethodArgName
 from .ctx import Context
-from .dec import get_object_call_filter_funcs, get_object_result_filter_funcs, supports_context
+from .dec import (
+    get_object_call_filter_funcs,
+    get_object_in_call_filter_funcs,
+    get_object_in_result_filter_funcs,
+    get_object_out_call_filter_funcs,
+    get_object_out_result_filter_funcs,
+    get_object_result_filter_funcs,
+    supports_context,
+)
 
 
 class _Filter:
 
-    def __init__(self, impl: object = None):
+    def __init__(self, filter_type: str, impl: object = None, incoming=True):
+        self.filter_type = filter_type
         self.impl = impl
+        self.incoming = incoming
+        self.impl_func = None
         self.logger = get_obj_logger(self)
 
     def get_impl_object(self):
@@ -32,23 +43,71 @@ class _Filter:
         else:
             return self
 
+    def filter_data(self, data, context: Context):
+        if self.impl_func is not None:
+            if self.incoming:
+                d = "incoming"
+            else:
+                d = "outgoing"
+
+            name, f = self.impl_func
+            self.logger.info(f"calling {d} {self.filter_type}: {name} ...")
+            if supports_context(f):
+                kwargs = {CollabMethodArgName.CONTEXT: context}
+            else:
+                kwargs = {}
+            return f(data, **kwargs)
+        else:
+            return data
+
+
+def _determine_filter_impl_func(
+    obj,
+    filter_type: str,
+    incoming: bool,
+    get_filter_f,
+    get_in_filter_f,
+    get_out_filter_f,
+):
+    if incoming:
+        funcs = get_in_filter_f(obj)
+        d = "in"
+    else:
+        funcs = get_out_filter_f(obj)
+        d = "out"
+
+    if len(funcs) > 1:
+        raise ValueError(
+            f"filter object {obj.__class__.__name__} must have one {d}_{filter_type} func but got {len(funcs)}"
+        )
+
+    if len(funcs) == 1:
+        return funcs[0]
+
+    funcs = get_filter_f(obj)
+    if not funcs:
+        raise ValueError(f"filter impl object {obj.__class__.__name__} has no {filter_type} func")
+
+    if len(funcs) > 1:
+        raise ValueError(
+            f"filter object {obj.__class__.__name__} must have one {filter_type} func but got {len(funcs)}"
+        )
+    return funcs[0]
+
 
 class CallFilter(_Filter):
 
-    def __init__(self, impl: object = None):
-        super().__init__(impl)
+    def __init__(self, impl: object = None, incoming=True):
+        super().__init__("call filter", impl, incoming)
         if impl:
-            funcs = get_object_call_filter_funcs(impl)
-            if not funcs:
-                raise ValueError(f"filter impl object {impl.__class__.__name__} has no call_filter func")
-
-            if len(funcs) > 1:
-                raise ValueError(
-                    f"filter object {impl.__class__.__name__} must have one call_filter func but got {len(funcs)}"
-                )
-            self.impl_func = funcs[0]
-        else:
-            self.impl_func = None
+            self.impl_func = _determine_filter_impl_func(
+                obj=impl,
+                incoming=incoming,
+                filter_type="call_filter",
+                get_filter_f=get_object_call_filter_funcs,
+                get_in_filter_f=get_object_in_call_filter_funcs,
+                get_out_filter_f=get_object_out_call_filter_funcs,
+            )
 
     def filter_call(self, func_kwargs: dict, context: Context):
         """Filter kwargs of function call.
@@ -60,34 +119,22 @@ class CallFilter(_Filter):
         Returns: filtered kwargs that will be passed to a collab func.
 
         """
-        if self.impl_func is not None:
-            name, f = self.impl_func
-            self.logger.info(f"calling call filter: {name} ...")
-            if supports_context(f):
-                kwargs = {CollabMethodArgName.CONTEXT: context}
-            else:
-                kwargs = {}
-            return f(func_kwargs, **kwargs)
-        else:
-            return func_kwargs
+        return self.filter_data(func_kwargs, context)
 
 
 class ResultFilter(_Filter):
 
-    def __init__(self, impl: object = None):
-        super().__init__(impl)
+    def __init__(self, impl: object = None, incoming=True):
+        super().__init__("result filter", impl, incoming)
         if impl:
-            funcs = get_object_result_filter_funcs(impl)
-            if not funcs:
-                raise ValueError(f"filter object {impl.__class__.__name__} has no result_filter func")
-
-            if len(funcs) > 1:
-                raise ValueError(
-                    f"filter object {impl.__class__.__name__} must have one result_filter func but got {len(funcs)}"
-                )
-            self.impl_func = funcs[0]
-        else:
-            self.impl_func = None
+            self.impl_func = _determine_filter_impl_func(
+                obj=impl,
+                filter_type="result_filter",
+                incoming=incoming,
+                get_filter_f=get_object_result_filter_funcs,
+                get_in_filter_f=get_object_in_result_filter_funcs,
+                get_out_filter_f=get_object_out_result_filter_funcs,
+            )
 
     def filter_result(self, result: Any, context: Context):
         """Filter result produced by a collab func.
@@ -99,15 +146,7 @@ class ResultFilter(_Filter):
         Returns: filtered result
 
         """
-        if self.impl_func is not None:
-            name, f = self.impl_func
-            if supports_context(f):
-                kwargs = {CollabMethodArgName.CONTEXT: context}
-            else:
-                kwargs = {}
-            return f(result, **kwargs)
-        else:
-            return result
+        return self.filter_data(result, context)
 
 
 class FilterChain:

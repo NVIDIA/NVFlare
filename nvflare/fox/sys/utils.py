@@ -114,13 +114,13 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     # invoke this method
     try:
         ctx, method_kwargs = _preprocess(app, caller, obj_name, target_name, method_name, m, method_args, method_kwargs)
-        logger.info(f"calling method {method_name}: {caller=}: {method_args=} {method_kwargs=}")
+        # logger.info(f"calling method {method_name}: {caller=}: {method_args=} {method_kwargs=}")
         result = m(*method_args, **method_kwargs)
-        logger.info(f"result from method {method_name}: {result}")
+        # logger.info(f"result from method {method_name}: {result}")
 
         # apply result filters
         result = app.apply_outgoing_result_filters(target_name, method_name, result, ctx)
-        logger.info(f"result after filtering: {result}")
+        # logger.info(f"result after filtering: {result}")
 
         return new_cell_message(
             headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, payload={CallReplyKey.RESULT: result}

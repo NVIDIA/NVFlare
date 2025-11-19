@@ -88,7 +88,7 @@ class App:
     def get_client_proxies(self):
         return copy.copy(self.clients)
 
-    def _add_filters(self, pattern: str, filters, to_list: list, filter_type):
+    def _add_filters(self, pattern: str, filters, to_list: list, filter_type, incoming):
         if not filters:
             return
 
@@ -99,7 +99,7 @@ class App:
         for f in filters:
             if not isinstance(f, filter_type):
                 # convert to proper filter type
-                filter_obj = filter_type(f)
+                filter_obj = filter_type(f, incoming)
             else:
                 filter_obj = f
             self._add_managed_object(f)
@@ -110,25 +110,25 @@ class App:
         to_list.append(chain)
 
     def add_incoming_call_filters(self, pattern: str, filters: List[object]):
-        self._add_filters(pattern, filters, self._incoming_call_filter_chains, CallFilter)
+        self._add_filters(pattern, filters, self._incoming_call_filter_chains, CallFilter, True)
 
     def get_incoming_call_filters(self):
         return self._incoming_call_filter_chains
 
     def add_outgoing_call_filters(self, pattern: str, filters: List[object]):
-        self._add_filters(pattern, filters, self._outgoing_call_filter_chains, CallFilter)
+        self._add_filters(pattern, filters, self._outgoing_call_filter_chains, CallFilter, False)
 
     def get_outgoing_call_filters(self):
         return self._outgoing_call_filter_chains
 
     def add_incoming_result_filters(self, pattern: str, filters: List[object]):
-        self._add_filters(pattern, filters, self._incoming_result_filter_chains, ResultFilter)
+        self._add_filters(pattern, filters, self._incoming_result_filter_chains, ResultFilter, True)
 
     def get_incoming_result_filters(self):
         return self._incoming_result_filter_chains
 
     def add_outgoing_result_filters(self, pattern: str, filters: List[object]):
-        self._add_filters(pattern, filters, self._outgoing_result_filter_chains, ResultFilter)
+        self._add_filters(pattern, filters, self._outgoing_result_filter_chains, ResultFilter, False)
 
     def get_outgoing_result_filters(self):
         return self._outgoing_result_filter_chains
