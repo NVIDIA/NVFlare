@@ -20,6 +20,8 @@ High-level API for federated feature selection on tabular datasets
 
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
 import pandas as pd
 from pathlib import Path
 import json
@@ -307,7 +309,6 @@ executor.set_data(X_train, y_train, feature_names=feature_names)
         indices = np.arange(len(df))
         
         if split_strategy == "stratified":
-            from sklearn.model_selection import train_test_split
             remaining_X = X
             remaining_y = y
             remaining_indices = indices
@@ -356,7 +357,6 @@ executor.set_data(X_train, y_train, feature_names=feature_names)
                 
         elif split_strategy == "dirichlet":
             # Non-IID split using Dirichlet distribution
-            from sklearn.preprocessing import LabelEncoder
             le = LabelEncoder()
             y_encoded = le.fit_transform(y)
             n_classes = len(le.classes_)
