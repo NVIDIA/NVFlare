@@ -122,11 +122,13 @@ class SimBackend(Backend):
             if waiter:
                 waiter.set()
 
-    def call_target_in_group(self, gcc: GroupCallContext, target_name: str, func_name: str, *args, **kwargs):
+    def call_target_in_group(self, gcc: GroupCallContext, func_name: str, *args, **kwargs):
         # do not use the optional args - they are managed by the group
+        self.logger.info(f"call_target_in_group: {gcc.target_name=}")
         for k in OPTION_ARGS:
             kwargs.pop(k, None)
 
+        target_name = gcc.target_name
         func = self._get_func(func_name)
         if not func:
             raise AttributeError(f"{target_name} does not have method '{func_name}' or it is not collab")
@@ -134,10 +136,11 @@ class SimBackend(Backend):
         if not callable(func):
             raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
-        self.executor.submit(self._run_func_with_resp, gcc, target_name, func_name, func, args, kwargs)
+        self.executor.submit(self._run_func_with_resp, gcc, func_name, func, args, kwargs)
 
-    def _run_func_with_resp(self, gcc: GroupCallContext, target_name, func_name, func, args, kwargs):
+    def _run_func_with_resp(self, gcc: GroupCallContext, func_name, func, args, kwargs):
         try:
+            target_name = gcc.target_name
             ctx, kwargs = self._preprocess(target_name, func_name, func, kwargs)
             result = func(*args, **kwargs)
 

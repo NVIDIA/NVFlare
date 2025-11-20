@@ -48,12 +48,11 @@ class Backend(ABC):
         pass
 
     @abstractmethod
-    def call_target_in_group(self, gcc: GroupCallContext, target_name: str, func_name: str, *args, **kwargs):
+    def call_target_in_group(self, gcc: GroupCallContext, func_name: str, *args, **kwargs):
         """Call a remote object as part of a group.
 
         Args:
             gcc: contextual information about group call.
-            target_name: fully qualified name of the target object to be called in the remote app.
             func_name: mame of the function to be called in the remote app.
             *args: args to pass to the target function.
             **kwargs: kwargs to pass to the target function.

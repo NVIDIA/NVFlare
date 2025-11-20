@@ -22,7 +22,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 from .app import App
 from .constants import CollabMethodArgName, CollabMethodOptionName
 from .ctx import Context
-from .gcc import GroupCallContext
+from .gcc import GroupCallContext, ResultWaiter
 from .proxy import Proxy
 from .utils import check_call_args
 
@@ -111,9 +111,12 @@ class Group:
 
                 # filter once for all targets
                 p = self._proxies[0]
-                the_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
-                the_backend = the_proxy.backend
-                ctx = the_proxy.app.new_context(the_proxy.app.name, the_proxy.name, target_group=self)
+
+                # func_proxy is the proxy that actually has the func.
+                # the func_proxy is either "p" or a child of "p".
+                func_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
+                the_backend = p.backend
+                ctx = func_proxy.app.new_context(func_proxy.caller_name, func_proxy.name, target_group=self)
 
                 self._logger.debug(
                     f"[{ctx.header_str()}] calling {func_name} of group {[p.name for p in self._proxies]}"
@@ -121,13 +124,14 @@ class Group:
 
                 # apply outgoing call filters
                 assert isinstance(self._app, App)
-                adj_kwargs = self._app.apply_outgoing_call_filters(p.target_name, func_name, adj_kwargs, ctx)
+                adj_kwargs = self._app.apply_outgoing_call_filters(func_proxy.target_name, func_name, adj_kwargs, ctx)
                 check_call_args(func_name, func_itf, adj_args, adj_kwargs)
 
+                waiter = ResultWaiter([p.name for p in self._proxies])
                 for p in self._proxies:
-                    the_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, adj_args, adj_kwargs)
+                    func_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, adj_args, adj_kwargs)
                     call_kwargs = copy.copy(call_kwargs)
-                    ctx = self._app.new_context(the_proxy.caller_name, the_proxy.name, target_group=self)
+                    ctx = self._app.new_context(func_proxy.caller_name, func_proxy.name, target_group=self)
                     call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
                     # set the optional args to help backend decide how to call
@@ -140,40 +144,43 @@ class Group:
 
                     gcc = GroupCallContext(
                         self._app,
-                        p.target_name,
+                        func_proxy.target_name,
                         func_name,
                         self._process_resp_cb,
                         self._cb_kwargs,
                         ctx,
+                        waiter,
                     )
                     gccs[p.name] = gcc
 
                     self._logger.debug(
                         f"[{ctx.header_str()}] group call: {func_name=} args={call_args} kwargs={call_kwargs}"
                     )
-                    the_proxy.backend.call_target_in_group(gcc, the_proxy.name, func_name, *call_args, **call_kwargs)
+                    func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
 
-                # wait for responses
                 if not self._blocking:
+                    # do not wait for responses
                     return None
 
+                # wait for responses
                 start_time = time.time()
                 min_received_time = None
                 while True:
                     if self._abort_signal.triggered:
                         raise RunAborted("run is aborted")
 
-                    # how many resps have been received?
-                    resps_received = 0
-                    for name, gcc in gccs.items():
-                        if gcc.resp_time:
-                            resps_received += 1
+                    # wait for a short time, so we can check other conditions
+                    done = waiter.wait(0.1)
+                    if done:
+                        self._logger.info(f"all received from {waiter.results} for func {func_name}")
+                        break
 
-                    if resps_received == len(self._proxies):
+                    results_received = waiter.num_results_received()
+                    if results_received >= self.size:
                         break
 
                     now = time.time()
-                    if resps_received >= self._min_resps:
+                    if results_received >= self._min_resps:
                         if not min_received_time:
                             min_received_time = now
                         if now - min_received_time > self._wait_after_min_resps:
@@ -181,20 +188,11 @@ class Group:
                             break
                     elif self._timeout and now - start_time > self._timeout:
                         # timed out
+                        self._logger.error(f"not all received from {waiter.results.keys()} for func {func_name}")
                         break
-                    else:
-                        # still have not received min resps
-                        time.sleep(0.1)
 
-                # process results
-                results = {}
-                for name, gcc in gccs.items():
-                    if gcc.resp_time:
-                        result = gcc.result
-                    else:
-                        result = TimeoutError()
-                    results[name] = result
-                return results
+                # process received results: fill in TimeoutError for missing result
+                return waiter.finalize_results()
             except Exception as ex:
                 if the_backend:
                     the_backend.handle_exception(ex)
