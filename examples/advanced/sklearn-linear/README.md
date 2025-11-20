@@ -108,6 +108,23 @@ train_args = {
 }
 ```
 
+**Alternative: Using Separate Data Files**
+
+Instead of using data ranges, you can split your data into separate files for each client:
+
+```python
+# Split data into files (e.g., using prepare_data.py or pandas)
+# - /data/site1_HIGGS.csv
+# - /data/site2_HIGGS.csv
+# - /data/site3_HIGGS.csv
+
+train_args = {
+    "site-1": "--data_path /data/site1_HIGGS.csv",
+    "site-2": "--data_path /data/site2_HIGGS.csv",
+    "site-3": "--data_path /data/site3_HIGGS.csv",
+}
+```
+
 This replaces the old `prepare_job_config.sh` approach with a more flexible Python-based solution.
 
 ### View Results
