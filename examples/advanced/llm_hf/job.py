@@ -184,10 +184,12 @@ def main(args):
         print("Running job in simulation mode...")
         print("workspace_dir=", workspace_dir)
         print("num_threads=", num_threads)
-        env = SimEnv(num_clients=num_clients, num_threads=num_threads, gpu_config=args.gpu, workspace_root=workspace_dir)
+        env = SimEnv(
+            num_clients=num_clients, num_threads=num_threads, gpu_config=args.gpu, workspace_root=workspace_dir
+        )
         run = recipe.execute(env)
         print("Job Status is:", run.get_status())
-        print("Job Result is:", run.get_result())   
+        print("Job Result is:", run.get_result())
 
 
 def define_parser():

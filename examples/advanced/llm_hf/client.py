@@ -372,7 +372,7 @@ def main():
             )
             # send model back to NVFlare
             flare.send(output_model)
-    
+
     # Cleanup distributed training environment
     if dist.is_initialized():
         dist.destroy_process_group()
