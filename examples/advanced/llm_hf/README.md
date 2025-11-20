@@ -276,6 +276,14 @@ export WANDB_API_KEY=<your_wandb_api_key>
 ```
 
 ### 4. Submit the SLURM Job
+
+Update your SLURM account name and partitions by providing the information in [nvflare.slurm](nvflare.slurm):
+
+```
+#SBATCH -A [ACCOUNT_NAME]
+#SBATCH --partition=[PARTITION_NAME1,PARTITION_NAME2,...]
+```
+
 By default, you can submit a job, requesting 2 nodes with 8 GPUs via
 
 ```bash

@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH -A coreai_edgeai_flresearch
+#SBATCH -A [ACCOUNT_NAME]
+#SBATCH --partition=[PARTITION_NAME1,PARTITION_NAME2,...]
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1
-#SBATCH --partition=polar,polar3,polar4
 #SBATCH --gpus-per-node=8
 #SBATCH --time=0:30:00
 #SBATCH --job-name=fl_job
