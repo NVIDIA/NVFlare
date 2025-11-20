@@ -7,7 +7,7 @@ and deploy it in a federated learning setting using NVFlare.
 ### [Simulated Federated Learning for 3D spleen CT segmentation](./spleen_ct_segmentation_sim/README.md)
 An example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) 
 to train a medical image analysis model using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629))
-and a [MONAI Bundle](https://docs.monai.io/en/latest/mb_specification.html).
+and a [MONAI Bundle](https://monai.readthedocs.io/en/latest/mb_specification.html).
 
 This example will also guide you on using MONAI FL with FLARE to 
 collect client data statistics and visualize both global and local 
