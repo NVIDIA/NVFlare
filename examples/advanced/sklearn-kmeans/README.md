@@ -170,7 +170,7 @@ run = recipe.execute(env)
 
 The recipe approach uses:
 - `job.py`: Defines the federated learning job using the `KMeansFedAvgRecipe`
-- `src/kmeans_fl.py`: Client training script using the NVFlare Client API
+- `client.py`: Client training script using the NVFlare Client API
 
 The recipe automatically handles:
 - Server-side component configuration (controller, aggregator, persistor, KMeansAssembler)

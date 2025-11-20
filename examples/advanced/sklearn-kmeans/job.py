@@ -117,7 +117,7 @@ def main():
         min_clients=n_clients,
         num_rounds=num_rounds,
         n_clusters=n_clusters,
-        train_script="src/kmeans_fl.py",
+        train_script="client.py",
         train_args=train_args,
     )
 
