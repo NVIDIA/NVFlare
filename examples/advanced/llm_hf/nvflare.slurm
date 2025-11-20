@@ -46,7 +46,7 @@ echo "Starting NVFlare client..."
 ${NVFLARE_PROJECT}/site-dolly/startup/start.sh
 
 # wait for client to start up (NVFlare will handle connection retry)
-sleep 10
+sleep 20
 echo "Server and client should be ready now"
 
 # Launch the FL job ONLY on the master node (first node)

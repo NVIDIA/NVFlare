@@ -47,6 +47,24 @@ if [ "$NNODES" -eq "1" ]; then
 else
     # Multi-node - use srun to launch torchrun on each node
     echo "Running multi-node training across $NNODES nodes..."
+    
+    # IMPORTANT: Fix localhost references in NVFlare client API config
+    # The client_api_config.json contains tcp://localhost:PORT which only works from the master node.
+    # We need to replace localhost with the actual master node hostname so processes on other nodes can connect.
+    # The config file is in the config/ subdirectory relative to where this wrapper is running
+    CONFIG_FILE="config/client_api_config.json"
+    if [ -f "$CONFIG_FILE" ]; then
+        echo "Found NVFlare client API config: $CONFIG_FILE"
+        echo "Replacing localhost with $MASTER_ADDR in config"
+        sed -i "s/localhost/$MASTER_ADDR/g" "$CONFIG_FILE"
+        echo "Config file updated successfully"
+    else
+        echo "Warning: Could not find client API config at $CONFIG_FILE"
+        echo "Current directory: $(pwd)"
+        echo "Directory contents:"
+        ls -la
+    fi
+    
     srun --nodes=$NNODES --ntasks-per-node=1 bash -c "
         # Set environment variables for NCCL to reduce warnings
         export NCCL_DEBUG=INFO
