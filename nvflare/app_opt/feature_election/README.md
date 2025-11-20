@@ -77,10 +77,6 @@ client_data = fe.prepare_data_splits(
 # Run simulation
 stats = fe.simulate_election(client_data)
 
-# Access results
-global_mask = fe.global_mask
-selected_feature_names = fe.selected_feature_names
-print(f"Reduction: {stats['reduction_ratio']:.1%}")
 ```
 
 ## NVIDIA FLARE Deployment
@@ -436,5 +432,3 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 ## Support
 
 - **FLASH Repository**: [Github](https://github.com/parasecurity/FLASH)
-- **Flare Documentation**: [Full documentation](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_opt.feature_election.html)
-
