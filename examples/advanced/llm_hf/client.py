@@ -261,7 +261,6 @@ def main():
             input_model = flare.receive(timeout=600)
             if input_model is None:
                 print("Rank 0: Received None from FL server, stopping training")
-                is_running = False
                 if dist.is_initialized():
                     stop_signal = [False]
                     dist.broadcast_object_list(stop_signal, src=0)
