@@ -70,6 +70,7 @@ SLURM Job (2 nodes allocated)
 - Automatically detects single-node vs multi-node
 - Uses `srun` to launch `torchrun` on each node for multi-node
 - Uses `torchrun` directly for single-node
+- Uses `CUDA_VISIBLE_DEVICES` to set GPUs. Assumes that they are set as comma-separated list, e.g. "0,1,2,3,4,5,6,7".
 
 **Why this works:**
 - The wrapper script is included in the FL job package
