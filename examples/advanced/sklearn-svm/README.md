@@ -118,6 +118,23 @@ train_args = {
 }
 ```
 
+**Alternative: Using Separate Data Files**
+
+Instead of using data ranges, you can split your data into separate files for each client:
+
+```python
+# Split data into files (e.g., using prepare_data.py or pandas)
+# - /data/site1_cancer.csv
+# - /data/site2_cancer.csv
+# - /data/site3_cancer.csv
+
+train_args = {
+    "site-1": "--data_path /data/site1_cancer.csv --backend sklearn",
+    "site-2": "--data_path /data/site2_cancer.csv --backend sklearn",
+    "site-3": "--data_path /data/site3_cancer.csv --backend sklearn",
+}
+```
+
 ### Using cuML Backend
 
 For GPU-accelerated SVM training:
