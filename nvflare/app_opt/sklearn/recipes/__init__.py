@@ -15,4 +15,3 @@
 from .fedavg import SklearnFedAvgRecipe
 
 __all__ = ["SklearnFedAvgRecipe"]
-

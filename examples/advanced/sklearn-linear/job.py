@@ -50,18 +50,18 @@ def define_parser():
 
 def calculate_data_splits(n_clients: int, total_size: int = 11000000, valid_size: int = 1100000):
     """Calculate uniform data splits for clients.
-    
+
     Args:
         n_clients: Number of clients
         total_size: Total dataset size (HIGGS has 11M rows)
         valid_size: Size of validation set (first N rows)
-    
+
     Returns:
         dict mapping site names to (train_start, train_end, valid_start, valid_end)
     """
     train_size = total_size - valid_size
     train_per_client = train_size // n_clients
-    
+
     splits = {}
     for i in range(n_clients):
         site_name = f"site-{i + 1}"
@@ -73,7 +73,7 @@ def calculate_data_splits(n_clients: int, total_size: int = 11000000, valid_size
             "valid_start": 0,
             "valid_end": valid_size,
         }
-    
+
     return splits
 
 
@@ -105,8 +105,10 @@ def main():
         }
         print("Using custom per-client data splits:")
         for site_name, split in splits.items():
-            print(f"  {site_name}: train [{split['train_start']}:{split['train_end']}], "
-                  f"valid [{split['valid_start']}:{split['valid_end']}]")
+            print(
+                f"  {site_name}: train [{split['train_start']}:{split['train_end']}], "
+                f"valid [{split['valid_start']}:{split['valid_end']}]"
+            )
 
     recipe = SklearnFedAvgRecipe(
         name="sklearn_linear",
@@ -138,4 +140,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

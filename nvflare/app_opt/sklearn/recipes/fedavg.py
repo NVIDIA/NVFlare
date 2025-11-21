@@ -203,4 +203,3 @@ class SklearnFedAvgRecipe(Recipe):
             job.to_clients(executor)
 
         Recipe.__init__(self, job)
-
