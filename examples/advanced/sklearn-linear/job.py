@@ -17,8 +17,8 @@ This code shows how to use NVIDIA FLARE Job Recipe to run federated learning wit
 linear models using FedAvg algorithm.
 
 Per-Client Data Splits:
-    The old prepare_job_config.sh approach is replaced by passing a dict for train_args.
-    This allows different data ranges for each client, supporting non-IID scenarios.
+    Data is automatically divided into non-overlapping ranges for each client.
+    Customize the calculate_data_splits() function to implement different split strategies.
 """
 
 import argparse
@@ -37,19 +37,15 @@ def define_parser():
         default="/tmp/nvflare/dataset/HIGGS.csv",
         help="Path to HIGGS dataset CSV file",
     )
-    parser.add_argument(
-        "--split_method",
-        type=str,
-        default="uniform",
-        choices=["uniform", "custom"],
-        help="Data split method: 'uniform' (same args for all) or 'custom' (per-client ranges)",
-    )
 
     return parser.parse_args()
 
 
 def calculate_data_splits(n_clients: int, total_size: int = 11000000, valid_size: int = 1100000):
-    """Calculate uniform data splits for clients.
+    """Calculate non-overlapping data splits for clients.
+
+    Divides training data into equal chunks for each client. Validation data is shared.
+    Users can modify this function to implement custom split strategies (e.g., non-IID).
 
     Args:
         n_clients: Number of clients
@@ -57,7 +53,7 @@ def calculate_data_splits(n_clients: int, total_size: int = 11000000, valid_size
         valid_size: Size of validation set (first N rows)
 
     Returns:
-        dict mapping site names to (train_start, train_end, valid_start, valid_end)
+        dict mapping site names to split configuration with train/valid ranges
     """
     train_size = total_size - valid_size
     train_per_client = train_size // n_clients
@@ -83,32 +79,25 @@ def main():
     n_clients = args.n_clients
     num_rounds = args.num_rounds
     data_path = args.data_path
-    split_method = args.split_method
 
     print(f"Creating sklearn linear model recipe with {n_clients} clients for {num_rounds} rounds")
     print(f"Data path: {data_path}")
-    print(f"Split method: {split_method}")
 
-    # Configure train_args based on split method
-    if split_method == "uniform":
-        # Simple mode: all clients use same args and client.py defaults
-        train_args = f"--data_path {data_path}"
-        print("Using uniform split (client.py defaults for data ranges)")
-    else:
-        # Custom mode: per-client data ranges
-        splits = calculate_data_splits(n_clients)
-        train_args = {
-            site_name: f"--data_path {data_path} --train_start {split['train_start']} "
-            f"--train_end {split['train_end']} --valid_start {split['valid_start']} "
-            f"--valid_end {split['valid_end']}"
-            for site_name, split in splits.items()
-        }
-        print("Using custom per-client data splits:")
-        for site_name, split in splits.items():
-            print(
-                f"  {site_name}: train [{split['train_start']}:{split['train_end']}], "
-                f"valid [{split['valid_start']}:{split['valid_end']}]"
-            )
+    # Calculate per-client data splits (non-overlapping ranges)
+    splits = calculate_data_splits(n_clients)
+    train_args = {
+        site_name: f"--data_path {data_path} --train_start {split['train_start']} "
+        f"--train_end {split['train_end']} --valid_start {split['valid_start']} "
+        f"--valid_end {split['valid_end']}"
+        for site_name, split in splits.items()
+    }
+
+    print("Per-client data splits:")
+    for site_name, split in splits.items():
+        print(
+            f"  {site_name}: train [{split['train_start']}:{split['train_end']}], "
+            f"valid [{split['valid_start']}:{split['valid_end']}]"
+        )
 
     recipe = SklearnFedAvgRecipe(
         name="sklearn_linear",
