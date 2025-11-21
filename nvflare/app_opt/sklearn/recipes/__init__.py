@@ -15,4 +15,3 @@
 from .kmeans import KMeansFedAvgRecipe
 
 __all__ = ["KMeansFedAvgRecipe"]
-
