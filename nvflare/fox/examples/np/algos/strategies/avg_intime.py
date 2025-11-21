@@ -39,7 +39,8 @@ class NPFedAvgInTime:
         self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
         current_model = fox.get_prop(ContextKey.INPUT, self._init_model)
         for i in range(self.num_rounds):
-            current_model = self._do_one_round(i, current_model)
+            # current_model = self._do_one_round(i, current_model)
+            current_model = self._do_one_round_non_blocking(i, current_model)
             score = self._do_eval(current_model)
             self.logger.info(f"[{fox.call_info}]: eval score in round {i}: {score}")
         self.logger.info(f"FINAL MODEL: {current_model}")
@@ -48,7 +49,7 @@ class NPFedAvgInTime:
     def _do_eval(self, model):
         results = fox.clients.evaluate(model)
         total = 0.0
-        for n, v in results.items():
+        for n, v in results:
             self.logger.info(f"[{fox.call_info}]: got eval result from client {n}: {v}")
             total += v
         return total / len(results)
@@ -69,6 +70,22 @@ class NPFedAvgInTime:
             result = aggr_result.total / aggr_result.count
             self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {aggr_result.count} clients: {result}")
             return result
+
+    def _do_one_round_non_blocking(self, r, current_model):
+        timeout = fox.get_app_prop("default_timeout", 10)
+        self.logger.info(f"got timeout: {timeout}")
+        results = fox.clients(
+            timeout=timeout,
+            blocking=False,
+        ).train(r, current_model)
+
+        total = 0
+        for n, v in results:
+            self.logger.info(f"[{fox.call_info}] round {r}: got group result from client {n}: {v}")
+            total += v
+        result = total / len(results)
+        self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {len(results)} clients: {result}")
+        return result
 
     def _accept_train_result(self, result, aggr_result: _AggrResult):
         self.logger.info(f"[{fox.call_info}] got train result from {fox.caller} {result}")

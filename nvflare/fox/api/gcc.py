@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import queue
 import threading
-import time
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
@@ -22,13 +22,43 @@ from .ctx import Context, set_call_context
 from .utils import check_context_support
 
 
+class ResultQueue:
+    def __init__(self, limit: int):
+        if limit <= 0:
+            raise ValueError(f"bad queue limit {limit}: must be > 0")
+        self.limit = limit
+        self.q = queue.Queue()
+        self.consumed = 0
+        self.num_items_received = 0
+
+    def append(self, i):
+        if self.num_items_received == self.limit:
+            raise RuntimeError(f"queue is full: {self.limit} items are already appended")
+        self.num_items_received += 1
+        self.q.put_nowait(i)
+        return self.num_items_received == self.limit
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.consumed == self.limit:
+            raise StopIteration()
+        else:
+            i = self.q.get(block=True)
+            self.consumed += 1
+            return i
+
+    def __len__(self):
+        return self.num_items_received
+
+
 class ResultWaiter(threading.Event):
 
     def __init__(self, sites: list[str]):
         super().__init__()
-        self.num_results_expected = len(sites)
         self.sites = sites
-        self.results = {}
+        self.results = ResultQueue(len(sites))
         self.lock = threading.Lock()
 
     def set_result(self, target_name: str, result):
@@ -37,20 +67,9 @@ class ResultWaiter(threading.Event):
         site_name = parts[0]
         with self.lock:
             print(f"set result for {target_name} on site {site_name}")
-            self.results[site_name] = result
-            if self.num_results_received() >= self.num_results_expected:
-                # print(f"received results from all {self.num_results_expected} sites!")
+            all_received = self.results.append((site_name, result))
+            if all_received:
                 self.set()
-
-    def finalize_results(self):
-        with self.lock:
-            for s in self.sites:
-                if s not in self.results:
-                    self.results[s] = TimeoutError
-        return self.results
-
-    def num_results_received(self):
-        return len(self.results)
 
 
 class GroupCallContext:
@@ -86,30 +105,31 @@ class GroupCallContext:
         Returns: None
 
         """
-        # filter incoming result
-        ctx = copy.copy(self.context)
+        try:
+            # filter incoming result
+            ctx = copy.copy(self.context)
 
-        # swap caller/callee
-        original_caller = ctx.caller
-        ctx.caller = ctx.callee
-        ctx.callee = original_caller
+            # swap caller/callee
+            original_caller = ctx.caller
+            ctx.caller = ctx.callee
+            ctx.callee = original_caller
 
-        if not isinstance(result, Exception):
-            result = self.app.apply_incoming_result_filters(self.target_name, self.func_name, result, ctx)
+            if not isinstance(result, Exception):
+                set_call_context(ctx)
+                result = self.app.apply_incoming_result_filters(self.target_name, self.func_name, result, ctx)
+                if self.process_cb:
+                    self.cb_kwargs[CollabMethodArgName.CONTEXT] = ctx
+                    check_context_support(self.process_cb, self.cb_kwargs)
+                    result = self.process_cb(result, **self.cb_kwargs)
+                else:
+                    self.logger.info(f"{self.func_name} does not have process_cb!")
 
-        if self.process_cb:
-            # set the context for the process_cb only
-            set_call_context(ctx)
-            self.cb_kwargs[CollabMethodArgName.CONTEXT] = ctx
-            check_context_support(self.process_cb, self.cb_kwargs)
-            result = self.process_cb(result, **self.cb_kwargs)
-
-            # set back to original context
-            set_call_context(self.context)
-        else:
-            self.logger.info(f"{self.func_name} does not have process_cb!")
-
-        self.waiter.set_result(self.target_name, result)
+                # set back to original context
+                set_call_context(self.context)
+        except Exception as ex:
+            result = ex
+        finally:
+            self.waiter.set_result(self.target_name, result)
 
     def set_exception(self, ex):
         """This is called by the backend to set the exception received from the remote app.

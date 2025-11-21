@@ -17,6 +17,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .backend import Backend
 from .constants import OPTION_ARGS, CollabMethodArgName, CollabMethodOptionName
+from .ctx import get_call_context, set_call_context
 from .utils import check_call_args
 
 
@@ -154,6 +155,7 @@ class Proxy:
         """
 
         def method(*args, **kwargs):
+            orig_ctx = get_call_context()
             try:
                 # remove option args
                 option_args = {}
@@ -186,12 +188,15 @@ class Proxy:
                 if isinstance(result, Exception):
                     raise result
 
-                if result:
+                if result is not None:
                     # filter incoming result filters
                     result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
 
                 return result
             except Exception as ex:
                 self.backend.handle_exception(ex)
+            finally:
+                if orig_ctx:
+                    set_call_context(orig_ctx)
 
         return method

@@ -52,14 +52,20 @@ class Print:
 
     @fox.call_filter
     def print_call(self, func_kwargs: dict):
+        self.logger.info(f"[{fox.call_info}] print_call on fox ctx {id(fox.context)}")
         direction = fox.filter_direction
         qual_func_name = fox.qual_func_name
-        self.logger.info(f"[{fox.call_info}] printing call: {func_kwargs=} {direction=} {qual_func_name=}")
+        self.logger.info(
+            f"[{fox.call_info}] printing call ctx {id(fox.context)}: {func_kwargs=} {direction=} {qual_func_name=}"
+        )
         return func_kwargs
 
     @fox.result_filter
-    def print_result(self, result):
+    def print_result(self, result, context):
+        self.logger.info(f"[{fox.call_info}] print_result on  {id(context)} fox ctx {id(fox.context)}")
         direction = fox.filter_direction
         qual_func_name = fox.qual_func_name
-        self.logger.info(f"[{fox.call_info}] printing result: {result=} {direction=} {qual_func_name=}")
+        self.logger.info(
+            f"[{fox.call_info}] printing result ctx {id(fox.context)}: {result=} {direction=} {qual_func_name=}"
+        )
         return result

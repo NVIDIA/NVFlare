@@ -21,6 +21,7 @@ class CollabMethodOptionName:
     TIMEOUT = "_timeout"
     OPTIONAL = "_optional"
     SECURE = "_secure"
+    EXPECT_RESULT = "_expect_result"
 
 
 OPTION_ARGS = [
@@ -28,6 +29,7 @@ OPTION_ARGS = [
     CollabMethodOptionName.TIMEOUT,
     CollabMethodOptionName.OPTIONAL,
     CollabMethodOptionName.SECURE,
+    CollabMethodOptionName.EXPECT_RESULT,
 ]
 
 

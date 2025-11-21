@@ -45,7 +45,7 @@ def main():
         experiment_name="fedavg_intime",
         server_app=server_app,
         client_app=client_app,
-        num_clients=2,
+        num_clients=1,
     )
 
     result = simulator.run()
