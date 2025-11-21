@@ -24,8 +24,7 @@ Usage:
 
 import argparse
 
-from jobs.random_forest_base.app.custom.higgs_data_loader import HIGGSDataLoader
-
+from nvflare.app_opt.xgboost.higgs_data_loader import HIGGSDataLoader
 from nvflare.app_opt.xgboost.recipes import XGBBaggingRecipe
 from nvflare.recipe import SimEnv, add_experiment_tracking
 
