@@ -23,7 +23,7 @@ Per-Client Data Splits:
 
 import argparse
 
-from nvflare.app_opt.sklearn.recipes.fedavg import SklearnFedAvgRecipe
+from nvflare.app_opt.sklearn import SklearnFedAvgRecipe
 from nvflare.recipe import SimEnv
 
 
@@ -112,7 +112,7 @@ def main():
         name="sklearn_linear",
         min_clients=n_clients,
         num_rounds=num_rounds,
-        initial_params={
+        model_params={
             "n_classes": 2,
             "learning_rate": "constant",
             "eta0": 1e-4,

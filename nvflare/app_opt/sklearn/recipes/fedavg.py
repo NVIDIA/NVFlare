@@ -36,7 +36,7 @@ class _SklearnFedAvgValidator(BaseModel):
     name: str
     min_clients: int
     num_rounds: int
-    initial_params: Optional[dict] = None
+    model_params: Optional[dict] = None
     train_script: str
     train_args: Union[str, Dict[str, str]]
     aggregator: Optional[Aggregator] = None
@@ -61,8 +61,9 @@ class SklearnFedAvgRecipe(Recipe):
         name: Name of the federated learning job. Defaults to "sklearn_fedavg".
         min_clients: Minimum number of clients required to start a training round.
         num_rounds: Number of federated training rounds to execute. Defaults to 2.
-        initial_params: Initial model parameters as a dictionary. Can include model
-            hyperparameters and initial weights.
+        model_params: Model hyperparameters as a dictionary. For SGDClassifier, can include:
+            n_classes, learning_rate, eta0, loss, penalty, fit_intercept, etc.
+            Can also include initial weights if needed.
         train_script: Path to the training script that will be executed on each client.
         train_args: Command line arguments to pass to the training script. Can be:
             - str: Same arguments for all clients (uses job.to_clients)
@@ -80,7 +81,7 @@ class SklearnFedAvgRecipe(Recipe):
             name="sklearn_linear",
             min_clients=5,
             num_rounds=50,
-            initial_params={
+            model_params={
                 "n_classes": 2,
                 "learning_rate": "constant",
                 "eta0": 1e-4,
@@ -113,7 +114,7 @@ class SklearnFedAvgRecipe(Recipe):
         name: str = "sklearn_fedavg",
         min_clients: int,
         num_rounds: int = 2,
-        initial_params: Optional[dict] = None,
+        model_params: Optional[dict] = None,
         train_script: str,
         train_args: Union[str, Dict[str, str]] = "",
         aggregator: Optional[Aggregator] = None,
@@ -126,7 +127,7 @@ class SklearnFedAvgRecipe(Recipe):
             name=name,
             min_clients=min_clients,
             num_rounds=num_rounds,
-            initial_params=initial_params,
+            model_params=model_params,
             train_script=train_script,
             train_args=train_args,
             aggregator=aggregator,
@@ -138,7 +139,7 @@ class SklearnFedAvgRecipe(Recipe):
         self.name = v.name
         self.min_clients = v.min_clients
         self.num_rounds = v.num_rounds
-        self.initial_params = v.initial_params
+        self.model_params = v.model_params
         self.train_script = v.train_script
         self.train_args = v.train_args
         self.aggregator = v.aggregator
@@ -150,7 +151,7 @@ class SklearnFedAvgRecipe(Recipe):
         job = FedJob(name=self.name, min_clients=self.min_clients)
 
         # Server components
-        persistor = JoblibModelParamPersistor(initial_params=self.initial_params or {})
+        persistor = JoblibModelParamPersistor(initial_params=self.model_params or {})
         persistor_id = job.to_server(persistor, id="persistor")
 
         shareable_generator = FullModelShareableGenerator()

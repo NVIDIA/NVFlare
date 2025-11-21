@@ -112,9 +112,9 @@ def main():
         print(f"Training on {train_size} samples...")
         local_model.fit(X_train, y_train)
 
-        # Validate
-        y_pred = local_model.predict(X_valid)
-        auc = roc_auc_score(y_valid, y_pred)
+        # Validate - use decision_function for AUC (returns signed distance to hyperplane)
+        y_scores = local_model.decision_function(X_valid)
+        auc = roc_auc_score(y_valid, y_scores)
         print(f"Validation AUC: {auc:.4f}")
 
         # Prepare parameters to send back
