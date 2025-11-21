@@ -97,9 +97,11 @@ def main(args):
     job.to(IntimeModelSelector(key_metric="eval_loss", negate_key_metric=True), "server", id="model_selector")
 
     # Send ScriptRunner to all clients
+    client_names = []
     for i in range(num_clients):
         client_id = client_ids[i]
         site_name = f"site-{client_id}"
+        client_names.append(site_name)
         data_path_train = os.path.join(args.data_path, client_id, "training.jsonl")
         data_path_valid = os.path.join(args.data_path, client_id, "validation.jsonl")
 
@@ -184,9 +186,7 @@ def main(args):
         print("Running job in simulation mode...")
         print("workspace_dir=", workspace_dir)
         print("num_threads=", num_threads)
-        env = SimEnv(
-            num_clients=num_clients, num_threads=num_threads, gpu_config=args.gpu, workspace_root=workspace_dir
-        )
+        env = SimEnv(clients=client_names, num_threads=num_threads, gpu_config=args.gpu, workspace_root=workspace_dir)
         run = recipe.execute(env)
         print("Job Status is:", run.get_status())
         print("Job Result is:", run.get_result())
