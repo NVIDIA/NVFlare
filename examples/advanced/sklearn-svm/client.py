@@ -103,7 +103,7 @@ def main():
             local_support_x = X_train[support_indices]
             local_support_y = y_train[support_indices]
 
-            print(f"Local SVM training complete")
+            print("Local SVM training complete")
             print(f"Number of support vectors: {len(support_indices)}")
 
             # Send support vectors to server
