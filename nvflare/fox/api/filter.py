@@ -51,7 +51,7 @@ class _Filter:
                 d = "outgoing"
 
             name, f = self.impl_func
-            self.logger.info(f"calling {d} {self.filter_type}: {name} ...")
+            self.logger.info(f"calling {d} {self.filter_type}: {name} on ctx {id(context)}")
             if supports_context(f):
                 kwargs = {CollabMethodArgName.CONTEXT: context}
             else:

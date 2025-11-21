@@ -34,24 +34,22 @@ class ProxyList(list):
     def __call__(
         self,
         blocking: bool = True,
+        expect_result: bool = True,
         timeout: float = 5.0,
         optional: bool = False,
         secure: bool = False,
-        min_resps: int = None,
-        wait_after_min_resps: float = None,
         process_resp_cb=None,
         **cb_kwargs,
     ):
-        print(f"creating group: {blocking=} {timeout=} {optional=} {secure=} {min_resps=} {wait_after_min_resps=}")
+        print(f"creating group: {blocking=} {timeout=} {optional=} {secure=}")
         return group(
             ctx=get_call_context(),
             proxies=self,
             blocking=blocking,
+            expect_result=expect_result,
             timeout=timeout,
             optional=optional,
             secure=secure,
-            min_resps=min_resps,
-            wait_after_min_resps=wait_after_min_resps,
             process_resp_cb=process_resp_cb,
             **cb_kwargs,
         )

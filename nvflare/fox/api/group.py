@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-import time
 from typing import List
 
 from nvflare.apis.fl_exception import RunAborted
@@ -21,7 +20,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .app import App
 from .constants import CollabMethodArgName, CollabMethodOptionName
-from .ctx import Context
+from .ctx import Context, get_call_context, set_call_context
 from .gcc import GroupCallContext, ResultWaiter
 from .proxy import Proxy
 from .utils import check_call_args
@@ -35,11 +34,10 @@ class Group:
         abort_signal: Signal,
         proxies: List[Proxy],
         blocking: bool = True,
+        expect_result: bool = True,
         timeout: float = 5.0,
         optional: bool = False,
         secure: bool = False,
-        min_resps: int = None,
-        wait_after_min_resps: float = None,
         process_resp_cb=None,
         **cb_kwargs,
     ):
@@ -50,6 +48,7 @@ class Group:
             abort_signal: signal to abort execution.
             proxies: proxies of the remote apps to be called.
             blocking: whether to block until responses are received from all remote apps.
+            expect_result: whether to expect result from remote sites.
             timeout: how long to wait for responses.
             optional: whether the call is optional or not.
             secure: whether the call is secure or not.
@@ -65,20 +64,13 @@ class Group:
         self._abort_signal = abort_signal
         self._proxies = proxies
         self._blocking = blocking
+        self._expect_result = expect_result
         self._timeout = timeout
         self._optional = optional
         self._secure = secure
-        self._min_resps = min_resps
-        self._wait_after_min_resps = wait_after_min_resps
         self._process_resp_cb = process_resp_cb
         self._cb_kwargs = cb_kwargs
         self._logger = get_obj_logger(self)
-
-        if not min_resps:
-            self._min_resps = len(proxies)
-
-        if not wait_after_min_resps:
-            self._wait_after_min_resps = 0
 
     @property
     def size(self):
@@ -106,6 +98,7 @@ class Group:
 
         def method(*args, **kwargs):
             the_backend = None
+            orig_ctx = get_call_context()
             try:
                 gccs = {}
 
@@ -131,7 +124,10 @@ class Group:
                 for p in self._proxies:
                     func_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, adj_args, adj_kwargs)
                     call_kwargs = copy.copy(call_kwargs)
-                    ctx = self._app.new_context(func_proxy.caller_name, func_proxy.name, target_group=self)
+                    ctx = self._app.new_context(
+                        func_proxy.caller_name, func_proxy.name, target_group=self, set_call_ctx=False
+                    )
+
                     call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
                     # set the optional args to help backend decide how to call
@@ -139,6 +135,7 @@ class Group:
                         call_kwargs[CollabMethodOptionName.TIMEOUT] = self._timeout
 
                     call_kwargs[CollabMethodOptionName.BLOCKING] = self._blocking
+                    call_kwargs[CollabMethodOptionName.EXPECT_RESULT] = self._expect_result
                     call_kwargs[CollabMethodOptionName.SECURE] = self._secure
                     call_kwargs[CollabMethodOptionName.OPTIONAL] = self._optional
 
@@ -158,13 +155,15 @@ class Group:
                     )
                     func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
 
-                if not self._blocking:
+                if not self._expect_result:
                     # do not wait for responses
                     return None
 
+                if not self._blocking:
+                    self._logger.debug(f"not blocking {func_name}")
+                    return waiter.results
+
                 # wait for responses
-                start_time = time.time()
-                min_received_time = None
                 while True:
                     if self._abort_signal.triggered:
                         raise RunAborted("run is aborted")
@@ -175,27 +174,13 @@ class Group:
                         self._logger.info(f"all received from {waiter.results} for func {func_name}")
                         break
 
-                    results_received = waiter.num_results_received()
-                    if results_received >= self.size:
-                        break
-
-                    now = time.time()
-                    if results_received >= self._min_resps:
-                        if not min_received_time:
-                            min_received_time = now
-                        if now - min_received_time > self._wait_after_min_resps:
-                            # waited long enough
-                            break
-                    elif self._timeout and now - start_time > self._timeout:
-                        # timed out
-                        self._logger.error(f"not all received from {waiter.results.keys()} for func {func_name}")
-                        break
-
-                # process received results: fill in TimeoutError for missing result
-                return waiter.finalize_results()
+                return waiter.results
             except Exception as ex:
                 if the_backend:
                     the_backend.handle_exception(ex)
+            finally:
+                if orig_ctx:
+                    set_call_context(orig_ctx)
 
         return method
 
@@ -204,11 +189,10 @@ def group(
     ctx: Context,
     proxies: List[Proxy],
     blocking: bool = True,
+    expect_result: bool = True,
     timeout: float = 5.0,
     optional: bool = False,
     secure: bool = False,
-    min_resps: int = None,
-    wait_after_min_resps: float = None,
     process_resp_cb=None,
     **cb_kwargs,
 ):
@@ -218,11 +202,10 @@ def group(
         ctx:
         proxies:
         blocking:
+        expect_result:
         timeout:
         optional:
         secure:
-        min_resps:
-        wait_after_min_resps:
         process_resp_cb:
         **cb_kwargs:
 
@@ -234,11 +217,10 @@ def group(
         ctx.abort_signal,
         proxies,
         blocking,
+        expect_result,
         timeout,
         optional,
         secure,
-        min_resps,
-        wait_after_min_resps,
         process_resp_cb,
         **cb_kwargs,
     )
@@ -247,11 +229,10 @@ def group(
 def all_clients(
     ctx: Context,
     blocking: bool = True,
+    expect_result: bool = True,
     timeout: float = 5.0,
     optional: bool = False,
     secure: bool = False,
-    min_resps: int = None,
-    wait_after_min_resps: float = None,
     process_resp_cb=None,
     **cb_kwargs,
 ):
@@ -260,11 +241,10 @@ def all_clients(
     Args:
         ctx:
         blocking:
+        expect_result:
         timeout:
         optional:
         secure:
-        min_resps:
-        wait_after_min_resps:
         process_resp_cb:
         **cb_kwargs:
 
@@ -276,11 +256,10 @@ def all_clients(
         ctx.abort_signal,
         ctx.clients,
         blocking,
+        expect_result,
         timeout,
         optional,
         secure,
-        min_resps,
-        wait_after_min_resps,
         process_resp_cb,
         **cb_kwargs,
     )
@@ -289,11 +268,10 @@ def all_clients(
 def all_other_clients(
     ctx: Context,
     blocking: bool = True,
+    expect_result: bool = True,
     timeout: float = 5.0,
     optional: bool = False,
     secure: bool = False,
-    min_resps: int = None,
-    wait_after_min_resps: float = None,
     process_resp_cb=None,
     **cb_kwargs,
 ):
@@ -302,11 +280,10 @@ def all_other_clients(
     Args:
         ctx:
         blocking:
+        expect_result:
         timeout:
         optional:
         secure:
-        min_resps:
-        wait_after_min_resps:
         process_resp_cb:
         **cb_kwargs:
 
@@ -323,11 +300,10 @@ def all_other_clients(
         ctx.abort_signal,
         candidates,
         blocking,
+        expect_result,
         timeout,
         optional,
         secure,
-        min_resps,
-        wait_after_min_resps,
         process_resp_cb,
         **cb_kwargs,
     )
@@ -336,11 +312,10 @@ def all_other_clients(
 def all_children(
     ctx: Context,
     blocking: bool = True,
+    expect_result: bool = True,
     timeout: float = 5.0,
     optional: bool = False,
     secure: bool = False,
-    min_resps: int = None,
-    wait_after_min_resps: float = None,
     process_resp_cb=None,
     **cb_kwargs,
 ):
@@ -349,11 +324,10 @@ def all_children(
     Args:
         ctx:
         blocking:
+        expect_result:
         timeout:
         optional:
         secure:
-        min_resps:
-        wait_after_min_resps:
         process_resp_cb:
         **cb_kwargs:
 
@@ -369,11 +343,10 @@ def all_children(
         ctx.abort_signal,
         clients,
         blocking,
+        expect_result,
         timeout,
         optional,
         secure,
-        min_resps,
-        wait_after_min_resps,
         process_resp_cb,
         **cb_kwargs,
     )
@@ -382,11 +355,10 @@ def all_children(
 def all_leaf_clients(
     ctx: Context,
     blocking: bool = True,
+    expect_result: bool = True,
     timeout: float = 5.0,
     optional: bool = False,
     secure: bool = False,
-    min_resps: int = None,
-    wait_after_min_resps: float = None,
     process_resp_cb=None,
     **cb_kwargs,
 ):
@@ -395,11 +367,10 @@ def all_leaf_clients(
     Args:
         ctx:
         blocking:
+        expect_result:
         timeout:
         optional:
         secure:
-        min_resps:
-        wait_after_min_resps:
         process_resp_cb:
         **cb_kwargs:
 
@@ -415,11 +386,10 @@ def all_leaf_clients(
         ctx.abort_signal,
         clients,
         blocking,
+        expect_result,
         timeout,
         optional,
         secure,
-        min_resps,
-        wait_after_min_resps,
         process_resp_cb,
         **cb_kwargs,
     )

@@ -45,7 +45,9 @@ class NPTrainer:
         #     self.server.accept_metric({"round": r, "y": 2})
         #     self.server.metric_receiver.accept_metric({"round": r, "y": 2})
         #
+        self.logger.info(f"before fire_event: fox ctx={id(fox.context)}")
         fox.server(blocking=False).fire_event("metrics", {"round": current_round, "y": 10})
+        self.logger.info(f"after fire_event: fox ctx={id(fox.context)}")
         return weights + self.delta
 
     @fox.collab

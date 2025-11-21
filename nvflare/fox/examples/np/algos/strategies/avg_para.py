@@ -38,15 +38,15 @@ class NPFedAvgParallel:
     def _do_eval(self, model):
         results = fox.clients.evaluate(model)
         total = 0.0
-        for n, v in results.items():
+        for n, v in results:
             self.logger.info(f"[{fox.call_info}]: got eval result from client {n}: {v}")
             total += v
         return total / len(results)
 
     def _do_one_round(self, r, current_model):
         total = 0
-        results = fox.clients(timeout=4, min_resps=2, wait_after_min_resps=1).train(r, current_model)
-        for n, v in results.items():
+        results = fox.clients(timeout=4, blocking=False).train(r, current_model)
+        for n, v in results:
             self.logger.info(f"[{fox.call_info}] round {r}: got group result from client {n}: {v}")
             total += v
         return total / len(results)

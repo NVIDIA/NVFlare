@@ -15,14 +15,13 @@ import threading
 import time
 
 from nvflare.apis.fl_exception import RunAborted
+from nvflare.fox import fox
 from nvflare.fox.api.app import App
 from nvflare.fox.api.backend import Backend
-from nvflare.fox.api.constants import OPTION_ARGS, CollabMethodArgName, CollabMethodOptionName
-from nvflare.fox.api.ctx import fox_context
+from nvflare.fox.api.constants import OPTION_ARGS, CollabMethodArgName, CollabMethodOptionName, ContextKey
 from nvflare.fox.api.dec import adjust_kwargs
 from nvflare.fox.api.gcc import GroupCallContext
 from nvflare.fox.api.utils import check_call_args
-from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
 class _Waiter(threading.Event):
@@ -87,7 +86,15 @@ class SimBackend(Backend):
     def _preprocess(self, target_name, func_name, func, kwargs):
         caller_ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
         my_ctx = self.target_app.new_context(caller_ctx.caller, caller_ctx.callee)
+
+        self.logger.info(
+            f"established call_ctx {id(my_ctx)} for {target_name=} {func_name=}: fox_ctx={id(fox.context)}"
+        )
+
         kwargs = self.target_app.apply_incoming_call_filters(target_name, func_name, kwargs, my_ctx)
+        self.logger.info(
+            f"_preprocess: {id(my_ctx)} apply_incoming_call_filters: {my_ctx.get_prop(ContextKey.DIRECTION)}"
+        )
 
         # make sure the final kwargs conforms to func interface
         obj_itf = self.target_app.get_target_object_collab_interface(self.target_obj_name)
@@ -109,9 +116,13 @@ class SimBackend(Backend):
         try:
             ctx, kwargs = self._preprocess(target_name, func_name, func, kwargs)
             result = func(*args, **kwargs)
+            # set_call_context(ctx)
 
             # apply result filter
             result = self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
+            self.logger.info(
+                f"_run_func: {id(ctx)} apply_outgoing_result_filters: {ctx.get_prop(ContextKey.DIRECTION)}"
+            )
 
             if waiter:
                 waiter.result = result
@@ -142,10 +153,22 @@ class SimBackend(Backend):
         try:
             target_name = gcc.target_name
             ctx, kwargs = self._preprocess(target_name, func_name, func, kwargs)
+            self.logger.info(f"after _preprocess: ctx={id(ctx)} fox_ctx={id(fox.context)}")
             result = func(*args, **kwargs)
+            # set_call_context(ctx)
+            self.logger.info(f"after calling {func_name}: ctx={id(ctx)} fox_ctx={id(fox.context)}")
 
             # apply result filter
             result = self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
+
+            self.logger.info(
+                f"after apply_outgoing_result_filters {func_name}: ctx={id(ctx)} fox_ctx={id(fox.context)}"
+            )
+
+            self.logger.info(
+                f"_run_func_with_resp: {id(ctx)} apply_outgoing_result_filters: {ctx.get_prop(ContextKey.DIRECTION)}"
+                f" {ctx.get_prop(ContextKey.QUALIFIED_FUNC_NAME)}"
+            )
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)

@@ -134,8 +134,7 @@ class App:
     def get_outgoing_result_filters(self):
         return self._outgoing_result_filter_chains
 
-    @staticmethod
-    def _find_filter_chain(chains: List[FilterChain], target_name: str, func_name: str, ctx: Context):
+    def _find_filter_chain(self, direction, chains: List[FilterChain], target_name: str, func_name: str, ctx: Context):
         """
 
         Args:
@@ -146,12 +145,14 @@ class App:
         Returns:
 
         """
-        if not chains:
-            return None
-
         collab_obj_name = get_collab_object_name(target_name)
         qualified_func_name = f"{collab_obj_name}.{func_name}"
         ctx.set_prop(ContextKey.QUALIFIED_FUNC_NAME, qualified_func_name)
+        ctx.set_prop(ContextKey.DIRECTION, direction)
+        self.logger.info(f"set filter context {id(ctx)}: {direction} {qualified_func_name}")
+
+        if not chains:
+            return None
 
         for c in chains:
             if fnmatch.fnmatch(qualified_func_name, c.pattern):
@@ -159,33 +160,41 @@ class App:
         return None
 
     def apply_incoming_call_filters(self, target_name: str, func_name: str, func_kwargs, context: Context):
-        filter_chain = self._find_filter_chain(self._incoming_call_filter_chains, target_name, func_name, context)
+        self.logger.info(f"apply_incoming_call_filters on ctx {id(context)}")
+        filter_chain = self._find_filter_chain(
+            FilterDirection.INCOMING, self._incoming_call_filter_chains, target_name, func_name, context
+        )
         if filter_chain:
-            context.set_prop(ContextKey.DIRECTION, FilterDirection.INCOMING)
             return filter_chain.apply_filters(func_kwargs, context)
         else:
             return func_kwargs
 
     def apply_outgoing_call_filters(self, target_name: str, func_name: str, func_kwargs, context: Context):
-        filter_chain = self._find_filter_chain(self._outgoing_call_filter_chains, target_name, func_name, context)
+        self.logger.info(f"apply_outgoing_call_filters on ctx {id(context)}")
+        filter_chain = self._find_filter_chain(
+            FilterDirection.OUTGOING, self._outgoing_call_filter_chains, target_name, func_name, context
+        )
         if filter_chain:
-            context.set_prop(ContextKey.DIRECTION, FilterDirection.OUTGOING)
             return filter_chain.apply_filters(func_kwargs, context)
         else:
             return func_kwargs
 
     def apply_incoming_result_filters(self, target_name: str, func_name: str, result, context: Context):
-        filter_chain = self._find_filter_chain(self._incoming_result_filter_chains, target_name, func_name, context)
+        self.logger.info(f"apply_incoming_result_filters on ctx {id(context)}")
+        filter_chain = self._find_filter_chain(
+            FilterDirection.INCOMING, self._incoming_result_filter_chains, target_name, func_name, context
+        )
         if filter_chain:
-            context.set_prop(ContextKey.DIRECTION, FilterDirection.INCOMING)
             return filter_chain.apply_filters(result, context)
         else:
             return result
 
     def apply_outgoing_result_filters(self, target_name: str, func_name: str, result, context: Context):
-        filter_chain = self._find_filter_chain(self._outgoing_result_filter_chains, target_name, func_name, context)
+        self.logger.info(f"apply_outgoing_result_filters on ctx {id(context)}")
+        filter_chain = self._find_filter_chain(
+            FilterDirection.OUTGOING, self._outgoing_result_filter_chains, target_name, func_name, context
+        )
         if filter_chain:
-            context.set_prop(ContextKey.DIRECTION, FilterDirection.OUTGOING)
             return filter_chain.apply_filters(result, context)
         else:
             return result
@@ -308,9 +317,10 @@ class App:
         for obj in self._managed_objects.values():
             self._fox_finalize(obj, context)
 
-    def new_context(self, caller: str, callee: str, target_group=None):
+    def new_context(self, caller: str, callee: str, target_group=None, set_call_ctx=True):
         ctx = Context(self, caller, callee, self._abort_signal, target_group=target_group)
-        set_call_context(ctx)
+        if set_call_ctx:
+            set_call_context(ctx)
         return ctx
 
     def register_event_handler(self, event_type: str, handler, **handler_kwargs):

@@ -35,7 +35,8 @@ class SysBackend(Backend):
         self.thread_executor = thread_executor
 
     def call_target(self, target_name: str, func_name: str, *args, **kwargs):
-        blocking = kwargs.pop(CollabMethodOptionName.BLOCKING, True)
+        kwargs.pop(CollabMethodOptionName.BLOCKING, True)
+        expect_result = kwargs.pop(CollabMethodOptionName.EXPECT_RESULT, True)
         timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, 10.0)
         optional = kwargs.pop(CollabMethodOptionName.OPTIONAL, False)
         secure = kwargs.pop(CollabMethodOptionName.SECURE, False)
@@ -52,7 +53,7 @@ class SysBackend(Backend):
         }
         request = new_cell_message({}, payload)
 
-        if blocking:
+        if expect_result:
             self.logger.info(f"send_request from {self.cell.get_fqcn()} to {self.target_fqcn}: {payload=} {timeout=}")
 
             reply = self.cell.send_request(
