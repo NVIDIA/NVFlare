@@ -90,12 +90,33 @@ class Connection(private val context: Context) {
 
     // Generate a stable device ID using Android's ANDROID_ID (matches iOS identifierForVendor pattern)
     // This stays the same across app restarts, ensuring the server recognizes the same device
+    // Falls back to persistent UUID in SharedPreferences if ANDROID_ID is null (rare edge case)
     private val deviceId: String = run {
         val androidId = android.provider.Settings.Secure.getString(
             context.contentResolver,
             android.provider.Settings.Secure.ANDROID_ID
-        ) ?: java.util.UUID.randomUUID().toString()
-        "NVFlare_Android-$androidId"
+        )
+        
+        if (androidId != null) {
+            // Use stable system ID
+            "NVFlare_Android-$androidId"
+        } else {
+            // ANDROID_ID is null (extremely rare) - use persistent random UUID
+            // This ensures resume works even on edge-case devices
+            val prefs = context.getSharedPreferences("nvflare_device", android.content.Context.MODE_PRIVATE)
+            val savedId = prefs.getString("device_id", null)
+            
+            if (savedId != null) {
+                // Use previously saved ID
+                savedId
+            } else {
+                // Generate new ID and save it for future sessions
+                val newId = "NVFlare_Android-${java.util.UUID.randomUUID()}"
+                prefs.edit().putString("device_id", newId).apply()
+                Log.d(TAG, "Generated and saved new device ID (ANDROID_ID was null)")
+                newId
+            }
+        }
     }
     private var deviceInfo: Map<String, String> = mapOf(
         "device_id" to deviceId,
