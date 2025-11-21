@@ -44,7 +44,7 @@ def get_collab_object_name(target_name: str):
     """
     parts = target_name.split(".")
     if len(parts) == 1:
-        return "app"
+        return "_app_"
     else:
         return parts[1]
 
