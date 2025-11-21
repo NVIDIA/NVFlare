@@ -166,8 +166,6 @@ class XGBBaggingRecipe(Recipe):
 
     def configure(self):
         """Configure the federated job for XGBoost bagging."""
-        from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
-
         # Create FedJob
         job = FedJob(name=self.name, min_clients=self.min_clients)
 
