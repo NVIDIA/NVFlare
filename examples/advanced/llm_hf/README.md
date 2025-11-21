@@ -115,11 +115,11 @@ Also, the basic iterative training script does not support multi-GPU training.
 
 To enhance the iterative training script, we can add scheduler alignment via callback and multi-GPU support with `./utils/hf_sft_peft_iter_callback_multigpu.py`.
 
-Single-GPU experiment can be run with the following command:
+Multi-GPU experiments in central settings can be run with the following command. By default **all available GPUs** will be used:
 ``` 
 python3 ./utils/hf_sft_peft_iter_callback_multigpu.py --output_path ./workspace/dolly_cen_iter_callback_cosine --lr_scheduler cosine_with_restarts 
 ```
-For multi-GPU experiments, we can use the following command:
+You can also control the number of GPUs using the following command:
 ```
 accelerate launch \
     --num_processes 2 \
@@ -154,7 +154,7 @@ python3 job.py \
 The loss curves are shown below, black for centralized results, magenta for FL training. With some training randomness, the two SFT training loss curves align with each other. 
 ![sft](./figs/fl_sft.png)
 
-Similarly, 2-GPU training with two clients can be run with the following command:
+Similarly, 2-GPU training with two clients can be run with the following command. **Note** make sure that no other programs run on the specified ports (e.g., JupyterLab):
 ```
 python3 job.py \
        --client_ids dolly oasst1\
