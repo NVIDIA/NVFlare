@@ -17,7 +17,8 @@ import kotlinx.coroutines.runBlocking
  * Handles ET training execution with dataset creation and result conversion.
  */
 class ETTrainerExecutor(
-    private val trainer: ETTrainer
+    private val trainer: ETTrainer,
+    private val storedArgs: Map<String, Any> = emptyMap()
 ) : Executor {
     private val TAG = "ETTrainerExecutor"
 
@@ -68,12 +69,15 @@ class ETTrainerExecutor(
     }
     
     private fun extractTrainingConfig(taskData: DXO, ctx: Context): TrainingConfig {
-        // Extract training configuration from the task data
-        val data = taskData.data
-        val meta = taskData.meta
+        // Merge stored args with task data meta (task data takes precedence)
+        // This matches the iOS pattern where job-level config is merged with per-task config
+        val finalConfig = storedArgs.toMutableMap()
         
-        // Convert meta to TrainingConfig, including job name from context
-        val metaMap = meta as? Map<String, Any> ?: emptyMap()
+        // Task data meta overrides stored args
+        val taskMeta = taskData.meta as? Map<String, Any> ?: emptyMap()
+        for ((key, value) in taskMeta) {
+            finalConfig[key] = value
+        }
         
         // Get job name from runner context
         val runner = ctx[ContextKey.RUNNER] as? AndroidFlareRunner
@@ -81,10 +85,9 @@ class ETTrainerExecutor(
         Log.d(TAG, "Job name: '$jobName'")
         
         // Add job name to config data for method determination
-        val configData = metaMap.toMutableMap()
-        configData[TaskHeaderKey.JOB_NAME] = jobName
+        finalConfig[TaskHeaderKey.JOB_NAME] = jobName
         
-        return TrainingConfig.fromMap(configData)
+        return TrainingConfig.fromMap(finalConfig)
     }
 }
 
@@ -94,8 +97,11 @@ class ETTrainerExecutor(
 object ETTrainerExecutorFactory {
     
     fun createExecutor(context: android.content.Context, method: String, meta: Map<String, Any>): ETTrainerExecutor {
-        val trainingConfig = TrainingConfig.fromMap(meta)
+        // Create trainer with meta (used for artifact management)
         val trainer = ETTrainer(context, meta)
-        return ETTrainerExecutor(trainer)
+        
+        // Pass meta as stored args to executor (matches iOS pattern)
+        // These stored args will be merged with per-task config, with task config taking precedence
+        return ETTrainerExecutor(trainer, meta)
     }
 }
