@@ -102,6 +102,8 @@ This will:
 - site-2: train [151:303], valid [455:569]
 - site-3: train [303:455], valid [455:569]
 
+> **Alternative**: Instead of using data ranges, you can also save the split data to separate individual files and pass different `--data_path` to each client. See the "Alternative: Using Separate Data Files" section below.
+
 **Advanced: Custom Split Logic**
 
 Modify `calculate_data_splits()` in `job.py` to implement different strategies:
@@ -120,19 +122,22 @@ train_args = {
 
 **Alternative: Using Separate Data Files**
 
-Instead of using data ranges, you can split your data into separate files for each client:
+As an alternative to passing different data range arguments, you can also save the split data to separate individual files and pass different `--data_path` to each client:
 
 ```python
-# Split data into files (e.g., using prepare_data.py or pandas)
-# - /data/site1_cancer.csv
-# - /data/site2_cancer.csv
-# - /data/site3_cancer.csv
+# Split data into separate files (e.g., using prepare_data.py or pandas)
+# - /data/site1_cancer.csv  (contains rows 0-151)
+# - /data/site2_cancer.csv  (contains rows 151-303)
+# - /data/site3_cancer.csv  (contains rows 303-455)
 
+# Then configure per-client data paths in job.py:
 train_args = {
     "site-1": "--data_path /data/site1_cancer.csv --backend sklearn",
     "site-2": "--data_path /data/site2_cancer.csv --backend sklearn",
     "site-3": "--data_path /data/site3_cancer.csv --backend sklearn",
 }
+
+# No need to pass --train_start, --train_end, etc. when using separate files
 ```
 
 ### Using cuML Backend

@@ -43,6 +43,14 @@ class SVMAssembler(Assembler):
     
     def __init__(self, kernel: str = "rbf"):
         super().__init__(data_kind=DataKind.WEIGHTS)
+        
+        # Validate kernel parameter
+        supported_kernels = ["linear", "poly", "rbf", "sigmoid"]
+        if kernel not in supported_kernels:
+            raise ValueError(
+                f"Unsupported kernel '{kernel}'. Must be one of {supported_kernels}"
+            )
+        
         # Record the global support vectors
         # so that only 1 round of training is performed
         self.support_x = None
@@ -50,13 +58,44 @@ class SVMAssembler(Assembler):
         self.kernel = kernel
 
     def get_model_params(self, dxo: DXO):
+        """Extract support vectors from the DXO.
+        
+        Args:
+            dxo: DXO containing model data with 'support_x' (support vectors)
+                and 'support_y' (support vector labels)
+                
+        Returns:
+            Dictionary with keys 'support_x' and 'support_y' containing
+            the support vectors and their labels
+        """
         data = dxo.data
         return {"support_x": data["support_x"], "support_y": data["support_y"]}
 
     def assemble(self, data: dict[str, dict], fl_ctx: FLContext) -> DXO:
+        """Assemble the federated SVM model from client contributions.
+        
+        This method implements the core SVM aggregation logic:
+        - Round 0: Collects support vectors from all clients, trains a global SVM
+          on the concatenated support vectors, and extracts global support vectors
+        - Round 1+: Returns the previously computed global support vectors
+        
+        Args:
+            data: Dictionary mapping client names to their data (not used directly;
+                self.collection contains the processed client models)
+            fl_ctx: FLContext containing federated learning context information
+                (e.g., current round number)
+                
+        Returns:
+            DXO containing the global support vectors ('support_x' and 'support_y')
+            
+        Note:
+            self.collection is populated by the parent Assembler class before this
+            method is called. It contains the processed client models from get_model_params().
+        """
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         if current_round == 0:
             # First round, collect all support vectors from clients
+            # Note: self.collection is populated by parent Assembler class
             support_x = []
             support_y = []
             for client in self.collection:

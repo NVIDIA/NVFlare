@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Optional, Union
+from typing import Dict, Literal, Optional, Union
 
 from pydantic import BaseModel
 
@@ -34,10 +34,10 @@ class _SVMValidator(BaseModel):
 
     name: str
     min_clients: int
-    kernel: str
+    kernel: Literal["linear", "poly", "rbf", "sigmoid"]
     train_script: str
     train_args: Union[str, Dict[str, str]]
-    backend: str = "sklearn"
+    backend: Literal["sklearn", "cuml"] = "sklearn"
     launch_external_process: bool = False
     command: str = "python3 -u"
 

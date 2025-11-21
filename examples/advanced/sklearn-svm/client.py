@@ -16,7 +16,7 @@
 Client training script for federated SVM with scikit-learn.
 Uses the NVFlare Client API for federated learning.
 
-SVM training only requires one round:
+SVM training requires two rounds:
 - Round 0: Train local SVM, extract and send support vectors
 - Round 1: Validate using global support vectors
 """
@@ -76,11 +76,8 @@ def main():
     # Initialize Federated Learning
     flare.init()
 
-    kernel = None
-    local_svm = None
-
     print("Starting federated learning loop...")
-    print("Note: SVM only trains in round 0, round 1 is for validation")
+    print("Note: SVM requires 2 rounds - round 0 for training, round 1 for validation")
 
     while flare.is_running():
         # Receive global model from server
@@ -88,14 +85,16 @@ def main():
         curr_round = input_model.current_round
         print(f"\n=== Round {curr_round} ===")
 
+        # Extract kernel from global params (used in both rounds)
+        global_params = input_model.params
+        kernel = global_params.get("kernel", "rbf")
+        print(f"Using kernel: {kernel}")
+
         if curr_round == 0:
             # Round 0: Train local SVM and extract support vectors
             print("Training local SVM on client data")
-            global_params = input_model.params
-            kernel = global_params["kernel"]
-            print(f"Using kernel: {kernel}")
 
-            # Train local SVM
+            # Train local SVM (kept in memory for potential debugging, not used afterwards)
             local_svm = svm_lib.SVC(kernel=kernel)
             local_svm.fit(X_train, y_train)
 
@@ -119,7 +118,6 @@ def main():
         elif curr_round == 1:
             # Round 1: Validate using global support vectors
             print("Validating with global support vectors")
-            global_params = input_model.params
             global_support_x = global_params["support_x"]
             global_support_y = global_params["support_y"]
 
