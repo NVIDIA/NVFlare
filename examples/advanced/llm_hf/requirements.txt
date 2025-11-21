@@ -4,6 +4,7 @@
 # peft==0.17.1
 # trl==0.22.2
 
+nvflare~=2.7rc
 torch
 torchvision
 datasets
@@ -12,3 +13,4 @@ transformers
 peft
 trl
 bitsandbytes
+wandb
