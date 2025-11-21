@@ -165,7 +165,7 @@ class Proxy:
                 ctx = p.app.new_context(self.caller_name, self.name)
 
                 self.logger.debug(
-                    f"[{ctx.header_str()}] calling target {p.target_name} func {func_name}: {call_args=} {call_kwargs=}"
+                    f"[{ctx.header_str()}] apply_outgoing_call_filters on {p.target_name} func {func_name}"
                 )
 
                 # apply outgoing call filters
@@ -178,12 +178,18 @@ class Proxy:
                 for k, v in option_args.items():
                     call_kwargs[k] = v
 
+                self.logger.debug(
+                    f"[{ctx.header_str()}] calling target {p.target_name} func {func_name}: {option_args=}"
+                )
+
                 result = p.backend.call_target(p.target_name, func_name, *call_args, **call_kwargs)
                 if isinstance(result, Exception):
                     raise result
 
-                # filter incoming result filters
-                result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
+                if result:
+                    # filter incoming result filters
+                    result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
+
                 return result
             except Exception as ex:
                 self.backend.handle_exception(ex)

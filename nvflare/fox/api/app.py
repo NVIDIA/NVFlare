@@ -14,6 +14,7 @@
 import copy
 import fnmatch
 import os
+import re
 from typing import List
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -203,6 +204,11 @@ class App:
             self._props.update(props)
 
     def add_collab_object(self, name: str, obj):
+        # name must be acceptable str
+        pattern = r"^[A-Za-z][A-Za-z0-9_]+$"
+        if not re.match(pattern, name):
+            raise ValueError(f"invalid name {name} for collab object - must be simple name starting with a letter")
+
         if name in self._collab_objs:
             raise ValueError(f"conflict with existing collab object '{name}' of {type(self._collab_objs[name])}")
 
