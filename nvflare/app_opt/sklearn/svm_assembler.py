@@ -24,7 +24,7 @@ from nvflare.app_common.app_constant import AppConstants
 
 class SVMAssembler(Assembler):
     """Assembler for federated SVM using support vector aggregation.
-    
+
     This assembler implements the aggregation logic for federated SVM training.
     The approach is to:
     1. Each client trains a local SVM on their data
@@ -32,25 +32,23 @@ class SVMAssembler(Assembler):
     3. Server concatenates all support vectors from all clients
     4. Server trains a global SVM on the aggregated support vectors
     5. Server extracts final global support vectors and sends back to clients
-    
+
     This approach only requires one round of training since SVM is not an
     iterative algorithm in the federated setting.
-    
+
     Args:
         kernel: Kernel type to use in SVM. Options include 'linear', 'poly', 'rbf', 'sigmoid'.
             Default is 'rbf'.
     """
-    
+
     def __init__(self, kernel: str = "rbf"):
         super().__init__(data_kind=DataKind.WEIGHTS)
-        
+
         # Validate kernel parameter
         supported_kernels = ["linear", "poly", "rbf", "sigmoid"]
         if kernel not in supported_kernels:
-            raise ValueError(
-                f"Unsupported kernel '{kernel}'. Must be one of {supported_kernels}"
-            )
-        
+            raise ValueError(f"Unsupported kernel '{kernel}'. Must be one of {supported_kernels}")
+
         # Record the global support vectors
         # so that only 1 round of training is performed
         self.support_x = None
@@ -59,11 +57,11 @@ class SVMAssembler(Assembler):
 
     def get_model_params(self, dxo: DXO):
         """Extract support vectors from the DXO.
-        
+
         Args:
             dxo: DXO containing model data with 'support_x' (support vectors)
                 and 'support_y' (support vector labels)
-                
+
         Returns:
             Dictionary with keys 'support_x' and 'support_y' containing
             the support vectors and their labels
@@ -73,21 +71,21 @@ class SVMAssembler(Assembler):
 
     def assemble(self, data: dict[str, dict], fl_ctx: FLContext) -> DXO:
         """Assemble the federated SVM model from client contributions.
-        
+
         This method implements the core SVM aggregation logic:
         - Round 0: Collects support vectors from all clients, trains a global SVM
           on the concatenated support vectors, and extracts global support vectors
         - Round 1+: Returns the previously computed global support vectors
-        
+
         Args:
             data: Dictionary mapping client names to their data (not used directly;
                 self.collection contains the processed client models)
             fl_ctx: FLContext containing federated learning context information
                 (e.g., current round number)
-                
+
         Returns:
             DXO containing the global support vectors ('support_x' and 'support_y')
-            
+
         Note:
             self.collection is populated by the parent Assembler class before this
             method is called. It contains the processed client models from get_model_params().
@@ -114,4 +112,3 @@ class SVMAssembler(Assembler):
         params = {"support_x": self.support_x, "support_y": self.support_y}
         dxo = DXO(data_kind=self.expected_data_kind, data=params)
         return dxo
-

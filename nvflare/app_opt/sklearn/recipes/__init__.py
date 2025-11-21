@@ -15,4 +15,3 @@
 from .svm import SVMFedAvgRecipe
 
 __all__ = ["SVMFedAvgRecipe"]
-
