@@ -14,12 +14,12 @@ Please install cuml following instructions: https://rapids.ai/start.html
 ### Tabular data
 The data used in this example is tabular in a format that can be handled by [pandas](https://pandas.pydata.org/), such that:
 - rows correspond to data samples.
-- the first column represents the label. 
-- the other columns cover the features.    
+- the first column represents the label.
+- the other columns cover the features.
 
-Each client is expected to have one local data file containing both training and validation samples. 
+Each client is expected to have one local data file containing both training and validation samples.
 To load the data for each client, the following parameters are expected by local learner:
-- data_file_path: (`string`) the full path to the client's data file. 
+- data_file_path: (`string`) the full path to the client's data file.
 - train_start: (`int`) start row index for the training set.
 - train_end: (`int`) end row index for the training set.
 - valid_start: (`int`) start row index for the validation set.
@@ -29,24 +29,24 @@ To load the data for each client, the following parameters are expected by local
 The machine learning algorithm shown in this example is [SVM for Classification (SVC)](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html).
 Under this setting, federated learning can be formulated in two steps:
 - local training: each client trains a local SVM model with their own data
-- global training: server collects the support vectors from all clients and 
+- global training: server collects the support vectors from all clients and
   trains a global SVM model based on them
 
-Unlike other iterative federated algorithms, federated SVM only involves 
+Unlike other iterative federated algorithms, federated SVM only involves
 these two training steps. Hence, in the server config, we have
 ```
 "num_rounds": 2
 ```
-The first round is the training round, performing local training and global aggregation. 
-Next, the global model will be sent back to clients for the second round, 
-performing model validation and local model update. 
+The first round is the training round, performing local training and global aggregation.
+Next, the global model will be sent back to clients for the second round,
+performing model validation and local model update.
 If this number is set to a number greater than 2, the system will report an error and exit.
 
-## Data preparation 
+## Data preparation
 This example uses the breast cancer dataset available from Scikit-learn's dataset API.
 
-First, we will load the data, format it properly by removing the header, order 
-the label and feature columns, and save it to a CSV file with comma separation. 
+First, we will load the data, format it properly by removing the header, order
+the label and feature columns, and save it to a CSV file with comma separation.
 The default path is `/tmp/nvflare/dataset/cancer.csv`.
 ```commandline
 bash prepare_data.sh
@@ -79,23 +79,13 @@ Available arguments:
 - `--kernel`: Kernel type - linear, poly, rbf, or sigmoid (default: rbf)
 - `--backend`: Backend library - sklearn or cuml (default: sklearn)
 - `--data_path`: Path to cancer CSV file (default: /tmp/nvflare/dataset/cancer.csv)
-- `--split_method`: Data split method - 'uniform' or 'custom' (default: uniform)
 
 ### Per-Client Data Splits
 
-By default (`--split_method uniform`), all clients use the same data ranges, which is suitable for testing on small datasets like Breast Cancer.
-
-For realistic federated learning with non-overlapping data, use `--split_method custom`:
-
-```bash
-python job.py --n_clients 3 --kernel rbf --split_method custom
-```
-
-This will:
-- Calculate non-overlapping training data ranges for each client
-- Use 80% of data (455 samples) for training, split among clients
+The job automatically divides data into **non-overlapping ranges** for each client:
+- First 80% of data (455 samples) split among clients for training
 - Last 20% (114 samples) used as shared validation set
-- Pass different `--train_start`, `--train_end`, `--valid_start`, `--valid_end` arguments to each client
+- Each client receives different `--train_start`, `--train_end`, `--valid_start`, `--valid_end` arguments
 
 **Example splits for 3 clients:**
 - site-1: train [0:151], valid [455:569]
@@ -104,7 +94,7 @@ This will:
 
 > **Alternative**: Instead of using data ranges, you can also save the split data to separate individual files and pass different `--data_path` to each client. See the "Alternative: Using Separate Data Files" section below.
 
-**Advanced: Custom Split Logic**
+**Customizing Split Logic**
 
 Modify `calculate_data_splits()` in `job.py` to implement different strategies:
 - **Non-IID splits**: Assign different class distributions to clients
@@ -204,7 +194,7 @@ This is automatically configured by the recipe!
 
 ## Results
 
-Running with default [SVC](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html) classifier with RBF kernel, the 
+Running with default [SVC](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html) classifier with RBF kernel, the
 resulting global model's AUC is approximately 0.8088, which can be seen in the clients' logs or TensorBoard.
 
 You can visualize the training metrics:

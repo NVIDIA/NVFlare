@@ -17,8 +17,8 @@ This code shows how to use NVIDIA FLARE Job Recipe to run federated SVM
 with scikit-learn using support vector aggregation.
 
 Per-Client Data Splits:
-    Supports passing a dict for train_args to configure different data ranges per client,
-    enabling realistic federated learning scenarios with non-overlapping data.
+    Data is automatically divided into non-overlapping ranges for each client.
+    Customize the calculate_data_splits() function to implement different split strategies.
 """
 
 import argparse
@@ -50,19 +50,15 @@ def define_parser():
         default="/tmp/nvflare/dataset/cancer.csv",
         help="Path to breast cancer dataset CSV file",
     )
-    parser.add_argument(
-        "--split_method",
-        type=str,
-        default="uniform",
-        choices=["uniform", "custom"],
-        help="Data split method: 'uniform' (same args for all) or 'custom' (per-client ranges)",
-    )
 
     return parser.parse_args()
 
 
 def calculate_data_splits(n_clients: int, total_size: int = 569, train_fraction: float = 0.8):
-    """Calculate uniform data splits for clients.
+    """Calculate non-overlapping data splits for clients.
+
+    Divides training data into equal chunks for each client. Validation data is shared.
+    Users can modify this function to implement custom split strategies.
 
     Args:
         n_clients: Number of clients
@@ -70,7 +66,7 @@ def calculate_data_splits(n_clients: int, total_size: int = 569, train_fraction:
         train_fraction: Fraction of data for training (rest for validation)
 
     Returns:
-        dict mapping site names to (train_start, train_end, valid_start, valid_end)
+        dict mapping site names to split configuration with train/valid ranges
     """
     train_size = int(total_size * train_fraction)
     valid_start = train_size
@@ -98,34 +94,27 @@ def main():
     kernel = args.kernel
     backend = args.backend
     data_path = args.data_path
-    split_method = args.split_method
 
     print(f"Creating SVM recipe with {n_clients} clients")
     print(f"Kernel: {kernel}")
     print(f"Backend: {backend}")
     print(f"Data path: {data_path}")
-    print(f"Split method: {split_method}")
 
-    # Configure train_args based on split method
-    if split_method == "uniform":
-        # Simple mode: all clients use same args (for testing/small datasets)
-        train_args = f"--data_path {data_path} --backend {backend} --train_start 0 --train_end 455 --valid_start 455 --valid_end 569"
-        print("Using uniform split (all clients use same data range for testing)")
-    else:
-        # Custom mode: per-client non-overlapping data ranges
-        splits = calculate_data_splits(n_clients)
-        train_args = {
-            site_name: f"--data_path {data_path} --backend {backend} --train_start {split['train_start']} "
-            f"--train_end {split['train_end']} --valid_start {split['valid_start']} "
-            f"--valid_end {split['valid_end']}"
-            for site_name, split in splits.items()
-        }
-        print("Using custom per-client data splits:")
-        for site_name, split in splits.items():
-            print(
-                f"  {site_name}: train [{split['train_start']}:{split['train_end']}], "
-                f"valid [{split['valid_start']}:{split['valid_end']}]"
-            )
+    # Calculate per-client data splits (non-overlapping ranges)
+    splits = calculate_data_splits(n_clients)
+    train_args = {
+        site_name: f"--data_path {data_path} --backend {backend} --train_start {split['train_start']} "
+        f"--train_end {split['train_end']} --valid_start {split['valid_start']} "
+        f"--valid_end {split['valid_end']}"
+        for site_name, split in splits.items()
+    }
+
+    print("Per-client data splits:")
+    for site_name, split in splits.items():
+        print(
+            f"  {site_name}: train [{split['train_start']}:{split['train_end']}], "
+            f"valid [{split['valid_start']}:{split['valid_end']}]"
+        )
 
     recipe = SVMFedAvgRecipe(
         name="sklearn_svm",
