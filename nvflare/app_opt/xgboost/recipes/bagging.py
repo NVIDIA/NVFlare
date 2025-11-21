@@ -159,7 +159,7 @@ class XGBBaggingRecipe(Recipe):
         self.lr_mode = v.lr_mode
         self.save_name = v.save_name
         self.data_loader_id = v.data_loader_id
-        
+
         # Configure the job
         self.job = self.configure()
         Recipe.__init__(self, self.job)
@@ -238,4 +238,3 @@ class XGBBaggingRecipe(Recipe):
         self.job.to(dataloader, site_name, id=self.data_loader_id)
 
         return self
-

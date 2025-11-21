@@ -15,4 +15,3 @@
 from .bagging import XGBBaggingRecipe
 
 __all__ = ["XGBBaggingRecipe"]
-

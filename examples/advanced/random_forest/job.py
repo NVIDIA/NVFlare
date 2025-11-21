@@ -47,9 +47,7 @@ def define_parser():
         "--objective", type=str, default="binary:logistic", help="Learning objective (default: binary:logistic)"
     )
     parser.add_argument("--eval_metric", type=str, default="auc", help="Evaluation metric (default: auc)")
-    parser.add_argument(
-        "--tree_method", type=str, default="hist", help="Tree construction method (default: hist)"
-    )
+    parser.add_argument("--tree_method", type=str, default="hist", help="Tree construction method (default: hist)")
     parser.add_argument("--use_gpus", action="store_true", help="Use GPUs for training")
     parser.add_argument("--nthread", type=int, default=16, help="Number of threads (default: 16)")
     parser.add_argument(
@@ -110,4 +108,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
