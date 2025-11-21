@@ -24,7 +24,6 @@ import datasets
 import numpy as np
 import torch
 import torch.distributed as dist
-from accelerate import PartialState
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, TrainerCallback, trainer_utils
 from trl import SFTConfig, SFTTrainer
@@ -63,12 +62,6 @@ def setup_distributed_training():
     else:
         print("No distributed training environment detected, running in single GPU mode")
         return 0, 1, 0
-
-
-def cleanup_distributed_training():
-    """Cleanup distributed training environment."""
-    if dist.is_initialized():
-        dist.destroy_process_group()
 
 
 def main():
@@ -113,17 +106,41 @@ def main():
     )
     parser.add_argument("--local_epoch", type=int, default=1)
     parser.add_argument("--num_rounds", type=int, default=3)
+    parser.add_argument(
+        "--wandb_project", type=str, default="fl_exp", help="WandB project name (enables WandB if provided)"
+    )
+    parser.add_argument("--wandb_run_name", type=str, default="multinode", help="WandB run name")
     args = parser.parse_args()
 
     # Setup distributed training
     rank, world_size, local_rank = setup_distributed_training()
 
     # Set up device for DDP
-    device_string = PartialState().process_index
-    device_map = {"": device_string}
+    # Use local_rank which is 0-7 on each node, not global rank which is 0-15 across all nodes
+    device_map = {"": local_rank}
+
+    # Set WandB environment variables (only if API key is set and rank 0 will actually log)
+    wandb_enabled = args.wandb_project and os.environ.get("WANDB_API_KEY")
+    if wandb_enabled:
+        os.environ["WANDB_PROJECT"] = args.wandb_project
+        if args.wandb_run_name:
+            os.environ["WANDB_NAME"] = args.wandb_run_name
+        # Add FL-specific tags
+        os.environ["WANDB_TAGS"] = (
+            f"nvflare,multi-node,{world_size}gpus,{os.environ.get('SLURM_JOB_NUM_NODES', '1')}nodes"
+        )
+        if rank == 0:
+            print(f"Rank 0: WandB enabled - project: {args.wandb_project}, run: {args.wandb_run_name}")
+    elif rank == 0:
+        print("Rank 0: WandB disabled (WANDB_API_KEY not set), using TensorBoard for logging")
+
+    # initializes NVFlare client API
+    # IMPORTANT: Only global rank 0 should interact with NVFlare
+    # In multi-node training, rank 0 is on the master node where the FL client runs
+    flare.init(rank=rank)
 
     # If output path exists, remove it (only on main process)
-    if local_rank == 0:
+    if rank == 0:
         try:
             print(f"Attempting to remove output path {args.output_path}.")
             shutil.rmtree(args.output_path)
@@ -138,13 +155,13 @@ def main():
     dataset_train = datasets.load_dataset("json", data_files=args.data_path_train, split="train")
     dataset_valid = datasets.load_dataset("json", data_files=args.data_path_valid, split="train")
     # Print dataset info
-    if local_rank == 0:
+    if rank == 0:
         print(f"Dataset size: training {len(dataset_train)}, validation {len(dataset_valid)}")
     # record every 5% of the dataset
     batch_size = 4
     gra_accu_steps = 10
     logging_steps = int(len(dataset_train) / (20 * batch_size * gra_accu_steps))
-    if local_rank == 0:
+    if rank == 0:
         print(f"logging_steps: {logging_steps}")
 
     # Model configs
@@ -216,6 +233,11 @@ def main():
         # Multi-GPU specific settings
         ddp_find_unused_parameters=False,
         dataloader_pin_memory=False,
+        # WandB integration (if API key is set), otherwise use TensorBoard for logging
+        # HuggingFace Trainer automatically handles multi-process logging (only rank 0 logs)
+        report_to="wandb" if wandb_enabled else "tensorboard",
+        run_name=args.wandb_run_name if wandb_enabled else None,
+        logging_dir=os.path.join(args.output_path, "logs") if not wandb_enabled else None,
     )
 
     # Trainer
@@ -230,17 +252,21 @@ def main():
         callbacks=[StopCallback()],
     )
 
-    # initializes NVFlare client API
-    flare.init()
-
     # Train federated rounds
     # start with global model at the beginning of each round
     while flare.is_running():
-        # receives golobal model from NVFlare (only on main process)
-        if local_rank == 0:
-            input_model = flare.receive()
+        # receives golobal model from NVFlare (only on rank 0)
+        if rank == 0:
+            print("Rank 0: Waiting to receive model from FL server...")
+            input_model = flare.receive(timeout=600)
+            if input_model is None:
+                print("Rank 0: Received None from FL server, stopping training")
+                if dist.is_initialized():
+                    stop_signal = [False]
+                    dist.broadcast_object_list(stop_signal, src=0)
+                break
             curr_round = input_model.current_round
-            print(f"current_round={curr_round}")
+            print(f"Rank 0: Received model for round {curr_round}")
             # Update the key name received from global model if using model def file
             global_model = copy.deepcopy(input_model.params)
             for key in list(global_model.keys()):
@@ -286,8 +312,9 @@ def main():
                     # continue training
                     trainer.train(resume_from_checkpoint=True)
         else:
-            # replace local resume weights with global weights (only on main process)
-            if local_rank == 0:
+            # replace local resume weights with global weights (only on global rank 0)
+            # Use rank (not local_rank) since all nodes share the same filesystem
+            if rank == 0:
                 resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
                 if train_mode:
                     # PEFT model small, directly save via torch.save
@@ -314,8 +341,8 @@ def main():
         if dist.is_initialized():
             dist.barrier()
 
-        # compose output model to send back to server (only on main process)
-        if local_rank == 0:
+        # compose output model to send back to server (only on rank 0)
+        if rank == 0:
             if train_mode:
                 # PEFT, load PEFT part from trainer model
                 out_param = get_peft_model_state_dict(trainer.model)
@@ -344,6 +371,10 @@ def main():
             )
             # send model back to NVFlare
             flare.send(output_model)
+
+    # Cleanup distributed training environment
+    if dist.is_initialized():
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":

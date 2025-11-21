@@ -144,7 +144,7 @@ receiving and returning the global model, as shown below:
 
 We run the federated training on a single client with single GPU using NVFlare Simulator via [JobAPI](https://nvflare.readthedocs.io/en/main/programming_guide/fed_job_api.html).
 ```
-python3 llm_hf_fl_job.py \
+python3 job.py \
     --client_ids dolly \
     --data_path ${PWD}/dataset \
     --workspace_dir ${PWD}/workspace/dolly_fl_single_gpu \
@@ -156,11 +156,11 @@ The loss curves are shown below, black for centralized results, magenta for FL t
 
 Similarly, 2-GPU training with two clients can be run with the following command:
 ```
-python3 llm_hf_fl_job.py \
+python3 job.py \
        --client_ids dolly oasst1\
        --data_path ${PWD}/dataset \
-       --workspace_dir ${PWD}/workspace/dolly_fl_multi_gpu \
-       --job_dir ${PWD}/workspace/jobs/dolly_fl_multi_gpu \
+       --workspace_dir ${PWD}/workspace/dolly_oasst1_fl_multi_gpu \
+       --job_dir ${PWD}/workspace/jobs/dolly_oasst1_fl_multi_gpu \
        --gpu "[0,1],[2,3]" \
        --ports 7777 8888
 ```
@@ -171,10 +171,10 @@ from float32 to 16-bit, 8-bit, and 4-bit for communication. Quantization is enab
 16-bit is a direct precision conversion, while 8-bit, 4-bit quantization is performed by [bitsandbytes](https://github.com/bitsandbytes-foundation/bitsandbytes/tree/main).
 Note that 4-bit quantizations (`fp4` or `nf4`) need device support.
 ```
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_16 --job_dir ${PWD}/workspace/jobs/hf_sft_16 --train_mode SFT --quantize_mode float16
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_8 --job_dir ${PWD}/workspace/jobs/hf_sft_8 --train_mode SFT --quantize_mode blockwise8
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_fp4 --train_mode SFT --quantize_mode float4
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_nf4 --job_dir ${PWD}/workspace/jobs/hf_sft_nf4 --train_mode SFT --quantize_mode normfloat4
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_16 --job_dir ${PWD}/workspace/jobs/hf_sft_16 --train_mode SFT --quantize_mode float16
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_8 --job_dir ${PWD}/workspace/jobs/hf_sft_8 --train_mode SFT --quantize_mode blockwise8
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_fp4 --train_mode SFT --quantize_mode float4
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_nf4 --job_dir ${PWD}/workspace/jobs/hf_sft_nf4 --train_mode SFT --quantize_mode normfloat4
 ```
 The SFT curves are shown below, magenta for centralized results, others for FL training with quantization. We can see it achieves similar alignment comparing to centralized result with training randomness (similar to previous figure).
 ![sft](./figs/fl_sft_comp.png)
@@ -196,11 +196,11 @@ Note that quantization will generate additional meta data, which can be signific
 In addition, since the model is trained with bf16, instead of first converting to numpy in float32, we can directly communicate with tensor in bf16 to avoid the message size inflation due to the conversion. 
 We can use the following command to run the federated training with direct tensor communication.
 ```
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor --job_dir ${PWD}/workspace/jobs/hf_sft_tensor --train_mode SFT --message_mode tensor
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor --job_dir ${PWD}/workspace/jobs/hf_sft_tensor --train_mode SFT --message_mode tensor
 ```
 Similarly, quantization can be applied to tensor communication as well.
 ```
-python3 llm_hf_fl_job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_tensor_fp4 --job_dir ${PWD}/workspace/jobs/hf_sft_tensor_fp4 --train_mode SFT --message_mode tensor --quantize_mode float4
 ```
 In this case, since the tensor is in bf16, and the quantization reduces it to float4, the message size change is thus:
 ```
@@ -210,7 +210,7 @@ Before quantization: 2858.13 MB. After quantization: 714.53 MB with meta: 89.33 
 ## Federated Training with Multiple Clients
 With the above example, we can easily extend the federated training to multiple clients. We can use the following command to run the federated training with multiple clients:
 ```
-python3 llm_hf_fl_job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_multi --job_dir ${PWD}/workspace/jobs/hf_sft_multi --train_mode SFT --threads 1
+python3 job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_multi --job_dir ${PWD}/workspace/jobs/hf_sft_multi --train_mode SFT --threads 1
 ```
 
 For comparison, we run the other two sites in centralized training mode:
@@ -235,7 +235,7 @@ Similarly for PEFT, we can run the following command:
 python3 ./utils/hf_sft_peft.py --output_path ./workspace/dolly_cen_peft --train_mode PEFT
 python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/alpaca/training.jsonl --data_path_valid ./dataset/alpaca/validation.jsonl --output_path ./workspace/alpaca_cen_peft --train_mode PEFT
 python3 ./utils/hf_sft_peft.py --data_path_train ./dataset/oasst1/training.jsonl --data_path_valid ./dataset/oasst1/validation.jsonl --output_path ./workspace/oasst1_cen_peft --train_mode PEFT
-python3 llm_hf_fl_job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_multi --job_dir ${PWD}/workspace/jobs/hf_peft_multi --train_mode PEFT --threads 1
+python3 job.py --client_ids dolly alpaca oasst1 --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_peft_multi --job_dir ${PWD}/workspace/jobs/hf_peft_multi --train_mode PEFT --threads 1
 ```
 
 The training loss curves are shown below:
@@ -246,3 +246,48 @@ Alpaca:
 ![peft](./figs/peft_alpaca.png)
 Oasst1:
 ![peft](./figs/peft_oasst1.png)
+
+
+## Multi-node Training
+The NVFlare client can run in a multi-node environment as well. The deployment depends on your cluster environment. We provide an example on how to test this with a SLURM-based cluster. See the details and some findings on ensuring the job runs correctly in multi-node setting in [MULTINODE.md](MULTINODE.md).
+
+### 1. Create a fresh virtual environment on your cluster
+Create a fresh virtual environment on your cluster and install the requrements.
+```bash
+export VENV_DIR=<path/to/your/venv>
+```
+
+### 2. Create a NVFlare project
+As an example, we create a project with only one client for the Dolly dataset.
+```bash
+nvflare poc prepare -c site-dolly
+```
+Copy the created "prod_00" where your SLURM job can access it, i.e., a shared file system.
+
+```bash
+export NVFLARE_PROJECT=<your/path/to/prod_00>
+```
+
+### 3. (Optionally) Set your Weights and Biases API Key
+The training can be logged to WandB if you provide and API key via
+
+```bash
+export WANDB_API_KEY=<your_wandb_api_key>
+```
+
+### 4. Submit the SLURM Job
+
+Update your SLURM account name and partitions by providing the information in [nvflare.slurm](nvflare.slurm):
+
+```
+#SBATCH -A [ACCOUNT_NAME]
+#SBATCH --partition=[PARTITION_NAME1,PARTITION_NAME2,...]
+```
+
+By default, you can submit a job, requesting 2 nodes with 8 GPUs via
+
+```bash
+sbatch nvflare.slurm
+```
+
+For more options, see [MULTINODE.md](MULTINODE.md#testing).
