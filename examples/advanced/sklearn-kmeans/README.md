@@ -6,19 +6,19 @@ Please make sure you set up virtual environment and Jupyterlab follows [example 
 ### Scikit-learn
 This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.
 It uses [Scikit-learn](https://scikit-learn.org/),
-a widely used open-source machine learning library that supports supervised 
+a widely used open-source machine learning library that supports supervised
 and unsupervised learning.
 Follow along in this [notebook](./sklearn_kmeans_iris.ipynb) for an interactive experience.
 ### Tabular data
 The data used in this example is tabular in a format that can be handled by [pandas](https://pandas.pydata.org/), such that:
 - rows correspond to data samples
-- the first column represents the label 
-- the other columns cover the features.    
+- the first column represents the label
+- the other columns cover the features.
 
-Each client is expected to have one local data file containing both training 
-and validation samples. To load the data for each client, the following 
+Each client is expected to have one local data file containing both training
+and validation samples. To load the data for each client, the following
 parameters are expected by the local learner:
-- data_file_path: string, the full path to the client's data file 
+- data_file_path: string, the full path to the client's data file
 - train_start: int, start row index for the training set
 - train_end: int, end row index for the training set
 - valid_start: int, start row index for the validation set
@@ -26,30 +26,30 @@ parameters are expected by the local learner:
 
 ### Federated k-Means clustering
 The machine learning algorithm in this example is [k-Means clustering](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html).
-The aggregation follows the scheme defined in [Mini-batch k-Means](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.MiniBatchKMeans.html). 
+The aggregation follows the scheme defined in [Mini-batch k-Means](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.MiniBatchKMeans.html).
 Under this setting, each round of federated learning can be formulated as follows:
 - local training: starting from global centers, each client trains a local MiniBatchKMeans model with their own data
-- global aggregation: server collects the cluster center, 
-  counts information from all clients, aggregates them by considering 
+- global aggregation: server collects the cluster center,
+  counts information from all clients, aggregates them by considering
   each client's results as a mini-batch, and updates the global center and per-center counts.
 
-For center initialization, at the first round, each client generates its 
-initial centers with the k-means++ method. Then, the server collects all 
-initial centers and performs one round of k-means to generate the initial 
+For center initialization, at the first round, each client generates its
+initial centers with the k-means++ method. Then, the server collects all
+initial centers and performs one round of k-means to generate the initial
 global center.
 
-## Data preparation 
-This example uses the Iris dataset available from Scikit-learn's dataset API.  
+## Data preparation
+This example uses the Iris dataset available from Scikit-learn's dataset API.
 ```commandline
 bash prepare_data.sh
 ```
-This will load the data, format it properly by removing the header, order 
-the label and feature columns, randomize the dataset, and save it to a CSV file with comma separation. 
-The default path is `/tmp/nvflare/dataset/sklearn_iris.csv`. 
+This will load the data, format it properly by removing the header, order
+the label and feature columns, randomize the dataset, and save it to a CSV file with comma separation.
+The default path is `/tmp/nvflare/dataset/sklearn_iris.csv`.
 
-Note that the dataset contains a label for each sample, which will not be 
-used for training since k-Means clustering is an unsupervised method. 
-The entire dataset with labels will be used for performance evaluation 
+Note that the dataset contains a label for each sample, which will not be
+used for training since k-Means clustering is an unsupervised method.
+The entire dataset with labels will be used for performance evaluation
 based on [homogeneity_score](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.homogeneity_score.html).
 
 ## Run with Job Recipe (Recommended)
@@ -78,30 +78,20 @@ Available arguments:
 - `--num_rounds`: Number of training rounds (default: 5)
 - `--n_clusters`: Number of clusters (default: 3)
 - `--data_path`: Path to iris CSV file (default: /tmp/nvflare/dataset/sklearn_iris.csv)
-- `--split_method`: Data split method - 'uniform' or 'custom' (default: uniform)
 
 ### Per-Client Data Splits
 
-By default (`--split_method uniform`), all clients use the same data ranges, which is suitable for testing on small datasets like Iris.
-
-For realistic federated learning with non-overlapping data, use `--split_method custom`:
-
-```bash
-python job.py --n_clients 3 --num_rounds 5 --split_method custom
-```
-
-This will:
-- Calculate non-overlapping training data ranges for each client
-- Use 80% of data (120 samples) for training, split among clients
+The job automatically divides data into **non-overlapping ranges** for each client:
+- First 80% of data (120 samples) split among clients for training
 - Last 20% (30 samples) used as shared validation set
-- Pass different `--train_start`, `--train_end`, `--valid_start`, `--valid_end` arguments to each client
+- Each client receives different `--train_start`, `--train_end`, `--valid_start`, `--valid_end` arguments
 
 **Example splits for 3 clients:**
 - site-1: train [0:40], valid [120:150]
 - site-2: train [40:80], valid [120:150]
 - site-3: train [80:120], valid [120:150]
 
-**Advanced: Custom Split Logic**
+**Customizing Split Logic**
 
 Modify `calculate_data_splits()` in `job.py` to implement different strategies:
 - **Non-IID splits**: Assign different class distributions to clients
