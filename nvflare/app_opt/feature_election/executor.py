@@ -384,10 +384,10 @@ class FeatureElectionExecutor(Executor):
                 base_model = RandomForestClassifier(n_estimators=100, random_state=random_state)
 
             # Use PPIMBC for feature selection
-            if self.fs_method == "pyimpetus":
-                selector = PPIMBC(
-                    base_model, p_val_thresh=p_val_thresh, num_sim=num_sim, random_state=random_state, verbose=verbose
-                )
+            # Use PPIMBC for feature selection
+            selector = PPIMBC(
+                base_model, p_val_thresh=p_val_thresh, num_sim=num_sim, random_state=random_state, verbose=verbose
+            )
             # Fit the selector
             selector.fit(self.X_train, self.y_train)
 
