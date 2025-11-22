@@ -4,19 +4,20 @@ A plug-and-play horizontal federated feature selection framework for tabular dat
 
 ## Overview
 
-This work originates from FLASH: A framework for Federated Learning with Attribute Selection and Hyperparameter optimization a work presented in [FLTA IEEE 2025](https://flta-conference.org/flta-2025/) achieving the best student paper award.
-Feature election enables multiple clients with tabular datasets to collaboratively identify the most relevant features without sharing raw data. It works by using conventional Feature selection algorithms in the client side and performing a weighted aggregation of their results.
-FLASH is available on [Github](https://github.com/parasecurity/FLASH)
+This work originates from FLASH: A framework for Federated Learning with Attribute Selection and Hyperparameter optimization, a work presented at [FLTA IEEE 2025](https://flta-conference.org/flta-2025/) achieving the Best Student Paper Award.
+
+Feature Election enables multiple clients with tabular datasets to collaboratively identify the most relevant features without sharing raw data. It works by using conventional feature selection algorithms on the client side and performing a weighted aggregation of their results.
+
+FLASH is available on [GitHub](https://github.com/parasecurity/FLASH)
 
 ### Key Features
 
 - **Easy Integration**: Simple API for tabular datasets (pandas, numpy)
-- **Multiple Feature Selection Methods**: Lasso, Elastic Net, Mutual Information, PyImpetus, and more
+- **Multiple Feature Selection Methods**: Lasso, Elastic Net, Mutual Information, RFE, Random Forest, PyImpetus, and more
 - **Flexible Aggregation**: Configurable freedom degree (0=intersection, 1=union, 0-1=weighted voting)
 - **Auto-tuning**: Automatic optimization of freedom degree parameter
 - **Privacy-Preserving**: Only feature selections and scores are shared, not raw data
 - **Production-Ready**: Fully compatible with NVIDIA FLARE workflows
-
 
 ### Optional Dependencies
 
@@ -28,7 +29,7 @@ FLASH is available on [Github](https://github.com/parasecurity/FLASH)
 ```bash
 pip install PyImpetus
 ```
-  
+
 ## Quick Start
 
 ### Basic Usage
@@ -52,6 +53,7 @@ selected_mask, stats = quick_election(
 # Get selected features
 selected_features = df.columns[:-1][selected_mask]
 print(f"Selected {len(selected_features)} features: {list(selected_features)}")
+print(f"Optimal freedom_degree: {stats['freedom_degree']}")
 ```
 
 ### Custom Configuration
@@ -71,12 +73,15 @@ client_data = fe.prepare_data_splits(
     df=df,
     target_col='target',
     num_clients=5,
-    split_strategy='stratified'  # or 'random', 'dirichlet'
+    split_strategy='stratified'  # or 'random', 'sequential', 'dirichlet'
 )
 
 # Run simulation
 stats = fe.simulate_election(client_data)
 
+# Access selected features
+selected_features = fe.selected_feature_names
+print(f"Selected {stats['num_features_selected']} features")
 ```
 
 ## NVIDIA FLARE Deployment
@@ -97,7 +102,8 @@ config_paths = fe.create_flare_job(
     job_name="feature_selection_job",
     output_dir="./jobs/feature_selection",
     min_clients=2,
-    num_rounds=1
+    num_rounds=1,
+    client_sites=['hospital_1', 'hospital_2', 'hospital_3']
 )
 ```
 
@@ -144,13 +150,15 @@ selected_features = [feature_names[i] for i, selected in enumerate(global_mask) 
 
 | Method | Description | Best For | Parameters |
 |--------|-------------|----------|------------|
-| `lasso` | L1 regularization | High-dimensional sparse data | `alpha` |
-| `elastic_net` | L1+L2 regularization | Correlated features | `alpha`, `l1_ratio` |
-| `random_forest` | Tree-based importance | Non-linear relationships | `n_estimators`, `max_depth` |
-| `mutual_info` | Information gain | Any data type | `n_neighbors` |
+| `lasso` | L1 regularization | High-dimensional sparse data | `alpha`, `max_iter` |
+| `elastic_net` | L1+L2 regularization | Correlated features | `alpha`, `l1_ratio`, `max_iter` |
+| `random_forest` | Tree-based importance | Non-linear relationships | `n_estimators`, `max_depth`, `k` |
+| `mutual_info` | Information gain | Any data type | `n_neighbors`, `k` |
 | `f_classif` | ANOVA F-test | Gaussian features | `k` |
 | `chi2` | Chi-squared test | Non-negative features | `k` |
-| `pyimpetus` | Permutation importance | Robust feature selection | `p_val_thresh`, `num_sim` |
+| `rfe` | Recursive Feature Elimination | Iterative selection | `n_features_to_select`, `step` |
+| `selectkbest` | SelectKBest wrapper | General use | `k`, `score_func` |
+| `pyimpetus` | Permutation importance | Robust feature selection | `p_val_thresh`, `num_sim`, `model` |
 
 ## Parameters
 
@@ -173,8 +181,8 @@ selected_features = [feature_names[i] for i, selected in enumerate(global_mask) 
 
 - **stratified**: Maintains class distribution (recommended for classification)
 - **random**: Random split
-- **dirichlet**: Non-IID split with Dirichlet distribution
-- **feature_split**: Each client gets different feature subsets
+- **sequential**: Sequential split for ordered data
+- **dirichlet**: Non-IID split with Dirichlet distribution (alpha=0.5)
 
 ## Advanced Features
 
@@ -187,10 +195,16 @@ selected_mask, stats = quick_election(
     df=df,
     target_col='target',
     num_clients=4,
-    auto_tune=True,
-    candidate_freedoms=[0.0, 0.3, 0.5, 0.7, 1.0]
+    auto_tune=True
 )
 print(f"Optimal freedom_degree: {stats['freedom_degree']}")
+```
+
+### Applying Feature Mask to New Data
+
+```python
+# After running election
+X_test_selected = fe.apply_mask(X_test)
 ```
 
 ### Cross-validation
@@ -219,6 +233,9 @@ fe.save_results("feature_election_results.json")
 # Load results
 from nvflare.app_opt.feature_election import load_election_results
 results = load_election_results("feature_election_results.json")
+
+# Or load into an existing FeatureElection instance
+fe.load_results("feature_election_results.json")
 ```
 
 ## Architecture
@@ -271,19 +288,36 @@ class FeatureElection:
         self,
         df: pd.DataFrame,
         target_col: str,
-        num_clients: int,
-        split_strategy: str = 'stratified'
-    ) -> Dict
+        num_clients: int = 3,
+        split_strategy: str = "stratified",
+        split_ratios: Optional[List[float]] = None,
+        random_state: int = 42
+    ) -> List[Tuple[pd.DataFrame, pd.Series]]
     
-    def simulate_election(self, client_data: Dict) -> Dict
+    def simulate_election(
+        self,
+        client_data: List[Tuple[Union[pd.DataFrame, np.ndarray], Union[pd.Series, np.ndarray]]],
+        feature_names: Optional[List[str]] = None
+    ) -> Dict
     
     def create_flare_job(
         self,
-        job_name: str,
-        output_dir: str,
+        job_name: str = "feature_election",
+        output_dir: str = "jobs/feature_election",
         min_clients: int = 2,
-        num_rounds: int = 1
+        num_rounds: int = 1,
+        client_sites: Optional[List[str]] = None
     ) -> Dict[str, str]
+    
+    def apply_mask(
+        self,
+        X: Union[pd.DataFrame, np.ndarray],
+        feature_names: Optional[List[str]] = None
+    ) -> Union[pd.DataFrame, np.ndarray]
+    
+    def save_results(self, filepath: str)
+    
+    def load_results(self, filepath: str)
 ```
 
 #### FeatureElectionController
@@ -297,8 +331,12 @@ class FeatureElectionController(ScatterAndGather):
         freedom_degree: float = 0.1,
         aggregation_mode: str = 'weighted',
         min_clients: int = 2,
-        num_rounds: int = 1
+        num_rounds: int = 1,
+        task_name: str = "feature_election",
+        train_timeout: int = 0
     )
+    
+    def get_results(self) -> Dict
 ```
 
 #### FeatureElectionExecutor
@@ -311,7 +349,9 @@ class FeatureElectionExecutor(Executor):
         self,
         fs_method: str = "lasso",
         fs_params: Optional[Dict] = None,
-        eval_metric: str = "f1"
+        eval_metric: str = "f1",
+        quick_eval: bool = True,
+        task_name: str = "feature_election"
     )
     
     def set_data(
@@ -322,20 +362,34 @@ class FeatureElectionExecutor(Executor):
         y_val: Optional[np.ndarray] = None,
         feature_names: Optional[List[str]] = None
     )
+    
+    def get_selected_features(self) -> Optional[np.ndarray]
+    
+    def get_feature_names(self) -> Optional[List[str]]
+    
+    def get_pyimpetus_info(self) -> Dict[str, Any]
 ```
 
-### Helper Functions
+### Convenience Functions
+
+#### quick_election
 
 ```python
 def quick_election(
     df: pd.DataFrame,
     target_col: str,
-    num_clients: int = 4,
-    fs_method: str = 'lasso',
-    auto_tune: bool = True,
+    num_clients: int = 3,
+    freedom_degree: float = 0.5,
+    fs_method: str = "lasso",
+    auto_tune: bool = False,
+    split_strategy: str = "stratified",
     **kwargs
 ) -> Tuple[np.ndarray, Dict]
+```
 
+#### load_election_results
+
+```python
 def load_election_results(filepath: str) -> Dict
 ```
 
@@ -357,12 +411,6 @@ For high-dimensional datasets (>10,000 features):
 | Random Forest | O(n*p*log(n)*trees) | Medium datasets |
 | PyImpetus | O(n*p*sim) | When accuracy critical |
 
-### Scalability
-
-- Clients: Tested with 2-100 clients
-- Features: Tested with 10-50,000 features
-- Samples: Tested with 100-1M samples per client
-
 ## Troubleshooting
 
 ### Common Issues
@@ -381,6 +429,10 @@ For high-dimensional datasets (>10,000 features):
    - Enable auto_tune
    - Increase min_clients
    - Try weighted aggregation
+
+4. **"PyImpetus not available"**
+   - Install with: `pip install PyImpetus`
+   - The executor will fall back to mutual information if unavailable
 
 ### Debug Mode
 
@@ -412,9 +464,8 @@ If you use this library in your research, please cite (PENDING)
 <!--```bibtex
 @inproceedings{flash2025,
   title={FLASH: A framework for Federated Learning with Attribute Selection and Hyperparameter optimization},
-  author={[Ioannis Christofilogiannis, Georgios Valavanis, Alexander Shevtsov, Ioannis Lamprou and Sotiris Ioannidis
-]},
-  booktitle={[FLTA]},
+  author={Ioannis Christofilogiannis, Georgios Valavanis, Alexander Shevtsov, Ioannis Lamprou and Sotiris Ioannidis},
+  booktitle={FLTA IEEE 2025},
   year={2025}
 }
 ```-->
@@ -431,4 +482,4 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Support
 
-- **FLASH Repository**: [Github](https://github.com/parasecurity/FLASH)
+- **FLASH Repository**: [GitHub](https://github.com/parasecurity/FLASH)

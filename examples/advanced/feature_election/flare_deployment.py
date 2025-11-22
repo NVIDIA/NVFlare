@@ -110,11 +110,6 @@ def load_client_data():
     Simulate loading client data
     In production, replace this with your actual data loading logic
     """
-    def load_client_data():
-    """
-    Simulate loading client data
-    In production, replace this with your actual data loading logic
-    """
     # Simulate client-specific data
     X, y = make_classification(
         n_samples=500,
