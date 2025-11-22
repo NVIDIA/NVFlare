@@ -261,10 +261,7 @@ Clients (Executors)
 See the `/examples` directory for comprehensive examples:
 
 - `basic_usage.py`: Simple feature election
-- `production_deployment.py`: Full FLARE deployment
-- `high_dimensional.py`: Genomics/high-dimensional data
-- `comparison.py`: Compare different methods
-- `custom_methods.py`: Integrate custom feature selection
+- `flare_deployment.py`: Deployment example
 
 ## API Reference
 

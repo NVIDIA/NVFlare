@@ -189,8 +189,6 @@ def example_apply_mask_to_new_data():
     print("=" * 70)
 
     # Load the election results
-    # Duplicate import removed - already imported on line 146
-
     try:
         results = load_election_results("feature_election_results.json")
         global_mask = np.array(results["global_mask"])
