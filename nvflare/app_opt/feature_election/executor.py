@@ -18,28 +18,27 @@ Feature Election Client Executor for NVIDIA FLARE
 Handles local feature selection and responds to server requests
 """
 
+import logging
+from typing import Any, Dict, Optional, Tuple
+
 import numpy as np
-from typing import Dict, Optional, Tuple, Any
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_selection import RFE, SelectKBest, chi2, f_classif, mutual_info_classif
+from sklearn.linear_model import ElasticNet, Lasso, LogisticRegression
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.preprocessing import StandardScaler
+
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-import logging
-from sklearn.feature_selection import (
-    SelectKBest, chi2, f_classif, mutual_info_classif,
-    RFE
-)
-from sklearn.linear_model import Lasso, ElasticNet, LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import f1_score, accuracy_score, roc_auc_score
-
 
 # Try to import PyImpetus
 
 try:
     from pyimpetus import PPIMBC
+
     PYIMPETUS_AVAILABLE = True
 except ImportError:
     PYIMPETUS_AVAILABLE = False
@@ -60,7 +59,7 @@ class FeatureElectionExecutor(Executor):
         fs_params: Optional[Dict] = None,
         eval_metric: str = "f1",
         quick_eval: bool = True,
-        task_name: str = "feature_election"
+        task_name: str = "feature_election",
     ):
         """
         Initialize Feature Election Executor
@@ -113,17 +112,22 @@ class FeatureElectionExecutor(Executor):
                 "p_val_thresh": 0.05,
                 "num_sim": 50,
                 "random_state": 42,
-                "verbose": 0
-            }
+                "verbose": 0,
+            },
         }
 
         if self.fs_method in defaults:
             # Merge with user-provided params (user params override defaults)
             self.fs_params = {**defaults[self.fs_method], **self.fs_params}
 
-    def set_data(self, X_train: np.ndarray, y_train: np.ndarray,
-                 X_val: Optional[np.ndarray] = None, y_val: Optional[np.ndarray] = None,
-                 feature_names: Optional[list] = None):
+    def set_data(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_val: Optional[np.ndarray] = None,
+        y_val: Optional[np.ndarray] = None,
+        feature_names: Optional[list] = None,
+    ):
         """
         Set training and validation data
 
@@ -146,13 +150,7 @@ class FeatureElectionExecutor(Executor):
 
         logger.info(f"Data set: {X_train.shape[0]} samples, {X_train.shape[1]} features")
 
-    def execute(
-        self,
-        task_name: str,
-        shareable: Shareable,
-        fl_ctx: FLContext,
-        abort_signal: Signal
-    ) -> Shareable:
+    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """
         Execute feature election task
 
@@ -180,12 +178,7 @@ class FeatureElectionExecutor(Executor):
             logger.error(f"Unknown request type: {request_type}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-    def _handle_feature_selection(
-        self,
-        shareable: Shareable,
-        fl_ctx: FLContext,
-        abort_signal: Signal
-    ) -> Shareable:
+    def _handle_feature_selection(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """Handle feature selection request from server"""
 
         if self.X_train is None:
@@ -197,16 +190,12 @@ class FeatureElectionExecutor(Executor):
             selected_mask, feature_scores = self._perform_feature_selection()
 
             # Evaluate performance with selected features
-            initial_score = self.evaluate_model(
-                self.X_train, self.y_train, self.X_val, self.y_val
-            )
+            initial_score = self.evaluate_model(self.X_train, self.y_train, self.X_val, self.y_val)
 
             # Apply feature mask and evaluate
             X_train_selected = self.X_train[:, selected_mask]
             X_val_selected = self.X_val[:, selected_mask]
-            fs_score = self.evaluate_model(
-                X_train_selected, self.y_train, X_val_selected, self.y_val
-            )
+            fs_score = self.evaluate_model(X_train_selected, self.y_train, X_val_selected, self.y_val)
 
             # Log results
             n_selected = np.sum(selected_mask)
@@ -267,9 +256,10 @@ class FeatureElectionExecutor(Executor):
 
         elif self.fs_method == "mutual_info":
             feature_scores = mutual_info_classif(
-                X_scaled, self.y_train,
+                X_scaled,
+                self.y_train,
                 n_neighbors=self.fs_params.get("n_neighbors", 3),
-                random_state=self.fs_params.get("random_state", 42)
+                random_state=self.fs_params.get("random_state", 42),
             )
             k = min(self.fs_params.get("k", 10), n_features)
             selected_indices = np.argsort(feature_scores)[-k:]
@@ -297,7 +287,7 @@ class FeatureElectionExecutor(Executor):
             selector = RFE(
                 estimator,
                 n_features_to_select=min(self.fs_params.get("n_features_to_select", 10), n_features),
-                step=self.fs_params.get("step", 1)
+                step=self.fs_params.get("step", 1),
             )
             selector.fit(X_scaled, self.y_train)
             selected_mask = selector.support_
@@ -327,10 +317,7 @@ class FeatureElectionExecutor(Executor):
                 score_func = f_classif
                 X_to_use = X_scaled
 
-            selector = SelectKBest(
-                score_func=score_func,
-                k=min(self.fs_params.get("k", 10), n_features)
-            )
+            selector = SelectKBest(score_func=score_func, k=min(self.fs_params.get("k", 10), n_features))
             selector.fit(X_to_use, self.y_train)
             selected_mask = selector.get_support()
             feature_scores = selector.scores_
@@ -351,8 +338,9 @@ class FeatureElectionExecutor(Executor):
 
         # Normalize scores to [0, 1]
         if np.max(feature_scores) > np.min(feature_scores):
-            feature_scores = (feature_scores - np.min(feature_scores)) / \
-                           (np.max(feature_scores) - np.min(feature_scores))
+            feature_scores = (feature_scores - np.min(feature_scores)) / (
+                np.max(feature_scores) - np.min(feature_scores)
+            )
         else:
             # If all scores are same, use binary scores
             feature_scores = selected_mask.astype(float)
@@ -389,31 +377,16 @@ class FeatureElectionExecutor(Executor):
 
             # Initialize base model
             if model_type == "random_forest":
-                base_model = RandomForestClassifier(
-                    n_estimators=100,
-                    random_state=random_state,
-                    max_depth=None
-                )
+                base_model = RandomForestClassifier(n_estimators=100, random_state=random_state, max_depth=None)
             elif model_type == "logistic":
-                base_model = LogisticRegression(
-                    max_iter=1000,
-                    random_state=random_state,
-                    solver='liblinear'
-                )
+                base_model = LogisticRegression(max_iter=1000, random_state=random_state, solver="liblinear")
             else:
-                base_model = RandomForestClassifier(
-                    n_estimators=100,
-                    random_state=random_state
-                )
+                base_model = RandomForestClassifier(n_estimators=100, random_state=random_state)
 
             # Use PPIMBC for feature selection
             if self.fs_method == "pyimpetus":
                 selector = PPIMBC(
-                    base_model,
-                    p_val_thresh=p_val_thresh,
-                    num_sim=num_sim,
-                    random_state=random_state,
-                    verbose=verbose
+                    base_model, p_val_thresh=p_val_thresh, num_sim=num_sim, random_state=random_state, verbose=verbose
                 )
             # Fit the selector
             selector.fit(self.X_train, self.y_train)
@@ -437,7 +410,7 @@ class FeatureElectionExecutor(Executor):
                 selected_indices = np.where(selected_mask)[0]
 
             # Create feature scores
-            if hasattr(selector, 'p_vals_') and len(selector.p_vals_) == n_features:
+            if hasattr(selector, "p_vals_") and len(selector.p_vals_) == n_features:
                 # Use -log(p_value) as score (higher = more significant)
                 epsilon = 1e-10
                 feature_scores = -np.log10(selector.p_vals_ + epsilon)
@@ -466,13 +439,7 @@ class FeatureElectionExecutor(Executor):
             selected_mask[selected_indices] = True
             return selected_mask, feature_scores
 
-    def evaluate_model(
-        self,
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-        X_val: np.ndarray,
-        y_val: np.ndarray
-    ) -> float:
+    def evaluate_model(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray) -> float:
         """
         Quick evaluation of model performance
 
@@ -492,7 +459,7 @@ class FeatureElectionExecutor(Executor):
             y_pred = model.predict(X_val)
 
             if self.eval_metric == "f1":
-                score = f1_score(y_val, y_pred, average='weighted')
+                score = f1_score(y_val, y_pred, average="weighted")
             elif self.eval_metric == "accuracy":
                 score = accuracy_score(y_val, y_pred)
             elif self.eval_metric == "auc":
@@ -501,9 +468,9 @@ class FeatureElectionExecutor(Executor):
                     score = roc_auc_score(y_val, y_proba)
                 else:
                     # Fall back to f1 for multi-class
-                    score = f1_score(y_val, y_pred, average='weighted')
+                    score = f1_score(y_val, y_pred, average="weighted")
             else:
-                score = f1_score(y_val, y_pred, average='weighted')
+                score = f1_score(y_val, y_pred, average="weighted")
 
             return max(score, 0.0)  # Ensure non-negative score
         except Exception as e:
@@ -533,10 +500,7 @@ class FeatureElectionExecutor(Executor):
 
             # Update feature names
             if self.feature_names is not None:
-                self.feature_names = [
-                    name for i, name in enumerate(self.feature_names)
-                    if self.global_feature_mask[i]
-                ]
+                self.feature_names = [name for i, name in enumerate(self.feature_names) if self.global_feature_mask[i]]
 
         return make_reply(ReturnCode.OK)
 
@@ -547,16 +511,13 @@ class FeatureElectionExecutor(Executor):
     def get_feature_names(self) -> Optional[list]:
         """Get names of selected features"""
         if self.global_feature_mask is not None and self.feature_names is not None:
-            return [
-                name for i, name in enumerate(self.feature_names)
-                if self.global_feature_mask[i]
-            ]
+            return [name for i, name in enumerate(self.feature_names) if self.global_feature_mask[i]]
         return None
 
     def get_pyimpetus_info(self) -> Dict[str, Any]:
         """Get information about PyImpetus availability and methods"""
         info = {
             "pyimpetus_available": PYIMPETUS_AVAILABLE,
-            "is_using_pyimpetus": self.fs_method == "pyimpetus" and PYIMPETUS_AVAILABLE
+            "is_using_pyimpetus": self.fs_method == "pyimpetus" and PYIMPETUS_AVAILABLE,
         }
         return info

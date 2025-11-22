@@ -18,14 +18,16 @@ Feature Election Controller for NVIDIA FLARE
 Implements the Feature Election algorithm from the FLASH framework
 """
 
-import numpy as np
+import logging
 from typing import Dict, Optional
+
+import numpy as np
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_common.abstract.aggregator import Aggregator
-import logging
+from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +41,11 @@ class FeatureElectionController(ScatterAndGather):
     def __init__(
         self,
         freedom_degree: float = 0.1,
-        aggregation_mode: str = 'weighted',
+        aggregation_mode: str = "weighted",
         min_clients: int = 2,
         num_rounds: int = 1,
         task_name: str = "feature_election",
-        train_timeout: int = 0
+        train_timeout: int = 0,
     ):
         """
         Initialize Feature Election Controller
@@ -61,13 +63,13 @@ class FeatureElectionController(ScatterAndGather):
             start_round=0,
             wait_time_after_min_received=10,
             train_task_name=task_name,
-            train_timeout=train_timeout
+            train_timeout=train_timeout,
         )
 
         # Validate inputs
         if not 0 <= freedom_degree <= 1:
             raise ValueError("freedom_degree must be between 0 and 1")
-        if aggregation_mode not in ['weighted', 'uniform']:
+        if aggregation_mode not in ["weighted", "uniform"]:
             raise ValueError("aggregation_mode must be 'weighted' or 'uniform'")
 
         self.freedom_degree = freedom_degree
@@ -161,7 +163,7 @@ class FeatureElectionController(ScatterAndGather):
                         "feature_scores": np.array(client_contrib.get("feature_scores")),
                         "num_samples": client_contrib.get("num_samples", 1),
                         "initial_score": client_contrib.get("initial_score", 0),
-                        "fs_score": client_contrib.get("fs_score", 0)
+                        "fs_score": client_contrib.get("fs_score", 0),
                     }
 
         logger.info(f"Extracted data from {len(client_data)} clients")
@@ -230,12 +232,11 @@ class FeatureElectionController(ScatterAndGather):
                 "initial_score": selection.get("initial_score", 0),
                 "fs_score": selection.get("fs_score", 0),
                 "num_features": int(np.sum(selection["selected_features"])),
-                "num_samples": num_samples
+                "num_samples": num_samples,
             }
 
             # Log client statistics
-            logger.info(f"Client {client_name}: {np.sum(masks[-1])} features selected, "
-                       f"{num_samples} samples")
+            logger.info(f"Client {client_name}: {np.sum(masks[-1])} features selected, " f"{num_samples} samples")
 
         masks = np.array(masks)
         scores = np.array(scores)
@@ -255,9 +256,7 @@ class FeatureElectionController(ScatterAndGather):
             global_mask = union_mask
         else:
             # Main algorithm: select from difference set based on weighted voting
-            global_mask = self._weighted_election(
-                masks, scores, weights, intersection_mask, union_mask
-            )
+            global_mask = self._weighted_election(masks, scores, weights, intersection_mask, union_mask)
 
         logger.info(f"Global mask: {np.sum(global_mask)} features selected")
 
@@ -269,7 +268,7 @@ class FeatureElectionController(ScatterAndGather):
         scores: np.ndarray,
         weights: np.ndarray,
         intersection_mask: np.ndarray,
-        union_mask: np.ndarray
+        union_mask: np.ndarray,
     ) -> np.ndarray:
         """
         Perform weighted election for features in (union - intersection)
@@ -304,7 +303,7 @@ class FeatureElectionController(ScatterAndGather):
             scaled_scores[i][intersection_mask] = 0.0
 
             # Apply client weight if in weighted mode
-            if self.aggregation_mode == 'weighted':
+            if self.aggregation_mode == "weighted":
                 scaled_scores[i] *= weights[i]
 
         # Aggregate scores across clients
@@ -355,9 +354,11 @@ class FeatureElectionController(ScatterAndGather):
         """Get feature election results"""
         return {
             "global_feature_mask": self.global_feature_mask.tolist() if self.global_feature_mask is not None else None,
-            "num_features_selected": int(np.sum(self.global_feature_mask)) if self.global_feature_mask is not None else 0,
+            "num_features_selected": (
+                int(np.sum(self.global_feature_mask)) if self.global_feature_mask is not None else 0
+            ),
             "freedom_degree": self.freedom_degree,
             "aggregation_mode": self.aggregation_mode,
             "client_scores": self.client_scores,
-            "total_clients": len(self.client_scores)
+            "total_clients": len(self.client_scores),
         }

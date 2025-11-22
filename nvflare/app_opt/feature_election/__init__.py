@@ -50,16 +50,16 @@ Example:
         )
 """
 
-from .feature_election import FeatureElection, quick_election, load_election_results
 from .controller import FeatureElectionController
 from .executor import FeatureElectionExecutor
+from .feature_election import FeatureElection, load_election_results, quick_election
 
 __version__ = "0.0.9"
 __author__ = "Ioannis Christofilogiannis"
 __all__ = [
     "FeatureElection",
-    "FeatureElectionController", 
+    "FeatureElectionController",
     "FeatureElectionExecutor",
     "quick_election",
-    "load_election_results"
+    "load_election_results",
 ]
