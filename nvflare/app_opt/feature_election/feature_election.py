@@ -458,9 +458,9 @@ executor.set_data(X_train, y_train, feature_names=feature_names)
             selected_mask, feature_scores = executor._perform_feature_selection()
             
             # Evaluate
-            initial_score = executor._evaluate_model(X_np, y_np, X_np, y_np)
+            initial_score = executor.evaluate_model(X_np, y_np, X_np, y_np)
             X_selected = X_np[:, selected_mask]
-            fs_score = executor._evaluate_model(X_selected, y_np, X_selected, y_np)
+            fs_score = executor.evaluate_model(X_selected, y_np, X_selected, y_np)
             
             client_selections[f"client_{i}"] = {
                 "selected_features": selected_mask,

@@ -197,14 +197,14 @@ class FeatureElectionExecutor(Executor):
             selected_mask, feature_scores = self._perform_feature_selection()
 
             # Evaluate performance with selected features
-            initial_score = self._evaluate_model(
+            initial_score = self.evaluate_model(
                 self.X_train, self.y_train, self.X_val, self.y_val
             )
 
             # Apply feature mask and evaluate
             X_train_selected = self.X_train[:, selected_mask]
             X_val_selected = self.X_val[:, selected_mask]
-            fs_score = self._evaluate_model(
+            fs_score = self.evaluate_model(
                 X_train_selected, self.y_train, X_val_selected, self.y_val
             )
 
@@ -466,7 +466,7 @@ class FeatureElectionExecutor(Executor):
             selected_mask[selected_indices] = True
             return selected_mask, feature_scores
 
-    def _evaluate_model(
+    def evaluate_model(
         self,
         X_train: np.ndarray,
         y_train: np.ndarray,
