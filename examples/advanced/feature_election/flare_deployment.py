@@ -189,7 +189,7 @@ def example_apply_mask_to_new_data():
     print("=" * 70)
 
     # Load the election results
-    from nvflare.app_opt.feature_election import load_election_results
+    # Duplicate import removed - already imported on line 146
 
     try:
         results = load_election_results("feature_election_results.json")
