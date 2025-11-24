@@ -74,7 +74,7 @@ class FoxExecutor(Executor, FoxAdaptor):
 
         app = ClientApp(client_obj)
         app.name = client_name
-        app.backend_type = BackendType.SYSTEM
+        app.backend_type = BackendType.FLARE
         self.client_app = app
 
         err = self.process_config(self.client_app, fl_ctx)
