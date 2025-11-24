@@ -88,14 +88,12 @@ class ModelQuantizer(DXOFilter):
                 source_data_type = str(values.dtype).split(".")[1]
             source_datatype[param_name] = source_data_type
 
-            # check if the data type is valid
-            # check if the data type is valid
-            if source_data_type == "bool":
-                # bool type can be returned by adaquant for zero tensors or compressed data
-                source_datatype[param_name] = source_data_type
-                continue
-
-            if source_data_type.upper() not in DATA_TYPE:
+            # check if the data type is valid, bool can be returned by adaquant so treating as exception
+            if source_data_type != "bool" and source_data_type.upper() not in DATA_TYPE:
+                raise ValueError(
+                    f"Invalid source data type: {source_data_type}, valid: {DATA_TYPE}, param_name: {param_name}"
+                )
+            source_datatype[param_name] = source_data_type
 
             if self.quantization_type != "adaquant":
                 # get the bits information
