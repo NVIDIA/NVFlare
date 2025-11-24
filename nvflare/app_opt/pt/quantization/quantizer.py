@@ -185,7 +185,9 @@ class ModelQuantizer(DXOFilter):
                 if source_data_format == "numpy":
                     params[param_name] = quantized.cpu().numpy() if isinstance(quantized, torch.Tensor) else quantized
                 elif source_data_format == "torch":
-                    params[param_name] = quantized.cpu() if isinstance(quantized, torch.Tensor) else torch.as_tensor(quantized)
+                    params[param_name] = (
+                        quantized.cpu() if isinstance(quantized, torch.Tensor) else torch.as_tensor(quantized)
+                    )
 
                 if quantized_state_dict:
                     quant_state[param_name] = quantized_state_dict
