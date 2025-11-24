@@ -14,5 +14,6 @@
 
 from .fedavg import SklearnFedAvgRecipe
 from .kmeans import KMeansFedAvgRecipe
+from .svm import SVMFedAvgRecipe
 
-__all__ = ["KMeansFedAvgRecipe", "SklearnFedAvgRecipe", "SVMFedAvgRecipe"]
+__all__ = ["SklearnFedAvgRecipe", "KMeansFedAvgRecipe", "SVMFedAvgRecipe"]
