@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import copy
 import os
 
 # Add deterministic seed for reproducibility illustration
@@ -23,10 +24,11 @@ import datasets
 import numpy as np
 import torch
 import torch.distributed as dist
-from accelerate import PartialState
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict, utils
 from transformers import AutoModelForCausalLM, TrainerCallback, trainer_utils
 from trl import SFTConfig, SFTTrainer
+
+import nvflare.client as flare
 
 
 # Add callback to stop at each epoch
@@ -62,12 +64,6 @@ def setup_distributed_training():
         return 0, 1, 0
 
 
-def cleanup_distributed_training():
-    """Cleanup distributed training environment."""
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -88,7 +84,7 @@ def main():
     parser.add_argument(
         "--output_path",
         type=str,
-        default="./workspace_centralized/llama-3.2-1b-dolly-sft-iter",
+        default="./workspace_federated/llama-3.2-1b-dolly-sft",
     )
     parser.add_argument(
         "--train_mode",
@@ -102,17 +98,49 @@ def main():
         default="constant",
         help="learning rate scheduler type, default to 'constant'",
     )
+    parser.add_argument(
+        "--message_mode",
+        type=str,
+        default="numpy",
+        help="message mode, numpy or tensor, default to numpy",
+    )
+    parser.add_argument("--local_epoch", type=int, default=1)
+    parser.add_argument("--num_rounds", type=int, default=3)
+    parser.add_argument(
+        "--wandb_project", type=str, default="fl_exp", help="WandB project name (enables WandB if provided)"
+    )
+    parser.add_argument("--wandb_run_name", type=str, default="multinode", help="WandB run name")
     args = parser.parse_args()
 
     # Setup distributed training
     rank, world_size, local_rank = setup_distributed_training()
 
     # Set up device for DDP
-    device_string = PartialState().process_index
-    device_map = {"": device_string}
+    # Use local_rank which is 0-7 on each node, not global rank which is 0-15 across all nodes
+    device_map = {"": local_rank}
+
+    # Set WandB environment variables (only if API key is set and rank 0 will actually log)
+    wandb_enabled = args.wandb_project and os.environ.get("WANDB_API_KEY")
+    if wandb_enabled:
+        os.environ["WANDB_PROJECT"] = args.wandb_project
+        if args.wandb_run_name:
+            os.environ["WANDB_NAME"] = args.wandb_run_name
+        # Add FL-specific tags
+        os.environ["WANDB_TAGS"] = (
+            f"nvflare,multi-node,{world_size}gpus,{os.environ.get('SLURM_JOB_NUM_NODES', '1')}nodes"
+        )
+        if rank == 0:
+            print(f"Rank 0: WandB enabled - project: {args.wandb_project}, run: {args.wandb_run_name}")
+    elif rank == 0:
+        print("Rank 0: WandB disabled (WANDB_API_KEY not set), using TensorBoard for logging")
+
+    # initializes NVFlare client API
+    # IMPORTANT: Only global rank 0 should interact with NVFlare
+    # In multi-node training, rank 0 is on the master node where the FL client runs
+    flare.init(rank=rank)
 
     # If output path exists, remove it (only on main process)
-    if local_rank == 0:
+    if rank == 0:
         try:
             print(f"Attempting to remove output path {args.output_path}.")
             shutil.rmtree(args.output_path)
@@ -127,13 +155,13 @@ def main():
     dataset_train = datasets.load_dataset("json", data_files=args.data_path_train, split="train")
     dataset_valid = datasets.load_dataset("json", data_files=args.data_path_valid, split="train")
     # Print dataset info
-    if local_rank == 0:
+    if rank == 0:
         print(f"Dataset size: training {len(dataset_train)}, validation {len(dataset_valid)}")
     # record every 5% of the dataset
     batch_size = 4
     gra_accu_steps = 10
     logging_steps = int(len(dataset_train) / (20 * batch_size * gra_accu_steps))
-    if local_rank == 0:
+    if rank == 0:
         print(f"logging_steps: {logging_steps}")
 
     # Model configs
@@ -176,8 +204,8 @@ def main():
     train_args = SFTConfig(
         output_dir=args.output_path,
         # Using callback, stop at each epoch, so specify num_train_epochs
-        # the same as one-call training
-        num_train_epochs=3,
+        # the same as the total epoch in one-call training
+        num_train_epochs=args.local_epoch * args.num_rounds,
         per_device_train_batch_size=batch_size,
         gradient_accumulation_steps=gra_accu_steps,
         gradient_checkpointing=False,
@@ -205,6 +233,11 @@ def main():
         # Multi-GPU specific settings
         ddp_find_unused_parameters=False,
         dataloader_pin_memory=False,
+        # WandB integration (if API key is set), otherwise use TensorBoard for logging
+        # HuggingFace Trainer automatically handles multi-process logging (only rank 0 logs)
+        report_to="wandb" if wandb_enabled else "tensorboard",
+        run_name=args.wandb_run_name if wandb_enabled else None,
+        logging_dir=os.path.join(args.output_path, "logs") if not wandb_enabled else None,
     )
 
     # Trainer
@@ -219,68 +252,79 @@ def main():
         callbacks=[StopCallback()],
     )
 
-    # Save base model state_dict, which will be used as the starting
-    # weights for each round - to show the weights are loaded correctly
-    # Only save on main process
-    if local_rank == 0:
-        initial_model_path = os.path.join(args.output_path, "pytorch_model_initial.pth")
-        if train_mode:
-            params = get_peft_model_state_dict(model)
+    # Train federated rounds
+    # start with global model at the beginning of each round
+    while flare.is_running():
+        # receives golobal model from NVFlare (only on rank 0)
+        if rank == 0:
+            print("Rank 0: Waiting to receive model from FL server...")
+            input_model = flare.receive(timeout=600)
+            if input_model is None:
+                print("Rank 0: Received None from FL server, stopping training")
+                if dist.is_initialized():
+                    stop_signal = [False]
+                    dist.broadcast_object_list(stop_signal, src=0)
+                break
+            curr_round = input_model.current_round
+            print(f"Rank 0: Received model for round {curr_round}")
+            # Update the key name received from global model if using model def file
+            global_model = copy.deepcopy(input_model.params)
+            for key in list(global_model.keys()):
+                global_model[key.replace("model.", "", 1)] = global_model.pop(key)
         else:
-            params = model.state_dict()
-        torch.save(params, initial_model_path)
+            curr_round = None
+            global_model = None
 
-    # Wait for main process to finish saving
-    if dist.is_initialized():
-        dist.barrier()
+        # broadcast current round and global_model to all processes
+        if dist.is_initialized():
+            curr_round_list = [curr_round]
+            global_model_list = [global_model]
+            dist.broadcast_object_list(curr_round_list, src=0)
+            dist.broadcast_object_list(global_model_list, src=0)
+            curr_round = curr_round_list[0]
+            global_model = global_model_list[0]
 
-    # Train iteratively by using "resume" functionality
-    # and replace the resume weights every round
-    for curr_round in range(3):
-        # Load initial model (only on main process)
-        if local_rank == 0:
-            print(f"current_round={curr_round}")
+        if dist.is_initialized():
+            dist.barrier()
 
-            if curr_round == 0:
-                # Load initial model weights
-                resume_model_file_path = os.path.join(args.output_path, "pytorch_model_initial.pth")
-            else:
-                # Get the last checkpoint folder
-                resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
-                # Load the last checkpoint weights "pytorch_model.bin"
-                resume_model_file_path = os.path.join(resume_from_checkpoint_folder, "pytorch_model.bin")
-            state_dict_replace = torch.load(resume_model_file_path)
-
-            # Load state dict
-            if train_mode:
-                set_peft_model_state_dict(trainer.model, state_dict_replace)
-            else:
-                trainer.model.load_state_dict(state_dict_replace)
-
+        # Load state dict
+        if train_mode:
+            set_peft_model_state_dict(trainer.model, global_model)
+        else:
+            trainer.model.load_state_dict(global_model)
         # Wait for main process to finish model loading
         if dist.is_initialized():
             dist.barrier()
 
-        # Evaluate
-        trainer.evaluate()
+        # Evaluate the global model
+        eval_loss = trainer.evaluate()
+        eval_loss = float(eval_loss["eval_loss"])
 
         # Train
         if curr_round == 0:
             # First round, start from pretrained model
-            trainer.train()
+            for epoch in range(args.local_epoch):
+                print(f"Training local epoch {epoch + 1}/{args.local_epoch}")
+                # train for one epoch
+                if epoch == 0:
+                    trainer.train()
+                else:
+                    # continue training
+                    trainer.train(resume_from_checkpoint=True)
         else:
-            # replace local resume weights with global weights (only on main process)
-            if local_rank == 0:
+            # replace local resume weights with global weights (only on global rank 0)
+            # Use rank (not local_rank) since all nodes share the same filesystem
+            if rank == 0:
                 resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)
                 if train_mode:
                     # PEFT model small, directly save via torch.save
                     resume_model_file_path = os.path.join(resume_from_checkpoint_folder, utils.WEIGHTS_NAME)
-                    torch.save(state_dict_replace, resume_model_file_path)
+                    torch.save(global_model, resume_model_file_path)
                 else:
                     # SFT model can be large, save via HF API
-                    # Disable safetensor for local checkpointing
+                    # Disable safetensor for now
                     trainer.model.save_pretrained(
-                        resume_from_checkpoint_folder, state_dict=state_dict_replace, safe_serialization=False
+                        resume_from_checkpoint_folder, state_dict=global_model, safe_serialization=False
                     )
 
             # Wait for main process to finish saving before continuing
@@ -289,10 +333,48 @@ def main():
 
             # continue training
             # as we used callback, no need to increment num_train_epochs
-            trainer.train(resume_from_checkpoint=True)
+            for epoch in range(args.local_epoch):
+                print(f"Training local epoch {epoch + 1}/{args.local_epoch}")
+                trainer.train(resume_from_checkpoint=True)
 
-    # Cleanup distributed training
-    cleanup_distributed_training()
+        # Wait for all process to finish training before continuing
+        if dist.is_initialized():
+            dist.barrier()
+
+        # compose output model to send back to server (only on rank 0)
+        if rank == 0:
+            if train_mode:
+                # PEFT, load PEFT part from trainer model
+                out_param = get_peft_model_state_dict(trainer.model)
+            else:
+                # SFT, load whole model state_dict
+                out_param = trainer.model.state_dict()
+
+            # update the key name sent to global model
+            if not train_mode:
+                for key in list(out_param.keys()):
+                    out_param["model." + key] = out_param.pop(key).cpu()
+
+            if args.message_mode.lower() == "numpy":
+                # cast out_param to float32 preparing for communication with numpy
+                # otherwise do nothing
+                out_param = {k: v.to(torch.float32) for k, v in out_param.items()}
+
+            # print the dict size
+            print(f"In total {len(out_param.keys())} params to be sent to server.")
+
+            # construct trained FL model
+            output_model = flare.FLModel(
+                params=out_param,
+                metrics={"eval_loss": eval_loss},
+                meta={"NUM_STEPS_CURRENT_ROUND": trainer.train_dataset.num_rows},
+            )
+            # send model back to NVFlare
+            flare.send(output_model)
+
+    # Cleanup distributed training environment
+    if dist.is_initialized():
+        dist.destroy_process_group()
 
 
 if __name__ == "__main__":
