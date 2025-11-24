@@ -93,7 +93,6 @@ class ModelQuantizer(DXOFilter):
                 raise ValueError(
                     f"Invalid source data type: {source_data_type}, valid: {DATA_TYPE}, param_name: {param_name}"
                 )
-            source_datatype[param_name] = source_data_type
 
             if source_data_type == "bool":
                 continue
