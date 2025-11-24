@@ -63,7 +63,7 @@ class PTFedAvgStream:
             aggr_result=aggr_result,
         )
 
-        if fox.backend_type == BackendType.SYSTEM:
+        if fox.backend_type == BackendType.FLARE:
             downloader = Downloader(
                 num_receivers=grp.size,
                 timeout=5.0,

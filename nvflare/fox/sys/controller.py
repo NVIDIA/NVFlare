@@ -85,7 +85,7 @@ class FoxController(Controller, FoxAdaptor):
         app = ServerApp(server_obj)
 
         app.name = "server"
-        app.backend_type = BackendType.SYSTEM
+        app.backend_type = BackendType.FLARE
 
         err = self.process_config(app, fl_ctx)
         if err:

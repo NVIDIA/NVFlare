@@ -29,4 +29,4 @@ class FilterDirection:
 
 class BackendType:
     SIMULATION = "simulation"
-    SYSTEM = "system"
+    FLARE = "flare"

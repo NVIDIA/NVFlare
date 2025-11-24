@@ -16,7 +16,6 @@ import uuid
 
 from nvflare.fox import fox
 from nvflare.fox.api.constants import BackendType
-from nvflare.fox.api.dec import collab
 from nvflare.fox.examples.np.algos.utils import load_np_model, parse_array_def, save_np_model
 from nvflare.fox.sys.downloader import Downloader, download_file
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -57,7 +56,7 @@ class NPFedAvgStream:
 
         # pretend the model is big
         file_name = None
-        if fox.backend_type == BackendType.SYSTEM:
+        if fox.backend_type == BackendType.FLARE:
             file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
             save_np_model(current_model, file_name)
             downloader = Downloader(
@@ -109,7 +108,7 @@ class NPTrainer:
         self.delta = delta
         self.logger = get_obj_logger(self)
 
-    @collab
+    @fox.collab
     def train(self, current_round, weights, model_type: str):
         if fox.is_aborted:
             self.logger.debug("training aborted")
