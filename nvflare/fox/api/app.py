@@ -46,7 +46,7 @@ class App:
         self.server = None
         self.clients = None
         self.client_hierarchy = None
-        self.env_type = None
+        self.backend_type = None
         self._me = None
         self._collab_objs = {}
         self._abort_signal = None

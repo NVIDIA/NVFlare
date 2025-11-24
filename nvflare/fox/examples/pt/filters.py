@@ -36,7 +36,6 @@ class OutgoingModelCallFilter(CallFilter):
 
         downloader = Downloader(
             num_receivers=context.target_group_size,
-            ctx=context,
             timeout=5.0,
         )
         model = downloader.add_tensors(arg_value, 0)
@@ -56,7 +55,7 @@ class IncomingModelCallFilter(CallFilter):
         if not arg_value:
             return func_kwargs
 
-        err, model = download_tensors(ref=arg_value, ctx=context, per_request_timeout=5.0)
+        err, model = download_tensors(ref=arg_value, per_request_timeout=5.0)
         if err:
             self.logger.error(f"error filtering call arg {arg_value}: {err}")
         else:
@@ -73,7 +72,6 @@ class OutgoingModelResultFilter(ResultFilter):
 
         downloader = Downloader(
             num_receivers=1,
-            ctx=context,
             timeout=5.0,
         )
         return downloader.add_tensors(result, 0)
@@ -86,7 +84,7 @@ class IncomingModelResultFilter(ResultFilter):
         self.logger = get_obj_logger(self)
 
     def filter_result(self, result: Any, context: Context):
-        err, model = download_tensors(ref=result, ctx=context, per_request_timeout=5.0)
+        err, model = download_tensors(ref=result, per_request_timeout=5.0)
         if err:
             self.logger.error(f"error filtering result {result}: {err}")
             return result

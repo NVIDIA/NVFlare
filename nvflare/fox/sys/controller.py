@@ -22,7 +22,7 @@ from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import ServerApp
-from nvflare.fox.api.constants import EnvType
+from nvflare.fox.api.constants import BackendType
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fox.api.run_server import run_server
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -85,7 +85,7 @@ class FoxController(Controller, FoxAdaptor):
         app = ServerApp(server_obj)
 
         app.name = "server"
-        app.env_type = EnvType.SYSTEM
+        app.backend_type = BackendType.SYSTEM
 
         err = self.process_config(app, fl_ctx)
         if err:

@@ -23,7 +23,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import ClientApp
-from nvflare.fox.api.constants import EnvType
+from nvflare.fox.api.constants import BackendType
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
@@ -74,7 +74,7 @@ class FoxExecutor(Executor, FoxAdaptor):
 
         app = ClientApp(client_obj)
         app.name = client_name
-        app.env_type = EnvType.SYSTEM
+        app.backend_type = BackendType.SYSTEM
         self.client_app = app
 
         err = self.process_config(self.client_app, fl_ctx)

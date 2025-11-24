@@ -40,8 +40,8 @@ class Context:
         return self.app.get_backend()
 
     @property
-    def env_type(self):
-        return self.app.env_type
+    def backend_type(self):
+        return self.app.backend_type
 
     @property
     def clients(self):

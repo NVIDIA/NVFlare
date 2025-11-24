@@ -16,7 +16,8 @@ import copy
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .backend import Backend
-from .constants import OPTION_ARGS, CollabMethodArgName, CollabMethodOptionName
+from .call_opt import CallOpt
+from .constants import CollabMethodArgName
 from .utils import check_call_args
 
 
@@ -31,22 +32,17 @@ class _ProxyCall:
         secure: bool = False,
     ):
         self.proxy = proxy
-        self.expect_result = expect_result
-        self.timeout = timeout
-        self.optional = optional
-        self.secure = secure
+        self.call_opt = CallOpt(
+            expect_result=expect_result,
+            blocking=expect_result,
+            timeout=timeout,
+            optional=optional,
+            secure=secure,
+        )
 
     def __getattr__(self, func_name):
         def method(*args, **kwargs):
-            kwargs.update(
-                {
-                    CollabMethodOptionName.OPTIONAL: self.optional,
-                    CollabMethodOptionName.SECURE: self.secure,
-                    CollabMethodOptionName.EXPECT_RESULT: self.expect_result,
-                    CollabMethodOptionName.TIMEOUT: self.timeout,
-                }
-            )
-            return getattr(self.proxy, func_name)(*args, **kwargs)
+            return self.proxy.call_func(self.call_opt, func_name, args, kwargs)
 
         return method
 
@@ -71,6 +67,17 @@ class Proxy:
         optional: bool = False,
         secure: bool = False,
     ):
+        """This is called when the proxy is used with call options.
+
+        Args:
+            expect_result:
+            timeout:
+            optional:
+            secure:
+
+        Returns:
+
+        """
         return _ProxyCall(
             proxy=self,
             expect_result=expect_result,
@@ -97,6 +104,19 @@ class Proxy:
             return None
 
     def _find_interface(self, func_name):
+        """Find interface for specified func name.
+
+        Args:
+            func_name: name of the func.
+
+        Returns: the proxy that the func belongs to, the func interface.
+
+        Notes: the proxy represents a remote object. The remote object could have sub-objects. In this case,
+        the proxy will have child proxies, each representing a sub-object.
+
+        We first try to find the interface from the proxy itself. If not found, we try to find it from child proxies.
+
+        """
         self.logger.debug(f"trying to find interface for {func_name}")
         args = self.target_interface.get(func_name) if self.target_interface else None
         if args:
@@ -125,10 +145,23 @@ class Proxy:
         return the_proxy, the_args
 
     def adjust_func_args(self, func_name, args, kwargs):
+        """Based on specified args and kwargs, this method finds corresponding keywords for all positional
+        args based on the interface of the func, and then moves the positional args into kwargs.
+
+        Once done, all args will have keywords, which makes it easy for call filters to identify the args to process.
+
+        Args:
+            func_name: name of the func.
+            args: positional arg values.
+            kwargs: keyword arg values
+
+        Returns: the proxy that the func belongs to, interface of the func, empty args, and new kwargs
+
+        """
         call_args = args
         call_kwargs = kwargs
 
-        # find the proxy for the func
+        # find the proxy and interface for the func
         p, func_itf = self._find_interface(func_name)
         if not p:
             raise RuntimeError(f"target {self.target_name} does not have method '{func_name}'")
@@ -148,46 +181,49 @@ class Proxy:
 
         return p, func_itf, call_args, call_kwargs
 
+    def call_func(self, call_opt: CallOpt, func_name, args, kwargs):
+        """Call the specified function with call options.
+
+        Args:
+            call_opt: call option that controls the call behavior.
+            func_name: name of func to be called.
+            args: args to be passed to the func.
+            kwargs: kwargs to be passed to the func.
+
+        Returns: result of the function, or exception.
+
+        """
+        try:
+            p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
+
+            with p.app.new_context(self.caller_name, self.name) as ctx:
+                self.logger.debug(f"[{ctx}] apply_outgoing_call_filters on {p.target_name} func {func_name}")
+
+                # apply outgoing call filters
+                call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
+                check_call_args(func_name, func_itf, call_args, call_kwargs)
+
+                self.logger.debug(f"[{ctx}] calling target {p.target_name} func {func_name}")
+                call_kwargs[CollabMethodArgName.CONTEXT] = ctx
+                result = p.backend.call_target(p.target_name, call_opt, func_name, *call_args, **call_kwargs)
+                if isinstance(result, Exception):
+                    raise result
+
+                if result is not None:
+                    # filter incoming result filters
+                    result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
+                return result
+        except Exception as ex:
+            self.backend.handle_exception(ex)
+            return ex
+
     def __getattr__(self, func_name):
         """
-        This method is called when Python cannot find an invoked method func_name of this class.
+        This method is called when the proxy is invoked to perform the specified func without any call options.
+        In this case, we use a CallOpt with default values.
         """
 
         def method(*args, **kwargs):
-            try:
-                # remove option args
-                option_args = {}
-                for k in OPTION_ARGS:
-                    if k in kwargs:
-                        option_args[k] = kwargs.pop(k)
-
-                p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
-
-                with p.app.new_context(self.caller_name, self.name) as ctx:
-                    self.logger.debug(f"[{ctx}] apply_outgoing_call_filters on {p.target_name} func {func_name}")
-
-                    # apply outgoing call filters
-                    call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
-                    check_call_args(func_name, func_itf, call_args, call_kwargs)
-
-                    call_kwargs[CollabMethodArgName.CONTEXT] = ctx
-
-                    # restore option args
-                    for k, v in option_args.items():
-                        call_kwargs[k] = v
-
-                    self.logger.debug(f"[{ctx}] calling target {p.target_name} func {func_name}: {option_args=}")
-
-                    result = p.backend.call_target(p.target_name, func_name, *call_args, **call_kwargs)
-                    if isinstance(result, Exception):
-                        raise result
-
-                    if result is not None:
-                        # filter incoming result filters
-                        result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
-
-                    return result
-            except Exception as ex:
-                self.backend.handle_exception(ex)
+            return self.call_func(CallOpt(), func_name, args, kwargs)
 
         return method

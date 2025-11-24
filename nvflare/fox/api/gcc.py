@@ -17,6 +17,7 @@ import threading
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
+from .call_opt import CallOpt
 from .constants import CollabMethodArgName
 from .ctx import Context, set_call_context
 from .utils import check_context_support
@@ -73,12 +74,23 @@ class ResultWaiter(threading.Event):
 
 class GroupCallContext:
 
-    def __init__(self, app, target_name, func_name, process_cb, cb_kwargs, context: Context, waiter: ResultWaiter):
+    def __init__(
+        self,
+        app,
+        target_name: str,
+        call_opt: CallOpt,
+        func_name: str,
+        process_cb,
+        cb_kwargs,
+        context: Context,
+        waiter: ResultWaiter,
+    ):
         """GroupCallContext contains contextual information about a group call to a target.
 
         Args:
             app: the calling app.
             target_name: name of the target to be called in the remote app.
+            call_opt: call options.
             func_name: name of the function to be called in the remote app.
             process_cb: the callback function to be called to process response from the remote app.
             cb_kwargs: kwargs passed to the callback function.
@@ -86,14 +98,13 @@ class GroupCallContext:
             waiter: the waiter to wait for result
         """
         self.app = app
+        self.call_opt = call_opt
         self.target_name = target_name
         self.func_name = func_name
         self.process_cb = process_cb
         self.cb_kwargs = cb_kwargs
         self.context = context
         self.waiter = waiter
-        self.expect_result = True
-        self.timeout = None
         self.logger = get_obj_logger(self)
 
     def set_result(self, result):

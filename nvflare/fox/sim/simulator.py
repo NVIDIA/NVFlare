@@ -18,7 +18,7 @@ from typing import Tuple, Union
 
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import App, ClientApp, ServerApp
-from nvflare.fox.api.constants import EnvType
+from nvflare.fox.api.constants import BackendType
 from nvflare.fox.api.dec import get_object_collab_interface
 from nvflare.fox.api.proxy import Proxy
 from nvflare.fox.api.run_server import run_server
@@ -66,7 +66,7 @@ class Simulator:
 
         app.name = name
         app.fqn = fqn
-        app.env_type = EnvType.SIMULATION
+        app.backend_type = BackendType.SIMULATION
         return app
 
     def _prepare_proxies(self, for_app: App, server_app: App, client_apps: dict, backends: dict):
@@ -97,7 +97,7 @@ class Simulator:
         self.abort_signal = Signal()
         server_app.name = "server"
         server_app.fqn = server_app.name
-        server_app.env_type = EnvType.SIMULATION
+        server_app.backend_type = BackendType.SIMULATION
         self.server_app = server_app
         self.client_app = client_app
         self.thread_executor = ThreadPoolExecutor(max_workers=max_workers)

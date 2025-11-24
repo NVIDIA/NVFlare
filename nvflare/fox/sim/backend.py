@@ -18,7 +18,8 @@ from nvflare.apis.fl_exception import RunAborted
 from nvflare.fox import fox
 from nvflare.fox.api.app import App
 from nvflare.fox.api.backend import Backend
-from nvflare.fox.api.constants import OPTION_ARGS, CollabMethodArgName, CollabMethodOptionName, ContextKey
+from nvflare.fox.api.call_opt import CallOpt
+from nvflare.fox.api.constants import CollabMethodArgName, ContextKey
 from nvflare.fox.api.dec import adjust_kwargs
 from nvflare.fox.api.gcc import GroupCallContext
 from nvflare.fox.api.utils import check_call_args
@@ -43,7 +44,7 @@ class SimBackend(Backend):
     def _get_func(self, func_name):
         return self.target_app.find_collab_method(self.target_obj, func_name)
 
-    def call_target(self, target_name: str, func_name: str, *args, **kwargs):
+    def call_target(self, target_name: str, call_opt: CallOpt, func_name: str, *args, **kwargs):
         func = self._get_func(func_name)
         if not func:
             raise AttributeError(f"{target_name} does not have method '{func_name}' or it is not collab")
@@ -51,12 +52,8 @@ class SimBackend(Backend):
         if not callable(func):
             raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
-        expect_result = kwargs.pop(CollabMethodOptionName.EXPECT_RESULT, True)
-        timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, 5.0)
-
-        # other options don't apply to simulation
-        for k in OPTION_ARGS:
-            kwargs.pop(k, None)
+        expect_result = call_opt.expect_result
+        timeout = call_opt.timeout
 
         waiter = None
         if expect_result:
@@ -137,9 +134,6 @@ class SimBackend(Backend):
         # do not use the optional args - they are managed by the group
         self.logger.info(f"call_target_in_group: {gcc.target_name=}")
 
-        for k in OPTION_ARGS:
-            kwargs.pop(k, None)
-
         target_name = gcc.target_name
         func = self._get_func(func_name)
         if not func:
@@ -153,9 +147,7 @@ class SimBackend(Backend):
     def _run_func_in_group(self, gcc: GroupCallContext, func_name, args, kwargs):
         try:
             target_name = gcc.target_name
-            kwargs[CollabMethodOptionName.EXPECT_RESULT] = gcc.expect_result
-            kwargs[CollabMethodOptionName.TIMEOUT] = gcc.timeout
-            result = self.call_target(target_name, func_name, *args, **kwargs)
+            result = self.call_target(target_name, gcc.call_opt, func_name, *args, **kwargs)
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)

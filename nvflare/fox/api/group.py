@@ -19,7 +19,8 @@ from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .app import App
-from .constants import CollabMethodArgName, CollabMethodOptionName
+from .call_opt import CallOpt
+from .constants import CollabMethodArgName
 from .ctx import Context
 from .gcc import GroupCallContext, ResultWaiter
 from .proxy import Proxy
@@ -61,11 +62,13 @@ class Group:
         self._app = app
         self._abort_signal = abort_signal
         self._proxies = proxies
-        self._blocking = blocking
-        self._expect_result = expect_result
-        self._timeout = timeout
-        self._optional = optional
-        self._secure = secure
+        self._call_opt = CallOpt(
+            blocking=blocking,
+            expect_result=expect_result,
+            timeout=timeout,
+            optional=optional,
+            secure=secure,
+        )
         self._process_resp_cb = process_resp_cb
         self._cb_kwargs = cb_kwargs
         self._logger = get_obj_logger(self)
@@ -106,7 +109,9 @@ class Group:
                 the_backend = p.backend
 
                 with func_proxy.app.new_context(func_proxy.caller_name, func_proxy.name, target_group=self) as ctx:
-                    self._logger.debug(f"[{ctx}] calling {func_name} of group {[p.name for p in self._proxies]}")
+                    self._logger.debug(
+                        f"[{ctx}] calling {func_name} {self._call_opt} of group {[p.name for p in self._proxies]}"
+                    )
 
                     # apply outgoing call filters
                     assert isinstance(self._app, App)
@@ -127,33 +132,23 @@ class Group:
 
                         call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
-                        # set the optional args to help backend decide how to call
-                        call_kwargs[CollabMethodOptionName.TIMEOUT] = self._timeout
-                        call_kwargs[CollabMethodOptionName.BLOCKING] = self._blocking
-                        call_kwargs[CollabMethodOptionName.EXPECT_RESULT] = self._expect_result
-                        call_kwargs[CollabMethodOptionName.SECURE] = self._secure
-                        call_kwargs[CollabMethodOptionName.OPTIONAL] = self._optional
-
                         gcc = GroupCallContext(
-                            self._app,
-                            func_proxy.target_name,
-                            func_name,
-                            self._process_resp_cb,
-                            self._cb_kwargs,
-                            ctx,
-                            waiter,
+                            app=self._app,
+                            target_name=func_proxy.target_name,
+                            call_opt=self._call_opt,
+                            func_name=func_name,
+                            process_cb=self._process_resp_cb,
+                            cb_kwargs=self._cb_kwargs,
+                            context=ctx,
+                            waiter=waiter,
                         )
-                        gcc.expect_result = self._expect_result
-                        gcc.timeout = self._timeout
-
-                        self._logger.debug(f"[{ctx}] group call: {func_name=} args={call_args} kwargs={call_kwargs}")
                         func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
 
-                    if not self._expect_result:
+                    if not self._call_opt.expect_result:
                         # do not wait for responses
                         return None
 
-                    if not self._blocking:
+                    if not self._call_opt.blocking:
                         self._logger.debug(f"not blocking {func_name}")
                         return waiter.results
 
@@ -165,7 +160,6 @@ class Group:
                         # wait for a short time, so we can check other conditions
                         done = waiter.wait(0.1)
                         if done:
-                            self._logger.info(f"all received from {waiter.results} for func {func_name}")
                             break
 
                     return waiter.results

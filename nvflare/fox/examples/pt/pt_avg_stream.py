@@ -17,8 +17,7 @@ import threading
 import torch
 
 from nvflare.fox import fox
-from nvflare.fox.api.constants import EnvType
-from nvflare.fox.api.ctx import Context
+from nvflare.fox.api.constants import BackendType
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.pt.utils import parse_state_dict
 from nvflare.fox.sim.sim2 import Simulator
@@ -64,10 +63,9 @@ class PTFedAvgStream:
             aggr_result=aggr_result,
         )
 
-        if fox.env_type == EnvType.SYSTEM:
+        if fox.backend_type == BackendType.SYSTEM:
             downloader = Downloader(
                 num_receivers=grp.size,
-                ctx=fox.context,
                 timeout=5.0,
             )
             model_type = "ref"
@@ -97,7 +95,6 @@ class PTFedAvgStream:
             err, model = download_tensors(
                 ref=model,
                 per_request_timeout=5.0,
-                ctx=fox.context,
                 tensors_received_cb=self._aggregate_tensors,
                 aggr_result=aggr_result,
             )
@@ -136,12 +133,12 @@ class PTTrainer:
             return 0
         self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {model1=} {model2=}")
         if model_type == "ref":
-            err, model1 = download_tensors(ref=model1, per_request_timeout=5.0, ctx=fox.context)
+            err, model1 = download_tensors(ref=model1, per_request_timeout=5.0)
             if err:
                 raise RuntimeError(f"failed to download model1 {model1}: {err}")
             self.logger.info(f"downloaded model1 {model1}")
 
-            err, model2 = download_tensors(ref=model2, per_request_timeout=5.0, ctx=fox.context)
+            err, model2 = download_tensors(ref=model2, per_request_timeout=5.0)
             if err:
                 raise RuntimeError(f"failed to download model2 {model2}: {err}")
             self.logger.info(f"downloaded model2 {model2}")
@@ -158,7 +155,6 @@ class PTTrainer:
             # stream it
             downloader = Downloader(
                 num_receivers=1,
-                ctx=fox.context,
                 timeout=5.0,
             )
             model_type = "ref"

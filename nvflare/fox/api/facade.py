@@ -109,9 +109,9 @@ class facade:
         return ProxyList(candidates)
 
     @classproperty
-    def env_type(cls):
+    def backend_type(cls):
         ctx = get_call_context()
-        return ctx.env_type
+        return ctx.backend_type
 
     @classproperty
     def is_aborted(cls):
