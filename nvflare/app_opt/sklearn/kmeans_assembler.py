@@ -23,6 +23,20 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class KMeansAssembler(Assembler):
+    """Assembler for K-Means clustering using mini-batch aggregation strategy.
+
+    This assembler implements the aggregation logic for federated K-Means clustering
+    following the Mini-Batch K-Means approach where:
+    - Round 0: Collect initial centers from all clients and perform one round of K-Means
+      to generate the initial global centers
+    - Subsequent rounds: Aggregate centers using weighted averaging based on counts,
+      following the mini-batch update rule
+
+    The assembler maintains:
+    - center: Global cluster centers
+    - count: Per-center counts for weighted aggregation
+    """
+
     def __init__(self):
         super().__init__(data_kind=DataKind.WEIGHTS)
         # Aggregator needs to keep record of historical

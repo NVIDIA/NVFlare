@@ -13,5 +13,7 @@
 # limitations under the License.
 
 from .fedavg import SklearnFedAvgRecipe
+from .kmeans import KMeansFedAvgRecipe
+from .svm import SVMFedAvgRecipe
 
-__all__ = ["SklearnFedAvgRecipe"]
+__all__ = ["SklearnFedAvgRecipe", "KMeansFedAvgRecipe", "SVMFedAvgRecipe"]
