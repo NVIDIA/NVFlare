@@ -288,6 +288,9 @@ class CCManager(FLComponent):
             if k not in self.cc_enabled_sites:
                 result[k] = True
                 continue
+            if not cc_info:  # a cc-enabled site does not have any cc_info
+                invalid_participant_list.append(k + " namespace: {None} ")
+                continue
             for v in cc_info:
                 token = v.get(CC_TOKEN, "")
                 namespace = v.get(CC_NAMESPACE, "")
