@@ -147,7 +147,7 @@ class ModelDequantizer(DXOFilter):
                 elif source_data_format == "torch":
                     values_tensor = values
                 param_quant_state = quant_state.get(param_name)
-                if param_quant_state is None:
+                if param_quant_state is None or not param_quant_state:
                     dequantized = values_tensor
                 else:
                     dequantized = AdaQuantizer().dequantized(values_tensor, param_quant_state)
