@@ -132,7 +132,7 @@ class ViaFileDecomposer(fobs.Decomposer, ABC):
         pass
 
     @abstractmethod
-    def load_from_file(self, path: str, fobs_ctx: dict, meta: dict = None) -> dict:
+    def load_from_file(self, path: str, fobs_ctx: dict, meta: Optional[dict] = None) -> dict:
         """Load target object items from the specified file
 
         Args:

@@ -24,7 +24,7 @@ from nvflare.job_config.defs import FilterType
 
 class ExecEnv(ABC):
 
-    def __init__(self, extra: dict = None):
+    def __init__(self, extra: Optional[dict] = None):
         """Constructor of ExecEnv
 
         Args:
@@ -210,8 +210,8 @@ class Recipe(ABC):
     def export(
         self,
         job_dir: str,
-        server_exec_params: dict = None,
-        client_exec_params: dict = None,
+        server_exec_params: Optional[dict] = None,
+        client_exec_params: Optional[dict] = None,
         env: ExecEnv = None,
     ):
         """Export the recipe to a job definition.
@@ -236,7 +236,9 @@ class Recipe(ABC):
 
         self.job.export_job(job_dir)
 
-    def execute(self, env: ExecEnv, server_exec_params: dict = None, client_exec_params: dict = None) -> "Run":
+    def execute(
+        self, env: ExecEnv, server_exec_params: Optional[dict] = None, client_exec_params: Optional[dict] = None
+    ) -> "Run":
         """Execute the recipe in a specified execution environment.
 
         Args:
