@@ -58,7 +58,9 @@ class ModelDequantizer(DXOFilter):
         n_quant_params = 0
         for i, param_name in enumerate(params.keys()):
             source_data_type = source_datatype[param_name]
-
+            if source_data_type == "bool":
+                continue
+    
             if quantization_type != "adaquant":
                 # get the bits information
                 source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
