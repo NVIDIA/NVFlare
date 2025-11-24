@@ -263,7 +263,7 @@ confidential ACI resources must be updated according to your own account and pre
 
 If you encounter permission issues or the script gets stuck, please check your role in the ACR.
 
-.. literalinclude:: ../../resources/ccprep.json
+.. literalinclude:: ../../../resources/ccprep.json
    :language: json
 
 
