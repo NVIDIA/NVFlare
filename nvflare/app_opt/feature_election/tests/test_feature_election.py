@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from sklearn.datasets import make_classification
+import json
 
 from nvflare.app_opt.feature_election import FeatureElection, quick_election
 
@@ -214,8 +215,6 @@ class TestFeatureElection:
         assert "server_config" in paths
         assert "client_config" in paths
         assert "meta" in paths
-
-        import json
 
         # Verify server config
         with open(paths["server_config"]) as f:

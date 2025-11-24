@@ -384,7 +384,6 @@ class FeatureElectionExecutor(Executor):
                 base_model = RandomForestClassifier(n_estimators=100, random_state=random_state)
 
             # Use PPIMBC for feature selection
-            # Use PPIMBC for feature selection
             selector = PPIMBC(
                 base_model, p_val_thresh=p_val_thresh, num_sim=num_sim, random_state=random_state, verbose=verbose
             )

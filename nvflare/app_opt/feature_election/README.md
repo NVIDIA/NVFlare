@@ -456,7 +456,7 @@ pytest tests/unit_test/app_opt/feature_election/test_feature_election.py
 
 ## Citation
 
-If you use this library in your research, please cite (PENDING)
+If you use Feature Election in your research, please cite (PENDING)
 
 <!--```bibtex
 @inproceedings{flash2025,
