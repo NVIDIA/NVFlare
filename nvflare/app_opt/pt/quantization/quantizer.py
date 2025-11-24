@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import re
-from typing import Any, Optional, Union
+from typing import Union
 
 import numpy as np
 import torch
@@ -65,37 +65,35 @@ class ModelQuantizer(DXOFilter):
         n_bytes_after = 0
         n_bytes_meta = 0
         n_quant_params = 0
-        quant_state: dict = {}
+        quant_state = {}
         source_datatype = {}
-        for param_name in params:
+        for i, param_name in enumerate(params.keys()):
             values = params[param_name]
             quant_state[param_name] = {}
 
-            # check the data format, numpy or torch, and get dtype
+            # check the data type, numpy or torch
             # otherwise error
             if isinstance(values, np.ndarray):
                 # if numpy, convert to torch
                 source_data_format = "numpy"
-                source_data_type = values.dtype.name
             elif isinstance(values, torch.Tensor):
                 source_data_format = "torch"
-                source_data_type = str(values.dtype).split(".")[1]
             else:
                 raise ValueError(f"Invalid source data type: {type(values)}, valid: numpy or torch")
 
-            # check if the data type is valid
-            if source_data_type == "bool":
-                source_datatype[param_name] = source_data_type
-                continue
+            # get the data type of the values
+            if source_data_format == "numpy":
+                source_data_type = values.dtype.name
+            elif source_data_format == "torch":
+                source_data_type = str(values.dtype).split(".")[1]
+            source_datatype[param_name] = source_data_type
 
+            # check if the data type is valid
             if source_data_type.upper() not in DATA_TYPE:
                 raise ValueError(
                     f"Invalid source data type: {source_data_type}, valid: {DATA_TYPE}, param_name: {param_name}"
                 )
 
-            source_datatype[param_name] = source_data_type
-
-            # get the bits information
             if self.quantization_type != "adaquant":
                 # get the bits information
                 source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
@@ -129,30 +127,65 @@ class ModelQuantizer(DXOFilter):
 
                 # CPU has limited support for 8- and 4-bits quantization
                 # For general purpose, here we use GPU
-                # if numpy, first convert numpy array to tensor, need to use GPU
-                values_tensor = self.to_torch_tensor(values).cuda()
+                if source_data_format == "numpy":
+                    # if numpy, first convert numpy array to tensor, need to use GPU
+                    values_tensor = torch.as_tensor(values).cuda()
+                elif source_data_format == "torch":
+                    # if torch, directly use the tensor, need to use GPU
+                    values_tensor = values.cuda()
 
-                # quantize the tensor
                 if self.quantization_type == "blockwise8":
+                    # quantize the tensor
                     quantized, quantized_state = quantize_blockwise(values_tensor)
+                    # add the quantization state and values, keep source data format
+                    if source_data_format == "numpy":
+                        quant_state[param_name]["absmax"] = quantized_state.absmax.cpu().numpy()
+                        quant_state[param_name]["code"] = quantized_state.code.cpu().numpy()
+                        values = quantized.cpu().numpy()
+                    elif source_data_format == "torch":
+                        quant_state[param_name]["absmax"] = quantized_state.absmax.cpu()
+                        quant_state[param_name]["code"] = quantized_state.code.cpu()
+                        values = quantized.cpu()
+                    n_bytes_meta += quant_state[param_name]["absmax"].nbytes
+                    n_bytes_meta += quant_state[param_name]["code"].nbytes
                 else:
-                    quantization_type = "fp4" if self.quantization_type == "float4" else "nf4"
-                    quantized, quantized_state = quantize_4bit(values_tensor, quant_type=quantization_type)
-                # add the quantization state and values, keep source data format
-                quantized_state_dict: dict[str, Any] = quantized_state.as_dict()
-                for state_name, state in quantized_state_dict.items():
-                    if isinstance(state, (torch.Tensor, np.ndarray)):
-                        quantized_state_dict[state_name] = self.to_source_data(state, source_data_format)
-                        n_bytes_meta += state.nbytes
-                quant_state[param_name] = quantized_state_dict
-                # add values
-                values = self.to_source_data(quantized, source_data_format)
+                    # then quantize the tensor
+                    if self.quantization_type == "float4":
+                        quantized, quantized_state = quantize_4bit(values_tensor, quant_type="fp4")
+                    else:
+                        quantized, quantized_state = quantize_4bit(values_tensor, quant_type="nf4")
+                    # add the quantization state and values, keep source data format
+                    quantized_state = quantized_state.as_dict()
+                    # prepared the message
+                    for state_name, state in quantized_state.items():
+                        if isinstance(state, torch.Tensor):
+                            if source_data_format == "numpy":
+                                # if the state is a tensor, convert it to numpy array
+                                quant_state[param_name][state_name] = state.cpu().numpy()
+                            elif source_data_format == "torch":
+                                # if the state is a tensor, keep it as tensor
+                                quant_state[param_name][state_name] = state.cpu()
+                            n_bytes_meta += state.nbytes
+                        else:
+                            quant_state[param_name][state_name] = state
+                    # add values
+                    if source_data_format == "numpy":
+                        values = quantized.cpu().numpy()
+                    elif source_data_format == "torch":
+                        values = quantized.cpu()
+
                 params[param_name] = values
             elif self.quantization_type == "adaquant":
                 # if numpy, first convert numpy array to tensor
-                values_tensor = self.to_torch_tensor(values).cpu()
+                if source_data_format == "numpy":
+                    values_tensor = torch.as_tensor(values).cpu()
+                elif source_data_format == "torch":
+                    values_tensor = values.cpu()
                 quantized, quantized_state_dict = AdaQuantizer().quantize(values_tensor)
-                params[param_name] = self.to_source_data(quantized, source_data_format)
+                if source_data_format == "numpy":
+                    params[param_name] = quantized.cpu().numpy()
+                elif source_data_format == "torch":
+                    params[param_name] = quantized.cpu()
 
                 if quantized_state_dict:
                     quant_state[param_name] = quantized_state_dict
@@ -160,29 +193,17 @@ class ModelQuantizer(DXOFilter):
                 for state_name, state in quantized_state_dict.items():
                     if isinstance(state, (torch.Tensor, np.ndarray)):
                         n_bytes_meta += state.nbytes
-            else:
-                raise ValueError(f"Invalid quantization type: {self.quantization_type}")
             n_bytes_after += params[param_name].nbytes
 
         self.log_info(
             fl_ctx,
             f"Quantized {n_quant_params}/{n_params} params."
-            f" Before quantization: {n_bytes_before / (1024**2):.2f} MB."
-            f" After quantization: {n_bytes_after / (1024**2):.2f} MB with meta: {n_bytes_meta / (1024**2):.2f} MB.",
+            f" Before quantization: {n_bytes_before / (1024 ** 2):.2f} MB."
+            f" After quantization: {n_bytes_after / (1024 ** 2):.2f} MB with meta: {n_bytes_meta / (1024 ** 2):.2f} MB.",
         )
         return params, quant_state, source_datatype
 
-    def to_torch_tensor(self, data: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-        if isinstance(data, np.ndarray):
-            return torch.as_tensor(data)
-        return data
-
-    def to_source_data(self, tensor: torch.Tensor, source_data_format: str) -> Union[np.ndarray, torch.Tensor]:
-        if source_data_format == "numpy":
-            return tensor.cpu().numpy()
-        return tensor.cpu()
-
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Optional[DXO]:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Filter process apply to the Shareable object.
 
         Args:
