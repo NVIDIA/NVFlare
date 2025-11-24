@@ -73,9 +73,10 @@ class ModelDequantizer(DXOFilter):
                     continue
             values = params[param_name]
             n_bytes_before += values.nbytes
-            for item in quant_state[param_name].values():
-                if isinstance(item, np.ndarray) or isinstance(item, torch.Tensor):
-                    n_bytes_meta += item.nbytes
+            if quant_state[param_name]:
+                for item in quant_state[param_name].values():
+                    if isinstance(item, np.ndarray) or isinstance(item, torch.Tensor):
+                        n_bytes_meta += item.nbytes
 
             if isinstance(values, np.ndarray):
                 # if numpy, convert to torch
