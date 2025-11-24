@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.app_opt.sklearn.recipes import SklearnFedAvgRecipe
 from nvflare.app_opt.sklearn.recipes import SVMFedAvgRecipe
 
-__all__ = ["SVMFedAvgRecipe"]
+__all__ = ["SklearnFedAvgRecipe", "SVMFedAvgRecipe"]
