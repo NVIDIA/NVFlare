@@ -128,7 +128,7 @@ class ModelDequantizer(DXOFilter):
                             dtype=getattr(torch, quant_state[param_name]["dtype"]),
                             shape=torch.Size(quant_state[param_name]["shape"]),
                         )
-                    # de-quanitze
+                    # de-quantize
                     if quantization_type == "float4":
                         dequantized = dequantize_4bit(quantized, quantize_state, quant_type="fp4")
                     else:
