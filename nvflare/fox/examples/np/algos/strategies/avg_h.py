@@ -39,7 +39,7 @@ class NPHierarchicalFedAvg:
     def _do_eval(self, model):
         results = fox.leaf_clients.evaluate(model)
         total = 0.0
-        for n, v in results.items():
+        for n, v in results:
             self.logger.info(f"[{fox.call_info}]: got eval result from client {n}: {v}")
             total += v
         return total / len(results)
@@ -47,7 +47,7 @@ class NPHierarchicalFedAvg:
     def _do_one_round(self, r, current_model):
         total = 0
         results = fox.child_clients.train(r, current_model)
-        for n, v in results.items():
+        for n, v in results:
             self.logger.info(f"[{fox.call_info}] round {r}: got group result from client {n}: {v}")
             total += v
         return total / len(results)

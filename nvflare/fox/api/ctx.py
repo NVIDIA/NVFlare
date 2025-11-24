@@ -33,6 +33,7 @@ class Context:
         self.abort_signal = abort_signal
         self.app = app
         self.props = {}
+        self.parent_ctx = get_call_context()
 
     @property
     def backend(self):
@@ -74,14 +75,22 @@ class Context:
     def is_aborted(self):
         return self.abort_signal and self.abort_signal.triggered
 
-    def header_str(self):
+    def __str__(self):
         return f"{self.app.name}:{self.caller}=>{self.callee}"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.parent_ctx:
+            set_call_context(self.parent_ctx)
 
 
 def get_call_context():
-    if not fox_context.call_ctx:
-        print("NO CALL_CTX in FOX Context!!!")
-    return fox_context.call_ctx
+    if hasattr(fox_context, "call_ctx"):
+        return fox_context.call_ctx
+    else:
+        return None
 
 
 def set_call_context(ctx):

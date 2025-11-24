@@ -66,7 +66,6 @@ class ResultWaiter(threading.Event):
         parts = target_name.split(".")
         site_name = parts[0]
         with self.lock:
-            print(f"set result for {target_name} on site {site_name}")
             all_received = self.results.append((site_name, result))
             if all_received:
                 self.set()
@@ -93,6 +92,8 @@ class GroupCallContext:
         self.cb_kwargs = cb_kwargs
         self.context = context
         self.waiter = waiter
+        self.expect_result = True
+        self.timeout = None
         self.logger = get_obj_logger(self)
 
     def set_result(self, result):

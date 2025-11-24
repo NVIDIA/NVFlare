@@ -17,7 +17,6 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .backend import Backend
 from .constants import OPTION_ARGS, CollabMethodArgName, CollabMethodOptionName
-from .ctx import get_call_context, set_call_context
 from .utils import check_call_args
 
 
@@ -26,13 +25,13 @@ class _ProxyCall:
     def __init__(
         self,
         proxy,
-        blocking: bool = True,
+        expect_result: bool = True,
         timeout: float = 5.0,
         optional: bool = False,
         secure: bool = False,
     ):
         self.proxy = proxy
-        self.blocking = blocking
+        self.expect_result = expect_result
         self.timeout = timeout
         self.optional = optional
         self.secure = secure
@@ -43,7 +42,7 @@ class _ProxyCall:
                 {
                     CollabMethodOptionName.OPTIONAL: self.optional,
                     CollabMethodOptionName.SECURE: self.secure,
-                    CollabMethodOptionName.BLOCKING: self.blocking,
+                    CollabMethodOptionName.EXPECT_RESULT: self.expect_result,
                     CollabMethodOptionName.TIMEOUT: self.timeout,
                 }
             )
@@ -67,14 +66,14 @@ class Proxy:
 
     def __call__(
         self,
-        blocking: bool = True,
+        expect_result: bool = True,
         timeout: float = 5.0,
         optional: bool = False,
         secure: bool = False,
     ):
         return _ProxyCall(
             proxy=self,
-            blocking=blocking,
+            expect_result=expect_result,
             timeout=timeout,
             optional=optional,
             secure=secure,
@@ -155,7 +154,6 @@ class Proxy:
         """
 
         def method(*args, **kwargs):
-            orig_ctx = get_call_context()
             try:
                 # remove option args
                 option_args = {}
@@ -164,39 +162,32 @@ class Proxy:
                         option_args[k] = kwargs.pop(k)
 
                 p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
-                ctx = p.app.new_context(self.caller_name, self.name)
 
-                self.logger.debug(
-                    f"[{ctx.header_str()}] apply_outgoing_call_filters on {p.target_name} func {func_name}"
-                )
+                with p.app.new_context(self.caller_name, self.name) as ctx:
+                    self.logger.debug(f"[{ctx}] apply_outgoing_call_filters on {p.target_name} func {func_name}")
 
-                # apply outgoing call filters
-                call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
-                check_call_args(func_name, func_itf, call_args, call_kwargs)
+                    # apply outgoing call filters
+                    call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
+                    check_call_args(func_name, func_itf, call_args, call_kwargs)
 
-                call_kwargs[CollabMethodArgName.CONTEXT] = ctx
+                    call_kwargs[CollabMethodArgName.CONTEXT] = ctx
 
-                # restore option args
-                for k, v in option_args.items():
-                    call_kwargs[k] = v
+                    # restore option args
+                    for k, v in option_args.items():
+                        call_kwargs[k] = v
 
-                self.logger.debug(
-                    f"[{ctx.header_str()}] calling target {p.target_name} func {func_name}: {option_args=}"
-                )
+                    self.logger.debug(f"[{ctx}] calling target {p.target_name} func {func_name}: {option_args=}")
 
-                result = p.backend.call_target(p.target_name, func_name, *call_args, **call_kwargs)
-                if isinstance(result, Exception):
-                    raise result
+                    result = p.backend.call_target(p.target_name, func_name, *call_args, **call_kwargs)
+                    if isinstance(result, Exception):
+                        raise result
 
-                if result is not None:
-                    # filter incoming result filters
-                    result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
+                    if result is not None:
+                        # filter incoming result filters
+                        result = self.app.apply_incoming_result_filters(p.target_name, func_name, result, ctx)
 
-                return result
+                    return result
             except Exception as ex:
                 self.backend.handle_exception(ex)
-            finally:
-                if orig_ctx:
-                    set_call_context(orig_ctx)
 
         return method

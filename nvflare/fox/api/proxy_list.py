@@ -41,7 +41,6 @@ class ProxyList(list):
         process_resp_cb=None,
         **cb_kwargs,
     ):
-        print(f"creating group: {blocking=} {timeout=} {optional=} {secure=}")
         return group(
             ctx=get_call_context(),
             proxies=self,

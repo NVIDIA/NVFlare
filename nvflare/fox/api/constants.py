@@ -17,11 +17,11 @@ class CollabMethodArgName:
 
 
 class CollabMethodOptionName:
-    BLOCKING = "_blocking"
-    TIMEOUT = "_timeout"
-    OPTIONAL = "_optional"
-    SECURE = "_secure"
-    EXPECT_RESULT = "_expect_result"
+    BLOCKING = "__blocking__"
+    TIMEOUT = "__timeout__"
+    OPTIONAL = "__optional__"
+    SECURE = "__secure__"
+    EXPECT_RESULT = "__expect_result__"
 
 
 OPTION_ARGS = [

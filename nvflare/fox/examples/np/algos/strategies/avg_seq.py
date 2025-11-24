@@ -56,12 +56,13 @@ class NPFedAvgSequential:
         # save model to work dir
         file_name = os.path.join(fox.workspace.get_work_dir(), "model.npy")
         save_np_model(current_model, file_name)
+        self.logger.info(f"FINAL RESULT: {current_model}")
         return current_model
 
     def _do_one_round(self, r, current_model):
         total = 0
         for c in fox.clients:
-            result = c(blocking=True, timeout=2.0, optional=True, secure=False).train(r, current_model)
-            self.logger.info(f"[{fox.context.header_str()}] round {r}: got result from client {c.name}: {result}")
+            result = c(expect_result=True, timeout=2.0, optional=True, secure=False).train(r, current_model)
+            self.logger.info(f"[{fox.call_info}] round {r}: got result from client {c.name}: {result}")
             total += result * self.client_weights[c.name]
         return total

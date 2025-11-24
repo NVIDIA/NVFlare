@@ -149,7 +149,6 @@ class App:
         qualified_func_name = f"{collab_obj_name}.{func_name}"
         ctx.set_prop(ContextKey.QUALIFIED_FUNC_NAME, qualified_func_name)
         ctx.set_prop(ContextKey.DIRECTION, direction)
-        self.logger.info(f"set filter context {id(ctx)}: {direction} {qualified_func_name}")
 
         if not chains:
             return None
@@ -160,7 +159,7 @@ class App:
         return None
 
     def apply_incoming_call_filters(self, target_name: str, func_name: str, func_kwargs, context: Context):
-        self.logger.info(f"apply_incoming_call_filters on ctx {id(context)}")
+        self.logger.debug(f"apply_incoming_call_filters on ctx {id(context)}")
         filter_chain = self._find_filter_chain(
             FilterDirection.INCOMING, self._incoming_call_filter_chains, target_name, func_name, context
         )
@@ -170,7 +169,7 @@ class App:
             return func_kwargs
 
     def apply_outgoing_call_filters(self, target_name: str, func_name: str, func_kwargs, context: Context):
-        self.logger.info(f"apply_outgoing_call_filters on ctx {id(context)}")
+        self.logger.debug(f"apply_outgoing_call_filters on ctx {id(context)}")
         filter_chain = self._find_filter_chain(
             FilterDirection.OUTGOING, self._outgoing_call_filter_chains, target_name, func_name, context
         )
@@ -180,7 +179,7 @@ class App:
             return func_kwargs
 
     def apply_incoming_result_filters(self, target_name: str, func_name: str, result, context: Context):
-        self.logger.info(f"apply_incoming_result_filters on ctx {id(context)}")
+        self.logger.debug(f"apply_incoming_result_filters on ctx {id(context)}")
         filter_chain = self._find_filter_chain(
             FilterDirection.INCOMING, self._incoming_result_filter_chains, target_name, func_name, context
         )
@@ -190,7 +189,7 @@ class App:
             return result
 
     def apply_outgoing_result_filters(self, target_name: str, func_name: str, result, context: Context):
-        self.logger.info(f"apply_outgoing_result_filters on ctx {id(context)}")
+        self.logger.debug(f"apply_outgoing_result_filters on ctx {id(context)}")
         filter_chain = self._find_filter_chain(
             FilterDirection.OUTGOING, self._outgoing_result_filter_chains, target_name, func_name, context
         )
