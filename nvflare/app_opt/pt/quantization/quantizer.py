@@ -95,6 +95,9 @@ class ModelQuantizer(DXOFilter):
                 )
             source_datatype[param_name] = source_data_type
 
+            if source_data_type == "bool":
+                continue
+
             if self.quantization_type != "adaquant":
                 # get the bits information
                 source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
