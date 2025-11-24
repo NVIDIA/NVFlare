@@ -11,22 +11,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-class CollabMethodArgName:
-    # defines optional args that a target's collaboration method can have
-    CONTEXT = "context"
+class CallOpt:
 
+    def __init__(
+        self,
+        expect_result: bool = True,
+        blocking: bool = True,
+        timeout: float = 5.0,
+        secure: bool = False,
+        optional: bool = False,
+    ):
+        self.expect_result = expect_result
+        self.blocking = blocking
+        self.timeout = timeout
+        self.secure = secure
+        self.optional = optional
 
-class ContextKey:
-    INPUT = "input"
-    QUALIFIED_FUNC_NAME = "qualified_func_name"
-    DIRECTION = "direction"
-
-
-class FilterDirection:
-    INCOMING = "incoming"
-    OUTGOING = "outgoing"
-
-
-class BackendType:
-    SIMULATION = "simulation"
-    SYSTEM = "system"
+    def __str__(self):
+        return (
+            f"expect_result={self.expect_result} blocking={self.blocking} timeout={self.timeout} "
+            f"secure={self.secure} optional={self.optional}"
+        )

@@ -16,7 +16,7 @@ import torch
 
 from nvflare.app_common.np.np_downloader import add_arrays
 from nvflare.app_common.np.np_downloader import download_arrays as pull_arrays
-from nvflare.fox.api.ctx import Context
+from nvflare.fox import fox
 from nvflare.fox.sys.backend import SysBackend
 from nvflare.fuel.f3.streaming.file_downloader import add_file
 from nvflare.fuel.f3.streaming.file_downloader import download_file as pull_file
@@ -44,8 +44,8 @@ class Downloader(ObjectDownloader):
         self,
         num_receivers: int,
         timeout: float,
-        ctx: Context,
     ):
+        ctx = fox.context
         backend = ctx.backend
         if not isinstance(backend, SysBackend):
             raise ValueError(f"backend must be SysBackend but got {type(backend)}")
@@ -82,7 +82,8 @@ class Downloader(ObjectDownloader):
         return self._to_ref(ObjectType.ARRAYS, rid)
 
 
-def download_file(ref: dict, per_request_timeout: float, ctx: Context):
+def download_file(ref: dict, per_request_timeout: float):
+    ctx = fox.context
     backend = ctx.backend
     if not isinstance(backend, SysBackend):
         raise ValueError(f"backend must be SysBackend but got {type(backend)}")
@@ -100,7 +101,8 @@ def download_file(ref: dict, per_request_timeout: float, ctx: Context):
     )
 
 
-def download_tensors(ref: dict, per_request_timeout: float, ctx: Context, tensors_received_cb=None, **cb_kwargs):
+def download_tensors(ref: dict, per_request_timeout: float, tensors_received_cb=None, **cb_kwargs):
+    ctx = fox.context
     backend = ctx.backend
     if not isinstance(backend, SysBackend):
         raise ValueError(f"backend must be SysBackend but got {type(backend)}")
@@ -120,7 +122,8 @@ def download_tensors(ref: dict, per_request_timeout: float, ctx: Context, tensor
     )
 
 
-def download_arrays(ref: dict, per_request_timeout: float, ctx: Context, arrays_received_cb=None, **cb_kwargs):
+def download_arrays(ref: dict, per_request_timeout: float, arrays_received_cb=None, **cb_kwargs):
+    ctx = fox.context
     backend = ctx.backend
     if not isinstance(backend, SysBackend):
         raise ValueError(f"backend must be SysBackend but got {type(backend)}")

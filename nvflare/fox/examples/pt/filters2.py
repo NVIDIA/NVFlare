@@ -36,7 +36,6 @@ class ModelFilter:
 
         downloader = Downloader(
             num_receivers=num_receivers,
-            ctx=fox.context,
             timeout=5.0,
         )
         model = downloader.add_tensors(arg_value, 0)
@@ -49,7 +48,7 @@ class ModelFilter:
         if not arg_value:
             return func_kwargs
 
-        err, model = download_tensors(ref=arg_value, ctx=fox.context, per_request_timeout=5.0)
+        err, model = download_tensors(ref=arg_value, per_request_timeout=5.0)
         if err:
             self.logger.error(f"error filtering call arg {arg_value}: {err}")
         else:
@@ -64,14 +63,13 @@ class ModelFilter:
 
         downloader = Downloader(
             num_receivers=1,
-            ctx=fox.context,
             timeout=5.0,
         )
         return downloader.add_tensors(result, 0)
 
     @fox.in_result_filter
     def download_result(self, result: Any):
-        err, model = download_tensors(ref=result, ctx=fox.context, per_request_timeout=5.0)
+        err, model = download_tensors(ref=result, per_request_timeout=5.0)
         if err:
             self.logger.error(f"error filtering result {result}: {err}")
             return result

@@ -18,8 +18,7 @@ import numpy as np
 import torch
 
 from nvflare.fox import fox
-from nvflare.fox.api.constants import EnvType
-from nvflare.fox.api.ctx import Context
+from nvflare.fox.api.constants import BackendType
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.utils import add as add_np
 from nvflare.fox.examples.np.algos.utils import div as div_np
@@ -70,10 +69,9 @@ class PTFedAvgMixed:
             aggr_result=aggr_result,
         )
 
-        if fox.env_type == EnvType.SYSTEM:
+        if fox.backend_type == BackendType.SYSTEM:
             downloader = Downloader(
                 num_receivers=grp.size,
-                ctx=fox.context,
                 timeout=5.0,
             )
             model_type = "ref"
@@ -109,10 +107,8 @@ class PTFedAvgMixed:
             err, pt_result = download_tensors(
                 ref=pt_result,
                 per_request_timeout=5.0,
-                ctx=fox.context,
                 tensors_received_cb=self._aggregate_tensors,
                 aggr_result=aggr_result,
-                context=fox.context,
             )
             if err:
                 raise RuntimeError(f"failed to download model {pt_result}: {err}")
@@ -120,10 +116,8 @@ class PTFedAvgMixed:
             err, np_result = download_arrays(
                 ref=np_result,
                 per_request_timeout=5.0,
-                ctx=fox.context,
                 arrays_received_cb=self._aggregate_arrays,
                 aggr_result=aggr_result,
-                context=fox.context,
             )
             if err:
                 raise RuntimeError(f"failed to download NP model file {np_result}: {err}")
@@ -134,13 +128,13 @@ class PTFedAvgMixed:
         aggr_result.count += 1
         return None
 
-    def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context}] aggregating received tensor: {td}")
+    def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult):
+        self.logger.info(f"[{fox.call_info}] aggregating received tensor: {td}")
         with aggr_result.lock:
             add_pt(td, aggr_result.pt_total)
 
-    def _aggregate_arrays(self, td: dict[str, np.ndarray], aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context}] aggregating received array: {td}")
+    def _aggregate_arrays(self, td: dict[str, np.ndarray], aggr_result: _AggrResult):
+        self.logger.info(f"[{fox.call_info}] aggregating received array: {td}")
         with aggr_result.lock:
             add_np(td, aggr_result.np_total)
 
@@ -160,12 +154,12 @@ class PTTrainer:
         self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {pt_model=} {np_model=}")
 
         if model_type == "ref":
-            err, pt_model = download_tensors(ref=pt_model, per_request_timeout=5.0, ctx=fox.context)
+            err, pt_model = download_tensors(ref=pt_model, per_request_timeout=5.0)
             if err:
                 raise RuntimeError(f"failed to download PT model {pt_model}: {err}")
             self.logger.info(f"downloaded PT model {pt_model}")
 
-            err, np_model = download_arrays(ref=np_model, per_request_timeout=5.0, ctx=fox.context)
+            err, np_model = download_arrays(ref=np_model, per_request_timeout=5.0)
             if err:
                 raise RuntimeError(f"failed to download NP model {np_model}: {err}")
             self.logger.info(f"downloaded NP model {np_model}")
@@ -182,7 +176,6 @@ class PTTrainer:
             # stream it
             downloader = Downloader(
                 num_receivers=1,
-                ctx=fox.context,
                 timeout=5.0,
             )
             pt_result = downloader.add_tensors(pt_result, 0)

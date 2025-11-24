@@ -15,7 +15,7 @@ import os.path
 import uuid
 
 from nvflare.fox import fox
-from nvflare.fox.api.constants import EnvType
+from nvflare.fox.api.constants import BackendType
 from nvflare.fox.api.dec import collab
 from nvflare.fox.examples.np.algos.utils import load_np_model, parse_array_def, save_np_model
 from nvflare.fox.sys.downloader import Downloader, download_file
@@ -57,12 +57,11 @@ class NPFedAvgStream:
 
         # pretend the model is big
         file_name = None
-        if fox.env_type == EnvType.SYSTEM:
+        if fox.backend_type == BackendType.SYSTEM:
             file_name = f"/tmp/np_{str(uuid.uuid4())}.npy"
             save_np_model(current_model, file_name)
             downloader = Downloader(
                 num_receivers=grp.size,
-                ctx=fox.context,
                 timeout=5.0,
             )
             model = downloader.add_file(file_name=file_name, file_downloaded_cb=self._model_downloaded)
@@ -89,7 +88,7 @@ class NPFedAvgStream:
 
         model, model_type = result
         if model_type == "ref":
-            err, file_path = download_file(ref=model, per_request_timeout=5.0, ctx=fox.context)
+            err, file_path = download_file(ref=model, per_request_timeout=5.0)
             if err:
                 raise RuntimeError(f"failed to download model file {model}: {err}")
             self.logger.info(f"downloaded model file to {file_path}")
@@ -117,7 +116,7 @@ class NPTrainer:
             return 0
         self.logger.debug(f"[{fox.call_info}] training round {current_round}: {model_type=} {weights=}")
         if model_type == "ref":
-            err, file_path = download_file(ref=weights, per_request_timeout=5.0, ctx=fox.context)
+            err, file_path = download_file(ref=weights, per_request_timeout=5.0)
             if err:
                 raise RuntimeError(f"failed to download model file {weights}: {err}")
             self.logger.info(f"downloaded model file to {file_path}")
@@ -133,7 +132,6 @@ class NPTrainer:
             save_np_model(result, file_name)
             downloader = Downloader(
                 num_receivers=1,
-                ctx=fox.context,
                 timeout=5.0,
             )
             result = downloader.add_file(file_name=file_name, file_downloaded_cb=self._result_downloaded)

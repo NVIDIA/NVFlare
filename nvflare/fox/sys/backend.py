@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.fox.api.backend import Backend
-from nvflare.fox.api.constants import CollabMethodArgName, CollabMethodOptionName
+from nvflare.fox.api.call_opt import CallOpt
+from nvflare.fox.api.constants import CollabMethodArgName
 from nvflare.fox.api.ctx import set_call_context
 from nvflare.fox.api.gcc import GroupCallContext
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -34,13 +35,7 @@ class SysBackend(Backend):
         self.target_fqcn = target_fqcn
         self.thread_executor = thread_executor
 
-    def call_target(self, target_name: str, func_name: str, *args, **kwargs):
-        kwargs.pop(CollabMethodOptionName.BLOCKING, True)
-        expect_result = kwargs.pop(CollabMethodOptionName.EXPECT_RESULT, True)
-        timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, 10.0)
-        optional = kwargs.pop(CollabMethodOptionName.OPTIONAL, False)
-        secure = kwargs.pop(CollabMethodOptionName.SECURE, False)
-
+    def call_target(self, target_name: str, call_opt: CallOpt, func_name: str, *args, **kwargs):
         ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
         set_call_context(ctx)
 
@@ -53,7 +48,8 @@ class SysBackend(Backend):
         }
         request = new_cell_message({}, payload)
 
-        if expect_result:
+        timeout = call_opt.timeout
+        if call_opt.expect_result:
             self.logger.info(f"send_request from {self.cell.get_fqcn()} to {self.target_fqcn}: {payload=} {timeout=}")
 
             reply = self.cell.send_request(
@@ -62,8 +58,8 @@ class SysBackend(Backend):
                 topic=MSG_TOPIC,
                 request=request,
                 timeout=timeout,
-                secure=secure,
-                optional=optional,
+                secure=call_opt.secure,
+                optional=call_opt.optional,
                 abort_signal=self.abort_signal,
             )
             assert isinstance(reply, Message)
@@ -91,8 +87,8 @@ class SysBackend(Backend):
                 topic=MSG_TOPIC,
                 targets=self.target_fqcn,
                 message=request,
-                secure=secure,
-                optional=optional,
+                secure=call_opt.secure,
+                optional=call_opt.optional,
             )
             return None
 
@@ -101,7 +97,7 @@ class SysBackend(Backend):
 
     def _run_func(self, gcc: GroupCallContext, func_name: str, args, kwargs):
         try:
-            result = self.call_target(gcc.target_name, func_name, *args, **kwargs)
+            result = self.call_target(gcc.target_name, gcc.call_opt, func_name, *args, **kwargs)
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)
