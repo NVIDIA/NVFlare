@@ -57,7 +57,7 @@ class facade:
     @classproperty
     def call_info(cls):
         ctx = get_call_context()
-        return ctx.header_str()
+        return str(ctx)
 
     @classproperty
     def site_name(cls):

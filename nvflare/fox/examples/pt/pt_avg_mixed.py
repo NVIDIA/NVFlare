@@ -135,12 +135,12 @@ class PTFedAvgMixed:
         return None
 
     def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context.header_str()}] aggregating received tensor: {td}")
+        self.logger.info(f"[{context}] aggregating received tensor: {td}")
         with aggr_result.lock:
             add_pt(td, aggr_result.pt_total)
 
     def _aggregate_arrays(self, td: dict[str, np.ndarray], aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context.header_str()}] aggregating received array: {td}")
+        self.logger.info(f"[{context}] aggregating received array: {td}")
         with aggr_result.lock:
             add_np(td, aggr_result.np_total)
 

@@ -20,7 +20,7 @@ from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .app import App
 from .constants import CollabMethodArgName, CollabMethodOptionName
-from .ctx import Context, get_call_context, set_call_context
+from .ctx import Context
 from .gcc import GroupCallContext, ResultWaiter
 from .proxy import Proxy
 from .utils import check_call_args
@@ -52,8 +52,6 @@ class Group:
             timeout: how long to wait for responses.
             optional: whether the call is optional or not.
             secure: whether the call is secure or not.
-            min_resps: minimum number of responses expected.
-            wait_after_min_resps: how much longer to wait after min_resps are received.
             process_resp_cb: callback function to be called to process responses from remote apps.
             **cb_kwargs: kwargs passed to process_resp_cb.
         """
@@ -98,10 +96,7 @@ class Group:
 
         def method(*args, **kwargs):
             the_backend = None
-            orig_ctx = get_call_context()
             try:
-                gccs = {}
-
                 # filter once for all targets
                 p = self._proxies[0]
 
@@ -109,78 +104,74 @@ class Group:
                 # the func_proxy is either "p" or a child of "p".
                 func_proxy, func_itf, adj_args, adj_kwargs = p.adjust_func_args(func_name, args, kwargs)
                 the_backend = p.backend
-                ctx = func_proxy.app.new_context(func_proxy.caller_name, func_proxy.name, target_group=self)
 
-                self._logger.debug(
-                    f"[{ctx.header_str()}] calling {func_name} of group {[p.name for p in self._proxies]}"
-                )
+                with func_proxy.app.new_context(func_proxy.caller_name, func_proxy.name, target_group=self) as ctx:
+                    self._logger.debug(f"[{ctx}] calling {func_name} of group {[p.name for p in self._proxies]}")
 
-                # apply outgoing call filters
-                assert isinstance(self._app, App)
-                adj_kwargs = self._app.apply_outgoing_call_filters(func_proxy.target_name, func_name, adj_kwargs, ctx)
-                check_call_args(func_name, func_itf, adj_args, adj_kwargs)
-
-                waiter = ResultWaiter([p.name for p in self._proxies])
-                for p in self._proxies:
-                    func_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, adj_args, adj_kwargs)
-                    call_kwargs = copy.copy(call_kwargs)
-                    ctx = self._app.new_context(
-                        func_proxy.caller_name, func_proxy.name, target_group=self, set_call_ctx=False
+                    # apply outgoing call filters
+                    assert isinstance(self._app, App)
+                    adj_kwargs = self._app.apply_outgoing_call_filters(
+                        func_proxy.target_name, func_name, adj_kwargs, ctx
                     )
+                    check_call_args(func_name, func_itf, adj_args, adj_kwargs)
 
-                    call_kwargs[CollabMethodArgName.CONTEXT] = ctx
+                    waiter = ResultWaiter([p.name for p in self._proxies])
+                    for p in self._proxies:
+                        func_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(
+                            func_name, adj_args, adj_kwargs
+                        )
+                        call_kwargs = copy.copy(call_kwargs)
+                        ctx = self._app.new_context(
+                            func_proxy.caller_name, func_proxy.name, target_group=self, set_call_ctx=False
+                        )
 
-                    # set the optional args to help backend decide how to call
-                    if self._timeout:
+                        call_kwargs[CollabMethodArgName.CONTEXT] = ctx
+
+                        # set the optional args to help backend decide how to call
                         call_kwargs[CollabMethodOptionName.TIMEOUT] = self._timeout
+                        call_kwargs[CollabMethodOptionName.BLOCKING] = self._blocking
+                        call_kwargs[CollabMethodOptionName.EXPECT_RESULT] = self._expect_result
+                        call_kwargs[CollabMethodOptionName.SECURE] = self._secure
+                        call_kwargs[CollabMethodOptionName.OPTIONAL] = self._optional
 
-                    call_kwargs[CollabMethodOptionName.BLOCKING] = self._blocking
-                    call_kwargs[CollabMethodOptionName.EXPECT_RESULT] = self._expect_result
-                    call_kwargs[CollabMethodOptionName.SECURE] = self._secure
-                    call_kwargs[CollabMethodOptionName.OPTIONAL] = self._optional
+                        gcc = GroupCallContext(
+                            self._app,
+                            func_proxy.target_name,
+                            func_name,
+                            self._process_resp_cb,
+                            self._cb_kwargs,
+                            ctx,
+                            waiter,
+                        )
+                        gcc.expect_result = self._expect_result
+                        gcc.timeout = self._timeout
 
-                    gcc = GroupCallContext(
-                        self._app,
-                        func_proxy.target_name,
-                        func_name,
-                        self._process_resp_cb,
-                        self._cb_kwargs,
-                        ctx,
-                        waiter,
-                    )
-                    gccs[p.name] = gcc
+                        self._logger.debug(f"[{ctx}] group call: {func_name=} args={call_args} kwargs={call_kwargs}")
+                        func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
 
-                    self._logger.debug(
-                        f"[{ctx.header_str()}] group call: {func_name=} args={call_args} kwargs={call_kwargs}"
-                    )
-                    func_proxy.backend.call_target_in_group(gcc, func_name, *call_args, **call_kwargs)
+                    if not self._expect_result:
+                        # do not wait for responses
+                        return None
 
-                if not self._expect_result:
-                    # do not wait for responses
-                    return None
+                    if not self._blocking:
+                        self._logger.debug(f"not blocking {func_name}")
+                        return waiter.results
 
-                if not self._blocking:
-                    self._logger.debug(f"not blocking {func_name}")
+                    # wait for responses
+                    while True:
+                        if self._abort_signal.triggered:
+                            raise RunAborted("run is aborted")
+
+                        # wait for a short time, so we can check other conditions
+                        done = waiter.wait(0.1)
+                        if done:
+                            self._logger.info(f"all received from {waiter.results} for func {func_name}")
+                            break
+
                     return waiter.results
-
-                # wait for responses
-                while True:
-                    if self._abort_signal.triggered:
-                        raise RunAborted("run is aborted")
-
-                    # wait for a short time, so we can check other conditions
-                    done = waiter.wait(0.1)
-                    if done:
-                        self._logger.info(f"all received from {waiter.results} for func {func_name}")
-                        break
-
-                return waiter.results
             except Exception as ex:
                 if the_backend:
                     the_backend.handle_exception(ex)
-            finally:
-                if orig_ctx:
-                    set_call_context(orig_ctx)
 
         return method
 

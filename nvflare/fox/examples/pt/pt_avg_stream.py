@@ -100,7 +100,6 @@ class PTFedAvgStream:
                 ctx=fox.context,
                 tensors_received_cb=self._aggregate_tensors,
                 aggr_result=aggr_result,
-                context=fox.context,
             )
             if err:
                 raise RuntimeError(f"failed to download model {model}: {err}")
@@ -114,8 +113,8 @@ class PTFedAvgStream:
         aggr_result.count += 1
         return None
 
-    def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult, context: Context):
-        self.logger.info(f"[{context.header_str()}] aggregating received tensor: {td}")
+    def _aggregate_tensors(self, td: dict[str, torch.Tensor], aggr_result: _AggrResult):
+        self.logger.info(f"[{fox.call_info}] aggregating received tensor: {td}")
         with aggr_result.lock:
             for k, v in td.items():
                 if k not in aggr_result.total:

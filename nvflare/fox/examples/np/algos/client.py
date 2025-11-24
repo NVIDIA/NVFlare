@@ -39,15 +39,10 @@ class NPTrainer:
             self.logger.debug("training aborted")
             return 0
         self.logger.info(f"[{fox.call_info}] EZ trained round {current_round=} {weights=}")
+        fox.server(expect_result=False).fire_event("metrics", {"round": current_round, "y": 10})
 
-        # metric_receiver = self.server.get_target("metric_receiver")
-        # if metric_receiver:
-        #     self.server.accept_metric({"round": r, "y": 2})
-        #     self.server.metric_receiver.accept_metric({"round": r, "y": 2})
-        #
-        self.logger.info(f"before fire_event: fox ctx={id(fox.context)}")
-        fox.server(blocking=False).fire_event("metrics", {"round": current_round, "y": 10})
-        self.logger.info(f"after fire_event: fox ctx={id(fox.context)}")
+        # force timeout to test timeout handling
+        # time.sleep(10)
         return weights + self.delta
 
     @fox.collab
@@ -72,14 +67,14 @@ class NPHierarchicalTrainer:
         if fox.has_children:
             total = 0
             results = fox.child_clients.train(current_round, weights)
-            for n, v in results.items():
+            for n, v in results:
                 total += v
             result = total / len(results)
             self.logger.debug(f"[{fox.call_info}]: aggr result from children of round {current_round}: {result}")
         else:
             result = self._local_train(current_round, weights)
             self.logger.debug(f"[{fox.call_info}]: local train result of round {current_round}: {result}")
-            fox.server.fire_event("metrics", {"round": current_round, "y": 10}, _blocking=False)
+            fox.server(expect_result=False).fire_event("metrics", {"round": current_round, "y": 10})
         return result
 
     def _local_train(self, current_round, weights):

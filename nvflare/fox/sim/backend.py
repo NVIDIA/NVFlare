@@ -51,7 +51,7 @@ class SimBackend(Backend):
         if not callable(func):
             raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
-        blocking = kwargs.pop(CollabMethodOptionName.BLOCKING, True)
+        expect_result = kwargs.pop(CollabMethodOptionName.EXPECT_RESULT, True)
         timeout = kwargs.pop(CollabMethodOptionName.TIMEOUT, 5.0)
 
         # other options don't apply to simulation
@@ -59,7 +59,7 @@ class SimBackend(Backend):
             kwargs.pop(k, None)
 
         waiter = None
-        if blocking:
+        if expect_result:
             waiter = _Waiter()
 
         self.executor.submit(self._run_func, waiter, target_name, func_name, func, args, kwargs)
@@ -106,7 +106,7 @@ class SimBackend(Backend):
             raise RuntimeError(f"cannot find interface for func '{func_name}' of object {self.target_obj_name}")
 
         check_call_args(func_name, func_itf, [], kwargs)
-        self.logger.debug(f"[{my_ctx.header_str()}] received kwargs is good for '{func_name}': {kwargs}")
+        self.logger.debug(f"[{my_ctx}] received kwargs is good for '{func_name}': {kwargs}")
 
         kwargs[CollabMethodArgName.CONTEXT] = my_ctx
         adjust_kwargs(func, kwargs)
@@ -136,6 +136,7 @@ class SimBackend(Backend):
     def call_target_in_group(self, gcc: GroupCallContext, func_name: str, *args, **kwargs):
         # do not use the optional args - they are managed by the group
         self.logger.info(f"call_target_in_group: {gcc.target_name=}")
+
         for k in OPTION_ARGS:
             kwargs.pop(k, None)
 
@@ -147,28 +148,14 @@ class SimBackend(Backend):
         if not callable(func):
             raise AttributeError(f"the method '{func_name}' of {target_name} is not callable")
 
-        self.executor.submit(self._run_func_with_resp, gcc, func_name, func, args, kwargs)
+        self.executor.submit(self._run_func_in_group, gcc, func_name, args, kwargs)
 
-    def _run_func_with_resp(self, gcc: GroupCallContext, func_name, func, args, kwargs):
+    def _run_func_in_group(self, gcc: GroupCallContext, func_name, args, kwargs):
         try:
             target_name = gcc.target_name
-            ctx, kwargs = self._preprocess(target_name, func_name, func, kwargs)
-            self.logger.info(f"after _preprocess: ctx={id(ctx)} fox_ctx={id(fox.context)}")
-            result = func(*args, **kwargs)
-            # set_call_context(ctx)
-            self.logger.info(f"after calling {func_name}: ctx={id(ctx)} fox_ctx={id(fox.context)}")
-
-            # apply result filter
-            result = self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
-
-            self.logger.info(
-                f"after apply_outgoing_result_filters {func_name}: ctx={id(ctx)} fox_ctx={id(fox.context)}"
-            )
-
-            self.logger.info(
-                f"_run_func_with_resp: {id(ctx)} apply_outgoing_result_filters: {ctx.get_prop(ContextKey.DIRECTION)}"
-                f" {ctx.get_prop(ContextKey.QUALIFIED_FUNC_NAME)}"
-            )
+            kwargs[CollabMethodOptionName.EXPECT_RESULT] = gcc.expect_result
+            kwargs[CollabMethodOptionName.TIMEOUT] = gcc.timeout
+            result = self.call_target(target_name, func_name, *args, **kwargs)
             gcc.set_result(result)
         except Exception as ex:
             gcc.set_exception(ex)

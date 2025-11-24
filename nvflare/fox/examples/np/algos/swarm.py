@@ -68,10 +68,9 @@ class NPSwarmClient:
 
     def sag(self, model, current_round):
         results = fox.clients.train(model, current_round)
-        results = list(results.values())
         total = 0
-        for i in range(len(results)):
-            total += results[i]
+        for n, v in results:
+            total += v
         return total / len(results)
 
     @fox.collab
@@ -82,11 +81,10 @@ class NPSwarmClient:
         self.logger.info(f"[{fox.call_info}]: trained model {new_model=}")
         if current_round == num_rounds - 1:
             # all done
-            fox.clients(blocking=False).fire_event("final_model", new_model)
-            # self.server.fire_event("all_done", "OK", blocking=False)
+            fox.clients(expect_result=False).fire_event("final_model", new_model)
             self.logger.info("notify server all done!")
             try:
-                fox.server(blocking=False).all_done("OK")
+                fox.server(expect_result=False).all_done("OK")
             except:
                 traceback.print_exc()
             self.logger.info("Swarm Training is DONE!")
@@ -97,7 +95,7 @@ class NPSwarmClient:
         next_client_idx = random.randint(0, len(fox.clients) - 1)
         self.logger.debug(f"chose aggr client for round {next_round}: {next_client_idx}")
         next_client = fox.clients[next_client_idx]
-        next_client.swarm_learn(num_rounds, new_model, next_round, _blocking=False)
+        next_client(expect_result=False).swarm_learn(num_rounds, new_model, next_round)
 
     @fox.collab
     def start(self, num_rounds, initial_model):
