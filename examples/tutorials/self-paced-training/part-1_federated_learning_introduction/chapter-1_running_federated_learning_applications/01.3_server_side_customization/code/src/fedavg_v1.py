@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
@@ -114,7 +114,7 @@ class FedAvgV1(BaseFedAvg):
         self.num_fl_rounds_without_improvement += 1
         return False
 
-    def should_stop(self, metrics: Optional[Dict] = None) -> bool:
+    def should_stop(self, metrics: Optional[dict] = None) -> bool:
         """Checks whether the current FL experiment should stop.
 
         Args:

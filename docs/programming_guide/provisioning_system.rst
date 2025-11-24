@@ -131,10 +131,10 @@ The builders in the above diagram are provided as a convenient way to generate c
 NVIDIA FLARE system.  Developers are encouraged to add / modify or even remove those builders to fit their own requirements.
 
 Each builder is responsible for taking the information from project, its own __init__ arguments, and provisioner to
-generate data.  For example, the HEBuilder is responsible for generating tenseal context files for server and client,
-but not admin.  Additionally, the context for servers does not include either public key or secret key while the
-context for clients include both.  Its __init__ arguments consist of poly_modules_degree, coeff_mod_bit_sizes,
-scale_bits and scheme.  With all of the information, HEBuilder can output context files correctly.
+generate data. For example, the HEBuilder is responsible for generating tenseal context files for server and client,
+but not admin. Additionally, the context for the server does not include either public key or secret key while the
+context for clients include both. Its __init__ arguments consist of poly_modules_degree, coeff_mod_bit_sizes,
+scale_bits and scheme. With all of the information, HEBuilder can output context files correctly.
 
 Provisioner calls each builder's initialize method first during provisioning time in a loop.  This allows builders to
 prepare information and to populate their instance variables.  After calling each builder's initialize method, the
@@ -414,10 +414,6 @@ own requirements:
         │   ├── nvflare_compose
         │   ├── nvflare_hc
         │   │   └── templates
-        │   ├── overseer
-        │   │   ├── local
-        │   │   ├── startup
-        │   │   └── transfer
         │   ├── server1
         │   │   ├── local
         │   │   ├── startup
@@ -452,11 +448,7 @@ will ask you if you would like to have one sample copy of this file created.
 
   (nvflare-venv) ~/workspace$ provision
   No project.yml found in current folder.
-  There are two types of templates for project.yml.
-  1) project.yml for HA mode
-  2) project.yml for non-HA mode
-  3) Don't generate project.yml.  Exit this program.
-  Which type of project.yml should be generated at /home/nvflare/workspace/project.yml for you? (1/2/3) 
+  Would you like to generate a sample project.yml file? (y/n) 
 
 
 Edit the project.yml configuration file to meet your project requirements:
@@ -464,12 +456,11 @@ Edit the project.yml configuration file to meet your project requirements:
     - "api_version" must be 3 for current release of provisioning tool
     - "name" is used to identify this project.
     - "participants" describes the different parties in the FL system, distinguished by type. For all participants, "name"
-      should be unique, and "org" should be defined in AuthPolicyBuilder. The "name" of the Overseer and servers should
-      be in the format of fully qualified domain names. It is possible to use a unique hostname rather than FQDN, with
+      should be unique, and "org" should be defined in AuthPolicyBuilder. The "name" of the server should
+      be in the format of a fully qualified domain name. It is possible to use a unique hostname rather than FQDN, with
       the IP mapped to the hostname by having it added to ``/etc/hosts``:
 
-        - Type "overseer" describes the Overseer, with the "org", "name", "protocol", "api_root", and "port".
-        - Type "server" describes the FL servers, with the "org", "name", "fed_learn_port", "admin_port", and "enable_byoc":
+        - Type "server" describes the FL server, with the "org", "name", "fed_learn_port", "admin_port", and "enable_byoc":
 
             - "fed_learn_port" is the port number for communication between the FL server and FL clients
             - "admin_port" is the port number for communication between the FL server and FL administration client
@@ -482,15 +473,7 @@ Edit the project.yml configuration file to meet your project requirements:
 Default project.yml file
 ========================
 
-The following is an example of the default project.yml file of HA mode.
-
-.. literalinclude:: ../../nvflare/lighter/ha_project.yml
-  :language: yaml
-
-.. attention:: Please make sure that the Overseer and FL servers ports are accessible by all participating sites.
-
-
-The following is an example of the default project.yml file of non-HA mode.
+The following is an example of the default project.yml file.
 
 .. literalinclude:: ../../nvflare/lighter/dummy_project.yml
   :language: yaml

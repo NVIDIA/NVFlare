@@ -25,6 +25,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.pt.quantization.constant import QUANTIZATION_TYPE
 
+from .ada_quant import AdaQuantizer
+
 
 class ModelDequantizer(DXOFilter):
     def __init__(self):
@@ -41,7 +43,12 @@ class ModelDequantizer(DXOFilter):
         self.logger.info("Using model dequantizer.")
 
     def dequantization(
-        self, params: dict, quant_state: dict, quantization_type: str, source_datatype: dict, fl_ctx: FLContext
+        self,
+        params: dict,
+        quant_state: dict,
+        quantization_type: str,
+        source_datatype: dict,
+        fl_ctx: FLContext,
     ):
         n_params = len(params.keys())
         self.log_info(fl_ctx, f"Running dequantization on {n_params} variables")
@@ -51,102 +58,119 @@ class ModelDequantizer(DXOFilter):
         n_quant_params = 0
         for i, param_name in enumerate(params.keys()):
             source_data_type = source_datatype[param_name]
-
-            # get the bits information
-            source_date_bits = int(re.findall(r"\d+", source_data_type)[0])
-            quantization_bits = int(re.findall(r"\d+", quantization_type)[0])
-
-            # only dequantize if the quantization type is lower than the source data type
-            if quantization_bits >= source_date_bits:
-                self.log_info(
-                    fl_ctx,
-                    f"Skipping dequantization for {param_name}, quantization bit {quantization_type} >= source data bit {source_data_type}",
-                )
+            if source_data_type == "bool":
                 continue
-            else:
-                values = params[param_name]
-                n_bytes_before += values.nbytes
+
+            if quantization_type != "adaquant":
+                # get the bits information
+                source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
+                quantization_bits = int(re.findall(r"\d+", quantization_type)[0])
+
+                # only dequantize if the quantization type is lower than the source data type
+                if quantization_bits >= source_data_bits:
+                    self.log_info(
+                        fl_ctx,
+                        f"Skipping dequantization for {param_name}, quantization bit {quantization_type} >= source data bit {source_data_type}",
+                    )
+                    continue
+            values = params[param_name]
+            n_bytes_before += values.nbytes
+            if quant_state[param_name]:
                 for item in quant_state[param_name].values():
                     if isinstance(item, np.ndarray) or isinstance(item, torch.Tensor):
                         n_bytes_meta += item.nbytes
 
-                if isinstance(values, np.ndarray):
-                    # if numpy, convert to torch
-                    source_data_format = "numpy"
-                elif isinstance(values, torch.Tensor):
-                    source_data_format = "torch"
-                else:
-                    raise ValueError(f"Invalid source data type: {type(values)}, valid: numpy or torch")
+            if isinstance(values, np.ndarray):
+                # if numpy, convert to torch
+                source_data_format = "numpy"
+            elif isinstance(values, torch.Tensor):
+                source_data_format = "torch"
+            else:
+                raise ValueError(f"Invalid source data type: {type(values)}, valid: numpy or torch")
 
-                n_quant_params += 1
-                if quantization_type == "float16":
-                    # direct assign and convert back to higher precision
-                    params[param_name] = values
-                elif quantization_type in ["blockwise8", "float4", "normfloat4"]:
-                    # use bitsandbytes to dequantize the values
-                    # need GPU for general support
-                    # extract quantization state
-                    if quantization_type == "blockwise8":
-                        if source_data_format == "numpy":
-                            # first convert numpy array to tensor if numpy
-                            quantized = torch.as_tensor(values).cuda()
-                            absmax = torch.as_tensor(quant_state[param_name]["absmax"]).cuda()
-                            code = torch.as_tensor(quant_state[param_name]["code"]).cuda()
-                        elif source_data_format == "torch":
-                            quantized = values.cuda()
-                            absmax = quant_state[param_name]["absmax"].cuda()
-                            code = quant_state[param_name]["code"].cuda()
-                        # de-quantize
-                        dequantized = dequantize_blockwise(quantized, absmax=absmax, code=code)
-                    else:
-                        if source_data_format == "numpy":
-                            # first convert numpy array to tensor, need to use GPU
-                            quantized = torch.as_tensor(values).cuda()
-                            # create QuantState object
-                            quantize_state = QuantState(
-                                quant_type=quant_state[param_name]["quant_type"],
-                                absmax=torch.as_tensor(quant_state[param_name]["absmax"]).cuda(),
-                                blocksize=quant_state[param_name]["blocksize"],
-                                code=torch.as_tensor(quant_state[param_name]["quant_map"]).cuda(),
-                                dtype=getattr(torch, quant_state[param_name]["dtype"]),
-                                shape=torch.Size(quant_state[param_name]["shape"]),
-                            )
-                        elif source_data_format == "torch":
-                            quantized = values.cuda()
-                            quantize_state = QuantState(
-                                quant_type=quant_state[param_name]["quant_type"],
-                                absmax=quant_state[param_name]["absmax"].cuda(),
-                                blocksize=quant_state[param_name]["blocksize"],
-                                code=quant_state[param_name]["quant_map"].cuda(),
-                                dtype=getattr(torch, quant_state[param_name]["dtype"]),
-                                shape=torch.Size(quant_state[param_name]["shape"]),
-                            )
-                        # de-quantize
-                        if quantization_type == "float4":
-                            dequantized = dequantize_4bit(quantized, quantize_state, quant_type="fp4")
-                        else:
-                            dequantized = dequantize_4bit(quantized, quantize_state, quant_type="nf4")
-
+            n_quant_params += 1
+            if quantization_type == "float16":
+                # direct assign and convert back to higher precision
+                params[param_name] = values
+            elif quantization_type in ["blockwise8", "float4", "normfloat4"]:
+                # use bitsandbytes to dequantize the values
+                # need GPU for general support
+                # extract quantization state
+                if quantization_type == "blockwise8":
                     if source_data_format == "numpy":
-                        params[param_name] = dequantized.cpu().numpy()
+                        # first convert numpy array to tensor if numpy
+                        quantized = torch.as_tensor(values).cuda()
+                        absmax = torch.as_tensor(quant_state[param_name]["absmax"]).cuda()
+                        code = torch.as_tensor(quant_state[param_name]["code"]).cuda()
                     elif source_data_format == "torch":
-                        params[param_name] = dequantized.cpu()
+                        quantized = values.cuda()
+                        absmax = quant_state[param_name]["absmax"].cuda()
+                        code = quant_state[param_name]["code"].cuda()
+                    # de-quanitze
+                    dequantized = dequantize_blockwise(quantized, absmax=absmax, code=code)
+                else:
+                    if source_data_format == "numpy":
+                        # first convert numpy array to tensor, need to use GPU
+                        quantized = torch.as_tensor(values).cuda()
+                        # create QuantState object
+                        quantize_state = QuantState(
+                            quant_type=quant_state[param_name]["quant_type"],
+                            absmax=torch.as_tensor(quant_state[param_name]["absmax"]).cuda(),
+                            blocksize=quant_state[param_name]["blocksize"],
+                            code=torch.as_tensor(quant_state[param_name]["quant_map"]).cuda(),
+                            dtype=getattr(torch, quant_state[param_name]["dtype"]),
+                            shape=torch.Size(quant_state[param_name]["shape"]),
+                        )
+                    elif source_data_format == "torch":
+                        quantized = values.cuda()
+                        quantize_state = QuantState(
+                            quant_type=quant_state[param_name]["quant_type"],
+                            absmax=quant_state[param_name]["absmax"].cuda(),
+                            blocksize=quant_state[param_name]["blocksize"],
+                            code=quant_state[param_name]["quant_map"].cuda(),
+                            dtype=getattr(torch, quant_state[param_name]["dtype"]),
+                            shape=torch.Size(quant_state[param_name]["shape"]),
+                        )
+                    # de-quantize
+                    if quantization_type == "float4":
+                        dequantized = dequantize_4bit(quantized, quantize_state, quant_type="fp4")
+                    else:
+                        dequantized = dequantize_4bit(quantized, quantize_state, quant_type="nf4")
 
-                # assign back
                 if source_data_format == "numpy":
-                    # convert back to original data type
-                    if source_data_type == "float32":
-                        params[param_name] = params[param_name].astype(np.float32)
-                    elif source_data_type == "float16":
-                        params[param_name] = params[param_name].astype(np.float16)
+                    params[param_name] = dequantized.cpu().numpy()
                 elif source_data_format == "torch":
-                    # convert back to original data type
-                    if source_data_type == "float32":
-                        params[param_name] = params[param_name].float()
-                    elif source_data_type == "float16":
-                        params[param_name] = params[param_name].half()
-                    elif source_data_type == "bfloat16":
-                        params[param_name] = params[param_name].bfloat16()
+                    params[param_name] = dequantized.cpu()
+            elif quantization_type == "adaquant":
+                if source_data_format == "numpy":
+                    values_tensor = torch.as_tensor(values)
+                elif source_data_format == "torch":
+                    values_tensor = values
+                param_quant_state = quant_state.get(param_name)
+                if param_quant_state is None or not param_quant_state:
+                    dequantized = values_tensor
+                else:
+                    dequantized = AdaQuantizer().dequantized(values_tensor, param_quant_state)
+                if source_data_format == "numpy":
+                    params[param_name] = dequantized.cpu().numpy()
+                elif source_data_format == "torch":
+                    params[param_name] = dequantized.cpu()
+
+            # assign back
+            if source_data_format == "numpy":
+                # convert back to original data type
+                if source_data_type == "float32":
+                    params[param_name] = params[param_name].astype(np.float32)
+                elif source_data_type == "float16":
+                    params[param_name] = params[param_name].astype(np.float16)
+            elif source_data_format == "torch":
+                # convert back to original data type
+                if source_data_type == "float32":
+                    params[param_name] = params[param_name].float()
+                elif source_data_type == "float16":
+                    params[param_name] = params[param_name].half()
+                elif source_data_type == "bfloat16":
+                    params[param_name] = params[param_name].bfloat16()
 
             n_bytes_after += params[param_name].nbytes
 
@@ -186,7 +210,14 @@ class ModelDequantizer(DXOFilter):
         )
         # Compose new DXO with dequantized data
         dxo.data = dequantized_params
-        dxo.remove_meta_props([MetaKey.PROCESSED_ALGORITHM, "quant_state", "source_datatype", "quantized_flag"])
+        dxo.remove_meta_props(
+            [
+                MetaKey.PROCESSED_ALGORITHM,
+                "quant_state",
+                "source_datatype",
+                "quantized_flag",
+            ]
+        )
         dxo.update_shareable(shareable)
         self.log_info(fl_ctx, "Dequantized back to original precision")
 

@@ -16,16 +16,15 @@ import time
 
 import jwt
 import requests
-from jwt import PyJWKClient
 
 from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer
 
-ACI_NAMESPACE = "x-ms"
-maa_endpoint = "sharedeus2.eus2.attest.azure.net"
+ACI_NAMESPACE = "x-az-aci"
 
 
 class ACIAuthorizer(CCAuthorizer):
-    def __init__(self, retry_count=5, retry_sleep=2):
+    def __init__(self, maa_endpoint="sharedeus2.eus2.attest.azure.net", retry_count=5, retry_sleep=2):
+        self.maa_endpoint = maa_endpoint
         self.retry_count = retry_count
         self.retry_sleep = retry_sleep
 
@@ -37,7 +36,7 @@ class ACIAuthorizer(CCAuthorizer):
             try:
                 r = requests.post(
                     "http://localhost:8284/attest/maa",
-                    data=json.dumps({"maa_endpoint": maa_endpoint, "runtime_data": "ewp9"}),
+                    data=json.dumps({"maa_endpoint": self.maa_endpoint, "runtime_data": "ewp9"}),
                     headers={"Content-Type": "application/json"},
                 )
                 if r.status_code == requests.codes.ok:
@@ -53,7 +52,7 @@ class ACIAuthorizer(CCAuthorizer):
         try:
             header = jwt.get_unverified_header(token)
             alg = header.get("alg")
-            jwks_client = PyJWKClient(f"https://{maa_endpoint}/certs")
+            jwks_client = jwt.PyJWKClient(f"https://{self.maa_endpoint}/certs")
             signing_key = jwks_client.get_signing_key_from_jwt(token)
             claims = jwt.decode(token, signing_key.key, algorithms=[alg])
             if claims:

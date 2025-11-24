@@ -8,7 +8,7 @@
             "executor": {
                 "path": "nvflare.app_opt.pt.in_process_client_api_executor.PTInProcessClientAPIExecutor",
                 "args": {
-                    "task_script_path": "/local/custom/hello-pt_cifar10_fl.py"
+                    "task_script_path": "/local/custom/client.py"
                 }
             }
         }
