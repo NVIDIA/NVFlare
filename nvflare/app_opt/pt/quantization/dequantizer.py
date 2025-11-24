@@ -61,11 +61,11 @@ class ModelDequantizer(DXOFilter):
 
             if quantization_type != "adaquant":
                 # get the bits information
-                source_date_bits = int(re.findall(r"\d+", source_data_type)[0])
+                source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
                 quantization_bits = int(re.findall(r"\d+", quantization_type)[0])
 
                 # only dequantize if the quantization type is lower than the source data type
-                if quantization_bits >= source_date_bits:
+                if quantization_bits >= source_data_bits:
                     self.log_info(
                         fl_ctx,
                         f"Skipping dequantization for {param_name}, quantization bit {quantization_type} >= source data bit {source_data_type}",
