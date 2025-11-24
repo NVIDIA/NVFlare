@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .fedavg import SklearnFedAvgRecipe
-from .kmeans import KMeansFedAvgRecipe
-from .svm import SVMFedAvgRecipe
+from .bagging import XGBBaggingRecipe
 
-__all__ = ["SklearnFedAvgRecipe", "KMeansFedAvgRecipe", "SVMFedAvgRecipe"]
+__all__ = ["XGBBaggingRecipe"]
