@@ -36,7 +36,7 @@ user_data_drive_size: 1
 
 # Docker image archive saved using:
 # docker save <image_name> | gzip > app.tar.gz
-docker_archive: /tmp/base_images/app.tar.gz
+docker_archive: /tmp/nvflare-site.tar.gz
 
 allowed_ports:
 - 8002
