@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from .call_opt import CallOption
 from .ctx import get_call_context
 from .group import group
 
@@ -22,6 +23,16 @@ class ProxyList(list):
         self.extend(proxies)
 
     def __getattr__(self, func_name):
+        """This is called to invoke the specified func without specifying call option.
+        In this case, default call option will be used.
+
+        Args:
+            func_name:
+
+        Returns:
+
+        """
+
         def method(*args, **kwargs):
             grp = group(
                 ctx=get_call_context(),
@@ -41,14 +52,30 @@ class ProxyList(list):
         process_resp_cb=None,
         **cb_kwargs,
     ):
+        """This is called to define the behavior (Call Option) of the group call.
+
+        Args:
+            blocking:
+            expect_result:
+            timeout:
+            optional:
+            secure:
+            process_resp_cb:
+            **cb_kwargs:
+
+        Returns:
+
+        """
         return group(
             ctx=get_call_context(),
             proxies=self,
-            blocking=blocking,
-            expect_result=expect_result,
-            timeout=timeout,
-            optional=optional,
-            secure=secure,
+            call_opt=CallOption(
+                blocking=blocking,
+                expect_result=expect_result,
+                timeout=timeout,
+                optional=optional,
+                secure=secure,
+            ),
             process_resp_cb=process_resp_cb,
             **cb_kwargs,
         )

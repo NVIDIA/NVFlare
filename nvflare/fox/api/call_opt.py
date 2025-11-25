@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-class CallOpt:
+class CallOption:
 
     def __init__(
         self,
@@ -21,6 +21,15 @@ class CallOpt:
         secure: bool = False,
         optional: bool = False,
     ):
+        """CallOption defines behavior of a collab call.
+
+        Args:
+            expect_result: whether result is expected from the remote object.
+            blocking: whether rhe call is blocking. Only for group calls.
+            timeout: when expecting result, the max number of secs to wait for result.
+            secure: whether to use P2P secure messaging.
+            optional: whether the call is optional.
+        """
         self.expect_result = expect_result
         self.blocking = blocking
         self.timeout = timeout

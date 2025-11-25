@@ -16,7 +16,7 @@ import copy
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 from .backend import Backend
-from .call_opt import CallOpt
+from .call_opt import CallOption
 from .constants import CollabMethodArgName
 from .utils import check_call_args
 
@@ -32,7 +32,7 @@ class _ProxyCall:
         secure: bool = False,
     ):
         self.proxy = proxy
-        self.call_opt = CallOpt(
+        self.call_opt = CallOption(
             expect_result=expect_result,
             blocking=expect_result,
             timeout=timeout,
@@ -117,7 +117,7 @@ class Proxy:
         We first try to find the interface from the proxy itself. If not found, we try to find it from child proxies.
 
         """
-        self.logger.debug(f"trying to find interface for {func_name}")
+        # self.logger.debug(f"trying to find interface for {func_name}")
         args = self.target_interface.get(func_name) if self.target_interface else None
         if args:
             return self, args
@@ -131,7 +131,7 @@ class Proxy:
             if not args:
                 continue
 
-            self.logger.debug(f"found interface for func {func_name}: defined in child {n}")
+            # self.logger.debug(f"found interface for func {func_name}: defined in child {n}")
 
             if not the_proxy:
                 the_name = n
@@ -181,7 +181,7 @@ class Proxy:
 
         return p, func_itf, call_args, call_kwargs
 
-    def call_func(self, call_opt: CallOpt, func_name, args, kwargs):
+    def call_func(self, call_opt: CallOption, func_name, args, kwargs):
         """Call the specified function with call options.
 
         Args:
@@ -197,13 +197,10 @@ class Proxy:
             p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
 
             with p.app.new_context(self.caller_name, self.name) as ctx:
-                self.logger.debug(f"[{ctx}] apply_outgoing_call_filters on {p.target_name} func {func_name}")
-
                 # apply outgoing call filters
                 call_kwargs = self.app.apply_outgoing_call_filters(p.target_name, func_name, call_kwargs, ctx)
                 check_call_args(func_name, func_itf, call_args, call_kwargs)
 
-                self.logger.debug(f"[{ctx}] calling target {p.target_name} func {func_name}")
                 call_kwargs[CollabMethodArgName.CONTEXT] = ctx
                 result = p.backend.call_target(p.target_name, call_opt, func_name, *call_args, **call_kwargs)
                 if isinstance(result, Exception):
@@ -224,6 +221,6 @@ class Proxy:
         """
 
         def method(*args, **kwargs):
-            return self.call_func(CallOpt(), func_name, args, kwargs)
+            return self.call_func(CallOption(), func_name, args, kwargs)
 
         return method

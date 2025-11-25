@@ -11,12 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import random
 import threading
 import traceback
 
 from nvflare.fox import fox
-from nvflare.fox.examples.np.algos.utils import parse_array_def
+from nvflare.fox.examples.np.algos.utils import parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -60,6 +61,7 @@ class NPSwarmClient:
     @fox.init
     def init(self):
         fox.register_event_handler("final_model", self._accept_final_model)
+        fox.register_event_handler("final_model", self._save_final_model)
 
     @fox.collab
     def train(self, weights, current_round):
@@ -81,7 +83,9 @@ class NPSwarmClient:
         self.logger.info(f"[{fox.call_info}]: trained model {new_model=}")
         if current_round == num_rounds - 1:
             # all done
-            fox.clients(expect_result=False).fire_event("final_model", new_model)
+            result = fox.clients(expect_result=True).fire_event("final_model", new_model)
+            for n, v in result:
+                self.logger.info(f"[{fox.call_info}] final_model reply from {n}: {v}")
             self.logger.info("notify server all done!")
             try:
                 fox.server(expect_result=False).all_done("OK")
@@ -105,3 +109,12 @@ class NPSwarmClient:
         # accept the final model
         # write model to disk
         self.logger.info(f"[{fox.call_info}]: received event '{event_type}' from {fox.caller}: {model}")
+        return "received"
+
+    def _save_final_model(self, event_type: str, model):
+        # accept the final model
+        # write model to disk
+        file_name = os.path.join(fox.workspace.get_work_dir(), "final_model.npy")
+        save_np_model(model, file_name)
+        self.logger.info(f"[{fox.call_info}]: saved model {model} to {file_name}")
+        return "saved"

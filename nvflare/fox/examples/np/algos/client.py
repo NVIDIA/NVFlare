@@ -38,8 +38,9 @@ class NPTrainer:
         if fox.is_aborted:
             self.logger.debug("training aborted")
             return 0
-        self.logger.info(f"[{fox.call_info}] EZ trained round {current_round=} {weights=}")
-        fox.server(expect_result=False).fire_event("metrics", {"round": current_round, "y": 10})
+        self.logger.info(f"[{fox.call_info}] training round {current_round=} {weights=}")
+        result = fox.server(expect_result=True).fire_event("metrics", {"round": current_round, "y": 10})
+        self.logger.info(f"[{fox.call_info}] got event result: {result}")
 
         # force timeout to test timeout handling
         # time.sleep(10)

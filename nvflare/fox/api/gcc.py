@@ -17,7 +17,7 @@ import threading
 
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-from .call_opt import CallOpt
+from .call_opt import CallOption
 from .constants import CollabMethodArgName
 from .ctx import Context, set_call_context
 from .utils import check_context_support
@@ -78,7 +78,7 @@ class GroupCallContext:
         self,
         app,
         target_name: str,
-        call_opt: CallOpt,
+        call_opt: CallOption,
         func_name: str,
         process_cb,
         cb_kwargs,
@@ -133,8 +133,6 @@ class GroupCallContext:
                     self.cb_kwargs[CollabMethodArgName.CONTEXT] = ctx
                     check_context_support(self.process_cb, self.cb_kwargs)
                     result = self.process_cb(result, **self.cb_kwargs)
-                else:
-                    self.logger.info(f"{self.func_name} does not have process_cb!")
 
                 # set back to original context
                 set_call_context(self.context)

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.fox.api.backend import Backend
-from nvflare.fox.api.call_opt import CallOpt
+from nvflare.fox.api.call_opt import CallOption
 from nvflare.fox.api.constants import CollabMethodArgName
 from nvflare.fox.api.ctx import set_call_context
 from nvflare.fox.api.gcc import GroupCallContext
@@ -35,7 +35,7 @@ class SysBackend(Backend):
         self.target_fqcn = target_fqcn
         self.thread_executor = thread_executor
 
-    def call_target(self, target_name: str, call_opt: CallOpt, func_name: str, *args, **kwargs):
+    def call_target(self, target_name: str, call_opt: CallOption, func_name: str, *args, **kwargs):
         ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
         set_call_context(ctx)
 
