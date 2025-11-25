@@ -29,7 +29,7 @@ class SysWorkspace(Workspace):
         return self.flare_ws.get_root_dir()
 
     def get_work_dir(self) -> str:
-        return self.flare_ws.get_app_dir(self.job_id)
+        return self.flare_ws.get_run_dir(self.job_id)
 
     def get_experiment_dir(self) -> str:
         return self.get_work_dir()

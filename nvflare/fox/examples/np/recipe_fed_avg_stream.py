@@ -11,9 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
-
-from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.avg_stream import NPFedAvgStream, NPTrainer
 from nvflare.fox.sys.recipe import FoxRecipe
 
@@ -21,8 +18,6 @@ JOB_ROOT_DIR = "/Users/yanc/NVFlare/sandbox/v27/prod_00/admin@nvidia.com/transfe
 
 
 def main():
-    simple_logging(logging.DEBUG)
-
     recipe = FoxRecipe(
         job_name="fox_fedavg_stream",
         server=NPFedAvgStream(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
