@@ -159,7 +159,6 @@ class App:
         return None
 
     def apply_incoming_call_filters(self, target_name: str, func_name: str, func_kwargs, context: Context):
-        self.logger.debug(f"apply_incoming_call_filters on ctx {id(context)}")
         filter_chain = self._find_filter_chain(
             FilterDirection.INCOMING, self._incoming_call_filter_chains, target_name, func_name, context
         )
@@ -169,7 +168,6 @@ class App:
             return func_kwargs
 
     def apply_outgoing_call_filters(self, target_name: str, func_name: str, func_kwargs, context: Context):
-        self.logger.debug(f"apply_outgoing_call_filters on ctx {id(context)}")
         filter_chain = self._find_filter_chain(
             FilterDirection.OUTGOING, self._outgoing_call_filter_chains, target_name, func_name, context
         )
@@ -179,7 +177,6 @@ class App:
             return func_kwargs
 
     def apply_incoming_result_filters(self, target_name: str, func_name: str, result, context: Context):
-        self.logger.debug(f"apply_incoming_result_filters on ctx {id(context)}")
         filter_chain = self._find_filter_chain(
             FilterDirection.INCOMING, self._incoming_result_filter_chains, target_name, func_name, context
         )
@@ -189,7 +186,6 @@ class App:
             return result
 
     def apply_outgoing_result_filters(self, target_name: str, func_name: str, result, context: Context):
-        self.logger.debug(f"apply_outgoing_result_filters on ctx {id(context)}")
         filter_chain = self._find_filter_chain(
             FilterDirection.OUTGOING, self._outgoing_result_filter_chains, target_name, func_name, context
         )
@@ -328,6 +324,7 @@ class App:
             handlers = []
             self._event_handlers[event_type] = handlers
         handlers.append((handler, handler_kwargs))
+        self.logger.debug(f"registered event handler {handler.__qualname__} for {event_type=}")
 
     def get_collab_interface(self):
         return self._collab_interface
@@ -340,13 +337,15 @@ class App:
 
     @collab
     def fire_event(self, event_type: str, data, context: Context):
+        result = {}
         for e, handlers in self._event_handlers.items():
             if e == event_type:
                 for h, kwargs in handlers:
                     kwargs = copy.copy(kwargs)
                     kwargs.update({CollabMethodArgName.CONTEXT: context})
                     check_context_support(h, kwargs)
-                    h(event_type, data, **kwargs)
+                    result[h.__qualname__] = h(event_type, data, **kwargs)
+        return result
 
     def get_children(self):
         return []

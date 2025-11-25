@@ -31,3 +31,4 @@ class MetricReceiver:
 
     def _accept_metric(self, event_type: str, data):
         self.logger.info(f"[{fox.callee}] received metrics event '{event_type}' from {fox.caller}: {data}")
+        return "OK"

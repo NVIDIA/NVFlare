@@ -71,10 +71,6 @@ class facade:
 
     @classproperty
     def clients(cls):
-        return cls.get_clients()
-
-    @staticmethod
-    def get_clients():
         ctx = get_call_context()
         return ProxyList(ctx.clients)
 

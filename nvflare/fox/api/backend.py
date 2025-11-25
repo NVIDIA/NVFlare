@@ -17,7 +17,7 @@ from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_traceback
 
-from .call_opt import CallOpt
+from .call_opt import CallOption
 from .gcc import GroupCallContext
 
 
@@ -31,7 +31,7 @@ class Backend(ABC):
         self.logger = get_obj_logger(self)
 
     @abstractmethod
-    def call_target(self, target_name: str, call_opt: CallOpt, func_name: str, *args, **kwargs):
+    def call_target(self, target_name: str, call_opt: CallOption, func_name: str, *args, **kwargs):
         """
         Call a target function with arguments and return a result.
 

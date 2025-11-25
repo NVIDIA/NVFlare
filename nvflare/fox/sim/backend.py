@@ -18,7 +18,7 @@ from nvflare.apis.fl_exception import RunAborted
 from nvflare.fox import fox
 from nvflare.fox.api.app import App
 from nvflare.fox.api.backend import Backend
-from nvflare.fox.api.call_opt import CallOpt
+from nvflare.fox.api.call_opt import CallOption
 from nvflare.fox.api.constants import CollabMethodArgName, ContextKey
 from nvflare.fox.api.dec import adjust_kwargs
 from nvflare.fox.api.gcc import GroupCallContext
@@ -44,7 +44,7 @@ class SimBackend(Backend):
     def _get_func(self, func_name):
         return self.target_app.find_collab_method(self.target_obj, func_name)
 
-    def call_target(self, target_name: str, call_opt: CallOpt, func_name: str, *args, **kwargs):
+    def call_target(self, target_name: str, call_opt: CallOption, func_name: str, *args, **kwargs):
         func = self._get_func(func_name)
         if not func:
             raise AttributeError(f"{target_name} does not have method '{func_name}' or it is not collab")
@@ -83,15 +83,7 @@ class SimBackend(Backend):
     def _preprocess(self, target_name, func_name, func, kwargs):
         caller_ctx = kwargs.pop(CollabMethodArgName.CONTEXT)
         my_ctx = self.target_app.new_context(caller_ctx.caller, caller_ctx.callee)
-
-        self.logger.info(
-            f"established call_ctx {id(my_ctx)} for {target_name=} {func_name=}: fox_ctx={id(fox.context)}"
-        )
-
         kwargs = self.target_app.apply_incoming_call_filters(target_name, func_name, kwargs, my_ctx)
-        self.logger.info(
-            f"_preprocess: {id(my_ctx)} apply_incoming_call_filters: {my_ctx.get_prop(ContextKey.DIRECTION)}"
-        )
 
         # make sure the final kwargs conforms to func interface
         obj_itf = self.target_app.get_target_object_collab_interface(self.target_obj_name)
@@ -103,8 +95,6 @@ class SimBackend(Backend):
             raise RuntimeError(f"cannot find interface for func '{func_name}' of object {self.target_obj_name}")
 
         check_call_args(func_name, func_itf, [], kwargs)
-        self.logger.debug(f"[{my_ctx}] received kwargs is good for '{func_name}': {kwargs}")
-
         kwargs[CollabMethodArgName.CONTEXT] = my_ctx
         adjust_kwargs(func, kwargs)
         return my_ctx, kwargs
@@ -117,10 +107,6 @@ class SimBackend(Backend):
 
             # apply result filter
             result = self.target_app.apply_outgoing_result_filters(target_name, func_name, result, ctx)
-            self.logger.info(
-                f"_run_func: {id(ctx)} apply_outgoing_result_filters: {ctx.get_prop(ContextKey.DIRECTION)}"
-            )
-
             if waiter:
                 waiter.result = result
         except Exception as ex:
@@ -131,9 +117,6 @@ class SimBackend(Backend):
                 waiter.set()
 
     def call_target_in_group(self, gcc: GroupCallContext, func_name: str, *args, **kwargs):
-        # do not use the optional args - they are managed by the group
-        self.logger.info(f"call_target_in_group: {gcc.target_name=}")
-
         target_name = gcc.target_name
         func = self._get_func(func_name)
         if not func:
