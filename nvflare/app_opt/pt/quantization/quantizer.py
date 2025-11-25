@@ -64,6 +64,7 @@ class ModelQuantizer(DXOFilter):
         # Key by id(dxo.data) since different DXO wrappers may share the same data dict
         self._quantization_locks = {}  # data_id -> threading.Lock
         self._quantized_results = {}  # data_id -> quantized DXO (metadata for waiting threads)
+        self._quantization_errors = {}  # data_id -> Exception (if quantization failed)
         self._data_refcounts = {}  # data_id -> number of threads using this data
         self._locks_lock = threading.Lock()  # protect the dictionaries
 
@@ -259,17 +260,21 @@ class ModelQuantizer(DXOFilter):
             # Acquire the data-specific lock to ensure only one thread quantizes this data
             # Other threads will wait here until quantization is complete
             with data_lock:
+                # Check if quantization failed in another thread
+                if data_id in self._quantization_errors:
+                    self.log_info(fl_ctx, "Quantization failed in another thread, re-raising error")
+                    raise self._quantization_errors[data_id]
                 # Check if quantization result already exists (from another thread)
-                if data_id in self._quantized_results:
+                elif data_id in self._quantized_results:
                     self.log_info(fl_ctx, "Already quantized by another thread, reusing result")
                     new_dxo = self._quantized_results[data_id]
+                # Check if this DXO was already quantized (e.g., from previous filter)
+                elif dxo.get_meta_prop("quantized_flag"):
+                    self.log_info(fl_ctx, "Already quantized, skip quantization")
+                    new_dxo = dxo
+                # Perform quantization
                 else:
-                    # Check if already completed
-                    quantized_flag = dxo.get_meta_prop("quantized_flag")
-                    if quantized_flag:
-                        self.log_info(fl_ctx, "Already quantized, skip quantization")
-                        new_dxo = dxo
-                    else:
+                    try:
                         # Apply quantization
                         # The lock ensures mutual exclusion, so only one thread can execute this
                         quantized_params, quant_state, source_datatype = self.quantization(
@@ -289,6 +294,13 @@ class ModelQuantizer(DXOFilter):
                         # Store the result so other waiting threads can use it
                         self._quantized_results[data_id] = new_dxo
 
+                    except Exception as e:
+                        # Store the error so other waiting threads can re-raise it
+                        # without retrying the failed quantization
+                        self.log_error(fl_ctx, f"Quantization failed: {e}")
+                        self._quantization_errors[data_id] = e
+                        raise
+
             return new_dxo
 
         finally:
@@ -299,5 +311,6 @@ class ModelQuantizer(DXOFilter):
                 # If no more threads need this data, clean up
                 if self._data_refcounts[data_id] == 0:
                     self._quantized_results.pop(data_id, None)
+                    self._quantization_errors.pop(data_id, None)
                     self._quantization_locks.pop(data_id, None)
                     self._data_refcounts.pop(data_id, None)
