@@ -258,33 +258,57 @@ class ModelQuantizer(DXOFilter):
                 self.log_info(fl_ctx, "Already quantized by another thread, reusing result")
                 new_dxo = self._quantized_results[data_id]
             else:
-                # Check quantized_flag on the original DXO
-                quantized_flag = dxo.get_meta_prop("quantized_flag")
-                if quantized_flag:
+                # Check if already completed (two-flag system for exception safety)
+                quantization_completed = dxo.get_meta_prop("quantization_completed")
+                if quantization_completed:
                     self.log_info(fl_ctx, "Already quantized, skip quantization")
                     new_dxo = dxo
                 else:
-                    # Set the flag to indicate quantization is in progress/complete
-                    # This is critical for 1-N server scenarios where multiple clients may process the same task data
-                    dxo.set_meta_prop(key="quantized_flag", value=True)
+                    # Check if quantization is in progress (shouldn't happen due to lock, but for safety)
+                    quantization_in_progress = dxo.get_meta_prop("quantization_in_progress")
+                    if quantization_in_progress:
+                        self.log_info(fl_ctx, "Quantization in progress detected, waiting...")
+                        # This shouldn't happen due to the lock, but indicates a potential issue
+                        new_dxo = dxo
+                    else:
+                        # Set the in-progress flag immediately
+                        # This indicates quantization has started but not yet completed
+                        dxo.set_meta_prop(key="quantization_in_progress", value=True)
 
-                    # apply quantization
-                    quantized_params, quant_state, source_datatype = self.quantization(params=dxo.data, fl_ctx=fl_ctx)
-                    # Compose new DXO with quantized data
-                    # Add quant_state to the new DXO meta
-                    new_dxo = DXO(data_kind=dxo.data_kind, data=quantized_params, meta=dxo.meta)
-                    new_dxo.set_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, value=self.quantization_type)
-                    new_dxo.set_meta_prop(key="quant_state", value=quant_state)
-                    new_dxo.set_meta_prop(key="source_datatype", value=source_datatype)
-                    new_dxo.set_meta_prop(key="quantized_flag", value=True)
-                    self.log_info(fl_ctx, f"Quantized to {self.quantization_type}")
+                        try:
+                            # apply quantization
+                            quantized_params, quant_state, source_datatype = self.quantization(
+                                params=dxo.data, fl_ctx=fl_ctx
+                            )
 
-                    # Store the result so other waiting threads can use it
-                    self._quantized_results[data_id] = new_dxo
+                            # Compose new DXO with quantized data
+                            # Add quant_state to the new DXO meta
+                            new_dxo = DXO(data_kind=dxo.data_kind, data=quantized_params, meta=dxo.meta)
+                            new_dxo.set_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, value=self.quantization_type)
+                            new_dxo.set_meta_prop(key="quant_state", value=quant_state)
+                            new_dxo.set_meta_prop(key="source_datatype", value=source_datatype)
 
-        # NOTE: We intentionally do NOT clean up locks/results here to avoid race conditions.
-        # If we clean up immediately after releasing data_lock, other threads waiting on that
-        # lock won't find the cached result. The memory overhead is minimal (just references
-        # to locks and DXOs that already exist) and will be cleaned up when the filter is destroyed.
+                            # Set the completed flag only after successful quantization
+                            new_dxo.set_meta_prop(key="quantization_completed", value=True)
+                            new_dxo.set_meta_prop(key="quantization_in_progress", value=False)
+
+                            self.log_info(fl_ctx, f"Quantized to {self.quantization_type}")
+
+                            # Store the result so other waiting threads can use it
+                            self._quantized_results[data_id] = new_dxo
+
+                        except Exception as e:
+                            # If quantization fails, clear the in-progress flag so it can be retried
+                            dxo.set_meta_prop(key="quantization_in_progress", value=False)
+                            self.log_error(fl_ctx, f"Quantization failed: {e}")
+                            raise
+
+            # Clean up cache and locks for this data_id after successful quantization
+            # This prevents memory leak from unbounded dictionary growth
+            with self._locks_lock:
+                if data_id in self._quantization_locks:
+                    del self._quantization_locks[data_id]
+                if data_id in self._quantized_results:
+                    del self._quantized_results[data_id]
 
         return new_dxo
