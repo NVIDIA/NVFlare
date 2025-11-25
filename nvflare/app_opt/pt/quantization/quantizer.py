@@ -303,12 +303,14 @@ class ModelQuantizer(DXOFilter):
                             self.log_error(fl_ctx, f"Quantization failed: {e}")
                             raise
 
-            # Clean up cache and locks for this data_id after successful quantization
-            # This prevents memory leak from unbounded dictionary growth
-            with self._locks_lock:
-                if data_id in self._quantization_locks:
-                    del self._quantization_locks[data_id]
-                if data_id in self._quantized_results:
-                    del self._quantized_results[data_id]
+        # Clean up cache and locks for this data_id after releasing data_lock
+        # This prevents memory leak from unbounded dictionary growth
+        # Cleanup is done outside the data_lock context to avoid removing the lock
+        # while other threads might still be acquiring it
+        with self._locks_lock:
+            if data_id in self._quantization_locks:
+                del self._quantization_locks[data_id]
+            if data_id in self._quantized_results:
+                del self._quantized_results[data_id]
 
         return new_dxo
