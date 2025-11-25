@@ -11,3 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+
+from nvflare.app_opt.sklearn.recipes import KMeansFedAvgRecipe, SklearnFedAvgRecipe, SVMFedAvgRecipe
+
+__all__ = ["KMeansFedAvgRecipe", "SklearnFedAvgRecipe", "SVMFedAvgRecipe"]

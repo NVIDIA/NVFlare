@@ -33,7 +33,7 @@ For federated training, we use
 -c client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx -gpu 0,1,0,1,0,1
 ```
 
-Note that since the current experiments are performed on a light 2D dataset, we used [`CacheDataset`](https://docs.monai.io/en/stable/data.html#cachedataset) and set cache rate to 1.0 to accelerate the training process. Please adjust the cache rate if memory resource is limited on your system.
+Note that since the current experiments are performed on a light 2D dataset, we used [`CacheDataset`](https://monai.readthedocs.io/en/stable/data.html#cachedataset) and set cache rate to 1.0 to accelerate the training process. Please adjust the cache rate if memory resource is limited on your system.
 
 ### Experiment list
 In this example, we perform the following experiments:
