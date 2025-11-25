@@ -17,7 +17,7 @@ import torch
 from nvflare.app_common.np.np_downloader import add_arrays
 from nvflare.app_common.np.np_downloader import download_arrays as pull_arrays
 from nvflare.fox import fox
-from nvflare.fox.sys.backend import SysBackend
+from nvflare.fox.sys.backend import FlareBackend
 from nvflare.fuel.f3.streaming.file_downloader import add_file
 from nvflare.fuel.f3.streaming.file_downloader import download_file as pull_file
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
@@ -47,7 +47,7 @@ class Downloader(ObjectDownloader):
     ):
         ctx = fox.context
         backend = ctx.backend
-        if not isinstance(backend, SysBackend):
+        if not isinstance(backend, FlareBackend):
             raise ValueError(f"backend must be SysBackend but got {type(backend)}")
 
         super().__init__(
@@ -85,7 +85,7 @@ class Downloader(ObjectDownloader):
 def download_file(ref: dict, per_request_timeout: float):
     ctx = fox.context
     backend = ctx.backend
-    if not isinstance(backend, SysBackend):
+    if not isinstance(backend, FlareBackend):
         raise ValueError(f"backend must be SysBackend but got {type(backend)}")
 
     obj_type = ref.get(DownloadRefKey.OBJECT_TYPE)
@@ -104,7 +104,7 @@ def download_file(ref: dict, per_request_timeout: float):
 def download_tensors(ref: dict, per_request_timeout: float, tensors_received_cb=None, **cb_kwargs):
     ctx = fox.context
     backend = ctx.backend
-    if not isinstance(backend, SysBackend):
+    if not isinstance(backend, FlareBackend):
         raise ValueError(f"backend must be SysBackend but got {type(backend)}")
 
     obj_type = ref.get(DownloadRefKey.OBJECT_TYPE)
@@ -125,7 +125,7 @@ def download_tensors(ref: dict, per_request_timeout: float, tensors_received_cb=
 def download_arrays(ref: dict, per_request_timeout: float, arrays_received_cb=None, **cb_kwargs):
     ctx = fox.context
     backend = ctx.backend
-    if not isinstance(backend, SysBackend):
+    if not isinstance(backend, FlareBackend):
         raise ValueError(f"backend must be SysBackend but got {type(backend)}")
 
     obj_type = ref.get(DownloadRefKey.OBJECT_TYPE)

@@ -28,10 +28,10 @@ from nvflare.fox.api.run_server import run_server
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .adaptor import FoxAdaptor
-from .backend import SysBackend
+from .backend import FlareBackend
 from .constants import SYNC_TASK_NAME, SyncKey
 from .utils import prepare_for_remote_call
-from .ws import SysWorkspace
+from .ws import FlareWorkspace
 
 
 class _ClientInfo:
@@ -94,7 +94,7 @@ class FoxController(Controller, FoxAdaptor):
         self.server_app = app
 
     def _prepare_client_backend(self, job_id, client: ClientSite, abort_signal: Signal, fl_ctx: FLContext):
-        return SysBackend(
+        return FlareBackend(
             manager=self,
             engine=fl_ctx.get_engine(),
             caller=self.server_app.name,
@@ -105,7 +105,7 @@ class FoxController(Controller, FoxAdaptor):
         )
 
     def _prepare_server_backend(self, job_id: str, abort_signal: Signal, fl_ctx: FLContext):
-        return SysBackend(
+        return FlareBackend(
             manager=self,
             engine=fl_ctx.get_engine(),
             caller=self.server_app.name,
@@ -232,7 +232,7 @@ class FoxController(Controller, FoxAdaptor):
             assert isinstance(info, _ClientInfo)
             client_proxies.append(self._prepare_client_proxy(job_id, c, info.collab_interface, abort_signal, fl_ctx))
 
-        ws = SysWorkspace(fl_ctx)
+        ws = FlareWorkspace(fl_ctx)
         self.server_app.setup(ws, server_proxy, client_proxies, abort_signal)
         run_server(self.server_app, self.logger)
 

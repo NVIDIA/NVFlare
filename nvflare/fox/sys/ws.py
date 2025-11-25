@@ -12,16 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.workspace import Workspace as FlareWorkspace
+from nvflare.apis.workspace import Workspace as NVFWorkspace
 from nvflare.fox.api.workspace import Workspace
 
 
-class SysWorkspace(Workspace):
+class FlareWorkspace(Workspace):
 
     def __init__(self, fl_ctx: FLContext):
         super().__init__()
         ws_obj = fl_ctx.get_workspace()
-        assert isinstance(ws_obj, FlareWorkspace)
+        assert isinstance(ws_obj, NVFWorkspace)
         self.flare_ws = ws_obj
         self.job_id = fl_ctx.get_job_id()
 

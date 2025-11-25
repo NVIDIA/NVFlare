@@ -28,10 +28,10 @@ from nvflare.fox.api.proxy import Proxy
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .adaptor import FoxAdaptor
-from .backend import SysBackend
+from .backend import FlareBackend
 from .constants import SYNC_TASK_NAME, SyncKey
 from .utils import prepare_for_remote_call
-from .ws import SysWorkspace
+from .ws import FlareWorkspace
 
 
 class FoxExecutor(Executor, FoxAdaptor):
@@ -89,7 +89,7 @@ class FoxExecutor(Executor, FoxAdaptor):
 
     def _prepare_server_proxy(self, job_id, cell, collab_interface: dict, abort_signal, fl_ctx: FLContext):
         server_name = "server"
-        backend = SysBackend(
+        backend = FlareBackend(
             manager=self,
             engine=fl_ctx.get_engine(),
             caller=self.client_app.name,
@@ -121,7 +121,7 @@ class FoxExecutor(Executor, FoxAdaptor):
         return proxy
 
     def _prepare_client_proxy(self, job_id, cell, client: Client, abort_signal, collab_interface, fl_ctx: FLContext):
-        backend = SysBackend(
+        backend = FlareBackend(
             manager=self,
             engine=fl_ctx.get_engine(),
             caller=self.client_app.name,
@@ -181,7 +181,7 @@ class FoxExecutor(Executor, FoxAdaptor):
             p = self._prepare_client_proxy(job_id, cell, c, abort_signal, client_collab_interface, fl_ctx)
             client_proxies.append(p)
 
-        ws = SysWorkspace(fl_ctx)
+        ws = FlareWorkspace(fl_ctx)
         self.client_app.setup(ws, server_proxy, client_proxies, abort_signal)
 
         self.client_ctx = self.client_app.new_context(self.client_app.name, self.client_app.name)
