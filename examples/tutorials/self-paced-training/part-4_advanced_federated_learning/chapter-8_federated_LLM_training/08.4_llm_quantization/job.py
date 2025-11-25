@@ -126,7 +126,7 @@ def define_parser():
         nargs="+",
         type=str,
         default="",
-        help="Clinet IDs, used to get the data path for each client",
+        help="Client IDs, used to get the data path for each client",
     )
     parser.add_argument(
         "--num_rounds",
