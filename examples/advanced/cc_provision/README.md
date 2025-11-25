@@ -10,6 +10,12 @@ In CC mode, **custom code execution is not allowed**.
 All required code, dependencies, and libraries must be built into the Docker image.
 This example demonstrates how to build NVFLARE Docker images in the [docker/](docker/README.md) directory.
 
+Copy the archive to a place which is accessible by the CVM builder. For example,
+
+```commandline
+   cp docker/nvflare-site.tar.gz /tmp
+```
+
 ## 1. Define CC Configuration per Site (`cc_config`)
 
 Each site participating in a CC job must provide a **CC configuration file**. This file describes the trusted execution environment (e.g., AMD SEV-SNP on-prem CVM), drive allocations, and attestation policies.
