@@ -58,7 +58,7 @@ def _preprocess(app: App, caller, target_obj_name, target_name, func_name, func,
 
 
 def _call_app_method(request: Message, app: App, logger) -> Message:
-    logger.info("got a remote call")
+    logger.debug("got a remote call")
     payload = request.payload
     assert isinstance(payload, dict)
 
@@ -84,7 +84,6 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
         return _error_reply(f"bad method args: should be list/tuple but got {type(method_args)}", logger)
 
     method_kwargs = payload.get(ObjectCallKey.KWARGS)
-    logger.info(f"received kwargs for method {method_name}: {method_kwargs}")
     if not method_kwargs:
         method_kwargs = {}
     elif not isinstance(method_kwargs, dict):
@@ -97,10 +96,10 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     if obj_name:
         target_objs = app.get_collab_objects()
         target_obj = target_objs.get(obj_name)
-        logger.info(f"calling target obj: {app.name}.{obj_name}")
+        logger.debug(f"calling target obj: {app.name}.{obj_name}")
     else:
         target_obj = app
-        logger.info(f"calling target app: {app.name}")
+        logger.debug(f"calling target app: {app.name}")
 
     if not target_obj:
         return _error_reply(f"no object named '{target_name}'", logger)
@@ -109,18 +108,15 @@ def _call_app_method(request: Message, app: App, logger) -> Message:
     if not m:
         return _error_reply(f"no method named '{method_name}' or it is not collab", logger)
     else:
-        logger.info(f"found method for {method_name}")
+        logger.debug(f"found method for {method_name}")
 
     # invoke this method
     try:
         ctx, method_kwargs = _preprocess(app, caller, obj_name, target_name, method_name, m, method_args, method_kwargs)
-        # logger.info(f"calling method {method_name}: {caller=}: {method_args=} {method_kwargs=}")
         result = m(*method_args, **method_kwargs)
-        # logger.info(f"result from method {method_name}: {result}")
 
         # apply result filters
         result = app.apply_outgoing_result_filters(target_name, method_name, result, ctx)
-        # logger.info(f"result after filtering: {result}")
 
         return new_cell_message(
             headers={MessageHeaderKey.RETURN_CODE: ReturnCode.OK}, payload={CallReplyKey.RESULT: result}

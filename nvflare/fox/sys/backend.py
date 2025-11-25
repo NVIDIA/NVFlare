@@ -24,7 +24,7 @@ from nvflare.security.logging import secure_log_traceback
 from .constants import MSG_CHANNEL, MSG_TOPIC, CallReplyKey, ObjectCallKey
 
 
-class SysBackend(Backend):
+class FlareBackend(Backend):
 
     def __init__(self, manager, engine, caller, cell, target_fqcn, abort_signal, thread_executor):
         Backend.__init__(self, abort_signal)
@@ -50,7 +50,7 @@ class SysBackend(Backend):
 
         timeout = call_opt.timeout
         if call_opt.expect_result:
-            self.logger.info(f"send_request from {self.cell.get_fqcn()} to {self.target_fqcn}: {payload=} {timeout=}")
+            self.logger.info(f"send_request from {self.cell.get_fqcn()} to {self.target_fqcn}: {func_name=} {call_opt}")
 
             reply = self.cell.send_request(
                 channel=MSG_CHANNEL,
@@ -77,7 +77,7 @@ class SysBackend(Backend):
                 return RuntimeError(f"function {func_name} failed: {error}")
 
             result = reply.payload.get(CallReplyKey.RESULT)
-            self.logger.info(f"got result from {self.target_fqcn}: {result}")
+            self.logger.info(f"got result from {self.target_fqcn} {func_name=}")
             return result
         else:
             # fire and forget
