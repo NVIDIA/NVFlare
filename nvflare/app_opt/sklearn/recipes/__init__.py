@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .accumulate_model_aggregator import AccumulateWeightedAggregator
-from .collect_and_assemble_aggregator import CollectAndAssembleAggregator
-from .intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
+from .fedavg import SklearnFedAvgRecipe
+from .kmeans import KMeansFedAvgRecipe
+from .svm import SVMFedAvgRecipe
 
-__all__ = ["AccumulateWeightedAggregator", "CollectAndAssembleAggregator", "InTimeAccumulateWeightedAggregator"]
+__all__ = ["SklearnFedAvgRecipe", "KMeansFedAvgRecipe", "SVMFedAvgRecipe"]
