@@ -14,7 +14,6 @@
 
 import re
 import threading
-import weakref
 from typing import Union
 
 import numpy as np
@@ -62,10 +61,9 @@ class ModelQuantizer(DXOFilter):
 
         # Lock to ensure thread-safe quantization for concurrent client requests
         # In 1-N server scenarios, multiple clients may process the same task data
-        # Use WeakKeyDictionary to automatically clean up when data objects are garbage collected
-        # This prevents unbounded memory growth over the server's lifetime
-        self._quantization_locks = weakref.WeakKeyDictionary()  # data_dict -> threading.Lock
-        self._quantized_results = weakref.WeakKeyDictionary()  # data_dict -> quantized DXO
+        # Key by id(dxo.data) since different DXO wrappers may share the same data dict
+        self._quantization_locks = {}  # data_id -> threading.Lock
+        self._quantized_results = {}  # data_id -> quantized DXO (so waiting threads can get the result)
         self._locks_lock = threading.Lock()  # protect the locks dictionary itself
 
     def quantization(self, params: dict, fl_ctx: FLContext):
@@ -243,23 +241,22 @@ class ModelQuantizer(DXOFilter):
         # - If 1-N server-client filters can be different (Filter_1 applies to server-client_subset_1, etc.), then
         # a deep copy of the server data should be made by filter before applying a different filter
 
-        # Use the data dictionary itself as the key for locking
+        # Use the data dictionary's id as the key for locking
         # In 1-N scenarios, different DXO wrapper objects may share the same underlying data dict
         # We need to synchronize based on the actual data being quantized, not the wrapper
-        # WeakKeyDictionary automatically cleans up when data objects are garbage collected
-        data_dict = dxo.data
+        data_id = id(dxo.data)
         with self._locks_lock:
-            if data_dict not in self._quantization_locks:
-                self._quantization_locks[data_dict] = threading.Lock()
-            data_lock = self._quantization_locks[data_dict]
+            if data_id not in self._quantization_locks:
+                self._quantization_locks[data_id] = threading.Lock()
+            data_lock = self._quantization_locks[data_id]
 
         # Acquire the data-specific lock to ensure only one thread quantizes this data
         # Other threads will wait here until quantization is complete
         with data_lock:
             # Check if quantization result already exists (from another thread)
-            if data_dict in self._quantized_results:
+            if data_id in self._quantized_results:
                 self.log_info(fl_ctx, "Already quantized by another thread, reusing result")
-                new_dxo = self._quantized_results[data_dict]
+                new_dxo = self._quantized_results[data_id]
             else:
                 # Check if already completed
                 quantized_flag = dxo.get_meta_prop("quantized_flag")
@@ -282,13 +279,13 @@ class ModelQuantizer(DXOFilter):
                     self.log_info(fl_ctx, f"Quantized to {self.quantization_type}")
 
                     # Store the result so other waiting threads can use it
-                    self._quantized_results[data_dict] = new_dxo
+                    self._quantized_results[data_id] = new_dxo
 
         # Clean up cached results to prevent memory leak
-        # WeakKeyDictionary will automatically clean up both locks and results when
-        # the data dictionary is garbage collected, preventing unbounded growth
+        # Note: We keep locks in the dictionary to prevent race conditions
+        # Lock objects are small and the dictionary size is bounded by unique data objects
         with self._locks_lock:
-            if data_dict in self._quantized_results:
-                del self._quantized_results[data_dict]
+            if data_id in self._quantized_results:
+                del self._quantized_results[data_id]
 
         return new_dxo
