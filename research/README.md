@@ -6,7 +6,7 @@ NVIDIA FLARE has been used in several research studies. In this directory, you c
 
 ## Research Implementations
 
-10. [FedNCA - Equitable Federated Learning with NCA](./fed-bpt/README.md) ([MICCAI 2025](https://arxiv.org/abs/2506.21735))
+10. [FedNCA - Equitable Federated Learning with NCA](./FedNCA/README.md) ([MICCAI 2025](https://arxiv.org/abs/2506.21735))
 09. [FedBPT: Efficient Federated Black-box Prompt Tuning for Large Language Models](./fed-bpt/README.md) ([ICML 2024](https://arxiv.org/abs/2310.01467))
 08. [ConDistFL: Conditional Distillation for Federated Learning from Partially Annotated Data](./condist-fl/README.md) ([DeCaF 2023](https://arxiv.org/abs/2308.04070))
 07. [FedOBD: Opportunistic Block Dropout for Efficiently Training Large-scale Neural Networks through Federated Learning](./fedobd/README.md) ([IJCAI 2023](https://arxiv.org/abs/2208.05174))
