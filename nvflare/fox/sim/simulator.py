@@ -14,7 +14,7 @@
 import copy
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Tuple, Union
+from typing import List, Tuple, Union
 
 from nvflare.apis.signal import Signal
 from nvflare.fox.api.app import App, ClientApp, ServerApp
@@ -27,7 +27,7 @@ from nvflare.fox.sim.ws import SimWorkspace
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
-class Simulator:
+class AppRunner:
 
     def _prepare_app_backends(self, app: App):
         bes = {"": SimBackend("", app, app, self.abort_signal, self.thread_executor)}
@@ -201,3 +201,83 @@ class Simulator:
             app.finalize(ctx)
 
         return result
+
+
+class Simulator:
+
+    def __init__(
+        self,
+        root_dir: str,
+        experiment_name: str,
+        server,
+        client,
+        server_objects: dict[str, object] = None,
+        client_objects: dict[str, object] = None,
+        max_workers: int = 100,
+        num_clients: Union[int, Tuple[int, int]] = 2,
+    ):
+        server_app: ServerApp = ServerApp(server)
+        client_app: ClientApp = ClientApp(client)
+
+        self.root_dir = root_dir
+        self.experiment_name = experiment_name
+        self.max_workers = max_workers
+        self.num_clients = num_clients
+
+        if server_objects:
+            for name, obj in server_objects.items():
+                server_app.add_collab_object(name, obj)
+
+        if client_objects:
+            for name, obj in client_objects.items():
+                client_app.add_collab_object(name, obj)
+
+        self.server_app = server_app
+        self.client_app = client_app
+
+    def add_server_outgoing_call_filters(self, pattern: str, filters: List[object]):
+        self.server_app.add_outgoing_call_filters(pattern, filters)
+
+    def add_server_incoming_call_filters(self, pattern: str, filters: List[object]):
+        self.server_app.add_incoming_call_filters(pattern, filters)
+
+    def add_server_outgoing_result_filters(self, pattern: str, filters: List[object]):
+        self.server_app.add_outgoing_result_filters(pattern, filters)
+
+    def add_server_incoming_result_filters(self, pattern: str, filters: List[object]):
+        self.server_app.add_incoming_result_filters(pattern, filters)
+
+    def add_client_outgoing_call_filters(self, pattern: str, filters: List[object]):
+        self.client_app.add_outgoing_call_filters(pattern, filters)
+
+    def add_client_incoming_call_filters(self, pattern: str, filters: List[object]):
+        self.client_app.add_incoming_call_filters(pattern, filters)
+
+    def add_client_outgoing_result_filters(self, pattern: str, filters: List[object]):
+        self.client_app.add_outgoing_result_filters(pattern, filters)
+
+    def add_client_incoming_result_filters(self, pattern: str, filters: List[object]):
+        self.client_app.add_incoming_result_filters(pattern, filters)
+
+    def set_server_prop(self, name: str, value):
+        self.server_app.set_prop(name, value)
+
+    def set_client_prop(self, name: str, value):
+        self.client_app.set_prop(name, value)
+
+    def set_server_resource_dirs(self, resource_dirs):
+        self.server_app.set_resource_dirs(resource_dirs)
+
+    def set_client_resource_dirs(self, resource_dirs):
+        self.client_app.set_resource_dirs(resource_dirs)
+
+    def run(self):
+        runner = AppRunner(
+            root_dir=self.root_dir,
+            experiment_name=self.experiment_name,
+            server_app=self.server_app,
+            client_app=self.client_app,
+            max_workers=self.max_workers,
+            num_clients=self.num_clients,
+        )
+        return runner.run()

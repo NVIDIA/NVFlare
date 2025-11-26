@@ -19,7 +19,7 @@ import torch
 from nvflare.fox import fox
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.pt.utils import parse_state_dict
-from nvflare.fox.sim.sim2 import Simulator
+from nvflare.fox.sim.simulator import Simulator
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 

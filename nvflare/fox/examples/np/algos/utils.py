@@ -22,6 +22,10 @@ def parse_array_def(array_def):
     if isinstance(array_def, np.ndarray):
         return array_def
 
+    if isinstance(array_def, str):
+        # this is base name of the file that contains NP array
+        return array_def
+
     if isinstance(array_def, list):
         return np.array(array_def, dtype=np.float32)
     else:

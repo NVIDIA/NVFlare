@@ -14,7 +14,6 @@
 import logging
 
 from nvflare.fox import fox
-from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_para import NPFedAvgParallel
@@ -54,13 +53,13 @@ def main():
     simple_logging(logging.DEBUG)
     exp_name = "cyclic_avg"
 
-    server_app = ServerApp(Controller(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], cyclic_rounds=2, avg_rounds=3))
+    server = Controller(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], cyclic_rounds=2, avg_rounds=3)
 
     simulator = Simulator(
         root_dir="/tmp/fox",
         experiment_name=exp_name,
-        server_app=server_app,
-        client_app=ClientApp(NPTrainer(delta=1.0)),
+        server=server,
+        client=NPTrainer(delta=1.0),
         num_clients=3,
     )
 
