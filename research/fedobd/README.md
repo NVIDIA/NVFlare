@@ -25,7 +25,7 @@ pip install -r requirements.txt
 
 ## Steps to run the code
 
-Let's follow the steps in the [quantization examples] (https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf).
+Let's follow the steps in the [quantization examples](https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/llm_hf).
 
 ### Data Preparation
 cd examples/advanced/llm_hf
