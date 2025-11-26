@@ -21,7 +21,6 @@ from nvflare.fuel.f3.cellnet.defs import Encoding, MessageHeaderKey
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.utils.buffer_list import BufferList
-from nvflare.fuel.utils.time_utils import time_to_string
 
 cell_mapping = {
     "O": MessageHeaderKey.ORIGIN,
