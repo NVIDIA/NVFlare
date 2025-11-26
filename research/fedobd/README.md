@@ -42,6 +42,9 @@ python ./utils/preprocess_dolly.py --training_file dataset/databricks-dolly-15k/
 python ./utils/preprocess_alpaca.py --training_file dataset/alpaca/data/train-00000-of-00001-a09b74b3ef9c3b56.parquet --output_dir dataset/alpaca
 python ./utils/preprocess_oasst1.py --training_file dataset/oasst1/data/train-00000-of-00001-b42a775f407cee45.parquet --validation_file dataset/oasst1/data/validation-00000-of-00001-134b8fd0c89408b6.parquet --output_dir dataset/oasst1
 
+python3 job.py --client_ids dolly --data_path ${PWD}/dataset --workspace_dir ${PWD}/workspace/hf_sft_adaquant --job_dir ${PWD}/workspace/jobs/hf_sft_adaquant --train_mode SFT --quantize_mode adaquant
+```
+
 ## Citation
 
 If you use this implementation, please cite the original FedOBD paper:
