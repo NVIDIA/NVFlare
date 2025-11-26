@@ -55,8 +55,10 @@ class NPCyclic:
         self.logger.info(f"[{fox.call_info}]: saved final model {final_result} to {file_name}")
 
     def _do_one_round(self, current_round, current_model):
-        random.shuffle(fox.clients)
-        for c in fox.clients:
+        # Note: fox.clients always returns a new copy of all clients!
+        clients = fox.clients
+        random.shuffle(clients)
+        for c in clients:
             current_model = c.train(current_round, current_model)
             self.logger.info(f"[{fox.call_info}] result from {c.name}: {current_model}")
         return current_model

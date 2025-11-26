@@ -39,8 +39,8 @@ class NPFedAvgInTime:
         self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
         current_model = fox.get_prop(ContextKey.INPUT, self._init_model)
         for i in range(self.num_rounds):
-            # current_model = self._do_one_round(i, current_model)
-            current_model = self._do_one_round_non_blocking(i, current_model)
+            current_model = self._do_one_round(i, current_model)
+            # current_model = self._do_one_round_non_blocking(i, current_model)
             score = self._do_eval(current_model)
             self.logger.info(f"[{fox.call_info}]: eval score in round {i}: {score}")
         self.logger.info(f"FINAL MODEL: {current_model}")
