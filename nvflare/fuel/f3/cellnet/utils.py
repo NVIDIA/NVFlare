@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import logging
 import time
 from typing import Any
 
@@ -20,7 +21,6 @@ from nvflare.fuel.f3.cellnet.defs import Encoding, MessageHeaderKey
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.utils.buffer_list import BufferList
-from nvflare.fuel.utils.time_utils import time_to_string
 
 cell_mapping = {
     "O": MessageHeaderKey.ORIGIN,
@@ -39,6 +39,8 @@ msg_mapping = {
 
 
 _MSG_SIZE_HW_THRESHOLD = 1024 * 1024 * 10
+
+log = logging.getLogger(__name__)
 
 
 class MsgHighWaterInfo:
@@ -65,7 +67,7 @@ class MsgHighWaterInfo:
 
         if size > _MSG_SIZE_HW_THRESHOLD:
             info = f"from {self.origin} to {self.destination}: {size=} topic={self.topic} headers={self.headers}"
-            print(f"{time_to_string(self.timestamp)}: {self.hw_type} Msg Size High Water: {info}")
+            log.debug(f"{self.hw_type} Msg Size High Water: {info}")
 
 
 # Some stats of msg size high water
