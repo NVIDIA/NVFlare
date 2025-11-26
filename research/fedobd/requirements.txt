@@ -2,3 +2,8 @@ nvflare~=2.7.0rc
 torch
 torchvision
 tensorboard
+transformers
+datasets
+peft
+trl
+bitsandbytes
