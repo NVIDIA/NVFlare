@@ -33,7 +33,7 @@ class Workspace(ABC):
     def get_work_dir(self) -> str:
         pass
 
-    def get_subdir(self, name: str, create: bool = True) -> str:
+    def get_resource_dir(self, name: str, create: bool = True) -> str:
         resource_dir = self.resource_dirs.get(name)
         if resource_dir:
             return resource_dir

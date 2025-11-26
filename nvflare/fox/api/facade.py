@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
+
 from .constants import ContextKey
 from .ctx import get_call_context
 from .dec import algo as dec_algo
@@ -103,6 +105,23 @@ class facade:
         if not candidates:
             raise RuntimeError(f"app {ctx.app.name} has no leaf clients")
         return ProxyList(candidates)
+
+    @classmethod
+    def get_clients(cls, names: list[str]):
+        ctx = get_call_context()
+        candidates = ctx.clients
+        result = []
+        for n in names:
+            p = None
+            for c in candidates:
+                if c.name == n:
+                    p = c
+                    break
+            if not p:
+                # no proxy for this name
+                raise RuntimeError(f"app {ctx.app.name} has no client '{n}'")
+            result.append(p)
+        return ProxyList(result)
 
     @classproperty
     def backend_type(cls):

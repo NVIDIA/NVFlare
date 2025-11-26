@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import random
 
 from nvflare.fox import fox
-from nvflare.fox.examples.np.algos.utils import parse_array_def
+from nvflare.fox.examples.np.algos.utils import load_np_model, parse_array_def, save_np_model
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
 
@@ -27,6 +28,16 @@ class NPCyclic:
         self.final_model = None
         self.logger = get_obj_logger(self)
 
+    @fox.init
+    def check_initial_model(self):
+        if isinstance(self._initial_model, str):
+            # this is name of the file that contains model data
+            # load the model.
+            resource_dir = fox.workspace.get_resource_dir("data")
+            file_name = os.path.join(resource_dir, self._initial_model)
+            self._initial_model = load_np_model(file_name)
+            self.logger.info(f"loaded initial model from {file_name}: {self._initial_model}")
+
     @fox.algo
     def execute(self):
         current_model = fox.get_input(self._initial_model)
@@ -37,8 +48,11 @@ class NPCyclic:
         return current_model
 
     @fox.final
-    def done(self):
-        self.logger.info(f"Cyclic is done: final model: {self.final_model}")
+    def save_result(self):
+        final_result = fox.get_input()
+        file_name = os.path.join(fox.workspace.get_work_dir(), "final_model.npy")
+        save_np_model(final_result, file_name)
+        self.logger.info(f"[{fox.call_info}]: saved final model {final_result} to {file_name}")
 
     def _do_one_round(self, current_round, current_model):
         random.shuffle(fox.clients)

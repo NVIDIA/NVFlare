@@ -13,7 +13,6 @@
 # limitations under the License.
 import logging
 
-from nvflare.fox.api.app import ClientApp, ServerApp
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.avg_seq import NPFedAvgSequential
@@ -24,36 +23,21 @@ from nvflare.fox.sim.simulator import Simulator
 def main():
     simple_logging(logging.DEBUG)
 
-    server_app = ServerApp(
-        NPFedAvgSequential(
-            num_rounds=2,
-            initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-        ),
-    )
-    server_app.add_collab_object("metric_receiver", MetricReceiver())
-    server_app.set_prop(
-        "client_weight_config",
-        {
-            "site-1": 70,
-            "site-2": 100,
-        },
+    server = NPFedAvgSequential(
+        num_rounds=2,
+        initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
     )
 
-    client_app = ClientApp(NPTrainer(delta=1.0))
-    client_app.set_prop(
-        "client_delta",
-        {
-            "site-1": 1.0,
-            "site-2": 2.0,
-        },
-    )
     simulator = Simulator(
         root_dir="/tmp/fox",
         experiment_name="fedavg_seq",
-        server_app=server_app,
-        client_app=client_app,
+        server=server,
+        client=NPTrainer(delta=1.0),
+        server_objects={"metric_receiver": MetricReceiver()},
         num_clients=2,
     )
+    simulator.set_server_prop("client_weight_config", {"site-1": 70, "site-2": 100})
+    simulator.set_client_prop("client_delta", {"site-1": 1.0, "site-2": 2.0})
 
     result = simulator.run()
     print(f"Final result: {result}")

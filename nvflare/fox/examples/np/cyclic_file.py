@@ -16,7 +16,7 @@ import logging
 from nvflare.fox.api.utils import simple_logging
 from nvflare.fox.examples.np.algos.client import NPTrainer
 from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
-from nvflare.fox.sim.sim2 import Simulator
+from nvflare.fox.sim.simulator import Simulator
 
 
 def main():
@@ -25,10 +25,12 @@ def main():
     simulator = Simulator(
         root_dir="/tmp/fox",
         experiment_name="cyclic",
-        server=NPCyclic(initial_model=[[1, 2, 3], [4, 5, 6], [7, 8, 9]], num_rounds=2),
+        server=NPCyclic(initial_model="model.npy", num_rounds=2),
         client=NPTrainer(delta=1.0),
         num_clients=2,
     )
+
+    simulator.set_server_resource_dirs({"data": "/tmp/fox/data"})
 
     final_result = simulator.run()
     print(f"final model: {final_result}")
