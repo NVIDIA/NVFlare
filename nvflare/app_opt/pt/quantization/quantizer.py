@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import re
+import threading
 from typing import Union
 
 import numpy as np
@@ -57,6 +58,15 @@ class ModelQuantizer(DXOFilter):
         self.NP_FP16_MAX = np.finfo(np.float16).max
         self.TS_FP16_MIN = torch.finfo(torch.float16).min
         self.TS_FP16_MAX = torch.finfo(torch.float16).max
+
+        # Lock to ensure thread-safe quantization for concurrent client requests
+        # In 1-N server scenarios, multiple clients may process the same task data
+        # Key by id(dxo.data) since different DXO wrappers may share the same data dict
+        self._quantization_locks = {}  # data_id -> threading.Lock
+        self._quantized_results = {}  # data_id -> quantized DXO (metadata for waiting threads)
+        self._quantization_errors = {}  # data_id -> Exception (if quantization failed)
+        self._data_refcounts = {}  # data_id -> number of threads using this data
+        self._locks_lock = threading.Lock()  # protect the dictionaries
 
     def quantization(self, params: dict, fl_ctx: FLContext):
         n_params = len(params.keys())
@@ -233,21 +243,74 @@ class ModelQuantizer(DXOFilter):
         # - If 1-N server-client filters can be different (Filter_1 applies to server-client_subset_1, etc.), then
         # a deep copy of the server data should be made by filter before applying a different filter
 
-        # quantized_flag None if does not exist in meta
-        quantized_flag = dxo.get_meta_prop("quantized_flag")
-        if quantized_flag:
-            self.log_info(fl_ctx, "Already quantized, skip quantization")
-            new_dxo = dxo
-        else:
-            # apply quantization
-            quantized_params, quant_state, source_datatype = self.quantization(params=dxo.data, fl_ctx=fl_ctx)
-            # Compose new DXO with quantized data
-            # Add quant_state to the new DXO meta
-            new_dxo = DXO(data_kind=dxo.data_kind, data=quantized_params, meta=dxo.meta)
-            new_dxo.set_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, value=self.quantization_type)
-            new_dxo.set_meta_prop(key="quant_state", value=quant_state)
-            new_dxo.set_meta_prop(key="source_datatype", value=source_datatype)
-            new_dxo.set_meta_prop(key="quantized_flag", value=True)
-            self.log_info(fl_ctx, f"Quantized to {self.quantization_type}")
+        # Use the data dictionary's id as the key for locking
+        # In 1-N scenarios, different DXO wrapper objects may share the same underlying data dict
+        # We need to synchronize based on the actual data being quantized, not the wrapper
+        data_id = id(dxo.data)
 
-        return new_dxo
+        # Increment reference count - this thread is now using this data_id
+        with self._locks_lock:
+            if data_id not in self._quantization_locks:
+                self._quantization_locks[data_id] = threading.Lock()
+                self._data_refcounts[data_id] = 0
+            self._data_refcounts[data_id] += 1
+            data_lock = self._quantization_locks[data_id]
+
+        try:
+            # Acquire the data-specific lock to ensure only one thread quantizes this data
+            # Other threads will wait here until quantization is complete
+            with data_lock:
+                # Check if quantization failed in another thread
+                if data_id in self._quantization_errors:
+                    self.log_info(fl_ctx, "Quantization failed in another thread, re-raising error")
+                    raise self._quantization_errors[data_id]
+                # Check if quantization result already exists (from another thread)
+                elif data_id in self._quantized_results:
+                    self.log_info(fl_ctx, "Already quantized by another thread, reusing result")
+                    new_dxo = self._quantized_results[data_id]
+                # Check if this DXO was already quantized (e.g., from previous filter)
+                elif dxo.get_meta_prop("quantized_flag"):
+                    self.log_info(fl_ctx, "Already quantized, skip quantization")
+                    new_dxo = dxo
+                # Perform quantization
+                else:
+                    try:
+                        # Apply quantization
+                        # The lock ensures mutual exclusion, so only one thread can execute this
+                        quantized_params, quant_state, source_datatype = self.quantization(
+                            params=dxo.data, fl_ctx=fl_ctx
+                        )
+
+                        # Compose new DXO with quantized data
+                        # Add quant_state to the new DXO meta
+                        new_dxo = DXO(data_kind=dxo.data_kind, data=quantized_params, meta=dxo.meta)
+                        new_dxo.set_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, value=self.quantization_type)
+                        new_dxo.set_meta_prop(key="quant_state", value=quant_state)
+                        new_dxo.set_meta_prop(key="source_datatype", value=source_datatype)
+                        new_dxo.set_meta_prop(key="quantized_flag", value=True)
+
+                        self.log_info(fl_ctx, f"Quantized to {self.quantization_type}")
+
+                        # Store the result so other waiting threads can use it
+                        self._quantized_results[data_id] = new_dxo
+
+                    except Exception as e:
+                        # Store the error so other waiting threads can re-raise it
+                        # without retrying the failed quantization
+                        self.log_error(fl_ctx, f"Quantization failed: {e}")
+                        self._quantization_errors[data_id] = e
+                        raise
+
+            return new_dxo
+
+        finally:
+            # Decrement reference count and clean up if this was the last thread
+            with self._locks_lock:
+                self._data_refcounts[data_id] -= 1
+
+                # If no more threads need this data, clean up
+                if self._data_refcounts[data_id] == 0:
+                    self._quantized_results.pop(data_id, None)
+                    self._quantization_errors.pop(data_id, None)
+                    self._quantization_locks.pop(data_id, None)
+                    self._data_refcounts.pop(data_id, None)

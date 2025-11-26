@@ -14,8 +14,8 @@
 
 import argparse
 
-from src.streaming_controller import StreamingController
-from src.streaming_executor import StreamingExecutor
+from streaming_controller import StreamingController
+from streaming_executor import StreamingExecutor
 
 from nvflare import FedJob
 from nvflare.app_common.streamers.container_retriever import ContainerRetriever

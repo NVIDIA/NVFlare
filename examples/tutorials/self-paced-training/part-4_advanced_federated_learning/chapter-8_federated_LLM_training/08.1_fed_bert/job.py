@@ -14,7 +14,7 @@
 
 import argparse
 
-from src.nlp_models import BertModel, GPTModel
+from model import BertModel, GPTModel
 
 from nvflare.app_common.widgets.intime_model_selector import IntimeModelSelector
 from nvflare.app_common.workflows.fedavg import FedAvg
@@ -57,7 +57,7 @@ def main():
     # Local training parameters
     num_rounds = 5
     dataset_path = f"/tmp/nvflare/dataset/nlp_ner/{num_clients}_split"
-    train_script = "src/nlp_fl.py"
+    train_script = "client.py"
     train_args = f"--dataset_path {dataset_path} --model_name {train_model_name}"
 
     # Define the controller workflow and send to server
