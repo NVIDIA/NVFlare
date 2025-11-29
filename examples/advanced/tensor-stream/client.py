@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import argparse
+
 from model import get_model
 from trainer import get_dataset, get_training_arguments, preprocess
 from trl import SFTTrainer
@@ -23,9 +25,13 @@ def main():
     sys_info = flare.system_info()
     client_name = sys_info["site_name"]
 
-    # Load pretrained model + tokenizer
-    model, tokenizer = get_model("gpt2")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--exchange-model-only", action="store_true", help="If set, only exchange the model without training.")
+    parser.add_argument("--model-name", type=str, default="gpt2", help="Hugging Face model name.")
+    args = parser.parse_args()
 
+    # Load pretrained model + tokenizer
+    model, tokenizer = get_model(args.model_name)
     # Load dataset and preprocess
     dataset = get_dataset()
     train_dataset = dataset["train"].map(lambda x: preprocess(x, tokenizer), batched=True)
@@ -44,8 +50,9 @@ def main():
         model.load_state_dict(input_model.params)
         model.to(training_args.device)
 
-        # comment out the next line to skip training, and only do model exchange
-        trainer.train()
+        # Train the model unless only exchanging the model is specified
+        if not args.exchange_model_only:
+            trainer.train()
 
         output_model = flare.FLModel(
             params=model.cpu().state_dict(),
