@@ -26,7 +26,9 @@ def main():
     client_name = sys_info["site_name"]
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exchange-model-only", action="store_true", help="If set, only exchange the model without training.")
+    parser.add_argument(
+        "--exchange-model-only", action="store_true", help="If set, only exchange the model without training."
+    )
     parser.add_argument("--model-name", type=str, default="gpt2", help="Hugging Face model name.")
     args = parser.parse_args()
 

@@ -32,9 +32,13 @@ def define_parser():
     parser.add_argument("--n_clients", type=int, default=2, help="Number of clients to simulate.")
     parser.add_argument("--num_rounds", type=int, default=2, help="Number of federated learning rounds.")
     parser.add_argument("--export-only", action="store_true", help="If set, export the job without executing it.")
-    parser.add_argument("--export-path", type=str, default="jobs/tensor-example-job-gpt2", help="Path to export the job.")
+    parser.add_argument(
+        "--export-path", type=str, default="jobs/tensor-example-job-gpt2", help="Path to export the job."
+    )
     parser.add_argument("--disable-tensorstream", action="store_true", help="If set, disable tensor streamers.")
-    parser.add_argument("--exchange-model-only", action="store_true", help="If set, only exchange the model without training.")
+    parser.add_argument(
+        "--exchange-model-only", action="store_true", help="If set, only exchange the model without training."
+    )
 
     return parser.parse_args()
 
@@ -48,9 +52,9 @@ def main():
     model, _ = get_model(args.model_name)
 
     if args.disable_tensorstream:
-        server_expected_format=ExchangeFormat.NUMPY
+        server_expected_format = ExchangeFormat.NUMPY
     else:
-        server_expected_format=ExchangeFormat.PYTORCH
+        server_expected_format = ExchangeFormat.PYTORCH
 
     train_args = f"--model-name {args.model_name}"
     if args.exchange_model_only:
@@ -66,7 +70,7 @@ def main():
         train_args=train_args,
     )
     add_experiment_tracking(recipe, tracking_type="tensorboard")
- 
+
     if not args.disable_tensorstream:
         recipe.job.to_server(TensorServerStreamer(), "tensor_server_streamer")
         recipe.job.to_clients(TensorClientStreamer(), "tensor_client_streamer")
