@@ -40,7 +40,7 @@ class NPCyclic:
 
     @fox.algo
     def execute(self):
-        current_model = fox.get_input(self._initial_model)
+        current_model = self._initial_model
         for current_round in range(self.num_rounds):
             current_model = self._do_one_round(current_round, current_model)
         self.logger.info(f"[{fox.call_info}] final result: {current_model}")
@@ -49,7 +49,7 @@ class NPCyclic:
 
     @fox.final
     def save_result(self):
-        final_result = fox.get_input()
+        final_result = fox.get_result()
         file_name = os.path.join(fox.workspace.get_work_dir(), "final_model.npy")
         save_np_model(final_result, file_name)
         self.logger.info(f"[{fox.call_info}]: saved final model {final_result} to {file_name}")

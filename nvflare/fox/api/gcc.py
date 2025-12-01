@@ -32,11 +32,13 @@ class ResultQueue:
         self.consumed = 0
         self.num_items_received = 0
 
-    def append(self, i):
+    def append(self, item, complete=True):
         if self.num_items_received == self.limit:
             raise RuntimeError(f"queue is full: {self.limit} items are already appended")
-        self.num_items_received += 1
-        self.q.put_nowait(i)
+        self.q.put_nowait(item)
+
+        if complete:
+            self.num_items_received += 1
         return self.num_items_received == self.limit
 
     def __iter__(self):
@@ -62,14 +64,23 @@ class ResultWaiter(threading.Event):
         self.results = ResultQueue(len(sites))
         self.lock = threading.Lock()
 
-    def set_result(self, target_name: str, result):
+    @staticmethod
+    def _get_site_name(target_name: str):
         # target_name is either <site_name> or <site_name>.<obj_name>
         parts = target_name.split(".")
-        site_name = parts[0]
+        return parts[0]
+
+    def set_result(self, target_name: str, result):
+        site_name = self._get_site_name(target_name)
         with self.lock:
             all_received = self.results.append((site_name, result))
             if all_received:
                 self.set()
+
+    def add_partial_result(self, target_name: str, partial_result):
+        site_name = self._get_site_name(target_name)
+        with self.lock:
+            self.results.append((site_name, partial_result), complete=False)
 
 
 class GroupCallContext:
@@ -132,7 +143,7 @@ class GroupCallContext:
                 if self.process_cb:
                     self.cb_kwargs[CollabMethodArgName.CONTEXT] = ctx
                     check_context_support(self.process_cb, self.cb_kwargs)
-                    result = self.process_cb(result, **self.cb_kwargs)
+                    result = self.process_cb(self, result, **self.cb_kwargs)
 
                 # set back to original context
                 set_call_context(self.context)
@@ -152,3 +163,6 @@ class GroupCallContext:
 
         """
         self.waiter.set_result(self.target_name, ex)
+
+    def add_partial_result(self, partial_result):
+        self.waiter.add_partial_result(self.target_name, partial_result)

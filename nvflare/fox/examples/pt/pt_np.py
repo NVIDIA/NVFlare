@@ -80,7 +80,7 @@ class PTFedAvgMixed:
             )
             return pt_result, np_result
 
-    def _accept_train_result(self, result, aggr_result: _AggrResult):
+    def _accept_train_result(self, gcc, result, aggr_result: _AggrResult):
         self.logger.info(f"[{fox.call_info}] got train result from {fox.caller}: {result}")
 
         pt_result, np_result = result

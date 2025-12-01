@@ -37,7 +37,7 @@ def run_server(server_app: ServerApp, logger):
             if not supports_context(f):
                 kwargs = {}
             result = f(**kwargs)
-            server_ctx.set_prop(ContextKey.INPUT, result)
+            server_ctx.set_prop(ContextKey.RESULT, result)
         except Exception as ex:
             traceback.print_exc()
             backend = server_app.get_backend()

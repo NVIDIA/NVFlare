@@ -37,7 +37,7 @@ class NPFedAvgInTime:
     @fox.algo
     def execute(self):
         self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
-        current_model = fox.get_prop(ContextKey.INPUT, self._init_model)
+        current_model = fox.get_prop(ContextKey.RESULT, self._init_model)
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
             # current_model = self._do_one_round_non_blocking(i, current_model)
@@ -87,7 +87,7 @@ class NPFedAvgInTime:
         self.logger.info(f"[{fox.call_info}] round {r}: aggr result from {len(results)} clients: {result}")
         return result
 
-    def _accept_train_result(self, result, aggr_result: _AggrResult):
+    def _accept_train_result(self, gcc, result, aggr_result: _AggrResult):
         self.logger.info(f"[{fox.call_info}] got train result from {fox.caller} {result}")
         aggr_result.total += result
         aggr_result.count += 1
