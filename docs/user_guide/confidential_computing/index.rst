@@ -1,8 +1,8 @@
 .. _confidential_computing:
 
-################################
+###############################
 FLARE Confidential Federated AI
-################################
+###############################
 
 .. admonition:: FLARE Confidential Federated AI
 
@@ -24,7 +24,7 @@ Traditional federated learning relies on organizational trust agreements, but th
 prevent malicious behavior during model training and aggregation.
 
 Security Risks in Federated Learning
---------------------------------------
+------------------------------------
 
 Federated learning operations face multiple security risks throughout the entire lifecycle:
 
@@ -43,7 +43,7 @@ are in place, making deployment a critical point of exposure.
 
 **Runtime Risks**
 
-Even after secure deployment, model IP and training data remain exposed to runtime threats:
+Even after secure deployment, model Intellectual Property (IP) and training data remain exposed to runtime threats:
 
 - **Compromised participant machines** - Attackers may exploit vulnerabilities to gain remote access
 - **Unauthorized access** - Direct access or network access to remote training machines
@@ -55,7 +55,7 @@ Even after secure deployment, model IP and training data remain exposed to runti
 These risks exist regardless of organizational trust agreements and cannot be fully mitigated through traditional security measures alone.
 
 What is Confidential Computing?
---------------------------------
+-------------------------------
 
 Confidential Computing leverages hardware-based Trusted Execution Environments (TEEs) to protect data and code during execution.
 
@@ -66,7 +66,7 @@ These technologies provide a hardware root of trust through attestation, allowin
 are running in genuine secure environments before sharing sensitive data or models.
 
 Risk Mitigation with Confidential Computing
---------------------------------------------
+-------------------------------------------
 
 FLARE's Confidential Computing solution addresses the federated learning security risks through three key mechanisms:
 
@@ -87,7 +87,7 @@ FLARE's solution provides end-to-end security throughout the entire lifecycle:
 - **Access Control Lockdown** - Comprehensive CVM hardening includes disabling interactive login, blocking SSH access, restricting network ports to only essential communication channels, and preventing unauthorized administrative access
 
 Operational Risks Even with Confidential Computing
----------------------------------------------------
+--------------------------------------------------
 
 While Confidential Computing significantly enhances security, certain operational risks remain that require additional safeguards:
 
@@ -115,13 +115,13 @@ These risks require additional safeguards including:
 This comprehensive approach enables organizations to collaborate on federated learning while maintaining strong IP protection guarantees.
 
 
-FLARE Confidential Federated AI Offerings
-==========================================
+FLARE Confidential Federated AI Overview
+========================================
 
-NVIDIA FLARE 2.7.0 introduces Confidential Federated AI capabilities that enable secure, trustworthy federated learning through hardware-backed security. The release includes two deployment options to address different organizational requirements:
+NVIDIA FLARE provides Confidential Federated AI capabilities that enable secure, trustworthy federated learning through hardware-backed security. It includes two deployment options to address different organizational requirements:
 
-On-Premises IP Protection Solution
------------------------------------
+On-Premises IP Protection Deployment
+------------------------------------
 
 FLARE's on-premises Confidential Federated AI solution provides comprehensive IP protection for organizations that need to protect proprietary models and training code during federated collaboration. This solution leverages confidential virtual machines (CVMs) with:
 
@@ -139,15 +139,15 @@ FLARE's on-premises Confidential Federated AI solution provides comprehensive IP
 This solution is ideal for organizations with high-value proprietary models collaborating with partners who may have different security postures or trust levels.
 
 
-Azure Confidential Computing Cloud Deployment
-----------------------------------------------
+Azure Confidential Computing Deployment
+---------------------------------------
 
 For organizations seeking cloud-based confidential federated learning, FLARE supports running Federated learning workload on Azure Confidential Computing infrastructure.
 This deployment option provides:
 
 .. note::
 
-    Other CSP supports on the cloud will be in future releases.
+    Support for additional cloud service providers (CSPs) will be added in future releases.
 
 **Trust Establishment Among Participants**
 
@@ -159,28 +159,18 @@ Azure Confidential Computing enables participants to establish explicit trust th
 
 This deployment model is suitable for organizations that prioritize data privacy and secure aggregation, while training code and model architectures can be shared among trusted participants.
 
-**Choosing the Right Deployment**
+
+Choosing the Right Deployment
+=============================
 
 - Use **On-Premises IP Protection** when model IP is highly valuable and must be protected from all participants
 - Use **Azure Confidential Computing** when the primary concern is data privacy and secure aggregation among trusted collaborators
 - Both options can be combined in hybrid deployments where some sites require IP protection while others focus on secure aggregation
 
 
+.. toctree::
+   :maxdepth: 2
 
-Architecture Design for Confidential Federated AI with IP Protection
-=====================================================================
+   on_premises/index
+   azure/index
 
-The following documents provide detailed information about FLARE's Confidential Federated AI architecture for IP protection:
-
-- :ref:`cc_architecture` - System architecture and component design
-- :ref:`cc_deployment_guide` - Deployment guide for on-premises CVM setup with AMD SEV-SNP and NVIDIA GPU
-- :ref:`confidential_computing_attestation` - Attestation mechanisms and trust establishment
-- :ref:`hashicorp_vault_trustee_deployment` - Operational HashiCorp key vault deployment with Trustee
-
-
-
-FLARE Deployment to Azure Confidential Computing
-================================================
-
-- :ref:`confidential_azure_container_instances_deployment` - Secure Aggregation on FLARE Server with Azure ACI (Azure Container Instance)
-- :ref:`azure_confidential_virtual_machine_deployment` - Creating Azure confidential virtual machines

@@ -1,13 +1,20 @@
 # How to use CC provision
 
-This guide explains how to use **CC (Confidential Computing) Provision** in NVFLARE, including setting up site configurations, enabling the CC builder, and using Docker images for CC workloads.
+This guide explains how to use **CC (Confidential Computing) Provision** in NVFlare.
+It covers how to set up site configurations, enable the CC builder, and use Docker images for CC workloads.
 
 
-## 0. Prepare application docker image workload
+## 0. Prepare Application Docker Image Workload
 
-In CC, we don't allow custom code, all the codes and required libs must be built-in in the docker image.
-In this example, we show you how to build NVFlare docker images in [docker/](docker/README.md)
+In CC mode, **custom code execution is not allowed**.  
+All required code, dependencies, and libraries must be built into the Docker image.
+This example demonstrates how to build NVFLARE Docker images in the [docker/](docker/README.md) directory.
 
+Copy the archive to a place which is accessible by the CVM builder. For example,
+
+```commandline
+   cp docker/nvflare-site.tar.gz /tmp
+```
 
 ## 1. Define CC Configuration per Site (`cc_config`)
 
@@ -29,7 +36,7 @@ user_data_drive_size: 1
 
 # Docker image archive saved using:
 # docker save <image_name> | gzip > app.tar.gz
-docker_archive: /tmp/base_images/app.tar.gz
+docker_archive: /tmp/nvflare-site.tar.gz
 
 allowed_ports:
 - 8002
@@ -42,7 +49,6 @@ cc_issuers:
       snpguest_binary: "/host/bin/snpguest"
 cc_attestation:
   check_frequency: 120 # seconds
-  failure_action: stop_job
 ```
 
 ## 2. Reference `cc_config` in `project.yml`
@@ -94,7 +100,7 @@ Once you add all the required sections into your `project.yml`, run the provisio
 nvflare provision -p project.yml
 ```
 
-## 6. Distribute and deploy
+## 6. Distribute and Deploy
 
 Each site's result will be located in 
 
@@ -114,3 +120,47 @@ cd cvm_xxx
 
 The confidential VM will start, and the NVFLARE server and clients will automatically connect and begin operation.
 You can now use the NVFlare admin console to communicate with the NVFlare system.
+
+## 7. Notes on using NVIDIA GPU CC
+
+1. Follow the [NVIDIA Confidential Computing documentation](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/on_premises/cc_deployment_guide.html) to set up a machine with NVIDIA GPU CC enabled.
+
+2. For any site that supports GPU CC, you can add NVFLARE's `GPUAuthorizer` to the `cc_site.yml` configuration file:
+
+```yaml
+cc_issuers:
+  ...
+  - id: gpu_authorizer
+    path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
+    token_expiration: 100 # seconds, needs to be less than check_frequency
+```
+
+3. The NVFlare `GPUAuthorizer` uses NVIDIA's `nv_attestation_sdk`.
+   When building the NVFlare app docker image, make sure to include it in the requirements, for example:
+
+```
+torch
+torchvision
+tensorboard
+tensorflow
+safetensors
+nv_attestation_sdk
+```
+
+4. To get GPU working in CVM, you need to ensure:
+       - No GPU driver installed on host, otherwise the passthrough will fail.
+       - You need to create VFIO by running the following command:
+
+```
+NVIDIA_GPU=$(lspci -d 10de: | awk '/NVIDIA/{print $1}')
+NVIDIA_PASSTHROUGH=$(lspci -n -s $NVIDIA_GPU | awk -F: '{print $4}' | awk '{print $1}')
+echo 10de $NVIDIA_PASSTHROUGH > /sys/bus/pci/drivers/vfio-pci/new_id
+```
+
+5. For more details, please refer to [NVIDIA's Deployment Guide for SecureAI](https://docs.nvidia.com/cc-deployment-guide-snp.pdf)
+
+## 8. Notes on re-building initramfs with CVM image builder
+
+1. Before re-building the initramfs for the CVM, remove the ``initrd.img`` file from the ``image_builder/base_images/`` directory.
+   This ensures the Image Builder regenerates a fresh initramfs during the build process.
+
