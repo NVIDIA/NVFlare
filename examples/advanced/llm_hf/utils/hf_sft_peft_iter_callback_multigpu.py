@@ -243,7 +243,7 @@ def main():
 
             if curr_round == 0:
                 # Load initial model weights
-                resume_model_file_path = os.path.join(args.output_path, "pytorch_model_initial.pt")
+                resume_model_file_path = os.path.join(args.output_path, "pytorch_model_initial.pth")
             else:
                 # Get the last checkpoint folder
                 resume_from_checkpoint_folder = trainer_utils.get_last_checkpoint(trainer.args.output_dir)

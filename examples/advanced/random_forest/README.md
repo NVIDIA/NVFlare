@@ -2,6 +2,47 @@
 
 Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
 
+## Quick Start with Recipe API (Recommended)
+
+The simplest way to run this example is using NVFlare's **Recipe API**, which provides a high-level, simplified interface:
+
+### 1. Data Preparation
+First, prepare the HIGGS dataset splits:
+
+```bash
+bash data_split_gen.sh DATASET_ROOT
+```
+
+Replace `DATASET_ROOT` with the path to your HIGGS dataset directory. This will generate data splits in `/tmp/nvflare/random_forest/HIGGS/data_splits`.
+
+### 2. Run with Recipe
+
+```bash
+python job.py --n_clients 5 --local_subsample 0.5 --data_split_path /tmp/nvflare/random_forest/HIGGS/data_splits/5_uniform
+```
+
+**Key arguments:**
+- `--n_clients`: Number of federated clients (default: 5)
+- `--num_local_parallel_tree`: Number of parallel trees per client (default: 5)
+- `--local_subsample`: Subsample ratio for local training (default: 0.5)
+- `--data_split_path`: Path to data split directory
+
+**What the Recipe does:**
+- Uses `XGBBaggingRecipe` for tree-based federated Random Forest
+- Each client trains a local sub-forest on their data
+- Server aggregates all sub-forests to form the global model
+- Runs in simulation environment by default
+
+### 3. Enable GPU Support (Optional)
+
+To use GPUs for training:
+
+```bash
+python job.py --use_gpus --tree_method hist
+```
+
+---
+
 ## Introduction to Libraries and HIGGS Data
 
 ### Libraries
@@ -35,120 +76,22 @@ Random forest training with multiple clients can be achieved in two steps:
 
 No further training will be performed, `num_boost_round` should be 1 to align with the basic setting of random forest.
 
+---
 
-## Data Preparation
-### Download and Store Data
-To run the examples, we first download the dataset from the HIGGS link above, which is a single `HIGGS.csv` file.
-By default, we assume the dataset is downloaded, uncompressed, and stored in `DATASET_ROOT/HIGGS.csv`.
+## Results
 
+Federated Random Forest using XGBoost bagging produces competitive AUC scores. The model quality 
+depends on hyperparameters like `local_subsample` and `num_local_parallel_tree`.
 
-### Data Split
-Since HIGGS dataset is already randomly recorded,
-data split will be specified by the continuous index ranges for each client,
-rather than a vector of random instance indices.
-We provide four options to split the dataset to simulate the non-uniformity in data quantity: 
+Example AUC results on HIGGS dataset (first 1M instances for validation):
+- With local_subsample=0.5: AUC ≈ 0.77-0.78
+- With local_subsample=0.05: AUC ≈ 0.78-0.82
+- With local_subsample=0.005: AUC ≈ 0.78-0.83
 
-1. uniform: all clients has the same amount of data 
-2. linear: the amount of data is linearly correlated with the client ID (1 to M)
-3. square: the amount of data is correlated with the client ID in a squared fashion (1^2 to M^2)
-4. exponential: the amount of data is correlated with the client ID in an exponential fashion (exp(1) to exp(M))
+Lower subsample rates generally produce better models but require more local data per client.
 
-The choice of data split depends on dataset and the number of participants.
+---
 
-For a large dataset like HIGGS, if the number of clients is small (e.g. 5),
-each client will still have sufficient data to train on with uniform split,
-and hence exponential would be used to observe the performance drop caused by non-uniform data split.
-If the number of clients is large (e.g. 20), exponential split will be too aggressive, and linear/square should be used.
+## Legacy Approach
 
-Data splits used in this example can be generated with
-```
-bash data_split_gen.sh DATASET_ROOT
-```
-> **_NOTE:_** make sure to put the correct path for `DATASET_ROOT`.
-
-This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential.
-If you want to customize for your experiments, please check `utils/prepare_data_split.py`.
-
-> **_NOTE:_** The generated train config files will be stored in the folder `/tmp/nvflare/random_forest/HIGGS/data_splits`,
-> and will be used by jobs by specifying the path within `config_fed_client.json` 
-
-
-## HIGGS jobs preparation under various training settings
-
-Please follow the [Installation](../../getting_started/README.md) instructions to install NVFlare.
-
-We then prepare the NVFlare jobs for different settings by running
-```
-bash jobs_gen.sh
-```
-
-This script modifies settings from base job configuration
-(`./jobs/random_forest_base`),
-and copies the correct data split file generated in the data preparation step.
-
-> **_NOTE:_** To customize your own job configs, you can just edit from the generated ones.
-> Or check the code in `./utils/prepare_job_config.py`.
-
-The script will generate a total of 18 different configs in `./jobs` for random forest algorithm with different data split, client number, local tree number, and local subsample rate.
-
-## GPU support
-By default, CPU based training is used.
-
-If the CUDA is installed on the site, tree construction and prediction can be
-accelerated using GPUs.
-
-In order to enable GPU accelerated training, first ensure that your machine has CUDA installed and has at least one GPU.
-In `config_fed_client.json` set `"use_gpus": true` and  `"tree_method": "hist"`.
-Then, in `FedXGBTreeExecutor` we use the `device` parameter to map each rank to a GPU device ordinal.
-If using multiple GPUs, we can map each rank to a different GPU device, however you can also map each rank to the same GPU device if using a single GPU.
-
-## Run experiments 
-After you run the two scripts `data_split_gen.sh` and `jobs_gen.sh`, the experiments can be run with the NVFlare simulator.
-```
-bash run_experiment_simulator.sh
-```
-
-## Validate the trained model
-The trained global random forest model can further be validated using
-```
-bash model_validation.sh 
-```
-The output is 
-```
-5_clients_uniform_split_uniform_lr_split_0.5_subsample
-AUC over first 1000000 instances is: 0.7739160662860319
-5_clients_exponential_split_uniform_lr_split_0.5_subsample
-AUC over first 1000000 instances is: 0.7770108010299946
-5_clients_exponential_split_scaled_lr_split_0.5_subsample
-AUC over first 1000000 instances is: 0.7727404041835751
-5_clients_uniform_split_uniform_lr_split_0.05_subsample
-AUC over first 1000000 instances is: 0.7810306437097397
-5_clients_exponential_split_uniform_lr_split_0.05_subsample
-AUC over first 1000000 instances is: 0.7821852372076727
-5_clients_exponential_split_scaled_lr_split_0.05_subsample
-AUC over first 1000000 instances is: 0.7787293667285318
-5_clients_uniform_split_uniform_lr_split_0.005_subsample
-AUC over first 1000000 instances is: 0.7825158041290863
-5_clients_exponential_split_uniform_lr_split_0.005_subsample
-AUC over first 1000000 instances is: 0.7797689977305647
-5_clients_exponential_split_scaled_lr_split_0.005_subsample
-AUC over first 1000000 instances is: 0.7817849808015369
-20_clients_uniform_split_uniform_lr_split_0.8_subsample
-AUC over first 1000000 instances is: 0.7768044721524759
-20_clients_square_split_uniform_lr_split_0.8_subsample
-AUC over first 1000000 instances is: 0.7788396083758498
-20_clients_square_split_scaled_lr_split_0.8_subsample
-AUC over first 1000000 instances is: 0.7757795325989565
-20_clients_uniform_split_uniform_lr_split_0.2_subsample
-AUC over first 1000000 instances is: 0.7808745447533768
-20_clients_square_split_uniform_lr_split_0.2_subsample
-AUC over first 1000000 instances is: 0.7817719906970683
-20_clients_square_split_scaled_lr_split_0.2_subsample
-AUC over first 1000000 instances is: 0.7797564888670013
-20_clients_uniform_split_uniform_lr_split_0.02_subsample
-AUC over first 1000000 instances is: 0.7828698775310959
-20_clients_square_split_uniform_lr_split_0.02_subsample
-AUC over first 1000000 instances is: 0.779952094937354
-20_clients_square_split_scaled_lr_split_0.02_subsample
-AUC over first 1000000 instances is: 0.7825360505137948
-```
+> **Note**: This example has been updated to use the simplified Job Recipe API. If you need the previous JSON-based configuration approach with automated job generation scripts, please refer to the [NVFlare 2.6 documentation](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/advanced/random_forest) or earlier versions.

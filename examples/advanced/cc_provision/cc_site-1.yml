@@ -1,16 +1,15 @@
 compute_env: onprem_cvm
 cc_cpu_mechanism: amd_sev_snp
-cc_gpu_mechanism: nvidia_cc
 role: client
 
 # All drive sizes are in GB
-root_drive_size: 30
+root_drive_size: 45
 applog_drive_size: 1
 user_config_drive_size: 1
 user_data_drive_size: 1
 # Docker image archive saved using:
 # docker save <image_name> | gzip > app.tar.gz
-docker_archive: /tmp/base_images/app.tar.gz
+docker_archive: /tmp/nvflare-site.tar.gz
 
 # for debugging purpose
 # hosts_entries:
@@ -23,10 +22,6 @@ cc_issuers:
     token_expiration: 100 # seconds, needs to be less than check_frequency
     args:
       snpguest_binary: "/host/bin/snpguest"
-  - id: gpu_authorizer
-    path: nvflare.app_opt.confidential_computing.gpu_authorizer.GPUAuthorizer
-    token_expiration: 100 # seconds, needs to be less than check_frequency
 
 cc_attestation:
   check_frequency: 120 # seconds
-  failure_action: stop_job

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.nvidia.nvflare.app.data.AndroidDataSource
 import com.nvidia.nvflare.app.data.DatasetError
+import com.nvidia.nvflare.sdk.models.TrainingProgress
 import com.nvidia.nvflare.sdk.training.TrainingStatus
 import com.nvidia.nvflare.sdk.core.AndroidFlareRunner
 import com.nvidia.nvflare.sdk.core.Connection
@@ -18,6 +19,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.os.Handler
+import android.os.Looper
 
 
 sealed class TrainingError : Exception() {
@@ -91,6 +94,7 @@ class FlareRunnerController(
     
     fun startTraining(
         onStatusUpdate: (TrainingStatus) -> Unit,
+        onProgressUpdate: (TrainingProgress) -> Unit,
         onError: (Exception) -> Unit,
         onSuccess: () -> Unit
     ) {
@@ -104,6 +108,7 @@ class FlareRunnerController(
         
         status = TrainingStatus.TRAINING
         onStatusUpdate(status)
+        onProgressUpdate(TrainingProgress.idle())
         
         // Create connection on main thread to avoid background thread issues
         val connection = createConnection()
@@ -178,7 +183,7 @@ class FlareRunnerController(
                 currentDataset = dataset
                 Log.d(TAG, "FlareRunnerController: Stored dataset reference: $dataset")
                 
-                                // Create FlareRunner with dataset
+                                // Create FlareRunner with dataset and progress callback
                 val runner = AndroidFlareRunner(
                     context = context,
                     connection = connection,
@@ -193,7 +198,13 @@ class FlareRunnerController(
                         "app_version" to context.packageManager.getPackageInfo(context.packageName, 0).versionName
                     ),
                     userInfo = emptyMap(),
-                    jobTimeout = TWENTY_FOUR_HOURS_IN_SECONDS
+                    jobTimeout = TWENTY_FOUR_HOURS_IN_SECONDS,
+                    onProgressUpdate = { progress ->
+                        // Pass TrainingProgress directly to UI on main thread
+                        Handler(Looper.getMainLooper()).post {
+                            onProgressUpdate(progress)
+                        }
+                    }
                 )
                 
                 flareRunner = runner
