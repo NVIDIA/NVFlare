@@ -17,12 +17,12 @@ import os
 
 import pandas as pd
 import torch
-from data_sequence import DataSequence
-from nlp_models import BertModel, GPTModel
+from model import BertModel, GPTModel
 from seqeval.metrics import classification_report
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from utils.data_sequence import DataSequence
 
 # import nvflare client API
 import nvflare.client as flare
