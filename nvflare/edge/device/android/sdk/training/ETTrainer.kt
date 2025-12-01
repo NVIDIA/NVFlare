@@ -37,8 +37,6 @@ class ETTrainer(
     private var tModule: TrainingModule? = null
     
     companion object {
-        private const val EXECUTORCH_HEADER_SIZE = 8
-        private const val EXECUTORCH_HEADER_PREFIX = "PAAAAEVU"
         private const val BUFFER_SIZE = 4 * 1024  // 4KB buffer for file operations
         private const val PROGRESS_LOG_INTERVAL = 500  // Log progress every 500 steps
         private const val DEFAULT_MOMENTUM = 0.9f
@@ -153,13 +151,10 @@ class ETTrainer(
             
             Log.d(TAG, "Decoded model data size: ${decodedModelData.size} bytes")
             
-            // Validate model header (check for ExecuTorch magic bytes)
-            if (decodedModelData.size >= EXECUTORCH_HEADER_SIZE) {
-                val header = String(decodedModelData.take(EXECUTORCH_HEADER_SIZE).toByteArray())
-                Log.d(TAG, "Model header: $header")
-                if (!header.startsWith(EXECUTORCH_HEADER_PREFIX)) {
-                    Log.w(TAG, "Warning: Model header doesn't match expected ExecuTorch format")
-                }
+            // Log first few bytes for debugging (ExecuTorch will validate format internally)
+            if (decodedModelData.size >= 8) {
+                val headerBytes = decodedModelData.take(8).joinToString(" ") { "%02X".format(it) }
+                Log.d(TAG, "Model header bytes (hex): $headerBytes")
             }
             
             val tempFile = File.createTempFile("model", ".pte")

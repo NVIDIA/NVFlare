@@ -9,7 +9,7 @@ user_config_drive_size: 1
 user_data_drive_size: 1
 # Docker image archive saved using:
 # docker save <image_name> | gzip > app.tar.gz
-docker_archive: /tmp/base_images/app.tar.gz
+docker_archive: /tmp/nvflare-site.tar.gz
 
 # for debugging purpose
 # hosts_entries:
