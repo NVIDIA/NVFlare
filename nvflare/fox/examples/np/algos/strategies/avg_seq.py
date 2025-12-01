@@ -49,7 +49,7 @@ class NPFedAvgSequential:
     @fox.algo
     def execute(self):
         self.logger.info(f"[{fox.call_info}] Start training for {self.num_rounds} rounds")
-        current_model = fox.get_input(self._initial_model)
+        current_model = self._initial_model
         for i in range(self.num_rounds):
             current_model = self._do_one_round(i, current_model)
 

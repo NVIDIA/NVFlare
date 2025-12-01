@@ -53,7 +53,7 @@ class Controller:
 
     @fox.final
     def save_result(self):
-        final_result = fox.get_input()
+        final_result = fox.get_result()
         file_name = os.path.join(fox.workspace.get_work_dir(), "final_model.npy")
         save_np_model(final_result, file_name)
         self.logger.info(f"[{fox.call_info}]: saved final model {final_result} to {file_name}")

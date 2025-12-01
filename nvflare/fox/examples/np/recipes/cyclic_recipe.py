@@ -11,22 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-class CollabMethodArgName:
-    # defines optional args that a target's collaboration method can have
-    CONTEXT = "context"
+from nvflare.fox.examples.np.algos.strategies.cyclic import NPCyclic
+from nvflare.fox.sys.recipe import FoxRecipe
 
 
-class ContextKey:
-    RESULT = "result"
-    QUALIFIED_FUNC_NAME = "qualified_func_name"
-    DIRECTION = "direction"
+class CyclicRecipe(FoxRecipe):
 
-
-class FilterDirection:
-    INCOMING = "incoming"
-    OUTGOING = "outgoing"
-
-
-class BackendType:
-    SIMULATION = "simulation"
-    FLARE = "flare"
+    def __init__(
+        self,
+        job_name,
+        initial_model,
+        num_rounds,
+        client,
+    ):
+        FoxRecipe.__init__(
+            self,
+            job_name,
+            server=NPCyclic(initial_model, num_rounds),
+            client=client,
+        )

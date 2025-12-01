@@ -169,5 +169,5 @@ class facade:
         return ctx.get_prop(name, default)
 
     @staticmethod
-    def get_input(default=None):
-        return facade.get_prop(ContextKey.INPUT, default)
+    def get_result(default=None):
+        return facade.get_prop(ContextKey.RESULT, default)
