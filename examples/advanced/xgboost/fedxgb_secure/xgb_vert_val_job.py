@@ -23,18 +23,17 @@ from nvflare.job_config.api import FedJob
 def define_parser():
     parser = argparse.ArgumentParser(description="Federated XGBoost Secure Vertical Evaluation Job")
     parser.add_argument(
-    parser.add_argument(
         "--data_root",
         type=str,
         required=True,
         help="Path to dataset files for each site",
     )
-    )
-    parser.add_argument("--site_num", type=int, default=3, help="Total number of sites")
+    parser.add_argument("--site_num", type=int, default=3, required=True, help="Total number of sites")
     parser.add_argument(
         "--train_workspace_path",
         type=str,
         default="/tmp/nvflare/workspace/fedxgb_secure/train_fl/works/vertical_secure",
+        required=True,
         help="Path to the trained model workspace root",
     )
     return parser.parse_args()
