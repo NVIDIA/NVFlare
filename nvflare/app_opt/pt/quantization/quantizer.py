@@ -13,7 +13,8 @@
 # limitations under the License.
 
 import re
-from typing import Any, Optional, Union
+import threading
+from typing import Union
 
 import numpy as np
 import torch
@@ -24,6 +25,8 @@ from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.pt.quantization.constant import DATA_TYPE, QUANTIZATION_TYPE
+
+from .ada_quant import AdaQuantizer
 
 
 class ModelQuantizer(DXOFilter):
@@ -56,6 +59,15 @@ class ModelQuantizer(DXOFilter):
         self.TS_FP16_MIN = torch.finfo(torch.float16).min
         self.TS_FP16_MAX = torch.finfo(torch.float16).max
 
+        # Lock to ensure thread-safe quantization for concurrent client requests
+        # In 1-N server scenarios, multiple clients may process the same task data
+        # Key by id(dxo.data) since different DXO wrappers may share the same data dict
+        self._quantization_locks = {}  # data_id -> threading.Lock
+        self._quantized_results = {}  # data_id -> quantized DXO (metadata for waiting threads)
+        self._quantization_errors = {}  # data_id -> Exception (if quantization failed)
+        self._data_refcounts = {}  # data_id -> number of threads using this data
+        self._locks_lock = threading.Lock()  # protect the dictionaries
+
     def quantization(self, params: dict, fl_ctx: FLContext):
         n_params = len(params.keys())
         self.log_info(fl_ctx, f"Running quantization on {n_params} variables")
@@ -63,41 +75,50 @@ class ModelQuantizer(DXOFilter):
         n_bytes_after = 0
         n_bytes_meta = 0
         n_quant_params = 0
-        quant_state: dict = {}
+        quant_state = {}
         source_datatype = {}
-        for param_name in params:
+        for i, param_name in enumerate(params.keys()):
             values = params[param_name]
             quant_state[param_name] = {}
 
-            # check the data format, numpy or torch, and get dtype
+            # check the data type, numpy or torch
             # otherwise error
             if isinstance(values, np.ndarray):
                 # if numpy, convert to torch
                 source_data_format = "numpy"
-                source_data_type = values.dtype.name
             elif isinstance(values, torch.Tensor):
                 source_data_format = "torch"
-                source_data_type = str(values.dtype).split(".")[1]
             else:
                 raise ValueError(f"Invalid source data type: {type(values)}, valid: numpy or torch")
 
-            # check if the data type is valid
-            if source_data_type.upper() not in DATA_TYPE:
-                raise ValueError(f"Invalid source data type: {source_data_type}, valid: {DATA_TYPE}")
-
+            # get the data type of the values
+            if source_data_format == "numpy":
+                source_data_type = values.dtype.name
+            elif source_data_format == "torch":
+                source_data_type = str(values.dtype).split(".")[1]
             source_datatype[param_name] = source_data_type
 
-            # get the bits information
-            source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
-            quantization_bits = int(re.findall(r"\d+", self.quantization_type)[0])
-
-            # only quantize if the quantization type is lower than the source data type
-            if quantization_bits >= source_data_bits:
-                self.log_info(
-                    fl_ctx,
-                    f"Skipping quantization for {param_name}, quantization bit {self.quantization_type} >= source data bit {source_data_type}",
+            # check if the data type is valid, bool can be returned by adaquant so treating as exception
+            if source_data_type != "bool" and source_data_type.upper() not in DATA_TYPE:
+                raise ValueError(
+                    f"Invalid source data type: {source_data_type}, valid: {DATA_TYPE}, param_name: {param_name}"
                 )
+
+            if source_data_type == "bool":
                 continue
+
+            if self.quantization_type != "adaquant":
+                # get the bits information
+                source_data_bits = int(re.findall(r"\d+", source_data_type)[0])
+                quantization_bits = int(re.findall(r"\d+", self.quantization_type)[0])
+
+                # only quantize if the quantization type is lower than the source data type
+                if quantization_bits >= source_data_bits:
+                    self.log_info(
+                        fl_ctx,
+                        f"Skipping quantization for {param_name}, quantization bit {self.quantization_type} >= source data bit {source_data_type}",
+                    )
+                    continue
             # add the number of bytes of the values
             n_bytes_before += values.nbytes
             n_quant_params += 1
@@ -119,46 +140,85 @@ class ModelQuantizer(DXOFilter):
 
                 # CPU has limited support for 8- and 4-bits quantization
                 # For general purpose, here we use GPU
-                # if numpy, first convert numpy array to tensor, need to use GPU
-                values_tensor = self.to_torch_tensor(values).cuda()
+                if source_data_format == "numpy":
+                    # if numpy, first convert numpy array to tensor, need to use GPU
+                    values_tensor = torch.as_tensor(values).cuda()
+                elif source_data_format == "torch":
+                    # if torch, directly use the tensor, need to use GPU
+                    values_tensor = values.cuda()
 
-                # quantize the tensor
                 if self.quantization_type == "blockwise8":
+                    # quantize the tensor
                     quantized, quantized_state = quantize_blockwise(values_tensor)
+                    # add the quantization state and values, keep source data format
+                    if source_data_format == "numpy":
+                        quant_state[param_name]["absmax"] = quantized_state.absmax.cpu().numpy()
+                        quant_state[param_name]["code"] = quantized_state.code.cpu().numpy()
+                        values = quantized.cpu().numpy()
+                    elif source_data_format == "torch":
+                        quant_state[param_name]["absmax"] = quantized_state.absmax.cpu()
+                        quant_state[param_name]["code"] = quantized_state.code.cpu()
+                        values = quantized.cpu()
+                    n_bytes_meta += quant_state[param_name]["absmax"].nbytes
+                    n_bytes_meta += quant_state[param_name]["code"].nbytes
                 else:
-                    quantization_type = "fp4" if self.quantization_type == "float4" else "nf4"
-                    quantized, quantized_state = quantize_4bit(values_tensor, quant_type=quantization_type)
-                # add the quantization state and values, keep source data format
-                quantized_state_dict: dict[str, Any] = quantized_state.as_dict()
+                    # then quantize the tensor
+                    if self.quantization_type == "float4":
+                        quantized, quantized_state = quantize_4bit(values_tensor, quant_type="fp4")
+                    else:
+                        quantized, quantized_state = quantize_4bit(values_tensor, quant_type="nf4")
+                    # add the quantization state and values, keep source data format
+                    quantized_state = quantized_state.as_dict()
+                    # prepared the message
+                    for state_name, state in quantized_state.items():
+                        if isinstance(state, torch.Tensor):
+                            if source_data_format == "numpy":
+                                # if the state is a tensor, convert it to numpy array
+                                quant_state[param_name][state_name] = state.cpu().numpy()
+                            elif source_data_format == "torch":
+                                # if the state is a tensor, keep it as tensor
+                                quant_state[param_name][state_name] = state.cpu()
+                            n_bytes_meta += state.nbytes
+                        else:
+                            quant_state[param_name][state_name] = state
+                    # add values
+                    if source_data_format == "numpy":
+                        values = quantized.cpu().numpy()
+                    elif source_data_format == "torch":
+                        values = quantized.cpu()
+
+                params[param_name] = values
+            elif self.quantization_type == "adaquant":
+                # if numpy, first convert numpy array to tensor
+                if source_data_format == "numpy":
+                    values_tensor = torch.as_tensor(values).cpu()
+                elif source_data_format == "torch":
+                    values_tensor = values.cpu()
+                quantized, quantized_state_dict = AdaQuantizer().quantize(values_tensor)
+                if source_data_format == "numpy":
+                    params[param_name] = quantized.cpu().numpy() if isinstance(quantized, torch.Tensor) else quantized
+                elif source_data_format == "torch":
+                    params[param_name] = (
+                        quantized.cpu() if isinstance(quantized, torch.Tensor) else torch.as_tensor(quantized)
+                    )
+
+                if quantized_state_dict:
+                    quant_state[param_name] = quantized_state_dict
+
                 for state_name, state in quantized_state_dict.items():
                     if isinstance(state, (torch.Tensor, np.ndarray)):
-                        quantized_state_dict[state_name] = self.to_source_data(state, source_data_format)
                         n_bytes_meta += state.nbytes
-                quant_state[param_name] = quantized_state_dict
-                # add values
-                values = self.to_source_data(quantized, source_data_format)
-                params[param_name] = values
             n_bytes_after += params[param_name].nbytes
 
         self.log_info(
             fl_ctx,
             f"Quantized {n_quant_params}/{n_params} params."
-            f" Before quantization: {n_bytes_before / (1024**2):.2f} MB."
-            f" After quantization: {n_bytes_after / (1024**2):.2f} MB with meta: {n_bytes_meta / (1024**2):.2f} MB.",
+            f" Before quantization: {n_bytes_before / (1024 ** 2):.2f} MB."
+            f" After quantization: {n_bytes_after / (1024 ** 2):.2f} MB with meta: {n_bytes_meta / (1024 ** 2):.2f} MB.",
         )
         return params, quant_state, source_datatype
 
-    def to_torch_tensor(self, data: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-        if isinstance(data, np.ndarray):
-            return torch.as_tensor(data)
-        return data
-
-    def to_source_data(self, tensor: torch.Tensor, source_data_format: str) -> Union[np.ndarray, torch.Tensor]:
-        if source_data_format == "numpy":
-            return tensor.numpy()
-        return tensor.cpu()
-
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Optional[DXO]:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Filter process apply to the Shareable object.
 
         Args:
@@ -183,21 +243,74 @@ class ModelQuantizer(DXOFilter):
         # - If 1-N server-client filters can be different (Filter_1 applies to server-client_subset_1, etc.), then
         # a deep copy of the server data should be made by filter before applying a different filter
 
-        # quantized_flag None if does not exist in meta
-        quantized_flag = dxo.get_meta_prop("quantized_flag")
-        if quantized_flag:
-            self.log_info(fl_ctx, "Already quantized, skip quantization")
-            new_dxo = dxo
-        else:
-            # apply quantization
-            quantized_params, quant_state, source_datatype = self.quantization(params=dxo.data, fl_ctx=fl_ctx)
-            # Compose new DXO with quantized data
-            # Add quant_state to the new DXO meta
-            new_dxo = DXO(data_kind=dxo.data_kind, data=quantized_params, meta=dxo.meta)
-            new_dxo.set_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, value=self.quantization_type)
-            new_dxo.set_meta_prop(key="quant_state", value=quant_state)
-            new_dxo.set_meta_prop(key="source_datatype", value=source_datatype)
-            new_dxo.set_meta_prop(key="quantized_flag", value=True)
-            self.log_info(fl_ctx, f"Quantized to {self.quantization_type}")
+        # Use the data dictionary's id as the key for locking
+        # In 1-N scenarios, different DXO wrapper objects may share the same underlying data dict
+        # We need to synchronize based on the actual data being quantized, not the wrapper
+        data_id = id(dxo.data)
 
-        return new_dxo
+        # Increment reference count - this thread is now using this data_id
+        with self._locks_lock:
+            if data_id not in self._quantization_locks:
+                self._quantization_locks[data_id] = threading.Lock()
+                self._data_refcounts[data_id] = 0
+            self._data_refcounts[data_id] += 1
+            data_lock = self._quantization_locks[data_id]
+
+        try:
+            # Acquire the data-specific lock to ensure only one thread quantizes this data
+            # Other threads will wait here until quantization is complete
+            with data_lock:
+                # Check if quantization failed in another thread
+                if data_id in self._quantization_errors:
+                    self.log_info(fl_ctx, "Quantization failed in another thread, re-raising error")
+                    raise self._quantization_errors[data_id]
+                # Check if quantization result already exists (from another thread)
+                elif data_id in self._quantized_results:
+                    self.log_info(fl_ctx, "Already quantized by another thread, reusing result")
+                    new_dxo = self._quantized_results[data_id]
+                # Check if this DXO was already quantized (e.g., from previous filter)
+                elif dxo.get_meta_prop("quantized_flag"):
+                    self.log_info(fl_ctx, "Already quantized, skip quantization")
+                    new_dxo = dxo
+                # Perform quantization
+                else:
+                    try:
+                        # Apply quantization
+                        # The lock ensures mutual exclusion, so only one thread can execute this
+                        quantized_params, quant_state, source_datatype = self.quantization(
+                            params=dxo.data, fl_ctx=fl_ctx
+                        )
+
+                        # Compose new DXO with quantized data
+                        # Add quant_state to the new DXO meta
+                        new_dxo = DXO(data_kind=dxo.data_kind, data=quantized_params, meta=dxo.meta)
+                        new_dxo.set_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, value=self.quantization_type)
+                        new_dxo.set_meta_prop(key="quant_state", value=quant_state)
+                        new_dxo.set_meta_prop(key="source_datatype", value=source_datatype)
+                        new_dxo.set_meta_prop(key="quantized_flag", value=True)
+
+                        self.log_info(fl_ctx, f"Quantized to {self.quantization_type}")
+
+                        # Store the result so other waiting threads can use it
+                        self._quantized_results[data_id] = new_dxo
+
+                    except Exception as e:
+                        # Store the error so other waiting threads can re-raise it
+                        # without retrying the failed quantization
+                        self.log_error(fl_ctx, f"Quantization failed: {e}")
+                        self._quantization_errors[data_id] = e
+                        raise
+
+            return new_dxo
+
+        finally:
+            # Decrement reference count and clean up if this was the last thread
+            with self._locks_lock:
+                self._data_refcounts[data_id] -= 1
+
+                # If no more threads need this data, clean up
+                if self._data_refcounts[data_id] == 0:
+                    self._quantized_results.pop(data_id, None)
+                    self._quantization_errors.pop(data_id, None)
+                    self._quantization_locks.pop(data_id, None)
+                    self._data_refcounts.pop(data_id, None)

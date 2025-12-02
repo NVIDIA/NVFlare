@@ -10,6 +10,12 @@ In CC mode, **custom code execution is not allowed**.
 All required code, dependencies, and libraries must be built into the Docker image.
 This example demonstrates how to build NVFLARE Docker images in the [docker/](docker/README.md) directory.
 
+Copy the archive to a place which is accessible by the CVM builder. For example,
+
+```commandline
+   cp docker/nvflare-site.tar.gz /tmp
+```
+
 ## 1. Define CC Configuration per Site (`cc_config`)
 
 Each site participating in a CC job must provide a **CC configuration file**. This file describes the trusted execution environment (e.g., AMD SEV-SNP on-prem CVM), drive allocations, and attestation policies.
@@ -30,7 +36,7 @@ user_data_drive_size: 1
 
 # Docker image archive saved using:
 # docker save <image_name> | gzip > app.tar.gz
-docker_archive: /tmp/base_images/app.tar.gz
+docker_archive: /tmp/nvflare-site.tar.gz
 
 allowed_ports:
 - 8002
@@ -117,7 +123,7 @@ You can now use the NVFlare admin console to communicate with the NVFlare system
 
 ## 7. Notes on using NVIDIA GPU CC
 
-1. Follow the [NVIDIA Confidential Computing documentation](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/cc_deployment_guide.html#cc-deployment-guide) to set up a machine with NVIDIA GPU CC enabled.
+1. Follow the [NVIDIA Confidential Computing documentation](https://nvflare.readthedocs.io/en/main/user_guide/confidential_computing/on_premises/cc_deployment_guide.html) to set up a machine with NVIDIA GPU CC enabled.
 
 2. For any site that supports GPU CC, you can add NVFLARE's `GPUAuthorizer` to the `cc_site.yml` configuration file:
 
@@ -140,3 +146,21 @@ tensorflow
 safetensors
 nv_attestation_sdk
 ```
+
+4. To get GPU working in CVM, you need to ensure:
+       - No GPU driver installed on host, otherwise the passthrough will fail.
+       - You need to create VFIO by running the following command:
+
+```
+NVIDIA_GPU=$(lspci -d 10de: | awk '/NVIDIA/{print $1}')
+NVIDIA_PASSTHROUGH=$(lspci -n -s $NVIDIA_GPU | awk -F: '{print $4}' | awk '{print $1}')
+echo 10de $NVIDIA_PASSTHROUGH > /sys/bus/pci/drivers/vfio-pci/new_id
+```
+
+5. For more details, please refer to [NVIDIA's Deployment Guide for SecureAI](https://docs.nvidia.com/cc-deployment-guide-snp.pdf)
+
+## 8. Notes on re-building initramfs with CVM image builder
+
+1. Before re-building the initramfs for the CVM, remove the ``initrd.img`` file from the ``image_builder/base_images/`` directory.
+   This ensures the Image Builder regenerates a fresh initramfs during the build process.
+
