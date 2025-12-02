@@ -50,6 +50,7 @@ class BuffDeviceManager(DeviceManager):
         super().__init__()
         check_positive_int("device_selection_size", device_selection_size)
         check_positive_int("min_hole_to_fill", min_hole_to_fill)
+        check_positive_int("initial_min_client_num", initial_min_client_num)
 
         self.device_selection_size = device_selection_size
         self.initial_min_client_num = initial_min_client_num
