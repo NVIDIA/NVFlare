@@ -141,7 +141,7 @@ class XGBEvalRunner(AppRunner, FLComponent):
 
         with xgb.collective.CommunicatorContext(**communicator_env):
             # Load the validation data. Dmatrix must be created with column split mode in CommunicatorContext for vertical FL
-            train_data, val_data = self._data_loader.load_data()
+            _, val_data = self._data_loader.load_data()
 
             # Load the trained model
             bst = self._load_trained_model()
