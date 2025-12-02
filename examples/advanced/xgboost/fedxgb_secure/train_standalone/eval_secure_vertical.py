@@ -31,6 +31,12 @@ def create_parser():
         default="/tmp/nvflare/dataset/xgb_dataset/vertical_xgb_data",
         help="Path to validation data folder",
     )
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        default="/tmp/nvflare/workspace/fedxgb_secure/train_standalone/vert_cpu_enc",
+        help="Path to model",
+    )
     return parser
 
 
@@ -38,7 +44,7 @@ def run_server(port: int, world_size: int) -> None:
     xgboost.federated.run_federated_server(port=port, n_workers=world_size)
 
 
-def run_worker(port: int, world_size: int, rank: int, data_root: str) -> None:
+def run_worker(port: int, world_size: int, rank: int, data_root: str, model_path: str) -> None:
     """Run a federated worker for model evaluation."""
     communicator_env = {
         "dmlc_communicator": "federated",
@@ -54,7 +60,6 @@ def run_worker(port: int, world_size: int, rank: int, data_root: str) -> None:
         dvalid = xgb.DMatrix(f"{valid_path}?format=csv{label_param}", data_split_mode=1)
 
         # Load the trained model
-        model_path = "/tmp/nvflare/workspace/fedxgb_secure/train_standalone/vert_cpu_enc"
         bst = xgb.Booster({"nthread": 1})
         current_rank = xgb.collective.get_rank()
         bst.load_model(f"{model_path}/model.{current_rank}.json")
@@ -89,7 +94,7 @@ def main():
     # Start workers
     workers = []
     for rank in range(world_size):
-        worker = multiprocessing.Process(target=run_worker, args=(port, world_size, rank, args.data_root))
+        worker = multiprocessing.Process(target=run_worker, args=(port, world_size, rank, args.data_root, args.model_path))
         workers.append(worker)
         worker.start()
 
