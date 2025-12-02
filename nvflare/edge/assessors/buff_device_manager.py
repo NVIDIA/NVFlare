@@ -192,7 +192,7 @@ class BuffDeviceManager(DeviceManager):
                         device_id = random.choice(list(usable_devices))
                         usable_devices.remove(device_id)
                         # current_selection keeps track of devices selected for a particular model version
-                        self.current_selection[device_id] = self.current_selection_version
+                        self.current_selection[device_id] = current_model_version
                         self.used_devices[device_id] = {
                             "model_version": current_model_version,
                             "selection_version": self.current_selection_version,
