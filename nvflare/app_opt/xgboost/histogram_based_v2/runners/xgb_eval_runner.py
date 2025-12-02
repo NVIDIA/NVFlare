@@ -25,10 +25,6 @@ from nvflare.app_opt.xgboost.histogram_based_v2.defs import Constant
 from nvflare.app_opt.xgboost.histogram_based_v2.runners.xgb_runner import AppRunner
 from nvflare.fuel.utils.log_utils import get_obj_logger
 
-PLUGIN_PARAM_KEY = "federated_plugin"
-PLUGIN_KEY_NAME = "name"
-PLUGIN_KEY_PATH = "path"
-
 
 def _check_ctx(ctx: dict):
     required_ctx_keys = [
@@ -59,7 +55,6 @@ class XGBEvalRunner(AppRunner, FLComponent):
         self._rank = None
         self._world_size = None
         self._data_split_mode = None
-        self._secure_training = None
         self._server_addr = None
         self._data_loader = None
         self._model_dir = None
