@@ -101,6 +101,8 @@ def main():
     # Wait for all workers to complete
     for worker in workers:
         worker.join()
+        if worker.exitcode != 0:
+            raise RuntimeError(f"Worker failed with exit code {worker.exitcode}")
 
     # Clean up
     server.terminate()
