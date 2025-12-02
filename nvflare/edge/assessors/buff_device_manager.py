@@ -182,7 +182,7 @@ class BuffDeviceManager(DeviceManager):
                     selected_devices = self._balanced_device_sampling(usable_devices, num_holes)
                     for device_id in selected_devices:
                         # current_selection keeps track of devices selected for a particular model version
-                        self.current_selection[device_id] = self.current_selection_version
+                        self.current_selection[device_id] = current_model_version
                         self.used_devices[device_id] = {
                             "model_version": current_model_version,
                             "selection_version": self.current_selection_version,
