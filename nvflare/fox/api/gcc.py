@@ -27,13 +27,13 @@ class ResultQueue:
     def __init__(self, limit: int):
         if limit <= 0:
             raise ValueError(f"bad queue limit {limit}: must be > 0")
+
         self.limit = limit
         self.q = queue.Queue()
-        self.consumed = 0
 
-        # num_items_received is the number of WHOLE items received.
+        # num_whole_items_received is the number of WHOLE items received.
         # the queue could contain partial results.
-        self.num_items_received = 0
+        self.num_whole_items_received = 0
 
     def append(self, item, is_whole=True):
         """Append an item to the result queue.
@@ -42,17 +42,17 @@ class ResultQueue:
             item: the item to be appended.
             is_whole: whether the item is whole.
 
-        Returns:
+        Returns: whether the queue has received all whole items.
 
         """
-        if self.num_items_received == self.limit:
+        if self.num_whole_items_received == self.limit:
             raise RuntimeError(f"queue is full: {self.limit} items are already appended")
         self.q.put_nowait(item)
 
         if is_whole:
-            # increment num_items_received only if the item is whole!
-            self.num_items_received += 1
-        return self.num_items_received == self.limit
+            # increment num_whole_items_received only if the item is whole!
+            self.num_whole_items_received += 1
+        return self.num_whole_items_received == self.limit
 
     def __iter__(self):
         return self
@@ -62,7 +62,7 @@ class ResultQueue:
             return self.q.get()
 
         # queue is empty: do we expect more?
-        if self.num_items_received < self.limit:
+        if self.num_whole_items_received < self.limit:
             # there will be more items - wait until more item is received
             return self.q.get(block=True)
         else:
@@ -70,7 +70,13 @@ class ResultQueue:
             raise StopIteration()
 
     def __len__(self):
-        return self.num_items_received
+        """Return the number of whole items that have been received.
+        Note that this is NOT the current number of items in the queue!
+
+        Returns: the number of whole items that have been received
+
+        """
+        return self.num_whole_items_received
 
 
 class ResultWaiter(threading.Event):

@@ -80,6 +80,18 @@ class Group:
         """
         return self._proxies
 
+    def _get_work_proxy(self, p):
+        if self._call_opt.collab_obj_name:
+            child = p.get_child(self._call_opt.collab_obj_name)
+            if not child:
+                raise RuntimeError(
+                    f"site {p.name} does not have collab object named '{self._call_opt.collab_obj_name}': "
+                    f"make sure to use correct collab_obj_name in the group call."
+                )
+            return child
+        else:
+            return p
+
     def __getattr__(self, func_name):
         """
         This method is called to invoke the specified collab function.
@@ -101,7 +113,7 @@ class Group:
             the_backend = None
             try:
                 # filter once for all targets
-                p = self._proxies[0]
+                p = self._get_work_proxy(self._proxies[0])
 
                 # func_proxy is the proxy that actually has the func.
                 # the func_proxy is either "p" or a child of "p".
@@ -122,6 +134,7 @@ class Group:
 
                     waiter = ResultWaiter([p.name for p in self._proxies])
                     for p in self._proxies:
+                        p = self._get_work_proxy(p)
                         func_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(
                             func_name, adj_args, adj_kwargs
                         )
@@ -164,6 +177,7 @@ class Group:
 
                     return waiter.results
             except Exception as ex:
+                self._logger.error(f"exception {type(ex)} occurred: {ex}")
                 if the_backend:
                     the_backend.handle_exception(ex)
 

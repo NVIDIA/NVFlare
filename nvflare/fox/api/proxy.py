@@ -94,14 +94,16 @@ class Proxy:
         self.children[name] = p
         setattr(self, name, p)
 
-    def get_target(self, name: str):
-        obj = getattr(self, name, None)
-        if not obj:
-            return None
-        if isinstance(obj, Proxy):
-            return obj
-        else:
-            return None
+    def get_child(self, name):
+        """Get the specified child proxy.
+
+        Args:
+            name: name of the child proxy.
+
+        Returns: the child proxy if defined.
+
+        """
+        return self.children.get(name)
 
     def _find_interface(self, func_name):
         """Find interface for specified func name.
