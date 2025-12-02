@@ -131,7 +131,9 @@ class XGBEvalRunner(AppRunner, FLComponent):
             "federated_rank": self._rank,
         }
 
-        # no need to use plugin for inference
+        # Plugins are required during training to enable federated communication and coordination between clients.
+        # For inference, the model is already trained and only needs to be evaluated locally or collectively.
+        # Therefore, plugin functionality is not needed for inference.
 
         self._data_loader.initialize(
             client_id=self._client_name, rank=self._rank, data_split_mode=self._data_split_mode
