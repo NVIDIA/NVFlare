@@ -57,7 +57,6 @@ class XGBEvalRunner(AppRunner, FLComponent):
         self._data_split_mode = None
         self._server_addr = None
         self._data_loader = None
-        self._model_dir = None
         self._stopped = False
 
     def initialize(self, fl_ctx: FLContext):
