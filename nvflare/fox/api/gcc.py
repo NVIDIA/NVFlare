@@ -30,14 +30,27 @@ class ResultQueue:
         self.limit = limit
         self.q = queue.Queue()
         self.consumed = 0
+
+        # num_items_received is the number of WHOLE items received.
+        # the queue could contain partial results.
         self.num_items_received = 0
 
-    def append(self, item, complete=True):
+    def append(self, item, is_whole=True):
+        """Append an item to the result queue.
+
+        Args:
+            item: the item to be appended.
+            is_whole: whether the item is whole.
+
+        Returns:
+
+        """
         if self.num_items_received == self.limit:
             raise RuntimeError(f"queue is full: {self.limit} items are already appended")
         self.q.put_nowait(item)
 
-        if complete:
+        if is_whole:
+            # increment num_items_received only if the item is whole!
             self.num_items_received += 1
         return self.num_items_received == self.limit
 
@@ -45,12 +58,16 @@ class ResultQueue:
         return self
 
     def __next__(self):
-        if self.consumed == self.limit:
-            raise StopIteration()
+        if not self.q.empty():
+            return self.q.get()
+
+        # queue is empty: do we expect more?
+        if self.num_items_received < self.limit:
+            # there will be more items - wait until more item is received
+            return self.q.get(block=True)
         else:
-            i = self.q.get(block=True)
-            self.consumed += 1
-            return i
+            # no more items
+            raise StopIteration()
 
     def __len__(self):
         return self.num_items_received
@@ -80,7 +97,7 @@ class ResultWaiter(threading.Event):
     def add_partial_result(self, target_name: str, partial_result):
         site_name = self._get_site_name(target_name)
         with self.lock:
-            self.results.append((site_name, partial_result), complete=False)
+            self.results.append((site_name, partial_result), is_whole=False)
 
 
 class GroupCallContext:
