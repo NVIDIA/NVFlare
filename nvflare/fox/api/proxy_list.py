@@ -49,7 +49,7 @@ class ProxyList(list):
         timeout: float = 5.0,
         optional: bool = False,
         secure: bool = False,
-        collab_obj_name=None,
+        target=None,
         process_resp_cb=None,
         **cb_kwargs,
     ):
@@ -61,7 +61,7 @@ class ProxyList(list):
             timeout:
             optional:
             secure:
-            collab_obj_name:
+            target:
             process_resp_cb:
             **cb_kwargs:
 
@@ -77,7 +77,7 @@ class ProxyList(list):
                 timeout=timeout,
                 optional=optional,
                 secure=secure,
-                collab_obj_name=collab_obj_name,
+                target=target,
             ),
             process_resp_cb=process_resp_cb,
             **cb_kwargs,
