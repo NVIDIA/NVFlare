@@ -15,31 +15,33 @@
 import argparse
 import logging
 from typing import Optional
-from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
-from nvflare.job_config.api import FedJob
-from nvflare.app_opt.feature_election.controller import FeatureElectionController
+
 from client import SyntheticDataExecutor
+
+from nvflare.app_common.widgets.validation_json_generator import ValidationJsonGenerator
+from nvflare.app_opt.feature_election.controller import FeatureElectionController
+from nvflare.job_config.api import FedJob
 
 logger = logging.getLogger(__name__)
 
 
 def create_feature_election_job(
-        job_name: str = "feature_election_synthetic",
-        num_clients: int = 3,
-        freedom_degree: float = 0.5,
-        aggregation_mode: str = "weighted",
-        num_rounds: int = 5,
-        auto_tune: bool = False,
-        tuning_rounds: int = 4,
-        fs_method: str = "lasso",
-        eval_metric: str = "f1",
-        split_strategy: str = "stratified",
-        n_samples: int = 1000,
-        n_features: int = 100,
-        n_informative: int = 20,
-        n_redundant: int = 30,
-        n_repeated: int = 10,
-        export_dir: Optional[str] = None,
+    job_name: str = "feature_election_synthetic",
+    num_clients: int = 3,
+    freedom_degree: float = 0.5,
+    aggregation_mode: str = "weighted",
+    num_rounds: int = 5,
+    auto_tune: bool = False,
+    tuning_rounds: int = 4,
+    fs_method: str = "lasso",
+    eval_metric: str = "f1",
+    split_strategy: str = "stratified",
+    n_samples: int = 1000,
+    n_features: int = 100,
+    n_informative: int = 20,
+    n_redundant: int = 30,
+    n_repeated: int = 10,
+    export_dir: Optional[str] = None,
 ) -> FedJob:
     job = FedJob(name=job_name)
 

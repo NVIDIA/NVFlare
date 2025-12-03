@@ -40,7 +40,6 @@ class FeatureElection:
     - Easy data preparation and splitting
     - Local simulation for testing
     - Result management and persistence
-
     """
 
     def __init__(

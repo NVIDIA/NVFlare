@@ -116,5 +116,5 @@ def get_controller_by_name(config_name: str = "basic") -> FeatureElectionControl
     """
     if config_name not in CONFIGS:
         raise ValueError(f"Unknown config: {config_name}. Available: {list(CONFIGS.keys())}")
-    
+
     return get_controller(**CONFIGS[config_name])

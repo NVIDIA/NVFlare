@@ -13,16 +13,17 @@
 # limitations under the License.
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict
+
 import numpy as np
 
+from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import ClientTask
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.controller import Controller, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.impl.controller import Controller, Task
-from nvflare.apis.controller_spec import ClientTask
-from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import ReturnCode
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +35,15 @@ class FeatureElectionController(Controller):
     """
 
     def __init__(
-            self,
-            freedom_degree: float = 0.5,
-            aggregation_mode: str = "weighted",
-            min_clients: int = 2,
-            num_rounds: int = 5,
-            task_name: str = "feature_election",
-            train_timeout: int = 300,
-            auto_tune: bool = False,
-            tuning_rounds: int = 0,
+        self,
+        freedom_degree: float = 0.5,
+        aggregation_mode: str = "weighted",
+        min_clients: int = 2,
+        num_rounds: int = 5,
+        task_name: str = "feature_election",
+        train_timeout: int = 300,
+        auto_tune: bool = False,
+        tuning_rounds: int = 0,
     ):
         super().__init__()
 
@@ -75,7 +76,7 @@ class FeatureElectionController(Controller):
         logger.info("Stopping Feature Election Controller")
 
     def process_result_of_unknown_task(
-            self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         """
         Called when a result is received for an unknown task.
@@ -101,6 +102,7 @@ class FeatureElectionController(Controller):
         except Exception as e:
             logger.error(f"Workflow failed: {e}")
             import traceback
+
             traceback.print_exc()
 
     # ==============================================================================
@@ -129,11 +131,7 @@ class FeatureElectionController(Controller):
         logger.debug(f"Received result from {client_name}")
 
     def _broadcast_and_gather(
-            self,
-            task_data: Shareable,
-            abort_signal: Signal,
-            fl_ctx: FLContext,
-            timeout: int = 0
+        self, task_data: Shareable, abort_signal: Signal, fl_ctx: FLContext, timeout: int = 0
     ) -> Dict[str, Shareable]:
         """
         Helper to send tasks and collect results safely.
@@ -263,9 +261,7 @@ class FeatureElectionController(Controller):
             if self.global_weights:
                 task_data["params"] = self.global_weights
 
-            results = self._broadcast_and_gather(
-                task_data, abort_signal, fl_ctx, timeout=self.train_timeout
-            )
+            results = self._broadcast_and_gather(task_data, abort_signal, fl_ctx, timeout=self.train_timeout)
 
             # Aggregate Weights (FedAvg)
             self._aggregate_weights(results)
@@ -345,12 +341,7 @@ class FeatureElectionController(Controller):
         return self._weighted_election(masks, scores, weights, intersection, union)
 
     def _weighted_election(
-            self,
-            masks: np.ndarray,
-            scores: np.ndarray,
-            weights: np.ndarray,
-            intersection: np.ndarray,
-            union: np.ndarray
+        self, masks: np.ndarray, scores: np.ndarray, weights: np.ndarray, intersection: np.ndarray, union: np.ndarray
     ) -> np.ndarray:
         """
         Perform weighted voting for features in the difference set.

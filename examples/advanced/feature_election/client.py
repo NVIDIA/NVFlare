@@ -22,10 +22,10 @@ FeatureElectionExecutor from nvflare.app_opt.feature_election.
 import logging
 from typing import Optional
 
+from prepare_data import load_client_data
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.feature_election.executor import FeatureElectionExecutor
-
-from prepare_data import load_client_data
 
 logger = logging.getLogger(__name__)
 
@@ -100,10 +100,10 @@ def get_executor(
 class SyntheticDataExecutor(FeatureElectionExecutor):
     """
     FeatureElectionExecutor with built-in synthetic data loading.
-    
+
     This executor automatically loads synthetic data based on
     client_id extracted from the FL context.
-    
+
     Args:
         fs_method: Feature selection method
         eval_metric: Evaluation metric
@@ -150,7 +150,7 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
 
         # Extract client ID from site name
         site_name = fl_ctx.get_identity_name()
-        
+
         # Parse client_id from site name (e.g., "site-1" -> 0)
         try:
             if site_name.startswith("site-"):
@@ -158,6 +158,7 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
             else:
                 # Try to extract any number
                 import re
+
                 match = re.search(r"\d+", site_name)
                 client_id = int(match.group()) - 1 if match else 0
         except (ValueError, AttributeError):
@@ -178,7 +179,7 @@ class SyntheticDataExecutor(FeatureElectionExecutor):
 
         self.set_data(X_train, y_train, X_val, y_val, feature_names)
         self._data_loaded = True
-        
+
         logger.info(f"Loaded synthetic data for {site_name} (client_id={client_id})")
 
     def execute(self, task_name, shareable, fl_ctx, abort_signal):
