@@ -104,26 +104,22 @@ def split_data_for_clients(
         raise ValueError(f"Unknown strategy: {strategy}")
 
 
-def _split_stratified(
-    df: pd.DataFrame, num_clients: int, random_state: int
-) -> List[pd.DataFrame]:
+def _split_stratified(df: pd.DataFrame, num_clients: int, random_state: int) -> List[pd.DataFrame]:
     """Stratified split maintaining class distribution across clients."""
     df_shuffled = df.sample(frac=1, random_state=random_state).reset_index(drop=True)
-    
+
     client_dfs = []
     rows_per_client = len(df) // num_clients
-    
+
     for i in range(num_clients):
         start = i * rows_per_client
         end = start + rows_per_client if i < num_clients - 1 else len(df)
         client_dfs.append(df_shuffled.iloc[start:end].copy())
-    
+
     return client_dfs
 
 
-def _split_random(
-    df: pd.DataFrame, num_clients: int, random_state: int
-) -> List[pd.DataFrame]:
+def _split_random(df: pd.DataFrame, num_clients: int, random_state: int) -> List[pd.DataFrame]:
     """Random split without stratification."""
     np.random.seed(random_state)
     indices = np.arange(len(df))
@@ -131,12 +127,12 @@ def _split_random(
 
     client_dfs = []
     samples_per_client = len(df) // num_clients
-    
+
     for i in range(num_clients):
         start = i * samples_per_client
         end = start + samples_per_client if i < num_clients - 1 else len(df)
         client_dfs.append(df.iloc[indices[start:end]].copy())
-    
+
     return client_dfs
 
 
@@ -148,37 +144,37 @@ def _split_non_iid(
 ) -> List[pd.DataFrame]:
     """
     Non-IID split using Dirichlet distribution.
-    
+
     Creates heterogeneous data distributions across clients,
     simulating real-world federated scenarios.
     """
     y = df["target"].values
-    
+
     if y.dtype == object:
         le = LabelEncoder()
         y = le.fit_transform(y)
-    
+
     num_classes = len(np.unique(y))
     np.random.seed(random_state)
-    
+
     # Dirichlet distribution for label assignment
     label_distribution = np.random.dirichlet([alpha] * num_clients, num_classes)
-    
+
     client_indices = [[] for _ in range(num_clients)]
-    
+
     for k in range(num_classes):
         idx_k = np.where(y == k)[0]
         np.random.shuffle(idx_k)
-        
+
         # Split indices according to Dirichlet proportions
         proportions = (label_distribution[k] * len(idx_k)).astype(int)
         proportions[-1] = len(idx_k) - proportions[:-1].sum()  # Ensure all assigned
-        
+
         start = 0
         for i, prop in enumerate(proportions):
-            client_indices[i].extend(idx_k[start:start + prop])
+            client_indices[i].extend(idx_k[start : start + prop])
             start += prop
-    
+
     return [df.iloc[indices].copy() for indices in client_indices]
 
 
@@ -223,7 +219,7 @@ def load_client_data(
             feature_names = [c for c in df.columns if c != "target"]
             X = df.drop(columns=["target"]).values
             y = df["target"].values
-            
+
             X_train, X_val, y_train, y_val = train_test_split(
                 X, y, test_size=test_size, random_state=random_state + client_id, stratify=y
             )
@@ -253,9 +249,7 @@ def load_client_data(
         X, y, test_size=test_size, random_state=random_state + client_id, stratify=y
     )
 
-    logger.info(
-        f"Client {client_id}: {len(X_train)} train samples, {len(X_val)} val samples"
-    )
+    logger.info(f"Client {client_id}: {len(X_train)} train samples, {len(X_val)} val samples")
 
     return X_train, y_train, X_val, y_val, feature_names
 
@@ -290,7 +284,7 @@ def prepare_data_for_all_clients(
 
     # Split and save
     client_dfs = split_data_for_clients(df, num_clients, split_strategy, random_state)
-    
+
     for i, client_df in enumerate(client_dfs):
         filepath = output_path / f"client_{i}.csv"
         client_df.to_csv(filepath, index=False)
@@ -304,18 +298,19 @@ def prepare_data_for_all_clients(
         "feature_names": feature_names,
         "total_samples": total_samples,
     }
-    
+
     import json
+
     with open(output_path / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
-    
+
     logger.info(f"Data preparation complete. Files saved to {output_path}")
 
 
 if __name__ == "__main__":
     # Example: Generate data for 3 clients
     logging.basicConfig(level=logging.INFO)
-    
+
     prepare_data_for_all_clients(
         output_dir="./data",
         num_clients=3,

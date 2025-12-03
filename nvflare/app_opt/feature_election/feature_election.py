@@ -40,16 +40,15 @@ class FeatureElection:
     - Easy data preparation and splitting
     - Local simulation for testing
     - Result management and persistence
-
     """
 
     def __init__(
-            self,
-            freedom_degree: float = 0.5,
-            fs_method: str = "lasso",
-            aggregation_mode: str = "weighted",
-            auto_tune: bool = False,
-            tuning_rounds: int = 5,
+        self,
+        freedom_degree: float = 0.5,
+        fs_method: str = "lasso",
+        aggregation_mode: str = "weighted",
+        auto_tune: bool = False,
+        tuning_rounds: int = 5,
     ):
         if not 0 <= freedom_degree <= 1:
             raise ValueError("freedom_degree must be between 0 and 1")
@@ -68,12 +67,12 @@ class FeatureElection:
         self.election_stats = {}
 
     def create_flare_job(
-            self,
-            job_name: str = "feature_election",
-            output_dir: str = "jobs/feature_election",
-            min_clients: int = 2,
-            num_rounds: int = 5,
-            client_sites: Optional[List[str]] = None,
+        self,
+        job_name: str = "feature_election",
+        output_dir: str = "jobs/feature_election",
+        min_clients: int = 2,
+        num_rounds: int = 5,
+        client_sites: Optional[List[str]] = None,
     ) -> Dict[str, str]:
         """
         Generate FLARE job configuration.
@@ -146,9 +145,12 @@ class FeatureElection:
             "readme": job_path / "README.md",
         }
 
-        with open(paths["server_config"], "w") as f: json.dump(server_config, f, indent=2)
-        with open(paths["client_config"], "w") as f: json.dump(client_config, f, indent=2)
-        with open(paths["meta"], "w") as f: json.dump(meta_config, f, indent=2)
+        with open(paths["server_config"], "w") as f:
+            json.dump(server_config, f, indent=2)
+        with open(paths["client_config"], "w") as f:
+            json.dump(client_config, f, indent=2)
+        with open(paths["meta"], "w") as f:
+            json.dump(meta_config, f, indent=2)
 
         # Create README
         with open(paths["readme"], "w") as f:
@@ -158,13 +160,13 @@ class FeatureElection:
         return {k: str(v) for k, v in paths.items()}
 
     def prepare_data_splits(
-            self,
-            df: pd.DataFrame,
-            target_col: str,
-            num_clients: int = 3,
-            split_strategy: str = "stratified",
-            split_ratios: Optional[List[float]] = None,
-            random_state: int = 42,
+        self,
+        df: pd.DataFrame,
+        target_col: str,
+        num_clients: int = 3,
+        split_strategy: str = "stratified",
+        split_ratios: Optional[List[float]] = None,
+        random_state: int = 42,
     ) -> List[Tuple[pd.DataFrame, pd.Series]]:
         """Prepare data splits for federated clients."""
         X = df.drop(columns=[target_col])
@@ -221,7 +223,8 @@ class FeatureElection:
                 proportions = (label_distribution[k] * len(idx_k)).astype(int)[:-1]
                 splits = np.split(idx_k, np.cumsum(proportions))
                 for i in range(num_clients):
-                    if i < len(splits): client_indices[i].extend(splits[i])
+                    if i < len(splits):
+                        client_indices[i].extend(splits[i])
 
             for indices_i in client_indices:
                 client_data.append((X.iloc[indices_i], y.iloc[indices_i]))
@@ -238,9 +241,9 @@ class FeatureElection:
         return client_data
 
     def simulate_election(
-            self,
-            client_data: List[Tuple[Union[pd.DataFrame, np.ndarray], Union[pd.Series, np.ndarray]]],
-            feature_names: Optional[List[str]] = None,
+        self,
+        client_data: List[Tuple[Union[pd.DataFrame, np.ndarray], Union[pd.Series, np.ndarray]]],
+        feature_names: Optional[List[str]] = None,
     ) -> Dict:
         """Simulate election locally."""
         # Local import to avoid circular dependency
@@ -252,7 +255,7 @@ class FeatureElection:
             aggregation_mode=self.aggregation_mode,
             min_clients=len(client_data),
             auto_tune=self.auto_tune,
-            tuning_rounds=self.tuning_rounds
+            tuning_rounds=self.tuning_rounds,
         )
 
         client_selections = {}
@@ -296,19 +299,20 @@ class FeatureElection:
             "auto_tune": self.auto_tune,
             "intersection_features": int(np.sum(np.all(masks, axis=0))),
             "union_features": int(np.sum(np.any(masks, axis=0))),
-            "client_stats": client_selections
+            "client_stats": client_selections,
         }
 
         if feature_names is not None:
             if len(feature_names) != len(self.global_mask):
                 raise ValueError(
-                    f"Feature names length ({len(feature_names)}) doesn't match global mask length ({len(self.global_mask)})")
+                    f"Feature names length ({len(feature_names)}) doesn't match global mask length ({len(self.global_mask)})"
+                )
             self.selected_feature_names = [name for i, name in enumerate(feature_names) if self.global_mask[i]]
 
         return self.election_stats
 
     def apply_mask(
-            self, X: Union[pd.DataFrame, np.ndarray], feature_names: Optional[List[str]] = None
+        self, X: Union[pd.DataFrame, np.ndarray], feature_names: Optional[List[str]] = None
     ) -> Union[pd.DataFrame, np.ndarray]:
         """Apply global feature mask to new data."""
         if self.global_mask is None:
@@ -357,14 +361,15 @@ class FeatureElection:
 
 # --- HELPER FUNCTIONS ---
 
+
 def quick_election(
-        df: pd.DataFrame,
-        target_col: str,
-        num_clients: int = 3,
-        freedom_degree: float = 0.5,
-        fs_method: str = "lasso",
-        split_strategy: str = "stratified",
-        **kwargs,
+    df: pd.DataFrame,
+    target_col: str,
+    num_clients: int = 3,
+    freedom_degree: float = 0.5,
+    fs_method: str = "lasso",
+    split_strategy: str = "stratified",
+    **kwargs,
 ) -> Tuple[np.ndarray, Dict]:
     """
     Quick Feature Election for tabular data (one-line solution).

@@ -14,13 +14,14 @@
 
 import logging
 from typing import Dict, Optional, Tuple
+
 import numpy as np
 
 # Correct imports
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import Lasso, ElasticNet, LogisticRegression
 from sklearn.feature_selection import mutual_info_classif
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.linear_model import ElasticNet, Lasso, LogisticRegression
+from sklearn.metrics import accuracy_score, f1_score
 from sklearn.preprocessing import StandardScaler
 
 from nvflare.apis.executor import Executor
@@ -30,7 +31,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 
 try:
-    from pyimpetus import PPIMBC
+    from PyImpetus import PPIMBC
 
     PYIMPETUS_AVAILABLE = True
 except ImportError:
@@ -41,12 +42,12 @@ logger = logging.getLogger(__name__)
 
 class FeatureElectionExecutor(Executor):
     def __init__(
-            self,
-            fs_method: str = "lasso",
-            fs_params: Optional[Dict] = None,
-            eval_metric: str = "f1",
-            quick_eval: bool = True,
-            task_name: str = "feature_election",
+        self,
+        fs_method: str = "lasso",
+        fs_params: Optional[Dict] = None,
+        eval_metric: str = "f1",
+        quick_eval: bool = True,
+        task_name: str = "feature_election",
     ):
         super().__init__()
         self.fs_method = fs_method.lower()
@@ -62,7 +63,7 @@ class FeatureElectionExecutor(Executor):
 
         # State
         self.global_feature_mask = None
-        self.model = LogisticRegression(max_iter=1000, solver='lbfgs', random_state=42)
+        self.model = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)
 
         self._set_default_params()
 
@@ -72,7 +73,7 @@ class FeatureElectionExecutor(Executor):
             "elastic_net": {"alpha": 0.01, "l1_ratio": 0.5},
             "mutual_info": {"n_neighbors": 3},
             "random_forest": {"n_estimators": 100},
-            "pyimpetus": {"p_val_thresh": 0.05}
+            "pyimpetus": {"p_val_thresh": 0.05},
         }
         if self.fs_method in defaults:
             self.fs_params = {**defaults[self.fs_method], **self.fs_params}
@@ -131,7 +132,8 @@ class FeatureElectionExecutor(Executor):
             return 0.0
 
     def _handle_feature_selection(self) -> Shareable:
-        if self.X_train is None: return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        if self.X_train is None:
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         try:
             mask, scores = self._perform_feature_selection()
             resp = make_reply(ReturnCode.OK)
@@ -178,8 +180,10 @@ class FeatureElectionExecutor(Executor):
         try:
             if "params" in shareable:
                 p = shareable["params"]
-                if "weight_0" in p: self.model.coef_ = p["weight_0"]
-                if "weight_1" in p: self.model.intercept_ = p["weight_1"]
+                if "weight_0" in p:
+                    self.model.coef_ = p["weight_0"]
+                if "weight_1" in p:
+                    self.model.intercept_ = p["weight_1"]
 
             scaler = StandardScaler()
             X_tr = scaler.fit_transform(self.X_train)
@@ -224,6 +228,23 @@ class FeatureElectionExecutor(Executor):
             mask = np.zeros(n_features, dtype=bool)
             k = max(1, n_features // 2)
             mask[np.argsort(scores)[-k:]] = True
+            return mask, scores
+
+        elif self.fs_method == "pyimpetus":
+            if not PYIMPETUS_AVAILABLE:
+                logger.warning("PyImpetus not available, falling back to mutual_info")
+                scores = mutual_info_classif(self.X_train, self.y_train, random_state=42)
+                mask = np.zeros(n_features, dtype=bool)
+                k = max(1, n_features // 2)
+                mask[np.argsort(scores)[-k:]] = True
+                return mask, scores
+
+            model = PPIMBC(self.fs_params.get("model", LogisticRegression(max_iter=1000, random_state=42)))
+            selected_features = model.fit(self.X_train, self.y_train, self.fs_params.get("p_val_thresh", 0.05))
+            mask = np.zeros(n_features, dtype=bool)
+            mask[selected_features] = True
+            scores = np.zeros(n_features)
+            scores[selected_features] = 1.0
             return mask, scores
 
         else:
