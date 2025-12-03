@@ -80,13 +80,13 @@ class Group:
         """
         return self._proxies
 
-    def _get_work_proxy(self, p):
-        if self._call_opt.collab_obj_name:
-            child = p.get_child(self._call_opt.collab_obj_name)
+    def _get_work_proxy(self, p, func_name):
+        if self._call_opt.target:
+            child = p.get_child(self._call_opt.target)
             if not child:
                 raise RuntimeError(
-                    f"site {p.name} does not have collab object named '{self._call_opt.collab_obj_name}': "
-                    f"make sure to use correct collab_obj_name in the group call."
+                    f"site {p.name} does not have collab target named '{self._call_opt.target}': "
+                    f"make sure to use correct target in the group call of '{func_name}'."
                 )
             return child
         else:
@@ -113,7 +113,7 @@ class Group:
             the_backend = None
             try:
                 # filter once for all targets
-                p = self._get_work_proxy(self._proxies[0])
+                p = self._get_work_proxy(self._proxies[0], func_name)
 
                 # func_proxy is the proxy that actually has the func.
                 # the func_proxy is either "p" or a child of "p".
@@ -134,7 +134,7 @@ class Group:
 
                     waiter = ResultWaiter([p.name for p in self._proxies])
                     for p in self._proxies:
-                        p = self._get_work_proxy(p)
+                        p = self._get_work_proxy(p, func_name)
                         func_proxy, func_itf, call_args, call_kwargs = p.adjust_func_args(
                             func_name, adj_args, adj_kwargs
                         )

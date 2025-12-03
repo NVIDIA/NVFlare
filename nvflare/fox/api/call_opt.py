@@ -20,7 +20,7 @@ class CallOption:
         timeout: float = 5.0,
         secure: bool = False,
         optional: bool = False,
-        collab_obj_name=None,
+        target=None,
     ):
         """CallOption defines behavior of a collab call.
 
@@ -30,17 +30,17 @@ class CallOption:
             timeout: when expecting result, the max number of secs to wait for result.
             secure: whether to use P2P secure messaging.
             optional: whether the call is optional.
-            collab_obj_name: name of the collab object to be called.
+            target: name of the collab object to be called.
         """
         self.expect_result = expect_result
         self.blocking = blocking
         self.timeout = timeout
         self.secure = secure
         self.optional = optional
-        self.collab_obj_name = collab_obj_name
+        self.target = target
 
     def __str__(self):
         return (
             f"expect_result={self.expect_result} blocking={self.blocking} timeout={self.timeout} "
-            f"secure={self.secure} optional={self.optional} collab_obj={self.collab_obj_name}"
+            f"secure={self.secure} optional={self.optional} target={self.target}"
         )

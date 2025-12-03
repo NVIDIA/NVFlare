@@ -30,6 +30,7 @@ class _ProxyCall:
         timeout: float = 5.0,
         optional: bool = False,
         secure: bool = False,
+        target: str = None,
     ):
         self.proxy = proxy
         self.call_opt = CallOption(
@@ -38,6 +39,7 @@ class _ProxyCall:
             timeout=timeout,
             optional=optional,
             secure=secure,
+            target=target,
         )
 
     def __getattr__(self, func_name):
@@ -66,6 +68,7 @@ class Proxy:
         timeout: float = 5.0,
         optional: bool = False,
         secure: bool = False,
+        target: str = None,
     ):
         """This is called when the proxy is used with call options.
 
@@ -74,6 +77,7 @@ class Proxy:
             timeout:
             optional:
             secure:
+            target:
 
         Returns:
 
@@ -84,6 +88,7 @@ class Proxy:
             timeout=timeout,
             optional=optional,
             secure=secure,
+            target=target,
         )
 
     @property
@@ -196,7 +201,17 @@ class Proxy:
 
         """
         try:
-            p, func_itf, call_args, call_kwargs = self.adjust_func_args(func_name, args, kwargs)
+            if call_opt.target:
+                p = self.get_child(call_opt.target)
+                if not p:
+                    raise RuntimeError(
+                        f"site {self.name} does not have collab target named '{call_opt.target}': "
+                        f"make sure to use correct target when calling '{func_name}'."
+                    )
+            else:
+                p = self
+
+            p, func_itf, call_args, call_kwargs = p.adjust_func_args(func_name, args, kwargs)
 
             with p.app.new_context(self.caller_name, self.name) as ctx:
                 # apply outgoing call filters

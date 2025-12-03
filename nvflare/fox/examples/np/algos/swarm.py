@@ -37,7 +37,7 @@ class NPSwarm:
         # randomly pick a client to start
         start_client_idx = random.randint(0, len(fox.clients) - 1)
         start_client = fox.clients[start_client_idx]
-        start_client.start(self.num_rounds, self._initial_model)
+        start_client(target="client").start(self.num_rounds, self._initial_model)
         while not fox.is_aborted:
             if self.waiter.wait(timeout=0.5):
                 break
